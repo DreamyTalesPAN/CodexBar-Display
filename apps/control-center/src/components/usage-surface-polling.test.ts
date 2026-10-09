@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   startUsageSurfacePolling,
+  USAGE_REFRESH_POLL_INTERVAL_MS,
   USAGE_SURFACE_POLL_INTERVAL_MS,
 } from "./usage-surface-polling";
 
@@ -33,6 +34,26 @@ describe("startUsageSurfacePolling", () => {
     expect(refreshProviderHealth).toHaveBeenCalledTimes(3);
 
     stop();
+  });
+
+  it("reads a manual refresh promptly without speeding up provider health checks", async () => {
+    vi.useFakeTimers();
+    const refreshUsage = vi.fn(() => Promise.resolve());
+    const refreshProviderHealth = vi.fn(() => Promise.resolve());
+    const stop = startUsageSurfacePolling({
+      refreshUsage,
+      refreshProviderHealth,
+      refreshPending: true,
+    });
+
+    await advance(0);
+    await advance(USAGE_REFRESH_POLL_INTERVAL_MS);
+    expect(refreshUsage).toHaveBeenCalledTimes(2);
+    expect(refreshProviderHealth).toHaveBeenCalledTimes(1);
+
+    stop();
+    await advance(USAGE_REFRESH_POLL_INTERVAL_MS);
+    expect(refreshUsage).toHaveBeenCalledTimes(2);
   });
 
   it("pauses polling while hidden or offline", async () => {

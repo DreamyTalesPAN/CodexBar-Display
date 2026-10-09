@@ -4577,6 +4577,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     return startUsageSurfacePolling({
       refreshUsage: () => refreshUsage({ quiet: true }),
       refreshProviderHealth: () => refreshProviderPreferences({ quiet: true }),
+      refreshPending: usage?.refresh?.state === "refreshing",
     });
   }, [
     activeShellTab,
@@ -4585,6 +4586,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     refreshProviderPreferences,
     refreshUsage,
     hasEnteredControlCenter,
+    usage?.refresh?.state,
   ]);
 
   // Settings and the provider step show the display selection; setup also has

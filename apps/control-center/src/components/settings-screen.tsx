@@ -100,6 +100,7 @@ export function SettingsScreen({
   const thisHost = windowsHost ? "this computer" : "this Mac";
   const [requestedMode, setRequestedMode] = useState<"cable" | "wifi" | null>(null);
   const [eraseRequested, setEraseRequested] = useState(false);
+  const [resetRequested, setResetRequested] = useState(false);
   const brightnessSupport =
     device?.capabilities?.display?.brightness?.supported ?? true;
   const minBrightness =
@@ -395,7 +396,7 @@ export function SettingsScreen({
         <div>
           <Button
             disabled={localActionBusy}
-            onClick={onResetSetup}
+            onClick={() => setResetRequested(true)}
             type="button"
             variant="outline"
           >
@@ -407,6 +408,35 @@ export function SettingsScreen({
             </span>
           </Button>
         </div>
+        {resetRequested ? (
+          <Dialog open onOpenChange={(open) => {
+            if (!open) setResetRequested(false);
+          }}>
+            <DialogContent showCloseButton={false}>
+              <DialogHeader>
+                <DialogTitle>Run setup again?</DialogTitle>
+                <DialogDescription>
+                  VibeTV keeps its settings and themes. This computer forgets its current VibeTV connection and starts setup again.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button onClick={() => setResetRequested(false)} type="button" variant="outline">
+                  Cancel
+                </Button>
+                <Button
+                  disabled={localActionBusy}
+                  onClick={() => {
+                    setResetRequested(false);
+                    onResetSetup();
+                  }}
+                  type="button"
+                >
+                  Run setup again
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        ) : null}
         {onEraseDevice && connectionMode === "cable" ? (
           <div>
             <Button

@@ -3154,7 +3154,7 @@ async function testOfflineActiveDeviceOffersReadOnlyPickerAfterSetupReset(browse
   assert(deviceWriteRequests.length === 0,
     "An admitted session must not adopt another VibeTV after disconnecting");
   await clickNavigation(page, "Settings");
-  await page.getByRole("button", { name: "Run setup again" }).click();
+  await confirmRunSetupAgain(page);
   await waitForSetupDeviceStep(page);
   await page.getByRole("radio", { name: "VibeTV device-82" }).waitFor({
     timeout: 10_000,
@@ -3829,7 +3829,7 @@ async function testEnteredControlCenterOpensPairingRecovery(browser, appUrl) {
   await pairingError.waitFor({ timeout: 10_000 });
   await pairingError.getByRole("button", { name: "OK", exact: true }).click();
   await pairingError.waitFor({ state: "detached", timeout: 5_000 });
-  await page.getByRole("button", { name: "Run setup again" }).click();
+  await confirmRunSetupAgain(page);
   await waitForSetupDeviceStep(page, 20_000);
   await setupDeviceCards(page).first().waitFor({ timeout: 10_000 });
   await setupConnectButton(page).click();
@@ -7889,6 +7889,12 @@ async function testRunSetupAgainReturnsToWifiOnboarding(browser, appUrl) {
   const runSetupAgain = page.getByRole("button", { name: "Run setup again" });
   await runSetupAgain.waitFor({ timeout: 10_000 });
   await runSetupAgain.click();
+  const confirmDialog = page.getByRole("dialog", { name: "Run setup again?" });
+  await confirmDialog.waitFor();
+  assert(resetRequests.length === 0, "Opening the confirmation must not reset setup");
+  await confirmDialog.getByRole("button", { name: "Cancel" }).click();
+  assert(resetRequests.length === 0, "Cancelling must not reset setup");
+  await confirmRunSetupAgain(page);
   await page
     .getByRole("main", { name: "Welcome" })
     .waitFor({ timeout: 10_000 });
@@ -7910,6 +7916,12 @@ async function testRunSetupAgainReturnsToWifiOnboarding(browser, appUrl) {
 // A reset while a display-mode save was still in flight let that save land
 // after the reset and write the old selection back, so the rerun skipped the
 // display step. The reset waits for the save, from every entry point.
+async function confirmRunSetupAgain(page) {
+  await page.getByRole("button", { name: "Run setup again" }).click();
+  await page.getByRole("dialog", { name: "Run setup again?" })
+    .getByRole("button", { name: "Run setup again" }).click();
+}
+
 async function testRunSetupAgainWaitsForAPendingDisplaySave(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
@@ -7940,7 +7952,7 @@ async function testRunSetupAgainWaitsForAPendingDisplaySave(browser, appUrl) {
     () => timeline.some((entry) => entry.pathname === "/v1/provider-display"),
     "choosing a display mode in Settings must save it",
   );
-  await page.getByRole("button", { name: "Run setup again" }).click();
+  await confirmRunSetupAgain(page);
   await waitForCondition(
     () => timeline.some((entry) => entry.pathname === "/v1/setup/reset"),
     "Run setup again must reset once the save has landed",
@@ -7989,7 +8001,7 @@ async function testRunSetupAgainWaitsForAPendingProviderToggle(browser, appUrl) 
     () => timeline.some((entry) => entry.pathname.startsWith("/v1/preferences/")),
     "switching a provider in Settings must save it",
   );
-  await page.getByRole("button", { name: "Run setup again" }).click();
+  await confirmRunSetupAgain(page);
   await waitForCondition(
     () => timeline.some((entry) => entry.pathname === "/v1/setup/reset"),
     "Run setup again must reset once the provider toggle has settled",
@@ -8064,7 +8076,7 @@ async function testFailedSetupResetReconcilesPendingProviderToggle(
       ),
     "enabling Claude must start its provider preference save",
   );
-  await page.getByRole("button", { name: "Run setup again" }).click();
+  await confirmRunSetupAgain(page);
   await waitForCondition(
     () =>
       requests.some((request) => request.pathname === "/v1/setup/reset"),
@@ -8120,7 +8132,7 @@ async function testRunSetupAgainBlocksLaterProviderWrites(browser, appUrl) {
     timeout: 10_000,
   });
   await clickNavigation(page, "Settings");
-  await page.getByRole("button", { name: "Run setup again" }).click();
+  await confirmRunSetupAgain(page);
   await waitForCondition(
     () => requests.includes("/v1/setup/reset"),
     "Run setup again did not start its reset",

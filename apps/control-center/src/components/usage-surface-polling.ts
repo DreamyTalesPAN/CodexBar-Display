@@ -1,4 +1,5 @@
 export const USAGE_SURFACE_POLL_INTERVAL_MS = 30_000;
+export const USAGE_REFRESH_POLL_INTERVAL_MS = 3_000;
 
 type IntervalHandle = ReturnType<typeof globalThis.setInterval>;
 type TimeoutHandle = ReturnType<typeof globalThis.setTimeout>;
@@ -16,6 +17,7 @@ type UsageSurfacePollingOptions = {
   isVisible?: () => boolean;
   isOnline?: () => boolean;
   intervalMs?: number;
+  refreshPending?: boolean;
   clock?: PollingClock;
 };
 
@@ -25,17 +27,18 @@ export function startUsageSurfacePolling({
   isVisible = defaultIsVisible,
   isOnline = defaultIsOnline,
   intervalMs = USAGE_SURFACE_POLL_INTERVAL_MS,
+  refreshPending = false,
   clock = currentClock(),
 }: UsageSurfacePollingOptions): () => void {
   let stopped = false;
   let usageInFlight = false;
   let providerHealthInFlight = false;
 
-  const run = () => {
-    if (stopped || !isVisible() || !isOnline()) {
+  const canPoll = () => !stopped && isVisible() && isOnline();
+  const runUsage = () => {
+    if (!canPoll()) {
       return;
     }
-
     if (!usageInFlight) {
       usageInFlight = true;
       void Promise.resolve()
@@ -45,6 +48,13 @@ export function startUsageSurfacePolling({
           usageInFlight = false;
         });
     }
+  };
+
+  const run = () => {
+    if (!canPoll()) {
+      return;
+    }
+    runUsage();
 
     if (!providerHealthInFlight) {
       providerHealthInFlight = true;
@@ -64,6 +74,9 @@ export function startUsageSurfacePolling({
 
   const initialTimer: TimeoutHandle = clock.setTimeout(run, 0);
   const intervalTimer: IntervalHandle = clock.setInterval(run, intervalMs);
+  const refreshTimer: IntervalHandle | null = refreshPending
+    ? clock.setInterval(runUsage, USAGE_REFRESH_POLL_INTERVAL_MS)
+    : null;
 
   return () => {
     stopped = true;
@@ -72,6 +85,7 @@ export function startUsageSurfacePolling({
     providerHealthInFlight = false;
     clock.clearTimeout(initialTimer);
     clock.clearInterval(intervalTimer);
+    if (refreshTimer !== null) clock.clearInterval(refreshTimer);
   };
 }
 
