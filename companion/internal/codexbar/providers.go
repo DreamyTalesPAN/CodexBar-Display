@@ -31,6 +31,10 @@ var providerProbePerProvider = runtime.GOOS == "windows"
 // check timed out." while the provider was working.
 const perProviderProbeTimeout = 40 * time.Second
 
+// dashboardProbeBudget is the shared budget of the Windows serve /usage join.
+// A variable so tests can run the budget out quickly.
+var dashboardProbeBudget = perProviderProbeTimeout
+
 // ProviderCheckBudget is the longest a caller waits for one provider check:
 // the 5 s inventory read plus one probe. Request and refresh contexts that
 // wrap a check must be at least this long.
@@ -84,6 +88,9 @@ func providerInventoryArgs() []string {
 // so the caller shows it as unavailable; the others still arrive. Only when
 // no provider answered is the collection itself failed, so the collector
 // falls back as it does for a failed single request.
+//
+// Success is counted from decoded answers: a provider the shared budget never
+// started gets no request at all, so it counts as failed too (#500 review).
 func fetchDashboardUsage(ctx context.Context, providerIDs []string, fetch func(ctx context.Context, query string) ([]byte, error)) ([]dashboardusage.UsageProvider, error) {
 	decode := func(raw []byte) ([]dashboardusage.UsageProvider, error) {
 		decoded, err := dashboardusage.DecodeUsage(raw)
@@ -104,9 +111,9 @@ func fetchDashboardUsage(ctx context.Context, providerIDs []string, fetch func(c
 		settings = append(settings, ProviderSetting{ID: id, Enabled: true})
 	}
 	var mu sync.Mutex
-	failed := make(map[string]struct{})
+	answered := make(map[string]struct{})
 	var firstErr error
-	joined, err := probeEnabledProviders(ctx, perProviderProbeTimeout, settings, func(setting ProviderSetting, timeout time.Duration) ([]byte, error) {
+	joined, err := probeEnabledProviders(ctx, dashboardProbeBudget, settings, func(setting ProviderSetting, timeout time.Duration) ([]byte, error) {
 		requestCtx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		raw, err := fetch(requestCtx, "?provider="+url.QueryEscape(setting.ID))
@@ -116,20 +123,31 @@ func fetchDashboardUsage(ctx context.Context, providerIDs []string, fetch func(c
 		}
 		if err != nil {
 			mu.Lock()
-			failed[setting.ID] = struct{}{}
 			if firstErr == nil {
 				firstErr = err
 			}
 			mu.Unlock()
 			return nil, err
 		}
+		mu.Lock()
+		answered[setting.ID] = struct{}{}
+		mu.Unlock()
 		return json.Marshal(decoded)
 	})
 	if err != nil {
 		return nil, err
 	}
-	if len(settings) > 0 && len(failed) == len(settings) {
+	if len(settings) > 0 && len(answered) == 0 {
+		if firstErr == nil {
+			firstErr = context.DeadlineExceeded
+		}
 		return nil, firstErr
+	}
+	failed := make(map[string]struct{})
+	for _, setting := range settings {
+		if _, ok := answered[setting.ID]; !ok {
+			failed[setting.ID] = struct{}{}
+		}
 	}
 	all, err := decode(joined)
 	if err != nil {

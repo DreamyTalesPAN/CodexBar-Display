@@ -308,6 +308,36 @@ func TestFetchDashboardProvidersFailsWhenEveryWindowsRequestFails(t *testing.T) 
 	}
 }
 
+// With more providers than parallel slots, a provider the shared budget never
+// started sends no request. When every started request fails as well, the
+// collection must still fail instead of settling with only unavailable
+// providers (#500 review).
+func TestFetchDashboardUsageFailsWhenBudgetSkipsTheRest(t *testing.T) {
+	previous, previousBudget := providerProbePerProvider, dashboardProbeBudget
+	providerProbePerProvider, dashboardProbeBudget = true, 100*time.Millisecond
+	t.Cleanup(func() { providerProbePerProvider, dashboardProbeBudget = previous, previousBudget })
+
+	ids := make([]string, maxParallelProviderProbes+1)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("p%d", i)
+	}
+	var mu sync.Mutex
+	requests := 0
+	usage, err := fetchDashboardUsage(context.Background(), ids, func(ctx context.Context, query string) ([]byte, error) {
+		mu.Lock()
+		requests++
+		mu.Unlock()
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})
+	if requests >= len(ids) {
+		t.Fatalf("the test needs a provider the budget skipped, got %d requests for %d providers", requests, len(ids))
+	}
+	if err == nil {
+		t.Fatalf("no provider answered, the collection must fail: usage=%+v", usage)
+	}
+}
+
 func newDashboardFetchTestServer(t *testing.T, snapshot string) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
