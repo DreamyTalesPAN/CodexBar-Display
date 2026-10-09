@@ -363,12 +363,14 @@ func managedCodexBarRecoveryURL(
     applicationSupportURL: URL,
     validatedCLIURL: URL?
 ) -> URL? {
-    guard validatedCLIURL?.standardizedFileURL == appManagedCodexBarCLIURL(
-        applicationSupportURL: applicationSupportURL
-    ).standardizedFileURL else {
+    let appURL = appManagedCodexBarAppURL(applicationSupportURL: applicationSupportURL)
+    let cliURL = appManagedCodexBarCLIURL(applicationSupportURL: applicationSupportURL)
+    guard validatedCLIURL?.standardizedFileURL == cliURL.standardizedFileURL,
+          appURL.resolvingSymlinksInPath().standardizedFileURL == appURL.standardizedFileURL,
+          cliURL.resolvingSymlinksInPath().standardizedFileURL == cliURL.standardizedFileURL else {
         return nil
     }
-    return appManagedCodexBarAppURL(applicationSupportURL: applicationSupportURL)
+    return appURL
 }
 
 
@@ -1360,6 +1362,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     // reruns preparation with the flag still set instead.
     private var pendingCodexBarRepairRerun = false
     private var codexBarRecoveryApplication: NSRunningApplication?
+    private var managedCodexBarOpenTask: Task<Void, Never>?
     private var installationStatusTitle = "Starting Control Center"
     private var installationStatusDetail = "Preparing the Mac App."
     private var installationStatusFailed = false
@@ -1643,31 +1646,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     // into CodexBar rather than after a download they already have.
     // Stopgap until #245 moves provider selection into setup and settings.
     private func openManagedCodexBar() {
+        guard managedCodexBarOpenTask == nil else { return }
         let supportURL = applicationSupportURL()
         let managed = appManagedCodexBarAppURL(applicationSupportURL: supportURL)
-        guard let appURL = managedCodexBarRecoveryURL(
-            applicationSupportURL: supportURL,
-            validatedCLIURL: validatedPinnedCodexBarCLI(at: managed)
-        ) else {
-            NSLog("VibeTV Control Center refused to open an unverified CodexBar app")
-            return
-        }
-        // From here the app is the customer's to use. Recovery cleanup must not
-        // terminate it under them, so drop our claim on it.
-        codexBarRecoveryApplication = nil
+        let companionURL = Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Helpers", isDirectory: true)
+            .appendingPathComponent("codexbar-display")
+        managedCodexBarOpenTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.managedCodexBarOpenTask = nil }
+            let validatedCLIURL = await Task.detached(priority: .userInitiated) {
+                guard let result = runCodexBarCommand(
+                    executableURL: companionURL,
+                    arguments: ["validate-codexbar", "--app", managed.path]
+                ), result.exitCode == 0 else { return Optional<URL>.none }
+                let path = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+                return path.isEmpty ? nil : URL(fileURLWithPath: path)
+            }.value
+            guard let appURL = managedCodexBarRecoveryURL(
+                applicationSupportURL: supportURL,
+                validatedCLIURL: validatedCLIURL
+            ) else {
+                NSLog("VibeTV Control Center refused to open an unverified CodexBar app")
+                return
+            }
+            // From here the app is the customer's to use. Recovery cleanup must
+            // not terminate it under them, so drop our claim on it.
+            self.codexBarRecoveryApplication = nil
 
-        let configuration = NSWorkspace.OpenConfiguration()
-        configuration.activates = true
-        configuration.addsToRecentItems = false
-        configuration.allowsRunningApplicationSubstitution = false
-        NSWorkspace.shared.openApplication(
-            at: appURL,
-            configuration: configuration
-        ) { _, error in
-            if let error {
-                NSLog(
-                    "VibeTV Control Center could not open CodexBar: \(error.localizedDescription)"
-                )
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = true
+            configuration.addsToRecentItems = false
+            configuration.allowsRunningApplicationSubstitution = false
+            NSWorkspace.shared.openApplication(
+                at: appURL,
+                configuration: configuration
+            ) { _, error in
+                if let error {
+                    NSLog(
+                        "VibeTV Control Center could not open CodexBar: \(error.localizedDescription)"
+                    )
+                }
             }
         }
     }

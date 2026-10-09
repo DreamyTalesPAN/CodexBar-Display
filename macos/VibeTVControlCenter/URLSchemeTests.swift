@@ -217,6 +217,46 @@ func runURLSchemeTests() {
         ) == nil,
         "recovery must reject an unverified private app"
     )
+    let symlinkTestRoot = FileManager.default.temporaryDirectory
+        .resolvingSymlinksInPath()
+        .appendingPathComponent("vibetv-recovery-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: symlinkTestRoot) }
+    let symlinkSupportURL = symlinkTestRoot.appendingPathComponent("support")
+    let symlinkAppURL = appManagedCodexBarAppURL(applicationSupportURL: symlinkSupportURL)
+    let unrelatedAppURL = symlinkTestRoot.appendingPathComponent("other/CodexBar.app")
+    try! FileManager.default.createDirectory(
+        at: symlinkAppURL.deletingLastPathComponent(), withIntermediateDirectories: true
+    )
+    try! FileManager.default.createDirectory(
+        at: unrelatedAppURL, withIntermediateDirectories: true
+    )
+    try! FileManager.default.createSymbolicLink(
+        at: symlinkAppURL, withDestinationURL: unrelatedAppURL
+    )
+    require(
+        managedCodexBarRecoveryURL(
+            applicationSupportURL: symlinkSupportURL,
+            validatedCLIURL: appManagedCodexBarCLIURL(applicationSupportURL: symlinkSupportURL)
+        ) == nil,
+        "recovery must reject a private path redirected to another app"
+    )
+    try! FileManager.default.removeItem(at: symlinkAppURL)
+    let symlinkCLIURL = appManagedCodexBarCLIURL(applicationSupportURL: symlinkSupportURL)
+    try! FileManager.default.createDirectory(
+        at: symlinkCLIURL.deletingLastPathComponent(), withIntermediateDirectories: true
+    )
+    try! Data().write(to: unrelatedAppURL.appendingPathComponent("CodexBarCLI"))
+    try! FileManager.default.createSymbolicLink(
+        at: symlinkCLIURL,
+        withDestinationURL: unrelatedAppURL.appendingPathComponent("CodexBarCLI")
+    )
+    require(
+        managedCodexBarRecoveryURL(
+            applicationSupportURL: symlinkSupportURL,
+            validatedCLIURL: symlinkCLIURL
+        ) == nil,
+        "recovery must reject a private CLI redirected outside the app"
+    )
 
     let commandFixtureDirectory = FileManager.default.temporaryDirectory
         .appendingPathComponent("vibetv-command-\(UUID().uuidString)")
