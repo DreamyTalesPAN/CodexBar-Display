@@ -7336,6 +7336,23 @@ async function testMacAppShowsTheWindowsSignInButton(browser, appUrl) {
     (await page.getByRole("dialog", { name: "Claude", exact: true }).count()) === 0,
     "The Mac must lead signed-out Claude to its sign-in button, not a popup",
   );
+  // On the bench Mac (09.10.) the popup's two buttons did not fit side by
+  // side, and "Sign in to Claude" stuck out of the popup on the right.
+  await page.setViewportSize(desktopViewport);
+  await panel.getByRole("button", { name: "Show provider message for Claude" }).click();
+  const providerDialog = page.getByRole("dialog", { name: "Claude", exact: true });
+  await providerDialog.getByRole("button", { name: "Sign in to Claude" }).waitFor();
+  const dialogBox = await providerDialog.boundingBox();
+  for (const name of ["Copy provider message for Claude", "Sign in to Claude"]) {
+    const box = await providerDialog.getByRole("button", { name }).boundingBox();
+    assert(
+      dialogBox && box && box.x >= dialogBox.x &&
+        box.x + box.width <= dialogBox.x + dialogBox.width + 0.5,
+      `"${name}" must stay inside the provider popup`,
+    );
+  }
+  await providerDialog.getByRole("button", { name: "Close" }).click();
+  await page.setViewportSize(viewport);
   await panel
     .getByRole("button", { name: "Check Claude again" })
     .first()
