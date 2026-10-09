@@ -1273,10 +1273,31 @@ async function startTestApp({
 
 async function newCustomerPage(browser, appUrl, options) {
   const page = await browser.newPage(options);
+  await markWhatsNewRead(page);
   await page.context().grantPermissions(["local-network-access"], {
     origin: appUrl,
   });
   return page;
+}
+
+// The "What's new" notice lies over Overview until the customer closes it, and
+// these flows are about everything else: each page opens for a customer who
+// has read every entry. The unit tests cover the notice itself.
+async function markWhatsNewRead(pageOrContext) {
+  const entries = await readFile(join(root, "src", "lib", "whats-new.ts"), "utf8");
+  await pageOrContext.addInitScript(
+    (ids) => {
+      try {
+        window.localStorage.setItem(
+          "vibetv.controlCenter.seenWhatsNew",
+          JSON.stringify(ids),
+        );
+      } catch {
+        // A page without storage shows no Control Center either.
+      }
+    },
+    [...entries.matchAll(/\bid: "([^"]+)"/g)].map((match) => match[1]),
+  );
 }
 
 async function testStartupStateMachine(browser, appUrl) {
@@ -1291,6 +1312,7 @@ async function testStartupStateMachine(browser, appUrl) {
 
 async function testSetupDoesNotRequestBrowserPermission(browser, appUrl) {
   const page = await browser.newPage({ viewport });
+  await markWhatsNewRead(page);
   const installRequests = [];
   await routeCompanionMissing(page, installRequests);
 
@@ -3400,6 +3422,7 @@ async function testKnownDeviceCompanionOutageSurvivesReloadAndSecondWindow(
   appUrl,
 ) {
   const context = await browser.newContext({ viewport: desktopViewport });
+  await markWhatsNewRead(context);
   await context.grantPermissions(["local-network-access"], { origin: appUrl });
   const firstPage = await context.newPage();
   const installRequests = [];
@@ -3925,6 +3948,7 @@ async function testHostedEntryShowsMacAppDownload(
   { expectDmg, path = "/" },
 ) {
   const page = await browser.newPage({ viewport });
+  await markWhatsNewRead(page);
   const installRequests = [];
   const companionRequests = [];
   // These checks are about the Mac customer's page. CI runs on Linux, where
@@ -4057,6 +4081,7 @@ async function pretendCustomerIsOnWindows(page) {
  */
 async function testHostedEntryOnWindowsOffersTheWindowsApp(browser, appUrl) {
   const page = await browser.newPage({ viewport });
+  await markWhatsNewRead(page);
   const installRequests = [];
   await pretendCustomerIsOnWindows(page);
   await routeHostedAppThroughLocalNext(page, appUrl);
@@ -4105,6 +4130,7 @@ async function testHostedPriorVisitStillShowsMacAppDownload(
   { expectDmg },
 ) {
   const page = await browser.newPage({ viewport });
+  await markWhatsNewRead(page);
   const installRequests = [];
   const companionRequests = [];
   await page.addInitScript(() => {
@@ -9189,6 +9215,7 @@ async function testAutomaticThemeRefreshRespectsUpdateGates(browser, appUrl) {
 
 async function testFailedAutomaticThemeRefreshStaysPaused(browser, appUrl) {
   const context = await browser.newContext({ viewport });
+  await markWhatsNewRead(context);
   await context.grantPermissions(["local-network-access"], { origin: appUrl });
   const page = await context.newPage();
   const installRequests = [];
@@ -10293,6 +10320,7 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
 ) {
   const localAppUrl = "http://127.0.0.1:47832/control-center";
   const page = await browser.newPage({ viewport: themeStudioViewport });
+  await markWhatsNewRead(page);
   const installRequests = [];
   const themeInstallRequests = [];
   const browserRequests = [];
@@ -10744,6 +10772,7 @@ async function testThemeStudioScreensaverInstallUsesScreensaverSlot(
 ) {
   const localAppUrl = "http://127.0.0.1:47832/control-center";
   const page = await browser.newPage({ viewport: themeStudioViewport });
+  await markWhatsNewRead(page);
   const installRequests = [];
   const themeInstallRequests = [];
   const browserRequests = [];
@@ -11295,6 +11324,7 @@ async function testCapabilityIncompatibleThemeStaysLocked(browser, appUrl) {
 
 async function testDisabledDmgFlagHidesSetupAndUpdateLinks(browser, appUrl) {
   let page = await browser.newPage({ viewport });
+  await markWhatsNewRead(page);
   const setupInstallRequests = [];
   await pretendCustomerIsOnAMac(page);
   await routeHostedAppThroughLocalNext(page, appUrl);

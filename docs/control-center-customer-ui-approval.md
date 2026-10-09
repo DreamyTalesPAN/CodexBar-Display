@@ -5673,3 +5673,87 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No wording, nothing changes for a theme built in Theme Studio or shipped in the catalog. A hand-written theme that holds both `"progressStyle":""` and `"ps":"arc"` (or `"ps":"segments"`) is drawn in the app's previews as a straight bar, which is what VibeTV draws for it. Before, the previews drew the arc or the segments.
 - Scope: the style a progress element is drawn with in `apps/control-center/src/components/live-vibetv-preview.tsx`, one test in `live-vibetv-preview.test.ts`, and this approval record; checked with unit tests only.
 - What's new: none — a preview correction for hand-written themes
+
+## 2026-10-08 — What's new: a notice on Overview after an update, readable again under Updates
+
+- User approval: Paul was shown two drawn variants in chat on 2026-10-08, A with a dialog in the middle of Overview and B with a card on top of Overview, both with the three items and all texts below, and answered: "a. texte passen so." He asked for the rule that goes with it with: "wie bauen wir das so, dass das in zukunft für jede änderung berücksichtigt wird, die wir machen?" He has seen the drawing, not the built dialog.
+- Approved customer-visible result: A new dialog `What's new`. It opens by itself the first time a customer who was already set up is on Overview after an update, as long as the list has an entry they have not seen; it shows the newest of those, at most three. It does not open during setup, during a firmware update, while the Mac App has stopped, or while the dialog about a lost VibeTV or about usage that cannot start is open; it opens once that is over. A customer who is setting VibeTV up never gets it. Above the title stands `Version` followed by the installed app version, for example `Version 1.0.63`, in small capital letters; when the app does not know its version, the line is left out. Below the title are three items, each with a small icon: `Switch providers with a shortcut` with `Press ⌃⌥⌘P in any app to show the next provider on VibeTV.`, the four keys drawn as key caps; `Choose how often VibeTV switches` with `In Automatic mode VibeTV can switch when your activity changes, or every 30 seconds, every minute or every 5 minutes.` and the link `Show me in Settings`; `Show what is used or what is left` with `Choose whether VibeTV shows how much of your limit you have used or how much remains.` and the link `Show me in Settings`. At the bottom stand `You can read this again under Updates.` on the left and the button `Got it` on the right. `Got it`, Escape and a click beside the dialog close it. Closing it counts every entry of the list as seen, also an older one that was not among the three shown, so it does not come again until an update adds an entry. `Show me in Settings` closes it in the same way and opens Settings at the top of the page; it does not scroll to the setting. On Updates, a new link `What's new` at the right of the heading opens the same dialog with the three newest entries at any time. Not on the drawing, and so not seen by Paul: on Windows the first sentence reads `Press Ctrl+Alt+Shift+P in any app to show the next provider on VibeTV.`, with one key cap per key and the plus signs between them; the place and look of the link on Updates; that the keyboard starts on `Got it`; and that the first item is shown also on a computer where Settings says that the shortcut is not available. The dialog is built from the app's own dialog parts, so its sizes, spacing and colours are those of the other dialogs, not those of the drawing.
+- Scope: the entries and the seen list in `apps/control-center/src/lib/whats-new.ts`, the dialog in `whats-new-dialog.tsx`, when it opens in `control-center-app.tsx`, the link in `updates-screen.tsx`, `providerShortcutKeys` in `settings-screen.tsx` (the keys Settings already named, now read by both), the tests `whats-new.test.ts` and `control-center-app.whats-new.test.tsx`, seven existing `control-center-app.*.test.tsx` files and `scripts/test-customer-flows.mjs`, which now start as a customer who has read the notice, and this approval record. For the rule: `scripts/check-control-center-ui-review-gate.mjs` now also asks every new approval entry for a `What's new:` line that names entries of that list or says `none` with a reason, its test script, and the section `What's New` in `docs/control-center-ui-principles.md`; `docs/control-center-accessibility.md` lists the new check. Checked with unit tests only: nobody has looked at the built dialog in the app yet, and the customer flows were adjusted but not run. This covers the branch only, not merge, release, installation, or a device operation.
+- What's new: none — this change is the notice itself
+
+## 2026-10-08 — What's new: new themes always get an entry and stand first
+
+- User approval: Asked in chat on 2026-10-08 whether the Gauge theme should get an entry, Paul answered: "ja, neue themes immer." and "die immer vorziehen". He was then shown a drawing of the dialog with the two theme items on top and their texts; his answer to those two texts is still open when this entry is written.
+- Approved customer-visible result: The dialog `What's new` now starts with one item for each theme that is new to the customer, above the three other items: `New theme: Gauge` with `A half ring that fills as you use your limit.` and `New theme: Token Counter` with `The tokens of your session as one large number.`, each with the link `Show me in Themes`. The link closes the dialog, counts it as read and opens Appearance › Themes. Theme items do not count against the three other items; at most three theme items are shown. With both themes the first notice has five items. The same holds when the dialog is opened again from Updates. Paul asked for the rule, the place on top and an entry for Gauge; the wording of the two theme items is drafted and not yet approved by him.
+- Scope: the two entries, the field `theme` and the order in `apps/control-center/src/lib/whats-new.ts`, the link in `whats-new-dialog.tsx`, `onShowThemes` in `control-center-app.tsx`, the tests in `whats-new.test.ts` (among them the check that every live theme added to the catalog has an entry and no entry names a theme the catalog lacks) and `control-center-app.whats-new.test.tsx`, the section `What's New` in `docs/control-center-ui-principles.md`, and this approval record. Also in this change, from the automated review of `b5d7d0e3`: the approval gate asks every approval entry that one change adds for its own `What's new:` line, with a new case in its test script. Checked with unit tests only; the built dialog has not been seen yet.
+- What's new: `theme-gauge`, `theme-token-counter`
+
+## 2026-10-08 — What's new: opened again from Updates, it steps back for another dialog
+
+- User approval: Not separately approved by Paul. Correction from the automated review of head `28d14630` on 2026-10-08 to the dialog he chose from a drawing ("a. texte passen so.").
+- Approved customer-visible result: No wording, no new control. When `What's new` was opened again from Updates and a dialog that needs the customer comes up — the Mac App has stopped, usage cannot start, a VibeTV was lost — or setup or a firmware update begins, the notice is taken away and comes back once that is over. Before, it stayed open under or over the other dialog. This is what the notice that opens by itself on Overview already did.
+- Scope: when the dialog shows, in `apps/control-center/src/components/control-center-app.tsx`, one test in `control-center-app.whats-new.test.tsx`, and this approval record. Also in this change, from the same review: the approval gate accepts an entry id from one approval entry only, with a new case in its test script and one sentence in `docs/control-center-ui-principles.md`. The line below names the three entries the notice started with: the entry about the notice itself above added them and said none, and they are named here so that no later change can name them as its own. Checked with unit tests only.
+- What's new: `provider-shortcut`, `switch-providers-interval`, `usage-display`
+
+## 2026-10-08 — What's new: opened from Updates and interrupted, it stays closed
+
+- User approval: Not separately approved by Paul. Correction from the automated review of head `34c3dc84` on 2026-10-08 to the entry `What's new: opened again from Updates, it steps back for another dialog` above.
+- Approved customer-visible result: No wording, no new control. This replaces one sentence of the entry above: a notice that was opened from Updates and is taken away by something else — setup, a firmware update, the stopped Mac App, a lost VibeTV, usage that cannot start — does not come back by itself; the customer opens it again with `What's new` on Updates. Before, it came back as soon as the other thing was over, and after a firmware update that failed it then stood together with the `Update failed` dialog. While one of those things holds, Updates does not show the link `What's new`. The notice that opens by itself on Overview is unchanged: it waits and opens afterwards.
+- Scope: when the reopened dialog shows and when Updates offers the link, in `apps/control-center/src/components/control-center-app.tsx`, the test in `control-center-app.whats-new.test.tsx`, and this approval record; checked with unit tests only.
+- What's new: none — a correction to the notice itself
+
+## 2026-10-08 — What's new: in a short window the notice opens at its first entry
+
+- User approval: Not separately approved by Paul. Correction from the automated review of head `74dfef14` on 2026-10-08 to the dialog he chose from a drawing.
+- Approved customer-visible result: No wording, no new control. In a window too short for all five items the list scrolls. The notice now opens showing its first items, the new themes; before, putting the keyboard focus on `Got it` scrolled the list to its end. The focus is on `Got it` as before, and Enter closes the notice.
+- Scope: the focus call in `apps/control-center/src/components/whats-new-dialog.tsx`, one assertion in `control-center-app.whats-new.test.tsx`, and this approval record; checked with unit tests only, not in a real window.
+- What's new: none — a correction to the notice itself
+
+## 2026-10-08 — What's new: it waits while a newer app is on offer
+
+- User approval: Not separately approved by Paul. Correction from the automated review of head `768769e0` on 2026-10-08 to the dialog he chose from a drawing.
+- Approved customer-visible result: No wording, no new control. While the app knows of a newer app version, the notice does not open by itself on Overview: the app's own update prompt asks first, and the two no longer come up together. After that update the notice opens as before, with whatever the customer has not seen. `What's new` on Updates still opens it at any time.
+- Scope: when the dialog opens by itself, in `apps/control-center/src/components/control-center-app.tsx`, one test in `control-center-app.whats-new.test.tsx`, and this approval record; checked with unit tests only.
+- What's new: none — a correction to the notice itself
+
+## 2026-10-08 — What's new: in a short window only the list scrolls
+
+- User approval: Not separately approved by Paul. Correction from the automated review of head `fb6b8bbb` on 2026-10-08; it replaces the way the entry `What's new: in a short window the notice opens at its first entry` above did it.
+- Approved customer-visible result: No wording, no new control. In a window too short for all items, the title and the bar with `You can read this again under Updates.` and `Got it` stay in place and only the list between them scrolls. The notice opens at its first items, and `Got it`, which has the keyboard focus, is in view. Before, the whole dialog scrolled: either the list jumped to its end, or the focused button was below the visible part. In a window that fits everything nothing changes.
+- Scope: the layout classes and the focus call in `apps/control-center/src/components/whats-new-dialog.tsx`, the assertion in `control-center-app.whats-new.test.tsx`, and this approval record; checked with unit tests only. A picture of the dialog in a 960 × 640 window follows from the Windows run.
+- What's new: none — a correction to the notice itself
+
+## 2026-10-08 — What's new: Paul approved the wording of the two theme items
+
+- User approval: Paul had the two texts in front of him in chat on 2026-10-08, first in a drawing of the dialog with the theme items on top, then quoted word for word: "New theme: Gauge – A half ring that fills as you use your limit." and "New theme: Token Counter – The tokens of your session as one large number." He answered: "ok".
+- Approved customer-visible result: The wording of the two theme items of the dialog `What's new`, as the entry `What's new: new themes always get an entry and stand first` above lists it: `New theme: Gauge` with `A half ring that fills as you use your limit.`, and `New theme: Token Counter` with `The tokens of your session as one large number.`, each with the link `Show me in Themes`. He has seen them drawn and quoted, not in the built dialog.
+- Scope: this approval record only; it changes no file of the app. The entry named above keeps its status line as written at the time.
+- What's new: none — the two theme entries are named by the entry about the theme rule above
+
+## 2026-10-08 — What's new: the notice opened from Updates stays on Updates
+
+- User approval: Not separately approved by Paul. Correction from the automated review of head `90b6d050` on 2026-10-08 to the dialog he chose from a drawing.
+- Approved customer-visible result: No wording, no new control. The notice that was opened with `What's new` on Updates is shown on Updates only. When the app moves the window to another page under it — to Themes, for example, because a theme install was started in another window — the notice is closed and does not come back by itself. Before, it stayed open on that page and could stand together with that page's own dialog, such as the one for a failed install. The notice that opens by itself is shown on Overview only, as before.
+- Scope: when the reopened dialog shows, in `apps/control-center/src/components/control-center-app.tsx`, one test in `control-center-app.whats-new.test.tsx`, and this approval record; checked with unit tests only.
+- What's new: none — a correction to the notice itself
+
+## 2026-10-08 — What's new: a customer with a new VibeTV is not told what is new, also without a provider step
+
+- User approval: Not separately approved by Paul. Correction from the automated review of head `419c5e1f` on 2026-10-08 to the rule he was told with the dialog: a customer who is setting VibeTV up never gets it.
+- Approved customer-visible result: No wording, no new control. A new customer whose AI providers were set up before, so that setup has no provider step, got the notice right after setup. The app now also takes a VibeTV that has no theme yet as a first setup and counts every entry as read. A set-up customer who starts the app after an update still gets the notice, also when their VibeTV is not plugged in at that moment.
+- Scope: when the entries count as read during setup, in `apps/control-center/src/components/control-center-app.tsx`, one test in `control-center-app.whats-new.test.tsx`, and this approval record; checked with unit tests only.
+- What's new: none — a correction to the notice itself
+
+## 2026-10-09 — A cleaner What's new dialog
+
+- User approval: Paul shared a screenshot of the built dialog and asked for a cleaner design on 2026-10-09.
+- Approved customer-visible result: The same five updates appear as a compact, divided list. The large icon tiles are gone, titles and descriptions are smaller, and the links sit quietly beside their entries on wider windows. The heading reads `What's new in version <installed version>` when the version is known, saving a separate line. The footer and its Got it button stay visible when the list scrolls.
+- Scope: the What's new dialog and its entry data only. The wording, navigation, ordering, and notice behavior are unchanged.
+- What's new: none — this changes only the design of the existing notice
+
+## 2026-10-09 — Keep the What's new layout focused on desktop
+
+- User approval: Paul clarified that customers use the app on desktop, so the notice does not need a separate mobile design.
+- Approved customer-visible result: Links remain beside their entries and the footer keeps its standard desktop button layout. A short desktop window still scrolls only the update list.
+- Scope: layout classes in `apps/control-center/src/components/whats-new-dialog.tsx` and this approval record.
+- What's new: none — this simplifies the design of the existing notice

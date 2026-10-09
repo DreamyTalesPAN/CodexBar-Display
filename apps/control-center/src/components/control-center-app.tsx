@@ -25,6 +25,11 @@ import {
 import { buildThemePack } from "@/lib/theme-studio";
 import { loadUserThemes } from "@/lib/theme-studio-storage";
 import type { ThemeCatalogResponse, ThemeProduct } from "@/lib/themes";
+import {
+  markWhatsNewSeen,
+  newestWhatsNew,
+  seenWhatsNew,
+} from "@/lib/whats-new";
 import { ControlCenterShell } from "./control-center-shell";
 import {
   companionRequestUrl,
@@ -147,6 +152,7 @@ import {
 } from "./theme-studio-screen";
 import { UpdatesScreen } from "./updates-screen";
 import { UsageScreen } from "./usage-screen";
+import { WhatsNewDialog } from "./whats-new-dialog";
 import {
   startUsageSurfacePolling,
   USAGE_REFRESH_PENDING_POLL_INTERVAL_MS,
@@ -599,6 +605,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [usageFailureHidden, setUsageFailureHidden] = useState(false);
   // "Run setup again" asks first, from Settings and from Support alike.
   const [setupAgainRequested, setSetupAgainRequested] = useState(false);
+  // The "What's new" entries this customer has seen, null while nothing is
+  // stored, and whether Updates has opened the notice again.
+  const [whatsNewSeen, setWhatsNewSeen] = useState(seenWhatsNew);
+  const [whatsNewReopened, setWhatsNewReopened] = useState(false);
   const lastFirmwareErrorRef = useRef<ApiError | null>(null);
   const [supportDiagnostics, setSupportDiagnostics] =
     useState<SupportDiagnostics | null>(null);
@@ -4990,6 +5000,59 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           candidate.deviceId === deviceRecoveryGateRef.current.preferredDeviceId,
       ));
 
+  // A customer who is setting VibeTV up has nothing to catch up on: every
+  // "What's new" entry counts as seen. Only while nothing is stored, so one who
+  // runs setup again keeps what they have not read yet. A first setup shows in
+  // the provider step or in a VibeTV that has no theme yet; the start screen
+  // alone does not, a set-up customer passes it at every launch.
+  const whatsNewIsNotNews =
+    setupOwnsScreen &&
+    (providerSelectionRequired || themeSetupRequired) &&
+    whatsNewSeen === null;
+  useEffect(() => {
+    if (!whatsNewIsNotNews) {
+      return;
+    }
+    const timer = window.setTimeout(() => setWhatsNewSeen(markWhatsNewSeen()), 0);
+    return () => window.clearTimeout(timer);
+  }, [whatsNewIsNotNews]);
+  // The notice opens by itself on Overview, and again from Updates, once
+  // nothing else asks for the customer: not during setup or a firmware update,
+  // and under no other dialog. It stays on the page it was opened on: other
+  // pages have dialogs of their own.
+  const somethingElseAsks =
+    setupOwnsScreen ||
+    firmwareUpdateInProgress ||
+    needsRuntimeRecovery ||
+    lostDevicePickerOpen ||
+    (usageFailure && !usageFailureHidden);
+  const whatsNewEntries = somethingElseAsks
+    ? []
+    : whatsNewReopened && activeShellTab === "updates"
+      ? newestWhatsNew()
+      : // While a newer app is on offer its own prompt asks first; what is new
+        // is told after that update.
+        activeShellTab === "overview" && !macAppUpdateAvailable
+        ? newestWhatsNew(whatsNewSeen)
+        : [];
+  // Opened from Updates and taken away by something else, or by the window
+  // moving to another page, the notice does not come back by itself: what
+  // follows may be a dialog this condition does not know, as the one Updates
+  // shows when an update failed.
+  const whatsNewReopenIsOver =
+    whatsNewReopened && (somethingElseAsks || activeShellTab !== "updates");
+  useEffect(() => {
+    if (!whatsNewReopenIsOver) {
+      return;
+    }
+    const timer = window.setTimeout(() => setWhatsNewReopened(false), 0);
+    return () => window.clearTimeout(timer);
+  }, [whatsNewReopenIsOver]);
+  const closeWhatsNew = () => {
+    setWhatsNewSeen(markWhatsNewSeen());
+    setWhatsNewReopened(false);
+  };
+
   const setupProviders = (providerPreferences || []).filter(isProviderItem);
   // The display step may only offer providers that can actually show something.
   // Filtering on "switched on" alone let a broken provider into the rotation
@@ -5498,6 +5561,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             }}
             onInstallUpdate={installFirmwareUpdate}
             onRetryThemeUpdate={retryActiveThemeUpgrade}
+            onShowWhatsNew={
+              somethingElseAsks ? undefined : () => setWhatsNewReopened(true)
+            }
             requiresMacAppMigration={requiresMacAppMigration}
             supportReportBusy={supportReportBusy}
             themeUpdateAvailable={activeThemeUpdateAvailable}
@@ -5602,6 +5668,23 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           }}
           showCloseButton={false}
           title="Run setup again?"
+        />
+      ) : null}
+      {whatsNewEntries.length > 0 ? (
+        <WhatsNewDialog
+          appVersion={companionInfo?.app?.version}
+          entries={whatsNewEntries}
+          onClose={closeWhatsNew}
+          onShowSettings={() => {
+            closeWhatsNew();
+            setActiveTab("settings");
+          }}
+          onShowThemes={() => {
+            closeWhatsNew();
+            setAppearanceSection("themes");
+            setActiveTab("theme-library");
+          }}
+          windowsHost={windowsHost}
         />
       ) : null}
     </SetupEventsContext.Provider>

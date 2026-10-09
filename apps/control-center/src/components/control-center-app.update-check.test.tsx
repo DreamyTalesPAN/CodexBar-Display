@@ -9,6 +9,7 @@ import { createElement } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { markWhatsNewSeen } from "@/lib/whats-new";
 import { expectKeepsFocus } from "@/test/focus";
 import { ControlCenterApp } from "./control-center-app";
 
@@ -51,6 +52,8 @@ async function openUpdates() {
     statusReadMs: 0,
     firmwareChecks: 0,
   };
+  // A customer who has read "What's new"; it would lie over Overview.
+  markWhatsNewSeen();
   vi.useFakeTimers();
   vi.stubGlobal("matchMedia", () => ({
     matches: true,
