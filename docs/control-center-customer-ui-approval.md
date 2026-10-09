@@ -5540,3 +5540,8 @@ issue scope, or release permission never implies UI permission.
 - User approval: Marcus requested fixing the library rendering and manual-layer preservation findings. These follow-ups address verified cases in those two paths.
 - Approved customer-visible result: Restoring usage reuses an existing custom panel without hiding it or consuming an extra element. Animated figures retain the rounded corners of static rectangles beneath them in the prepared device image.
 - Validation: Regression tests cover hidden/restored usage at the 32-element limit and every pixel in four animation frames over a rounded rectangle. Real Mac/display rehearsal remains deferred as requested.
+
+## 2026-10-09: Restore readout backgrounds above full-display backdrops
+
+- User approval: Marcus requested preserving custom design elements during fullscreen transitions. This follow-up corrects the reproduced backdrop-order finding in that transition.
+- Approved customer-visible result: A restored usage panel remains visible above retained full-display backdrops while manual overlays and usage labels remain above it, even with a reordered animated figure.

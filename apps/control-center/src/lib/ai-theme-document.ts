@@ -121,8 +121,15 @@ export function applyAIThemeCandidate(
     next.spec.primitives.splice(next.spec.primitives.findLastIndex((p) => managed(p.assetPath)) + 1, 0, ...newLayers);
     if (((layoutChanged && usage.size > 0) || (candidate.showUsage && usage.size === 0)) && !candidate.hideUsage) {
       const panel = candidate.spec.primitives.find(isPanel);
-      // This is a background, so it must stay below every retained customer layer.
-      if (panel && !next.spec.primitives.some(isPanelShape)) next.spec.primitives.unshift({ ...panel });
+      if (panel && !next.spec.primitives.some(isPanelShape)) {
+        const firstReadout = Math.min(...usageSectionIndices(next.spec.primitives).flat(), next.spec.primitives.length);
+        // Place the readout background over full-display backdrops, but below
+        // retained readouts and their manual overlays, irrespective of figure order.
+        const backdrop = next.spec.primitives.findLastIndex((p, i) => i < firstReadout &&
+          (p.type === "rect" || p.type === "sprite") && p.x <= 0 && p.y <= 0 &&
+          p.x + (p.width || 0) >= 240 && p.y + (p.height || 0) >= 240);
+        next.spec.primitives.splice(backdrop + 1, 0, { ...panel });
+      }
     }
     // A design without readouts that is asked to show usage again gets the
     // standard readouts of the new scene; one that has them keeps its own.

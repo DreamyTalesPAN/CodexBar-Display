@@ -187,6 +187,21 @@ describe("flexible picture layouts",()=>{
   expect(restored.spec.primitives.filter(p=>p.type==='rect'&&p.height===112)).toEqual([panel]);
   expect(validateThemeSpec(restored.spec,restored.assets).errors).toEqual([]);
  });
+ it('restores the usage panel above a retained full-display backdrop and below manual overlays',()=>{
+  const current=fixture(1).candidate();
+  const backdrop={type:'rect' as const,x:0,y:0,width:240,height:240,color:'#445566'};
+  const shape={type:'rect' as const,x:8,y:130,width:225,height:90,color:'#123456'};
+  current.spec.primitives.splice(3,0,shape);current.spec.primitives.unshift(backdrop);
+  const f=fixture(1);f.concept.artHeight=240;
+  const fullscreen=buildAIThemeCompanionCandidateFromRGBA(f.concept,new Uint8ClampedArray(240*240*4).fill(255),f.frames);
+  const expanded=applyAIThemeCandidate({...current,usage:'live'},fullscreen,'auto');
+  const reduced=applyAIThemeCandidate(expanded,fixture(1).candidate(),'auto');
+  const panel=reduced.spec.primitives.findIndex(p=>p.type==='rect'&&p.width===240&&p.height===112);
+  expect(reduced.spec.primitives[0]).toEqual(backdrop);
+  expect(panel).toBeGreaterThan(0);
+  expect(panel).toBeLessThan(reduced.spec.primitives.findIndex(p=>p.color===shape.color));
+  expect(panel).toBeLessThan(reduced.spec.primitives.findIndex(p=>p.text==='{usageSlot1Label}'));
+ });
  it('replaces a legacy animation at its original layer when upgrading to companions',()=>{
   const current=fixture(1).candidate();
   const pet='/themes/u/ai-pet-1.cba';
