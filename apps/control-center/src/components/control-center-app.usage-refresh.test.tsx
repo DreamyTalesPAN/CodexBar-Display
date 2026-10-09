@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// Issue #544: after Refresh on the Usage page, "Refreshing usage" has to go
+// Issue #544: after Refresh on the Usage page, the "Refreshing" mark has to go
 // within a few seconds of the Mac App having the new values, not on the next
 // 30 s usage read.
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -37,7 +37,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-it("ends Refreshing usage within seconds of the new values", async () => {
+it("ends the Refreshing mark within seconds of the new values", async () => {
   // The Mac App: a manual refresh stays "refreshing" until the new snapshot.
   const companion = { refreshing: false, providerReads: 0 };
   // A customer who has read "What's new"; it would lie over Overview.
@@ -137,7 +137,10 @@ it("ends Refreshing usage within seconds of the new values", async () => {
   await wait(1);
   fireEvent.click(screen.getByRole("button", { name: "Refresh token usage" }));
   await wait(1);
-  expect(text()).toContain("Refreshing usage");
+  // The Refresh button carries the spinner and "Refreshing" while it waits.
+  expect(
+    screen.getByRole("button", { name: "Refresh token usage" }).getAttribute("aria-busy"),
+  ).toBe("true");
 
   // Only usage is read faster meanwhile. Each provider read past its 10 s
   // cache starts a scan in the usage engine.
@@ -147,5 +150,7 @@ it("ends Refreshing usage within seconds of the new values", async () => {
 
   companion.refreshing = false;
   await wait(4);
-  expect(text()).not.toContain("Refreshing usage");
+  expect(
+    screen.getByRole("button", { name: "Refresh token usage" }).getAttribute("aria-busy"),
+  ).toBe("false");
 });

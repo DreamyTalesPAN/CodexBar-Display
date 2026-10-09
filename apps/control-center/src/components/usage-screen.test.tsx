@@ -282,7 +282,7 @@ describe("UsageScreen", () => {
     expect(html).toContain("Refreshing</button>");
   });
 
-  it("explains that a manual refresh is still waiting for a new snapshot", () => {
+  it("shows a small Refreshing mark by the token total while a manual refresh waits, and no notice", () => {
     const html = renderToStaticMarkup(
       <UsageScreen
         companionStatus="online"
@@ -296,9 +296,16 @@ describe("UsageScreen", () => {
       />,
     );
 
-    expect(html).toContain("Refreshing usage");
-    expect(html).toContain("Current values stay visible");
+    expect(html).toContain('data-testid="usage-refresh-pending"');
+    expect(html).not.toContain("Refreshing usage");
+    expect(html).not.toContain("Current values stay visible");
     expect(html).toContain("Codex");
+    // No mark without a pending refresh.
+    expect(
+      renderToStaticMarkup(
+        <UsageScreen companionStatus="online" onRefresh={vi.fn()} usage={usage} />,
+      ),
+    ).not.toContain('data-testid="usage-refresh-pending"');
   });
 
   it("does not show the global loading banner when unavailable refresh has token history", () => {

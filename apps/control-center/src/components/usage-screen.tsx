@@ -89,6 +89,9 @@ export function UsageScreen({
     !usageError &&
     hasProviders &&
     !tokenUsageReady;
+  // A requested refresh that still waits for its reading: a small spinner by
+  // the token total, not a notice above the page (Paul, 2026-10-09).
+  const refreshPending = usage?.refresh?.state === "refreshing";
   const refreshNotice = usageRefreshNotice(usage?.refresh, {
     companionStatus,
     hasUsableVisibleUsageContent,
@@ -151,15 +154,19 @@ export function UsageScreen({
               {onRefresh ? (
                 <Button
                   aria-label="Refresh token usage"
-                  aria-busy={refreshing}
-                  disabled={refreshing}
+                  aria-busy={refreshing || refreshPending}
+                  disabled={refreshing || refreshPending}
                   onClick={onRefresh}
                   size="sm"
                   type="button"
                   variant="outline"
                 >
-                  {refreshing ? <Spinner /> : <RefreshCw aria-hidden />}
-                  {refreshing ? "Refreshing" : "Refresh"}
+                  {refreshing || refreshPending ? (
+                    <Spinner />
+                  ) : (
+                    <RefreshCw aria-hidden />
+                  )}
+                  {refreshing || refreshPending ? "Refreshing" : "Refresh"}
                 </Button>
               ) : null}
             </AlertDescription>
@@ -168,7 +175,8 @@ export function UsageScreen({
           <TokenUsageOverTimePanel
             onRefresh={onRefresh}
             providers={providers}
-            refreshing={refreshing}
+            refreshPending={refreshPending}
+            refreshing={refreshing || refreshPending}
             updating={tokenUsageUpdating}
           />
         ) : tokenUsagePending ? (
@@ -216,13 +224,6 @@ function usageRefreshNotice(
   },
 ) {
   switch (refresh?.state) {
-    case "refreshing":
-      return {
-        tone: "info" as const,
-        title: "Refreshing usage",
-        description:
-          "Current values stay visible while VibeTV waits for a new usage snapshot.",
-      };
     case "unavailable":
       if (
         companionStatus !== "online" ||
@@ -245,11 +246,13 @@ function usageRefreshNotice(
 function TokenUsageOverTimePanel({
   onRefresh,
   providers,
+  refreshPending,
   refreshing,
   updating,
 }: {
   onRefresh?: () => void;
   providers: UsageProviderInfo[];
+  refreshPending: boolean;
   refreshing: boolean;
   updating: boolean;
 }) {
@@ -281,6 +284,16 @@ function TokenUsageOverTimePanel({
           >
             <Spinner className="size-3" data-icon="inline-start" />
             Still counting
+          </Badge>
+        ) : refreshPending ? (
+          <Badge
+            aria-live="polite"
+            className="mb-3"
+            data-testid="usage-refresh-pending"
+            variant="secondary"
+          >
+            <Spinner className="size-3" data-icon="inline-start" />
+            Refreshing
           </Badge>
         ) : null}
         <h2
