@@ -32,6 +32,10 @@ type Sender struct {
 	// openPath mirrors path for checks that must not wait on mu. A serial
 	// call stuck on an unplugged device can hold mu for a long time.
 	openPath atomic.Value
+	// cablePath is the port a VibeTV last identified itself or took a frame
+	// on. Unlike openPath it outlives closing the port, so status can still
+	// tell that this port is unplugged after a failed probe closed it.
+	cablePath atomic.Value
 
 	opener         PortOpener
 	sleep          func(time.Duration)
@@ -111,6 +115,7 @@ func (s *Sender) Send(path string, line []byte) error {
 			err,
 		)
 	}
+	s.cablePath.Store(path)
 	return nil
 }
 
@@ -193,6 +198,9 @@ func (s *Sender) deviceHelloLocked(ctx context.Context, path string, window time
 			"Reconnect the board to emit boot hello; runtime will fallback if still unavailable.",
 			ErrDeviceHelloUnavailable,
 		)
+	}
+	if strings.TrimSpace(s.hello.DeviceID) != "" {
+		s.cablePath.Store(path)
 	}
 	return s.hello, nil
 }
@@ -343,6 +351,21 @@ func (s *Sender) openPortVanished(explicit string) error {
 	if path == "" || (explicit != "" && !samePort(explicit, path)) {
 		return nil
 	}
+	return s.portVanished(path)
+}
+
+// cablePortVanished reports that the last VibeTV port was unplugged, also
+// after the port was closed. Resolution must not use it: a VibeTV that comes
+// back on another port has to stay findable.
+func (s *Sender) cablePortVanished() error {
+	path, _ := s.cablePath.Load().(string)
+	if path == "" {
+		return nil
+	}
+	return s.portVanished(path)
+}
+
+func (s *Sender) portVanished(path string) error {
 	ports, err := attachedPorts()
 	if err != nil {
 		return nil

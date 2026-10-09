@@ -101,7 +101,7 @@ func CurrentDeviceHello() (protocol.DeviceHello, bool) {
 // OpenCablePortVanished reports, without waiting on serial calls, that the
 // port of the running Cable worker was unplugged. It returns nil otherwise.
 func OpenCablePortVanished() error {
-	return defaultSender.openPortVanished("")
+	return defaultSender.cablePortVanished()
 }
 
 func SetConnectionMode(port, deviceID, mode string) error {

@@ -95,3 +95,37 @@ func TestDeviceHelloStopsOnReadErrorsOfAnUnpluggedPort(t *testing.T) {
 		t.Fatalf("failing handle kept: closes=%d", port.closeCalls)
 	}
 }
+
+// Windows physical retest: the first status check closed the vanished port,
+// and every later one forgot which port was unplugged and probed all ports.
+func TestCablePortStaysUnpluggedAfterItsHandleClosed(t *testing.T) {
+	port := newMockSerialPort()
+	sender := openUnplugTestSender(t, port)
+	listSerialPorts(t)
+	if err := sender.cablePortVanished(); errcode.Of(err) != errcode.TransportSerialPortNotFound {
+		t.Fatalf("unplug not reported: %v", err)
+	}
+	if port.closeCalls != 1 {
+		t.Fatalf("stale handle kept: closes=%d", port.closeCalls)
+	}
+	if err := sender.cablePortVanished(); errcode.Of(err) != errcode.TransportSerialPortNotFound {
+		t.Fatalf("closing the handle forgot the unplugged port: %v", err)
+	}
+	listSerialPorts(t, "COM3")
+	if err := sender.cablePortVanished(); err != nil {
+		t.Fatalf("replugged port still reported missing: %v", err)
+	}
+}
+
+// A built-in COM1 never answers, and probing it waited out the whole hello
+// window on every search for the VibeTV.
+func TestCableSearchSkipsPortsKnownNotToBeUSB(t *testing.T) {
+	listSerialPorts(t, "COM1", "COM3")
+	old := nonUSBPorts
+	t.Cleanup(func() { nonUSBPorts = old })
+	nonUSBPorts = func() map[string]bool { return map[string]bool{"COM1": true} }
+	got, err := listCablePorts()
+	if err != nil || len(got) != 1 || got[0] != "COM3" {
+		t.Fatalf("got %q, %v", got, err)
+	}
+}
