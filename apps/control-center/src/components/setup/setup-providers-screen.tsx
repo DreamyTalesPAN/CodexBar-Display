@@ -5,7 +5,7 @@ import type {
   UsageSnapshot,
 } from "../control-center-types";
 import { Search, SearchX, TriangleAlert } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -55,6 +55,12 @@ type SetupProvidersScreenProps = {
 /** How many provider rows are on screen before the customer asks for more. */
 const PROVIDER_PAGE_SIZE = 10;
 export const PROVIDER_LOADING_LOG_INTERVAL_MS = 20_000;
+/**
+ * How long after "Sign in to <Provider>" the app keeps re-checking that
+ * provider (control-center-app.tsx), and the provider list keeps its popup
+ * closed: the row recovers by itself while the customer signs in.
+ */
+export const PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS = 180_000;
 
 /**
  * The providers whose sign-in the Companion can start (provider_sign_in_launch.go).
@@ -167,22 +173,64 @@ export function ProviderList({
   // One acknowledged message per provider: polling must not reopen a dismissed
   // popup, while a new message or an explicit retry may show it again.
   const [dismissedIssues, setDismissedIssues] = useState<Record<string, string>>({});
-  const issue = providers.flatMap((provider) => {
+  // The provider whose warning icon the customer clicked. Its message opens
+  // whatever the rules below say about popups opening by themselves.
+  const [requestedIssueId, setRequestedIssueId] = useState<string | null>(null);
+  // Providers whose sign-in started less than PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS
+  // ago. Their row checks again by itself and passes through states such as
+  // "stale" while the usage service restarts; none of that is news.
+  const [signingIn, setSigningIn] = useState<Set<string>>(() => new Set());
+  const signInTimers = useRef(new Map<string, number>());
+  useEffect(() => {
+    const timers = signInTimers.current;
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, []);
+  const offersSignIn = (provider: ProviderItem) =>
+    Boolean(onOpenSignIn) && setupProviderOffersSignIn(provider);
+  const startSignIn = (provider: ProviderItem) => {
+    const id = provider.providerId;
+    const timers = signInTimers.current;
+    const running = timers.get(id);
+    if (running !== undefined) window.clearTimeout(running);
+    timers.set(id, window.setTimeout(() => {
+      timers.delete(id);
+      setSigningIn((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
+    }, PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS));
+    setSigningIn((current) => new Set(current).add(id));
+    setRequestedIssueId(null);
+    onOpenSignIn?.(provider);
+  };
+  type ProviderIssue = { provider: ProviderItem; message: string; requested: boolean };
+  const issues = providers.flatMap((provider): ProviderIssue[] => {
     if (!provider.value || pendingCheckIds.has(provider.providerId) ||
         pendingPreferenceIds.has(provider.id)) return [];
     const message = setupProviderIssueMessage({
       health: provider.health.state, label: provider.label,
       detail: provider.health.message, reportedMessage: provider.health.reported,
     });
+    if (!message) return [];
+    const requested = requestedIssueId === provider.id;
+    if (requested) return [{ provider, message, requested }];
+    // A row with "Sign in to <Provider>" already shows the one thing to do;
+    // a popup on top of it hid that button behind a provider message and a
+    // copy action (bench Mac, 09.10.). Its message opens from the warning icon.
+    if (offersSignIn(provider) || signingIn.has(provider.providerId)) return [];
     // A stale row still shows its last reading and recovers by itself, e.g.
     // while CodexBar starts after the runtime restarted. Nothing for the
     // customer to do, so its message opens only from the row's warning icon.
     if (provider.health.state === "stale" && dismissedIssues[provider.id] !== "") return [];
-    return message && dismissedIssues[provider.id] !== message
-      ? [{ provider, message }] : [];
-  })[0];
+    return dismissedIssues[provider.id] !== message
+      ? [{ provider, message, requested }] : [];
+  });
+  const issue = issues.find((candidate) => candidate.requested) ?? issues[0];
   const dismissIssue = () => {
-    if (issue) setDismissedIssues((current) => ({ ...current, [issue.provider.id]: issue.message }));
+    if (!issue) return;
+    setDismissedIssues((current) => ({ ...current, [issue.provider.id]: issue.message }));
+    setRequestedIssueId(null);
   };
   const resetIssue = (provider: ProviderItem) => {
     setDismissedIssues((current) => ({ ...current, [provider.id]: "" }));
@@ -200,6 +248,7 @@ export function ProviderList({
   const remaining = matching.length - visible.length;
   const ownAppNotice =
     issue && onOpenSetupGuide && setupProviderNeedsOwnApp(issue.provider);
+  const issueSignIn = issue && offersSignIn(issue.provider) ? issue.provider : null;
 
   return (
     <div className={cn("flex w-full flex-col", className)}>
@@ -214,7 +263,13 @@ export function ProviderList({
           }
           icon={TriangleAlert}
           onOpenChange={(open) => { if (!open) dismissIssue(); }}
-          primaryAction={{ label: "OK", onSelect: dismissIssue }}
+          primaryAction={issueSignIn ? {
+            label: `Sign in to ${issueSignIn.label}`,
+            onSelect: () => {
+              dismissIssue();
+              startSignIn(issueSignIn);
+            },
+          } : { label: "OK", onSelect: dismissIssue }}
           secondaryAction={issue.provider.health.reported ? {
             label: `Copy provider message for ${issue.provider.label}`,
             onSelect: () => { void navigator.clipboard?.writeText(issue.provider.health.reported!); },
@@ -266,20 +321,23 @@ export function ProviderList({
             }
             key={provider.id}
             label={provider.label}
-            onShowIssue={() => resetIssue(provider)}
+            onShowIssue={() => {
+              resetIssue(provider);
+              setRequestedIssueId(provider.id);
+            }}
             onCheckAgain={() => {
               resetIssue(provider);
+              setRequestedIssueId(null);
               onCheckAgain(provider);
             }}
             onOpenSignIn={
               onOpenSignIn && setupProviderOffersSignIn(provider)
-                ? () => {
-                    onOpenSignIn(provider);
-                  }
+                ? () => startSignIn(provider)
                 : undefined
             }
             onToggle={(enabled) => {
               resetIssue(provider);
+              setRequestedIssueId(null);
               onToggle(provider, enabled);
             }}
             saving={pendingPreferenceIds.has(provider.id)}

@@ -14,6 +14,7 @@ import type { PreferenceHealthState, UsageSnapshot } from "../control-center-typ
 import type { ProviderItem } from "../provider-picker";
 import {
   PROVIDER_LOADING_LOG_INTERVAL_MS,
+  PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS,
   SIGN_IN_PROVIDER_IDS,
   SetupProvidersScreen,
   setupProviderCanDisplay,
@@ -95,23 +96,55 @@ function render(
 }
 
 describe("SetupProvidersScreen", () => {
-  it("keeps an acknowledged sign-in issue dismissed while sign-in and background checks run", () => {
-    const failed = provider({ providerId: "claude", label: "Claude", health: "auth_required", message: "Sign in required." });
+  it("leads a signed-out row to its sign-in button instead of a popup", () => {
+    // Bench Mac, 09.10.: "Check again" on signed-out Claude opened its
+    // provider message with a copy action on top of "Sign in to Claude", and
+    // a second one popped up while the sign-in was already recovering.
+    vi.useFakeTimers();
+    const failed = provider({ providerId: "claude", label: "Claude", health: "auth_required",
+      message: "Sign in to claude.ai (or refresh Claude cookies) to load usage data." });
+    const signedOut = { ...failed, health: { ...failed.health, reported: failed.health.message } };
     const onOpenSignIn = vi.fn();
-    const props = { usage, providers: [failed], onOpenSignIn,
-      onCheckAgain: vi.fn(), onToggle: vi.fn(), onContinue: vi.fn(),
+    const onCheckAgain = vi.fn();
+    const props = { usage, providers: [signedOut], onOpenSignIn, onCheckAgain,
+      onToggle: vi.fn(), onContinue: vi.fn(),
       pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
     const { rerender } = renderDom(<SetupProvidersScreen {...props} />);
-    fireEvent.click(screen.getByRole("button", { name: "OK" }));
-    fireEvent.click(screen.getByRole("button", { name: "Sign in to Claude" }));
-    expect(onOpenSignIn).toHaveBeenCalledWith(failed);
+    // 1. Never by itself: not on load, not after "Check again", not on a new message.
     expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Check Claude again" }));
+    expect(onCheckAgain).toHaveBeenCalledWith(signedOut);
     rerender(<SetupProvidersScreen {...props} pendingCheckIds={new Set(["claude"])} />);
-    rerender(<SetupProvidersScreen {...props} providers={[{ ...failed }]} />);
+    rerender(<SetupProvidersScreen {...props} providers={[{ ...signedOut }]} />);
     expect(screen.queryByRole("dialog")).toBeNull();
-    const changed = { ...failed, health: { ...failed.health, message: "A new sign-in failure." } };
+    const changed = { ...signedOut, health: { ...signedOut.health, reported: "A new sign-in failure." } };
     rerender(<SetupProvidersScreen {...props} providers={[changed]} />);
-    expect(within(screen.getByRole("dialog")).getByText("A new sign-in failure.")).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // 2. The warning icon opens it, with the sign-in as its main button.
+    fireEvent.click(screen.getByRole("button", { name: "Show provider message for Claude" }));
+    const dialog = within(screen.getByRole("dialog"));
+    expect(dialog.getByText("A new sign-in failure.")).toBeTruthy();
+    expect(dialog.getByRole("button", { name: "Copy provider message for Claude" })).toBeTruthy();
+    expect(dialog.queryByRole("button", { name: "OK" })).toBeNull();
+    fireEvent.click(dialog.getByRole("button", { name: "Sign in to Claude" }));
+    expect(onOpenSignIn).toHaveBeenCalledWith(changed);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // 3. While the sign-in recovers, the row passes through "stale" as the
+    // usage service restarts; even "Check again" opens nothing.
+    const recovering = provider({ providerId: "claude", label: "Claude", health: "stale",
+      message: "Live usage is unavailable; the last successful reading is still saved." });
+    rerender(<SetupProvidersScreen {...props} providers={[recovering]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Show provider message for Claude" }));
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    rerender(<SetupProvidersScreen {...props} providers={[{ ...recovering, health: { ...recovering.health, state: "unavailable" } }]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Check Claude again" }));
+    rerender(<SetupProvidersScreen {...props} providers={[{ ...recovering, health: { ...recovering.health, state: "unavailable", message: "Still failing." } }]} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // After the three minutes a failing check reports again, as before.
+    act(() => { vi.advanceTimersByTime(PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS); });
+    fireEvent.click(screen.getByRole("button", { name: "Check Claude again" }));
+    rerender(<SetupProvidersScreen {...props} providers={[{ ...recovering, health: { ...recovering.health, state: "unavailable", message: "Failing after the window." } }]} />);
+    expect(within(screen.getByRole("dialog")).getByText("Failing after the window.")).toBeTruthy();
   });
 
   it("shows one provider popup, keeps dismissal across polls, and reopens after retry", () => {

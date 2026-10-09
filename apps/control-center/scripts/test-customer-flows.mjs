@@ -2739,11 +2739,29 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       .waitFor({ timeout: 10_000 });
     const providerDialog = page.getByRole("dialog", { name: "Codex", exact: true });
     const shownMessage = fixture.shownMessage ?? fixture.reportedMessage;
+    // A row with its own sign-in button opens its message only from the
+    // warning icon, and that popup leads to the same sign-in (09.10.).
+    const signInRow = fixture.rowActions.includes("Sign in to Codex");
+    if (signInRow) {
+      await page.getByRole("button", { name: "Sign in to Codex" }).first()
+        .waitFor({ timeout: 10_000 });
+      assert(
+        (await page.getByRole("dialog", { name: "Codex", exact: true }).count()) === 0,
+        `${fixture.status} must not open a popup over the sign-in button`,
+      );
+      await page.getByRole("button", { name: "Show provider message for Codex" }).click();
+    }
     await providerDialog.getByText(shownMessage, { exact: true })
       .waitFor({ timeout: 10_000 });
     await providerDialog.getByRole("button", { name: "Copy provider message for Codex" })
       .waitFor({ timeout: 10_000 });
-    await providerDialog.getByRole("button", { name: "OK", exact: true }).click();
+    if (signInRow) {
+      await providerDialog.getByRole("button", { name: "Sign in to Codex" })
+        .waitFor({ timeout: 10_000 });
+      await providerDialog.getByRole("button", { name: "Close" }).click();
+    } else {
+      await providerDialog.getByRole("button", { name: "OK", exact: true }).click();
+    }
     assert(
       (await page.getByText(shownMessage, { exact: true }).count()) === 0,
       `${fixture.status} must keep the reported message in the dismissible dialog, not on the row`,
@@ -7184,12 +7202,18 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
     .locator("section")
     .filter({ has: page.getByRole("heading", { name: "AI providers" }) });
   const providerDialog = page.getByRole("dialog", { name: "Claude", exact: true });
+  await panel.getByRole("button", { name: "Sign in to Claude" }).waitFor({ timeout: 10_000 });
+  assert(
+    (await page.getByRole("dialog", { name: "Claude", exact: true }).count()) === 0,
+    "A signed-out row must lead to its sign-in button, not a popup over it",
+  );
+  // The popup opener and the re-check stay beside the sign-in; the popup
+  // offers the same sign-in.
+  await panel.getByRole("button", { name: "Show provider message for Claude" }).click();
   await providerDialog.getByText("Claude connection failed: authentication required to read usage.", { exact: true }).waitFor();
   await providerDialog.getByRole("button", { name: "Copy provider message for Claude" }).waitFor();
-  await providerDialog.getByRole("button", { name: "OK", exact: true }).click();
-  // The Windows shell can start the sign-in; the popup opener and the re-check
-  // stay beside it.
-  await panel.getByRole("button", { name: "Sign in to Claude" }).waitFor({ timeout: 10_000 });
+  await providerDialog.getByRole("button", { name: "Sign in to Claude" }).waitFor();
+  await providerDialog.getByRole("button", { name: "Close" }).click();
   await panel.getByRole("button", { name: "Check Claude again" }).waitFor();
   await panel
     .getByText("Cursor", { exact: true })
@@ -7304,10 +7328,14 @@ async function testMacAppShowsTheWindowsSignInButton(browser, appUrl) {
   for (const kept of ["Gemini", "GitHub Copilot"]) {
     await panel.getByText(kept, { exact: true }).waitFor({ timeout: 10_000 });
   }
-  const providerDialog = page.getByRole("dialog", { name: "Claude", exact: true });
-  await providerDialog.getByRole("button", { name: "OK", exact: true }).click();
   const signInClaude = panel.getByRole("button", { name: "Sign in to Claude" });
   await signInClaude.waitFor({ timeout: 10_000 });
+  // Marcus's screenshot of 09.10.: this message used to open by itself, with
+  // only a copy action. Now the row's sign-in is the one thing to click.
+  assert(
+    (await page.getByRole("dialog", { name: "Claude", exact: true }).count()) === 0,
+    "The Mac must lead signed-out Claude to its sign-in button, not a popup",
+  );
   await panel
     .getByRole("button", { name: "Check Claude again" })
     .first()
@@ -7502,7 +7530,8 @@ async function testProviderCheckWinsOverOlderPreferenceRead(browser, appUrl) {
     (request) =>
       request.path === "/v1/preferences" && request.method === "GET",
   ).length;
-  await page.getByRole("dialog", { name: "Codex", exact: true }).getByRole("button", { name: "OK", exact: true }).click();
+  assert((await page.getByRole("dialog", { name: "Codex", exact: true }).count()) === 0,
+    "signed-out Codex must offer its sign-in button, not a popup");
   await clickNavigation(page, "Overview");
   await clickNavigation(page, "Settings");
   await waitForCondition(
@@ -7514,7 +7543,8 @@ async function testProviderCheckWinsOverOlderPreferenceRead(browser, appUrl) {
     "navigation must start the stale read used by the provider-check race",
   );
 
-  await page.getByRole("dialog", { name: "Codex", exact: true }).getByRole("button", { name: "OK", exact: true }).click();
+  assert((await page.getByRole("dialog", { name: "Codex", exact: true }).count()) === 0,
+    "signed-out Codex must offer its sign-in button, not a popup");
   await checkAgain.click();
   await waitForCondition(
     () =>
@@ -7660,16 +7690,22 @@ async function testProviderOnboardingUsesSharedHealthyDescriptor(
     "Codex must stop spinning once its usage can be displayed");
 
   const providerDialog = page.getByRole("dialog", { name: "Claude", exact: true });
-  await providerDialog.getByText("Claude connection failed: authentication required to read usage.", { exact: true }).waitFor();
-  await providerDialog.getByRole("button", { name: "Copy provider message for Claude" }).waitFor();
-  await providerDialog.getByRole("button", { name: "OK", exact: true }).click();
-
-  // The shell that can start a sign-in offers that button on the row; pressing
-  // it must reach the companion.
   const signInClaude = providersScreen.getByRole("button", {
     name: "Sign in to Claude",
   });
   await signInClaude.waitFor({ timeout: 10_000 });
+  assert(
+    (await page.getByRole("dialog", { name: "Claude", exact: true }).count()) === 0,
+    "setup must lead signed-out Claude to its sign-in button, not a popup",
+  );
+  // Its message opens from the warning icon, with the same sign-in on it.
+  await providersScreen.getByRole("button", { name: "Show provider message for Claude" }).click();
+  await providerDialog.getByText("Claude connection failed: authentication required to read usage.", { exact: true }).waitFor();
+  await providerDialog.getByRole("button", { name: "Copy provider message for Claude" }).waitFor();
+  await providerDialog.getByRole("button", { name: "Close" }).click();
+
+  // The shell that can start a sign-in offers that button on the row; pressing
+  // it must reach the companion.
   await signInClaude.click();
   await waitForCondition(
     () =>
@@ -7728,7 +7764,10 @@ async function testProviderOnboardingUsesSharedHealthyDescriptor(
 
   // Switching the only healthy provider off closes the shared descriptor
   // gate, and switching it back on opens it again.
-  await providerDialog.getByRole("button", { name: "OK", exact: true }).click();
+  // "Check again" on a row that still needs its sign-in keeps the popup
+  // closed: the row's sign-in stays the one thing to click (09.10.).
+  assert((await providerDialog.count()) === 0,
+    "Check again must not open a popup over the sign-in button");
   const codexSwitch = providersScreen.getByRole("switch", { name: "Codex" });
   await codexSwitch.click();
   await waitForCondition(

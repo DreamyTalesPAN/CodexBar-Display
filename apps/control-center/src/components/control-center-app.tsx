@@ -106,6 +106,7 @@ import { buildAiFixPrompt } from "./setup/setup-ai-prompt";
 import type { SetupConnectSteps } from "./setup/setup-connect";
 import { displayPreviewsFor } from "./setup/setup-display-previews";
 import {
+  PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS,
   providerRowHealthState,
   setupProviderCanDisplay,
 } from "./setup/setup-providers-screen";
@@ -164,7 +165,6 @@ const PROVIDER_POOL_RECONCILE_RETRY_MS = 5_000;
 // nobody signs in. The window is wall-clock, not a check count: probe
 // duration must not stretch it.
 const PROVIDER_SIGN_IN_FOLLOW_UP_INTERVAL_MS = 15_000;
-const PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS = 180_000;
 // launchd restarts the service itself: KeepAlive with a 10s ThrottleInterval
 // (main.swift:3759-3761), then the process start, then the 5s poll that sees it
 // -- about seventeen seconds before the app has learnt anything. Repairing at
