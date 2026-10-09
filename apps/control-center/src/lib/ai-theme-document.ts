@@ -120,7 +120,8 @@ export function applyAIThemeCandidate(
     next.spec.primitives.splice(next.spec.primitives.findLastIndex((p) => managed(p.assetPath)) + 1, 0, ...newLayers);
     if (layoutChanged && usage.size > 0 && !candidate.hideUsage) {
       const panel = candidate.spec.primitives.find(isPanel);
-      if (panel) next.spec.primitives.splice(next.spec.primitives.findLastIndex((p) => managed(p.assetPath)) + 1, 0, { ...panel });
+      // This is a background, so it must stay below every retained customer layer.
+      if (panel) next.spec.primitives.unshift({ ...panel });
     }
     // A design without readouts that is asked to show usage again gets the
     // standard readouts of the new scene; one that has them keeps its own.

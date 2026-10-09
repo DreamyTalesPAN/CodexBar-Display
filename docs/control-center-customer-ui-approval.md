@@ -5519,3 +5519,8 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Marcus requested fixing PR #422's loss of manual design additions and preserving their layering; this follow-up covers the verified legacy-animation transition in that same edit path.
 - Approved customer-visible result: When an older animation becomes new animated figures, the replacement occupies the previous animation layer so manual text behind it stays behind it.
+
+## 2026-10-09: Restore the usage background below retained layers
+
+- User approval: Marcus requested the fullscreen preservation fix; this follow-up addresses the reproduced review finding in the same transition.
+- Approved customer-visible result: Returning from fullscreen restores the usage background behind existing readouts and manual layers, including designs whose animated figure was moved above the readouts.
