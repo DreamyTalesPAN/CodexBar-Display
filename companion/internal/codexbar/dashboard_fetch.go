@@ -7,7 +7,6 @@ import (
 	"io"
 	"math"
 	"net/http"
-	"runtime"
 	"strings"
 	"time"
 
@@ -33,26 +32,21 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 	if err != nil {
 		return nil, err
 	}
-	// On macOS, omitting the override selects the configured enabled set,
-	// just like the dashboard. Explicit "all" probes disabled providers too.
-	// Win-CodexBar 0.60.3 instead defaults to Claude, so retain its all-provider
-	// join until it supports the enabled-set contract (see #415).
-	usagePath := dashboardUsagePath
-	if runtime.GOOS == "windows" {
-		usagePath += "?provider=all"
-	}
-	usageRaw, err := fetchDashboardJSON(ctx, endpoint+usagePath, strings.TrimSpace(info.Token))
-	if err != nil {
-		return nil, err
-	}
-
 	snapshot, err := dashboardusage.DecodeSnapshot(snapshotRaw)
 	if err != nil {
 		return nil, fmt.Errorf("decode dashboard snapshot: %w", err)
 	}
-	usageProviders, err := dashboardusage.DecodeUsage(usageRaw)
+	providerIDs := make([]string, 0, len(snapshot.Providers))
+	for _, provider := range snapshot.Providers {
+		providerIDs = append(providerIDs, provider.ID)
+	}
+	// The platform join lives in providers.go; a provider it leaves out
+	// shows as unavailable below.
+	usageProviders, err := fetchDashboardUsage(ctx, providerIDs, func(ctx context.Context, query string) ([]byte, error) {
+		return fetchDashboardJSON(ctx, endpoint+dashboardUsagePath+query, strings.TrimSpace(info.Token))
+	})
 	if err != nil {
-		return nil, fmt.Errorf("decode dashboard usage: %w", err)
+		return nil, err
 	}
 
 	snapshotCollectedAt := time.Time{}
