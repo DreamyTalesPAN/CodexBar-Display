@@ -38,6 +38,8 @@ export type ThemeStudioBinding =
   | string;
 
 export type ThemeStudioPrimitive = {
+  // Editor-only position relative to a temporarily removed usage background.
+  usagePanelLayer?: "below" | "above";
   type: ThemeStudioPrimitiveType;
   x: number;
   y: number;
@@ -1505,6 +1507,7 @@ function importPrimitive(value: unknown): ThemeStudioPrimitive {
   if (sheetColumns !== undefined) {
     primitive.sheetColumns = sheetColumns;
   }
+  if (value.usagePanelLayer === "below" || value.usagePanelLayer === "above") primitive.usagePanelLayer = value.usagePanelLayer;
   primitive.data = stringValue(value.data) ?? stringValue(value.d);
   const palette = stringArrayValue(value.p);
   if (palette) {

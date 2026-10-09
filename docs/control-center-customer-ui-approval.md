@@ -5550,3 +5550,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Marcus requested the fullscreen/manual-layer preservation fix. This follow-up completes the same backdrop handling for imported and legacy images.
 - Approved customer-visible result: Background images without explicit dimensions are recognized at the size encoded in their image data, so the restored usage panel remains visible over them just as with explicitly sized images and rectangles.
+
+## 2026-10-09: Preserve the original panel boundary and companion palette
+
+- User approval: Marcus requested the library-rendering and manual-layer preservation fixes; these corrections address verified follow-up failures in those same paths.
+- Approved customer-visible result: The draft remembers which elements were below or above its usage background, so fullscreen round trips preserve that boundary for partial backgrounds too, including after save/reopen. Device exports omit that editor-only information. Preparing an animation prioritizes its original figure colors before filling remaining palette slots with background colors.
+- Validation: Regression tests reproduce the partial-background and rare-figure-color failures. Library write/read and device-export checks verify the stored boundary survives saving without adding device fields.

@@ -66,6 +66,9 @@ export function applyAIThemeCandidate(
       p.width === 240 && p.height === 112;
     const isPanel = (p: ThemeStudioPrimitive) => isPanelShape(p) && p.borderRadius === 0 &&
       p.color === p.bgColor && p.color === p.borderColor && !p.binding;
+    const removedPanel = current.spec.primitives.findIndex(isPanel);
+    if (removedPanel >= 0 && (layoutChanged || candidate.hideUsage))
+      next.spec.primitives.forEach((p, i) => { p.usagePanelLayer = i < removedPanel ? "below" : "above"; });
     for (const path of Object.keys(next.assets))
       if (managed(path)) delete next.assets[path];
     const generated = candidate.spec.primitives
@@ -116,22 +119,17 @@ export function applyAIThemeCandidate(
         const animation = newLayers.findIndex((q) => q.assetPath !== ART);
         if (animation >= 0) replacement = newLayers.splice(animation, 1)[0];
       }
-      return replacement ? [replacement] : [];
+      return replacement ? [{ ...replacement, ...(p.usagePanelLayer ? { usagePanelLayer: p.usagePanelLayer } : {}) }] : [];
     });
     next.spec.primitives.splice(next.spec.primitives.findLastIndex((p) => managed(p.assetPath)) + 1, 0, ...newLayers);
     if (((layoutChanged && usage.size > 0) || (candidate.showUsage && usage.size === 0)) && !candidate.hideUsage) {
       const panel = candidate.spec.primitives.find(isPanel);
       if (panel && !next.spec.primitives.some(isPanelShape)) {
-        const firstReadout = Math.min(...usageSectionIndices(next.spec.primitives).flat(), next.spec.primitives.length);
-        // Place the readout background over full-display backdrops, but below
-        // retained readouts and their manual overlays, irrespective of figure order.
-        const backdrop = next.spec.primitives.findLastIndex((p, i) => {
-          if (i >= firstReadout || (p.type !== "rect" && p.type !== "sprite")) return false;
-          const sprite = p.type === "sprite" ? decodeSprite(next.assets[p.assetPath || ""]?.data || "") : null;
-          return p.x <= 0 && p.y <= 0 && p.x + (p.width || sprite?.width || 0) >= 240 &&
-            p.y + (p.height || sprite?.height || 0) >= 240;
-        });
-        next.spec.primitives.splice(backdrop + 1, 0, { ...panel });
+        const firstAbove = next.spec.primitives.findIndex((p) => p.usagePanelLayer === "above");
+        const lastBelow = next.spec.primitives.findLastIndex((p) => p.usagePanelLayer === "below");
+        const fallback = Math.min(...usageSectionIndices(next.spec.primitives).flat(), next.spec.primitives.length);
+        next.spec.primitives.splice(firstAbove >= 0 ? firstAbove : lastBelow >= 0 ? lastBelow + 1 : fallback, 0, { ...panel });
+        next.spec.primitives.forEach((p) => { delete p.usagePanelLayer; });
       }
     }
     // A design without readouts that is asked to show usage again gets the
@@ -469,7 +467,7 @@ export function flattenCompanionSprites(document: ThemeStudioDocument): ThemeStu
       });
       return rgba;
     });
-    next.assets[p.assetPath!] = { ...next.assets[p.assetPath!], data: encodeAIThemeCBA1(frames, width, height, sprite.fps) };
+    next.assets[p.assetPath!] = { ...next.assets[p.assetPath!], data: encodeAIThemeCBA1(frames, width, height, sprite.fps, sprite.frames.flatMap((frame) => frame.map((rect) => rect.color))) };
   }
   return next;
 }

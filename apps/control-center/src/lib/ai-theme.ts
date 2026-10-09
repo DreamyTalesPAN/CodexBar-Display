@@ -642,6 +642,7 @@ export function encodeAIThemeCBA1(
   width = ANIMATION_FRAME_SIZE,
   height = ANIMATION_FRAME_SIZE,
   fps = 4,
+  priorityColors: string[] = [],
 ): string {
   if (
     ![ANIMATION_FRAME_COUNT, 8].includes(frames.length) ||
@@ -680,10 +681,11 @@ export function encodeAIThemeCBA1(
     }
     colors.push(frameColors);
   }
-  const palette = Array.from(counts.entries())
+  const reserved = [...new Set(priorityColors)].filter((color) => counts.has(color)).slice(0, MAX_COLORS);
+  const palette = [...reserved, ...Array.from(counts.entries())
     .sort((a, b) => b[1] - a[1])
-    .slice(0, MAX_COLORS)
-    .map(([color]) => color);
+    .map(([color]) => color)
+    .filter((color) => !reserved.includes(color))].slice(0, MAX_COLORS);
   if (palette.length === 0) palette.push("#FFFFFF");
   const rows = colors.flatMap((frame) =>
     Array.from({ length: height }, (_, y) => {

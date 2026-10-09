@@ -201,6 +201,18 @@ describe("companion sprites on the device", () => {
     expect(pixels[3]).not.toContain(".");
     expect(pixels[4]).toBe("16.");
   });
+  it("keeps rare companion colors over a many-colored background", () => {
+    const pet="/themes/u/ai-pet-1.cba";
+    const art=new Uint8ClampedArray(240*128*4);
+    for(let i=0;i<240*128;i++) art.set([((i%26)%16)*17,Math.floor((i%26)/16)*170,0,255],i*4);
+    const frames=Array.from({length:4},()=>{const p=new Uint8ClampedArray(32*32*4);p.set([0,0,255,255],0);return p;});
+    const document={packName:"Detail",assets:{
+      [ART]:{contentType:"text/plain",encoding:"text",data:encodeAIThemeCBI1(art,240,128)},
+      [pet]:{contentType:"text/plain",encoding:"text",data:encodeAIThemeCBA1(frames,32,32,2)},
+    },spec:{primitives:[{type:"sprite",x:0,y:0,width:240,height:128,assetPath:ART},{type:"sprite",x:0,y:0,width:32,height:32,assetPath:pet}]}} as unknown as ThemeStudioDocument;
+    for(const frame of decodeSprite(flattenCompanionSprites(document).assets[pet].data)!.frames)
+      expect(frame.find(r=>r.x===0&&r.y===0)?.color).toBe('#0000FF');
+  });
   it("preserves the device's rounded rectangle pixels in every animation frame", () => {
     const pet="/themes/u/ai-pet-1.cba";
     const frames=Array.from({length:4},()=>{const p=new Uint8ClampedArray(16*16*4);p.set([0,0,255,255],(8*16+8)*4);return p;});

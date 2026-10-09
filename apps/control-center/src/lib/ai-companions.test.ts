@@ -1,9 +1,10 @@
+import { loadUserThemes, writeUserThemes } from "./theme-studio-storage";
 import {describe,it,expect,vi} from "vitest";
 import {encodeAIThemeCBI1,buildAIThemeCompanionCandidateFromRGBA,buildAIThemeCandidateFromRGBA,AI_THEME_SCREENMASTER_ASSET_PATH as ART,AI_THEME_ANIMATION_ASSET_PATH as ANIMATION,type AIThemeConcept} from "./ai-theme";
 import {applyAIThemeCandidate,conceptFromDocument} from "./ai-theme-document";
 import {registerCompanionFrames} from "./ai-companion-sprites";
 import {decodeSprite} from "@/components/live-vibetv-preview";
-import {buildThemePack,createBlankThemeSpec,validateThemeSpec} from "./theme-studio";
+import {deviceThemeSpecJson,buildThemePack,createBlankThemeSpec,validateThemeSpec} from "./theme-studio";
 import {createThemeStudioEditorState,themeStudioEditorReducer} from "@/components/theme-studio/theme-studio-editor-state";
 
 const base: AIThemeConcept={imageBase64:"fixture",imageContentType:"image/png",companions:[],style:{packName:"Forest",title:"Forest",notes:"Companions",artPrompt:"Fox",environmentPrompt:"Forest",animationMode:"four_frame",animationPrompt:"Swish",backgroundColor:"#112233",panelColor:"#112233",textColor:"#FFFFFF",sessionColor:"#FFFFFF",weeklyColor:"#FFFFFF",borderRadius:0,progressStyle:"solid"}};
@@ -108,8 +109,8 @@ describe("flexible picture layouts",()=>{
   const expanded=applyAIThemeCandidate(document,full(),'auto');
   const reduced=applyAIThemeCandidate(expanded,fixture(1).candidate(),'auto');
   for(const result of [expanded,reduced]) {
-    expect(result.spec.primitives[0]).toEqual(document.spec.primitives[0]);
-    expect(result.spec.primitives.slice(-2)).toEqual(document.spec.primitives.slice(-2));
+    expect(result.spec.primitives[0]).toMatchObject(document.spec.primitives[0]);
+    expect(result.spec.primitives.slice(-2)).toMatchObject(document.spec.primitives.slice(-2));
     expect(result.assets[customPath]).toEqual(document.assets[customPath]);
   }
   expect(expanded.spec.primitives.find(p=>p.assetPath===ART)?.height).toBe(240);
@@ -125,7 +126,7 @@ describe("flexible picture layouts",()=>{
   const reduced=applyAIThemeCandidate(expanded,fixture(1).candidate(),'auto');
   for(const result of [expanded,reduced]) {
     expect(result.spec.primitives[0].assetPath).toBe(ART);
-    expect(result.spec.primitives[1]).toEqual(text);
+    expect(result.spec.primitives[1]).toMatchObject(text);
     expect(result.spec.primitives[2].assetPath).toBe('/themes/u/ai-pet-1.cba');
   }
  });
@@ -160,7 +161,8 @@ describe("flexible picture layouts",()=>{
   expect(panel).toBeGreaterThanOrEqual(0);
   expect(panel).toBeLessThan(reduced.spec.primitives.findIndex(p=>p.color===shape.color));
   expect(panel).toBeLessThan(reduced.spec.primitives.findIndex(p=>p.text==='{usageSlot1Label}'));
-  expect(reduced.spec.primitives.filter((_,i)=>i!==panel)).toEqual(expanded.spec.primitives.map(p=>p.assetPath===ART?{...p,height:128}:p));
+  const visible=expanded.spec.primitives.map(p=>{const copy={...p};delete copy.usagePanelLayer;return copy.assetPath===ART?{...copy,height:128}:copy;});
+  expect(reduced.spec.primitives.filter((_,i)=>i!==panel)).toEqual(visible);
  });
  it('does not duplicate a customized panel in a design at the element limit',()=>{
   const current=fixture(1).candidate();
@@ -187,18 +189,23 @@ describe("flexible picture layouts",()=>{
   expect(restored.spec.primitives.filter(p=>p.type==='rect'&&p.height===112)).toEqual([panel]);
   expect(validateThemeSpec(restored.spec,restored.assets).errors).toEqual([]);
  });
- it.each(['rect','sized-image','native-image'] as const)('restores the usage panel above a retained %s backdrop and below manual overlays',kind=>{
+ it.each(['rect','sized-image','native-image','partial-image'] as const)('restores the usage panel above a retained %s backdrop and below manual overlays',kind=>{
   const current=fixture(1).candidate();
   const path='/themes/u/manual-background.cbi';
   current.assets[path]={contentType:'text/plain',encoding:'text',data:encodeAIThemeCBI1(new Uint8ClampedArray(240*240*4).fill(255),240,240)};
   const backdrop=kind==='rect'?{type:'rect' as const,x:0,y:0,width:240,height:240,color:'#445566'}:
-    {type:'sprite' as const,x:0,y:0,assetPath:path,...(kind==='sized-image'?{width:240,height:240}:{})};
+    {type:'sprite' as const,x:0,y:0,assetPath:path,...(kind==='sized-image'?{width:240,height:240}:kind==='partial-image'?{width:240,height:200}:{})};
   const shape={type:'rect' as const,x:8,y:130,width:225,height:90,color:'#123456'};
   current.spec.primitives.splice(3,0,shape);current.spec.primitives.unshift(backdrop);
   const f=fixture(1);f.concept.artHeight=240;
   const fullscreen=buildAIThemeCompanionCandidateFromRGBA(f.concept,new Uint8ClampedArray(240*240*4).fill(255),f.frames);
   const expanded=applyAIThemeCandidate({...current,usage:'live'},fullscreen,'auto');
-  const reduced=applyAIThemeCandidate(expanded,fixture(1).candidate(),'auto');
+  const values=new Map<string,string>();
+  const storage={getItem:(key:string)=>values.get(key)??null,setItem:(key:string,value:string)=>{values.set(key,value);},removeItem:(key:string)=>{values.delete(key);}};
+  expect(deviceThemeSpecJson(expanded.spec)).not.toContain('usagePanelLayer');
+  expect(writeUserThemes([{id:'round-trip',document:expanded,updatedAt:'2026-10-09T12:00:00Z'}],storage).ok).toBe(true);
+  const reopened=loadUserThemes(storage);if(!reopened.ok) throw new Error('Saved fullscreen design did not load');
+  const reduced=applyAIThemeCandidate(reopened.value.themes[0].document,fixture(1).candidate(),'auto');
   const panel=reduced.spec.primitives.findIndex(p=>p.type==='rect'&&p.width===240&&p.height===112);
   expect(reduced.spec.primitives[0]).toEqual(backdrop);
   expect(panel).toBeGreaterThan(0);
@@ -214,7 +221,7 @@ describe("flexible picture layouts",()=>{
   current.spec.primitives.splice(1,0,text);
   const result=applyAIThemeCandidate({...current,usage:'live'},fixture(2).candidate(),'auto');
   expect(result.spec.primitives[0].assetPath).toBe(ART);
-  expect(result.spec.primitives[1]).toEqual(text);
+  expect(result.spec.primitives[1]).toMatchObject(text);
   expect(result.spec.primitives[2].assetPath).toBe(pet);
   expect(result.spec.primitives[3].assetPath).toBe('/themes/u/ai-pet-2.cba');
   expect(result.spec.primitives.some(p=>p.assetPath===ANIMATION)).toBe(false);
