@@ -3184,27 +3184,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return .nativeRuntimeReady
         }
 
-        if !legacyApps.isEmpty {
-            let registeredURLHandler = await registerCurrentAppAsURLHandler()
-            if !registeredURLHandler {
-                _ = await rollbackToLegacyAgents(
-                    legacyStates,
-                    reason: "the current app could not become the vibetv URL handler"
-                )
-                return .failure(.legacyRepair)
-            }
-        }
-
         let backupRoot = migrationBackupURL()
         let artifacts = migrationArtifacts(
             legacyAgents: legacyDescriptors,
             legacyApps: legacyApps,
             backupRoot: backupRoot
         )
-        guard moveMigrationArtifacts(artifacts) != nil else {
+        guard let moved = moveMigrationArtifacts(artifacts) else {
             _ = await rollbackToLegacyAgents(
                 legacyStates,
                 reason: "legacy artifacts could not be moved into the migration backup"
+            )
+            return .failure(.legacyRepair)
+        }
+        if !legacyApps.isEmpty,
+           !(await registerCurrentAppAsURLHandler()) {
+            _ = restoreMigrationArtifacts(moved)
+            _ = await rollbackToLegacyAgents(
+                legacyStates,
+                reason: "the current app could not become the vibetv URL handler"
             )
             return .failure(.legacyRepair)
         }
@@ -4075,22 +4073,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return true
         }
 
-        guard await registerCurrentAppAsURLHandler() else {
-            NSLog(
-                "VibeTV Control Center kept legacy app bundles because the vibetv URL handler could not be updated"
-            )
-            return false
-        }
-
         let backupRoot = migrationBackupURL()
         let artifacts = migrationArtifacts(
             legacyAgents: [],
             legacyApps: legacyApps,
             backupRoot: backupRoot
         )
-        guard moveMigrationArtifacts(artifacts) != nil else {
+        guard let moved = moveMigrationArtifacts(artifacts) else {
             NSLog(
                 "VibeTV Control Center kept legacy app bundles because they could not be moved"
+            )
+            return false
+        }
+        guard await registerCurrentAppAsURLHandler() else {
+            _ = restoreMigrationArtifacts(moved)
+            NSLog(
+                "VibeTV Control Center kept legacy app bundles because the vibetv URL handler could not be updated"
             )
             return false
         }
