@@ -82,6 +82,7 @@ export function MacAppDownloadScreen({
           secondary={Boolean(openThemeUrl)}
         />
         <InstallSteps steps={WINDOWS_INSTALL_STEPS} />
+        <ReturnForThemeAfterInstall show={Boolean(openThemeUrl)} />
         <QuietAlternative
           href={downloadUrl}
           label="Using a Mac? Download for macOS"
@@ -116,6 +117,7 @@ export function MacAppDownloadScreen({
             secondary={Boolean(openThemeUrl)}
           />
         ) : null}
+        <ReturnForThemeAfterInstall show={Boolean(openThemeUrl)} />
       </DownloadScreenFrame>
     );
   }
@@ -171,6 +173,7 @@ export function MacAppDownloadScreen({
           <li key={step}>{step}</li>
         ))}
       </ol>
+      <ReturnForThemeAfterInstall show={Boolean(openThemeUrl)} />
     </SetupWizardScreen>
   );
 }
@@ -253,6 +256,18 @@ function OpenControlCenter({ href }: { href: string | undefined }) {
         <span>Open Control Center</span>
       </a>
     </Button>
+  );
+}
+
+function ReturnForThemeAfterInstall({ show }: { show: boolean }) {
+  if (!show) {
+    return null;
+  }
+  return (
+    <p className="mt-4 text-sm text-muted-foreground">
+      After installing, return to this page and click Open Control Center to
+      choose this theme.
+    </p>
   );
 }
 

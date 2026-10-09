@@ -67,6 +67,9 @@ describe("MacAppDownloadScreen on a recognised system", () => {
       );
       expect(html).toContain('href="vibetv://install-theme/clippy"');
       expect(html).toContain("Open Control Center");
+      expect(html).toContain(
+        "After installing, return to this page and click Open Control Center to choose this theme.",
+      );
       expect(html).toContain(platform === "macos" ? "VibeTV.dmg" : "VibeTV-Setup.exe");
     }
   });
@@ -84,6 +87,7 @@ describe("MacAppDownloadScreen on a recognised system", () => {
         <MacAppDownloadScreen platform="macos" release={bothAvailable} theme={theme} />,
       );
       expect(html).not.toContain("vibetv://install-theme/");
+      expect(html).not.toContain("After installing, return to this page");
       expect(html).toContain('href="https://app.vibetv.shop/VibeTV.dmg"');
     }
   });
@@ -130,6 +134,14 @@ describe("MacAppDownloadScreen on a recognised system", () => {
 
     expect(html).toContain('href="https://app.vibetv.shop/VibeTV.dmg"');
     expect(html).toContain('href="https://app.vibetv.shop/VibeTV-Setup.exe"');
+  });
+
+  it("keeps the theme return step when the browser cannot identify the computer", () => {
+    const html = renderToStaticMarkup(
+      <MacAppDownloadScreen platform="unknown" release={bothAvailable} theme={shopTheme} />,
+    );
+    expect(html).toContain("After installing, return to this page");
+    expect(html).toContain('href="vibetv://install-theme/clippy"');
   });
 
   it("gives the Windows screen exactly one primary action", () => {
