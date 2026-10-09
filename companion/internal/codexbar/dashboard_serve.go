@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -79,9 +80,11 @@ type DashboardServeSupervisor struct {
 	info    DashboardServeInfo
 	process *os.Process
 	// startedAt and configPath describe the running child: when it started
-	// and the CodexBar config it read then.
+	// and the CodexBar config it read then. configFile is that config with
+	// symlinks resolved, the file the child actually read.
 	startedAt  time.Time
 	configPath string
+	configFile string
 	// restart marks the next child exit as one Restart asked for, so the
 	// replacement starts at once instead of after the crash backoff.
 	restart bool
@@ -343,7 +346,8 @@ func (s *DashboardServeSupervisor) Restart(ctx context.Context) error {
 	s.mu.Lock()
 	process := s.process
 	oldPID := s.info.PID
-	stale := process != nil && configChangedSince(s.configPath, s.startedAt)
+	stale := process != nil &&
+		(configSelectionChanged(s.configFile) || configChangedSince(s.configPath, s.startedAt))
 	s.restart = stale
 	s.mu.Unlock()
 	if process == nil {
@@ -381,6 +385,30 @@ func (s *DashboardServeSupervisor) Restart(ctx context.Context) error {
 func configChangedSince(path string, t time.Time) bool {
 	info, err := os.Stat(path)
 	return err != nil || !info.ModTime().Before(t)
+}
+
+// configSelectionChanged reports whether a new serve would read another file
+// than the running one: on the Mac a ~/.config/codexbar/config.json that
+// appeared later takes priority, and a repointed symlink names another file
+// whose time can predate the start. Win-CodexBar reads one fixed file.
+func configSelectionChanged(startedFile string) bool {
+	if runtime.GOOS == "windows" {
+		return false
+	}
+	current, err := macConfigPath("")
+	if err != nil {
+		return true
+	}
+	return resolvedConfigFile(current) != startedFile
+}
+
+// resolvedConfigFile is path with symlinks resolved, or path itself when it
+// cannot be resolved (for example before CodexBar created it).
+func resolvedConfigFile(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved
+	}
+	return path
 }
 
 func environmentValue(env []string, key string) string {
@@ -422,6 +450,7 @@ func (s *DashboardServeSupervisor) setStarted(endpoint string, process *os.Proce
 	s.process = process
 	s.startedAt = launchedAt
 	s.configPath = configPath
+	s.configFile = resolvedConfigFile(configPath)
 	s.info.PID = process.Pid
 	s.info.Running = true
 	s.info.Healthy = false

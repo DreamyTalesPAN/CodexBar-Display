@@ -585,3 +585,63 @@ func argValue(args []string, name string) string {
 func errorsIsNotExist(err error) bool {
 	return err != nil && os.IsNotExist(err)
 }
+
+// A serve keeps reading the file it started with. When CodexBar would now
+// read another one, the serve is stale even though its own file is old: a
+// ~/.config/codexbar/config.json that appeared later takes priority, and a
+// repointed symlink names a file whose time can predate the start.
+func TestConfigSelectionChangedSeesAnotherFileThanTheRunningServe(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Win-CodexBar reads one fixed settings file")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEXBAR_CONFIG", "")
+	legacy := filepath.Join(home, ".codexbar", "config.json")
+	if err := os.MkdirAll(filepath.Dir(legacy), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(legacy, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	started := resolvedConfigFile(legacy)
+	if configSelectionChanged(started) {
+		t.Fatal("the file the serve started with is still the selected one")
+	}
+	preferred := filepath.Join(home, ".config", "codexbar", "config.json")
+	if err := os.MkdirAll(filepath.Dir(preferred), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(preferred, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !configSelectionChanged(started) {
+		t.Fatal("a later ~/.config/codexbar/config.json must make the serve stale")
+	}
+
+	older := filepath.Join(home, "older.json")
+	newer := filepath.Join(home, "newer.json")
+	for _, path := range []string{older, newer} {
+		if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(home, "linked.json")
+	if err := os.Symlink(newer, link); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_CONFIG", link)
+	started = resolvedConfigFile(link)
+	if configSelectionChanged(started) {
+		t.Fatal("an unchanged symlink is still the selected file")
+	}
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(older, link); err != nil {
+		t.Fatal(err)
+	}
+	if !configSelectionChanged(started) {
+		t.Fatal("a repointed symlink must make the serve stale")
+	}
+}
