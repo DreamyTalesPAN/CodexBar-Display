@@ -230,12 +230,12 @@ export function AIThemeStudioScreen({
   );
   const validation = useMemo(() => {
     const result = validateThemeSpec(document.spec, document.assets, document.usage);
-    // VibeTV draws one animated figure at a time: where two overlap, each new
-    // frame of one wipes the other.
-    const figures = document.spec.primitives.filter((p) => isCompanionSprite(p.assetPath));
+    // VibeTV draws one animation at a time: where two overlap, each new frame
+    // of one wipes the other. That holds for imported animations as well.
+    const figures = document.spec.primitives.filter((p) => p.type === "gif" || (p.type === "sprite" && /\.cba$/i.test(p.assetPath || "")));
     const overlap = figures.some((a, i) => figures.slice(i + 1).some((b) =>
       a.x < b.x + (b.width || 0) && b.x < a.x + (a.width || 0) && a.y < b.y + (b.height || 0) && b.y < a.y + (a.height || 0)));
-    return overlap ? { ...result, errors: [...result.errors, "Move the two animated figures apart. VibeTV cannot show them overlapping."] } : result;
+    return overlap ? { ...result, errors: [...result.errors, "Move the animated elements apart. VibeTV cannot show them overlapping."] } : result;
   }, [document]);
 
   useEffect(() => {

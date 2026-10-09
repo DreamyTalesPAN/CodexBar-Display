@@ -5456,3 +5456,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul asked for this pull request to release the whole feature and for the review findings to be fixed where relevant.
 - Approved customer-visible result: A design in which the two animated figures overlap cannot be saved or sent; the editor says "Move the two animated figures apart. VibeTV cannot show them overlapping." When OpenAI accepted the key but the app could not save it, the editor says "AI is ready. The key could not be saved on this Mac, so it is needed again after the Mac App restarts." (on Windows with the app's Windows wording) instead of only "AI is ready."
+
+
+## 2026-10-09 — Overlap rule for every animation
+
+- User approval: Paul asked for this pull request to release the whole feature and for the review findings to be fixed where relevant.
+- Approved customer-visible result: The rule against overlapping animations also covers imported animations and GIFs, not only the AI figures. The message now reads "Move the animated elements apart. VibeTV cannot show them overlapping."
