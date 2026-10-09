@@ -127,13 +127,20 @@ func providersIn(t *testing.T, path string) map[string]map[string]any {
 // A config the sign-in cannot read may still pin the provider, so the sign-in
 // must report it instead of answering as if the pin were gone.
 func TestUseBrowserCookiesReportsAConfigThatIsNotJSON(t *testing.T) {
-	broken := `{"providers": [{"id": "claude", "cookieSource": "manual"`
-	home, path := writePinnedConfig(t, broken)
-	if changed, err := UseBrowserCookies(home, "claude"); err == nil || changed {
-		t.Fatalf("a config that is not JSON must be an error: changed=%v err=%v", changed, err)
-	}
-	if raw, _ := os.ReadFile(path); string(raw) != broken {
-		t.Fatalf("the config must stay as it was:\n%s", raw)
+	for name, broken := range map[string]string{
+		"cut off":          `{"providers": [{"id": "claude", "cookieSource": "manual"`,
+		"data after it":    `{"providers": [{"id": "claude", "cookieSource": "manual"}]} {"providers": []}`,
+		"garbage after it": `{"providers": [{"id": "claude", "cookieSource": "manual"}]}x`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			home, path := writePinnedConfig(t, broken)
+			if changed, err := UseBrowserCookies(home, "claude"); err == nil || changed {
+				t.Fatalf("a config that is not one JSON object must be an error: changed=%v err=%v", changed, err)
+			}
+			if raw, _ := os.ReadFile(path); string(raw) != broken {
+				t.Fatalf("the config must stay as it was:\n%s", raw)
+			}
+		})
 	}
 }
 

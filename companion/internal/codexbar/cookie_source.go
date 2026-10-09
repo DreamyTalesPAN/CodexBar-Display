@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -67,6 +68,9 @@ func switchCookieSource(path, providerID string) (bool, error) {
 	var config map[string]any
 	if err := decoder.Decode(&config); err != nil {
 		return false, fmt.Errorf("CodexBar config is not valid JSON: %w", err)
+	}
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
+		return false, errors.New("CodexBar config has data after its JSON object")
 	}
 	providers, _ := config["providers"].([]any)
 	changed := false
