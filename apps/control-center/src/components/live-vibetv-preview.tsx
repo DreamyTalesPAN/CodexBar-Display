@@ -1770,26 +1770,36 @@ function usagePaceText(
   if (!pace?.state) {
     return "";
   }
-  if (field === "Delta") {
+  if (field.startsWith("D")) {
     const delta = pace.delta ?? 0;
     return `${delta > 0 ? "+" : ""}${delta}%`;
   }
-  if (field === "State") {
+  if (field.startsWith("S")) {
     return pace.state;
   }
-  if (pace.lasts === undefined) {
+  if (!field.startsWith("L") || pace.lasts === undefined) {
     return "";
   }
   return pace.lasts ? "lasts until reset" : "runs out";
 }
 
+// Mirrors the firmware, which reads a pace from every usage window key form:
+// usageSlot1PaceDelta and us1PaceDelta name window 1, and so does
+// usage.0.PaceDelta. The field is what follows "Pace".
+function paceBinding(binding: string): { index: number; field: string } | null {
+  const match = /^(?:usageSlot([12])|us([12])|usage\.(\d+)\.)Pace(\w*)$/.exec(binding);
+  if (!match) {
+    return null;
+  }
+  const index =
+    match[3] !== undefined ? Number(match[3]) : Number(match[1] ?? match[2]) - 1;
+  return { index, field: match[4] };
+}
+
 export function boundValue(key: string, frame: FrameData): string {
-  const paceMatch = /^usageSlot([12])Pace(Delta|State|Lasts)$/.exec(key);
-  if (paceMatch) {
-    return usagePaceText(
-      frame.usageWindows[Number(paceMatch[1]) - 1],
-      paceMatch[2],
-    );
+  const pace = paceBinding(key);
+  if (pace) {
+    return usagePaceText(frame.usageWindows[pace.index], pace.field);
   }
   const usageMatch = /^usage\.(\d+)\.(label|percent|reset|available)$/.exec(
     key,
@@ -1930,13 +1940,13 @@ export function progressPercent(
   // Mirrors the firmware: PaceExpected is where CodexBar expects the window
   // to be by now (its delta counts used percent); other pace bindings fill
   // like the window's percent.
-  const paceMatch = /^usageSlot([12])Pace(\w+)$/.exec(binding);
+  const paceMatch = paceBinding(binding);
   if (paceMatch) {
-    const window = frame.usageWindows[Number(paceMatch[1]) - 1];
+    const window = frame.usageWindows[paceMatch.index];
     if (!window?.available) {
       return 0;
     }
-    if (!paceMatch[2].startsWith("E")) {
+    if (!paceMatch.field.startsWith("E")) {
       return window.percent;
     }
     const pace = boundPace(binding, frame);
@@ -1961,10 +1971,10 @@ export function progressPercent(
   return frame.sessionUnavailable ? 0 : frame.session;
 }
 
-// The pace behind a usageSlotNPace... binding while its window still runs.
+// The pace behind a pace binding while its window still runs.
 function boundPace(binding: string, frame: FrameData): UsagePaceFrame | undefined {
-  const match = /^usageSlot([12])Pace/.exec(binding);
-  const window = match ? frame.usageWindows[Number(match[1]) - 1] : undefined;
+  const match = paceBinding(binding);
+  const window = match ? frame.usageWindows[match.index] : undefined;
   const pace = window?.available && window.resetSecs > 0 ? window.pace : undefined;
   return pace?.state ? pace : undefined;
 }
@@ -1980,7 +1990,7 @@ export function resolveProgressFillColor(
 ): string {
   const usageMode = frame.usageMode;
   const binding = primitive.binding || primitive.b || "";
-  const paceBound = /^usageSlot[12]Pace/.test(binding);
+  const paceBound = paceBinding(binding) !== null;
   const pace = paceBound ? boundPace(binding, frame as FrameData) : undefined;
   if (paceBound && !pace) {
     return colorFor(primitive.color || primitive.c, "#FFFFFF");

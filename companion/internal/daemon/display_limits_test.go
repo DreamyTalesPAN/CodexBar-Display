@@ -127,6 +127,30 @@ func TestDisplayLimitsPairWithOneProviderMissingShowsTheOther(t *testing.T) {
 	}
 }
 
+// Two idle accounts are a current reading too: the pair frame must leave as
+// live under a source the device accepts, so VibeTV can say "No active
+// session" instead of "Reset unavailable".
+func TestDisplayLimitsPairWithoutCountdownsStaysLive(t *testing.T) {
+	basis := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	claude := providerFrameWithWindows("claude", basis,
+		protocol.UsageWindow{ID: "weekly", Label: "Weekly", Percent: 0},
+	)
+	claude.Frame.Label = "Claude"
+	claude.Frame.V = protocol.ProtocolVersionV2
+	codex := providerFrameWithWindows("codex", basis,
+		protocol.UsageWindow{ID: "weekly", Label: "Weekly", Percent: 0},
+	)
+	codex.Frame.Label = "Codex"
+	codex.Frame.V = protocol.ProtocolVersionV2
+	display := &runtimeconfig.ProviderDisplayConfig{Mode: "pair", ProviderIDs: []string{"claude", "codex"}}
+
+	sent := applyDisplayLimits(claude.Frame, []codexbar.ParsedFrame{claude, codex}, display, basis).
+		ApplyResetTrust(basis, basis, true)
+	if sent.Provider != "claude+codex" || sent.ResetTrust != protocol.ResetTrustLive || sent.ResetSource != "claude.codex" {
+		t.Fatalf("idle pair provider=%q trust=%q source=%q want live under claude.codex", sent.Provider, sent.ResetTrust, sent.ResetSource)
+	}
+}
+
 func TestDisplayLimitsPairStopsAStaleProvidersCountdown(t *testing.T) {
 	basis := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
 	claude := displayLimitsClaude(basis)

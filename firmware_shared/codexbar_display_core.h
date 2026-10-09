@@ -787,9 +787,12 @@ inline const ThemeSpecLiveUse& ThemeSpecLiveUseForFrame(const RuntimeState& runt
 // The fields the periodic countdown redraw repaints. Provider-slot countdowns
 // tick locally too and share one field with the slot's label and percent, so
 // that field is requested only when the theme draws a slot countdown.
+// A usage window's pace is hidden once its countdown runs out or loses trust,
+// so pace fields are repainted with the countdowns.
 inline uint32_t ThemeSpecCountdownFields(const ThemeSpecLiveUse& use) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-  return (use.fields & (themespec::kThemeSpecFieldReset | themespec::kThemeSpecFieldUsageWindowReset)) |
+  return (use.fields & (themespec::kThemeSpecFieldReset | themespec::kThemeSpecFieldUsageWindowReset |
+                        themespec::kThemeSpecFieldUsageWindowPace)) |
          (use.providerSlotResets != 0 ? themespec::kThemeSpecFieldProviderSlots : 0);
 #else
   (void)use;

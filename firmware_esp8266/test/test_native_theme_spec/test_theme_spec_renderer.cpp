@@ -918,6 +918,13 @@ void testProviderSlotCountdownsAreRecognisedForThePeriodicRedraw() {
       codexbar_display::themespec::kThemeSpecFieldReset,
       countdownFieldsOf(
           R"JSON({"v":1,"id":"rt","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"r"}]})JSON"));
+  // A pace disappears when its window's countdown runs out, so a theme that
+  // shows only the pace still gets that repaint, in every key form.
+  TEST_ASSERT_EQUAL_UINT32(
+      codexbar_display::themespec::kThemeSpecFieldUsageWindowPace,
+      countdownFieldsOf(
+          R"JSON({"v":1,"id":"pc","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"us1PaceDelta"},)JSON"
+          R"JSON({"t":"tx","x":0,"y":20,"b":"usage.1.PaceState"}]})JSON"));
   // A theme with no countdown at all asks for no countdown repaint.
   TEST_ASSERT_EQUAL_UINT32(
       0,

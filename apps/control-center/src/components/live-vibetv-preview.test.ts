@@ -628,6 +628,32 @@ describe("dynamic usage slot preview", () => {
     );
   });
 
+  // The firmware reads a pace from the compact and indexed keys too.
+  it("renders every pace key form the firmware reads", () => {
+    const sentAt = "2026-09-21T08:30:00Z";
+    const frame = buildFrameData(
+      sentAt,
+      {
+        v: 2,
+        provider: "claude",
+        label: "Claude",
+        usageMode: "used",
+        usageWindows: [
+          { id: "session", label: "Session", percent: 8, resetSecs: 600, pace: { delta: -25, state: "reserve", lasts: true } },
+          { id: "weekly", label: "Weekly", percent: 73, resetSecs: 95000, pace: { delta: 14, state: "deficit", lasts: false } },
+        ],
+      },
+      new Date(sentAt),
+    );
+    expect(
+      ["us1PaceDelta", "us2PaceState", "usage.0.PaceLasts", "usage.1.PaceDelta"].map((key) =>
+        boundValue(key, frame),
+      ),
+    ).toEqual(["-25%", "deficit", "lasts until reset", "+14%"]);
+    expect(progressPercent({ t: "p", b: "us2PaceExpected" }, frame)).toBe(59);
+    expect(progressPercent({ t: "p", b: "usage.1.PaceExpected" }, frame)).toBe(59);
+  });
+
   it("keeps an unavailable slot empty rather than reporting it unavailable", () => {
     const frame = buildFrameData("2026-07-24T10:30:00Z", {
       v: 2,

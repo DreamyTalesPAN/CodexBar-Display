@@ -114,6 +114,12 @@ func pairDisplayFrame(selected protocol.Frame, providers []codexbar.ParsedFrame,
 	if len(windows) < 2 {
 		return withVisibleUsageWindows(selected, display)
 	}
+	if resetSource == "" {
+		// Neither limit has a countdown. The pair is still a current reading,
+		// so it needs a source the device accepts: the ids joined by "+" are
+		// refused, and the frame would be shown as stale.
+		resetSource = pairResetSource(ids)
+	}
 	frame := selected
 	frame.Provider = strings.Join(ids, pairProviderSeparator)
 	frame.Label = strings.Join(labels, " + ")
@@ -131,6 +137,16 @@ func pairDisplayFrame(selected protocol.Frame, providers []codexbar.ParsedFrame,
 // pairProviderSeparator joins the two provider ids of a Two at once frame.
 // Provider ids never contain it, so the frame cannot pass for either one.
 const pairProviderSeparator = "+"
+
+// pairResetSource names a pair frame without a countdown: both provider ids
+// joined by ".", cut to the 31 characters the device accepts.
+func pairResetSource(ids []string) string {
+	key := strings.Join(ids, ".")
+	if len(key) > 31 {
+		key = key[:31]
+	}
+	return protocol.ResetSourceKey(key, "")
+}
 
 // providerDisplayShowsProvider reports whether a frame of this provider is
 // one the display choice can show: a chosen provider, or the pair of them.
