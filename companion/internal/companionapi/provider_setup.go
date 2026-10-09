@@ -433,7 +433,10 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordProviderSetupEvents(setup, label)
 	if setup.Status == codexbar.ProviderReady {
-		if providerID != "" && !s.hasFreshUsage(providerID) && s.restartUsageService != nil &&
+		// A reading the running usage service took before CodexBar's config
+		// changed can still look fresh, so it is no evidence that the service
+		// runs on the current config; the supervisor decides that.
+		if providerID != "" && s.restartUsageService != nil &&
 			s.usageServiceRestarting.CompareAndSwap(false, true) {
 			go s.replaceUsageService(providerID)
 		} else if s.wakeDisplayStream != nil {
@@ -443,27 +446,11 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, providerSetupResponse{OK: true, ProviderSetup: setup})
 }
 
-// hasFreshUsage reports whether the running usage service delivered a fresh,
-// usable reading for providerID.
-func (s *Server) hasFreshUsage(providerID string) bool {
-	if s.loadUsage == nil {
-		return true
-	}
-	now := s.currentTime()
-	usage, _ := s.loadUsage(now)
-	for _, provider := range usage.Providers {
-		if readiness, ok := freshUsableUsageProviderReadiness(provider, now); ok && strings.EqualFold(readiness.ID, providerID) {
-			return true
-		}
-	}
-	return false
-}
-
 // replaceUsageService swaps the running usage service for a fresh one, then
 // collects again. "Check again" just read the provider with a fresh CodexBar,
-// so a running service that still has nothing for it may be the stale part.
-// The supervisor replaces it only when CodexBar's config changed after it
-// started; one already running on the current config is still collecting.
+// so a running service started on older settings may be the stale part. The
+// supervisor replaces it only when CodexBar's config changed after it
+// started; one already running on the current config keeps collecting.
 func (s *Server) replaceUsageService(providerID string) {
 	defer s.usageServiceRestarting.Store(false)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

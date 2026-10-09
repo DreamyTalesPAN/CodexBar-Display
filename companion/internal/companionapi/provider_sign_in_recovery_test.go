@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -77,19 +78,34 @@ func TestExpiredSavedClaudeCookieRecoversWithTheRowButtonsAlone(t *testing.T) {
 			}},
 		}
 	}
-	// The running usage service keeps what it had until it is replaced; a
-	// replacement starts from the current config.
-	var serviceHasClaude, restarts, wakes atomic.Int32
-	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
-		if serviceHasClaude.Load() == 1 {
-			return freshProviderUsage("claude", "Claude", now.Add(-time.Second)), true
+	// The running usage service keeps the config it started with. Like the
+	// supervisor, a restart replaces it only when the config changed after
+	// that start. Its Claude reading from before the cookie expired still
+	// looks fresh, which must not keep the old service running.
+	readConfig := func() string {
+		raw, err := os.ReadFile(configPath)
+		if err != nil {
+			t.Error(err)
 		}
-		return daemon.PersistedUsage{}, false
+		return string(raw)
+	}
+	var serviceMu sync.Mutex
+	serviceConfig := readConfig()
+	serviceReadsBrowser := func() bool {
+		serviceMu.Lock()
+		defer serviceMu.Unlock()
+		return !strings.Contains(serviceConfig, `"manual"`)
+	}
+	var restarts, wakes atomic.Int32
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return freshProviderUsage("claude", "Claude", now.Add(-time.Second)), true
 	}
 	server.restartUsageService = func(context.Context) error {
-		restarts.Add(1)
-		if claudeReadsBrowser() {
-			serviceHasClaude.Store(1)
+		serviceMu.Lock()
+		defer serviceMu.Unlock()
+		if current := readConfig(); current != serviceConfig {
+			serviceConfig = current
+			restarts.Add(1)
 		}
 		return nil
 	}
@@ -161,15 +177,18 @@ func TestExpiredSavedClaudeCookieRecoversWithTheRowButtonsAlone(t *testing.T) {
 	for (restarts.Load() != 1 || wakes.Load() == 0) && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if restarts.Load() != 1 || wakes.Load() == 0 || !server.hasFreshUsage("claude") {
-		t.Fatalf("expected one usage service restart and fresh Claude usage: restarts=%d wakes=%d", restarts.Load(), wakes.Load())
+	if restarts.Load() != 1 || wakes.Load() == 0 || !serviceReadsBrowser() {
+		t.Fatalf("expected one usage service restart onto the browser sign-in: restarts=%d wakes=%d", restarts.Load(), wakes.Load())
 	}
 
-	// 4. With fresh usage a later check leaves the usage service alone.
+	// 4. A service already running on the current config is left alone.
 	for server.usageServiceRestarting.Load() && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	retry()
+	for server.usageServiceRestarting.Load() && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
 	if restarts.Load() != 1 {
 		t.Fatalf("a working usage service must not be restarted again: restarts=%d", restarts.Load())
 	}
