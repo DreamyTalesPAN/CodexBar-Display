@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/empty";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { copyForHost } from "@/lib/customer-platform";
 import {
@@ -632,22 +633,12 @@ function UsageWindowBar({
   const detail = unavailableDetail || "Usage limits unavailable.";
   // The engine paced this window against its reset: no pace once that has
   // passed, or while the reading is unavailable.
-  const pace =
-    !unavailable && resetSecs > 0 && window.pace
-      ? usagePaceLine(window.pace, etaSecs)
-      : "";
-  return (
-    <div>
-      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm">
-        <span className="font-bold text-[#1B1B1B]">
-          {window.label}: {unavailable ? "??" : `${percent}% ${usageModeShortLabel(mode)}`}
-        </span>
-        {!unavailable && resetSecs ? (
-          <span className="ml-auto shrink-0 text-right font-semibold text-[#444933]">
-            {formatReset(resetSecs)}
-          </span>
-        ) : null}
-      </div>
+  const pace = !unavailable && resetSecs > 0 ? window.pace : undefined;
+  const paceWord = pace ? usagePaceWord(pace) : "";
+  const paceHint = pace && paceWord ? usagePaceHint(pace, etaSecs) : "";
+  const mark = paceWord ? pace?.expectedPercent : undefined;
+  const bar = (
+    <div className="relative py-1">
       <Progress
         aria-label={
           unavailable
@@ -657,49 +648,96 @@ function UsageWindowBar({
         className="h-2"
         value={unavailable ? null : percent}
       />
+      {mark === undefined ? null : (
+        <span
+          aria-hidden="true"
+          className="absolute top-0 h-4 w-[3px] -translate-x-1/2 rounded-full bg-[#1B1B1B] ring-2 ring-card"
+          data-testid="usage-pace-mark"
+          style={{ left: `${clampPercent(mark)}%` }}
+        />
+      )}
+    </div>
+  );
+  const paceLine = paceWord ? (
+    <p
+      className={cn(
+        "text-xs font-semibold",
+        pace?.state === "deficit" ? "text-[#6A5B00]" : pace?.state === "reserve" ? "text-[#3B5200]" : "text-[#444933]",
+      )}
+    >
+      {paceWord}
+    </p>
+  ) : null;
+  return (
+    <div>
+      <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm">
+        <span className="font-bold text-[#1B1B1B]">
+          {window.label}: {unavailable ? "??" : `${percent}% ${usageModeShortLabel(mode)}`}
+        </span>
+        {!unavailable && resetSecs ? (
+          <span className="ml-auto shrink-0 text-right font-semibold text-[#444933]">
+            {formatReset(resetSecs)}
+          </span>
+        ) : null}
+      </div>
+      {paceHint ? (
+        // The app's layout has a provider; the card also renders without it.
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/40" tabIndex={0}>
+                {bar}
+                {paceLine}
+                <span className="sr-only">{paceHint}</span>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent aria-hidden="true">{paceHint}</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      ) : (
+        <>
+          {bar}
+          {paceLine}
+        </>
+      )}
       {unavailable ? (
-        <p className="mt-1 text-xs font-semibold text-[#6A5B00]">{detail}</p>
-      ) : null}
-      {pace ? (
-        <p
-          className={cn(
-            "mt-1 text-xs font-semibold",
-            window.pace?.lasts === false ? "text-[#6A5B00]" : "text-[#444933]",
-          )}
-        >
-          {pace}
-        </p>
+        <p className="text-xs font-semibold text-[#6A5B00]">{detail}</p>
       ) : null}
     </div>
   );
 }
 
 /**
- * What the usage engine says about a window's pace, in the page's words. The
- * page adds nothing: without the engine's "lasts until reset" it promises
- * none, and the sentences name no percentage, so they read the same under
- * Used and Remaining.
+ * The usage engine's pace of a window in one word pair: under, on or over
+ * pace. A state the engine does not define says nothing.
  */
-export function usagePaceLine(pace: UsageWindowPace, etaSecs: number): string {
-  if (pace.lasts === false) {
-    return etaSecs >= 60
-      ? `At this pace it runs out in ${formatResetCountdown(etaSecs)}, before the reset.`
-      : "At this pace it runs out before the reset.";
-  }
+export function usagePaceWord(pace: UsageWindowPace): string {
   switch (pace.state) {
-    case "on pace":
-      return pace.lasts ? "On pace to last until the reset." : "On pace.";
     case "reserve":
-      return pace.lasts
-        ? "Below the expected pace: lasts until the reset."
-        : "Below the expected pace.";
+      return "Under pace";
+    case "on pace":
+      return "On pace";
     case "deficit":
-      return pace.lasts
-        ? "Above the expected pace, but it lasts until the reset."
-        : "Above the expected pace.";
+      return "Over pace";
     default:
       return "";
   }
+}
+
+/**
+ * How long the limit lasts at this pace, shown on hover. The page adds
+ * nothing: without the engine's "lasts until reset" it promises none.
+ */
+export function usagePaceHint(pace: UsageWindowPace, etaSecs: number): string {
+  if (pace.lasts === true) {
+    return "At this pace your limit lasts until the reset.";
+  }
+  if (pace.lasts === false) {
+    return etaSecs >= 60
+      ? `At this pace your limit runs out in ${formatResetCountdown(etaSecs)}, before the reset.`
+      : "At this pace your limit runs out before the reset.";
+  }
+  return "";
 }
 
 function UsageEmptyState({

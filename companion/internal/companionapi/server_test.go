@@ -3064,6 +3064,10 @@ func TestUsageWindowCarriesEnginePace(t *testing.T) {
 	if weekly == nil || weekly.State != protocol.PaceDeficit || weekly.Lasts == nil || *weekly.Lasts || weekly.ETASeconds != 115200 {
 		t.Fatalf("weekly pace: %+v", weekly)
 	}
+	// Where each bar would stand on pace: used minus the engine's delta.
+	if session.ExpectedPercent != 33 || weekly.ExpectedPercent != 43 {
+		t.Fatalf("expected percent: session=%d weekly=%d", session.ExpectedPercent, weekly.ExpectedPercent)
+	}
 	// The engine projected neither outcome: no lasts, so the page promises none.
 	if onPace == nil || onPace.State != protocol.PaceOnPace || onPace.Lasts != nil {
 		t.Fatalf("on-pace window: %+v", onPace)
@@ -3094,6 +3098,10 @@ func TestUsageRemainingDisplayKeepsEnginePace(t *testing.T) {
 	}
 	if windows[1].UsedPercent != 27 || windows[1].Pace == nil || windows[1].Pace.State != protocol.PaceDeficit || windows[1].Pace.ETASeconds != 115200 {
 		t.Fatalf("weekly under Remaining: %+v pace=%+v", windows[1], windows[1].Pace)
+	}
+	// The mark turns with the bar.
+	if windows[0].Pace.ExpectedPercent != 67 || windows[1].Pace.ExpectedPercent != 57 {
+		t.Fatalf("expected percent under Remaining: session=%d weekly=%d", windows[0].Pace.ExpectedPercent, windows[1].Pace.ExpectedPercent)
 	}
 }
 

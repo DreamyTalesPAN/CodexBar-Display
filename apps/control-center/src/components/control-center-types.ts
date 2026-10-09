@@ -475,11 +475,13 @@ export type UsageWindowInfo = {
 
 // The usage engine's pace for one window; absent when it sent none.
 // etaSeconds counts from the provider's collectedAt and comes with
-// lasts: false only.
+// lasts: false only. expectedPercent is where the window's percentage would
+// stand on pace, in the same sense (used or remaining) as usedPercent.
 export type UsageWindowPace = {
   state: "reserve" | "on pace" | "deficit" | string;
   lasts?: boolean;
   etaSeconds?: number;
+  expectedPercent?: number;
 };
 
 export type UsageStatusInfo = {
