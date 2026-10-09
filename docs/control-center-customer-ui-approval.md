@@ -6415,3 +6415,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: This replaces the sentences of the entry above. Under the bar of a usage limit the Usage page shows only `Under pace`, `On pace` or `Over pace` (dark green, neutral, dark yellow), and on the bar a short dark vertical mark, taller than the bar and with a light edge, at the percentage the limit would stand at on pace. Pointing at the bar or the words (or focusing it with the keyboard) shows `At this pace your limit lasts until the reset.` or `At this pace your limit runs out in 1d 8h, before the reset.` (`At this pace your limit runs out before the reset.` when the time has passed); when the usage engine projected neither, there is no hint. Under Remaining the mark turns round with the bar. Unchanged: no pace on a stale card, without a reset, or for a state the engine does not define.
 - Scope: `UsageWindowBar`, `usagePaceWord` and `usagePaceHint` (replacing `usagePaceLine`) in `apps/control-center/src/components/usage-screen.tsx`, `expectedPercent` on the window's pace in `components/control-center-types.ts`, tests in `usage-screen.test.tsx`, and this approval record; in the Companion `GET /v1/usage` adds `pace.expectedPercent` (the window's percentage minus the engine's delta, turned round under Remaining).
 - What's new: none — a correction to a line that is not released yet
+
+## 2026-10-09 — Usage: the pace hint opens below the bar (#210)
+
+- User approval: Not yet seen by Paul. A correction to the entry above, made after the hint was seen in the built page with real usage: opening above the bar it covered the limit's own name and reset time. Shown to Paul as a picture of the built page on 2026-10-09; his answer is open.
+- Approved customer-visible result: The hint that says how long a limit lasts at this pace opens below that limit's bar and words instead of above them. Wording, mark and words under the bar are unchanged.
+- Scope: `side="bottom"` on the hint in `UsageWindowBar` in `apps/control-center/src/components/usage-screen.tsx`, and this approval record.
+- What's new: none — a correction to a line that is not released yet
