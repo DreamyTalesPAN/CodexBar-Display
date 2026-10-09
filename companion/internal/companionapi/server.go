@@ -147,6 +147,7 @@ var displayStreamLogKeys = []string{
 	"code",
 	"op",
 	"retry",
+	"cause",
 	"recovery",
 	"err",
 	"transport",
@@ -10084,8 +10085,12 @@ func lastDisplayStreamErrorRecordAfter(path string, boundary time.Time) (time.Ti
 				detail = "Display stream could not send to VibeTV and is reconnecting."
 				code = "display_send_failed"
 			} else if op == "resolve-target" {
-				detail = "Display stream could not find VibeTV and is reconnecting."
-				code = "device_not_found"
+				// An unanswered or busy port does not prove that USB was unplugged.
+				switch errcode.Code(displayStreamLogValue(line, "cause")) {
+				case errcode.TransportNoUSBSerialPorts, errcode.TransportNoSerialPorts, errcode.TransportSerialPortNotFound:
+					detail = "Display stream could not find VibeTV and is reconnecting."
+					code = "device_not_found"
+				}
 			} else if strings.Contains(line, "cycle timeout:") {
 				detail = "Display stream timed out and is reconnecting."
 				code = "display_stream_timeout"

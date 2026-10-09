@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -89,5 +92,47 @@ func TestStatusDisconnectsCableWhenPortDisappearsAndReconnects(t *testing.T) {
 	lastSent = clock
 	if device := readStatus(); !device.Connected || !device.Ready {
 		t.Fatalf("replug must reconnect on the next status: %+v", device)
+	}
+}
+
+func TestCableResolveErrorsOnlyDisconnectWhenPortIsAbsent(t *testing.T) {
+	for _, tc := range []struct {
+		cause  string
+		absent bool
+	}{
+		{"transport/no-usb-serial-ports", true},
+		{"transport/no-serial-ports", true},
+		{"transport/serial-port-not-found", true},
+		{"transport/serial-open", false},
+		{"transport/no-matching-vibetv", false},
+		{"", false},
+	} {
+		t.Run(tc.cause, func(t *testing.T) {
+			clock := time.Now().UTC()
+			logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+			line := fmt.Sprintf("%s cycle error: code=runtime/serial-resolve op=resolve-target retry=2s cause=%s err=resolver failed\n", clock.Format(time.RFC3339Nano), tc.cause)
+			if err := os.WriteFile(logPath, []byte(line), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, _, code, ok := lastDisplayStreamErrorRecordAfter(logPath, time.Time{})
+			if !ok || (code == "device_not_found") != tc.absent {
+				t.Fatalf("cause=%q must distinguish absence from an uncertain probe: code=%q ok=%t", tc.cause, code, ok)
+			}
+			cfg := runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: "pair-token"}
+			server := newTestServer(t, cfg)
+			server.now = func() time.Time { return clock }
+			device := deviceInfo{Target: cableDeviceTarget, DeviceID: cfg.DeviceID, Connected: true, Paired: true}
+			server.withConfiguredConnectionState(cfg, device, true, false)
+			clock = clock.Add(15 * time.Second)
+			device.Connected = false
+			device.Stream = &displayStreamInfo{Target: cableDeviceTarget, ErrorCode: code}
+			if got := server.withConfiguredConnectionState(cfg, device, false, false); got.Connected == tc.absent {
+				t.Fatalf("cause=%q returned connected=%t after 15 seconds", tc.cause, got.Connected)
+			}
+			clock = clock.Add(deviceConnectedGraceWindow)
+			if got := server.withConfiguredConnectionState(cfg, device, false, false); got.Connected {
+				t.Fatalf("cause=%q remained connected past the grace window", tc.cause)
+			}
+		})
 	}
 }
