@@ -5649,21 +5649,28 @@ func TestCablePairingRequiresTokenWhenDeviceSupportsAuth(t *testing.T) {
 }
 
 func TestCableHelloProvesConnectionWithoutHealthFeature(t *testing.T) {
-	for _, liveID := range []string{"cable-a", "other-device", ""} {
-		t.Run(liveID, func(t *testing.T) {
+	for _, tc := range []struct{ liveID, streamError string }{
+		{"cable-a", "provider_setup_required"},
+		{"other-device", "provider_setup_required"},
+		{"", "provider_setup_required"},
+		{"cable-a", "device_not_found"},
+		{"other-device", "device_not_found"},
+		{"", "device_not_found"},
+	} {
+		t.Run(tc.liveID+"/"+tc.streamError, func(t *testing.T) {
 			server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a"})
 			hello := cableHelloForTest("cable-a")
 			hello.Features = nil
 			server.currentCableHello = func() (protocol.DeviceHello, bool) { return hello, true }
 			server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
 			server.streamStatus = func(context.Context, string) displayStreamInfo {
-				return displayStreamInfo{Running: true, Target: cableDeviceTarget, ErrorCode: "provider_setup_required"}
+				return displayStreamInfo{Running: true, Target: cableDeviceTarget, ErrorCode: tc.streamError}
 			}
 			server.readCableHello = func(string) (protocol.DeviceHello, error) {
-				if liveID == "" {
+				if tc.liveID == "" {
 					return protocol.DeviceHello{}, errors.New("unplugged")
 				}
-				return cableHelloForTest(liveID), nil
+				return cableHelloForTest(tc.liveID), nil
 			}
 			rec := httptest.NewRecorder()
 			server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
@@ -5671,7 +5678,7 @@ func TestCableHelloProvesConnectionWithoutHealthFeature(t *testing.T) {
 			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 				t.Fatal(err)
 			}
-			if got.Device.Connected != (liveID == "cable-a") {
+			if got.Device.Connected != (tc.liveID == "cable-a") {
 				t.Fatalf("only a live matching hello proves connectivity: %+v", got.Device)
 			}
 		})

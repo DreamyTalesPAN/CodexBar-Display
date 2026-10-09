@@ -1810,7 +1810,7 @@ func (s *Server) withConfiguredConnectionState(
 	// bounded grace window the device stays Connected in state "reconnecting";
 	// past the window the honest truth wins and Connected drops.
 	// A missing USB device is explicit disconnect evidence, not a WiFi probe miss.
-	cableNotFound := samePublicTarget(device.Target, cableDeviceTarget) &&
+	cableNotFound := !reachable && samePublicTarget(device.Target, cableDeviceTarget) &&
 		device.Stream != nil && device.Stream.ErrorCode == "device_not_found"
 	if !device.Connected && !identityMismatch && !cableNotFound && device.Paired &&
 		!state.lastSeenAt.IsZero() && now.Sub(state.lastSeenAt) <= deviceConnectedGraceWindow {
