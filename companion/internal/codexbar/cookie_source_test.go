@@ -136,6 +136,8 @@ func TestUseBrowserCookiesReportsAConfigThatIsNotJSON(t *testing.T) {
 		"garbage after it":  `{"providers": [{"id": "claude", "cookieSource": "manual"}]}x`,
 		"null":              `null`,
 		"providers no list": `{"providers": {"claude": {"cookieSource": "manual"}}}`,
+		"providers null":    `{"version": 1, "providers": null}`,
+		"no providers":      `{"version": 1}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			home, path := writePinnedConfig(t, broken)

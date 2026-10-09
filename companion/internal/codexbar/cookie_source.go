@@ -33,8 +33,9 @@ var errConfigChanged = errors.New("CodexBar config kept changing while switching
 // cookie stays in the file; only the source changes. It reports whether the
 // config changed. A missing config is left alone, and so is Windows:
 // Win-CodexBar keeps pasted cookies in a file of its own and the VibeTV app
-// offers no way to paste one. A config that is not JSON is an error, because
-// the pin it may hold could not be lifted.
+// offers no way to paste one. A config CodexBar could not read either (not
+// one JSON object with a provider list) is an error, because the pin it may
+// hold could not be lifted.
 func UseBrowserCookies(home, providerID string) (bool, error) {
 	if runtime.GOOS == "windows" {
 		return false, nil
@@ -95,12 +96,10 @@ func switchCookieSource(path, providerID string) (bool, error) {
 	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
 		return false, errors.New("CodexBar config has data after its JSON object")
 	}
-	if config == nil {
-		return false, errors.New("CodexBar config is not a JSON object")
-	}
+	// CodexBar itself cannot read a config without a provider list.
 	providers, ok := config["providers"].([]any)
-	if !ok && config["providers"] != nil {
-		return false, errors.New("CodexBar config providers is not a list")
+	if !ok {
+		return false, errors.New("CodexBar config has no provider list")
 	}
 	changed := false
 	for _, item := range providers {
