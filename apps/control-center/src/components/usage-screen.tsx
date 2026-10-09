@@ -663,7 +663,10 @@ function UsageWindowBar({
                 <span className="sr-only">{paceHint}</span>
               </div>
             </TooltipTrigger>
-            <TooltipContent aria-hidden="true">{paceHint}</TooltipContent>
+            {/* Below, so the limit's own name and reset stay readable. */}
+            <TooltipContent aria-hidden="true" side="bottom">
+              {paceHint}
+            </TooltipContent>
           </Tooltip>
         </TooltipProvider>
       ) : (
