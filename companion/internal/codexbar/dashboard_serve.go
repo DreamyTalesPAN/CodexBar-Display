@@ -243,11 +243,14 @@ func (s *DashboardServeSupervisor) runOnce(ctx context.Context) error {
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 
+	// Taken before the child exists, so it cannot have read a config written
+	// after this moment.
+	launchedAt := time.Now()
 	if err := cmd.Start(); err != nil {
 		s.setStopped(endpoint, err)
 		return err
 	}
-	s.setStarted(endpoint, cmd.Process, environmentValue(env, "CODEXBAR_CONFIG"))
+	s.setStarted(endpoint, cmd.Process, launchedAt, environmentValue(env, "CODEXBAR_CONFIG"))
 	if s.logf != nil {
 		s.logf("codexbar-dashboard event=child-started endpoint=%s pid=%d refreshInterval=%s\n", endpoint, cmd.Process.Pid, s.refreshInterval)
 	}
@@ -373,11 +376,12 @@ func (s *DashboardServeSupervisor) Restart(ctx context.Context) error {
 }
 
 // configChangedSince reports whether the config at path was written after t.
-// A config it cannot read counts as changed, so a serve is never kept for lack
-// of proof that it is current.
+// A write in the same second counts too, for file systems that keep whole
+// seconds, and so does a config it cannot read: a serve is never kept for
+// lack of proof that it is current.
 func configChangedSince(path string, t time.Time) bool {
 	info, err := os.Stat(path)
-	return err != nil || info.ModTime().After(t)
+	return err != nil || !info.ModTime().Before(t.Truncate(time.Second))
 }
 
 func environmentValue(env []string, key string) string {
@@ -412,12 +416,12 @@ func (s *DashboardServeSupervisor) checkHealth(ctx context.Context, endpoint str
 	return true
 }
 
-func (s *DashboardServeSupervisor) setStarted(endpoint string, process *os.Process, configPath string) {
+func (s *DashboardServeSupervisor) setStarted(endpoint string, process *os.Process, launchedAt time.Time, configPath string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.info.Endpoint = endpoint
 	s.process = process
-	s.startedAt = time.Now()
+	s.startedAt = launchedAt
 	s.configPath = configPath
 	s.info.PID = process.Pid
 	s.info.Running = true

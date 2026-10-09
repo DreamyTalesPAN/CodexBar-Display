@@ -212,6 +212,34 @@ func TestDashboardServeSupervisorRestartReplacesTheRunningChild(t *testing.T) {
 	}
 }
 
+// A config written while the child was starting may not be the one it read,
+// so only a write clearly before the launch proves the serve is current.
+func TestConfigChangedSinceCountsEveryWriteFromTheLaunchSecondOn(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	launchedAt := time.Date(2026, 10, 9, 8, 0, 0, 500_000_000, time.UTC)
+	for name, tc := range map[string]struct {
+		written time.Time
+		changed bool
+	}{
+		"written before the launch":               {launchedAt.Add(-2 * time.Second), false},
+		"written in the launch second, truncated": {launchedAt.Truncate(time.Second), true},
+		"written after the launch":                {launchedAt.Add(time.Millisecond), true},
+	} {
+		if err := os.Chtimes(path, tc.written, tc.written); err != nil {
+			t.Fatal(err)
+		}
+		if got := configChangedSince(path, launchedAt); got != tc.changed {
+			t.Fatalf("%s: changed=%v, want %v", name, got, tc.changed)
+		}
+	}
+	if !configChangedSince(filepath.Join(t.TempDir(), "missing.json"), launchedAt) {
+		t.Fatal("a config that cannot be read must count as changed")
+	}
+}
+
 func TestDashboardServeSupervisorRestartsChildAfterStartupTimeout(t *testing.T) {
 	recordPath := t.TempDir() + "/dashboard-helper.jsonl"
 	supervisor := newTestDashboardServeSupervisor(t, "serve", recordPath, 60*time.Second)
