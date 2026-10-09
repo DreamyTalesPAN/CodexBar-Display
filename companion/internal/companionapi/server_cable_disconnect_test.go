@@ -127,6 +127,36 @@ func TestCableMatchingResolutionSurvivesFailedHealthRead(t *testing.T) {
 	}
 }
 
+func TestCableThemeInstallPreservesFreshConnectionDespiteStaleAbsence(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: "pair-token"})
+	hello := cableHelloForTest("cable-a")
+	hello.Features = nil
+	server.currentCableHello = func() (protocol.DeviceHello, bool) { return hello, true }
+	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
+	server.readCableHello = func(string) (protocol.DeviceHello, error) { return hello, nil }
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{Running: true, Target: cableDeviceTarget, ErrorCode: "device_not_found"}
+	}
+	read := func() deviceInfo {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		var got statusResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		return got.Device
+	}
+	if !read().Connected {
+		t.Fatal("fresh hello must establish connection")
+	}
+	server.themeInstallActive = true
+	server.resolveCablePort = func(string, string) (string, error) { t.Fatal("theme install must suppress probes"); return "", nil }
+	if got := read(); !got.Connected || got.Ready {
+		t.Fatalf("suppressed probe cannot invalidate fresh connection or prove readiness: %+v", got)
+	}
+}
+
 func TestCableResolveErrorsOnlyDisconnectWhenPortIsAbsent(t *testing.T) {
 	for _, tc := range []struct {
 		cause  string
@@ -154,15 +184,15 @@ func TestCableResolveErrorsOnlyDisconnectWhenPortIsAbsent(t *testing.T) {
 			server := newTestServer(t, cfg)
 			server.now = func() time.Time { return clock }
 			device := deviceInfo{Target: cableDeviceTarget, DeviceID: cfg.DeviceID, Connected: true, Paired: true}
-			server.withConfiguredConnectionState(cfg, device, true, false)
+			server.withConfiguredConnectionState(cfg, device, true, false, false)
 			clock = clock.Add(15 * time.Second)
 			device.Connected = false
 			device.Stream = &displayStreamInfo{Target: cableDeviceTarget, ErrorCode: code}
-			if got := server.withConfiguredConnectionState(cfg, device, false, false); got.Connected == tc.absent {
+			if got := server.withConfiguredConnectionState(cfg, device, false, false, false); got.Connected == tc.absent {
 				t.Fatalf("cause=%q returned connected=%t after 15 seconds", tc.cause, got.Connected)
 			}
 			clock = clock.Add(deviceConnectedGraceWindow)
-			if got := server.withConfiguredConnectionState(cfg, device, false, false); got.Connected {
+			if got := server.withConfiguredConnectionState(cfg, device, false, false, false); got.Connected {
 				t.Fatalf("cause=%q remained connected past the grace window", tc.cause)
 			}
 		})

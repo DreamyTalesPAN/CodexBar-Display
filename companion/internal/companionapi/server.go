@@ -1445,6 +1445,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	reachable := false
 	identityMismatch := false
+	cableProbeSuppressed := false
 	if cableMode {
 		device.Capabilities = cableCapabilityBlock(cfg.DeviceTransports)
 		if hello, ok := s.currentCableHello(); ok && cableHelloMatchesConfig(hello, cfg.DeviceID) {
@@ -1458,7 +1459,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			// "Theme missing" screen and incorrectly skips the existing theme
 			// chooser. The shared Sender serializes this probe with frame writes.
 			s.firmwareUpdateStartMu.Lock()
-			if _, running := s.activeFirmwareUpdateJob(); !running && !s.themeInstallInFlight() {
+			_, updateRunning := s.activeFirmwareUpdateJob()
+			cableProbeSuppressed = updateRunning || s.themeInstallInFlight()
+			if !cableProbeSuppressed {
 				if port, portErr := s.resolveCablePort("", cfg.DeviceID); portErr == nil {
 					if hello.HasFeature(protocol.FeatureCableHealthV1) {
 						// Resolution already read a fresh matching hello; a later
@@ -1542,7 +1545,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	device = s.withConfiguredConnectionState(cfg, device, reachable, identityMismatch)
+	device = s.withConfiguredConnectionState(cfg, device, reachable, identityMismatch, cableProbeSuppressed)
 	if cfg.ConnectionModeChoiceRequired && strings.TrimSpace(cfg.DeviceID) == "" {
 		if candidate := s.currentCableConnectionChoiceDevice(); strings.TrimSpace(candidate.DeviceID) != "" {
 			device = candidate
@@ -1763,6 +1766,7 @@ func (s *Server) withConfiguredConnectionState(
 	device deviceInfo,
 	reachable bool,
 	identityMismatch bool,
+	cableProbeSuppressed bool,
 ) deviceInfo {
 	if samePublicTarget(device.Target, cableDeviceTarget) && device.Stream != nil {
 		device = withDisplayStreamInfo(device, *device.Stream)
@@ -1813,7 +1817,7 @@ func (s *Server) withConfiguredConnectionState(
 	// bounded grace window the device stays Connected in state "reconnecting";
 	// past the window the honest truth wins and Connected drops.
 	// A missing USB device is explicit disconnect evidence, not a WiFi probe miss.
-	cableNotFound := !reachable && samePublicTarget(device.Target, cableDeviceTarget) &&
+	cableNotFound := !reachable && !cableProbeSuppressed && samePublicTarget(device.Target, cableDeviceTarget) &&
 		device.Stream != nil && device.Stream.ErrorCode == "device_not_found"
 	if !device.Connected && !identityMismatch && !cableNotFound && device.Paired &&
 		!state.lastSeenAt.IsZero() && now.Sub(state.lastSeenAt) <= deviceConnectedGraceWindow {
@@ -2482,6 +2486,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			cfg,
 			device,
 			providerSetupStreamForTarget(device.Stream, device.Target),
+			false,
 			false,
 		)
 		writeDeviceReport(device)
@@ -4999,7 +5004,7 @@ func (s *Server) cableDeviceInfo(ctx context.Context, cfg runtimeconfig.Config, 
 		Active:       true,
 		Paired:       strings.TrimSpace(cfg.DeviceToken) != "" || hello.Capabilities.Auth == nil,
 		Capabilities: &hello.Capabilities,
-	}, stream), providerSetupStreamForTarget(streamPointer(stream), cableDeviceTarget), false)
+	}, stream), providerSetupStreamForTarget(streamPointer(stream), cableDeviceTarget), false, false)
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
