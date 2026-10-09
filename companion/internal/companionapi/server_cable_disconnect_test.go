@@ -95,6 +95,38 @@ func TestStatusDisconnectsCableWhenPortDisappearsAndReconnects(t *testing.T) {
 	}
 }
 
+func TestCableMatchingResolutionSurvivesFailedHealthRead(t *testing.T) {
+	for _, resolved := range []bool{true, false} {
+		t.Run(fmt.Sprint(resolved), func(t *testing.T) {
+			server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: "pair-token"})
+			hello := cableHelloForTest("cable-a")
+			hello.Features = []string{protocol.FeatureCableHealthV1}
+			server.currentCableHello = func() (protocol.DeviceHello, bool) { return hello, true }
+			server.resolveCablePort = func(string, string) (string, error) {
+				if !resolved {
+					return "", errors.New("device absent")
+				}
+				return "/dev/mock", nil
+			}
+			server.readCableHealth = func(string, string) (deviceHealth, error) {
+				return deviceHealth{}, errors.New("temporary health timeout")
+			}
+			server.streamStatus = func(context.Context, string) displayStreamInfo {
+				return displayStreamInfo{Running: true, Target: cableDeviceTarget, ErrorCode: "device_not_found"}
+			}
+			rec := httptest.NewRecorder()
+			server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+			var got statusResponse
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			if got.Device.Connected != resolved || got.Device.Ready || !got.Device.Paired {
+				t.Fatalf("matching resolution proves connection, health failure cannot prove readiness: %+v", got.Device)
+			}
+		})
+	}
+}
+
 func TestCableResolveErrorsOnlyDisconnectWhenPortIsAbsent(t *testing.T) {
 	for _, tc := range []struct {
 		cause  string
