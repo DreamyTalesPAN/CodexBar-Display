@@ -246,9 +246,11 @@ type Server struct {
 	renderDisplayStream    func()
 	restartUsageService    func(context.Context) error
 	usageServiceRestarting atomic.Bool
-	displayStreamRunning   func() bool
-	firmwareUpdateActive   atomic.Bool
-	firmwareUpdateStartMu  sync.Mutex
+	// A successful check that arrived while a replacement was running.
+	usageServiceRestartPending atomic.Bool
+	displayStreamRunning       func() bool
+	firmwareUpdateActive       atomic.Bool
+	firmwareUpdateStartMu      sync.Mutex
 	// Serial ports already asked on behalf of a legacy WiFi VibeTV.
 	legacyCableProbeMu     sync.Mutex
 	legacyCableProbePorts  string

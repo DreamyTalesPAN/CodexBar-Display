@@ -234,3 +234,68 @@ func TestProviderSignInReportsASavedCookieItCannotLift(t *testing.T) {
 		t.Fatalf("the config must be left as it was: %s", raw)
 	}
 }
+
+// Two providers become ready one after the other. The second one's settings
+// change after the first restart's new usage service already read the
+// config, so that second check must still reach the supervisor once the
+// first restart is done; otherwise the display keeps the second provider's
+// old error.
+func TestAProviderCheckDuringAUsageServiceRestartIsNotDropped(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.probeExactProvider = func(_ context.Context, _ string, id string) codexbar.ProviderSetup {
+		return codexbar.ProviderSetup{
+			Status:    codexbar.ProviderReady,
+			CheckedAt: time.Now().UTC().Format(time.RFC3339Nano),
+			Engine:    codexbar.EngineReadiness{Status: codexbar.ProviderReady},
+			Providers: []codexbar.ProviderReadiness{{
+				ID: id, Label: id, Enabled: providerEnabled(true), Status: codexbar.ProviderReady,
+			}},
+		}
+	}
+	var configVersion atomic.Int32
+	configVersion.Store(1)
+	var serviceMu sync.Mutex
+	serviceConfig := int32(0)
+	childStarted := make(chan struct{}, 1)
+	releaseFirst := make(chan struct{})
+	var calls atomic.Int32
+	server.restartUsageService = func(context.Context) error {
+		// Like the supervisor: a new child reads the config when it starts.
+		current := configVersion.Load()
+		serviceMu.Lock()
+		if current != serviceConfig {
+			serviceConfig = current
+		}
+		serviceMu.Unlock()
+		if calls.Add(1) == 1 {
+			childStarted <- struct{}{}
+			<-releaseFirst
+		}
+		return nil
+	}
+	server.wakeDisplayStream = func() {}
+	retry := func(provider string) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/providers/retry?provider="+provider, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("check %s: status=%d body=%s", provider, rec.Code, rec.Body.String())
+		}
+	}
+
+	retry("codex")
+	<-childStarted
+	configVersion.Store(2) // Claude's settings change after the new child read the config.
+	retry("claude")
+	close(releaseFirst)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for server.usageServiceRestarting.Load() && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	serviceMu.Lock()
+	defer serviceMu.Unlock()
+	if serviceConfig != 2 {
+		t.Fatalf("the usage service must run on Claude's new settings: config=%d supervisor calls=%d", serviceConfig, calls.Load())
+	}
+}

@@ -436,9 +436,8 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 		// A reading the running usage service took before CodexBar's config
 		// changed can still look fresh, so it is no evidence that the service
 		// runs on the current config; the supervisor decides that.
-		if providerID != "" && s.restartUsageService != nil &&
-			s.usageServiceRestarting.CompareAndSwap(false, true) {
-			go s.replaceUsageService(providerID)
+		if providerID != "" && s.restartUsageService != nil {
+			s.requestUsageServiceReplace(providerID)
 		} else if s.wakeDisplayStream != nil {
 			s.wakeDisplayStream()
 		}
@@ -446,17 +445,39 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, providerSetupResponse{OK: true, ProviderSetup: setup})
 }
 
+// requestUsageServiceReplace asks the supervisor to check the usage service.
+// A request that arrives while a replacement runs is kept, not dropped: the
+// config may have changed after that replacement's child already read it,
+// so the running replacement asks the supervisor once more when it is done.
+func (s *Server) requestUsageServiceReplace(providerID string) {
+	s.usageServiceRestartPending.Store(true)
+	if s.usageServiceRestarting.CompareAndSwap(false, true) {
+		go s.replaceUsageService(providerID)
+	}
+}
+
 // replaceUsageService swaps the running usage service for a fresh one, then
 // collects again. "Check again" just read the provider with a fresh CodexBar,
 // so a running service started on older settings may be the stale part. The
 // supervisor replaces it only when CodexBar's config changed after it
-// started; one already running on the current config keeps collecting.
+// started; one already running on the current config keeps collecting. It
+// repeats while checks keep arriving during a restart.
 func (s *Server) replaceUsageService(providerID string) {
-	defer s.usageServiceRestarting.Store(false)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if err := s.restartUsageService(ctx); err != nil && s.logf != nil {
-		s.logf("VibeTV usage service restart after checking %s failed: %v", providerID, err)
+	for {
+		for s.usageServiceRestartPending.Swap(false) {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			err := s.restartUsageService(ctx)
+			cancel()
+			if err != nil && s.logf != nil {
+				s.logf("VibeTV usage service restart after checking %s failed: %v", providerID, err)
+			}
+		}
+		s.usageServiceRestarting.Store(false)
+		// A request stored just before the flag cleared saw a replacement
+		// still running and left; take it over unless another one did.
+		if !s.usageServiceRestartPending.Load() || !s.usageServiceRestarting.CompareAndSwap(false, true) {
+			break
+		}
 	}
 	if s.wakeDisplayStream != nil {
 		s.wakeDisplayStream()
