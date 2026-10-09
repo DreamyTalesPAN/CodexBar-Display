@@ -73,6 +73,7 @@ import {
 import { importSpriteFile, uniqueAssetPath } from "@/lib/theme-studio-assets";
 import {
   loadUserThemes,
+  clearThemeStudioRecovery,
   loadThemeStudioRecovery,
   writeThemeStudioRecovery,
   writeUserThemes,
@@ -1914,6 +1915,9 @@ export function AIThemeStudioScreen({
               variant="destructive"
               className="h-12 w-full"
               onClick={() => {
+                // Discarding is final: the draft must not be offered again later.
+                clearThemeStudioRecovery();
+                persistedDraft.current = null;
                 if (leaving) onBackToLibrary?.();
                 else if (pending) load(pending);
               }}

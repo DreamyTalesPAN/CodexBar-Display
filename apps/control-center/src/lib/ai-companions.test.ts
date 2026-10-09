@@ -80,7 +80,7 @@ describe("flexible picture layouts",()=>{
   const f=fixture(1);Object.assign(f.concept,{artHeight:240});
   const c=buildAIThemeCompanionCandidateFromRGBA(f.concept,new Uint8ClampedArray(240*240*4).fill(255),f.frames);
   expect(c.spec.primitives.some(p=>p.type==='rect')).toBe(false);
-  expect(c.spec.primitives.some(p=>p.binding==='session')).toBe(true);
+  expect(c.spec.primitives.some(p=>p.binding==='usageSlot1Percent')).toBe(true);
   const small=fixture(1);Object.assign(small.concept.companions![0],{y:190});
   expect(()=>small.candidate()).toThrow();
  });
@@ -92,7 +92,7 @@ describe("flexible picture layouts",()=>{
   expect(replaced.spec.primitives).toHaveLength(2);
   const plain=fixture(1);Object.assign(plain.concept,{hideUsage:true});
   const kept=applyAIThemeCandidate(document,plain.candidate(),'auto');
-  expect(kept.spec.primitives.some(p=>p.binding==='session'||p.text?.includes('{session}'))).toBe(false);
+  expect(kept.spec.primitives.some(p=>p.binding==='usageSlot1Percent')).toBe(false);
   expect(kept.spec.primitives.some(p=>p.type==='rect')).toBe(true);
  });
  it('leaves a companion beside the picture where the customer put it when the AI changes something else',()=>{
@@ -115,18 +115,18 @@ describe("flexible picture layouts",()=>{
   expect(replaced.assets['/themes/u/ai-pet-1.cba']).toEqual(document.assets['/themes/u/ai-pet-1.cba']);
   const legacy=structuredClone(document);
   legacy.assets[ART]={...legacy.assets[ART],data:legacy.assets[ART].data.replace('240 128','240 117')};
-  expect(applyAIThemeCandidate(legacy,fixture(1).candidate(),'auto').spec.primitives.some(p=>p.binding==='session')).toBe(true);
+  expect(applyAIThemeCandidate(legacy,fixture(1).candidate(),'auto').spec.primitives.some(p=>p.binding==='usageSlot1Percent')).toBe(true);
   expect(applyAIThemeCandidate(legacy,fixture(1).candidate(),'auto').spec.themeId).toBe('my-saved-theme');
  });
  it('adds the readouts again when a design without them is asked to show usage',()=>{
   const bare=fixture(1);Object.assign(bare.concept,{hideUsage:true});const c=bare.candidate();
   const document={assets:c.assets,spec:c.spec,packName:'Mine',usage:'live' as const};
-  expect(document.spec.primitives.some(p=>p.binding==='session')).toBe(false);
-  expect(applyAIThemeCandidate(document,fixture(1).candidate(),'auto').spec.primitives.some(p=>p.binding==='session')).toBe(false);
+  expect(document.spec.primitives.some(p=>p.binding==='usageSlot1Percent')).toBe(false);
+  expect(applyAIThemeCandidate(document,fixture(1).candidate(),'auto').spec.primitives.some(p=>p.binding==='usageSlot1Percent')).toBe(false);
   const asked=fixture(1);Object.assign(asked.concept,{showUsage:true});
   const shown=applyAIThemeCandidate(document,asked.candidate(),'auto');
-  expect(shown.spec.primitives.filter(p=>p.binding==='session')).toHaveLength(1);
-  expect(applyAIThemeCandidate(shown,asked.candidate(),'auto').spec.primitives.filter(p=>p.binding==='session')).toHaveLength(1);
+  expect(shown.spec.primitives.filter(p=>p.binding==='usageSlot1Percent')).toHaveLength(1);
+  expect(applyAIThemeCandidate(shown,asked.candidate(),'auto').spec.primitives.filter(p=>p.binding==='usageSlot1Percent')).toHaveLength(1);
  });
  it('draws the scene into a new design of the app instead of under its black backdrop',()=>{
   const fresh={assets:{},spec:createBlankThemeSpec(),packName:'New Theme',usage:'live' as const};
@@ -136,5 +136,14 @@ describe("flexible picture layouts",()=>{
   expect(made.spec.primitives[0].assetPath).toBe(ART);
   expect(made.spec.primitives.some(p=>p.type==='rect'&&p.color==='#000000'&&p.height===240)).toBe(false);
   expect(made.spec.primitives).toEqual(c.spec.primitives);
+ });
+ it('titles each usage lane with the limit\'s own name instead of a fixed word',()=>{
+  const c=fixture(1).candidate();
+  const texts=c.spec.primitives.filter(p=>p.type==='text').map(p=>p.text);
+  expect(texts).toEqual(expect.arrayContaining(['{usageSlot1Label}','{usageSlot2Label}','{usageSlot1Percent}%','{usageSlot2Percent}%']));
+  expect(texts.some(t=>/SESSION|WEEKLY|\{session\}|\{weekly\}/.test(t||''))).toBe(false);
+  expect(c.spec.primitives.filter(p=>p.type==='progress').map(p=>[p.binding,p.slot])).toEqual([['usageSlot1Percent',1],['usageSlot2Percent',2]]);
+  expect(c.spec.primitives.find(p=>p.text==='{usageSlot1Label}')).toMatchObject({fit:'shrink',width:136,slot:1});
+  expect(validateThemeSpec(c.spec,c.assets).errors).toEqual([]);
  });
 });

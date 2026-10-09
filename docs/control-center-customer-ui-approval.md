@@ -5474,3 +5474,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul reported that "a jellyfish drifting through the sea. Fullscreen, animated." produced the standard layout with the usage readouts below and a black area where the jellyfish should be, and asked for it to be fixed: the prompt should simply have made a full-screen jellyfish.
 - Approved customer-visible result: A request that describes a picture and says nothing about usage produces a full-screen picture without the session and weekly readouts; the readouts come only when the customer asks for usage, limits, bars or similar, or when the design being refined already shows them. In the Mac and Windows app a new theme no longer hides the generated picture and figures behind its black starting background.
+
+
+## 2026-10-09 — Usage lanes named by the limit, discarded drafts stay discarded
+
+- User approval: Paul asked for the review comment on fixed SESSION and WEEKLY labels to be fixed in this pull request, and for the review findings to be fixed where relevant.
+- Approved customer-visible result: A generated design titles each usage lane with the name of the limit it shows (for example Session, Weekly or a model limit) instead of the fixed words SESSION and WEEKLY, shrinking a long name to fit; values and bars follow the first and second limit the provider reports. A draft the customer explicitly discards is not offered again later.

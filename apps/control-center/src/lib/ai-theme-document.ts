@@ -274,10 +274,10 @@ export function conceptFromDocument(
       panelColor: document.spec.bgColor || "#101820",
       textColor,
       sessionColor:
-        document.spec.primitives.find((p) => p.binding === "session")?.color ||
+        document.spec.primitives.find((p) => p.binding === "session" || p.binding === "usageSlot1Percent")?.color ||
         "#CCFF00",
       weeklyColor:
-        document.spec.primitives.find((p) => p.binding === "weekly")?.color ||
+        document.spec.primitives.find((p) => p.binding === "weekly" || p.binding === "usageSlot2Percent")?.color ||
         "#CCFF00",
       progressStyle: "solid",
       borderRadius: 0,
