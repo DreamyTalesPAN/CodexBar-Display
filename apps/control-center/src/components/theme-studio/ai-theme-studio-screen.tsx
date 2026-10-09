@@ -64,7 +64,6 @@ import {
   type ThemeStudioDocument,
 } from "./theme-studio-editor-state";
 import {
-  buildThemePack,
   createBlankThemeSpec,
   importThemeSpec,
   normalizeThemeSpec,
@@ -98,7 +97,6 @@ import {
   pruneUnusedThemeAssets,
   adoptPicture,
   conceptFromDocument,
-  flattenCompanionSprites,
   setAIAnimationSpeed,
   spritePNG,
 } from "@/lib/ai-theme-document";
@@ -109,7 +107,7 @@ import type { ThemeStudioScreenProps } from "../theme-studio-screen";
 import { themeRenderPackUrl } from "../control-center-runtime";
 import { copyForHost } from "@/lib/customer-platform";
 import { validateThemeAgainstCapabilities } from "@/lib/theme-studio-capabilities";
-import { sendThemeToVibeTV } from "@/lib/theme-install";
+import { buildDeviceThemePack, sendThemeToVibeTV } from "@/lib/theme-install";
 
 function blank(): ThemeStudioDocument {
   return {
@@ -521,13 +519,7 @@ export function AIThemeStudioScreen({
   }
   function exportPack() {
     try {
-      const device = flattenCompanionSprites(document);
-      const pack = buildThemePack(
-        device.spec,
-        device.packName,
-        device.assets,
-        device.usage,
-      );
+      const pack = buildDeviceThemePack(document);
       download(new Uint8Array(pack.zipBytes), pack.fileName, "application/zip");
       setStatus("Theme pack exported. No device was contacted.");
     } catch {
@@ -549,11 +541,11 @@ export function AIThemeStudioScreen({
     setTransferStatus("Sending…");
     try {
       if (onInstallTheme) {
-        const installed = await onInstallTheme(flattenCompanionSprites(document));
+        const installed = await onInstallTheme(document);
         setTransferStatus(installed ? "Theme sent to VibeTV." : "Check the transfer status.");
         return;
       }
-      setTransferStatus(await sendThemeToVibeTV(flattenCompanionSprites(document), setTransferStatus, transferJob, (id) => {
+      setTransferStatus(await sendThemeToVibeTV(document, setTransferStatus, transferJob, (id) => {
         acceptedJob = id;
         setTransferJob(id);
         try {

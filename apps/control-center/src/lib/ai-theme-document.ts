@@ -54,16 +54,30 @@ export function applyAIThemeCandidate(
     // companion sprites leave manually placed artwork where the customer put it.
     const hasLoop = candidate.spec.primitives.some((p) => p.assetPath === LOOP);
     const incomingArt = candidate.spec.primitives.find((p) => p.assetPath === ART);
-    // A picture of another size is another layout: the old readouts would sit
-    // on top of it, so the new design replaces the old one as a whole.
+    // A picture of another size changes its generated layout. Independent
+    // customer elements keep their assets and their layer above/below the art.
     const drawnHeight = (path: Record<string, { data: string }>) => Number(path[ART]?.data.split("\n", 2)[1]?.split(" ")[1]);
     // Only full screen against not full screen counts: a legacy picture such
     // as the sample's is a little shorter than 128 and still the same layout.
     if (artwork && incomingArt && !candidate.preserveArtwork && (drawnHeight(candidate.assets) === 240) !== (drawnHeight(current.assets) === 240)) {
+      const usage = new Set(usageSectionIndices(current.spec.primitives).flat());
+      const artworkIndex = current.spec.primitives.indexOf(artwork);
+      const manual = current.spec.primitives.flatMap((p, i) => {
+        // Only the unchanged standard readout panel belongs to the template;
+        // resized or restyled shapes belong to the customer.
+        const panel = p.type === "rect" && p.x === 0 && p.y === 128 &&
+          p.width === 240 && p.height === 112 && p.borderRadius === 0 &&
+          p.color === p.bgColor && p.color === p.borderColor && !p.binding;
+        return managed(p.assetPath) || usage.has(i) || panel ? [] : [{ primitive: { ...p }, index: i }];
+      });
       const replaced: ThemeStudioDocument = {
-        assets: { ...candidate.assets },
+        assets: { ...current.assets, ...candidate.assets },
         // The design stays the same theme on the device and in the library.
-        spec: { ...candidate.spec, themeId: current.spec.themeId, themeRev: current.spec.themeRev },
+        spec: { ...candidate.spec, themeId: current.spec.themeId, themeRev: current.spec.themeRev, primitives: [
+          ...manual.filter((p) => p.index < artworkIndex).map((p) => p.primitive),
+          ...candidate.spec.primitives.map((p) => ({ ...p })),
+          ...manual.filter((p) => p.index > artworkIndex).map((p) => p.primitive),
+        ] },
         packName: current.packName,
         usage: current.usage,
       };
@@ -72,6 +86,7 @@ export function applyAIThemeCandidate(
         replaced.assets[path] = { ...current.assets[path] };
         setAIAnimationSpeed(replaced, path, replaced.spec.primitives.find((p) => p.assetPath === path)?.fps ?? 4);
       }
+      pruneUnusedThemeAssets(replaced);
       return replaced;
     }
     const keepsPlace = Boolean(artwork && incomingArt && !hasLoop);

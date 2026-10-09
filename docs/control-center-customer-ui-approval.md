@@ -5498,3 +5498,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul said the helper must be able to change existing themes and their images, and asked for the review findings to be fixed where relevant.
 - Approved customer-visible result: Asking the chat to move or resize the main picture of a library, imported or older design works like it does for a generated picture, instead of being refused as a protected image.
+
+## 2026-10-09: Theme Studio library transfer and fullscreen preservation
+
+- User approval: Marcus reviewed the two reproduced findings in PR #422 and explicitly requested both fixes. Installation and personal testing on his Mac must wait until the other chat finishes its Mac tests.
+- Approved customer-visible result: A saved animated design has the same composited background when installed from the library or sent from the editor. Switching the picture to fullscreen and back preserves independent manual text, images and their layer order. Existing controls and wording remain unchanged.
+- Validation: Targeted regression tests fail before the fixes and pass afterward; automated local tests and an isolated build are used without replacing the installed Mac app or writing to hardware. Personal Mac and physical-display testing is deferred as requested.

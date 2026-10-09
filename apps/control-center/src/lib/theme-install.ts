@@ -2,6 +2,14 @@ import { companionRequestUrl } from "@/components/control-center-runtime";
 import type { ApiError } from "@/components/control-center-types";
 import type { ThemeStudioDocument } from "@/components/theme-studio/theme-studio-editor-state";
 import { buildThemePack } from "./theme-studio";
+import { flattenCompanionSprites } from "./ai-theme-document";
+
+// Editor, library and ZIP export all send the same device-ready copy. Keep
+// transparent originals in the editable document so later edits stay correct.
+export function buildDeviceThemePack(document: ThemeStudioDocument) {
+  const device = flattenCompanionSprites(document);
+  return buildThemePack(device.spec, device.packName, device.assets, device.usage);
+}
 
 export async function pollThemeInstallJob<Job extends { phase: string }>({
   applyInstallJob,
@@ -53,7 +61,7 @@ export async function sendThemeToVibeTV(document: ThemeStudioDocument, onStatus:
     return payload;
   };
   if (!pendingJob) {
-    const pack = buildThemePack(document.spec, document.packName, document.assets, document.usage);
+    const pack = buildDeviceThemePack(document);
     const query = new URLSearchParams({
       async: "true", slot: document.usage || "live",
       themeId: pack.manifest.id, themeName: pack.manifest.name,

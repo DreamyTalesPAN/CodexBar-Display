@@ -17,8 +17,7 @@ import {
   resolveScreensaverUpgrade,
 } from "@/lib/active-theme-upgrade";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
-import { buildThemePack } from "@/lib/theme-studio";
-import { pollThemeInstallJob } from "@/lib/theme-install";
+import { buildDeviceThemePack, pollThemeInstallJob } from "@/lib/theme-install";
 import type { ThemeCatalogResponse, ThemeProduct } from "@/lib/themes";
 import { ControlCenterShell } from "./control-center-shell";
 import {
@@ -2475,7 +2474,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       spec,
       usage = "live",
     }: ThemeStudioInstallPayload): Promise<boolean> => {
-      const pack = buildThemePack(spec, packName, assets, usage);
+      const pack = buildDeviceThemePack({ spec, packName, assets, usage });
       return installTheme({
         packBytes: pack.zipBytes,
         themeId: pack.manifest.id,

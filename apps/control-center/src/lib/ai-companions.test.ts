@@ -95,6 +95,27 @@ describe("flexible picture layouts",()=>{
   expect(kept.spec.primitives.some(p=>p.binding==='usageSlot1Percent')).toBe(false);
   expect(kept.spec.primitives.some(p=>p.type==='rect')).toBe(true);
  });
+ it('keeps manual labels, images and their layers through fullscreen and back',()=>{
+  const current=fixture(1).candidate();
+  const customPath='/themes/u/custom.cbi';
+  const document={assets:{...current.assets,[customPath]:current.assets[ART]},spec:{...current.spec,primitives:[
+    {type:'rect' as const,x:0,y:0,width:240,height:240,color:'#123456'},
+    ...current.spec.primitives,
+    {type:'text' as const,x:10,y:200,text:'KEEP ME',fontSize:1,color:'#FFFFFF'},
+    {type:'sprite' as const,x:190,y:180,width:32,height:32,assetPath:customPath},
+  ]},packName:'Mine',usage:'live' as const};
+  const original=structuredClone(document);
+  const expanded=applyAIThemeCandidate(document,full(),'auto');
+  const reduced=applyAIThemeCandidate(expanded,fixture(1).candidate(),'auto');
+  for(const result of [expanded,reduced]) {
+    expect(result.spec.primitives[0]).toEqual(document.spec.primitives[0]);
+    expect(result.spec.primitives.slice(-2)).toEqual(document.spec.primitives.slice(-2));
+    expect(result.assets[customPath]).toEqual(document.assets[customPath]);
+  }
+  expect(expanded.spec.primitives.find(p=>p.assetPath===ART)?.height).toBe(240);
+  expect(reduced.spec.primitives.find(p=>p.assetPath===ART)?.height).toBe(128);
+  expect(document).toEqual(original);
+ });
  it('leaves a companion beside the picture where the customer put it when the AI changes something else',()=>{
   const f=fixture(1);const first=f.candidate();
   const document={assets:first.assets,spec:first.spec,packName:'Mine',usage:'live' as const};

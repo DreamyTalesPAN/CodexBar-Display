@@ -167,7 +167,7 @@ try {
   await create.click();
   await page.getByRole("log",{name:"Conversation",exact:true}).getByText("A little character joins the scene.",{exact:true}).last().waitFor();
   assert.equal(requests.at(-1).referenceImages.length,1);
-  assert.deepEqual(layoutRequests.at(-1).referenceImages,requests.at(-1).referenceImages);
+  assert.deepEqual(layoutRequests.findLast(r=>r.prompt===requests.at(-1).prompt).referenceImages,requests.at(-1).referenceImages);
   assert.equal(await page.getByRole("img",{name:"reference.png",exact:true}).count(),0);
   const character=page.getByLabel("Select Animated character 2",{exact:true});
   await character.click();
@@ -181,7 +181,7 @@ try {
   await create.waitFor();
   assert.equal(await character.getAttribute("x"),characterX);
   assert(requests.at(-1).previous.referenceImageBase64,"Director sees actual composed artwork");
-  assert(layoutRequests.at(-1).layout.some((element)=>element.selected),"Selected context reaches the planner");
+  assert(layoutRequests.findLast(r=>r.prompt===requests.at(-1).prompt).layout.some((element)=>element.selected),"Selected context reaches the planner");
   assert(requests.at(-1).history.at(-1).content.includes("Animated character"));
   assert(requests.at(-1).previous.animationSheetBase64);
   console.log("PASS same input with selected figure, current visual reference and preserved character position");
@@ -301,7 +301,7 @@ try {
   console.log("PASS explicit ZIP transfer, accepted-job recovery after reload and actionable failure without retries (mocked device)");
 
   // Another tab can have a connected helper but no billing consent yet.
-  await page.evaluate(()=>sessionStorage.clear());
+  await page.evaluate(()=>localStorage.removeItem("vibetv.aiTheme.consent"));
   await page.reload();
   await input.waitFor();
   kind="static";
