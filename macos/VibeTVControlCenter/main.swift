@@ -1433,9 +1433,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             presentInstallationRequiredAlert()
             return
         }
-        Task { [weak self] in
-            _ = await self?.registerCurrentAppAsURLHandler()
-        }
 #if canImport(Sparkle)
         _ = updaterController
 #endif
@@ -3176,6 +3173,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         clearPendingNativeUpdate()
 
         if legacyStates.isEmpty {
+            if legacyApps.isEmpty {
+                _ = await registerCurrentAppAsURLHandler()
+            }
             let migratedLegacyApps = await migrateLegacyAppsAfterHealthyRuntime(legacyApps)
             guard migratedLegacyApps else {
                 return .nativeRuntimeReady
@@ -3210,6 +3210,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         }
 
         recordCurrentRuntimeBundleVersion()
+        if legacyApps.isEmpty {
+            _ = await registerCurrentAppAsURLHandler()
+        }
         NSLog(
             "VibeTV Control Center migration completed with healthy Companion version \(expectedVersion); backup=\(backupRoot.path)"
         )
