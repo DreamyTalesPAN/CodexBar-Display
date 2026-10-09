@@ -19,17 +19,17 @@ const reportedCredentialName = `[A-Za-z0-9._-]*(?:token|cookie|secret|key|sessio
 // it: those words are the guidance, and a visible marker is honest where a
 // silently dropped sentence would not be.
 var (
-	reportedHomePath = regexp.MustCompile(`(?i)/Users/[^/\s)]+`)
+	// A macOS home folder may hold spaces and brackets too (`/Users/Jane
+	// Doe/`), so the component goes through the next separator when one
+	// follows right after a non-space; otherwise see homeNameEnd.
+	reportedHomePath = regexp.MustCompile(`(?i)/Users/(?:[^/\r\n"]*[^/\s"]/|[^/\r\n"]+)`)
 	// The Windows engine names files under the profile folder, whose name is
 	// the account name: `C:\Users\Alice\.claude\...`, in JSON also with
 	// doubled backslashes. A folder name may hold spaces, apostrophes and
 	// brackets (`Jane O'Doe`, `Jane (Work)`), so the whole component goes:
 	// through the next separator when one follows (a colon cannot be part of
-	// the name, which keeps a later `D:\` out). Without a separator the name
-	// may also hold `)`, `]`, `}`, `,` and `;`, so the match runs to the
-	// next character a name cannot hold and windowsHomeNameEnd picks the end.
-	// Words after an unterminated name go with it: a support report may lose
-	// some prose but never part of the account name.
+	// the name, which keeps a later `D:\` out). Without a separator the
+	// match runs to the next character a name cannot hold; see homeNameEnd.
 	reportedWindowsHomePath = regexp.MustCompile(`(?i)\b[A-Z]:\\+Users\\+(?:[^\\\r\n"<>|:*?]+?\\|[^\\\r\n"<>|:*?]+)`)
 	// URL userinfo carries credentials before the host (`https://token@host` or
 	// `https://user:pass@host`).
@@ -78,24 +78,14 @@ var (
 
 const reportedRedacted = "[redacted]"
 
-// windowsHomeNameEnd returns where the profile name of an unterminated
-// `C:\Users\<name>` match ends. `)`, `]`, `}`, `,` and `;` are legal
-// inside the name, so one of them ends it only where no further name text
-// follows it: at the end of the match, before whitespace, or before more
-// closing punctuation. `(C:\Users\Jane)Doe)` keeps the whole `Jane)Doe` in
-// the redaction, and `(C:\Users\Jane O'Doe), try again` keeps the prose.
-// Without such a point the whole rest of the match is the name.
-func windowsHomeNameEnd(match string) int {
-	const closing = ")]},;"
-	for i := 0; i < len(match); i++ {
-		if !strings.ContainsRune(closing, rune(match[i])) {
-			continue
-		}
-		if i+1 == len(match) || strings.ContainsRune(" \t"+closing+".", rune(match[i+1])) {
-			return i
-		}
-	}
-	return len(match)
+// homeNameEnd returns where the profile name of an unterminated home-path
+// match ends. A name may hold spaces, brackets, commas and semicolons, so
+// no character inside the match reliably ends it: everything up to a
+// trailing run of closing punctuation and whitespace counts as the name.
+// A support report may lose some prose after such a path, but never part
+// of the account name (#572 review).
+func homeNameEnd(match string) int {
+	return len(strings.TrimRight(match, " \t)]},;."))
 }
 
 // reportedProviderMessage keeps the usage service's sentence and replaces the
@@ -112,9 +102,14 @@ func reportedProviderMessage(raw string) string {
 		if strings.HasSuffix(match, `\`) {
 			return `~\`
 		}
-		return "~" + match[windowsHomeNameEnd(match):]
+		return "~" + match[homeNameEnd(match):]
 	})
-	message = reportedHomePath.ReplaceAllString(message, "~")
+	message = reportedHomePath.ReplaceAllStringFunc(message, func(match string) string {
+		if strings.HasSuffix(match, "/") {
+			return "~/"
+		}
+		return "~" + match[homeNameEnd(match):]
+	})
 	message = reportedURLUserinfo.ReplaceAllString(message, "${1}"+reportedRedacted+"@")
 	message = reportedCookieHeader.ReplaceAllString(message, "${1}"+reportedRedacted)
 	message = reportedStructuredCredential.ReplaceAllString(message, "${1}\""+reportedRedacted+"\"")

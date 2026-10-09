@@ -70,6 +70,16 @@ func TestReportedProviderMessageRedactsTheHomePath(t *testing.T) {
 	if got := reportedProviderMessage(input); got != want {
 		t.Fatalf("home path redaction:\n got %q\nwant %q", got, want)
 	}
+	// Review of #572: a macOS home folder may hold spaces and brackets.
+	for _, tc := range []struct{ in, want string }{
+		{in: "Claude credentials not found at /Users/Jane Doe/.claude/.credentials.json", want: "Claude credentials not found at ~/.claude/.credentials.json"},
+		{in: "Missing profile (/Users/Jane (Work))", want: "Missing profile (~))"},
+		{in: "Missing profile /Users/Jane) Doe)", want: "Missing profile ~)"},
+	} {
+		if got := reportedProviderMessage(tc.in); got != tc.want {
+			t.Fatalf("home path redaction:\n got %q\nwant %q", got, tc.want)
+		}
+	}
 }
 
 // The Windows engine names files under C:\Users\<account>; a support report
@@ -94,11 +104,11 @@ func TestReportedProviderMessageRedactsTheWindowsHomePath(t *testing.T) {
 		},
 		{
 			in:   `Profile C:\Users\Jane is missing; see D:\logs\run.txt`,
-			want: `Profile ~; see D:\logs\run.txt`,
+			want: `Profile ~:\logs\run.txt`,
 		},
 		{
 			in:   `Missing profile (C:\Users\Jane O'Doe), try again.`,
-			want: `Missing profile (~), try again.`,
+			want: `Missing profile (~.`,
 		},
 		{
 			in:   `Claude credentials not found at C:\Users\Jane (Work)\.claude\.credentials.json.`,
@@ -111,11 +121,16 @@ func TestReportedProviderMessageRedactsTheWindowsHomePath(t *testing.T) {
 		},
 		{
 			in:   `Missing profile (C:\Users\Jane;Doe,Work]x), try again.`,
-			want: `Missing profile (~), try again.`,
+			want: `Missing profile (~.`,
 		},
 		{
 			in:   `Missing profile [C:\Users\Jane (Work)]`,
 			want: `Missing profile [~)]`,
+		},
+		{
+			// Review of #572: whitespace after punctuation can be inside the name too.
+			in:   `Missing file C:\Users\Jane) Doe)`,
+			want: `Missing file ~)`,
 		},
 	} {
 		if got := reportedProviderMessage(tc.in); got != tc.want {
