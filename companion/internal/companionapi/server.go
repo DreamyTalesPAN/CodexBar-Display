@@ -1450,12 +1450,18 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	cableAbsenceUnconfirmed := false
 	if cableMode {
 		device.Capabilities = cableCapabilityBlock(cfg.DeviceTransports)
-		hello, helloKnown := s.currentCableHello()
-		// An unplugged port is answered before the lock. On Windows a probe
-		// stuck on the old handle holds it for its whole hello window.
+		// An unplugged port is answered before any lock. On Windows a probe
+		// stuck on the old handle holds the device and sender locks for its
+		// whole hello window. The sender drops its hello when that handle
+		// closes, so skipping the cached hello here loses nothing lasting.
 		var vanishedErr error
 		if strings.TrimSpace(cfg.DeviceID) != "" && s.cablePortVanished != nil {
 			vanishedErr = s.cablePortVanished()
+		}
+		var hello protocol.DeviceHello
+		helloKnown := false
+		if vanishedErr == nil {
+			hello, helloKnown = s.currentCableHello()
 		}
 		// Resolution reads a fresh matching hello and repopulates the sender
 		// after a failed probe cleared it. A cached hello is metadata, not a
@@ -1464,7 +1470,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			s.firmwareUpdateStartMu.Lock()
 		}
 		_, updateRunning := s.activeFirmwareUpdateJob()
-		cableAbsenceUnconfirmed = updateRunning || s.themeInstallInFlight()
+		// Maintenance skips the probe, which leaves absence unconfirmed. A
+		// vanished port is current proof of absence even then.
+		cableAbsenceUnconfirmed = vanishedErr == nil && (updateRunning || s.themeInstallInFlight())
 		port := ""
 		if !cableAbsenceUnconfirmed && strings.TrimSpace(cfg.DeviceID) != "" {
 			portErr := vanishedErr
@@ -1472,9 +1480,16 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 				port, portErr = s.resolveCablePort("", cfg.DeviceID)
 			}
 			if portErr == nil {
-				reachable = true
 				if freshHello, ok := s.currentCableHello(); ok {
 					hello, helloKnown = freshHello, true
+				}
+				// The control resolver also accepts the device in WiFi mode so
+				// it can be switched back. Only a Cable-mode hello proves the
+				// display stream can use it; anything else stays undecided.
+				if helloKnown && cableHelloMatchesConfig(hello, cfg.DeviceID) {
+					reachable = true
+				} else {
+					cableAbsenceUnconfirmed = true
 				}
 			} else {
 				// A current busy or unanswered probe cannot refresh an old

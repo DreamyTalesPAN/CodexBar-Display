@@ -152,6 +152,79 @@ func TestStatusReportsUnpluggedCableWhileAProbeHoldsTheDeviceLock(t *testing.T) 
 	}
 }
 
+func cableStatusForTest(t *testing.T, server *Server) deviceInfo {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("status body: %v", err)
+	}
+	return got.Device
+}
+
+// A probe stuck on the unplugged handle also holds the sender lock that the
+// cached hello read needs.
+func TestStatusReportsUnpluggedCableWithoutWaitingOnTheSender(t *testing.T) {
+	cfg := runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: "pair-token"}
+	server := newTestServer(t, cfg)
+	stuck := make(chan struct{})
+	defer close(stuck)
+	server.currentCableHello = func() (protocol.DeviceHello, bool) {
+		<-stuck
+		return cableHelloForTest(cfg.DeviceID), true
+	}
+	server.cablePortVanished = func() error { return cableResolveTestError(errcode.TransportSerialPortNotFound) }
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{DeviceID: cfg.DeviceID, Running: true, Healthy: true, Target: cableDeviceTarget, LastTarget: cableDeviceTarget, LastSentAt: time.Now().UTC().Format(time.RFC3339)}
+	}
+	done := make(chan deviceInfo, 1)
+	go func() { done <- cableStatusForTest(t, server) }()
+	select {
+	case got := <-done:
+		if got.Connected || got.Stream == nil || got.Stream.ErrorCode != "device_not_found" {
+			t.Fatalf("unplugged Cable not reported: %+v", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("status waited behind the sender lock")
+	}
+}
+
+// Maintenance skips the probe, but a vanished port still proves the unplug.
+func TestStatusReportsUnpluggedCableDuringThemeInstall(t *testing.T) {
+	cfg := runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: "pair-token"}
+	server := newTestServer(t, cfg)
+	server.themeInstallActive = true
+	server.cablePortVanished = func() error { return cableResolveTestError(errcode.TransportSerialPortNotFound) }
+	server.resolveCablePort = func(string, string) (string, error) {
+		t.Error("an unplugged port must not be probed")
+		return "", errors.New("probed")
+	}
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{DeviceID: cfg.DeviceID, Running: true, Healthy: true, Target: cableDeviceTarget, LastTarget: cableDeviceTarget, LastSentAt: time.Now().UTC().Format(time.RFC3339)}
+	}
+	if got := cableStatusForTest(t, server); got.Connected || got.Stream == nil || got.Stream.ErrorCode != "device_not_found" {
+		t.Fatalf("unplug during theme install not reported: %+v", got)
+	}
+}
+
+// The control resolver accepts a WiFi-mode device so it can be switched back.
+// That answer must not count as a live Cable connection.
+func TestStatusDoesNotCountAWiFiModeHelloAsCableConnected(t *testing.T) {
+	cfg := runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: "pair-token"}
+	server := newTestServer(t, cfg)
+	hello := cableHelloForTest(cfg.DeviceID)
+	hello.Capabilities.Transport.Mode = "wifi"
+	server.currentCableHello = func() (protocol.DeviceHello, bool) { return hello, true }
+	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{DeviceID: cfg.DeviceID, Running: true, Target: cableDeviceTarget, ErrorCode: "device_not_found"}
+	}
+	if got := cableStatusForTest(t, server); got.Connected || got.LastSeenAt != "" {
+		t.Fatalf("WiFi-mode hello counted as Cable connection: %+v", got)
+	}
+}
+
 // The user's 15-second unplug must override the cached identity and last frame.
 func TestStatusDisconnectsCableWhenPortDisappearsAndReconnects(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{
