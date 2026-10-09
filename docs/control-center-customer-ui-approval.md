@@ -5220,3 +5220,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Paul delegated VibeTV issue selection, implementation, and testing for the unattended nightshift on 2026-10-09. He has not personally reviewed this exact refinement. The live shop readback showed the three free digital theme products are deliberately not purchasable, so the earlier entry's "available" condition would hide the action from all of them.
 - Approved customer-visible result: The hosted install page offers `Open Control Center` for a free Shopify catalog theme with a safe 3–64 character ID and complete pack URL, checksum, and size metadata. It keeps the app download as a secondary action. A missing, paid, or untrusted theme retains the download page without the deep link. The action opens the local theme page; it does not install a theme by itself.
 - Scope: `apps/control-center/src/components/setup/mac-app-download-screen.tsx`, its focused test, and this approval record. This records the delegated branch decision only, not deployment, merge, or release.
+
+## 2026-10-09 — Customer flows confirm setup reset (#546)
+
+- User approval: Paul delegated the overnight VibeTV issue work and the customer-visible decision for the `Run setup again?` confirmation recorded above. He has not reviewed this test-only follow-up.
+- Approved customer-visible result: The existing Settings button opens the confirmation dialog. Only its `Run setup again` action resets setup; the customer flow keeps the same device discovery and recovery behavior after confirmation. This entry adds no new customer text or control.
+- Scope: Update the browser customer-flow tests in `apps/control-center/scripts/test-customer-flows.mjs` to confirm the dialog before expecting setup reset, and this approval record. This is a branch test update, not merge or release approval.
