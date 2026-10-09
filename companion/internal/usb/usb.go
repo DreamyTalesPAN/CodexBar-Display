@@ -104,6 +104,13 @@ func OpenCablePortVanished() error {
 	return defaultSender.cablePortVanished()
 }
 
+// LastCablePort returns the port the VibeTV last answered on, or "" before the
+// first frame or identified hello. It does not wait on serial calls.
+func LastCablePort() string {
+	path, _ := defaultSender.cablePath.Load().(string)
+	return path
+}
+
 func SetConnectionMode(port, deviceID, mode string) error {
 	return defaultSender.SetConnectionMode(port, deviceID, mode)
 }

@@ -212,6 +212,7 @@ type Server struct {
 	runSetup               func(context.Context, setup.Options) error
 	resolveCablePort       func(string, string) (string, error)
 	cablePortVanished      func() error
+	lastCablePort          func() string
 	listCablePorts         func() ([]string, error)
 	discoverCableDevices   func(context.Context) ([]usb.CableDevice, error)
 	readCableHello         func(string) (protocol.DeviceHello, error)
@@ -1026,6 +1027,7 @@ func New(opts Options) (*Server, error) {
 		runSetup:               setup.Run,
 		resolveCablePort:       usb.ResolveVibeTVControlPort,
 		cablePortVanished:      usb.OpenCablePortVanished,
+		lastCablePort:          usb.LastCablePort,
 		listCablePorts:         usb.ListPorts,
 		discoverCableDevices:   usb.DiscoverVibeTVs,
 		readCableHello:         usb.ReadDeviceHello,
@@ -1477,7 +1479,15 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		if !cableAbsenceUnconfirmed && strings.TrimSpace(cfg.DeviceID) != "" {
 			portErr := vanishedErr
 			if portErr == nil {
-				port, portErr = s.resolveCablePort("", cfg.DeviceID)
+				// Status polls must answer within the UI timeout. Asking only the
+				// port the VibeTV last used keeps silent adapters from each
+				// costing a full hello window. Before the first frame no port
+				// is known yet, and the full search finds it.
+				lastPort := ""
+				if s.lastCablePort != nil {
+					lastPort = s.lastCablePort()
+				}
+				port, portErr = s.resolveCablePort(lastPort, cfg.DeviceID)
 			}
 			if portErr == nil {
 				if freshHello, ok := s.currentCableHello(); ok {

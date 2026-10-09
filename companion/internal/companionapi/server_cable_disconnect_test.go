@@ -407,3 +407,27 @@ func TestCableResolveErrorsOnlyDisconnectWhenPortIsAbsent(t *testing.T) {
 		})
 	}
 }
+
+// A known VibeTV port is probed alone, so silent adapters cannot push a
+// status poll past the UI timeout.
+func TestStatusProbesOnlyTheLastKnownCablePort(t *testing.T) {
+	cfg := runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: "pair-token"}
+	server := newTestServer(t, cfg)
+	server.currentCableHello = func() (protocol.DeviceHello, bool) { return cableHelloForTest(cfg.DeviceID), true }
+	server.lastCablePort = func() string { return "COM3" }
+	var asked []string
+	server.resolveCablePort = func(explicit, _ string) (string, error) {
+		asked = append(asked, explicit)
+		return explicit, nil
+	}
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{DeviceID: cfg.DeviceID, Running: true, Target: cableDeviceTarget, ErrorCode: "device_not_found"}
+	}
+	got := cableStatusForTest(t, server)
+	if len(asked) != 1 || asked[0] != "COM3" {
+		t.Fatalf("status probed %q, want only COM3", asked)
+	}
+	if !got.Connected {
+		t.Fatalf("answer on the last port not counted: %+v", got)
+	}
+}
