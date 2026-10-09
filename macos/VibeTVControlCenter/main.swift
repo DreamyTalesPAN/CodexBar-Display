@@ -1433,6 +1433,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             presentInstallationRequiredAlert()
             return
         }
+        Task { [weak self] in
+            _ = await self?.registerCurrentAppAsURLHandler()
+        }
 #if canImport(Sparkle)
         _ = updaterController
 #endif
@@ -4173,6 +4176,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     }
 
     private func registerCurrentAppAsURLHandler() async -> Bool {
+        guard isInstalledApplicationsBundle(Bundle.main.bundleURL) else {
+            NSLog("VibeTV Control Center refused to register a URL handler outside Applications")
+            return false
+        }
         let errorDescription: String? = await withCheckedContinuation { continuation in
             NSWorkspace.shared.setDefaultApplication(
                 at: Bundle.main.bundleURL,
