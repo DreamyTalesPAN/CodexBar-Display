@@ -5750,3 +5750,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: The same five updates appear as a compact, divided list. The large icon tiles are gone, titles and descriptions are smaller, and the links sit quietly beside their entries on wider windows. The heading reads `What's new in version <installed version>` when the version is known, saving a separate line. The footer and its Got it button stay visible when the list scrolls.
 - Scope: the What's new dialog and its entry data only. The wording, navigation, ordering, and notice behavior are unchanged.
 - What's new: none — this changes only the design of the existing notice
+
+## 2026-10-09 — Keep the What's new layout focused on desktop
+
+- User approval: Paul clarified that customers use the app on desktop, so the notice does not need a separate mobile design.
+- Approved customer-visible result: Links remain beside their entries and the footer keeps its standard desktop button layout. A short desktop window still scrolls only the update list.
+- Scope: layout classes in `apps/control-center/src/components/whats-new-dialog.tsx` and this approval record.
+- What's new: none — this simplifies the design of the existing notice

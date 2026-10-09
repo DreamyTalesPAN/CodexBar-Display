@@ -54,7 +54,7 @@ export function WhatsNewDialog({
         </DialogHeader>
         <ul className="min-h-0 overflow-y-auto overscroll-contain px-5">
           {entries.map((entry) => (
-            <li className="flex flex-col gap-1 border-t py-3.5 first:border-t-0 sm:flex-row sm:items-start sm:justify-between sm:gap-4" key={entry.id}>
+            <li className="flex items-start justify-between gap-4 border-t py-3.5 first:border-t-0" key={entry.id}>
               <div className="min-w-0">
                 <h3 className="text-sm leading-5 font-semibold">{entry.title}</h3>
                 <p className="mt-0.5 text-[13px] leading-5 text-muted-foreground">
@@ -63,7 +63,7 @@ export function WhatsNewDialog({
               </div>
               {entry.theme || entry.inSettings ? (
                 <Button
-                  className="h-11 self-start px-0 text-xs text-[var(--vibetv-support)] no-underline hover:underline sm:shrink-0"
+                  className="h-11 shrink-0 px-0 text-xs text-[var(--vibetv-support)] no-underline hover:underline"
                   onClick={entry.theme ? onShowThemes : onShowSettings}
                   size="sm"
                   type="button"
@@ -75,11 +75,11 @@ export function WhatsNewDialog({
             </li>
           ))}
         </ul>
-        <DialogFooter className="m-0 flex-col-reverse items-stretch rounded-none bg-popover px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+        <DialogFooter className="m-0 flex-row items-center justify-between rounded-none bg-popover px-5 py-3.5">
           <p className="text-xs text-muted-foreground">
             You can read this again under Updates.
           </p>
-          <Button className="w-full sm:w-auto" onClick={onClose} ref={gotIt} type="button">
+          <Button onClick={onClose} ref={gotIt} type="button">
             Got it
           </Button>
         </DialogFooter>
