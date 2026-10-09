@@ -240,7 +240,7 @@ export function AIThemeStudioScreen({
       });
     const hydration = window.setTimeout(() => {
       try {
-        setConsent(sessionStorage.getItem("vibetv.aiTheme.consent") === "1");
+        setConsent(localStorage.getItem("vibetv.aiTheme.consent") === "1");
         if (!nativeInstall) setTransferJob(sessionStorage.getItem("vibetv.themeStudio.transferJob"));
       } catch {
         /* Keep consent and transfer state per-page when storage is unavailable. */
@@ -877,8 +877,8 @@ export function AIThemeStudioScreen({
   function updateConsent(value: boolean) {
     setConsent(value);
     try {
-      if (value) sessionStorage.setItem("vibetv.aiTheme.consent", "1");
-      else sessionStorage.removeItem("vibetv.aiTheme.consent");
+      if (value) localStorage.setItem("vibetv.aiTheme.consent", "1");
+      else localStorage.removeItem("vibetv.aiTheme.consent");
     } catch {
       /* Never store a key or block editing on browser storage. */
     }

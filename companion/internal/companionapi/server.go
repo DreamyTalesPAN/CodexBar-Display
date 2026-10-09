@@ -196,6 +196,9 @@ type Options struct {
 	DisplayStreamRunning func() bool
 	// Logf writes one line to the runtime's log. Nil outside the runtime.
 	Logf func(string, ...any)
+	// Where Theme Studio keeps the customer's verified OpenAI key across
+	// restarts. Nil (tests, tools) keeps it in memory only.
+	AIThemeSecrets SecretStore
 }
 
 type Server struct {
@@ -1014,6 +1017,7 @@ func New(opts Options) (*Server, error) {
 	}
 	ai := &aiThemeServer{aiTheme: newAIThemeState(nil, nil)}
 	ai.aiTheme.enabled = true
+	ai.aiTheme.rememberAcross(opts.AIThemeSecrets)
 	server := &Server{
 		aiThemeServer:          ai,
 		addr:                   addr,

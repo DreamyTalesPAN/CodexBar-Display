@@ -33,7 +33,7 @@ try {
   });
   await page.addInitScript((document) => {
     localStorage.setItem("vibetv.controlCenter.userThemes", JSON.stringify({ schemaVersion: 1, themes: [{ id: "fixture", updatedAt: "2026-09-09T09:00:00Z", document }] }));
-    sessionStorage.setItem("vibetv.aiTheme.consent", "1");
+    localStorage.setItem("vibetv.aiTheme.consent", "1");
   }, fixture);
   // All AI and credential traffic is intercepted. Never bill an account.
   await page.route("**/api/local-companion/v1/ai-theme/**", async (route) => {

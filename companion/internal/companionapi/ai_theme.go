@@ -126,13 +126,36 @@ type aiThemeCredentialRequest struct {
 }
 
 type aiThemeState struct {
-	enabled              bool
-	devOrigins           bool
-	store                SecretStore
+	enabled    bool
+	devOrigins bool
+	store      SecretStore
+	// Keeps the verified key across restarts; nil keeps it in memory only.
+	durable              SecretStore
 	client               *http.Client
 	mu                   sync.Mutex
 	active               bool
 	verificationRequired bool
+}
+
+// A key is written to the durable store only after OpenAI accepted it, so what
+// comes back after a restart is ready to use without another check.
+func (a *aiThemeState) rememberAcross(durable SecretStore) {
+	if durable == nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.durable = durable
+	if key, err := durable.Get("openai"); err == nil && a.store.Set("openai", key) == nil {
+		a.verificationRequired = false
+	}
+}
+
+// Called with the lock held.
+func (a *aiThemeState) forgetDurable() {
+	if a.durable != nil {
+		_ = a.durable.Delete("openai")
+	}
 }
 
 func newAIThemeState(store SecretStore, client *http.Client) *aiThemeState {
@@ -265,6 +288,8 @@ func (s *aiThemeServer) handleAIThemeCredential(w http.ResponseWriter, r *http.R
 		if err == nil {
 			s.aiTheme.verificationRequired = true
 		}
+		// The key kept so far is replaced; the new one is kept once it is verified.
+		s.aiTheme.forgetDurable()
 		s.aiTheme.mu.Unlock()
 		if err != nil {
 			writeAIThemeError(w, http.StatusInternalServerError, "credential_store_failed")
@@ -275,6 +300,7 @@ func (s *aiThemeServer) handleAIThemeCredential(w http.ResponseWriter, r *http.R
 		s.aiTheme.mu.Lock()
 		err := s.aiTheme.store.Delete("openai")
 		s.aiTheme.verificationRequired = true
+		s.aiTheme.forgetDurable()
 		s.aiTheme.mu.Unlock()
 		if err != nil && !errors.Is(err, ErrSecretNotFound) {
 			writeAIThemeError(w, http.StatusInternalServerError, "credential_delete_failed")
@@ -314,6 +340,10 @@ func (s *aiThemeServer) handleAIThemeVerify(w http.ResponseWriter, r *http.Reque
 	unchanged := currentErr == nil && current == key
 	if unchanged {
 		s.aiTheme.verificationRequired = false
+		if s.aiTheme.durable != nil {
+			// Not being able to keep the key only means asking for it again later.
+			_ = s.aiTheme.durable.Set("openai", key)
+		}
 	}
 	s.aiTheme.mu.Unlock()
 	if !unchanged {

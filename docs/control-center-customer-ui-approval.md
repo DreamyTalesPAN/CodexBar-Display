@@ -5438,3 +5438,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul asked for the review findings on this pull request to be fixed where relevant.
 - Approved customer-visible result: A figure beside the picture no longer blocks AI layout changes. Text the AI makes longer near the right edge is widened only up to the edge. Starting from the built-in example keeps its layout when the AI redraws the scene. Making a saved design full screen keeps it the same theme and keeps an unchanged figure exactly as it was. Moving the picture in the chat carries the example's animated figure along, a picture with an attached motion stays in place, and a move that would not fit is declined. A request that fails or is cancelled appears in the chat only once it has an answer, and reference images are not sent again after an answer. Keyboard shortcuts do nothing while the leave dialog is open.
+
+
+## 2026-10-09 — OpenAI key survives restarts, readouts stay over animated figures
+
+- User approval: Paul asked for issues #577 and #578 to be fixed in this pull request, because merging it releases the whole feature.
+- Approved customer-visible result: The OpenAI key a customer connected and OpenAI accepted is kept across restarts of the app: in the login keychain on the Mac, and on Windows in a file only that Windows user can decrypt. A key that was not verified, was replaced or was disconnected is not kept. The agreement to send prompts to OpenAI is remembered with it, so after a restart Create works without entering anything again; disconnecting clears both. This replaces the earlier rule that the key must be entered again after a restart. On VibeTV, text and usage bars placed over an animated figure stay visible while the figure moves; this needs the firmware of this pull request.
