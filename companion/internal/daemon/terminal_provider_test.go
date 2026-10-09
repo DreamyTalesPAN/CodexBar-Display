@@ -217,3 +217,40 @@ func TestTerminalPairMemberDropsPairLastGood(t *testing.T) {
 		t.Fatal("a terminal provider outside the pair dropped the pair last-good")
 	}
 }
+
+// The inventory lists single providers only. A kept Two at once frame stays
+// while both members are switched on and goes once either is switched off.
+func TestInventoryKeepsPairLastGoodUntilAMemberIsOff(t *testing.T) {
+	prepareFastTestEnv(t)
+	now := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	pair := protocol.Frame{Provider: "claude+codex", Label: "Claude + Codex", Session: 40, Weekly: 40}
+	if err := persistLastGood(pair, now); err != nil {
+		t.Fatalf("persist: %v", err)
+	}
+	state := &runtimeState{
+		selector:    codexbar.NewProviderSelector(),
+		lastGood:    pair,
+		lastGoodAt:  now,
+		hasLastGood: true,
+	}
+	collector := &providerCollector{
+		inventoryKnown:   true,
+		inventoryEnabled: map[string]struct{}{"claude": {}, "codex": {}},
+	}
+	logf := runtimeDeps{logf: func(string, ...any) {}}
+	invalidateLastGoodDisabledByInventory(state, collector, logf)
+	if !state.hasLastGood {
+		t.Fatal("a pair of two switched-on providers was cleared as switched off")
+	}
+	if _, _, ok := loadPersistedLastGoodAnyAge(); !ok {
+		t.Fatal("the persisted pair was cleared while both providers are on")
+	}
+	collector.inventoryEnabled = map[string]struct{}{"claude": {}}
+	invalidateLastGoodDisabledByInventory(state, collector, logf)
+	if state.hasLastGood {
+		t.Fatal("the pair survived Codex being switched off")
+	}
+	if _, _, ok := loadPersistedLastGoodAnyAge(); ok {
+		t.Fatal("the persisted pair survived Codex being switched off")
+	}
+}

@@ -137,6 +137,19 @@ func pairDisplayFrame(selected protocol.Frame, providers []codexbar.ParsedFrame,
 // Provider ids never contain it, so the frame cannot pass for either one.
 const pairProviderSeparator = "+"
 
+// frameProviderMembers lists the providers a frame shows: its own provider,
+// or both members of a Two at once frame ("claude+codex"). Checks that keep
+// or drop a frame per provider must look at each member.
+func frameProviderMembers(provider string) []string {
+	members := []string{}
+	for _, member := range strings.Split(normalizeProviderKey(provider), pairProviderSeparator) {
+		if member = strings.TrimSpace(member); member != "" {
+			members = append(members, member)
+		}
+	}
+	return members
+}
+
 // pairResetSource names a pair frame without a countdown: both provider ids
 // joined by ".", cut to the 31 characters the device accepts.
 func pairResetSource(ids []string) string {

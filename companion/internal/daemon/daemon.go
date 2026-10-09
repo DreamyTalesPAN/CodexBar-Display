@@ -1958,8 +1958,16 @@ func invalidateLastGoodDisabledByInventory(state *runtimeState, collector *provi
 	if state == nil || !state.hasLastGood {
 		return
 	}
-	enabled, known := collector.providerEnabledByInventory(state.lastGood.Provider)
-	if !known || enabled {
+	// A Two at once frame goes as soon as either member is switched off; the
+	// pair itself is never an inventory entry.
+	disabled := false
+	for _, member := range frameProviderMembers(state.lastGood.Provider) {
+		if enabled, known := collector.providerEnabledByInventory(member); known && !enabled {
+			disabled = true
+			break
+		}
+	}
+	if !disabled {
 		return
 	}
 
@@ -2037,10 +2045,8 @@ func invalidateLastGoodTerminal(state *runtimeState, providers []codexbar.Parsed
 	// A Two at once frame names both providers ("claude+codex"); it is void
 	// as soon as either of them is.
 	members := map[string]bool{}
-	for _, member := range strings.Split(provider, pairProviderSeparator) {
-		if member = strings.TrimSpace(member); member != "" {
-			members[member] = true
-		}
+	for _, member := range frameProviderMembers(provider) {
+		members[member] = true
 	}
 	for _, parsed := range providers {
 		if !parsed.Terminal || !members[normalizeProviderKey(parsed.Provider)] {
