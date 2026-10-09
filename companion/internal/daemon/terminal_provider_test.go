@@ -177,3 +177,43 @@ func TestTerminalVerdictSurvivesRestartAndDropsLastGood(t *testing.T) {
 		t.Fatalf("obsolete Gemini last-good survived the restart")
 	}
 }
+
+// A Two at once frame names both providers, so it must go as soon as either
+// member is declared void, even while the other has no current reading.
+func TestTerminalPairMemberDropsPairLastGood(t *testing.T) {
+	prepareFastTestEnv(t)
+	now := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	for _, member := range []string{"claude", "codex"} {
+		pair := protocol.Frame{Provider: "claude+codex", Label: "Claude + Codex", Session: 40, Weekly: 40}
+		if err := persistLastGood(pair, now); err != nil {
+			t.Fatalf("persist: %v", err)
+		}
+		state := &runtimeState{
+			selector:    codexbar.NewProviderSelector(),
+			lastGood:    pair,
+			lastGoodAt:  now,
+			hasLastGood: true,
+		}
+		other := terminalTestFrame("claude", false)
+		if member == "claude" {
+			other = terminalTestFrame("codex", false)
+		}
+		invalidateLastGoodTerminal(state, []codexbar.ParsedFrame{other, terminalTestFrame(member, true)}, runtimeDeps{logf: func(string, ...any) {}})
+		if state.hasLastGood {
+			t.Fatalf("pair last-good survived terminal %s", member)
+		}
+		if _, _, ok := loadPersistedLastGoodAnyAge(); ok {
+			t.Fatalf("persisted pair last-good survived terminal %s", member)
+		}
+	}
+	state := &runtimeState{
+		selector:    codexbar.NewProviderSelector(),
+		lastGood:    protocol.Frame{Provider: "claude+codex", Session: 40},
+		lastGoodAt:  now,
+		hasLastGood: true,
+	}
+	invalidateLastGoodTerminal(state, []codexbar.ParsedFrame{terminalTestFrame("gemini", true)}, runtimeDeps{logf: func(string, ...any) {}})
+	if !state.hasLastGood {
+		t.Fatal("a terminal provider outside the pair dropped the pair last-good")
+	}
+}

@@ -2034,8 +2034,16 @@ func invalidateLastGoodTerminal(state *runtimeState, providers []codexbar.Parsed
 		return
 	}
 	provider := normalizeProviderKey(state.lastGood.Provider)
+	// A Two at once frame names both providers ("claude+codex"); it is void
+	// as soon as either of them is.
+	members := map[string]bool{}
+	for _, member := range strings.Split(provider, pairProviderSeparator) {
+		if member = strings.TrimSpace(member); member != "" {
+			members[member] = true
+		}
+	}
 	for _, parsed := range providers {
-		if !parsed.Terminal || normalizeProviderKey(parsed.Provider) != provider {
+		if !parsed.Terminal || !members[normalizeProviderKey(parsed.Provider)] {
 			continue
 		}
 		state.lastGood = protocol.Frame{}

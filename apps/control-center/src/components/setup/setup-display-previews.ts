@@ -77,7 +77,8 @@ export function visibleUsageWindows<T extends { id: string }>(
 
 /**
  * Two at once on the panel: each provider's first shown limit, named after its
- * provider, the way the companion sends the pair to VibeTV.
+ * provider, the way the companion sends the pair to VibeTV. Like the
+ * companion it counts down with the first of the two that has a reset time.
  */
 export function pairDisplayPreview(
   first: SetupDisplayModePreview | undefined,
@@ -86,9 +87,13 @@ export function pairDisplayPreview(
   if (!first || !second) {
     return null;
   }
+  const unknownReset = formatReset(undefined);
+  const counting = [first, second].find(
+    (preview) => preview.resetLabel && preview.resetLabel !== unknownReset,
+  );
   return {
     providerLabel: `${first.providerLabel} + ${second.providerLabel}`,
-    resetLabel: first.resetLabel,
+    resetLabel: (counting ?? first).resetLabel,
     windows: [first, second].map((preview) => ({
       label: preview.windows[0]
         ? `${preview.providerLabel} ${preview.windows[0].label}`
