@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/timeline"
 )
 
 // setupEventLimit bounds one setup session; older events are dropped.
@@ -31,6 +32,9 @@ type setupEvent struct {
 	Code       string `json:"code,omitempty"`
 	NextAction string `json:"nextAction,omitempty"`
 	Count      int    `json:"count,omitempty"`
+	// Subject tells apart two events with the same wording, such as the
+	// installs of two different themes. It is compared, never shown or saved.
+	Subject string `json:"-"`
 }
 
 // setupLog is both the GET /v1/setup/events body and the diagnostics setupLog.
@@ -58,11 +62,24 @@ type setupEventLog struct {
 	// path is where the session is saved; empty keeps it in memory only.
 	path     string
 	restored bool
+	// readOnly is the log of a runtime that is not the display writer. The
+	// writer saves the whole session from its own memory, so a second writer
+	// would erase its events (issue #581): this one records nothing and shows
+	// what is saved.
+	readOnly bool
 }
 
 // openLocked makes sure a session exists: the saved one when this runtime has
 // not looked yet and it is recent enough, otherwise a new one.
 func (l *setupEventLog) openLocked(now time.Time) {
+	if l.readOnly {
+		if saved, ok := l.savedLocked(now); ok {
+			l.session = saved
+		} else if l.session.SessionID == "" || len(l.session.Events) > 0 {
+			l.startLocked(now)
+		}
+		return
+	}
 	if !l.restored {
 		l.restored = true
 		if l.restoreLocked(now) {
@@ -74,23 +91,32 @@ func (l *setupEventLog) openLocked(now time.Time) {
 	}
 }
 
+// savedLocked reads the saved session when it is recent enough.
+func (l *setupEventLog) savedLocked(now time.Time) (setupLog, bool) {
+	var saved setupLog
+	raw, err := os.ReadFile(l.path)
+	if err != nil {
+		return saved, false
+	}
+	if err := json.Unmarshal(raw, &saved); err != nil || saved.SessionID == "" || len(saved.Events) == 0 {
+		return saved, false
+	}
+	last, err := time.Parse(time.RFC3339, saved.Events[len(saved.Events)-1].At)
+	if err != nil || now.Sub(last) > setupLogMaxAge {
+		return saved, false
+	}
+	saved.OK = true
+	return saved, true
+}
+
 func (l *setupEventLog) restoreLocked(now time.Time) bool {
 	if l.path == "" || l.session.SessionID != "" {
 		return false
 	}
-	raw, err := os.ReadFile(l.path)
-	if err != nil {
+	saved, ok := l.savedLocked(now)
+	if !ok {
 		return false
 	}
-	var saved setupLog
-	if err := json.Unmarshal(raw, &saved); err != nil || saved.SessionID == "" || len(saved.Events) == 0 {
-		return false
-	}
-	last, err := time.Parse(time.RFC3339, saved.Events[len(saved.Events)-1].At)
-	if err != nil || now.Sub(last) > setupLogMaxAge {
-		return false
-	}
-	saved.OK = true
 	l.session = saved
 	l.nextSeq = 0
 	for _, event := range saved.Events {
@@ -136,6 +162,9 @@ func (l *setupEventLog) startLocked(now time.Time) {
 }
 
 func (l *setupEventLog) reset(now time.Time) {
+	if l.readOnly {
+		return
+	}
 	l.mu.Lock()
 	l.restored = true
 	l.startLocked(now)
@@ -144,6 +173,9 @@ func (l *setupEventLog) reset(now time.Time) {
 }
 
 func (l *setupEventLog) record(now time.Time, event setupEvent) {
+	if l.readOnly {
+		return
+	}
 	event.Message = sanitizeErrorDetail(errors.New(event.Message))
 	event.At = now.UTC().Format(time.RFC3339)
 	l.mu.Lock()
@@ -183,7 +215,7 @@ func (l *setupEventLog) appendLocked(event setupEvent) {
 }
 
 func sameSetupEvent(a, b setupEvent) bool {
-	return a.Stage == b.Stage && a.Status == b.Status && a.Code == b.Code && a.Message == b.Message
+	return a.Stage == b.Stage && a.Status == b.Status && a.Code == b.Code && a.Message == b.Message && a.Subject == b.Subject
 }
 
 func (l *setupEventLog) snapshot(now time.Time) setupLog {
@@ -209,8 +241,62 @@ func (l *setupEventLog) lastOfStage(now time.Time, stage string) (setupEvent, bo
 	return setupEvent{}, false
 }
 
+// sessionID names the current setup session.
+func (l *setupEventLog) sessionID(now time.Time) string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.openLocked(now)
+	return l.session.SessionID
+}
+
+// recordSetupEvent is the one place a setup step is logged: in the setup log
+// the customer sees, and as a transition in the support timeline. A step
+// started again after it failed in the same session is a retry: the timeline
+// waits for its result, so a step repeated with the same failure stays one
+// entry, while a second run of a step that had succeeded gets its own start
+// and end.
 func (s *Server) recordSetupEvent(event setupEvent) {
-	s.setupEvents.record(s.currentTime(), event)
+	s.recordSetupEventAs(event.Stage, event)
+}
+
+// recordSetupEventAs logs a setup step under its own timeline component, for
+// a stage that covers several things with a state each (one per provider).
+func (s *Server) recordSetupEventAs(component string, event setupEvent) {
+	now := s.currentTime()
+	s.setupEvents.record(now, event)
+	if event.Stage == "device_search" && event.Status == "started" {
+		// The app searches on its own, also while nothing changes. A search
+		// is a check: only a result that differs from the last is a transition.
+		return
+	}
+	if last, ok := s.timeline.Latest(component); ok && last.State == "failed" && event.Status == "started" &&
+		last.CorrelationID == s.setupEvents.sessionID(now) {
+		return
+	}
+	s.recordTimeline(timeline.Event{Component: component, State: event.Status, Reason: event.Code})
+}
+
+// providerTimelineComponent keeps one state per provider in the timeline, so
+// a provider that fails its check does not hide one that passed.
+func providerTimelineComponent(providerID string) string {
+	if providerID == "" {
+		return "provider_check"
+	}
+	return "provider_check/" + providerID
+}
+
+// Timeline is the support timeline. The runtime hands it to its display
+// worker, so both write the one file through the one store.
+func (s *Server) Timeline() *timeline.Store {
+	return s.timeline
+}
+
+// recordTimeline adds a transition to the support timeline, tied to the setup
+// session it happened in.
+func (s *Server) recordTimeline(event timeline.Event) {
+	now := s.currentTime()
+	event.CorrelationID = s.setupEvents.sessionID(now)
+	s.timeline.Record(now, event)
 }
 
 func (s *Server) handleSetupEvents(w http.ResponseWriter, r *http.Request) {
@@ -279,8 +365,9 @@ func (r *setupStepRecorder) Write(p []byte) (int, error) {
 func (r *setupStepRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
 // recordProviderSetupEvents logs one provider check: the engine result only
-// when it changed, then the provider result.
-func (s *Server) recordProviderSetupEvents(setup codexbar.ProviderSetup, label string) {
+// when it changed, then the provider result. providerID is empty for a check
+// of all providers.
+func (s *Server) recordProviderSetupEvents(setup codexbar.ProviderSetup, providerID, label string) {
 	provider := providerDiagnosticCheck(setup)
 	if label != "" && provider.Status == "pass" {
 		provider.Detail = label + " is ready."
@@ -304,6 +391,10 @@ func (s *Server) recordProviderSetupEvents(setup codexbar.ProviderSetup, label s
 			event = setupEvent{Stage: stage, Status: "succeeded", Message: check.Detail}
 		}
 		if last, ok := s.setupEvents.lastOfStage(s.currentTime(), stage); stage == "usage_engine" && ok && sameSetupEvent(last, event) {
+			continue
+		}
+		if stage == "provider_check" {
+			s.recordSetupEventAs(providerTimelineComponent(providerID), event)
 			continue
 		}
 		s.recordSetupEvent(event)

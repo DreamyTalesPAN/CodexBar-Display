@@ -9,6 +9,22 @@ private func require(_ condition: @autoclosure () -> Bool, _ message: String) {
 }
 
 func runURLSchemeTests() {
+    // Issue #582: the page learns how the save dialog ended.
+    require(
+        downloadFinishedEventScript(fileName: "vibetv-theme-new-theme.zip", saved: true)
+            == "window.dispatchEvent(new CustomEvent('vibetv:download-finished', { detail: {\"fileName\":\"vibetv-theme-new-theme.zip\",\"saved\":true} })); true",
+        "a saved download must be reported to the page with its file name"
+    )
+    require(
+        downloadFinishedEventScript(fileName: "a.zip", saved: false)?
+            .contains("{\"fileName\":\"a.zip\",\"saved\":false}") == true,
+        "a cancelled save dialog must be reported as not saved"
+    )
+    require(
+        downloadFinishedEventScript(fileName: "a\"}));alert('x')//\n\\.zip", saved: true)?
+            .contains("{\"fileName\":\"a\\\"}));alert('x')\\/\\/\\n\\\\.zip\",\"saved\":true}") == true,
+        "a file name must reach the page as JSON text and never end the script's string"
+    )
     let fallbackEndpoint = RuntimeEndpoint(
         origin: "http://127.0.0.1:54321",
         pid: 83979

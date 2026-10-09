@@ -7,6 +7,7 @@ import {
   ArrowUp,
   CheckCircle2,
   Code2,
+  Download,
   FileUp,
   Film,
   ImagePlus,
@@ -71,6 +72,7 @@ import {
   referencedThemeAssetPaths,
   updateThemeColors,
   validateThemeSpec,
+  wordsForUsage,
   type ThemeStudioAsset,
   type ThemeStudioPrimitive,
   type ThemeStudioSpec,
@@ -113,6 +115,7 @@ import {
   type EditorStatus,
 } from "./theme-studio/editor-status";
 import { LeaveEditorDialog } from "./theme-studio/leave-editor-dialog";
+import { ReplaceDraftDialog } from "./theme-studio/replace-draft-dialog";
 import { ThemeStudioToolbar } from "./theme-studio/theme-studio-toolbar";
 import { EditableThemePreview } from "./theme-studio/editable-theme-preview";
 import { PrimitiveInspector } from "./theme-studio/primitive-inspector";
@@ -137,7 +140,11 @@ import {
   titleFromThemeId,
 } from "./theme-studio/editor-geometry";
 import type { ThemeRenderPack } from "./live-vibetv-preview";
-import { themeRenderPackUrl } from "./control-center-runtime";
+import {
+  isNativeControlCenterApp,
+  onNativeDownloadFinished,
+  themeRenderPackUrl,
+} from "./control-center-runtime";
 
 const COLOR_FALLBACK = "#000000";
 const DEFAULT_GIF_SIZE = 80;
@@ -199,6 +206,8 @@ export type ThemeStudioInstallPayload = {
 export type ThemeStudioScreenProps = {
   deviceCapabilities?: ThemeStudioDeviceCapabilities;
   initialTheme?: ThemeStudioEditorTheme;
+  /** Why the library would not install this either, e.g. the screensaver is off. */
+  installBlockedReason?: string;
   onBackToLibrary?: () => void;
   onInstallTheme?: (payload: ThemeStudioInstallPayload) => Promise<boolean>;
   onRecoveryDiscarded?: () => void;
@@ -213,6 +222,7 @@ export type ThemeStudioScreenProps = {
 export function ThemeStudioScreen({
   deviceCapabilities,
   initialTheme,
+  installBlockedReason,
   onBackToLibrary,
   onInstallTheme,
   onRecoveryDiscarded,
@@ -222,6 +232,7 @@ export function ThemeStudioScreen({
 }: ThemeStudioScreenProps = {}) {
   const usage = initialTheme?.usage || "live";
   const screensaver = usage === "screensaver";
+  const say = (text: string) => wordsForUsage(text, usage);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const gifInputRef = useRef<HTMLInputElement>(null);
   const libraryButtonRef = useRef<HTMLDivElement>(null);
@@ -231,6 +242,8 @@ export function ThemeStudioScreen({
     document: ThemeStudioDocument;
   } | null>(null);
   const spriteInputRef = useRef<HTMLInputElement>(null);
+  // How often each file name was exported while this editor is open.
+  const exportCountsRef = useRef<Record<string, number>>({});
   const libraryIdRef = useRef(initialTheme?.libraryId);
   const sourceRef = useRef<ThemeStudioEditorSource>(
     initialTheme?.source || "custom",
@@ -252,6 +265,7 @@ export function ThemeStudioScreen({
   const dispatchEditor = useCallback((action: ThemeStudioEditorAction) => {
     if (action.type !== "mark_saved" && !action.type.endsWith("_transaction")) {
       setLibraryStatus(withoutLibraryAnswer);
+      setImportError("");
     }
     dispatchEditorState(action);
   }, []);
@@ -276,6 +290,9 @@ export function ThemeStudioScreen({
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
+  // What "Mini theme" or an opened file would put in place of a draft that
+  // has changes; it waits here until the customer has answered.
+  const [replacement, setReplacement] = useState<(() => void) | null>(null);
   const [advancedTab, setAdvancedTab] =
     useState<ThemeStudioAdvancedTab>("project");
   const [jsonStatus, setJsonStatus] = useState<EditorStatus>({
@@ -283,6 +300,11 @@ export function ThemeStudioScreen({
     message: "Draft ready.",
   });
   const [exportStatus, setExportStatus] = useState(EXPORT_IDLE);
+  // The file the Mac app's save dialog is asking about, while its notice stands.
+  const [exportAwaitingSave, setExportAwaitingSave] = useState("");
+  // Why a chosen file was not opened. The button for it is on another tab
+  // than the JSON notice, so it is answered where Save, Export and Send are.
+  const [importError, setImportError] = useState("");
   const [deviceStatus, setDeviceStatus] = useState(SEND_IDLE);
   const [assetStatus, setAssetStatus] = useState<EditorStatus>({
     tone: "unknown",
@@ -299,7 +321,15 @@ export function ThemeStudioScreen({
   function clearAnswers() {
     setLibraryStatus(withoutLibraryAnswer);
     setExportStatus(EXPORT_IDLE);
+    setExportAwaitingSave("");
     setDeviceStatus(SEND_IDLE);
+    setImportError("");
+    // What Apply JSON refused is an answer as well; the typed text stays.
+    setJsonStatus((current) =>
+      current.tone === "attention"
+        ? { tone: "unknown", message: "JSON has local edits." }
+        : current,
+    );
   }
 
   const validation = useMemo(
@@ -323,7 +353,7 @@ export function ThemeStudioScreen({
     (dirty || !inLibrary
       ? saveBlockedReason ||
         `Save this ${screensaver ? "screensaver" : "theme"} before sending it to VibeTV.`
-      : deviceValidation?.errors[0] || "");
+      : installBlockedReason || deviceValidation?.errors[0] || "");
   const visibleSelectedIndices = useMemo(
     () => normalizeSelectedIndices(selectedIndices, spec.primitives.length),
     [selectedIndices, spec.primitives.length],
@@ -354,7 +384,10 @@ export function ThemeStudioScreen({
         markSaved: true,
         packName: initialTheme.packName,
         spec: initialTheme.spec,
-        status: { tone: "ready", message: "Theme opened." },
+        status: {
+          tone: "ready",
+          message: wordsForUsage("Theme opened.", initialTheme.usage),
+        },
       });
       return;
     }
@@ -405,6 +438,7 @@ export function ThemeStudioScreen({
       setJsonStatus(status);
     }
     setExportStatus(EXPORT_IDLE);
+    setExportAwaitingSave("");
   }
 
   const updateDocument = useCallback(
@@ -540,6 +574,15 @@ export function ThemeStudioScreen({
     setLeaveDialogOpen(true);
   }
 
+  function replaceDraft(run: () => void) {
+    // JSON typed and not applied is lost too, and Undo does not hold it.
+    if (dirty || (jsonDraft !== null && jsonDraft !== prettyJson(spec))) {
+      setReplacement(() => run);
+    } else {
+      run();
+    }
+  }
+
   function keepEditing() {
     setLeaveDialogOpen(false);
     window.setTimeout(() => {
@@ -597,7 +640,7 @@ export function ThemeStudioScreen({
     try {
       const response = await fetch(themeRenderPackUrl(themeId));
       if (!response.ok) {
-        throw new Error("Theme could not be opened.");
+        throw new Error(say("Theme could not be opened."));
       }
       const payload = (await response.json()) as {
         assets?: Record<string, ThemeStudioAsset>;
@@ -606,7 +649,7 @@ export function ThemeStudioScreen({
         themeId?: string;
       };
       if (!payload.spec) {
-        throw new Error("Theme could not be opened.");
+        throw new Error(say("Theme could not be opened."));
       }
       if (options.cancelled?.()) {
         return;
@@ -619,7 +662,7 @@ export function ThemeStudioScreen({
         spec: imported,
         status: options.quiet
           ? { tone: "ready", message: "Mini Classic loaded." }
-          : { tone: "ready", message: "Theme opened." },
+          : { tone: "ready", message: say("Theme opened.") },
       });
       setDeviceStatus(SEND_IDLE);
     } catch (error) {
@@ -629,7 +672,7 @@ export function ThemeStudioScreen({
       setJsonStatus({
         tone: "attention",
         message:
-          error instanceof Error ? error.message : "Theme could not be opened.",
+          error instanceof Error ? error.message : say("Theme could not be opened."),
       });
     } finally {
       if (!options.cancelled?.()) {
@@ -642,6 +685,7 @@ export function ThemeStudioScreen({
     if (!file) {
       return;
     }
+    clearAnswers();
     try {
       const imported = importThemeSpec(JSON.parse(await file.text()));
       replaceLoadedTheme({
@@ -651,11 +695,14 @@ export function ThemeStudioScreen({
         status: { tone: "ready", message: `${file.name} opened.` },
       });
     } catch (error) {
-      setJsonStatus({
-        tone: "attention",
-        message:
-          error instanceof Error ? error.message : "Theme file was not opened.",
-      });
+      setImportError(
+        // The parser's own sentence quotes the text and is written for developers.
+        error instanceof SyntaxError
+          ? "This file is not valid JSON. Nothing was changed."
+          : error instanceof Error
+            ? error.message
+            : say("Theme file was not opened."),
+      );
     } finally {
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
@@ -670,7 +717,8 @@ export function ThemeStudioScreen({
       );
       replaceLoadedTheme({
         assets,
-        packName: titleFromThemeId(imported.themeId),
+        // The JSON holds no name; the one the customer gave stays.
+        packName,
         spec: imported,
         status: { tone: "ready", message: "JSON applied." },
       });
@@ -678,7 +726,11 @@ export function ThemeStudioScreen({
       setJsonStatus({
         tone: "attention",
         message:
-          error instanceof Error ? error.message : "JSON was not applied.",
+          error instanceof SyntaxError
+            ? "This text is not valid JSON. Nothing was changed."
+            : error instanceof Error
+              ? error.message
+              : "JSON was not applied.",
       });
     }
   }
@@ -998,6 +1050,26 @@ export function ThemeStudioScreen({
     return () => window.clearTimeout(timer);
   }, [dirty, editorState.present, onRecoveryDiscarded, persistThemeStudioRecovery]);
 
+  // Issue #582: the Mac app says how its save dialog ended. A saved file is
+  // confirmed; after Cancel nothing was exported and the notice goes. An older
+  // Mac app says nothing, and the sentence about the dialog stays.
+  useEffect(() => {
+    if (!exportAwaitingSave) {
+      return;
+    }
+    return onNativeDownloadFinished(exportAwaitingSave, (saved) => {
+      setExportAwaitingSave("");
+      setExportStatus(
+        saved
+          ? {
+              tone: "ready",
+              message: `${exportAwaitingSave} saved. Nothing was sent.`,
+            }
+          : EXPORT_IDLE,
+      );
+    });
+  }, [exportAwaitingSave]);
+
   function insertToken(token: string) {
     updateSelectedPrimitive((primitive) => {
       if (primitive.type !== "text") {
@@ -1030,15 +1102,26 @@ export function ThemeStudioScreen({
       link.click();
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      const exportCount = (exportCountsRef.current[pack.fileName] ?? 0) + 1;
+      exportCountsRef.current[pack.fileName] = exportCount;
+      // Windows saves a download without asking where, so the app can name the
+      // folder. It cannot name the file: a second export under the same name
+      // is saved as "… (1).zip", so that one is counted instead, or the
+      // sentence would stand unchanged. The Mac app asks where and can be
+      // cancelled: its sentence says what is asked and claims no saved file
+      // until the app says how that ended. A plain browser, which a pre-DMG
+      // install still opens this page in, saves or asks as it is set.
+      const nativeMacApp = !windowsHost && isNativeControlCenterApp();
+      setExportAwaitingSave(nativeMacApp ? pack.fileName : "");
       setExportStatus({
-        tone: "ready",
-        // Windows saves a download without asking where, so the app can name
-        // the folder. It cannot name the file: a second export of the same
-        // theme is saved as "… (1).zip". The Mac asks where and can be
-        // cancelled; it gets no claim about a folder.
+        tone: windowsHost ? "ready" : "unknown",
         message: windowsHost
-          ? "Saved in your Downloads folder. Nothing was sent."
-          : `${pack.fileName} exported. Nothing was sent.`,
+          ? exportCount > 1
+            ? `Saved again in your Downloads folder (export ${exportCount}). Nothing was sent.`
+            : "Saved in your Downloads folder. Nothing was sent."
+          : nativeMacApp
+            ? `Choose where to save ${pack.fileName}. Nothing was sent.`
+            : `Export started in your browser: ${pack.fileName}. Nothing was sent.`,
       });
     } catch (error) {
       setExportStatus({
@@ -1058,7 +1141,7 @@ export function ThemeStudioScreen({
       setDeviceStatus({
         tone: "attention",
         message: copyForHost(
-          "Open Theme Studio in the local Mac App to send this theme.",
+          say("Open Theme Studio in the local Mac App to send this theme."),
           windowsHost,
         ),
       });
@@ -1073,7 +1156,7 @@ export function ThemeStudioScreen({
     setSending(true);
     setDeviceStatus({
       tone: "unknown",
-      message: `Sending ${screensaver ? "screensaver" : "theme"} after your click.`,
+      message: say("Sending the theme to VibeTV."),
     });
     try {
       const installed = await onInstallTheme({
@@ -1091,7 +1174,7 @@ export function ThemeStudioScreen({
         tone: "ready",
         message: screensaver
           ? "Screensaver is ready on VibeTV."
-          : copyForHost("Theme installed through the Mac App.", windowsHost),
+          : "Theme is installed on VibeTV.",
       });
     } catch (error) {
       setDeviceStatus({
@@ -1133,6 +1216,8 @@ export function ThemeStudioScreen({
               <Input
                 aria-label="Name"
                 className="h-12 max-w-xl text-2xl font-black md:text-2xl"
+                // As long as the name in the theme's file may be.
+                maxLength={80}
                 onChange={(event) => setPackName(event.target.value)}
                 placeholder={screensaver ? "Untitled screensaver" : "Untitled theme"}
                 value={packName}
@@ -1217,7 +1302,7 @@ export function ThemeStudioScreen({
                     <AddButton icon={Square} label="Rect" onClick={() => addPrimitive("rect")} />
                     <AddButton icon={Film} label="GIF" onClick={() => gifInputRef.current?.click()} />
                     <AddButton icon={ImagePlus} label="Sprite" onClick={() => spriteInputRef.current?.click()} />
-                    <AddButton icon={FileUp} label="JSON" onClick={() => fileInputRef.current?.click()} />
+                    <AddButton icon={FileUp} label="JSON" onClick={() => replaceDraft(() => fileInputRef.current?.click())} />
                   </div>
                   <div className="grid gap-2">
                     {spec.primitives.map((primitive, index) => (
@@ -1282,7 +1367,10 @@ export function ThemeStudioScreen({
                 <CardDescription>Add and arrange elements.</CardDescription>
               </CardHeader>
               <CardContent className="min-h-0 flex-1">
-                <ScrollArea className="h-full">
+                {/* The scroll area lays its content out as a table, which grows
+                    with the widest thing in it and is then cut off on the
+                    right. As a block it keeps the panel's width. */}
+                <ScrollArea className="h-full [&_[data-slot=scroll-area-viewport]>div]:block!">
                   <div className="flex flex-col gap-4 pr-3">
                 <div className="grid grid-cols-2 gap-2">
                   <AddButton
@@ -1384,7 +1472,9 @@ export function ThemeStudioScreen({
                 project: (
                 <section
                   aria-labelledby="theme-studio-tab-project"
-                  className="grid gap-3"
+                  // A label wider than the panel must wrap: a button's does not by
+                  // itself, and the list this sits in grows with its content.
+                  className="grid min-w-0 gap-3"
                   id="theme-studio-panel-project"
                   role="tabpanel"
                 >
@@ -1410,9 +1500,11 @@ export function ThemeStudioScreen({
                     }
                   />
                   <Button
-                    className="w-full"
+                    className="h-auto min-h-11 w-full py-2 whitespace-normal"
                     disabled={loadingPreset}
-                    onClick={() => void loadBuiltInTheme("mini-classic")}
+                    onClick={() =>
+                      replaceDraft(() => void loadBuiltInTheme("mini-classic"))
+                    }
                     type="button"
                     variant="outline"
                   >
@@ -1424,13 +1516,15 @@ export function ThemeStudioScreen({
                     <span>{loadingPreset ? "Loading" : "Mini theme"}</span>
                   </Button>
                   <Button
-                    className="w-full"
-                    onClick={() => fileInputRef.current?.click()}
+                    className="h-auto min-h-11 w-full py-2 whitespace-normal"
+                    onClick={() =>
+                      replaceDraft(() => fileInputRef.current?.click())
+                    }
                     type="button"
                     variant="outline"
                   >
                     <FileUp data-icon="inline-start" aria-hidden />
-                    <span>Import theme JSON</span>
+                    <span>{say("Import theme JSON")}</span>
                   </Button>
                 </section>
                 ),
@@ -1528,7 +1622,7 @@ export function ThemeStudioScreen({
                   role="tabpanel"
                 >
                   <Textarea
-                    aria-label="Theme JSON"
+                    aria-label={say("Theme JSON")}
                     className="min-h-[220px] resize-y font-mono text-xs leading-5"
                     onChange={(event) => {
                       setJsonDraft(event.target.value);
@@ -1655,14 +1749,24 @@ export function ThemeStudioScreen({
                   tone={libraryNotice.tone}
                 />
               ) : null}
+              {importError ? (
+                <StatusLine
+                  detail={importError}
+                  icon={<AlertTriangle size={16} aria-hidden />}
+                  title="Import"
+                  tone="attention"
+                />
+              ) : null}
               {exportStatus !== EXPORT_IDLE ? (
                 <StatusLine
                   detail={exportStatus.message}
                   icon={
                     exportStatus.tone === "attention" ? (
                       <AlertTriangle size={16} aria-hidden />
-                    ) : (
+                    ) : exportStatus.tone === "ready" ? (
                       <CheckCircle2 size={16} aria-hidden />
+                    ) : (
+                      <Download size={16} aria-hidden />
                     )
                   }
                   title="Export"
@@ -1759,6 +1863,15 @@ export function ThemeStudioScreen({
         ref={spriteInputRef}
         type="file"
       />
+      {replacement ? (
+        <ReplaceDraftDialog
+          onKeep={() => setReplacement(null)}
+          onReplace={replacement}
+        >
+          What you open takes the place of this draft, including its name.
+          Your changes are not saved yet.
+        </ReplaceDraftDialog>
+      ) : null}
       {leaveDialogOpen ? (
         <LeaveEditorDialog
           saving={saving}

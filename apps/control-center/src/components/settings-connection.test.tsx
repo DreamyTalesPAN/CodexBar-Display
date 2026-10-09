@@ -42,6 +42,24 @@ function props(overrides: Partial<SettingsScreenProps> = {}): SettingsScreenProp
   };
 }
 
+// Issue #548: the refusal of a provider change is the runtime's sentence, and
+// the Windows app showed it as it came.
+describe("Settings: a refused provider change", () => {
+  it.each([
+    [false, "Provider settings need a newer Mac App.", "Update the Mac App, then try again."],
+    [true, "Provider settings need a newer app.", "Update the app, then try again."],
+  ])("is worded for the host (Windows: %s)", (windowsHost, title, description) => {
+    const settings = props({ windowsHost });
+    settings.providerPicker.preferencesError = {
+      code: "provider_preferences_update_required",
+      message: "Provider settings need a newer Mac App.",
+      nextAction: "Update the Mac App, then try again.",
+    };
+    render(<SettingsScreen {...settings} />);
+    expect(screen.getByRole("dialog", { name: title }).textContent).toContain(description);
+  });
+});
+
 describe("Settings connection cards", () => {
   it.each([
     ["cable", "USB-C", "WiFi", "Switch to WiFi", "wifi"],

@@ -101,7 +101,7 @@ describe("provider popup guidance", () => {
 
   it.each([
     ["auth_required", "Sign in to Claude Code"],
-    ["permission_required", "Allow access in macOS"],
+    ["permission_required", "Allow access on this computer"],
     ["unsupported", "This provider no longer supports this account"],
     ["no_usage_available", "No usage data on this account"],
     ["service_outage", "Service outage — try again later"],

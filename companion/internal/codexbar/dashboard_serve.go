@@ -216,7 +216,8 @@ func (s *DashboardServeSupervisor) runOnce(ctx context.Context) error {
 		"--refresh-interval", strconv.Itoa(durationSecondsCeil(s.refreshInterval)),
 	)
 	if runtime.GOOS != "windows" {
-		// Win-CodexBar 0.56.8 rejects the flag and exits; see #415.
+		// The pinned Win-CodexBar (scripts/fetch-win-codexbar.ps1) rejects
+		// the flag and exits; see #415.
 		args = append(args, "--request-timeout", "0")
 	}
 
@@ -351,6 +352,9 @@ func (s *DashboardServeSupervisor) setStarted(endpoint string, pid int) {
 }
 
 func (s *DashboardServeSupervisor) setStopped(endpoint string, err error) {
+	// The collector does not read a stopped serve, so its last reading ends
+	// here.
+	forgetServeUsage()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if endpoint != "" {

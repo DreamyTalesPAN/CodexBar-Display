@@ -151,7 +151,7 @@ import {
   type ThemeStudioInstallPayload,
 } from "./theme-studio-screen";
 import { UpdatesScreen } from "./updates-screen";
-import { UsageScreen } from "./usage-screen";
+import { UsageScreen, usageTokenHistoryUnavailableOnVibeTV } from "./usage-screen";
 import { WhatsNewDialog } from "./whats-new-dialog";
 import {
   startUsageSurfacePolling,
@@ -641,6 +641,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const didRunSetupVerification = useRef(false);
   const pendingPairingCandidate = useRef<DeviceCandidate | null>(null);
   const legacyRecoverySearchInFlight = useRef(false);
+  const settingsReadRef = useRef<Promise<void> | null>(null);
   const lastCompanionRequestAt = useRef(0);
   const statusPollInFlight = useRef(false);
   // Set by "Check for updates"; the next status read takes it along.
@@ -1059,8 +1060,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     ],
   );
 
-  const loadSettings = useCallback(async () => {
+  const readSettings = useCallback(async () => {
     const setupGeneration = setupGenerationRef.current;
+    // A change the customer makes while this read is on its way is newer than
+    // what the read finds; its answer must not put the old value back.
+    const writes = deviceSettingWritesRef.current;
+    const brightnessWrites = writes.brightness;
+    const standbyWrites = writes.standby;
     setBusyAction("settings");
     try {
       const payload = await runCompanion<SettingsResponse>("/v1/settings");
@@ -1069,10 +1075,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       const loadedBrightness =
         payload.settings?.display?.brightnessPercent ?? null;
-      if (brightnessDirtyRef.current === null) {
+      if (
+        brightnessDirtyRef.current === null &&
+        writes.brightness === brightnessWrites
+      ) {
         setBrightness(loadedBrightness);
       }
-      if (standbyDirtyRef.current === null) {
+      if (
+        standbyDirtyRef.current === null &&
+        writes.standby === standbyWrites
+      ) {
         lastSavedStandbyRef.current = payload.settings?.standby ?? null;
         setStandby(payload.settings?.standby ?? null);
       }
@@ -1085,14 +1097,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           setSelectedThemeId(activeLiveTheme.themeId);
         }
       }
-      addEvent({
-        label: "Settings loaded",
-        detail:
-          loadedBrightness == null
-            ? "Brightness is ready to load."
-            : `Brightness is set to ${loadedBrightness}%.`,
-        tone: "ready",
-      });
+      // A read that changes nothing leaves no entry under Recent activity
+      // (issue #579); a failed one does, below.
     } catch (error) {
       if (setupGeneration !== setupGenerationRef.current) {
         return;
@@ -1126,7 +1132,52 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     runCompanion,
   ]);
 
+  // One read of the settings at a time. Who asks while one is on its way gets
+  // that one's answer; two side by side answered in either order, and the
+  // first opened the controls while the second could still put old values
+  // back. `fresh` is for a caller that has just changed what the settings
+  // hold (another VibeTV, an installed screensaver): its read starts after
+  // the one on its way.
+  const loadSettings = useCallback(
+    (options?: { fresh?: boolean }) => {
+      const running = settingsReadRef.current;
+      if (running && !options?.fresh) {
+        return running;
+      }
+      const read: Promise<void> = (
+        running ? running.then(readSettings) : readSettings()
+      ).finally(() => {
+        if (settingsReadRef.current === read) {
+          settingsReadRef.current = null;
+        }
+      });
+      settingsReadRef.current = read;
+      return read;
+    },
+    [readSettings],
+  );
+
   const deviceConnectedForSettings = deviceIsCustomerConnected(device);
+
+  // The screensaver setting comes with the settings, and Screensavers installs
+  // nothing without it. A VibeTV that has the setting reports a standby state
+  // with every status; while the setting itself is missing -- the status found
+  // VibeTV ready without the settings being read, or reading them failed --
+  // they are read again: once when that state begins, and each time
+  // Screensavers is opened in it. The customer must not have to visit Settings.
+  const screensaverSettingMissing =
+    standby === null && Boolean(device?.standby) && deviceIsReady(device);
+  const screensaversOpen =
+    activeTab === "theme-library" && appearanceSection === "screensavers";
+  useEffect(() => {
+    if (!screensaverSettingMissing) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void loadSettings();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadSettings, screensaverSettingMissing, screensaversOpen]);
 
   useEffect(() => {
     if (activeTab !== "settings" || !deviceConnectedForSettings) {
@@ -1757,7 +1808,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             "The selected VibeTV is connected. Its display will update automatically.",
           tone: "ready",
         });
-        void loadSettings();
+        void loadSettings({ fresh: true });
         return payload.device;
       } catch (error) {
         if (setupGeneration !== setupGenerationRef.current) {
@@ -1795,7 +1846,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                 "The selected VibeTV is connected. Its display will update automatically.",
               tone: "ready",
             });
-            void loadSettings();
+            void loadSettings({ fresh: true });
             return statusPayload.device;
           }
         } catch {
@@ -2426,7 +2477,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       });
       addEvent({
         label: `${noun} install started`,
-        detail: `${theme.title} is ready for device install.`,
+        detail: `${theme.title} is being installed on VibeTV.`,
         at: startedAt,
         tone: "unknown",
       });
@@ -2518,7 +2569,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           result,
         });
         const [, verifiedDevice] = await Promise.all([
-          loadSettings(),
+          loadSettings({ fresh: true }),
           refreshDevice({ quiet: true }),
         ]);
         const setupVerified =
@@ -3510,17 +3561,35 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               preference.id === payload.item.id ? payload.item : preference,
             ),
           );
+          const saved = payload.item.value;
+          addEvent({
+            label: `${item.label} saved`,
+            detail: `${item.label} is set to ${
+              saved === null
+                ? "Default"
+                : item.options?.find((option) => option.value === saved)
+                    ?.label ?? saved
+            }.`,
+            tone: "ready",
+          });
           void refreshUsage({ quiet: true });
         } catch (error) {
-          setLastError(
-            normalizeCaughtError(error, "Display settings need attention."),
+          const normalized = normalizeCaughtError(
+            error,
+            "Display settings need attention.",
           );
+          setLastError(normalized);
+          addEvent({
+            label: `${item.label} save needs attention`,
+            detail: normalized.nextAction,
+            tone: "attention",
+          });
         }
       });
       displayPreferenceWritesRef.current = write;
       return write;
     },
-    [refreshUsage, runCompanion],
+    [addEvent, refreshUsage, runCompanion],
   );
 
   const checkProvider = useCallback(
@@ -3671,6 +3740,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             current: ProviderDisplaySelection | null,
           ) => Pick<ProviderDisplaySelection, "mode" | "providerIds"> | null),
       providerId: string,
+      // Only a change the customer made by hand is entered under Recent
+      // activity; the app's own write of the Automatic pool, and its retries
+      // every five seconds, are not.
+      byCustomer = false,
     ) => {
       if (setupResetInProgressRef.current) {
         return Promise.resolve(false);
@@ -3708,17 +3781,40 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           if (retiresNotice) {
             setProviderDisplayNotice(null);
           }
+          // In the Setup log's sentences.
+          const shown = byCustomer
+            ? displayModeChange(previous, selection)
+            : null;
+          if (shown !== null) {
+            addEvent({
+              label: "Display mode saved",
+              detail: shown
+                ? `Always show ${
+                    providerPreferencesRef.current?.find(
+                      (preference) => preference.providerId === shown,
+                    )?.label || "the chosen provider"
+                  }.`
+                : "Automatic: VibeTV switches between your providers.",
+              tone: "ready",
+            });
+          }
           void refreshUsage({ quiet: true });
           return true;
         } catch (error) {
+          const normalized = normalizeCaughtError(
+            error,
+            "Display selection could not be saved.",
+          );
           providerDisplayRef.current = previous;
           setProviderDisplay(previous);
-          setProviderDisplayError(
-            normalizeCaughtError(
-              error,
-              "Display selection could not be saved.",
-            ),
-          );
+          setProviderDisplayError(normalized);
+          if (byCustomer) {
+            addEvent({
+              label: "Display mode save needs attention",
+              detail: normalized.nextAction,
+              tone: "attention",
+            });
+          }
           return false;
         } finally {
           setPendingProviderDisplayId(null);
@@ -3731,7 +3827,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       );
       return queued;
     },
-    [refreshUsage, runCompanion],
+    [addEvent, refreshUsage, runCompanion],
   );
 
   const completeProviderSetup = useCallback(async () => {
@@ -3904,6 +4000,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         providerPreferencesRef.current = confirmedPreferences;
         setProviderPreferences(confirmedPreferences);
         setProviderPreferencesError(null);
+        addEvent({
+          label: "AI provider saved",
+          detail: `${item.label} turned ${value ? "on" : "off"}.`,
+          tone: "ready",
+        });
         // Automatic means "every provider that is switched on", so switching
         // one on or off IS the change to the pool. The runtime filters strictly
         // by the stored list (daemon.go applyProviderDisplaySelection), so a
@@ -3927,11 +4028,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         ).map((preference) =>
           preference.id === item.id ? item : preference,
         );
+        const normalized = normalizeCaughtError(
+          error,
+          "Provider could not be updated.",
+        );
         providerPreferencesRef.current = restoredPreferences;
         setProviderPreferences(restoredPreferences);
-        setProviderPreferencesError(
-          normalizeCaughtError(error, "Provider could not be updated."),
-        );
+        setProviderPreferencesError(normalized);
+        addEvent({
+          label: "AI provider save needs attention",
+          detail: normalized.nextAction,
+          tone: "attention",
+        });
       } finally {
         finishPreferenceWrite();
         setPendingPreferenceIds((current) => {
@@ -3942,6 +4050,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
     },
     [
+      addEvent,
       refreshProviderDisplay,
       refreshProviderPreferences,
       refreshUsage,
@@ -4073,7 +4182,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             : "Support report ready",
           detail: partial
             ? "Browser and setup details were saved even though the Mac App did not answer."
-            : `${payload.checks?.length || 0} items ready for support.`,
+            : `The report has ${payload.checks?.length || 0} checks.`,
           tone:
             partial || payload.checks?.some((check) => check.status === "fail")
               ? "attention"
@@ -4643,7 +4752,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     onCheck: checkProvider,
     onOpenSignIn: providerSignInEnabled ? openProviderSignIn : undefined,
     onOpenSetupGuide: providerSignInEnabled ? openProviderSetupGuide : undefined,
-    onDisplayChange: updateProviderDisplay,
+    onDisplayChange: (
+      next: Parameters<typeof updateProviderDisplay>[0],
+      providerId: string,
+    ) => updateProviderDisplay(next, providerId, true),
     onPreferenceChange: updateProviderPreference,
   };
   // The usage-service recovery unregisters the background service on purpose
@@ -5048,6 +5160,45 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     const timer = window.setTimeout(() => setWhatsNewReopened(false), 0);
     return () => window.clearTimeout(timer);
   }, [whatsNewReopenIsOver]);
+  // A "Show me" link of the notice is about one place on the page it opens
+  // (issue #584). Every opened page starts at the top; after that, this place
+  // is brought into view. The page may still grow above it, or get the place
+  // only then: Themes reads the customer's own themes after it opened, and
+  // their rows stand above the catalog's. So for two seconds the place is
+  // brought into view again each time the page changes its height. That ends
+  // earlier when the customer scrolls, clicks or types, or the window moves to
+  // another page. The end in time is for what none of these reports, as a
+  // drag of the scrollbar: a height change later on moves nothing.
+  const shownAfterPageOpensRef = useRef("");
+  useEffect(() => {
+    const id = shownAfterPageOpensRef.current;
+    shownAfterPageOpensRef.current = "";
+    if (!id) {
+      return;
+    }
+    const show = () => document.getElementById(id)?.scrollIntoView();
+    show();
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
+    const pageGrows = new ResizeObserver(show);
+    pageGrows.observe(document.body);
+    const customerActs = ["wheel", "touchmove", "pointerdown", "keydown"];
+    // In the capture phase: a control that keeps an event to itself still ends it.
+    const listening = { capture: true, passive: true };
+    const stop = () => {
+      pageGrows.disconnect();
+      window.clearTimeout(pageHasFilled);
+      customerActs.forEach((act) =>
+        window.removeEventListener(act, stop, listening),
+      );
+    };
+    const pageHasFilled = window.setTimeout(stop, 2000);
+    customerActs.forEach((act) =>
+      window.addEventListener(act, stop, listening),
+    );
+    return stop;
+  }, [activeShellTab, appearanceSection]);
   const closeWhatsNew = () => {
     setWhatsNewSeen(markWhatsNewSeen());
     setWhatsNewReopened(false);
@@ -5347,6 +5498,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               selection.mode === "automatic"
                 ? enabledProviderIds[0] ?? ""
                 : selection.providerIds[0] ?? "",
+              true,
             )
           }
           onReturnToThemes={() => {
@@ -5536,6 +5688,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             storefrontConfigured={catalog.storefrontConfigured}
             themeInstallEnabled={themeInstallEnabled}
             themes={catalog.themes}
+            tokenHistoryUnavailable={usageTokenHistoryUnavailableOnVibeTV(usage)}
             usage={
               appearanceSection === "screensavers" ? "screensaver" : "live"
             }
@@ -5675,14 +5828,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           appVersion={companionInfo?.app?.version}
           entries={whatsNewEntries}
           onClose={closeWhatsNew}
-          onShowSettings={() => {
+          onShow={(page, id) => {
             closeWhatsNew();
-            setActiveTab("settings");
-          }}
-          onShowThemes={() => {
-            closeWhatsNew();
-            setAppearanceSection("themes");
-            setActiveTab("theme-library");
+            shownAfterPageOpensRef.current = id;
+            if (page === "themes") {
+              setAppearanceSection("themes");
+            }
+            setActiveTab(page === "themes" ? "theme-library" : "settings");
           }}
           windowsHost={windowsHost}
         />
@@ -5692,20 +5844,38 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 }
 
 /**
- * Recent activity, newest first. An entry that says the same as the newest one
- * is not written again: the Support page showed "Settings loaded" with the same
- * brightness several times in a row. The entry keeps the time of the latest
- * occurrence, so a failure that repeats does not look like an old one.
+ * Recent activity, newest first. An entry that says the same as an earlier one
+ * takes its place instead of standing beside it, so the Support page does not
+ * list the same entry again after every other one (issues #548, #558). The
+ * entry carries the time of the latest occurrence, so a failure that repeats
+ * does not look like an old one.
  */
 export function recentEventsWith(
   events: ControlCenterEvent[],
   event: ControlCenterEvent,
 ): ControlCenterEvent[] {
-  const newest = events[0];
-  if (newest?.label === event.label && newest.detail === event.detail) {
-    return [{ ...newest, at: event.at ?? newest.at }, ...events.slice(1)];
-  }
-  return [event, ...events].slice(0, RECENT_EVENT_LIMIT);
+  return [
+    event,
+    ...events.filter(
+      (earlier) => earlier.label !== event.label || earlier.detail !== event.detail,
+    ),
+  ].slice(0, RECENT_EVENT_LIMIT);
+}
+
+/**
+ * What a saved display selection changed, for Recent activity: the provider
+ * VibeTV now always shows, "" for Automatic, or null when neither the mode nor
+ * that provider changed. Nothing read yet counts as Automatic, the default, so
+ * confirming the default is no change; another pool under Automatic is none
+ * either.
+ */
+export function displayModeChange(
+  previous: Pick<ProviderDisplaySelection, "mode" | "providerIds"> | null,
+  selection: Pick<ProviderDisplaySelection, "mode" | "providerIds">,
+): string | null {
+  const shown = (value: typeof previous) =>
+    !value || value.mode === "automatic" ? "" : value.providerIds[0] ?? "";
+  return shown(previous) === shown(selection) ? null : shown(selection);
 }
 
 export function setupThemeCatalogError(
@@ -5992,7 +6162,7 @@ function currentFirmwareUpdate(firmware: string): FirmwareUpdateInfo {
 
 function customerInstallLogs(
   logs: string[] | undefined,
-  fallback: string[] = ["Preparing theme install."],
+  fallback: string[] = [],
 ): string[] {
   const cleaned = (logs || [])
     .map((line) => line.trim())
@@ -6005,7 +6175,7 @@ function themeInstallErrorText(error: ApiError): string {
   const message = error.message?.trim();
   const nextAction = error.nextAction?.trim();
   if (!message) {
-    return nextAction || "Theme install failed. Try again.";
+    return nextAction || "The install failed. Try again.";
   }
   if (!nextAction || nextAction === message) {
     return message;

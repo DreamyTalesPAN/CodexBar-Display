@@ -11,6 +11,8 @@ import {
 type ThemeRenderPreviewProps = {
   animate?: boolean;
   className?: string;
+  /** Told the published pack once it is loaded. */
+  onPack?: (pack: ThemeRenderPack) => void;
   /** Supplied for a Theme Studio theme, whose spec only exists locally. */
   pack?: ThemeRenderPack | null;
   themeId: string;
@@ -27,6 +29,7 @@ type ThemeRenderPreviewProps = {
 export function ThemeRenderPreview({
   animate = false,
   className,
+  onPack,
   pack: providedPack,
   themeId,
   themeSpecPath,
@@ -53,6 +56,7 @@ export function ThemeRenderPreview({
         return response.json() as Promise<ThemeRenderPack>;
       })
       .then((payload) => {
+        onPack?.(payload);
         setPackState({
           pack: payload,
           requestKey,
@@ -66,7 +70,7 @@ export function ThemeRenderPreview({
         setPackState({ pack: null, requestKey, status: "error" });
       });
     return () => controller.abort();
-  }, [providedPack, requestKey, themeId, themeSpecPath]);
+  }, [onPack, providedPack, requestKey, themeId, themeSpecPath]);
 
   const pack =
     providedPack ||

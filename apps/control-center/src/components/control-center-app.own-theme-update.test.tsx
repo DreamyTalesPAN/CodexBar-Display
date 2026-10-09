@@ -212,3 +212,56 @@ it("keeps a saved screensaver of the customer whose file name starts like a cata
     [],
   );
 });
+
+// #559: the browser's storage is empty (cleared, or the theme was sent from
+// another computer), so nothing here says the file is the customer's. The
+// catalog names the files of its earlier revisions, and this is none of them.
+it("keeps an own theme with the id of a catalog theme that this app's storage does not know", async () => {
+  const [path] = ownThemePaths([saved("mini-classic", "live")]);
+
+  expect(
+    await automaticInstalls({ display: { themeSpec: { active: true, path } } }),
+  ).toEqual([]);
+});
+
+it("keeps that theme during standby too", async () => {
+  const [liveThemePath] = ownThemePaths([saved("mini-classic", "live")]);
+
+  expect(
+    await automaticInstalls({
+      activeTheme: "night-clock",
+      display: {
+        themeSpec: { active: true, path: catalogPath("night-clock") },
+      },
+      standby: {
+        active: true,
+        liveThemePath,
+        screensaverPath: catalogPath("night-clock"),
+      },
+    }),
+  ).toEqual([]);
+});
+
+it("keeps an own screensaver that this app's storage does not know", async () => {
+  const [screensaverPath] = ownThemePaths([saved("rcf", "screensaver")]);
+
+  expect(await automaticInstalls({ standby: { screensaverPath } })).toEqual([]);
+});
+
+// Standby reports the live theme as a file only. The first revision is one
+// the catalog names, so it no longer waits for VibeTV to wake up.
+it("updates a catalog theme in its first revision during standby", async () => {
+  expect(
+    await automaticInstalls({
+      activeTheme: "night-clock",
+      display: {
+        themeSpec: { active: true, path: catalogPath("night-clock") },
+      },
+      standby: {
+        active: true,
+        liveThemePath: "/themes/u/mini-cl-1-e4fe6b.json",
+        screensaverPath: catalogPath("night-clock"),
+      },
+    }),
+  ).toEqual(["mini-classic"]);
+});

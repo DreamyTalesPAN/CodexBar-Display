@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { WhatsNewEntry } from "@/lib/whats-new";
+import { catalogThemeRowId, type WhatsNewEntry } from "@/lib/whats-new";
 import { providerShortcutKeys } from "./settings-screen";
 
 /**
@@ -21,15 +21,14 @@ export function WhatsNewDialog({
   appVersion,
   entries,
   onClose,
-  onShowSettings,
-  onShowThemes,
+  onShow,
   windowsHost,
 }: {
   appVersion?: string;
   entries: WhatsNewEntry[];
   onClose: () => void;
-  onShowSettings: () => void;
-  onShowThemes: () => void;
+  /** Opens the page the entry is about, at the element with this id. */
+  onShow: (page: "settings" | "themes", id: string) => void;
   windowsHost: boolean;
 }) {
   const gotIt = useRef<HTMLButtonElement>(null);
@@ -64,7 +63,11 @@ export function WhatsNewDialog({
               {entry.theme || entry.inSettings ? (
                 <Button
                   className="h-11 shrink-0 px-0 text-xs text-[var(--vibetv-support)] no-underline hover:underline"
-                  onClick={entry.theme ? onShowThemes : onShowSettings}
+                  onClick={() =>
+                    entry.theme
+                      ? onShow("themes", catalogThemeRowId(entry.theme))
+                      : onShow("settings", entry.inSettings!)
+                  }
                   size="sm"
                   type="button"
                   variant="link"

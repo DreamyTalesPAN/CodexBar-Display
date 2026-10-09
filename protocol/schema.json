@@ -120,6 +120,15 @@
       "type": "integer",
       "minimum": 0
     },
+    "activity": {
+      "type": "string",
+      "maxLength": 31,
+      "pattern": "^[a-z0-9_-]+$"
+    },
+    "activityTtlSecs": {
+      "type": "integer",
+      "minimum": 0
+    },
     "theme": {
       "type": "string",
       "enum": [

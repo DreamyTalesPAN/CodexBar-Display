@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/timeline"
 )
 
 const (
@@ -87,6 +89,10 @@ type preferenceHealth struct {
 	// What the usage service itself said, with its home path redacted. Empty
 	// only when it said nothing, so the screen falls back to generic Detail.
 	Reported string `json:"reported,omitempty"`
+	// NoReadingSince says how long the provider has gone without a newer usage
+	// reading; see noReadingSinceByProvider. LastSuccessAt cannot: it is gone
+	// as soon as the saved reading is too old to show (#368).
+	NoReadingSince string `json:"noReadingSince,omitempty"`
 }
 
 type preferencesResponse struct {
@@ -213,6 +219,8 @@ func (a providerPreferenceAdapter) Write(ctx context.Context, settingID string, 
 	}
 	a.server.recordSetupEvent(setupEvent{Stage: "provider_choice", Status: "succeeded", Message: choice})
 	if !enabled {
+		// Its last check result no longer says anything about it.
+		a.server.recordTimeline(timeline.Event{Component: providerTimelineComponent(providerID), State: "off"})
 		if a.server.wakeDisplayStream != nil {
 			a.server.wakeDisplayStream()
 		}
@@ -233,7 +241,7 @@ func (s *Server) verifyEnabledProvider(providerID, label string, providerRevisio
 	s.recordExactProviderSetup(providerID, providerRevision, setup)
 	// A check the customer already overtook by switching again is not news.
 	if s.currentProviderRevision(providerID) == providerRevision {
-		s.recordProviderSetupEvents(setup, label)
+		s.recordProviderSetupEvents(setup, providerID, label)
 	}
 }
 
@@ -510,7 +518,9 @@ func (s *Server) startProviderHealthRefreshLocked() bool {
 	s.providerPreferences.healthRefresh = true
 	revision := s.providerPreferences.revision
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), providerCheckTimeout)
+		// Nobody asked for this check either (see providerSetupForStatus).
+		// The Mac still runs its scan: only that brings the status page.
+		ctx, cancel := context.WithTimeout(codexbar.WithServeReading(context.Background()), providerCheckTimeout)
 		defer cancel()
 		settings, err := s.providerPreferences.load(ctx)
 
@@ -638,8 +648,10 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 	lastSuccess := make(map[string]string)
 	retainedSuccess := make(map[string]struct{})
 	freshSuccess := make(map[string]codexbar.ProviderReadiness)
+	var noReadingSince map[string]string
 	if s.loadUsage != nil {
 		if usage, ok := s.loadUsage(now); ok {
+			noReadingSince = noReadingSinceByProvider(usage, false)
 			for _, provider := range usage.Providers {
 				id := strings.TrimSpace(strings.ToLower(provider.Provider))
 				if id == "" {
@@ -689,7 +701,11 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			!providerIsDiscontinued(setting, readiness, readinessApplies) {
 			state = providerHealthStateStale
 			message = "Live usage is unavailable; the last successful reading is still saved."
-			if reported != "" {
+			// A stale row shows what it reports. A browser sign-in's summary is
+			// the engine's list of every source it tried, kept for copying only.
+			if setting.Health == codexbar.ProviderHealthBrowserSignIn {
+				reported = ""
+			} else if reported != "" {
 				reported = message + " " + reported
 			}
 		} else if _, fresh := freshSuccess[setting.ID]; setting.Health == codexbar.ProviderHealthChecking &&
@@ -735,9 +751,11 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			if signInURL == "" {
 				signInURL = setting.SignInURL
 			}
-			// CodexBar's summary is not kept for this state, so this sentence
-			// is the row's message. The exact check and the health scan share
-			// it: a dismissed message opens again when its text changes.
+			// CodexBar's summary lists every source it tried and is no
+			// guidance, so this sentence is the row's message and the summary
+			// stays in Reported for "Copy provider message" only. The exact
+			// check and the health scan share the sentence: a dismissed
+			// message opens again when its text changes.
 			message = codexbar.BrowserSignInGuidance(setting.ID, signInURL)
 			// The background scan carries no exact-check next action; the
 			// close-the-browser step is the one that makes the re-check work
@@ -760,18 +778,37 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			WriteStrategy:  "codexbar_command",
 			Writable:       true,
 			Health: &preferenceHealth{
-				State:         state,
-				Service:       string(setting.Service),
-				Message:       message,
-				Reported:      reported,
-				LastSuccessAt: lastSuccess[setting.ID],
-				CheckedAt:     checkedAt,
-				NextAction:    nextAction,
-				SignInURL:     signInURL,
+				State:          state,
+				Service:        string(setting.Service),
+				Message:        message,
+				Reported:       reported,
+				LastSuccessAt:  lastSuccess[setting.ID],
+				CheckedAt:      checkedAt,
+				NextAction:     nextAction,
+				SignInURL:      signInURL,
+				NoReadingSince: noReadingSince[setting.ID],
 			},
 		})
 	}
 	return items
+}
+
+// noReadingSinceByProvider is, per provider, when its last usage reading was
+// collected. The collector leaves that time alone while the provider keeps
+// failing. A provider that never delivered has no entry: the time its snapshot
+// carries is a failed reading. staleOnly leaves out providers whose reading is
+// current, for a list that names only the ones not delivering.
+func noReadingSinceByProvider(usage daemon.PersistedUsage, staleOnly bool) map[string]string {
+	since := make(map[string]string)
+	for _, provider := range usage.Providers {
+		id := strings.TrimSpace(strings.ToLower(provider.Provider))
+		if id == "" || provider.CollectedAt.IsZero() || provider.NoReading ||
+			staleOnly && !provider.Stale && !provider.Frame.UsageUnavailable {
+			continue
+		}
+		since[id] = provider.CollectedAt.UTC().Format(time.RFC3339)
+	}
+	return since
 }
 
 func providerReadinessAppliesToSetting(readiness providerReadinessRecord, setting codexbar.ProviderSetting, freshSuccess codexbar.ProviderReadiness, now time.Time) bool {
@@ -857,7 +894,8 @@ func providerReadinessHealthState(status string) string {
 }
 
 // providerCopyGOOS names the system in permission copy: Windows has no macOS
-// access to allow (#479). A variable so tests cover both hosts.
+// access to allow (#479). The two pages this server words itself, outside the
+// app's own screens, read it too (#548). A variable so tests cover both hosts.
 var providerCopyGOOS = runtime.GOOS
 
 func providerReadinessMessage(status string) string {

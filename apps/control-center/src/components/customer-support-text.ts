@@ -4,6 +4,8 @@
  */
 export function formatCustomerSupportText(value: string): string {
   return hideUsageEngineName(value)
+    // The healthy answer of the check "Display updates" (issue #558).
+    .replace("Display stream is sending usage frames.", "VibeTV is receiving your usage.")
     .replace(/\bCompanion\s+API\b/gi, "Mac App")
     .replace(/\bCompanion\b/g, "Mac App")
     .replace(/\bbridge\b/gi, "Mac App")

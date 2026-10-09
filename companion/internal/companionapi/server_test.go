@@ -36,6 +36,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themepack"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/timeline"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 )
 
@@ -3316,6 +3317,65 @@ func TestUsageManualRefreshReportsFreshForNewCollectorSnapshot(t *testing.T) {
 	}
 }
 
+// A second click on Refresh while the first is still waiting must not move the
+// request: the reading that answers the first click would otherwise count as
+// too old, and the wait would start again (#579).
+func TestUsageManualRefreshSecondClickKeepsTheFirstRequest(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	firstClick := time.Date(2026, 10, 8, 14, 0, 0, 0, time.UTC)
+	now := firstClick
+	collectedAt := firstClick.Add(-time.Minute)
+	server.now = func() time.Time { return now }
+	var wakeCount int
+	server.wakeDisplayStream = func() { wakeCount++ }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt: collectedAt,
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:    "claude",
+				Frame:       protocol.Frame{Provider: "claude", Label: "Claude", Weekly: 24, UsageMode: "used"},
+				CollectedAt: collectedAt,
+			}},
+		}, true
+	}
+	read := func(path string) usageRefreshInfo {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		var got usageResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode %s: %v", path, err)
+		}
+		return got.Refresh
+	}
+
+	if got := read("/v1/usage?refresh=1"); got.State != "refreshing" {
+		t.Fatalf("first click must start a refresh, got %+v", got)
+	}
+	// The reading made for the first click is on its way when the customer
+	// clicks again.
+	collectedAt = firstClick.Add(5 * time.Second)
+	now = firstClick.Add(8 * time.Second)
+	if got := read("/v1/usage?refresh=1"); got.State != "fresh" {
+		t.Fatalf("second click restarted the wait although a reading newer than the first click is there: %+v", got)
+	}
+	if wakeCount != 2 {
+		t.Fatalf("each click must wake the collector, got %d", wakeCount)
+	}
+
+	// With no request pending, the next click starts a new one.
+	now = firstClick.Add(20 * time.Second)
+	if got := read("/v1/usage?refresh=1"); got.State != "refreshing" || got.RequestedAt != now.Format(time.RFC3339) {
+		t.Fatalf("a click after a finished refresh must start a new one, got %+v", got)
+	}
+
+	// A request that ran out is not kept either.
+	now = now.Add(usageRefreshRequestMaxAge)
+	if got := read("/v1/usage?refresh=1"); got.State != "refreshing" || got.RequestedAt != now.Format(time.RFC3339) {
+		t.Fatalf("a click after an expired refresh must start a new one, got %+v", got)
+	}
+}
+
 func TestUsageManualRefreshWaitsForEveryProvider(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
@@ -5089,6 +5149,10 @@ func TestCustomThemeRenderPackPersistsWhenDisplayRefreshFails(t *testing.T) {
 }
 
 func TestDMGControlCenterRetiresExternalBrowserUI(t *testing.T) {
+	// The page names the host; this test checks the Mac wording on every runner.
+	original := providerCopyGOOS
+	t.Cleanup(func() { providerCopyGOOS = original })
+	providerCopyGOOS = "darwin"
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.installationMode = "dmg"
 	server.controlCenterFS = fstest.MapFS{
@@ -5146,6 +5210,51 @@ func TestControlCenterStaticUnavailableWithoutIndex(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "Run setup again") {
 		t.Fatalf("expected customer recovery copy, got %q", rec.Body.String())
+	}
+}
+
+// The two pages the server words itself never pass through the app's screens,
+// so they name the host themselves (#548). The Mac text stays as it was.
+func TestServerWordedPagesNameTheHost(t *testing.T) {
+	original := providerCopyGOOS
+	t.Cleanup(func() { providerCopyGOOS = original })
+
+	body := func(installationMode string, files fstest.MapFS) string {
+		server := newTestServer(t, runtimeconfig.Config{})
+		server.installationMode = installationMode
+		server.controlCenterFS = files
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/control-center", nil)
+		req.Header.Set("User-Agent", "Mozilla/5.0")
+		server.Handler().ServeHTTP(rec, req)
+		return rec.Body.String()
+	}
+	const (
+		macMoved   = `<h1>VibeTV Control Center moved to the Mac App.</h1><p>Open VibeTV Control Center from Applications.</p>`
+		macMissing = `<p>VibeTV Control Center is not bundled with this Mac App. Run setup again.</p>`
+		winMoved   = `<h1>VibeTV Control Center moved to the app.</h1><p>Open VibeTV Control Center from the Start menu.</p>`
+		winMissing = `<p>VibeTV Control Center is not bundled with this app. Run setup again.</p>`
+	)
+
+	providerCopyGOOS = "darwin"
+	if got := body("dmg", fstest.MapFS{}); !strings.Contains(got, macMoved) {
+		t.Fatalf("Mac moved page = %q", got)
+	}
+	if got := body("legacy", fstest.MapFS{}); !strings.Contains(got, macMissing) {
+		t.Fatalf("Mac missing page = %q", got)
+	}
+
+	providerCopyGOOS = "windows"
+	for _, got := range []string{body("dmg", fstest.MapFS{}), body("legacy", fstest.MapFS{})} {
+		if strings.Contains(got, "Mac") || strings.Contains(got, "Applications") {
+			t.Fatalf("Windows page names the Mac: %q", got)
+		}
+	}
+	if got := body("dmg", fstest.MapFS{}); !strings.Contains(got, winMoved) {
+		t.Fatalf("Windows moved page = %q", got)
+	}
+	if got := body("legacy", fstest.MapFS{}); !strings.Contains(got, winMissing) {
+		t.Fatalf("Windows missing page = %q", got)
 	}
 }
 
@@ -5973,7 +6082,7 @@ func TestStatusNamesRenderFailureInsteadOfProviderSetup(t *testing.T) {
 func TestThemeInstallRenderHealthErrorIsPlainText(t *testing.T) {
 	const hint = "keep VibeTV powered and retry theme install; if this repeats, contact support with `codexbar-display health` output"
 	payload := func(cause error) apiError {
-		_, got := themeInstallErrorPayload(&themeinstall.InstallError{
+		_, got := themeInstallErrorPayload("live", &themeinstall.InstallError{
 			Op:   "theme-pack/render-health",
 			Code: errcode.UpgradeFlashFirmware,
 			Err:  cause,
@@ -5999,6 +6108,39 @@ func TestThemeInstallRenderHealthErrorIsPlainText(t *testing.T) {
 		if got.Code == "display_render_failed" || got.NextAction != hint {
 			t.Fatalf("%v: must keep the retry advice, got %+v", cause, got)
 		}
+	}
+}
+
+// Issue #558: a screensaver that could not be installed was called a theme in
+// the failure the customer reads. The engine's own detail is not reworded.
+func TestScreensaverInstallFailureSaysScreensaver(t *testing.T) {
+	transfer := &themeinstall.InstallError{
+		Op:   "theme-pack/upload",
+		Err:  errors.New("write /themes/u/a.json: timeout"),
+		Hint: "keep VibeTV powered and on the same WiFi, then retry theme install",
+	}
+	pairing := &statusAPIError{status: http.StatusForbidden, api: apiError{
+		Code:       "pairing_required",
+		Message:    "VibeTV pairing is required before installing a theme.",
+		NextAction: "Finish VibeTV setup, then retry the theme install.",
+	}}
+
+	_, got := themeInstallErrorPayload("screensaver", transfer)
+	if !strings.HasPrefix(got.Message, "Screensaver install failed: ") || !strings.Contains(got.Message, "/themes/u/a.json") ||
+		got.NextAction != "keep VibeTV powered and on the same WiFi, then retry screensaver install" {
+		t.Fatalf("screensaver transfer failure reads %+v", got)
+	}
+	_, got = themeInstallErrorPayload("screensaver", pairing)
+	if got.Message != "VibeTV pairing is required before installing a screensaver." || got.NextAction != "Finish VibeTV setup, then retry the screensaver install." {
+		t.Fatalf("screensaver pairing failure reads %+v", got)
+	}
+	// A theme keeps its words.
+	_, got = themeInstallErrorPayload("live", transfer)
+	if !strings.HasPrefix(got.Message, "Theme install failed: ") || !strings.HasSuffix(got.NextAction, "retry theme install") {
+		t.Fatalf("theme transfer failure reads %+v", got)
+	}
+	if _, got = themeInstallErrorPayload("live", pairing); got != pairing.api {
+		t.Fatalf("theme pairing failure reads %+v", got)
 	}
 }
 
@@ -7193,6 +7335,62 @@ func TestDiagnosticsWorksWithoutDeviceTarget(t *testing.T) {
 	// The Control Center shows this sentence as "Mac App is running."
 	if got.Checks[0].Detail != "Companion API is running." {
 		t.Fatalf("expected the plain app check sentence, got %+v", got.Checks[0])
+	}
+}
+
+func TestDiagnosticsReportsLastCollectionCounts(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	at := time.Date(2026, 10, 9, 1, 2, 3, 0, time.UTC)
+	server.loadCollectorCycle = func() (daemon.CollectorCycle, bool) {
+		return daemon.CollectorCycle{At: at, Providers: 2, Succeeded: 1}, true
+	}
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/diagnostics", nil))
+
+	var got struct {
+		LastCollection map[string]any `json:"lastCollection"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	want := map[string]any{"at": "2026-10-09T01:02:03Z", "providers": float64(2), "succeeded": float64(1)}
+	if !reflect.DeepEqual(got.LastCollection, want) {
+		t.Fatalf("lastCollection = %#v, want %#v", got.LastCollection, want)
+	}
+
+	server.loadCollectorCycle = func() (daemon.CollectorCycle, bool) { return daemon.CollectorCycle{}, false }
+	rec = httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/diagnostics", nil))
+	if strings.Contains(rec.Body.String(), "lastCollection") {
+		t.Fatalf("expected no lastCollection before a collection completed, got %s", rec.Body.String())
+	}
+}
+
+// Issue #368: the support report says since when a provider has no newer
+// usage reading, so "enabled but silent for 16 days" is one line of JSON.
+func TestDiagnosticsReportsNoReadingSincePerProvider(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		at := time.Date(2026, 7, 28, 8, 29, 0, 0, time.UTC)
+		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{
+			{Provider: "claude", CollectedAt: at, Stale: true},
+			// A working provider is not in the list, nor is one that never
+			// delivered: its time is a failed reading.
+			{Provider: "codex", CollectedAt: at.Add(16 * 24 * time.Hour)},
+			{Provider: "cursor", CollectedAt: at, Stale: true, NoReading: true},
+		}}, true
+	}
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/diagnostics", nil))
+
+	var got struct {
+		NoReadingSince map[string]string `json:"noReadingSince"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if want := map[string]string{"claude": "2026-07-28T08:29:00Z"}; !reflect.DeepEqual(got.NoReadingSince, want) {
+		t.Fatalf("noReadingSince = %#v, want %#v", got.NoReadingSince, want)
 	}
 }
 
@@ -12218,6 +12416,10 @@ func TestFirmwareUpdateInstallRefusesWhileThemeInstallIsActive(t *testing.T) {
 	if response.Error.Code != "theme_install_in_progress" {
 		t.Fatalf("error code=%q want theme_install_in_progress", response.Error.Code)
 	}
+	// The running install can be a screensaver (issue #558).
+	if response.Error.Message != "A theme or screensaver is still being installed." {
+		t.Fatalf("refusal reads %q", response.Error.Message)
+	}
 	if _, active := server.activeFirmwareUpdateJob(); active {
 		t.Fatal("rejected firmware update created a job")
 	}
@@ -13547,6 +13749,8 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 	// log saved from there lands in the temp directory while the test removes
 	// it; saving has its own tests in setup_events_test.go.
 	server.setupEvents.path = ""
+	server.setupEvents.readOnly = false
+	server.timeline = timeline.Open("")
 	current := cfg
 	server.loadConfig = func(string) (runtimeconfig.Config, error) {
 		return current, nil

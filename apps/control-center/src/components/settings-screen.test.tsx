@@ -184,9 +184,14 @@ describe("SettingsScreen standby controls", () => {
     expect(wifi).not.toContain("Reset to factory settings");
     // Paul, 2026-10-08: the two setup actions sit side by side in one row, and
     // Run diagnostics is on Support only.
+    // Issue #579: each has its own line below it; before, the one line
+    // beside them explained only Run setup again.
     expect(cable).toMatch(
-      /Run setup again<\/span><\/button><button[^>]*><span>Reset to factory settings/,
+      /Run setup again<\/span><\/button><p[^>]*>Connect this Mac to another VibeTV\.<\/p><\/div><div[^>]*><button[^>]*><span>Reset to factory settings<\/span><\/button><p[^>]*>VibeTV forgets its WiFi details, pairing, settings and themes\.<\/p>/,
     );
+    expect(cable.match(/Connect this Mac to another VibeTV\./g)).toHaveLength(1);
+    expect(wifi).toContain("Connect this Mac to another VibeTV.");
+    expect(wifi).not.toContain("VibeTV forgets");
     expect(cable).not.toContain("Run diagnostics");
   });
 
@@ -591,13 +596,22 @@ describe("SettingsScreen standby controls", () => {
   // Issue #424: the app's global shortcut for the next provider is named
   // under Display mode, and so is the case that the system refused its keys.
   it("names the provider shortcut under Display mode", () => {
+    const signedOut: ProviderItem = {
+      ...provider("codex", "Codex", true),
+      health: { message: "Authentication required.", service: "operational", state: "auth_required" },
+    };
+    const twoWithUsage = [provider("claude", "Claude", true), provider("cursor", "Cursor", true)];
     const displayMode = (
       providerShortcut: SettingsScreenProps["providerShortcut"],
       windowsHost = false,
+      mode: "automatic" | "fixed" = "automatic",
+      items: ProviderItem[] = twoWithUsage,
     ) => {
       const html = render(
-        standbyDevice, savedStandby, providerPicker, 70, "cable", windowsHost,
-        [], [], providerShortcut,
+        standbyDevice, savedStandby,
+        { ...providerPicker, items,
+          display: { mode, providerIds: ["claude"], configured: true, valid: true } },
+        70, "cable", windowsHost, [], [], providerShortcut,
       );
       return html.slice(
         html.indexOf(">Display mode</h2>"),
@@ -621,6 +635,31 @@ describe("SettingsScreen standby controls", () => {
     expect(displayMode("unavailable", true)).toContain(
       "The shortcut Ctrl+Alt+Shift+P for the next provider is not available: another app may already be using these keys.",
     );
+
+    // Issue #558: the line follows what a press would do. With Manual chosen
+    // nothing switches to Manual, and with one provider that has usage a
+    // press changes nothing, also when a second one is on without usage.
+    const manual = displayMode("available", false, "fixed");
+    expect(manual).toContain("Press ⌃⌥⌘P in any app to show the next provider.");
+    expect(manual).not.toContain("This switches to Manual.");
+    for (const mode of ["automatic", "fixed"] as const) {
+      const one = displayMode("available", true, mode, [provider("claude", "Claude", true), signedOut]);
+      expect(one).toContain(
+        "Press Ctrl+Alt+Shift+P in any app to show the next provider. This needs two providers with usage.",
+      );
+      expect(one).not.toContain("This switches to Manual.");
+    }
+
+    // Until usage has been read, nobody knows how many providers have usage,
+    // and a press may well work: the line claims neither.
+    const unread = render(
+      standbyDevice, savedStandby,
+      { ...providerPicker, usage: null, items: twoWithUsage,
+        display: { mode: "automatic", providerIds: ["claude"], configured: true, valid: true } },
+      70, "cable", false, [], [], "available",
+    );
+    expect(unread).toContain("Press ⌃⌥⌘P in any app to show the next provider.</p>");
+    expect(unread).not.toContain("This needs two providers with usage.");
 
     // A browser has no global shortcut, so Settings names none.
     expect(displayMode(null)).not.toContain("shortcut");

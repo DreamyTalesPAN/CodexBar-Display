@@ -20,6 +20,9 @@ export type ThemeProduct = {
   themeVersion?: string;
   themeRev?: number;
   themeSpecPath?: string;
+  // The files this catalog theme was sent under in its earlier revisions. A
+  // catalog that names them tells exactly which files on VibeTV are its own.
+  earlierThemeSpecPaths?: string[];
   manifestUrl?: string;
   packUrl?: string;
   packSha256?: string;
@@ -109,6 +112,7 @@ type ThemePackCatalog = {
     manifestUrl?: string;
     themeRev?: number;
     themeSpecPath?: string;
+    earlierThemeSpecPaths?: string[];
     version?: string;
     usage?: string;
     compatibleBoards?: string[];
@@ -370,6 +374,7 @@ function mapThemePackCatalogEntry(
       theme.version || (theme.themeRev ? `rev ${theme.themeRev}` : undefined),
     themeRev: theme.themeRev,
     themeSpecPath: theme.themeSpecPath,
+    earlierThemeSpecPaths: theme.earlierThemeSpecPaths,
     usage: normalizeThemeUsage(theme.usage) || "live",
     manifestUrl: theme.manifestUrl,
     packUrl,
@@ -450,6 +455,7 @@ export function mergeThemeProductWithCatalog(
     themeVersion: technicalTheme.themeVersion || product.themeVersion,
     themeRev: technicalTheme.themeRev || product.themeRev,
     themeSpecPath: technicalTheme.themeSpecPath || product.themeSpecPath,
+    earlierThemeSpecPaths: technicalTheme.earlierThemeSpecPaths,
   };
 }
 

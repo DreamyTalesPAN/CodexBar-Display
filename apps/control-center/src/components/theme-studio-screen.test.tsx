@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -104,6 +104,9 @@ it("lets the customer name the theme in the header, without opening Advanced", a
     },
   });
 
+  // Issue #579: the name in the theme's file is cut to 80 characters, and the
+  // field took any length. The browser cuts what is typed or pasted beyond it.
+  expect((screen.getByLabelText("Name") as HTMLInputElement).maxLength).toBe(80);
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Retro Clock" } });
   fireEvent.click(button("Save theme"));
   await waitFor(() => expect(saved).toEqual(["Retro Clock"]));
@@ -200,6 +203,43 @@ it.each([
   expect(await screen.findByText(failed)).toBeTruthy();
 });
 
+// Issue #558: "Sending theme after your click." and "Theme installed through
+// the app." were the app's own words, not the customer's.
+it.each([
+  ["live", "Sending the theme to VibeTV.", "Theme is installed on VibeTV."],
+  ["screensaver", "Sending the screensaver to VibeTV.", "Screensaver is ready on VibeTV."],
+] as const)("says in plain words that it sends and that VibeTV has the %s", async (usage, sending, done) => {
+  let finish: (installed: boolean) => void = () => {};
+  renderStudio("custom", {
+    initialTheme: {
+      assets: {}, packName: "Mine", source: "custom", spec: createBlankThemeSpec(), usage,
+    },
+    onInstallTheme: () => new Promise<boolean>(resolve => { finish = resolve; }),
+  });
+
+  fireEvent.click(button("Send to VibeTV"));
+  expect(await screen.findByText(sending)).toBeTruthy();
+  finish(true);
+  expect(await screen.findByText(done)).toBeTruthy();
+  expect(document.body.textContent).not.toMatch(/after your click|through the/);
+});
+
+// Issue #558: Screensaver Studio said "theme" under Advanced.
+it.each([
+  ["live", "Import theme JSON", "Theme JSON"],
+  ["screensaver", "Import screensaver JSON", "Screensaver JSON"],
+] as const)("names what Advanced imports and edits (%s)", (usage, importJson, json) => {
+  renderStudio("custom", {
+    initialTheme: {
+      assets: {}, packName: "Mine", source: "custom", spec: createBlankThemeSpec(), usage,
+    },
+  });
+  fireEvent.click(button("Advanced"));
+  expect(button(importJson)).toBeTruthy();
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "JSON" }));
+  expect(screen.getByLabelText(json)).toBeTruthy();
+});
+
 it("names a failed check instead of asking to save while Save is unavailable too", () => {
   renderStudio("blank");
   fireEvent.click(button("Advanced"));
@@ -234,10 +274,20 @@ it("names the VibeTV's own limit when that is what keeps Send unavailable", () =
 // Issue #551: Export ZIP did not say where the file went. Windows saves a
 // download without asking (see #545); the Mac asks where and can be cancelled.
 // Windows gets no file name: it saves a second export as "… (1).zip".
+// Seen on the Mac app on 2026-10-09: "… exported." stood while the save dialog
+// was still open and after Cancel. The app does not learn how that dialog
+// ended, so the Mac sentence claims no saved file.
+// Found in review: a pre-DMG install still opens this page in a plain browser,
+// which saves without asking or asks, as it is set; the Mac sentence about a
+// save dialog is said in the Mac app only.
 it.each([
-  [true, "Saved in your Downloads folder. Nothing was sent."],
-  [false, "vibetv-theme-my-theme.zip exported. Nothing was sent."],
-])("says after Export ZIP where the file is when the app saved it itself (windows=%s)", (windowsHost, message) => {
+  [true, true, "Saved in your Downloads folder. Nothing was sent."],
+  [false, true, "Choose where to save vibetv-theme-new-theme.zip. Nothing was sent."],
+  [false, false, "Export started in your browser: vibetv-theme-new-theme.zip. Nothing was sent."],
+])("says after Export ZIP where the file is when the app saved it itself (windows=%s, app=%s)", (windowsHost, nativeApp, message) => {
+  if (nativeApp) {
+    vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue("VibeTVControlCenter/1.0");
+  }
   // jsdom has neither blob URLs nor downloads.
   URL.createObjectURL = () => "blob:theme";
   URL.revokeObjectURL = () => {};
@@ -250,6 +300,65 @@ it.each([
 
   expect(download).toHaveBeenCalledTimes(1);
   expect(screen.getByText(message)).toBeTruthy();
+});
+
+// Issue #582: the Mac app says how its save dialog ended. A saved file is
+// confirmed, after Cancel the notice goes, and an older Mac app, which says
+// nothing, keeps the sentence about the dialog.
+function exportInMacApp() {
+  vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue("VibeTVControlCenter/1.0");
+  URL.createObjectURL = () => "blob:theme";
+  URL.revokeObjectURL = () => {};
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  renderStudio("custom");
+  fireEvent.click(button("Export ZIP"));
+}
+
+function macAppSaveDialogEnded(fileName: string, saved: boolean) {
+  act(() => {
+    window.dispatchEvent(
+      new CustomEvent("vibetv:download-finished", { detail: { fileName, saved } }),
+    );
+  });
+}
+
+const ASKED = "Choose where to save vibetv-theme-new-theme.zip. Nothing was sent.";
+
+it("confirms the exported ZIP once the Mac app says it was saved", () => {
+  exportInMacApp();
+  expect(screen.getByText(ASKED)).toBeTruthy();
+
+  macAppSaveDialogEnded("vibetv-theme-new-theme.zip", true);
+
+  expect(screen.queryByText(ASKED)).toBeNull();
+  expect(screen.getByText("vibetv-theme-new-theme.zip saved. Nothing was sent.")).toBeTruthy();
+});
+
+it("takes the export notice away when the Mac app's save dialog was cancelled", () => {
+  exportInMacApp();
+  expect(screen.getByText("Export")).toBeTruthy();
+
+  macAppSaveDialogEnded("vibetv-theme-new-theme.zip", false);
+
+  expect(screen.queryByText(ASKED)).toBeNull();
+  expect(screen.queryByText("Export")).toBeNull();
+});
+
+it("keeps the export notice when the Mac app reports another file", () => {
+  exportInMacApp();
+
+  macAppSaveDialogEnded("vibetv-support-report-2026-10-08.json", true);
+  macAppSaveDialogEnded("vibetv-support-report-2026-10-08.json", false);
+
+  expect(screen.getByText(ASKED)).toBeTruthy();
+});
+
+it("confirms no export for a save the Mac app reports when none was asked for", () => {
+  renderStudio("custom");
+
+  macAppSaveDialogEnded("vibetv-theme-new-theme.zip", true);
+
+  expect(screen.queryByText("vibetv-theme-new-theme.zip saved. Nothing was sent.")).toBeNull();
 });
 
 // Issue #551: the notices sat under the Inspector's fields, below the fold
@@ -298,7 +407,7 @@ it("shows one answer at a time for Save, Export and Send, errors included", asyn
   URL.revokeObjectURL = () => {};
   vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
   const saved = "Saved to library.";
-  const exported = "vibetv-theme-my-theme.zip exported. Nothing was sent.";
+  const exported = "Export started in your browser: vibetv-theme-new-theme.zip. Nothing was sent.";
   const sendFailed = "Theme install needs attention. Check the install status.";
   const shown = () => [saved, exported, sendFailed].filter(text => screen.queryByText(text));
   renderStudio("blank", { onInstallTheme: async () => false });
@@ -327,4 +436,196 @@ it("keeps saying why saving is locked after a change and after Export", () => {
   fireEvent.click(screen.getAllByRole("button", { name: "Text" })[0]);
   // Now the line above the buttons names it too.
   expect(screen.getAllByText(locked)).toHaveLength(2);
+});
+
+// Issue #558: "Mini theme" took the draft's place, name and id included,
+// without a question.
+it("asks before Mini theme or an opened file replaces a draft with changes", async () => {
+  const fetchMock = vi.fn(async () => new Response("{}", { status: 404 }));
+  vi.stubGlobal("fetch", fetchMock);
+  renderStudio("blank");
+  fireEvent.click(button("Advanced"));
+
+  fireEvent.click(screen.getAllByRole("button", { name: "Text" })[0]);
+  fireEvent.click(button("Mini theme"));
+  expect(screen.getByRole("alertdialog", { name: "Replace your changes?" })).toBeTruthy();
+  fireEvent.click(button("Keep editing"));
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  expect(fetchMock).not.toHaveBeenCalled();
+
+  fireEvent.click(button("Import theme JSON"));
+  expect(screen.getByRole("alertdialog")).toBeTruthy();
+  fireEvent.click(button("Keep editing"));
+
+  fireEvent.click(button("Mini theme"));
+  fireEvent.click(button("Replace"));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+});
+
+// JSON typed under Advanced › JSON and not applied is a change too: what is
+// opened would throw it away, and Undo does not bring it back.
+it("asks before Mini theme replaces JSON that was typed and not applied", async () => {
+  const fetchMock = vi.fn(async () => new Response("{}", { status: 404 }));
+  vi.stubGlobal("fetch", fetchMock);
+  renderStudio("blank");
+  fireEvent.click(button("Advanced"));
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "JSON" }));
+  const json = screen.getByLabelText("Theme JSON") as HTMLTextAreaElement;
+  const unchanged = json.value;
+
+  // Typed text that is the theme as it is: nothing would be lost.
+  fireEvent.change(json, { target: { value: unchanged } });
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Project" }));
+  fireEvent.click(button("Mini theme"));
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "JSON" }));
+  fireEvent.change(screen.getByLabelText("Theme JSON"), { target: { value: `${unchanged} ` } });
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Project" }));
+  fireEvent.click(button("Mini theme"));
+  expect(screen.getByRole("alertdialog", { name: "Replace your changes?" })).toBeTruthy();
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
+it("opens Mini theme at once in a draft without changes", async () => {
+  const fetchMock = vi.fn(async () => new Response("{}", { status: 404 }));
+  vi.stubGlobal("fetch", fetchMock);
+  renderStudio("blank");
+  fireEvent.click(button("Advanced"));
+  fireEvent.click(button("Mini theme"));
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+});
+
+// Seen on the Windows app on 2026-10-09: with Show screensaver off the list
+// would not install a screensaver, and Screensaver Studio sent one anyway.
+it("does not send while the library says why nothing can be installed", () => {
+  const reason = "Turn on Show screensaver first.";
+  renderStudio("custom", { installBlockedReason: reason });
+  expect(button("Send to VibeTV").disabled).toBe(true);
+  expect(screen.getByText(reason)).toBeTruthy();
+});
+
+// Seen on the Windows app on 2026-10-09: Apply JSON answered with the
+// parser's own sentence, "Unexpected token 'Q', ... is not valid JSON".
+it("says in one plain sentence that typed or imported JSON is not valid, and keeps the text", async () => {
+  renderStudio("blank");
+  fireEvent.click(button("Advanced"));
+  const file = new File(['{"p": [QA'], "broken.json", { type: "application/json" });
+  fireEvent.change(document.querySelector('input[accept="application/json,.json"]')!, {
+    target: { files: [file] },
+  });
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "JSON" }));
+  expect(await screen.findByText("This file is not valid JSON. Nothing was changed.")).toBeTruthy();
+
+  const json = screen.getByLabelText("Theme JSON") as HTMLTextAreaElement;
+  fireEvent.change(json, { target: { value: '{"p": [QA-TYPED' } });
+  fireEvent.click(button("Apply JSON"));
+  expect(screen.getByText("This text is not valid JSON. Nothing was changed.")).toBeTruthy();
+  expect(screen.queryByText(/Unexpected token/)).toBeNull();
+  expect(json.value).toBe('{"p": [QA-TYPED');
+});
+
+// Seen on the Windows app on 2026-10-09: a second Export ZIP left the same
+// sentence standing, so nothing showed that it had saved another file.
+it("says on Windows that a repeated Export ZIP saved again", () => {
+  URL.createObjectURL = () => "blob:theme";
+  URL.revokeObjectURL = () => {};
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  renderStudio("custom", { windowsHost: true });
+
+  fireEvent.click(button("Export ZIP"));
+  expect(screen.getByText("Saved in your Downloads folder. Nothing was sent.")).toBeTruthy();
+  fireEvent.click(button("Export ZIP"));
+  expect(screen.getByText("Saved again in your Downloads folder (export 2). Nothing was sent.")).toBeTruthy();
+  fireEvent.click(button("Export ZIP"));
+  expect(screen.getByText("Saved again in your Downloads folder (export 3). Nothing was sent.")).toBeTruthy();
+
+  // Found in review: the count is of one file. Under another name the theme
+  // is saved as another file, and that one for the first time.
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Renamed" } });
+  fireEvent.click(button("Export ZIP"));
+  expect(screen.getByText("Saved in your Downloads folder. Nothing was sent.")).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "New Theme" } });
+  fireEvent.click(button("Export ZIP"));
+  expect(screen.getByText("Saved again in your Downloads folder (export 4). Nothing was sent.")).toBeTruthy();
+});
+
+// Seen on the Mac app on 2026-10-09: "Import screensaver JSON" does not fit
+// the left panel in one line, and a button's label does not wrap by itself,
+// so the whole panel grew wider and was cut off on the right. jsdom lays
+// nothing out: this checks the classes that let the label wrap, not a picture.
+it("lets the long labels under Advanced › Project wrap inside the panel", () => {
+  renderStudio("custom", {
+    initialTheme: {
+      assets: {}, packName: "S", source: "custom", spec: createBlankThemeSpec(), usage: "screensaver",
+    },
+  });
+  fireEvent.click(button("Advanced"));
+  for (const name of ["Import screensaver JSON", "Mini theme"]) {
+    const classes = button(name).className.split(" ");
+    expect(classes).toEqual(expect.arrayContaining(["h-auto", "whitespace-normal", "w-full"]));
+  }
+  expect(document.getElementById("theme-studio-panel-project")!.className.split(" ")).toContain("min-w-0");
+  // And the list they sit in does not grow with what is in it.
+  expect(
+    document.getElementById("theme-studio-panel-project")!.closest('[data-slot="scroll-area"]')!.className,
+  ).toContain("[&_[data-slot=scroll-area-viewport]>div]:block!");
+});
+
+// Seen on the Windows app on 2026-10-09: the import button is on Advanced ›
+// Project, and what it answered stood on the JSON tab only. It also stayed
+// there through three exports.
+it("answers a file that could not be imported where Save, Export and Send answer, until the next answer", async () => {
+  URL.createObjectURL = () => "blob:theme";
+  URL.revokeObjectURL = () => {};
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  const failed = "This file is not valid JSON. Nothing was changed.";
+  renderStudio("custom");
+  fireEvent.click(button("Advanced"));
+  fireEvent.change(document.querySelector('input[accept="application/json,.json"]')!, {
+    target: { files: [new File(['{"p": [QA'], "broken.json")] },
+  });
+  const notice = await screen.findByText(failed);
+  expect(screen.getByRole("tab", { name: "Project" }).getAttribute("aria-selected")).toBe("true");
+  expect(
+    notice.compareDocumentPosition(screen.getByText("Inspector")) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+
+  // A change to the theme takes it away, like what Save answered.
+  fireEvent.click(screen.getAllByRole("button", { name: "Text" })[0]);
+  expect(screen.queryByText(failed)).toBeNull();
+  fireEvent.change(document.querySelector('input[accept="application/json,.json"]')!, {
+    target: { files: [new File(["{"], "broken.json")] },
+  });
+  await screen.findByText(failed);
+  fireEvent.click(button("Export ZIP"));
+  expect(screen.queryByText(failed)).toBeNull();
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "JSON" }));
+  expect(screen.queryByText(failed)).toBeNull();
+
+  // What Apply JSON answered leaves with the next answer too.
+  const rejected = "This text is not valid JSON. Nothing was changed.";
+  fireEvent.change(screen.getByLabelText("Theme JSON"), { target: { value: "{" } });
+  fireEvent.click(button("Apply JSON"));
+  expect(screen.getByText(rejected)).toBeTruthy();
+  fireEvent.click(button("Export ZIP"));
+  expect(screen.queryByText(rejected)).toBeNull();
+});
+
+// Seen on the Windows app on 2026-10-09: after only the id was changed in the
+// JSON text, Apply JSON renamed "New Theme" to a name made up from that id.
+// The JSON holds no name, so it cannot change one.
+it("keeps the theme's name when JSON is applied", () => {
+  renderStudio("blank");
+  fireEvent.click(button("Advanced"));
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "JSON" }));
+  const json = screen.getByLabelText("Theme JSON") as HTMLTextAreaElement;
+  fireEvent.change(json, { target: { value: json.value.replace('"my-theme"', '"myqa-theme-7"') } });
+  fireEvent.click(button("Apply JSON"));
+  expect(json.value).toContain('"id": "myqa-theme-7"');
+  expect(screen.getByDisplayValue("New Theme")).toBeTruthy();
+  expect(screen.queryByDisplayValue("Myqa Theme 7")).toBeNull();
 });

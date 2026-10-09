@@ -111,6 +111,29 @@ describe("ThemeLibraryScreen custom themes", () => {
     await act(async () => cleanup());
   });
 
+  // Issue #551: Token Counter showed "-- SESSION TOKENS" on a computer
+  // without token history and its row did not say why.
+  it("says on the row of a theme with token numbers that they are missing", async () => {
+    const hint = "Shows -- while token history is unavailable. See Usage.";
+    vi.stubGlobal("fetch", async () =>
+      Response.json({ ok: true, spec: { p: [{ t: "tx", b: "st" }] } }),
+    );
+    const without = await renderLibrary([catalogTheme], { tokenHistoryUnavailable: true });
+    // The customer's own theme in this library draws no token number.
+    expect(without.html.split(hint)).toHaveLength(2);
+    expect(without.html.indexOf(hint)).toBeGreaterThan(without.html.indexOf("Live Theme"));
+    // In a narrow window the sentence takes three lines: it is not cut off.
+    const hintClass = /class="([^"]*)"[^>]*>\s*Shows --/.exec(without.html)?.[1] ?? "";
+    expect(hintClass).toContain("line-clamp-none");
+    expect(hintClass).not.toContain("line-clamp-2");
+    await act(async () => without.cleanup());
+
+    const known = await renderLibrary();
+    expect(known.html).not.toContain(hint);
+    await act(async () => known.cleanup());
+    vi.unstubAllGlobals();
+  });
+
   it("keeps the catalog theme alongside it, without a delete action", async () => {
     const { html, cleanup } = await renderLibrary();
 
@@ -368,6 +391,55 @@ describe("ThemeLibraryScreen custom themes", () => {
     await act(async () => root.unmount());
   });
 
+  // Found in review: the Screensavers list swapped "theme" for "screensaver"
+  // in every message it showed, also in one that carries the customer's name
+  // for their screensaver.
+  it("leaves a message that names the customer's screensaver as it is", async () => {
+    const savedName = ownScreensaver.packName;
+    ownScreensaver.packName = "Dark Theme";
+    try {
+      const host = document.createElement("div");
+      document.body.appendChild(host);
+      const root = createRoot(host);
+      await act(async () =>
+        root.render(
+          <ThemeLibraryScreen
+            busyAction={null}
+            companionStatus="online"
+            device={{ connected: true, paired: true, ready: true }}
+            onInstallCustomTheme={async (payload) => {
+              throw new Error(`${payload.packName} uses a theme file that is too large.`);
+            }}
+            onInstallTheme={vi.fn()}
+            onSaveStandby={vi.fn()}
+            onSelectTheme={vi.fn()}
+            selectedThemeId=""
+            standby={{ enabled: true, timeoutMinutes: 10, brightnessPercent: 20 }}
+            storefrontConfigured={false}
+            themeInstallEnabled
+            themes={[catalogTheme]}
+            usage="screensaver"
+          />,
+        ),
+      );
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      await act(async () => {
+        host.querySelector<HTMLButtonElement>('button[title="Install Dark Theme"]')!.click();
+      });
+
+      // The page's own title is worded for the list; the message is not touched.
+      expect(host.textContent).toContain("Screensaver action failed");
+      expect(host.textContent).toContain("Dark Theme uses a theme file that is too large.");
+      expect(host.textContent).not.toContain("Dark Screensaver");
+      await act(async () => root.unmount());
+    } finally {
+      ownScreensaver.packName = savedName;
+    }
+  });
+
   // VibeTV names its screensaver only by the path of the theme file. For the
   // customer's own screensaver that is the path its file is sent under.
   it("keeps the customer's own screensaver installed after a theme was installed", async () => {
@@ -394,11 +466,11 @@ describe("ThemeLibraryScreen custom themes", () => {
 
     const installed = await render(sentPath);
     expect(installed.html).toContain("My Screensaver");
-    expect(installed.html).toContain("Theme is already installed.");
+    expect(installed.html).toContain("Screensaver is already installed.");
     await act(async () => installed.cleanup());
 
     const other = await render("/themes/s/other-1-abc123.json");
-    expect(other.html).not.toContain("Theme is already installed.");
+    expect(other.html).not.toContain("is already installed.");
     await act(async () => other.cleanup());
   });
 });

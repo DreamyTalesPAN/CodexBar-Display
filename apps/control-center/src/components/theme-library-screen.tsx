@@ -50,6 +50,7 @@ import {
   Item,
   ItemActions,
   ItemContent,
+  ItemDescription,
   ItemFooter,
   ItemGroup,
   ItemMedia,
@@ -61,18 +62,20 @@ import { Switch } from "@/components/ui/switch";
 import {
   activeLiveThemeId,
   installedScreensaver,
-  pathMayNameCatalogTheme,
+  fileMayBeCatalogThemes,
 } from "@/lib/active-theme-upgrade";
 import { compareSemVer, parseSemVer } from "@/lib/semver";
 import { sentOwnThemePaths } from "@/lib/sent-own-theme-paths";
 import { cn } from "@/lib/utils";
 import { statusForHost } from "@/lib/customer-platform";
 import { isRemoteThemePackUrl } from "@/lib/theme-pack-url";
+import { catalogThemeRowId } from "@/lib/whats-new";
 import {
   createBlankThemeSpec,
   importThemeSpec,
   normalizeThemeSpec,
   validateThemeSpec,
+  wordsForUsage,
   type ThemeStudioAsset,
   type ThemeStudioUsage,
 } from "@/lib/theme-studio";
@@ -87,7 +90,12 @@ import {
 import type { ThemeStudioDeviceCapabilities } from "@/lib/theme-studio-capabilities";
 import type { ThemeProduct } from "@/lib/themes";
 import { themeRenderPackUrl } from "./control-center-runtime";
+import {
+  themeShowsTokenTotals,
+  type ThemeRenderPack,
+} from "./live-vibetv-preview";
 import { ThemeRenderPreview } from "./theme-render-preview";
+import { ReplaceDraftDialog } from "./theme-studio/replace-draft-dialog";
 import { SetupStepFailedDialog } from "./setup/setup-provider-dialogs";
 import type { ApiError, StandbySettings } from "./control-center-types";
 import {
@@ -171,6 +179,8 @@ export type ThemeInstallStatus = {
   failure?: ApiError;
 };
 
+const SCREENSAVER_OFF_REASON = "Turn on Show screensaver first.";
+
 export type ThemeLibraryScreenProps = {
   themes: ThemeProduct[];
   usage?: ThemeStudioUsage;
@@ -180,6 +190,8 @@ export type ThemeLibraryScreenProps = {
   companionStatus: ThemeLibraryCompanionStatus;
   device: ThemeLibraryDeviceInfo | null;
   themeInstallEnabled: boolean;
+  /** The provider on VibeTV has no token history (usageTokenHistoryUnavailableOnVibeTV). */
+  tokenHistoryUnavailable?: boolean;
   busyAction: string | null;
   installStatus?: ThemeInstallStatus | null;
   installEntry?: boolean;
@@ -210,6 +222,7 @@ export function ThemeLibraryScreen({
   storefrontConfigured,
   standby,
   themeInstallEnabled,
+  tokenHistoryUnavailable = false,
   onInstallCustomTheme,
   onSelectTheme,
   onInstallTheme,
@@ -220,6 +233,25 @@ export function ThemeLibraryScreen({
     (theme) => (theme.usage || "live") === usage,
   );
   const screensavers = usage === "screensaver";
+  // A screensaver is installed only while the screensaver is turned on, from
+  // the list and from Screensaver Studio alike.
+  const screensaverInstallBlockedReason = !screensavers
+    ? ""
+    : standby
+      ? standby.enabled
+        ? ""
+        : SCREENSAVER_OFF_REASON
+      : // The switch comes with the settings. A VibeTV that has it reports a
+        // standby state; while the settings are not there (still loading, or
+        // reading them failed) the app does not know whether it is on. A
+        // VibeTV without the switch reports neither and is not held back.
+        device?.standby
+        ? "Screensaver installs are not available right now."
+        : "";
+  // The sentences this page writes itself name what its list holds (issue
+  // #558). Only those: a message from storage, the app or the Mac App can
+  // carry the customer's own name for a theme and is shown as it came.
+  const say = (text: string) => wordsForUsage(text, usage);
   const [userThemes, setUserThemes] = useState<UserThemeRecord[]>([]);
   // What VibeTV itself reports in the slot this list fills, not what was
   // installed last from here: an install into the other slot changes nothing.
@@ -232,6 +264,9 @@ export function ThemeLibraryScreen({
     ? screensaverThemeId
     : activeLiveThemeId(themes, device);
   const [recovery, setRecovery] = useState<ThemeStudioRecovery | null>(null);
+  // There is one recovery copy, and the editor writes a new draft over it. What
+  // would be opened while an older draft waits there, until the customer agrees.
+  const [replacingRecovery, setReplacingRecovery] = useState<(() => void) | null>(null);
   const [editingTheme, setEditingTheme] =
     useState<ThemeStudioEditorTheme | null>(null);
   const [libraryError, setLibraryError] = useState("");
@@ -242,6 +277,8 @@ export function ThemeLibraryScreen({
   const deleteReturnFocusRef = useRef<HTMLElement | null>(null);
   const libraryHeadingRef = useRef<HTMLHeadingElement>(null);
   const [loadingEditorRow, setLoadingEditorRow] = useState("");
+  // Counts what was opened in the editor, to tell a theme that arrives late.
+  const editorOpensRef = useRef(0);
   const [preparingInstallRow, setPreparingInstallRow] = useState("");
   const [installRow, setInstallRow] = useState("");
   const [previewTheme, setPreviewTheme] = useState<ThemeLibraryItem | null>(null);
@@ -315,7 +352,6 @@ export function ThemeLibraryScreen({
         device,
         selectedTheme: displayTheme,
         themeInstallEnabled,
-        usage,
         windowsHost,
       });
   useEffect(() => {
@@ -348,7 +384,7 @@ export function ThemeLibraryScreen({
   function persistUserThemes(next: UserThemeRecord[]) {
     if (storageLocked) {
       throw new Error(
-        storageWarning || "Browser storage must be repaired before saving themes.",
+        storageWarning || say("Browser storage must be repaired before saving themes."),
       );
     }
     const result = writeUserThemes(next);
@@ -359,6 +395,16 @@ export function ThemeLibraryScreen({
     setUserThemes(result.value.themes);
   }
 
+  // Opens something other than the waiting draft, which the customer agreed
+  // to give up for it. The draft goes only now: what was chosen may have had
+  // to be fetched first, and when that fails nothing takes its place.
+  function openReplacingRecovery(theme: ThemeStudioEditorTheme) {
+    if (!recovery || discardRecovery()) {
+      editorOpensRef.current += 1;
+      setEditingTheme(theme);
+    }
+  }
+
   function openBlankTheme() {
     const existingIds = allThemeIds(themes, userThemes);
     const spec = createBlankThemeSpec();
@@ -367,7 +413,7 @@ export function ThemeLibraryScreen({
       existingIds,
     );
     setLibraryError("");
-    setEditingTheme({
+    openReplacingRecovery({
       assets: {},
       packName: screensavers ? "New Screensaver" : "New Theme",
       source: "blank",
@@ -379,7 +425,7 @@ export function ThemeLibraryScreen({
   async function openThemeEditor(item: ThemeLibraryItem) {
     setLibraryError("");
     if (item.kind === "custom") {
-      setEditingTheme({
+      openReplacingRecovery({
         assets: item.custom.document.assets,
         libraryId: item.custom.id,
         packName: item.custom.document.packName,
@@ -391,15 +437,21 @@ export function ThemeLibraryScreen({
     }
 
     setLoadingEditorRow(rowKey(item));
+    const opensBefore = editorOpensRef.current;
     try {
       const payload = await fetchThemePackForEditing(
         item.product.themeId,
         item.product.themeSpecPath,
       );
+      // The customer opened something else while this was loading: that stays
+      // in the editor, and this theme is not what replaces the draft.
+      if (opensBefore !== editorOpensRef.current) {
+        return;
+      }
       const spec = importThemeSpec(payload.spec);
       const existingIds = allThemeIds(themes, userThemes);
       spec.themeId = uniqueThemeId(`${item.product.themeId}-custom`, existingIds);
-      setEditingTheme({
+      openReplacingRecovery({
         assets: payload.assets || {},
         libraryId: item.product.themeId,
         packName: `${payload.name || item.product.title} Custom`,
@@ -409,7 +461,7 @@ export function ThemeLibraryScreen({
       });
     } catch (error) {
       setLibraryError(
-        error instanceof Error ? error.message : "Theme could not be opened.",
+        error instanceof Error ? error.message : say("Theme could not be opened."),
       );
     } finally {
       setLoadingEditorRow("");
@@ -486,13 +538,22 @@ export function ThemeLibraryScreen({
     });
   }
 
-  function discardRecovery() {
+  function discardRecovery(): boolean {
     const result = clearThemeStudioRecovery();
     if (!result.ok) {
       setLibraryError(result.error.message);
-      return;
+      return false;
     }
     setRecovery(null);
+    return true;
+  }
+
+  function openInEditor(open: () => void) {
+    if (recovery) {
+      setReplacingRecovery(() => open);
+    } else {
+      open();
+    }
   }
 
   function confirmDeleteTheme(): boolean {
@@ -507,7 +568,7 @@ export function ThemeLibraryScreen({
       return true;
     } catch (error) {
       setDeleteError(
-        error instanceof Error ? error.message : "Theme could not be deleted.",
+        error instanceof Error ? error.message : say("Theme could not be deleted."),
       );
       return false;
     }
@@ -557,7 +618,7 @@ export function ThemeLibraryScreen({
       }
     } catch (error) {
       setLibraryError(
-        error instanceof Error ? error.message : "Theme could not be prepared.",
+        error instanceof Error ? error.message : say("Theme could not be prepared."),
       );
     } finally {
       setPreparingInstallRow("");
@@ -569,6 +630,7 @@ export function ThemeLibraryScreen({
       <ThemeStudioScreen
         deviceCapabilities={themeStudioCapabilitiesFromDevice(device)}
         initialTheme={editingTheme}
+        installBlockedReason={screensaverInstallBlockedReason}
         onBackToLibrary={() => setEditingTheme(null)}
         onInstallTheme={onInstallCustomTheme}
         onRecoveryDiscarded={() => setRecovery(null)}
@@ -608,7 +670,7 @@ export function ThemeLibraryScreen({
               : "Customize how your live usage screen looks while VibeTV is active."}
           </p>
         </div>
-        <Button onClick={openBlankTheme} type="button">
+        <Button onClick={() => openInEditor(openBlankTheme)} type="button">
           <Plus data-icon="inline-start" aria-hidden />
           <span>{screensavers ? "Create Screensaver" : "Create Theme"}</span>
         </Button>
@@ -650,22 +712,25 @@ export function ThemeLibraryScreen({
         {storageWarning ? (
           <Alert className="mb-5">
             <Lock aria-hidden />
-            <AlertTitle>Theme storage needs attention</AlertTitle>
+            <AlertTitle>{say("Theme storage needs attention")}</AlertTitle>
             <AlertDescription>{storageWarning}</AlertDescription>
           </Alert>
         ) : null}
         {libraryError ? (
           <Alert className="mb-5" variant="destructive">
             <Lock aria-hidden />
-            <AlertTitle>Theme action failed</AlertTitle>
+            <AlertTitle>{say("Theme action failed")}</AlertTitle>
             <AlertDescription>{libraryError}</AlertDescription>
           </Alert>
         ) : null}
         {recovery && recoveryMatchesUsage ? (
           <RecoveryCard
+            // The theme that takes the draft's place is on its way.
+            busy={Boolean(loadingEditorRow)}
             onDiscard={discardRecovery}
             onResume={resumeRecovery}
             recovery={recovery}
+            title={say("Continue your unsaved theme")}
           />
         ) : null}
         {catalogEmpty ? (
@@ -687,9 +752,7 @@ export function ThemeLibraryScreen({
               {libraryThemes.map((theme) => (
                 <ThemeListItem
                   busyAction={busyAction}
-                  screensaverInstallLocked={
-                    screensavers && Boolean(standby) && !standby?.enabled
-                  }
+                  screensaverInstallBlockedReason={screensaverInstallBlockedReason}
                   device={device}
                   displayThemeId={displayTheme?.themeId}
                   item={theme}
@@ -701,7 +764,9 @@ export function ThemeLibraryScreen({
                   installedThemeId={installedThemeId}
                   lastInstall={lastInstall}
                   loadingEditorRow={loadingEditorRow}
-                  onEditTheme={openThemeEditor}
+                  onEditTheme={(item) =>
+                    openInEditor(() => void openThemeEditor(item))
+                  }
                   onDeleteTheme={requestDeleteTheme}
                   onInstallTheme={installLibraryTheme}
                   onPreviewTheme={setPreviewTheme}
@@ -712,6 +777,7 @@ export function ThemeLibraryScreen({
                   themeInstallBlockedReason={readiness.buttonReason}
                   themeInstallEnabled={themeInstallEnabled}
                   themeStorageLocked={storageLocked}
+                  tokenHistoryUnavailable={tokenHistoryUnavailable}
                 />
               ))}
             </ItemGroup>
@@ -737,6 +803,19 @@ export function ThemeLibraryScreen({
             <ThemePreview large theme={previewTheme} />
           </DialogContent>
         </Dialog>
+      ) : null}
+      {replacingRecovery && recovery ? (
+        <ReplaceDraftDialog
+          keepLabel="Keep draft"
+          onKeep={() => setReplacingRecovery(null)}
+          onReplace={() => {
+            setReplacingRecovery(null);
+            replacingRecovery();
+          }}
+        >
+          {recovery.document.packName} has changes that are not saved. What you
+          open takes its place.
+        </ReplaceDraftDialog>
       ) : null}
       {deleteTheme ? (
         <DeleteThemeDialog
@@ -770,29 +849,33 @@ function themeStudioCapabilitiesFromDevice(
 }
 
 function RecoveryCard({
+  busy,
   onDiscard,
   onResume,
   recovery,
+  title,
 }: {
+  busy: boolean;
   onDiscard: () => void;
   onResume: () => void;
   recovery: ThemeStudioRecovery;
+  title: string;
 }) {
   return (
     <div className="mb-6 grid gap-4 border border-border bg-card p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
       <div className="min-w-0">
         <div className="text-base font-bold text-[#1B1B1B]">
-          Continue your unsaved theme
+          {title}
         </div>
         <p className="mt-1 text-sm leading-6 text-[#444933]">
           {recovery.document.packName} was last changed {formatRecoveryTime(recovery.updatedAt)}.
         </p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Button onClick={onDiscard} type="button" variant="outline">
+        <Button disabled={busy} onClick={onDiscard} type="button" variant="outline">
           Discard
         </Button>
-        <Button onClick={onResume} type="button">
+        <Button disabled={busy} onClick={onResume} type="button">
           Resume
         </Button>
       </div>
@@ -811,18 +894,20 @@ function DeleteThemeDialog({
   onConfirm: () => boolean;
   theme: UserThemeRecord;
 }) {
+  const say = (text: string) => wordsForUsage(text, themeDocumentUsage(theme.document));
   return (
     <AlertDialog open onOpenChange={(open) => !open && onCancel()}>
       <AlertDialogContent className="sm:max-w-[520px]">
         <AlertDialogHeader>
           <AlertDialogTitle>Delete {theme.document.packName}?</AlertDialogTitle>
           <AlertDialogDescription>
-          This deletes the local library copy only. It does not remove or change
-          the theme currently active on VibeTV.
+          {say(
+            "This deletes the local library copy only. It does not remove or change the theme currently active on VibeTV.",
+          )}
           </AlertDialogDescription>
         </AlertDialogHeader>
         {error ? (
-          <Alert variant="destructive"><Lock /><AlertTitle>Theme could not be deleted</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>
+          <Alert variant="destructive"><Lock /><AlertTitle>{say("Theme could not be deleted")}</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>
         ) : null}
         <AlertDialogFooter>
           <AlertDialogCancel autoFocus onClick={onCancel}>
@@ -948,12 +1033,13 @@ function ThemeListItem({
   onPreviewTheme,
   ownPathOfSharedId,
   preparingInstallRow,
-  screensaverInstallLocked = false,
+  screensaverInstallBlockedReason,
   selectedThemeId,
   usage,
   themeInstallBlockedReason,
   themeInstallEnabled,
   themeStorageLocked,
+  tokenHistoryUnavailable,
 }: {
   busyAction: string | null;
   device: ThemeLibraryDeviceInfo | null;
@@ -972,19 +1058,27 @@ function ThemeListItem({
   onPreviewTheme: (theme: ThemeLibraryItem) => void;
   ownPathOfSharedId?: string;
   preparingInstallRow: string;
-  screensaverInstallLocked?: boolean;
+  screensaverInstallBlockedReason: string;
   selectedThemeId: string;
   usage: ThemeStudioUsage;
   themeInstallBlockedReason: string;
   themeInstallEnabled: boolean;
   themeStorageLocked: boolean;
+  tokenHistoryUnavailable: boolean;
 }) {
   const theme = item.kind === "published" ? item.product : null;
   const isCustom = item.kind === "custom";
+  // A catalog theme's elements are only known once its preview has loaded.
+  const [publishedPack, setPublishedPack] = useState<ThemeRenderPack | null>(null);
+  const showsNoTokens =
+    tokenHistoryUnavailable &&
+    themeShowsTokenTotals(
+      isCustom ? item.custom.document.spec : publishedPack?.spec,
+    );
   const sharesId = ownPathOfSharedId !== undefined;
   const installedPath =
     lastInstall?.themeId === item.themeId ? lastInstall.activePath : heldPath;
-  const installed =
+  const held =
     (lastInstall?.themeId === item.themeId ||
       installedThemeId === item.themeId) &&
     (!sharesId ||
@@ -992,10 +1086,17 @@ function ThemeListItem({
         ? installedPath === ownPathOfSharedId
         : Boolean(installedPath) && installedPath !== ownPathOfSharedId)) &&
     (isCustom ||
-      (pathMayNameCatalogTheme(theme?.themeSpecPath, installedPath) &&
+      (fileMayBeCatalogThemes(theme, installedPath) &&
         // A file this app sent for a theme the customer made is theirs, also
         // when its name starts like the catalog theme's.
         !sentOwnPaths.includes(installedPath ?? "")));
+  // VibeTV holds a file the catalog names as an earlier revision of this theme
+  // (#209). The app updates it on its own, but not while an app update is
+  // pending, not again after that install failed, and a screensaver not during
+  // standby; until then the row offers the same install.
+  const updateAvailable =
+    held && Boolean(theme?.earlierThemeSpecPaths?.includes(installedPath ?? ""));
+  const installed = held && !updateAvailable;
   const installInFlight =
     busyAction === "install" || installStatus?.phase === "installing";
   const preparingInstall = preparingInstallRow === rowKey(item);
@@ -1013,8 +1114,8 @@ function ThemeListItem({
         : installStatus.phase !== "complete" || installed));
   const retryingFailedInstall = visibleInstallStatus && installStatus?.phase === "error";
   const screensaverLockBlocker: ThemeInstallBlocker | null =
-    screensaverInstallLocked
-      ? { reason: "Turn on Show screensaver first." }
+    screensaverInstallBlockedReason
+      ? { reason: screensaverInstallBlockedReason }
       : null;
   // The VibeTV cannot draw its active theme (#498): the way out is another
   // theme, so that state must not block installing one.
@@ -1037,18 +1138,25 @@ function ThemeListItem({
         }));
   const blockedLabel = labelForInstallBlocker(blocker);
   const disabled = actionInFlight || (installed && !retryingFailedInstall) || Boolean(blocker);
+  // The reasons are this file's own fixed sentences, written for themes; this
+  // list may hold screensavers. None carries a name: the only variable part
+  // is a firmware version.
   const title = disabled
-      ? installDisabledReason({
-          actionInFlight,
-          installInFlight,
-          installed,
-          blocker,
-        })
-      : `Install ${item.title}`;
+      ? wordsForUsage(
+          installDisabledReason({
+            actionInFlight,
+            installInFlight,
+            installed,
+            blocker,
+          }),
+          usage,
+        )
+      : `${updateAvailable ? "Update" : "Install"} ${item.title}`;
   const loadingEdit = loadingEditorRow === rowKey(item);
 
   return (
     <Item
+      id={item.kind === "published" ? catalogThemeRowId(item.themeId) : undefined}
       role="listitem"
       variant={item.themeId === displayThemeId ? "muted" : "outline"}
     >
@@ -1060,13 +1168,18 @@ function ThemeListItem({
           type="button"
           variant="ghost"
         >
-          <ThemePreview theme={item} />
+          <ThemePreview onPack={setPublishedPack} theme={item} />
         </Button>
       </ItemMedia>
       <ItemContent className="min-w-[180px]">
         <ItemTitle className="text-lg font-bold">{item.title}</ItemTitle>
         {isCustom ? (
           <Badge variant="secondary">Custom</Badge>
+        ) : null}
+        {showsNoTokens ? (
+          <ItemDescription className="line-clamp-none">
+            Shows -- while token history is unavailable. See Usage.
+          </ItemDescription>
         ) : null}
       </ItemContent>
       <ItemActions
@@ -1104,9 +1217,14 @@ function ThemeListItem({
             actionInFlight,
             blockedLabel: blocker ? blockedLabel : "",
             installInFlight: installInFlight || preparingInstall,
+            // The row's notice says "Installed" from here on; the button says
+            // the same while the app still reads VibeTV's settings (#579).
+            installFinished:
+              visibleInstallStatus && installStatus?.phase === "complete" && !preparingInstall,
             installed,
             selected: item.themeId === selectedThemeId,
             disabled,
+            updateAvailable,
           })}
         </Button>
         {item.kind === "custom" ? (
@@ -1116,7 +1234,7 @@ function ThemeListItem({
             onClick={() => onDeleteTheme(item.custom)}
             title={
               themeStorageLocked
-                ? "Theme storage needs attention before deleting themes."
+                ? wordsForUsage("Theme storage needs attention before deleting themes.", usage)
                 : `Delete ${item.title}`
             }
             type="button"
@@ -1132,6 +1250,13 @@ function ThemeListItem({
         <ItemFooter className="block">
           <InlineInstallProgress
             canRetry={!disabled}
+            // While Show screensaver is off VibeTV shows none, so "ready on
+            // VibeTV" said too much (issue #579): the sentence Settings uses.
+            installedDetail={
+              screensaverInstallBlockedReason === SCREENSAVER_OFF_REASON
+                ? `${item.title} is installed.`
+                : undefined
+            }
             onRetry={() => onInstallTheme(item)}
             status={installStatus!}
             usage={usage}
@@ -1144,16 +1269,31 @@ function ThemeListItem({
 
 function InlineInstallProgress({
   canRetry,
+  installedDetail,
   onRetry,
   status,
   usage,
 }: {
   canRetry: boolean;
+  installedDetail?: string;
   onRetry: () => void;
   status: ThemeInstallStatus;
   usage: ThemeStudioUsage;
 }) {
   const [dismissedErrorAt, setDismissedErrorAt] = useState<string | null>(null);
+  // The notice of the last row opens below the edge of the window (issue
+  // #579). When an install starts or ends, the page moves as far as it takes
+  // to show it, and not at all when it is in view. A finished install found
+  // when the list is opened leaves the page where it is.
+  const noticeRef = useRef<HTMLDivElement>(null);
+  const shownPhaseRef = useRef<ThemeInstallStatus["phase"] | null>(null);
+  useEffect(() => {
+    if (status.phase === "installing" || shownPhaseRef.current === "installing") {
+      // Optional call: the unit tests' DOM has no scrollIntoView.
+      noticeRef.current?.scrollIntoView?.({ block: "nearest" });
+    }
+    shownPhaseRef.current = status.phase;
+  }, [status.phase]);
   // What this list installs, for the lines the page words itself (issue #558).
   const noun = usage === "screensaver" ? "Screensaver" : "Theme";
   if (status.phase === "error") {
@@ -1177,12 +1317,12 @@ function InlineInstallProgress({
   }
   const complete = status.phase === "complete";
   const detail = complete
-    ? status.message || (usage === "screensaver" ? "Screensaver is ready on VibeTV." : "Theme is active on VibeTV.")
+    ? installedDetail || status.message || (usage === "screensaver" ? "Screensaver is ready on VibeTV." : "Theme is active on VibeTV.")
     : status.message || status.logs[status.logs.length - 1] || `Preparing ${noun.toLowerCase()} install.`;
   const previousSteps = complete ? [] : status.logs.slice(-4, -1);
   const title = complete ? "Installed" : "Installing";
   return (
-    <div className="flex flex-col gap-3" role="status" aria-live="polite">
+    <div className="flex flex-col gap-3" ref={noticeRef} role="status" aria-live="polite">
       <Progress aria-label={title} className={complete ? "" : "animate-pulse"} value={clampInstallProgress(complete ? 100 : status.progress)} />
       <Alert>
         {complete ? <ShieldCheck aria-hidden /> : <Spinner />}
@@ -1211,17 +1351,25 @@ function labelForInstallButton({
   actionInFlight,
   blockedLabel,
   disabled,
+  installFinished,
   installInFlight,
   installed,
   selected,
+  updateAvailable,
 }: {
   actionInFlight: boolean;
   blockedLabel: string;
   disabled: boolean;
+  installFinished: boolean;
   installInFlight: boolean;
   installed: boolean;
   selected: boolean;
+  updateAvailable: boolean;
 }) {
+  const action = updateAvailable ? "Update" : "Install";
+  if (installFinished && actionInFlight) {
+    return "Installed";
+  }
   if (installInFlight && selected) {
     return "Installing";
   }
@@ -1233,11 +1381,11 @@ function labelForInstallButton({
   }
   if (disabled) {
     if (blockedLabel === "Setup First" || blockedLabel === "Connect First") {
-      return "Install";
+      return action;
     }
     return blockedLabel;
   }
-  return "Install";
+  return action;
 }
 
 function buildCustomThemeInstallBlocker({
@@ -1284,19 +1432,19 @@ function labelForInstallBlocker(blocker: ThemeInstallBlocker | null): string {
     return "Unavailable";
   }
   if (/firmware|update firmware/i.test(text)) {
-    return "Update Needed";
+    return "Update needed";
   }
   if (/board|support/i.test(text)) {
-    return "Not Supported";
+    return "Not supported";
   }
   if (/protected/i.test(text)) {
     return "Unavailable";
   }
   if (/show screensaver/i.test(text)) {
-    return "Turn On First";
+    return "Turn on first";
   }
   if (/paid|checkout/i.test(text)) {
-    return "Checkout Needed";
+    return "Checkout needed";
   }
   return "Unavailable";
 }
@@ -1306,14 +1454,12 @@ function buildInstallReadiness({
   device,
   selectedTheme,
   themeInstallEnabled,
-  usage,
   windowsHost,
 }: {
   companionStatus: ThemeLibraryCompanionStatus;
   device: ThemeLibraryDeviceInfo | null;
   selectedTheme?: ThemeProduct;
   themeInstallEnabled: boolean;
-  usage: ThemeStudioUsage;
   windowsHost: boolean;
 }) {
   const metadataBlocker = selectedTheme
@@ -1382,7 +1528,7 @@ function buildInstallReadiness({
   }
 
   if (!themeInstallEnabled) {
-    const reason = `${usage === "screensaver" ? "Screensaver" : "Theme"} installs are not available right now.`;
+    const reason = "Theme installs are not available right now.";
     return {
       title: "Themes unavailable",
       detail: reason,
@@ -1410,7 +1556,7 @@ function installDisabledReason({
   blocker: ThemeInstallBlocker | null;
 }) {
   if (installInFlight) {
-    return "Another theme install is already running.";
+    return "Another install is already running.";
   }
   if (actionInFlight) {
     return "Please wait for the current step to finish.";
@@ -1665,9 +1811,11 @@ function normalizeBoard(value: string): string {
 
 function ThemePreview({
   large,
+  onPack,
   theme,
 }: {
   large?: boolean;
+  onPack?: (pack: ThemeRenderPack) => void;
   theme: ThemeLibraryItem;
 }) {
   return (
@@ -1678,6 +1826,7 @@ function ThemePreview({
           ? "aspect-square w-full"
           : "size-28 rounded-lg sm:size-36"
       }
+      onPack={onPack}
       // A Theme Studio theme has no published pack to load: its spec only
       // exists in this app.
       pack={

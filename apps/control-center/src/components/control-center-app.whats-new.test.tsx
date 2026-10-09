@@ -30,6 +30,38 @@ const claude = {
   writable: true,
 };
 
+// The catalog theme the newest "New theme" entry announces.
+const gauge = {
+  id: "gauge",
+  themeId: "gauge",
+  title: "Gauge",
+  isFree: true,
+  priceLabel: "Free",
+  packUrl: "/theme-packs/gauge.zip",
+  packSha256: "a".repeat(64),
+  packSizeBytes: 100,
+  source: "github-catalog",
+  themeSpecPath: "/themes/u/gauge.json",
+  usage: "live",
+};
+
+// jsdom scrolls nothing. Each call notes what was brought into view, and moves
+// the window as a browser would, so a later return to the top would show.
+function watchScrolling() {
+  const shown: Element[] = [];
+  Element.prototype.scrollIntoView = function scrollIntoView(this: Element) {
+    shown.push(this);
+    document.documentElement.scrollTop = 400;
+  };
+  return shown;
+}
+
+// Who watches the height of the page. jsdom lays nothing out, so a test says
+// when the page grew: the customer's own themes, read after Themes opened,
+// stand above the catalog's rows.
+const pageWatchers = new Set<() => void>();
+const pageGrew = () => act(() => pageWatchers.forEach((changed) => changed()));
+
 function jsonResponse(body: unknown, status = 200): Response {
   return { ok: status < 400, status, json: async () => body } as unknown as Response;
 }
@@ -56,9 +88,16 @@ function startWindow({
   vi.stubGlobal(
     "ResizeObserver",
     class {
-      observe() {}
+      constructor(private readonly changed: () => void) {}
+      observe(element: Element) {
+        if (element === document.body) {
+          pageWatchers.add(this.changed);
+        }
+      }
       unobserve() {}
-      disconnect() {}
+      disconnect() {
+        pageWatchers.delete(this.changed);
+      }
     },
   );
   vi.stubGlobal(
@@ -165,7 +204,7 @@ function startWindow({
     createElement(
       TooltipProvider,
       null,
-      createElement(ControlCenterApp, { catalog: { themes: [] } as never }),
+      createElement(ControlCenterApp, { catalog: { themes: [gauge] } as never }),
     ),
   );
   return {
@@ -188,6 +227,7 @@ const allIds = WHATS_NEW.map(({ id }) => id);
 
 afterEach(() => {
   cleanup();
+  pageWatchers.clear();
   vi.unstubAllGlobals();
   vi.useRealTimers();
   window.localStorage.clear();
@@ -378,21 +418,59 @@ it("waits while a newer app is on offer", async () => {
   expect(notice()).not.toBeNull();
 });
 
-it("opens Settings from the notice and counts it as read", async () => {
+// Issue #584: "Show me in Settings" opened Settings at its top, with the
+// control the entry is about further down. The window here is on Manual, where
+// `Switch providers` is not on the page: the group with the two mode cards is
+// what the customer is shown.
+it.each([
+  ["Choose how often VibeTV switches", "Display mode"],
+  ["Show what is used or what is left", "Display"],
+])("opens Settings from the entry %s at the group %s and counts the notice as read", async (title, group) => {
+  const shown = watchScrolling();
   const window = startWindow();
   await window.wait(10);
+  document.documentElement.scrollTop = 900;
 
   fireEvent.click(
-    within(notice()!).getAllByRole("button", { name: "Show me in Settings" })[0],
+    within(
+      within(notice()!).getByRole("heading", { name: title }).closest("li")!,
+    ).getByRole("button", { name: "Show me in Settings" }),
   );
   await window.wait(1);
 
   expect(notice()).toBeNull();
   expect(seen()).toEqual(allIds);
   expect(screen.getByRole("heading", { name: "Settings" })).toBeTruthy();
+  expect(shown).toEqual([
+    screen.getByRole("heading", { name: group }).closest("section"),
+  ]);
+  // The page was put at its top first, and the group brought into view after.
+  expect(document.documentElement.scrollTop).toBe(400);
+  expect(screen.queryByRole("combobox", { name: "Switch providers" })).toBeNull();
 });
 
-it("opens Themes from a new theme and counts the notice as read", async () => {
+it("brings nothing into view when Settings is opened from the sidebar afterwards", async () => {
+  const shown = watchScrolling();
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(
+    within(notice()!).getAllByRole("button", { name: "Show me in Settings" })[0],
+  );
+  await window.wait(1);
+  shown.length = 0;
+
+  fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+  await window.wait(1);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+
+  expect(screen.getByRole("heading", { name: "Settings" })).toBeTruthy();
+  expect(shown).toEqual([]);
+  expect(document.documentElement.scrollTop).toBe(0);
+});
+
+it("opens Themes from a new theme at that theme and counts the notice as read", async () => {
+  const shown = watchScrolling();
   const window = startWindow();
   await window.wait(10);
   fireEvent.click(
@@ -403,6 +481,110 @@ it("opens Themes from a new theme and counts the notice as read", async () => {
   expect(notice()).toBeNull();
   expect(seen()).toEqual(allIds);
   expect(screen.getByRole("heading", { name: "Themes" })).toBeTruthy();
+  // Issue #584: the list is longer than the window; the row of the theme the
+  // entry announces is brought into view.
+  expect(shown).toEqual([
+    screen.getByRole("button", { name: "Preview Gauge" }).closest("[role=listitem]"),
+  ]);
+});
+
+// Seen in the Windows app with nine own themes: their rows were laid out after
+// the row of the new theme had been brought into view, and pushed it about
+// 870 px below the window.
+it("brings the new theme into view again when the list above it grows, until the customer scrolls", async () => {
+  const shown = watchScrolling();
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(
+    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[0],
+  );
+  await window.wait(1);
+  const row = screen.getByRole("button", { name: "Preview Gauge" }).closest("[role=listitem]");
+  shown.length = 0;
+
+  pageGrew();
+  pageGrew();
+  expect(shown).toEqual([row, row]);
+
+  fireEvent.wheel(document.body);
+  pageGrew();
+  expect(shown).toEqual([row, row]);
+});
+
+// Found in review: with no end in time, a height change much later (install
+// progress, a notice that goes away) pulled the page back, for a customer who
+// had moved it with the scrollbar, which none of the four inputs reports.
+it("stops bringing the new theme into view two seconds after the link was clicked", async () => {
+  const shown = watchScrolling();
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(
+    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[0],
+  );
+  await window.wait(1);
+  pageGrew();
+  expect(shown.length).toBeGreaterThan(1);
+  shown.length = 0;
+
+  await window.wait(1);
+  pageGrew();
+
+  expect(shown).toEqual([]);
+});
+
+it("ends at the customer's input even when a control keeps the event to itself", async () => {
+  const shown = watchScrolling();
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(
+    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[0],
+  );
+  await vi.advanceTimersByTimeAsync(0);
+  shown.length = 0;
+  const control = screen.getByRole("heading", { name: "Themes" });
+  control.addEventListener("keydown", (event) => event.stopPropagation());
+
+  fireEvent.keyDown(control);
+  pageGrew();
+
+  expect(shown).toEqual([]);
+});
+
+it("brings the place into view once in an app that cannot watch the page's height", async () => {
+  const shown = watchScrolling();
+  const window = startWindow();
+  await window.wait(10);
+  vi.stubGlobal("ResizeObserver", undefined);
+  fireEvent.click(
+    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[0],
+  );
+  await window.wait(1);
+
+  expect(screen.getByRole("heading", { name: "Themes" })).toBeTruthy();
+  expect(shown).toEqual([
+    screen.getByRole("button", { name: "Preview Gauge" }).closest("[role=listitem]"),
+  ]);
+});
+
+it("leaves a page alone that grows after the customer went on from Themes", async () => {
+  const shown = watchScrolling();
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(
+    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[0],
+  );
+  await window.wait(1);
+  shown.length = 0;
+
+  // The sidebar is used with the keyboard here, so it is leaving the page
+  // that ends it and not a click.
+  act(() => screen.getByRole("button", { name: "Settings" }).click());
+  await window.wait(1);
+  pageGrew();
+
+  expect(screen.getByRole("heading", { name: "Settings" })).toBeTruthy();
+  expect(shown).toEqual([]);
+  expect(document.documentElement.scrollTop).toBe(0);
 });
 
 it("opens again from Updates with the keys of a Windows computer", async () => {

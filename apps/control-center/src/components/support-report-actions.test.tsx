@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { downloadSupportReport } from "./support-report";
+import { downloadSupportReport, supportReportFilename } from "./support-report";
 import { SupportReportActions } from "./support-report-actions";
 
 vi.mock("./support-report", async (importOriginal) => ({
@@ -15,7 +15,8 @@ afterEach(cleanup);
 describe("SupportReportActions", () => {
   // Issue #545: Windows saves the report without any sign that it did.
   it("confirms a download on Windows with the file name and the folder", () => {
-    const report = { ok: true, generatedAt: "2026-10-07T06:58:00.000Z" };
+    // 08:58 on this computer's clock, whatever its time zone.
+    const report = { ok: true, generatedAt: new Date(2026, 9, 7, 8, 58).toISOString() };
     const view = render(
       <SupportReportActions diagnostics={report} onCreate={vi.fn()} windowsHost />,
     );
@@ -25,7 +26,7 @@ describe("SupportReportActions", () => {
     expect(downloadSupportReport).toHaveBeenCalledWith(report);
     expect(screen.getByRole("button", { name: "Downloaded" })).toBeTruthy();
     expect(screen.getByRole("status").textContent).toBe(
-      "Saved as vibetv-support-report-2026-10-07T06-58-00-000Z.json in your Downloads folder.",
+      "Saved as vibetv-support-report-2026-10-07T08-58-00.json in your Downloads folder.",
     );
 
     // A report created afterwards has not been saved yet.
@@ -51,6 +52,34 @@ describe("SupportReportActions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Download" }));
 
     expect(screen.getByRole("button", { name: "Download" })).toBeTruthy();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  // Issue #582: the Mac app says how its save dialog ended.
+  it("confirms a download on the Mac once the Mac app says the report was saved", () => {
+    render(
+      <SupportReportActions
+        diagnostics={{ ok: true, generatedAt: "2026-10-07T06:58:00.000Z" }}
+        onCreate={vi.fn()}
+      />,
+    );
+    const saveDialogEnded = (fileName: string, saved: boolean) =>
+      act(() => {
+        window.dispatchEvent(
+          new CustomEvent("vibetv:download-finished", { detail: { fileName, saved } }),
+        );
+      });
+    fireEvent.click(screen.getByRole("button", { name: "Download" }));
+    // The file is named after this computer's own time (#579), whatever its zone.
+    const reportFile = supportReportFilename("2026-10-07T06:58:00.000Z");
+
+    saveDialogEnded(reportFile, false);
+    saveDialogEnded("vibetv-theme-new-theme.zip", true);
+    expect(screen.getByRole("button", { name: "Download" })).toBeTruthy();
+
+    saveDialogEnded(reportFile, true);
+    expect(screen.getByRole("button", { name: "Downloaded" })).toBeTruthy();
+    // The customer chose the folder, so the Downloads folder is not named.
     expect(screen.queryByRole("status")).toBeNull();
   });
 

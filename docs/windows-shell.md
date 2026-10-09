@@ -11,7 +11,9 @@ Companion for everything it needs.
   on `http://127.0.0.1:47832/control-center` with the User-Agent
   `VibeTVControlCenter/<version>+<build>`, so the Companion's installation-mode
   gate applies unchanged. Closing the window hides it; the tray keeps the app
-  alive.
+  alive. The window asks for 1280x900 and is created with Tauri's
+  `prevent_overflow()` and `center()`: no larger than the primary monitor's
+  work area and centred in it (#548). No size or position is stored.
 - On start: `codexbar-display service install ...` registers the Companion as
   the per-user Scheduled Task `shop.vibetv.control-center.runtime-<SID>` from
   `%AppData%\codexbar-display\service\shop.vibetv.control-center.runtime.json`.
@@ -42,6 +44,28 @@ Companion for everything it needs.
   `vibetv://check-for-updates`; `tauri-plugin-updater` fetches
   `latest-windows.json` from the latest GitHub release, verifies the minisign
   signature, runs the NSIS installer in passive mode and relaunches the shell.
+- Update at launch (#565): before the shell registers the Companion and looks
+  for a VibeTV it asks the same update source once, with a limit of 5 seconds.
+  A newer version is downloaded and installed like above, and the start screen
+  reads "Updating VibeTV Control Center…". The start waits for that download
+  for at most 3 minutes, and for at most 20 seconds without a byte arriving
+  (`Update.timeout` and reqwest's `read_timeout` through `configure_client`).
+  Until the check and a download have ended, "Reload Control Center" only
+  brings the start screen forward, like "Open" and a second launch. Every other outcome (no newer
+  version, no answer, a running VibeTV update or theme install, a failed
+  download) is logged to stderr only and the start goes on. A version is
+  tried at launch at most once in 24 hours: version and time are written to
+  `%LOCALAPPDATA%\shop.vibetv.control-center\launch-update-attempt.txt` before
+  the download starts, and a start that is offered that version within the
+  next 24 hours skips it, whatever stopped the first attempt (a slow or
+  stalled download, an installer that failed after the app had closed). A
+  running VibeTV update or theme install is not an attempt: the file is
+  removed and the next start tries again. The rule is `due` in `src/launch_update.rs`, tested
+  alone in CI with `rustc --test`.
+  The tray item and the Updates tab still install it. There is no switch that
+  turns the check off and no way to point a build at another update source:
+  endpoint and public key are compiled in. The Microsoft Store listing
+  delivers this same installer, so there is no separate Store build.
 - Autostart of the shell: `tauri-plugin-autostart` writes
   `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\VibeTV Control Center`.
 - Installer: NSIS, x64, per-user. `nsis/hooks.nsh` stops the task before
@@ -115,7 +139,7 @@ caused `PREVIEW UNAVAILABLE` in the 2026-09-09 VM rehearsal although the exact
 Tiny Office revision existed in the export. Verify the installed app serves
 `/theme-packs/render/tiny-office/to-6-6eed22ed.json?specHash=4f824ce2` and renders it.
 
-Win-CodexBar 0.56.8's local cost command is `cost --json --days 30 --provider all`;
+The pinned Win-CodexBar's local cost command is `cost --json --days 30 --provider all`;
 it rejects the Mac `--refresh` option and defaults to Claude if the provider is
 omitted. Its `spendContract.daily` format is adapted centrally. Unestablished
 coverage, null daily token counts, or an unsupported provider remain unavailable,

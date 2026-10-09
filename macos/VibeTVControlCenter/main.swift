@@ -201,6 +201,20 @@ func shouldHandleWebViewDownload(url: URL, requestedByWebContent: Bool) -> Bool 
     requestedByWebContent && url.scheme?.lowercased() == "blob"
 }
 
+/// The script that tells the page how the save dialog for a download ended
+/// (issue #582). It carries the file name the page suggested and nothing of
+/// where the file went. The name reaches the script as JSON, never as text
+/// put between quotes.
+func downloadFinishedEventScript(fileName: String, saved: Bool) -> String? {
+    guard let detail = try? JSONSerialization.data(
+        withJSONObject: ["fileName": fileName, "saved": saved],
+        options: [.sortedKeys]
+    ) else {
+        return nil
+    }
+    return "window.dispatchEvent(new CustomEvent('vibetv:download-finished', { detail: \(String(decoding: detail, as: UTF8.self)) })); true"
+}
+
 func isApprovedDMGDownloadURL(_ url: URL) -> Bool {
     guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
           components.scheme?.lowercased() == "https",
@@ -1333,6 +1347,8 @@ private final class ShadcnSpinnerView: NSView {
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
     private var window: NSWindow?
     private var webView: WKWebView?
+    /// Suggested file names of downloads whose destination was chosen.
+    private var savingDownloadFileNames: [ObjectIdentifier: String] = [:]
     private var activeNavigation: WKNavigation?
     private let runtimeService = SMAppService.agent(plistName: runtimeLaunchAgentPlistName)
     private var urlRouter = ControlCenterURLRouter()
@@ -4409,8 +4425,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             for: .downloadsDirectory,
             in: .userDomainMask
         ).first
-        let finish: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+        let finish: (NSApplication.ModalResponse) -> Void = { [weak self, weak download] response in
             guard response == .OK, let destination = panel.url else {
+                self?.notifyDownloadFinished(fileName: suggestedFilename, saved: false)
                 completionHandler(nil)
                 return
             }
@@ -4419,8 +4436,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                     title: "A file with this name already exists",
                     detail: "Choose a different filename to keep the existing file."
                 )
+                self?.notifyDownloadFinished(fileName: suggestedFilename, saved: false)
                 completionHandler(nil)
                 return
+            }
+            if let download {
+                self?.savingDownloadFileNames[ObjectIdentifier(download)] = suggestedFilename
             }
             completionHandler(destination)
         }
@@ -4431,11 +4452,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         }
     }
 
+    func downloadDidFinish(_ download: WKDownload) {
+        if let fileName = savingDownloadFileNames.removeValue(forKey: ObjectIdentifier(download)) {
+            notifyDownloadFinished(fileName: fileName, saved: true)
+        }
+    }
+
+    /// Tells the page how the save dialog ended, once for each download.
+    private func notifyDownloadFinished(fileName: String, saved: Bool) {
+        guard let script = downloadFinishedEventScript(fileName: fileName, saved: saved) else {
+            return
+        }
+        webView?.evaluateJavaScript(script) { _, error in
+            if let error {
+                NSLog(
+                    "VibeTV Control Center could not report a finished download: \(error.localizedDescription)"
+                )
+            }
+        }
+    }
+
     func download(
         _ download: WKDownload,
         didFailWithError error: Error,
         resumeData: Data?
     ) {
+        if let fileName = savingDownloadFileNames.removeValue(forKey: ObjectIdentifier(download)) {
+            notifyDownloadFinished(fileName: fileName, saved: false)
+        }
         let error = error as NSError
         guard error.domain != NSURLErrorDomain || error.code != NSURLErrorCancelled else {
             return

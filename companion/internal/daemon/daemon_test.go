@@ -463,8 +463,14 @@ func TestRunCycleWithDepsWaitsForFirstAvailableUsageFrame(t *testing.T) {
 	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
 		t.Fatalf("expected later unavailable usage to keep the valid frame, got %v", err)
 	}
-	if len(sentLines) != 2 {
-		t.Fatalf("expected unavailable usage to preserve the valid frame, got %d sends", len(sentLines))
+	// The valid frame is preserved by restating it: a device that hears
+	// nothing would take the writer for gone and end a working state (#369).
+	if len(sentLines) != 3 {
+		t.Fatalf("expected unavailable usage to restate the valid frame, got %d sends", len(sentLines))
+	}
+	frame = decodeFrameLine(t, sentLines[2])
+	if frame.Provider != "claude" || frame.Weekly != 11 || frame.UsageUnavailable {
+		t.Fatalf("expected the valid Claude usage frame to be restated, got %+v", frame)
 	}
 
 	now = now.Add(providerSnapshotMaxAge() + time.Second)
@@ -472,12 +478,190 @@ func TestRunCycleWithDepsWaitsForFirstAvailableUsageFrame(t *testing.T) {
 	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
 		t.Fatalf("expected expired usage to send unavailable state, got %v", err)
 	}
-	if len(sentLines) != 3 {
+	if len(sentLines) != 4 {
 		t.Fatalf("expected unavailable state after last-good expiry, got %d sends", len(sentLines))
 	}
-	frame = decodeFrameLine(t, sentLines[2])
+	frame = decodeFrameLine(t, sentLines[3])
 	if frame.Provider != "claude" || !frame.UsageUnavailable || frame.Session != 0 || frame.Weekly != 0 || frame.UsageMode != "remaining" {
 		t.Fatalf("expected expired Claude usage to become unavailable, got %+v", frame)
+	}
+}
+
+func TestActivityTTLIsThreeFrameIntervalsWithAFloor(t *testing.T) {
+	tests := []struct {
+		name      string
+		interval  time.Duration
+		transport string
+		want      time.Duration
+	}{
+		{name: "usb default cadence sits on the floor", transport: "usb", want: 10 * time.Second},
+		{name: "wifi default cadence", transport: "wifi", want: 90 * time.Second},
+		{name: "configured interval wins over the transport default", interval: time.Minute, transport: "usb", want: 3 * time.Minute},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := activityTTL(tt.interval, tt.transport); got != tt.want {
+				t.Fatalf("activityTTL(%s, %q)=%s, expected %s", tt.interval, tt.transport, got, tt.want)
+			}
+		})
+	}
+}
+
+// Issue #369: the device expires a frame's activity on its own, and only the
+// Companion knows how often frames come. Every frame it sends therefore says
+// how long it is good for, the error frame included.
+func TestRunCycleWithDepsWritesActivityTTLIntoEveryFrame(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	send := func(transport string, fetch func(context.Context) ([]codexbar.ParsedFrame, error)) protocol.Frame {
+		t.Helper()
+		var sentLine []byte
+		_ = runCycleWithDeps(context.Background(), "", &runtimeState{selector: codexbar.NewProviderSelector()}, runtimeDeps{
+			now:            func() time.Time { return now },
+			resolvePort:    func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+			fetchProviders: fetch,
+			transportName:  transport,
+			logf:           func(string, ...any) {},
+			sendLine: func(port string, line []byte) error {
+				sentLine = append([]byte(nil), line...)
+				return nil
+			},
+		})
+		if len(sentLine) == 0 {
+			t.Fatalf("expected a frame on %s", transport)
+		}
+		return decodeFrameLine(t, sentLine)
+	}
+	usage := func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return []codexbar.ParsedFrame{testParsedFrame("codex", 12, 30, 3600)}, nil
+	}
+	failed := func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return nil, &codexbar.FetchError{Kind: codexbar.FetchErrorParse, Err: errors.New("invalid json")}
+	}
+
+	if frame := send("usb", usage); frame.Error != "" || frame.ActivityTTLSec != 10 {
+		t.Fatalf("expected a usage frame valid for 10s on the cable, got %+v", frame)
+	}
+	if frame := send("usb", failed); frame.Error == "" || frame.ActivityTTLSec != 10 {
+		t.Fatalf("expected an error frame valid for 10s on the cable, got %+v", frame)
+	}
+}
+
+// Issue #369: the device's activity bound guards against the writer going
+// away. A Companion that is running and merely has no fresh reading for the
+// shown provider is not gone, so it keeps saying what it last knew instead of
+// falling silent, and a working VibeTV does not drop to idle beside it.
+func TestRunCycleWithDepsKeepsSendingTheLastGoodFrameWhileTheReadingIsOnlyRetained(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	retained := false
+	var sent []protocol.Frame
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	deps := runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			frame := testParsedFrame("codex", 12, 30, 3600)
+			frame.Frame.Activity = "coding"
+			if retained {
+				// The retained reading may differ; the device keeps the last good one.
+				frame.Frame.Session = 99
+				frame.Frame.Activity = "idle"
+			}
+			frame.Stale = retained
+			return []codexbar.ParsedFrame{frame}, nil
+		},
+		transportName: "usb",
+		logf:          func(string, ...any) {},
+		sendLine: func(_ string, line []byte) error {
+			sent = append(sent, decodeFrameLine(t, line))
+			return nil
+		},
+	}
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil || len(sent) != 1 {
+		t.Fatalf("first cycle: err=%v sent=%d", err, len(sent))
+	}
+	lastGoodAt := state.lastGoodAt
+
+	retained = true
+	for i := 1; i <= 30; i++ {
+		now = now.Add(2 * time.Second)
+		if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+			t.Fatalf("retained cycle %d: %v", i, err)
+		}
+		if len(sent) != i+1 {
+			t.Fatalf("retained cycle %d sent no frame; a frame valid for 10s was the last one", i)
+		}
+	}
+	last := sent[len(sent)-1]
+	if last.Session != 12 || last.UsageUnavailable || last.Error != "" {
+		t.Fatalf("expected the last good reading to be restated, got %+v", last)
+	}
+	if last.Activity != "idle" || last.ActivityTTLSec != 10 {
+		t.Fatalf("expected the current activity verdict with its bound, got activity=%q ttl=%d", last.Activity, last.ActivityTTLSec)
+	}
+	if last.ResetTrust != protocol.ResetTrustOffline || last.ResetSec != 3600-60 {
+		t.Fatalf("expected the countdown to continue from the last good reading, got trust=%q reset=%d", last.ResetTrust, last.ResetSec)
+	}
+	if !state.lastGoodAt.Equal(lastGoodAt) {
+		t.Fatalf("restating the last good frame must not renew it: %s -> %s", lastGoodAt, state.lastGoodAt)
+	}
+}
+
+// Issue #369: the display was just moved to a provider whose reading is only
+// retained, which clears the last good frame of the provider shown before. The
+// Companion is there and knows that reading and the current activity, so it
+// says so every interval instead of leaving the device to end a working state
+// on its own. The reading is sent as what it is: not live, and never stored
+// as a new last good frame.
+func TestRunCycleWithDepsSendsARetainedReadingWhenThereIsNoLastGoodFrame(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	collectedAt := now.Add(-time.Minute)
+	var sent []protocol.Frame
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	deps := runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			frame := testParsedFrame("claude", 40, 60, 3600)
+			frame.Frame.Activity = "coding"
+			frame.CollectedAt = collectedAt
+			frame.Stale = true
+			return []codexbar.ParsedFrame{frame}, nil
+		},
+		transportName: "usb",
+		logf:          func(string, ...any) {},
+		sendLine: func(_ string, line []byte) error {
+			sent = append(sent, decodeFrameLine(t, line))
+			return nil
+		},
+	}
+	for i := 1; i <= 10; i++ {
+		if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+			t.Fatalf("cycle %d: %v", i, err)
+		}
+		if len(sent) != i {
+			t.Fatalf("cycle %d sent no frame although the Companion knows a reading and the activity", i)
+		}
+		now = now.Add(2 * time.Second)
+	}
+	first := sent[0]
+	if first.Provider != "claude" || first.Session != 40 || first.UsageUnavailable || first.Error != "" {
+		t.Fatalf("expected the retained Claude reading, got %+v", first)
+	}
+	if first.Activity != "coding" || first.ActivityTTLSec != 10 {
+		t.Fatalf("expected the activity verdict with its bound, got activity=%q ttl=%d", first.Activity, first.ActivityTTLSec)
+	}
+	if first.ResetTrust != protocol.ResetTrustOffline || first.ResetSec != 3600-60 {
+		t.Fatalf("expected a reading that is not live, counted from when it was taken, got trust=%q reset=%d", first.ResetTrust, first.ResetSec)
+	}
+	if state.hasLastGood {
+		t.Fatal("a retained reading must not become the last good frame")
 	}
 }
 
@@ -3085,7 +3269,7 @@ func TestLoadPersistedUsageReturnsOrderedProviderSnapshots(t *testing.T) {
 				},
 			},
 		},
-	}, now); err != nil {
+	}, nil, now); err != nil {
 		t.Fatalf("persist provider snapshots: %v", err)
 	}
 	if err := persistLastGood(protocol.Frame{Provider: "claude", Label: "Claude"}, now); err != nil {
@@ -3157,7 +3341,7 @@ func TestLoadPersistedUsageClearsExpiredProviderValues(t *testing.T) {
 			},
 			TokenStatsCollected: collectedAt,
 		},
-	}, now); err != nil {
+	}, nil, now); err != nil {
 		t.Fatalf("persist provider snapshots: %v", err)
 	}
 
@@ -3203,7 +3387,7 @@ func TestPersistEmptyProviderSnapshotsClearsStoredUsage(t *testing.T) {
 				Weekly:   40,
 			},
 		},
-	}, now); err != nil {
+	}, nil, now); err != nil {
 		t.Fatalf("persist provider snapshots: %v", err)
 	}
 
@@ -3211,7 +3395,7 @@ func TestPersistEmptyProviderSnapshotsClearsStoredUsage(t *testing.T) {
 		t.Fatal("expected persisted provider snapshot before clearing")
 	}
 
-	if err := persistProviderSnapshots(map[string]providerSnapshot{}, now.Add(time.Minute)); err != nil {
+	if err := persistProviderSnapshots(map[string]providerSnapshot{}, nil, now.Add(time.Minute)); err != nil {
 		t.Fatalf("clear persisted provider snapshots: %v", err)
 	}
 	if _, _, ok := loadPersistedProviderSnapshotsAnyAge(); ok {
@@ -4172,6 +4356,43 @@ func TestProviderCollectorLogsProviderFailureKindOnChange(t *testing.T) {
 	}
 }
 
+func TestProviderCollectorStoresLastCycleCountsForDiagnostics(t *testing.T) {
+	prepareFastTestEnv(t)
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	collector := &providerCollector{
+		now:             func() time.Time { return now },
+		logf:            func(string, ...any) {},
+		interval:        30 * time.Second,
+		timeout:         3 * time.Second,
+		snapshotMaxAge:  2 * time.Hour,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+	}
+	if _, ok := LoadCollectorCycle(); ok {
+		t.Fatal("expected no cycle before the first collection")
+	}
+	claudeFails := true
+	collector.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		claude := testParsedFrame("claude", 28, 35, 7200)
+		if claudeFails {
+			claude.Frame.Error = "Claude usage request timed out after 24s"
+		}
+		return []codexbar.ParsedFrame{testParsedFrame("codex", 14, 22, 3600), claude}, nil
+	}
+	collector.collectOnce(context.Background())
+	if got, ok := LoadCollectorCycle(); !ok || got != (CollectorCycle{At: now, Providers: 2, Succeeded: 1}) {
+		t.Fatalf("after one failing provider: got %+v ok=%v", got, ok)
+	}
+
+	// A changed count is stored at once, not after the persist interval.
+	now = now.Add(30 * time.Second)
+	claudeFails = false
+	collector.collectOnce(context.Background())
+	if got, ok := LoadCollectorCycle(); !ok || got != (CollectorCycle{At: now, Providers: 2, Succeeded: 2}) {
+		t.Fatalf("after both providers delivered: got %+v ok=%v", got, ok)
+	}
+}
+
 func TestProviderCollectorCollectOnceKeepsPerProviderLastGood(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -4466,7 +4687,7 @@ func TestProviderCollectorKeepsDashboardSnapshotThroughLastGoodWindow(t *testing
 		t.Fatalf("expected sent Codex dashboard frame, got %+v", frame)
 	}
 
-	if err := persistProviderSnapshots(collector.providers, now); err != nil {
+	if err := persistProviderSnapshots(collector.providers, nil, now); err != nil {
 		t.Fatalf("persist provider snapshots: %v", err)
 	}
 	usage, ok := LoadPersistedUsage(now)

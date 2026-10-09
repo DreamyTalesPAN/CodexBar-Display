@@ -131,6 +131,29 @@ export type SetupLog = {
   dropped: number;
 };
 
+/**
+ * One reliability transition in the Mac App's support timeline: `component`
+ * entered `state`, because of `reason`. Every field is an identifier or an
+ * error code; the Mac App stores no free text here.
+ */
+export type TimelineEvent = {
+  id: number;
+  at: string;
+  component: string;
+  deviceId?: string;
+  state: string;
+  reason?: string;
+  correlationId?: string;
+};
+
+/** The retained transitions, oldest first, as GET /v1/diagnostics reports them. */
+export type SupportTimeline = {
+  version: number;
+  events: TimelineEvent[];
+  /** The latest transition of every component, also when `events` no longer holds it. */
+  current?: TimelineEvent[];
+};
+
 export type ProviderSelectionSetup = {
   providerSelectionRequired: boolean;
   providerSelectionComplete: boolean;
@@ -173,6 +196,7 @@ export type SupportDiagnostics = {
   /** Carries the engine's product name; never render name. */
   usageEngine?: UsageEngineInfo & { name?: string };
   setupLog?: SetupLog | { unavailable: true };
+  timeline?: SupportTimeline | { unavailable: true };
   device?: DeviceInfo;
   checks?: Array<{
     name: string;
@@ -585,6 +609,11 @@ export type PreferenceDescriptor = {
      */
     reported?: string;
     lastSuccessAt?: string;
+    /**
+     * When the provider's last usage reading was collected. Absent for a
+     * provider that has not delivered one yet.
+     */
+    noReadingSince?: string;
     checkedAt?: string;
     nextAction?: string;
     /**

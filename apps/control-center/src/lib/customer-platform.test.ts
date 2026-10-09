@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   copyForHost,
@@ -44,6 +46,69 @@ describe("copyForHost", () => {
       nextAction: "Restart the app, then retry.",
     });
     expect(errorForHost(null, true)).toBeNull();
+  });
+});
+
+// Issue #548: the runtime keeps one wording, the Mac's, and the Windows app
+// rewords it where it is shown. A new sentence of the runtime that the rule
+// above does not catch ("on the Mac", "in macOS") would reach a Windows
+// customer as it is, so every sentence in the runtime's source is put through
+// the rule here.
+describe("the runtime's sentences in the Windows app", () => {
+  it.each([
+    // Setup log, after the background service came back.
+    ["The Mac App's background service started again.", "The app's background service started again."],
+    // Refusals while the app restarts or cannot do something.
+    ["Mac App is restarting.", "App is restarting."],
+    ["This Mac App cannot scan WiFi networks through VibeTV.", "This app cannot scan WiFi networks through VibeTV."],
+    ["Connect VibeTV to this Mac with the USB cable, then press Connect.", "Connect VibeTV to this computer with the USB cable, then press Connect."],
+    // The update check and its job.
+    ["Mac App is up to date.", "App is up to date."],
+    ["Mac App update is available.", "App update is available."],
+    ["Mac App check failed.", "App check failed."],
+    // Diagnostics checks.
+    ["Finish AI setup in the Mac App, then click Check again.", "Finish AI setup in the app, then click Check again."],
+    ["Keep VibeTV powered on and connected to the same WiFi as this Mac.", "Keep VibeTV powered on and connected to the same WiFi as this computer."],
+    ["Keep the Mac App running until VibeTV receives a usage frame.", "Keep the app running until VibeTV receives a usage frame."],
+  ])("%s", (mac, windows) => {
+    expect(copyForHost(mac, true)).toBe(windows);
+    expect(copyForHost(mac, false)).toBe(mac);
+  });
+
+  // Sentences that keep the Mac on purpose: they are chosen by system in the
+  // runtime itself, belong to a path only the Mac has, or are never shown.
+  const keepsTheMac = [
+    "macOS blocked access required by this provider.",
+    "Allow the requested macOS permission, then check again.",
+    "Allow the required macOS access, then check this provider.",
+    "Finish installing the Mac App in Applications.",
+    "Mac setup binary installed",
+    "Keep only one VibeTV Companion daemon running for this macOS user.",
+    "starts and restarts the VibeTV background service on macOS",
+    "run setup on macOS as your normal logged-in user, then rerun `codexbar-display setup`",
+  ];
+
+  it("leaves no other sentence of the runtime naming the Mac", () => {
+    const root = join(process.cwd(), "../../companion");
+    const sources = (readdirSync(root, { recursive: true }) as string[]).filter(
+      (file) => file.endsWith(".go") && !file.endsWith("_test.go"),
+    );
+    expect(sources.length).toBeGreaterThan(50);
+    const left: string[] = [];
+    for (const file of sources) {
+      for (const line of readFileSync(join(root, file), "utf8").split("\n")) {
+        if (/^\s*\/\//.test(line)) continue;
+        for (const match of line.replace(/\s\/\/ .*$/, "").matchAll(/"((?:[^"\\]|\\.)*)"|`([^`]*)`/g)) {
+          const text = match[1] ?? match[2];
+          // A sentence, not a path, a field name or a build constraint.
+          if (!text.includes(" ") || keepsTheMac.includes(text)) continue;
+          if (/\bMac\b|macOS|\bApplications\b/.test(copyForHost(text, true))) {
+            left.push(`${file}: ${text}`);
+          }
+        }
+      }
+    }
+    expect(left).toEqual([]);
   });
 });
 

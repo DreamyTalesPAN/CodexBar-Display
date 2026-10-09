@@ -88,6 +88,45 @@ func TestPreferencesMarksUnavailableProviderStaleFromPersistedUsage(t *testing.T
 	}
 }
 
+// Issue #368: a provider that stopped delivering says since when, also once
+// its saved reading is too old to show and lastSuccessAt is gone. A provider
+// the collector never stored says nothing.
+func TestPreferencesReportNoReadingSinceFromStoredCollectionTime(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	collectedAt := time.Date(2026, 7, 28, 8, 29, 0, 0, time.UTC)
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{
+			{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthAuthRequired},
+			{ID: "cursor", Label: "Cursor", Enabled: true, Health: codexbar.ProviderHealthAuthRequired},
+		}, nil
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
+			Provider: "claude", Frame: protocol.Frame{Provider: "claude", UsageUnavailable: true}, CollectedAt: collectedAt, Stale: true,
+		}, {
+			// Never delivered: this time is its first failed reading.
+			Provider: "cursor", Frame: protocol.Frame{Provider: "cursor", UsageUnavailable: true}, CollectedAt: collectedAt, Stale: true, NoReading: true,
+		}}}, true
+	}
+
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+	var response preferencesResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Items) != 2 {
+		t.Fatalf("expected two providers, got %#v", response.Items)
+	}
+	claude, cursor := response.Items[0].Health, response.Items[1].Health
+	if claude.State != "auth_required" || claude.LastSuccessAt != "" || claude.NoReadingSince != "2026-07-28T08:29:00Z" {
+		t.Fatalf("unexpected health for the failing provider: %#v", claude)
+	}
+	if cursor.NoReadingSince != "" {
+		t.Fatalf("a provider that never delivered must not name a time: %#v", cursor)
+	}
+}
+
 func TestPreferencesKeepRetainedUsageStaleAcrossHealthRefresh(t *testing.T) {
 	for _, health := range []codexbar.ProviderHealthState{
 		codexbar.ProviderHealthAuthRequired,
@@ -589,7 +628,7 @@ func TestBrowserSignInHealthScanDoesNotOverrideUsageEvidence(t *testing.T) {
 	scanned := []codexbar.ProviderSetting{{
 		ID: "claude", Label: "Claude", Enabled: true,
 		Health:    providerHealthFromReadiness(codexbar.ProviderErrorKind("claude", summary)),
-		SignInURL: "https://claude.ai/login",
+		SignInURL: "https://claude.ai/login", Reported: summary,
 	}}
 	if scanned[0].Health != codexbar.ProviderHealthBrowserSignIn {
 		t.Fatalf("the summary must classify as a browser sign-in, got %s", scanned[0].Health)
@@ -614,13 +653,19 @@ func TestBrowserSignInHealthScanDoesNotOverrideUsageEvidence(t *testing.T) {
 		items = server.providerDescriptors(scanned)
 		if len(items) != 1 || items[0].Health.State != "browser_sign_in_required" ||
 			items[0].Health.SignInURL != "https://claude.ai/login" ||
-			items[0].Health.Message != guidance || items[0].Health.Reported != "" {
+			items[0].Health.Message != guidance {
 			t.Fatalf("no reading, %s: the row must ask for the browser session in our words: %#v", source, items[0].Health)
+		}
+		// The engine's summary travels beside the message, for "Copy provider
+		// message" only (issue #551).
+		// Word for word: nothing in this summary is a secret.
+		if items[0].Health.Reported != summary {
+			t.Fatalf("no reading, %s: support needs the engine's summary to copy: %#v", source, items[0].Health)
 		}
 		server.providerReadiness = map[string]providerReadinessRecord{"claude": {
 			Status:    codexbar.ProviderBrowserSignInRequired,
 			Detail:    "Claude usage needs a signed-in claude.ai session in your browser.",
-			SignInURL: "https://claude.ai/login", CheckedAt: now,
+			SignInURL: "https://claude.ai/login", CheckedAt: now, Reported: summary,
 		}}
 	}
 }
@@ -634,6 +679,7 @@ func TestBrowserSignInHealthScanIsOnlyOverriddenByAFreshReading(t *testing.T) {
 		ID: "claude", Label: "Claude", Enabled: true,
 		Health:    codexbar.ProviderHealthBrowserSignIn,
 		SignInURL: "https://claude.ai/login",
+		Reported:  "Claude usage failed from all configured sources. [claude:browser-sign-in-required https://claude.ai/login]",
 	}}
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.now = func() time.Time { return now }
@@ -647,6 +693,10 @@ func TestBrowserSignInHealthScanIsOnlyOverriddenByAFreshReading(t *testing.T) {
 	items := server.providerDescriptors(scanned)
 	if len(items) != 1 || items[0].Health.State != providerHealthStateStale {
 		t.Fatalf("a reading that is only kept must not report the provider healthy: %#v", items[0].Health)
+	}
+	// The stale row shows what it reports, so the summary stays off it.
+	if items[0].Health.Reported != "" {
+		t.Fatalf("the stale row must not carry the browser sign-in summary: %#v", items[0].Health)
 	}
 }
 

@@ -216,7 +216,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
   // another id. The awake VibeTV still reports the id and holds the old file,
   // and the catalog row read Installed with its Install closed.
   it("offers Install for a catalog theme while VibeTV holds another theme's file under its id", () => {
-    const render = (path?: string) =>
+    const render = (path?: string, earlierThemeSpecPaths?: string[]) =>
       renderToStaticMarkup(
         <ThemeLibraryScreen
           busyAction={null}
@@ -240,6 +240,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
               id: "my-theme",
               themeId: "my-theme",
               themeSpecPath: "/themes/u/mt-4-abcdef.json",
+              earlierThemeSpecPaths,
               title: "Catalog Namesake",
             },
           ]}
@@ -256,6 +257,90 @@ describe("ThemeLibraryScreen Appearance sections", () => {
       "Theme is already installed.",
     );
     expect(render()).toContain("Theme is already installed.");
+    // #559: a catalog that names its earlier files tells an own file that
+    // starts like its own from a revision it shipped.
+    const earlier = ["/themes/u/mt-3-123456.json"];
+    expect(render("/themes/u/mt-3-0a1b2c.json", earlier)).toContain(
+      'title="Install Catalog Namesake"',
+    );
+    for (const held of ["/themes/u/mt-4-abcdef.json", undefined]) {
+      expect(render(held, earlier)).toContain("Theme is already installed.");
+    }
+  });
+
+  // #209: the app brings the theme on VibeTV up to the catalog on its own, but
+  // not while an app update is pending, not after that install failed once,
+  // and a screensaver not during standby. The row then read Installed with
+  // its button closed, although VibeTV held an earlier revision.
+  it("offers Update for a catalog theme while VibeTV holds a revision the catalog names as earlier", () => {
+    const earlier = "/themes/u/mt-3-123456.json";
+    const earlierScreensaver = "/themes/s/nc-2-12345678.json";
+    const render = (
+      usage: ThemeStudioUsage,
+      held: string,
+      ready = true,
+    ) =>
+      renderToStaticMarkup(
+        <ThemeLibraryScreen
+          busyAction={null}
+          companionStatus="online"
+          device={{
+            ...device,
+            ready,
+            activeTheme: "live-theme",
+            display: { themeSpec: { path: usage === "live" ? held : undefined } },
+            standby: {
+              screensaverPath: usage === "screensaver" ? held : undefined,
+            },
+          }}
+          onInstallCustomTheme={async () => false}
+          onInstallTheme={vi.fn()}
+          onSaveStandby={vi.fn()}
+          onSelectTheme={vi.fn()}
+          selectedThemeId=""
+          // The settings are read: without them a screensaver is not installed.
+          standby={{ brightnessPercent: 20, enabled: true, timeoutMinutes: 10 }}
+          storefrontConfigured={false}
+          themeInstallEnabled
+          themes={[
+            {
+              ...themes[0],
+              themeSpecPath: "/themes/u/mt-4-abcdef.json",
+              earlierThemeSpecPaths: [earlier],
+            },
+            {
+              ...themes[1],
+              themeSpecPath: "/themes/s/nc-3-e18e4217.json",
+              earlierThemeSpecPaths: [earlierScreensaver],
+            },
+          ]}
+          usage={usage}
+        />,
+      );
+    const button = (html: string, title: string) =>
+      html.match(new RegExp(`<button[^>]*title="${title}"[^>]*>([^<]*)<`));
+
+    const live = button(render("live", earlier), "Update Live Theme");
+    expect(live?.[1]).toBe("Update");
+    expect(live?.[0]).not.toContain(' disabled=""');
+    const screensaver = button(
+      render("screensaver", earlierScreensaver),
+      "Update Night Clock",
+    );
+    expect(screensaver?.[1]).toBe("Update");
+    expect(screensaver?.[0]).not.toContain(' disabled=""');
+
+    // The current file is installed, as before.
+    const current = button(
+      render("live", "/themes/u/mt-4-abcdef.json"),
+      "Theme is already installed.",
+    );
+    expect(current?.[1]).toBe("Installed");
+    expect(current?.[0]).toContain(' disabled=""');
+    // A VibeTV that cannot take an install keeps the word of the action.
+    const notReady = render("live", earlier, false);
+    expect(notReady).not.toContain("Theme is already installed.");
+    expect(notReady).toMatch(/<button[^>]* disabled=""[^>]*>Update</);
   });
 
   // Seen on the Windows app on 2026-10-07: Retro 3D said "Install" again after
@@ -291,13 +376,13 @@ describe("ThemeLibraryScreen Appearance sections", () => {
         />,
       );
 
-    expect(render()).not.toContain("Theme is already installed.");
+    expect(render()).not.toContain("is already installed.");
     expect(render("/themes/s/nc-3-e18e4217.json")).toContain(
-      "Theme is already installed.",
+      "Screensaver is already installed.",
     );
     // An older revision in the slot is still this screensaver.
     expect(render("/themes/s/nc-2-cb6d64ba.json")).toContain(
-      "Theme is already installed.",
+      "Screensaver is already installed.",
     );
   });
 
@@ -388,7 +473,8 @@ describe("ThemeLibraryScreen Appearance sections", () => {
       /<button[^>]*id="vibetv-library-standby"[^>]*>/,
     )?.[0];
     expect(standbySwitch).not.toContain('disabled=""');
-    expect(html).toContain("Turn On First");
+    // Sentence case, like every other button of the app.
+    expect(html).toContain(">Turn on first<");
     expect(html).toContain("Turn on Show screensaver to install");
   });
 
@@ -403,6 +489,40 @@ describe("ThemeLibraryScreen Appearance sections", () => {
     expect(html).toContain('aria-checked="true"');
     expect(html).not.toContain("Screensaver is turned off");
     expect(html).toContain("Night Clock");
+  });
+
+  // Issue #579: with Show screensaver off, the installed row still read
+  // "Screensaver is ready on VibeTV." below the notice that it is turned off.
+  it("says only that the screensaver is installed while Show screensaver is off", () => {
+    const list = (enabled: boolean) =>
+      renderToStaticMarkup(
+        <ThemeLibraryScreen
+          busyAction={null}
+          companionStatus="online"
+          device={{ connected: true, paired: true, ready: true }}
+          installStatus={{
+            logs: [],
+            message: "Screensaver is ready on VibeTV.",
+            phase: "complete",
+            startedAt: "10:00:00",
+            themeId: "night-clock",
+            title: "Night Clock",
+          }}
+          onInstallCustomTheme={async () => false}
+          onInstallTheme={vi.fn()}
+          onSelectTheme={vi.fn()}
+          selectedThemeId=""
+          standby={{ enabled, timeoutMinutes: 10, brightnessPercent: 20 }}
+          storefrontConfigured={false}
+          themeInstallEnabled
+          themes={themes}
+          usage="screensaver"
+        />,
+      );
+
+    expect(list(true)).toContain("Screensaver is ready on VibeTV.");
+    expect(list(false)).toContain("Night Clock is installed.");
+    expect(list(false)).not.toContain("Screensaver is ready on VibeTV.");
   });
 
   // Issue #558: the Screensavers list said "theme" in these lines of its own.
@@ -433,6 +553,32 @@ describe("ThemeLibraryScreen Appearance sections", () => {
     expect(
       list({ phase: "installing", themeId, title: "", startedAt: "", logs: [] }),
     ).toContain(`Preparing ${noun.toLowerCase()} install.`);
+  });
+
+  // Issue #558: the reasons an Install button gives are written for themes.
+  it.each([
+    ["screensaver", "This screensaver does not support this VibeTV."],
+    ["live", "This theme does not support this VibeTV."],
+  ] as const)("gives the reason an install is unavailable in the words of the %s list", (usage, reason) => {
+    const html = renderToStaticMarkup(
+      <ThemeLibraryScreen
+        busyAction={null}
+        companionStatus="online"
+        device={{ connected: true, paired: true, ready: true, board: "another-board" }}
+        onInstallCustomTheme={async () => false}
+        onInstallTheme={vi.fn()}
+        onSelectTheme={vi.fn()}
+        selectedThemeId=""
+        standby={{ enabled: true, timeoutMinutes: 10, brightnessPercent: 20 }}
+        storefrontConfigured={false}
+        themeInstallEnabled
+        themes={themes.map((item) => ({ ...item, compatibleBoards: ["esp8266_smalltv_st7789"] }))}
+        usage={usage}
+      />,
+    );
+
+    expect(html).toContain(`title="${reason}"`);
+    expect(html).toContain(">Not supported<");
   });
 
   it("shows a clear empty state when the catalog has no screensavers", () => {

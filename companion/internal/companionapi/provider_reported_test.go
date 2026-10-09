@@ -72,6 +72,176 @@ func TestReportedProviderMessageRedactsTheHomePath(t *testing.T) {
 	}
 }
 
+// The account name is the folder name under the home root on every system:
+// C:\Users\<name> (any drive, either slash, doubled in JSON), /Users/<name>
+// and /home/<name>. A name may hold spaces, apostrophes and brackets, so the
+// whole component goes, up to the next separator.
+func TestReportedProviderMessageRedactsEveryHomePath(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{
+			in:   `Cookies database not found at C:\Users\Paul Anduschus\AppData\Local\Google\Chrome\User Data\Default\Network\Cookies`,
+			want: `Cookies database not found at ~\AppData\Local\Google\Chrome\User Data\Default\Network\Cookies`,
+		},
+		{
+			in:   `Claude credentials not found at C:\Users\Patrick\.claude\.credentials.json.`,
+			want: `Claude credentials not found at ~\.claude\.credentials.json.`,
+		},
+		{
+			in:   `Claude credentials not found at d:/Users/Paul Anduschus/.claude/.credentials.json.`,
+			want: `Claude credentials not found at ~/.claude/.credentials.json.`,
+		},
+		{
+			in:   `{"path":"c:\\Users\\Patrick\\AppData\\Roaming\\CodexBar\\settings.json"}`,
+			want: `{"path":"~\\AppData\\Roaming\\CodexBar\\settings.json"}`,
+		},
+		{in: `Missing file (C:\Users\Patrick)`, want: `Missing file (~)`},
+		{
+			in:   `Claude credentials not found at C:\Users\Jane O'Doe\.claude\.credentials.json.`,
+			want: `Claude credentials not found at ~\.claude\.credentials.json.`,
+		},
+		{
+			in:   `Claude credentials not found at C:\Users\Jane (Work)\.claude\.credentials.json.`,
+			want: `Claude credentials not found at ~\.claude\.credentials.json.`,
+		},
+		// An unterminated name may take prose with it, never the reverse.
+		{in: `Profile C:\Users\Jane is missing; see D:\logs\run.txt`, want: `Profile ~; see D:\logs\run.txt`},
+		{in: `Missing profile (C:\Users\Jane O'Doe), try again.`, want: `Missing profile (~), try again.`},
+		{
+			in:   "Safari cookies: permission denied for /Users/Paul Anduschus/Library/Cookies/Cookies.binarycookies",
+			want: "Safari cookies: permission denied for ~/Library/Cookies/Cookies.binarycookies",
+		},
+		{in: "Missing profile (/Users/Paul Anduschus), try again.", want: "Missing profile (~), try again."},
+		{
+			in:   "Codex auth file not found at /home/paul/.codex/auth.json",
+			want: "Codex auth file not found at ~/.codex/auth.json",
+		},
+		// Two homes in one sentence: the first must not swallow the second.
+		{in: "Tried /Users/paul and /Users/anna/Library/x", want: "Tried ~~/Library/x"},
+		// A credential right behind a path is still one: the path rule ends
+		// at ";" and ",", and the pair rule takes over from there.
+		{in: "path=/Users/jane;token=abcdef", want: "path=~;token=[redacted]"},
+		{in: "path=/Users/jane,token=abcdef", want: "path=~,token=[redacted]"},
+		// "&" can be part of a folder name, so the path rule takes it along.
+		{in: "path=/Users/jane&token=abcdef", want: "path=~"},
+		{in: "path=/Users/jane/x&token=abcdef", want: "path=~/x&token=[redacted]"},
+		{in: `path=C:\Users\Jane Doe;password=letmein;session=abc`, want: "path=~;password=[redacted];session=[redacted]"},
+		{in: `dir=/home/jane;auth={"k":"v"}`, want: `dir=~;auth=[redacted]`},
+		// A web address is not a home folder.
+		{
+			in:   "Open https://example.com/home/dashboard to sign in.",
+			want: "Open https://example.com/home/dashboard to sign in.",
+		},
+	} {
+		if got := reportedProviderMessage(tc.in); got != tc.want {
+			t.Fatalf("home path redaction:\n  in %q\n got %q\nwant %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// The Windows engine joins what each source answered as "<source>: <error>",
+// with the sources Web, OAuth and CLI (claude_auto_fetch_error in the pinned
+// Win-CodexBar). "OAuth:" there is a label and not a credential key: read as
+// one, the sentence support copies came out as "OAuth: [redacted] error: ...".
+func TestReportedProviderMessageKeepsTheSourceLabelOAuth(t *testing.T) {
+	const summary = "Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: OAuth error: Claude OAuth usage endpoint is rate limited. Retrying in about 1s; credentials were preserved.; CLI: Claude CLI /usage opened, but this Claude version returned local activity stats instead of plan limit percentages. Use Auto, OAuth, or Web mode for Claude limits. [claude:browser-sign-in-required https://claude.ai/login]"
+	if got := reportedProviderMessage(summary); got != summary {
+		t.Fatalf("browser sign-in summary:\n got %q\nwant %q", got, summary)
+	}
+	for _, tc := range []struct{ in, want string }{
+		{
+			in:   "Claude usage failed from all configured sources. OAuth: OAuth error: token expired; Web: No cookies available for web API; CLI: Parse error: Empty output from Claude CLI",
+			want: "Claude usage failed from all configured sources. OAuth: OAuth error: token expired; Web: No cookies available for web API; CLI: Parse error: Empty output from Claude CLI",
+		},
+		// Only a word is a sentence's start. Anything else after the label,
+		// and every other key with "auth" in it, is still a credential.
+		{in: "OAuth: abc123def", want: "OAuth: [redacted]"},
+		// A sentence has a second word. One token is a value, also when it
+		// is all letters.
+		{in: "OAuth: hunterpassword", want: "OAuth: [redacted]"},
+		{in: "OAuth: AbCdEfGhIjKlMnOpQrStUvWxYz", want: "OAuth: [redacted]"},
+		{in: "Web: No cookies; OAuth: hunterpassword; CLI: Parse error", want: "Web: No cookies; OAuth: [redacted]; CLI: Parse error"},
+		{in: "OAuth: hunterpassword.", want: "OAuth: [redacted]."},
+		{in: "OAuth: hunter 12345678", want: "OAuth: [redacted] 12345678"},
+		{in: "OAuth: Bearer abcdefgh12", want: "OAuth: [redacted]"},
+		{in: "oauth_token: letmein", want: "oauth_token: [redacted]"},
+		{in: "OAuth=letmein", want: "OAuth=[redacted]"},
+	} {
+		if got := reportedProviderMessage(tc.in); got != tc.want {
+			t.Fatalf("source label:\n  in %q\n got %q\nwant %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// What the pinned Win-CodexBar can print behind the label "OAuth:" is the
+// text of the error its OAuth source returned (claude_auto_fetch_error joins
+// "<source>: <error>"; nothing else in the engine prints that label). Every
+// such text is a sentence: ProviderError's own wordings and the messages in
+// providers/claude/oauth. Its only one-word error, "Timeout", comes from the
+// CLI source and stands behind "CLI:". So no single word is let through:
+// "Unauthorized", "Forbidden" or "expired" alone are not engine answers, and
+// a one-word value cannot be told from a password.
+func TestReportedProviderMessageKeepsEverySentenceOfTheOAuthSource(t *testing.T) {
+	for _, sentence := range []string{
+		"Authentication required",
+		"OAuth error: API error 401: Unauthorized",
+		"OAuth error: Claude OAuth usage endpoint is rate limited. Retrying in about 1s; credentials were preserved.",
+		"OAuth error: Failed to parse OAuth response: expected value at line 1 column 1",
+		"OAuth session expired: OAuth token expired. Run `claude` to refresh.",
+		"OAuth session expired: OAuth token invalid or expired. Run `claude` to re-authenticate.",
+		"OAuth token revoked: OAuth token was revoked. The CLI fallback will be used.",
+		"OAuth error: OAuth token missing 'user:profile' scope (has: user:inference). Run `claude setup-token` to regenerate.",
+		"Claude OAuth credentials not found. Run `claude` to authenticate.",
+		"Claude OAuth access token is empty. Run `claude` to authenticate.",
+		"Network error: error sending request for url (https://api.anthropic.com/api/oauth/usage)",
+		"No cookies available for web API",
+	} {
+		in := "Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: " + sentence + "; CLI: Timeout"
+		if got := reportedProviderMessage(in); got != in {
+			t.Fatalf("OAuth source sentence:\n got %q\nwant %q", got, in)
+		}
+	}
+	for _, tc := range []struct{ in, want string }{
+		{in: "OAuth: Unauthorized. Sign in again.", want: "OAuth: [redacted]. Sign in again."},
+		{in: "Web: timeout | OAuth: Forbidden", want: "Web: timeout | OAuth: [redacted]"},
+		{in: "OAuth: expired, run codexbar login", want: "OAuth: [redacted], run codexbar login"},
+	} {
+		if got := reportedProviderMessage(tc.in); got != tc.want {
+			t.Fatalf("one word behind the label:\n  in %q\n got %q\nwant %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// What the engines print about an account is an address: "OpenAI dashboard
+// signed in as ", "Antigravity local session is signed in as " and "OpenAI
+// web session does not match Codex account. Found: <browser>=<address>"
+// (CodexBar 0.63.0). Neither engine prints a person's name or a browser
+// profile's display name; the Windows engine names a profile by its folder
+// ("Default", "Profile 1").
+func TestReportedProviderMessageRedactsTheAccountInTheEnginesOwnSentences(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{
+			in:   "OpenAI dashboard signed in as paul@example.com, but Codex uses hallo@dreamytales.de. Switch accounts in your browser and update OpenAI cookies in Providers → Codex.",
+			want: "OpenAI dashboard signed in as [redacted], but Codex uses [redacted]. Switch accounts in your browser and update OpenAI cookies in Providers → Codex.",
+		},
+		{
+			in:   "Antigravity local session is signed in as paul@example.com; local usage cannot be used for the selected account.",
+			want: "Antigravity local session is signed in as [redacted]; local usage cannot be used for the selected account.",
+		},
+		{
+			in:   "OpenAI web session does not match Codex account. Found: Chrome=paul@example.com, Safari=hallo@dreamytales.de.",
+			want: "OpenAI web session does not match Codex account. Found: Chrome=[redacted], Safari=[redacted].",
+		},
+		{
+			in:   "Cookies database not found for Chrome profile Profile 1",
+			want: "Cookies database not found for Chrome profile Profile 1",
+		},
+	} {
+		if got := reportedProviderMessage(tc.in); got != tc.want {
+			t.Fatalf("account in an engine sentence:\n  in %q\n got %q\nwant %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 // CodexBar 0.46.0 interpolates the account address and whole HTTP bodies into
 // the sentences this field carries -- "OpenAI dashboard signed in as ",
 // "Antigravity local session is signed in as ", "Unexpected response body (".

@@ -49,4 +49,27 @@ done < <(
     ':(glob)dist/theme-packs/render/*/*.json'
 )
 
+# A VibeTV that still holds an earlier revision gets its update only while the
+# catalog names that file (#559). So the file a theme had on the base, and every
+# earlier file the base named, stays named when the theme moves on.
+catalog="dist/theme-packs/vibetv-theme-packs-v2.json"
+if ! git show "${BASE_REF}:${catalog}" | node -e '
+  const base = JSON.parse(require("fs").readFileSync(0, "utf8"));
+  const current = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+  let ok = true;
+  for (const was of base.themes) {
+    const now = current.themes.find((theme) => theme.id === was.id);
+    for (const file of [was.themeSpecPath, ...(was.earlierThemeSpecPaths || [])]) {
+      if (now && file !== now.themeSpecPath && !now.earlierThemeSpecPaths?.includes(file)) {
+        console.log(`::error::${was.id} no longer names its earlier revision ${file}`);
+        ok = false;
+      }
+    }
+  }
+  process.exit(ok ? 0 : 1);
+' "${catalog}"; then
+  echo "::error::run node scripts/build-theme-packs.mjs; earlierThemeSpecPaths only grows"
+  exit 1
+fi
+
 echo "theme pack history ok against ${BASE_REF}"

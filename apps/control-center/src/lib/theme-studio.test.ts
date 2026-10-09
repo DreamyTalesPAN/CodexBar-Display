@@ -128,6 +128,38 @@ describe("validateThemeSpec", () => {
     expect(() => buildThemePack(spec, "Mismatched sprite", assets)).toThrow(error);
   });
 
+  // Issue #558: the export of "QA3 Night" was called vibetv-theme-my-theme-5.zip.
+  it.each([
+    ["QA3 Night", "vibetv-theme-qa3-night.zip"],
+    ["  Müsli / Bar: 2  ", "vibetv-theme-muesli-bar-2.zip"],
+    // German umlauts are spelled out, other accents dropped; before, both of
+    // these gave "gr-e".
+    ["Größe", "vibetv-theme-groesse.zip"],
+    ["Grüße", "vibetv-theme-gruesse.zip"],
+    ["ÄÖÜ Café Olé", "vibetv-theme-aeoeue-cafe-ole.zip"],
+    // At most 80 characters of the name, and no "-" left at the cut.
+    ["a".repeat(300), `vibetv-theme-${"a".repeat(80)}.zip`],
+    [`${"a".repeat(79)} b`, `vibetv-theme-${"a".repeat(79)}.zip`],
+    ["夜", "vibetv-theme-my-theme-5.zip"],
+    ["", "vibetv-theme-my-theme-5.zip"],
+  ])("names the exported file after the theme %j", (name, fileName) => {
+    const spec = { ...validSpec(), themeId: "my-theme-5" };
+    expect(buildThemePack(spec, name, {}).fileName).toBe(fileName);
+  });
+
+  // Seen on the Windows app on 2026-10-09: a screensaver's export was called
+  // vibetv-theme-….zip.
+  it("names an exported screensaver a screensaver", () => {
+    const spec = { ...validSpec(), themeId: "my-screensaver" };
+    expect(buildThemePack(spec, "Night Drift", {}, "screensaver").fileName).toBe(
+      "vibetv-screensaver-night-drift.zip",
+    );
+    expect(buildThemePack(spec, "", {}, "screensaver").fileName).toBe(
+      "vibetv-screensaver-my-screensaver.zip",
+    );
+    expect(buildThemePack(spec, "Night Drift", {}).fileName).toBe("vibetv-theme-night-drift.zip");
+  });
+
   it("builds a screensaver pack in its own slot without hidden state assets", () => {
     const spec = validSpec();
     spec.primitives = [

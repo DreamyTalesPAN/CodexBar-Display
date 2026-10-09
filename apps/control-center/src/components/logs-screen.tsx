@@ -36,9 +36,15 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { activeLiveThemeId } from "@/lib/active-theme-upgrade";
 import { copyForHost } from "@/lib/customer-platform";
+import { validateThemeSpec } from "@/lib/theme-studio";
+import {
+  loadUserThemes,
+  type ThemeStudioDocument,
+} from "@/lib/theme-studio-storage";
 import type { ThemeProduct } from "@/lib/themes";
 import {
   deviceIsCustomerConnected,
+  deviceUsesCable,
   deviceIsReady,
   type DeviceInfo,
   type SupportDiagnostics,
@@ -125,10 +131,15 @@ export function LogsScreen({
                 label="Device"
                 value={device?.deviceId || device?.board || "Not available"}
               />
-              <SupportFact
-                label="Address"
-                value={formatDeviceAddress(device?.target)}
-              />
+              {/* A VibeTV on the cable has no address (issue #558). */}
+              {deviceUsesCable(device) ? (
+                <SupportFact label="Connection" value="USB-C cable" />
+              ) : (
+                <SupportFact
+                  label="Address"
+                  value={formatDeviceAddress(device?.target)}
+                />
+              )}
               <SupportFact
                 label="Firmware"
                 value={device?.firmware || "Not available"}
@@ -280,14 +291,45 @@ function activeThemeLabel(
   themes: ThemeProduct[],
   device: DeviceInfo | null | undefined,
 ): string {
+  // The customer's own themes are saved in this browser, by Theme Studio, with
+  // the name they gave them.
+  const saved = loadUserThemes();
+  const ownName = (matches: (document: ThemeStudioDocument) => boolean) =>
+    (saved.ok ? saved.value.themes : saved.data?.themes || []).find(
+      ({ document }) => document.usage !== "screensaver" && matches(document),
+    )?.document.packName;
+  // The file in the live slot says whose theme it is: a saved theme is sent
+  // under a path only it has, also when a later catalog gave one of its themes
+  // the same id. During standby that file is all VibeTV reports of the slot;
+  // the screensaver on screen is not it.
+  const standbyActive = device?.standby?.active === true;
+  const livePath = (
+    standbyActive
+      ? device.standby?.liveThemePath
+      : device?.display?.themeSpec?.path
+  )?.trim();
+  const ownByFile =
+    livePath &&
+    ownName(
+      (document) =>
+        validateThemeSpec(document.spec, document.assets, "live")
+          .themeSpecPath === livePath,
+    );
+  if (ownByFile) {
+    return ownByFile;
+  }
   const theme = activeLiveThemeId(themes, device)?.trim();
   if (!theme) {
-    // During standby a Theme Studio theme in the live slot has no name here;
-    // the screensaver on screen is not it.
-    if (device?.standby?.active === true && device.standby.liveThemePath?.trim()) {
+    if (standbyActive && livePath) {
       return "Custom theme";
     }
     return deviceIsReady(device) ? "Default" : "Not available";
+  }
+  const own =
+    !themes.some((listed) => listed.themeId === theme) &&
+    ownName((document) => document.spec.themeId === theme);
+  if (own) {
+    return own;
   }
   return theme.split(/[-_]+/).filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
 }

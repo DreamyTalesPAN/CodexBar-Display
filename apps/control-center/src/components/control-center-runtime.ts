@@ -53,6 +53,29 @@ export function nativeProviderShortcut(
     : "available";
 }
 
+/**
+ * The Mac App says how its save dialog for a download ended (issue #582):
+ * `saved` is false after Cancel. Only the outcome for `fileName` is passed
+ * on. An older Mac App says nothing. Returns the function that stops listening.
+ */
+export function onNativeDownloadFinished(
+  fileName: string,
+  listener: (saved: boolean) => void,
+): () => void {
+  const handle = (event: Event) => {
+    const detail: unknown = (event as CustomEvent).detail;
+    if (typeof detail !== "object" || detail === null) {
+      return;
+    }
+    const { fileName: finished, saved } = detail as Record<string, unknown>;
+    if (finished === fileName && typeof saved === "boolean") {
+      listener(saved);
+    }
+  };
+  window.addEventListener("vibetv:download-finished", handle);
+  return () => window.removeEventListener("vibetv:download-finished", handle);
+}
+
 export function isNativeControlCenterApp(): boolean {
   return (
     typeof navigator !== "undefined" &&

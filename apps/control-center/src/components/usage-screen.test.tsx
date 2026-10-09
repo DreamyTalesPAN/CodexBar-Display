@@ -2,7 +2,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "@/test/axe";
 import type { UsageSnapshot } from "./control-center-types";
-import { UsageScreen } from "./usage-screen";
+import {
+  UsageScreen,
+  usageTokenHistoryUnavailable,
+  usageTokenHistoryUnavailableOnVibeTV,
+} from "./usage-screen";
 
 const usage: UsageSnapshot = {
   ok: true,
@@ -49,9 +53,62 @@ describe("UsageScreen", () => {
       providers: [...usage.providers, { id: "claude", label: "Claude", session: 0, weekly: 10, usageMode: "used" }],
     });
     expect(html).toContain("Token history is unavailable");
+    expect(html).toContain("not available for every selected provider");
     expect(html).not.toContain("Total tokens in the last 30 days");
     expect(html).toContain("Weekly: 34% used");
     expect(html).toContain("Weekly: 10% used");
+  });
+
+  it("says when the Usage notice stands", () => {
+    expect(usageTokenHistoryUnavailable(usage)).toBe(false);
+    expect(usageTokenHistoryUnavailable(null)).toBe(false);
+    expect(
+      usageTokenHistoryUnavailable({
+        ...usage,
+        tokenUsageReady: true,
+        providers: usage.providers.map((provider) => ({ ...provider, cost: undefined })),
+      }),
+    ).toBe(true);
+  });
+
+  // VibeTV draws the token numbers of one provider. The hint on Themes says
+  // "Shows --" only when that provider has none, whatever the others have.
+  it("answers for Themes by the provider on VibeTV", () => {
+    const cursor = { id: "cursor", label: "Cursor", session: 0, weekly: 10, usageMode: "used" as const };
+    const mixed = { ...usage, providers: [...usage.providers, cursor] };
+    expect(usageTokenHistoryUnavailable(mixed)).toBe(true);
+    expect(usageTokenHistoryUnavailableOnVibeTV(mixed)).toBe(false);
+    expect(usageTokenHistoryUnavailableOnVibeTV({ ...mixed, currentProvider: "cursor" })).toBe(true);
+    // No provider on VibeTV: only when none of the shown ones has a history.
+    expect(usageTokenHistoryUnavailableOnVibeTV({ ...mixed, currentProvider: undefined })).toBe(false);
+    expect(
+      usageTokenHistoryUnavailableOnVibeTV({ ...usage, currentProvider: undefined, providers: [cursor] }),
+    ).toBe(true);
+    expect(usageTokenHistoryUnavailableOnVibeTV(null)).toBe(false);
+    // Token history not read yet: no claim.
+    expect(
+      usageTokenHistoryUnavailableOnVibeTV({ ...usage, tokenUsageReady: false, providers: [cursor] }),
+    ).toBe(false);
+  });
+
+  // Issue #558: with one provider on, "not available for every selected
+  // provider" read like an error about providers the customer does not have.
+  it("names the one provider that has no token history", () => {
+    const one = (windowsHost: boolean) =>
+      renderToStaticMarkup(
+        <UsageScreen
+          busyAction={null}
+          companionStatus="online"
+          usage={{ ...usage, providers: usage.providers.map((provider) => ({ ...provider, cost: undefined })) }}
+          windowsHost={windowsHost}
+        />,
+      );
+
+    expect(one(false)).toContain(
+      "No token history was found for Codex on this Mac. Your usage limits are shown below.",
+    );
+    expect(one(false)).not.toContain("every selected provider");
+    expect(one(true)).toContain("No token history was found for Codex on this computer.");
   });
 
   it("shows unavailable rather than zero or a spinner after a scan without history", () => {
@@ -225,7 +282,7 @@ describe("UsageScreen", () => {
     expect(html).toContain("Refreshing</button>");
   });
 
-  it("explains that a manual refresh is still waiting for a new snapshot", () => {
+  it("shows a small Refreshing mark by the token total while a manual refresh waits, and no notice", () => {
     const html = renderToStaticMarkup(
       <UsageScreen
         companionStatus="online"
@@ -239,9 +296,16 @@ describe("UsageScreen", () => {
       />,
     );
 
-    expect(html).toContain("Refreshing usage");
-    expect(html).toContain("Current values stay visible");
+    expect(html).toContain('data-testid="usage-refresh-pending"');
+    expect(html).not.toContain("Refreshing usage");
+    expect(html).not.toContain("Current values stay visible");
     expect(html).toContain("Codex");
+    // No mark without a pending refresh.
+    expect(
+      renderToStaticMarkup(
+        <UsageScreen companionStatus="online" onRefresh={vi.fn()} usage={usage} />,
+      ),
+    ).not.toContain('data-testid="usage-refresh-pending"');
   });
 
   it("does not show the global loading banner when unavailable refresh has token history", () => {

@@ -26,6 +26,7 @@ import { Slider } from "@/components/ui/slider";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { installedScreensaver } from "@/lib/active-theme-upgrade";
+import { errorForHost } from "@/lib/customer-platform";
 import { loadUserThemes } from "@/lib/theme-studio-storage";
 import type { ThemeProduct } from "@/lib/themes";
 import { PreferenceControl } from "./preference-control";
@@ -207,6 +208,13 @@ export function SettingsScreen({
   const usageDisplay = displayPreferences.find(
     (item) => item.id === "vibetv.usage.displayMode",
   );
+  // What Default stands for right now, in the row's own words (issue #558).
+  const usageDisplayDefault =
+    usageDisplay?.value === null
+      ? usageDisplay.options?.find(
+          (option) => option.value === usageDisplay.effectiveValue,
+        )?.label
+      : undefined;
   const rotation = displayPreferences.find(
     (item) => item.id === "vibetv.display.rotateSeconds",
   );
@@ -214,7 +222,7 @@ export function SettingsScreen({
   return (
     <div className="mx-auto w-full max-w-[1040px] py-10">
       <SetupStepFailedDialog
-        error={actionError ?? providerError ?? null}
+        error={actionError ?? errorForHost(providerError, windowsHost)}
         onOpenChange={(open) => !open && onDismissError()}
       />
       <SettingsSection title="Connection">
@@ -284,7 +292,7 @@ export function SettingsScreen({
 
       <ItemSeparator className="my-0" />
 
-      <SettingsSection title="Display">
+      <SettingsSection id="settings-display" title="Display">
         <BrightnessControl
           disabled={
             !brightnessSupport ||
@@ -314,11 +322,16 @@ export function SettingsScreen({
             onChange={onDisplayPreferenceChange}
           />
         ) : null}
+        {usageDisplayDefault ? (
+          <p className="-mt-2 text-sm text-muted-foreground">
+            Default is the same as {usageDisplayDefault}.
+          </p>
+        ) : null}
       </SettingsSection>
 
       <ItemSeparator className="my-0" />
 
-      <SettingsSection title="Display mode">
+      <SettingsSection id="settings-display-mode" title="Display mode">
         {providerPicker.displayNotice ? (
           <p className="text-sm text-muted-foreground" role="status">
             {providerPicker.displayNotice}
@@ -384,7 +397,19 @@ export function SettingsScreen({
         {providerShortcut ? (
           <p className="text-sm text-muted-foreground">
             {providerShortcut === "available"
-              ? `Press ${shortcutKeys} in any app to show the next provider. This switches to Manual.`
+              ? // What a press does now (issue #558): it moves between the
+                // providers Manual offers, so one of them leaves nothing to
+                // show next, and Manual cannot be switched to twice. Until
+                // usage has been read, neither is known and neither is said.
+                `Press ${shortcutKeys} in any app to show the next provider.${
+                  !providerPicker.usage
+                    ? ""
+                    : displayable.length < 2
+                      ? " This needs two providers with usage."
+                      : displayMode === "fixed"
+                        ? ""
+                        : " This switches to Manual."
+                }`
               : `The shortcut ${shortcutKeys} for the next provider is not available: another app may already be using these keys.`}
           </p>
         ) : null}
@@ -424,7 +449,8 @@ export function SettingsScreen({
                 <SelectContent>
                   {standbyTimeoutOptions.map((minutes) => (
                     <SelectItem key={minutes} value={String(minutes)}>
-                      {standbyTimeoutLabel(minutes)}
+                      {/* Says what the minutes count (issue #558). */}
+                      {standbyTimeoutLabel(minutes)} without AI usage
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -474,40 +500,51 @@ export function SettingsScreen({
 
       <ItemSeparator className="my-0" />
 
-      <SettingsSection
-        description={`Connect ${thisHost} to another VibeTV.`}
-        title="Setup"
-      >
-        <div className="flex flex-wrap gap-3">
-          <Button
-            disabled={localActionBusy}
-            onClick={onResetSetup}
-            type="button"
-            variant="outline"
-          >
-            {busyAction === "reset-setup" ? (
-              <Spinner data-icon="inline-start" />
-            ) : null}
-            <span>
-              {busyAction === "reset-setup" ? "Resetting" : "Run setup again"}
-            </span>
-          </Button>
-          {onEraseDevice && connectionMode === "cable" ? (
+      <SettingsSection title="Setup">
+        {/* Side by side, each with its own line: one line beside both
+            explained only the first (issue #579). */}
+        <div className="flex flex-wrap items-start gap-x-3 gap-y-4">
+          <div className="flex min-w-0 flex-1 basis-56 flex-col items-start gap-2">
             <Button
-              disabled={localActionBusy || !deviceIsCustomerConnected(device)}
-              onClick={() => setEraseRequested(true)}
+              aria-describedby="vibetv-run-setup-help"
+              disabled={localActionBusy}
+              onClick={onResetSetup}
               type="button"
               variant="outline"
             >
-              {busyAction === "erase-device" ? (
+              {busyAction === "reset-setup" ? (
                 <Spinner data-icon="inline-start" />
               ) : null}
               <span>
-                {busyAction === "erase-device"
-                  ? "Resetting"
-                  : "Reset to factory settings"}
+                {busyAction === "reset-setup" ? "Resetting" : "Run setup again"}
               </span>
             </Button>
+            <p className="text-sm text-muted-foreground" id="vibetv-run-setup-help">
+              Connect {thisHost} to another VibeTV.
+            </p>
+          </div>
+          {onEraseDevice && connectionMode === "cable" ? (
+            <div className="flex min-w-0 flex-1 basis-56 flex-col items-start gap-2">
+              <Button
+                aria-describedby="vibetv-factory-reset-help"
+                disabled={localActionBusy || !deviceIsCustomerConnected(device)}
+                onClick={() => setEraseRequested(true)}
+                type="button"
+                variant="outline"
+              >
+                {busyAction === "erase-device" ? (
+                  <Spinner data-icon="inline-start" />
+                ) : null}
+                <span>
+                  {busyAction === "erase-device"
+                    ? "Resetting"
+                    : "Reset to factory settings"}
+                </span>
+              </Button>
+              <p className="text-sm text-muted-foreground" id="vibetv-factory-reset-help">
+                VibeTV forgets its WiFi details, pairing, settings and themes.
+              </p>
+            </div>
           ) : null}
         </div>
         {eraseRequested ? (
@@ -581,20 +618,18 @@ export function SettingsScreen({
  */
 function SettingsSection({
   children,
-  description,
+  id,
   title,
 }: {
   children: ReactNode;
-  description?: string;
+  /** For a link that opens Settings at this group ("What's new"). */
+  id?: string;
   title: string;
 }) {
   return (
-    <section className="grid grid-cols-1 items-start gap-5 py-8 md:grid-cols-[minmax(0,240px)_minmax(0,1fr)] md:gap-10">
+    <section id={id} className="grid grid-cols-1 items-start gap-5 py-8 md:grid-cols-[minmax(0,240px)_minmax(0,1fr)] md:gap-10">
       <div className="min-w-0">
         <h2 className="text-base font-semibold">{title}</h2>
-        {description ? (
-          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-        ) : null}
       </div>
       <div className="flex min-w-0 max-w-[520px] flex-col gap-4">{children}</div>
     </section>

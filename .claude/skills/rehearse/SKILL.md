@@ -47,6 +47,13 @@ with a backup, which after a cold start followed by a warm start is the
 candidate state, not what the Mac looked like first. The pre-session state is
 the oldest run of the current chain; recover that one by hand with `ditto`.
 
+Each run removes old runs when it starts, but only runs that are both beyond
+the newest 6 that still hold a backup (`REHEARSAL_KEEP_RUNS=<n>`) and older
+than 14 days (`REHEARSAL_KEEP_DAYS=<n>`). The oldest run with a backup and
+anything named `manual-*` always stay. A state you need for longer than two
+weeks belongs under a `manual-*` name. With less than 3 GB free the scripts
+refuse to start.
+
 ## Procedure
 
 Cold and warm start **flash firmware**. That is a hardware write, so the

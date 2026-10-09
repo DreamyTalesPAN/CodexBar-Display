@@ -539,17 +539,22 @@ describe("a Theme Studio theme in the live slot during standby", () => {
     expect(checked).toBeGreaterThan(20);
   });
 
-  // Revision 1 is where every Theme Studio theme lives, so the catalog's own
-  // first revision (public release v1.0.52) waits for VibeTV to wake up: then
-  // it reports the theme by id and is updated as before.
-  it("updates the catalog's own first revision once VibeTV is awake", () => {
+  // Revision 1 is where every Theme Studio theme lives. A catalog from before
+  // #559 does not say which revision-1 files are its own, so its first
+  // revision (public release v1.0.52) waits for VibeTV to wake up: then it
+  // reports the theme by id and is updated as before.
+  it("updates the first revision of a catalog without earlier files once VibeTV is awake", () => {
     const firstRevision = "/themes/u/mini-cl-1-e4fe6b.json";
+    const olderCatalog = catalog.map((theme) => ({
+      ...theme,
+      earlierThemeSpecPaths: undefined,
+    }));
 
     expect(
-      resolveActiveThemeUpgrade(catalog, inStandby(firstRevision)).needed,
+      resolveActiveThemeUpgrade(olderCatalog, inStandby(firstRevision)).needed,
     ).toBe(false);
     expect(
-      resolveActiveThemeUpgrade(catalog, {
+      resolveActiveThemeUpgrade(olderCatalog, {
         ...device(true, firstRevision),
         activeTheme: "mini-classic",
       }),
@@ -557,5 +562,152 @@ describe("a Theme Studio theme in the live slot during standby", () => {
       needed: true,
       theme: { themeId: "mini-classic" },
     });
+  });
+});
+
+// #559: a later catalog can give one of its themes the id of a theme the
+// customer made, and this app's storage does not always know the file VibeTV
+// holds (storage cleared, theme sent from another computer). The catalog names
+// the files of its earlier revisions, so any other file is left alone.
+describe("a file under a catalog theme's id that this app's storage does not know", () => {
+  const dist = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../../../dist/theme-packs",
+  );
+  // The catalog this build ships, not a fixture.
+  const catalog: ThemeProduct[] = JSON.parse(
+    readFileSync(path.join(dist, "vibetv-theme-packs-v2.json"), "utf8"),
+  ).themes.map((entry: ThemeProduct & { id: string }) => ({
+    ...slotTheme,
+    ...entry,
+    themeId: entry.id,
+  }));
+  const olderCatalog = catalog.map((theme) => ({
+    ...theme,
+    earlierThemeSpecPaths: undefined,
+  }));
+  const awake = (themeId: string, livePath: string): DeviceInfo => ({
+    ...device(true, livePath),
+    activeTheme: themeId,
+  });
+  const inStandby = (liveThemePath: string): DeviceInfo => ({
+    ...device(true, "/themes/s/nc-3-e18e4217.json"),
+    activeTheme: "night-clock",
+    standby: { active: true, liveThemePath },
+  });
+  // The file an own theme with this id is sent under.
+  const ownPath = (themeId: string, usage?: "screensaver"): string =>
+    validateThemeSpec({ ...createBlankThemeSpec(), themeId }, {}, usage)
+      .themeSpecPath;
+  // Every file a catalog theme was shipped under before its current one: the
+  // render revisions of this build, and the six first revisions by name.
+  const shipped = catalog.flatMap((theme) =>
+    readdirSync(path.join(dist, "render", theme.themeId))
+      .map(
+        (file) =>
+          JSON.parse(
+            readFileSync(path.join(dist, "render", theme.themeId, file), "utf8"),
+          ).specPath as string,
+      )
+      .filter((specPath) => specPath !== theme.themeSpecPath)
+      .map((specPath) => ({ specPath, theme })),
+  );
+
+  it("knows the first revisions that were shipped", () => {
+    expect(shipped.map(({ specPath }) => specPath)).toEqual(
+      expect.arrayContaining([
+        "/themes/u/mini-cl-1-e4fe6b.json",
+        "/themes/u/mini-cl-1-410a37.json",
+        "/themes/u/claude--1-623de0.json",
+        "/themes/u/clippy-1-caafce.json",
+        "/themes/u/synthwa-1-6b39a3.json",
+        "/themes/s/tf-1-874fd8e2.json",
+      ]),
+    );
+  });
+
+  it.each(
+    catalog.filter((theme) => theme.usage === "live").map((theme) => theme.themeId),
+  )("leaves an own theme with the id %s alone, awake and during standby", (themeId) => {
+    for (const held of [
+      ownPath(themeId),
+      // Not every own file is a revision 1 of this app's making.
+      ownPath(themeId).replace("-1-", "-3-"),
+    ]) {
+      expect(resolveActiveThemeUpgrade(catalog, awake(themeId, held)), held).toEqual(
+        NO_THEME_UPGRADE,
+      );
+      expect(resolveActiveThemeUpgrade(catalog, inStandby(held)), held).toEqual(
+        NO_THEME_UPGRADE,
+      );
+      expect(activeLiveThemeId(catalog, inStandby(held)), held).toBeUndefined();
+    }
+    // A catalog from before the list judges the awake VibeTV by the id.
+    expect(
+      resolveActiveThemeUpgrade(olderCatalog, awake(themeId, ownPath(themeId)))
+        .needed,
+    ).toBe(true);
+  });
+
+  it("leaves an own screensaver alone whose file name starts like a catalog one", () => {
+    for (const held of [
+      ownPath("rcf", "screensaver"),
+      "/themes/s/tf-1-0a0b0c0d.json",
+      "/themes/s/nc-2-0a0b0c0d.json",
+    ]) {
+      expect(resolveScreensaverUpgrade(catalog, held), held).toEqual(
+        NO_THEME_UPGRADE,
+      );
+      expect(installedScreensaver(catalog, [], held), held).toBeUndefined();
+      expect(resolveScreensaverUpgrade(olderCatalog, held).needed, held).toBe(true);
+    }
+  });
+
+  it("still updates every earlier revision that was shipped", () => {
+    expect(shipped.length).toBeGreaterThan(30);
+    for (const { specPath, theme } of shipped) {
+      const update = { needed: true, needsThemeSpec: true, theme };
+      if (theme.usage === "screensaver") {
+        expect(resolveScreensaverUpgrade(catalog, specPath), specPath).toMatchObject(
+          update,
+        );
+        continue;
+      }
+      expect(
+        resolveActiveThemeUpgrade(catalog, awake(theme.themeId, specPath)),
+        specPath,
+      ).toMatchObject(update);
+      expect(
+        resolveActiveThemeUpgrade(catalog, inStandby(specPath)),
+        specPath,
+      ).toMatchObject(update);
+    }
+  });
+
+  // Releases v1.0.18 to v1.0.46 rebuilt the first revisions in place; no
+  // render revision holds those files, the catalog names them all the same.
+  it.each([
+    ["claude-creature", "/themes/u/claude--1-defca1.json"],
+    ["clippy", "/themes/u/clippy-1-5d86bb.json"],
+    ["mini-classic", "/themes/u/mini-cl-1-b3c3f7.json"],
+    ["synthwave", "/themes/u/synthwa-1-0432f1.json"],
+  ])("still updates %s from the rebuilt first revision %s", (themeId, held) => {
+    expect(resolveActiveThemeUpgrade(catalog, awake(themeId, held))).toMatchObject({
+      needed: true,
+      theme: { themeId },
+    });
+    expect(resolveActiveThemeUpgrade(catalog, inStandby(held))).toMatchObject({
+      needed: true,
+      theme: { themeId },
+    });
+  });
+
+  it("judges a VibeTV that reports no file by the id, as before", () => {
+    expect(
+      resolveActiveThemeUpgrade(catalog, {
+        ...awake("mini-classic", ""),
+        display: { themeSpec: { active: true } },
+      }),
+    ).toMatchObject({ needed: true, theme: { themeId: "mini-classic" } });
   });
 });

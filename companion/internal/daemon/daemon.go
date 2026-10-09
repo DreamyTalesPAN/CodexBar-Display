@@ -21,6 +21,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/timeline"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/versioning"
@@ -41,6 +42,9 @@ type Options struct {
 	Dashboard codexbar.DashboardServe
 	// RenderWake reselects from existing collector snapshots without a provider fetch.
 	RenderWake <-chan struct{}
+	// RecordEvent receives the worker's state for the support timeline. It is
+	// called on every cycle; the timeline keeps only the transitions.
+	RecordEvent func(timeline.Event)
 }
 
 const (
@@ -152,10 +156,12 @@ type runtimeDeps struct {
 	dashboard             codexbar.DashboardServe
 	usageBarsShowUsed     func() bool
 	beginDeviceWrite      func() func()
+	interval              time.Duration
 	sendLine              func(string, []byte) error
 	fetchUpdateState      func(context.Context, protocol.DeviceCapabilities) (protocol.UpdateState, error)
 	newSelector           func() *codexbar.ProviderSelector
 	logf                  func(string, ...any)
+	record                func(timeline.Event)
 	homeDir               func() (string, error)
 	loadConfig            func(string) (runtimeconfig.Config, error)
 	saveConfig            func(string, runtimeconfig.Config) error
@@ -233,6 +239,13 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 		}
 	}
 	return d
+}
+
+// recordEvent reports state to the support timeline, when the runtime has one.
+func (d runtimeDeps) recordEvent(event timeline.Event) {
+	if d.record != nil {
+		d.record(event)
+	}
 }
 
 func defaultRuntimeLogf(format string, args ...any) {
@@ -316,6 +329,9 @@ type ProviderUsageSnapshot struct {
 	TokenHistorySettled   bool
 	ActivityObservedAt    time.Time
 	Stale                 bool
+	// NoReading: CollectedAt is the time of a failed reading, because this
+	// provider has not delivered one yet.
+	NoReading bool
 }
 
 func Run(ctx context.Context, opts Options) error {
@@ -360,6 +376,10 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 		opts.Interval = defaultIntervalForTransport(deps.transportName)
 	}
 	deps.beginDeviceWrite = opts.BeginDeviceWrite
+	deps.interval = opts.Interval
+	if opts.RecordEvent != nil {
+		deps.record = opts.RecordEvent
+	}
 	syncCycleMode := deps.fetchProviders != nil && deps.fetchProvider == nil
 	deps = deps.withDefaults()
 
@@ -406,7 +426,16 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 		return runCycleWithDeps(cycleCtx, requestedTarget, state, deps)
 	}
 
-	return runDaemonLoop(ctx, opts, deps, runCycle)
+	deps.recordEvent(timeline.Event{Component: "stream", State: "started", Reason: deps.transportName})
+	err := runDaemonLoop(ctx, opts, deps, runCycle)
+	stopped := timeline.Event{Component: "stream", State: "stopped"}
+	if errors.Is(err, ErrConnectionModeChanged) {
+		stopped.Reason = "connection-mode-changed"
+	} else if err != nil && ctx.Err() == nil {
+		stopped.Reason = string(asRuntimeError(err).ErrorCode())
+	}
+	deps.recordEvent(stopped)
+	return err
 }
 
 func forwardWake(ctx context.Context, input <-chan struct{}, output chan<- struct{}) {
@@ -534,6 +563,7 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 		if waitingForWiFi || (opts.PauseDeviceWrites != nil && opts.PauseDeviceWrites()) {
 			if !deviceWritesPaused {
 				deps.logf("runtime event=device-writes-paused reason=device-maintenance\n")
+				deps.recordEvent(timeline.Event{Component: "stream", State: "paused", Reason: "device-maintenance"})
 				deviceWritesPaused = true
 			}
 			select {
@@ -547,6 +577,7 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 		}
 		if deviceWritesPaused {
 			deps.logf("runtime event=device-writes-resumed reason=device-maintenance-complete\n")
+			deps.recordEvent(timeline.Event{Component: "stream", State: "resumed"})
 			deviceWritesPaused = false
 			// Issue #536: the pause is not a sleep, so its length must not be
 			// logged as a sleep-wake gap.
@@ -575,6 +606,9 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 		waitFor := opts.Interval
 		if err != nil {
 			runtimeErr := asRuntimeError(err)
+			if ctx.Err() == nil {
+				recordCycleFailure(deps, runtimeErr)
+			}
 			// A device-unreachable cycle must not wait a full WiFi interval
 			// before the next attempt: after a device cold start or Mac wake
 			// this turns into 30-90s of "reconnecting" although everything is
@@ -617,6 +651,22 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 		case <-deps.after(waitFor):
 		}
 	}
+}
+
+// recordCycleFailure attributes a failed cycle to the part that failed: the
+// VibeTV when it did not answer or refused the pairing, otherwise the stream.
+func recordCycleFailure(deps runtimeDeps, runtimeErr *RuntimeError) {
+	if runtimeErr.Op == "fetch-usage" || runtimeErr.Op == "select-provider" {
+		// The frame was sent; its usage entry already names this failure.
+		return
+	}
+	event := timeline.Event{Component: "stream", State: "failed", Reason: string(runtimeErr.ErrorCode())}
+	if deviceUnreachableError(runtimeErr) {
+		event.Component, event.State = "device", "unreachable"
+	} else if runtimeErr.Kind == runtimeErrorPairingRequired {
+		event.Component, event.State = "device", "pairing_required"
+	}
+	deps.recordEvent(event)
 }
 
 func runCycleWithTimeout(parent context.Context, timeout time.Duration, runCycle func(context.Context) error) error {
@@ -662,6 +712,18 @@ func defaultIntervalForTransport(transportName string) time.Duration {
 		return defaultWiFiInterval
 	}
 	return defaultInterval
+}
+
+// activityTTL is how long a device may keep showing a frame's activity when no
+// further frame arrives (#369). It guards against the writer going away, not
+// against routine switching, so it is three frame intervals: two lost frames
+// do not flip a working device to idle. The floor keeps one slow cycle on the
+// 2s cable cadence from doing that either.
+func activityTTL(interval time.Duration, transportName string) time.Duration {
+	if interval <= 0 {
+		interval = defaultIntervalForTransport(transportName)
+	}
+	return max(3*interval, 10*time.Second)
 }
 
 func startupInterval(normal, uptime time.Duration) time.Duration {
@@ -892,6 +954,7 @@ func persistActiveCableIdentity(caps protocol.DeviceCapabilities, deps runtimeDe
 		}
 		if savedID := strings.TrimSpace(cfg.DeviceID); savedID != "" && !strings.EqualFold(savedID, deviceID) {
 			deps.logf("runtime event=cable-identity-persist-rejected expected=%s observed=%s\n", savedID, deviceID)
+			deps.recordEvent(timeline.Event{Component: "device_identity", DeviceID: deviceID, State: "rejected", Reason: "device-id-mismatch"})
 			return nil
 		}
 		supportedTransports := append([]string(nil), caps.SupportedTransportChannels...)
@@ -931,8 +994,10 @@ func persistActiveCableIdentity(caps protocol.DeviceCapabilities, deps runtimeDe
 	}
 	if rolledBackFromWiFi {
 		deps.logf("runtime event=wifi-transition-rolled-back deviceId=%s\n", deviceID)
+		deps.recordEvent(timeline.Event{Component: "device_identity", DeviceID: deviceID, State: "saved", Reason: "wifi-transition-rolled-back"})
 	} else {
 		deps.logf("runtime event=cable-identity-persisted deviceId=%s\n", deviceID)
+		deps.recordEvent(timeline.Event{Component: "device_identity", DeviceID: deviceID, State: "saved", Reason: "cable"})
 	}
 }
 
@@ -992,6 +1057,7 @@ func persistActiveWiFiTarget(target string, deps runtimeDeps) {
 			deps.logf("runtime event=wifi-target-persist-failed target=%s err=%v\n", target, err)
 		} else if strings.TrimSpace(deviceID) != "" {
 			deps.logf("runtime event=wifi-target-persisted target=%s deviceId=%s\n", target, deviceID)
+			deps.recordEvent(timeline.Event{Component: "device_address", DeviceID: deviceID, State: "saved"})
 		}
 	}
 }
@@ -1023,6 +1089,7 @@ func recoverStaleWiFiTarget(stalePort string, staleErr error, deps runtimeDeps) 
 	hello := result.Hello.Normalize()
 	if hello.NetworkMode == "setup" {
 		deps.logf("runtime event=wifi-target-rejected target=%s reason=setup-mode\n", result.Target)
+		deps.recordEvent(timeline.Event{Component: "device_address", State: "rejected", Reason: "setup-mode"})
 		return "", protocol.DeviceCapabilities{}, false
 	}
 	cfg, configOK := loadRuntimeConfig(deps)
@@ -1031,11 +1098,13 @@ func recoverStaleWiFiTarget(stalePort string, staleErr error, deps runtimeDeps) 
 		gotID := strings.TrimSpace(hello.DeviceID)
 		if wantID != "" && !strings.EqualFold(wantID, gotID) {
 			deps.logf("runtime event=wifi-target-rejected target=%s reason=device-id-mismatch\n", result.Target)
+			deps.recordEvent(timeline.Event{Component: "device_address", State: "rejected", Reason: "device-id-mismatch"})
 			return "", protocol.DeviceCapabilities{}, false
 		}
 	}
 	if result.Source == "network-scan" && (!configOK || strings.TrimSpace(cfg.DeviceID) == "") {
 		deps.logf("runtime event=wifi-target-rejected target=%s reason=legacy-device-unidentified\n", result.Target)
+		deps.recordEvent(timeline.Event{Component: "device_address", State: "rejected", Reason: "legacy-device-unidentified"})
 		return "", protocol.DeviceCapabilities{}, false
 	}
 	caps := protocol.CapabilitiesFromHello(result.Hello)
@@ -1049,6 +1118,7 @@ func recoverStaleWiFiTarget(stalePort string, staleErr error, deps runtimeDeps) 
 		result.Source,
 		staleErr,
 	)
+	deps.recordEvent(timeline.Event{Component: "device_address", DeviceID: caps.DeviceID, State: "rediscovered", Reason: result.Source})
 	return result.Target, caps, true
 }
 
@@ -1657,9 +1727,23 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	frame := applyUsageBarsPreference(authoritativeFrame.Normalize(), cfg.UsageShowsUsed(deps.usageBarsShowUsed))
 	if !result.usageFresh && result.failureErr == nil {
 		expiredLastGood := state != nil && state.hasLastGood && !isLastGoodFreshAt(state.lastGoodAt, deps.now(), providerSnapshotMaxAge())
-		if !frame.UsageUnavailable || !expiredLastGood {
-			deps.logf("runtime event=usage-waiting port=%s provider=%s reason=usage-not-fresh\n", publicPort, frame.Provider)
-			return nil
+		// The reading is only retained, so there is nothing new to show.
+		// Falling silent would look like a lost writer to the device, which
+		// then ends a working state on its own (#369). Restate the last good
+		// frame instead, as a failed collection does, with the activity
+		// verdict of this cycle. Without a last good frame (the display was
+		// just moved to this provider) the retained reading itself goes out,
+		// marked as not live below and never stored as last good.
+		if state != nil && state.hasLastGood && (!frame.UsageUnavailable || !expiredLastGood) {
+			authoritativeFrame = state.lastGood
+			authoritativeFrame.Activity, authoritativeFrame.Update = result.frame.Activity, result.frame.Update
+			if !isLastGoodFreshAt(state.lastGoodAt, deps.now(), lastGoodMaxAge()) {
+				authoritativeFrame.UsageUnavailable = true
+			}
+			result.resetBasisAt = state.lastGoodAt
+			result.usageSource = "last-good"
+			result.selectionReason, result.selectionDetail = "usage-waiting", "usage-not-fresh"
+			frame = applyUsageBarsPreference(authoritativeFrame.Normalize(), cfg.UsageShowsUsed(deps.usageBarsShowUsed))
 		}
 	}
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
@@ -1684,6 +1768,7 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	// metadata before every send keeps the JSON document small enough for
 	// devices that have just left WiFi setup with a fragmented heap.
 	frame.Update = compactFrameUpdate(frame.Update)
+	frame.ActivityTTLSec = int64(activityTTL(deps.interval, deps.transportName) / time.Second)
 
 	line, marshaledFrame, err := marshalFrameWithinLimit(frame, maxFrameBytes)
 	if err != nil {
@@ -1731,6 +1816,7 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	if cableWriteBlocked(deps) {
 		releaseDeviceWrite()
 		deps.logf("runtime event=cable-frame-skipped reason=connection-choice-required\n")
+		deps.recordEvent(timeline.Event{Component: "stream", DeviceID: caps.DeviceID, State: "paused", Reason: "connection-choice-required"})
 		return nil
 	}
 	sendErr := deps.sendLine(sendTarget, line)
@@ -1753,7 +1839,7 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	// classification. Loading already marks an expired frame unavailable, and
 	// a provider switched off in inventory still clears it deliberately
 	// (invalidateLastGoodDisabledByInventory).
-	if !frame.UsageUnavailable && result.failureErr == nil {
+	if result.usageFresh && !frame.UsageUnavailable && result.failureErr == nil {
 		collectedAt := result.collectedAt
 		if collectedAt.IsZero() {
 			collectedAt = deps.now()
@@ -1762,6 +1848,33 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	}
 
 	deps.logf("%s", SentFrameLogLine(publicPort, deps.transportName, caps.DeviceID, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame, result.selectionReason, result.selectionDetail, result.activityDetail))
+
+	// What the VibeTV now shows. Reported after every frame; the timeline keeps
+	// the changes. Every frame has a provider and every hello a firmware, so a
+	// missing one (an error frame) is recorded as unknown instead of leaving
+	// the last value standing. A frame names a theme only when it carries one.
+	// A frame without a fresh reading carries old values: the last good frame
+	// restated after a failed collection or while the provider has nothing
+	// new, or a retained reading sent because there is no last good (#369).
+	restated := !result.usageFresh
+	failureKind := string(result.failureKind)
+	if restated && failureKind == "" {
+		failureKind = "usage-not-fresh"
+	}
+	usage := usageTimelineEvent(frame.UsageUnavailable || frame.Error != "", restated, failureKind, result.selectionReason)
+	events := []timeline.Event{
+		{Component: "device", State: "reachable"},
+		{Component: "firmware", State: timelineStateOrUnknown(caps.Firmware)},
+		{Component: "theme", State: frame.Theme},
+		{Component: "provider", State: timelineStateOrUnknown(frame.Provider)},
+		usage,
+		// The VibeTV took the frame, whatever it says about usage.
+		{Component: "stream", State: "sending"},
+	}
+	for _, event := range events {
+		event.DeviceID = caps.DeviceID
+		deps.recordEvent(event)
+	}
 
 	if result.failureErr != nil {
 		if result.usedLastGood {
@@ -2564,7 +2677,7 @@ func providerSnapshotsPath() string {
 	return runtimepaths.Path(home, "provider-snapshots.json")
 }
 
-func persistProviderSnapshots(snapshots map[string]providerSnapshot, savedAt time.Time) error {
+func persistProviderSnapshots(snapshots map[string]providerSnapshot, cycle *CollectorCycle, savedAt time.Time) error {
 	if savedAt.IsZero() {
 		return nil
 	}
@@ -2577,6 +2690,7 @@ func persistProviderSnapshots(snapshots map[string]providerSnapshot, savedAt tim
 	payload := persistedProviderSnapshots{
 		SavedAt:   savedAt.UTC(),
 		Providers: make([]providerSnapshot, 0, len(snapshots)),
+		LastCycle: cycle,
 	}
 	for _, key := range sortedSnapshotKeys(snapshots) {
 		snapshot := snapshots[key]
@@ -2645,6 +2759,20 @@ func loadPersistedProviderSnapshotsAnyAge() (map[string]providerSnapshot, time.T
 	return out, saved.SavedAt, true
 }
 
+// LoadCollectorCycle reads the last completed collection the collector
+// stored beside its provider snapshots.
+func LoadCollectorCycle() (CollectorCycle, bool) {
+	raw, err := os.ReadFile(providerSnapshotsPath())
+	if err != nil {
+		return CollectorCycle{}, false
+	}
+	var saved persistedProviderSnapshots
+	if err := json.Unmarshal(raw, &saved); err != nil || saved.LastCycle == nil {
+		return CollectorCycle{}, false
+	}
+	return *saved.LastCycle, true
+}
+
 func LoadPersistedUsage(now time.Time) (PersistedUsage, bool) {
 	snapshots, savedAt, ok := loadPersistedProviderSnapshotsAnyAge()
 	if !ok || len(snapshots) == 0 {
@@ -2690,6 +2818,7 @@ func LoadPersistedUsage(now time.Time) (PersistedUsage, bool) {
 			Source:                strings.TrimSpace(snapshot.Source),
 			Meta:                  snapshot.Meta,
 			CollectedAt:           snapshot.Collected.UTC(),
+			NoReading:             snapshot.NoReading,
 			Retained:              snapshot.Retained,
 			TokenStatsCollectedAt: snapshot.TokenStatsCollected.UTC(),
 			TokenHistorySettled:   snapshot.TokenHistorySettled,
@@ -3069,4 +3198,27 @@ func compactUpdateCandidates(frame protocol.Frame) []protocol.Frame {
 	candidates = append(candidates, withoutTheme)
 
 	return candidates
+}
+
+func timelineStateOrUnknown(state string) string {
+	if strings.TrimSpace(state) == "" {
+		return "unknown"
+	}
+	return state
+}
+
+// usageTimelineEvent names what the sent frame says about usage. A frame
+// without a fresh reading (the last good frame restated, or a retained
+// reading) is "stale", so an outage does not read as fresh usage in the
+// support timeline. When the collection failed, its error code is the reason.
+func usageTimelineEvent(unavailable, restated bool, failureKind, selectionReason string) timeline.Event {
+	switch {
+	case unavailable && failureKind != "":
+		return timeline.Event{Component: "usage", State: "unavailable", Reason: failureKind}
+	case unavailable:
+		return timeline.Event{Component: "usage", State: "unavailable", Reason: selectionReason}
+	case restated:
+		return timeline.Event{Component: "usage", State: "stale", Reason: failureKind}
+	}
+	return timeline.Event{Component: "usage", State: "shown"}
 }

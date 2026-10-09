@@ -217,7 +217,7 @@ export function setupProviderIssueMessage({
       : variant === "browser_sign_in"
         ? `Sign in to ${label} in your browser, close the browser, then check again`
       : variant === "permission"
-        ? "Allow access in macOS"
+        ? "Allow access on this computer"
         : variant === "unsupported"
           ? "This provider no longer supports this account"
         : variant === "no_usage"
@@ -227,7 +227,10 @@ export function setupProviderIssueMessage({
             : variant === "stale"
               ? "Live usage is unavailable"
             : "Check timed out";
-  return hideUsageEngineName(reportedMessage || detail || fallbackMessage);
+  // A browser sign-in is said in the app's own sentence. What the engine
+  // reported for it lists every source it tried and is only there to copy.
+  const reported = variant === "browser_sign_in" ? "" : reportedMessage;
+  return hideUsageEngineName(reported || detail || fallbackMessage);
 }
 
 function SetupProviderRowAction({

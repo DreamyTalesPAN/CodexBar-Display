@@ -2899,7 +2899,7 @@ async function testLocalWifiSearchOffersImmediateManualEntry(browser, appUrl) {
     "A search that has not answered must not report a count",
   );
   await createSetupSupportReport(page);
-  await page.getByText(/^Report saved/).waitFor({ timeout: 15_000 });
+  await page.getByText(/^Report (saved|created)/).waitFor({ timeout: 15_000 });
   await page.keyboard.press("Escape");
   // An empty scan keeps Welcome and offers recovery in the existing dialog.
   await setupNotFoundDialog(page).waitFor({ timeout: 10_000 });
@@ -4018,7 +4018,7 @@ async function testHostedEntryShowsMacAppDownload(
   // The download page is the only thing a customer without the app can reach,
   // so the way to ask for help has to be on it.
   await createSetupSupportReport(page);
-  await page.getByText(/^Report saved|^Report could not be created/).waitFor({
+  await page.getByText(/^Report saved|^Report created|^Report could not be created/).waitFor({
     timeout: 15_000,
   });
   assert(
@@ -8687,6 +8687,9 @@ async function testReloadRestoresRunningThemeInstall(browser, appUrl) {
         installStatusRequests += 1;
       }
     },
+    // A screensaver is installed only while Show screensaver is on; with it
+    // off the finished row says only that the screensaver is installed.
+    standbySettings: { enabled: true, timeoutMinutes: 10, brightnessPercent: 20 },
     statusThemeInstallJob: {
       id: "theme-job-from-closed-window",
       themeId: "night-clock",
@@ -10545,8 +10548,8 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     page.getByRole("button", { name: "Export ZIP" }).click(),
   ]);
   assert(
-    download.suggestedFilename() === "vibetv-theme-synthwave-copy.zip",
-    `Theme Studio should export the edited theme ID, got ${download.suggestedFilename()}`,
+    download.suggestedFilename() === "vibetv-theme-synthwave-customer-copy.zip",
+    `Theme Studio should name the export after the theme's name, got ${download.suggestedFilename()}`,
   );
   const downloadPath = await download.path();
   assert(
@@ -10624,8 +10627,7 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     ),
   );
   assert(
-    (await page.getByText("Theme installed through the Mac App.").count()) ===
-      1,
+    (await page.getByText("Theme is installed on VibeTV.").count()) === 1,
     "Theme Studio should report the Companion install as complete",
   );
 
@@ -10807,6 +10809,13 @@ async function testThemeStudioScreensaverInstallUsesScreensaverSlot(
         },
       },
     ],
+    // Screensaver Studio sends only while Show screensaver is on.
+    standbySettings: {
+      enabled: true,
+      timeoutMinutes: 10,
+      brightnessPercent: 20,
+      screensaverPath: "",
+    },
     onThemeInstallRequest: (request) => {
       themeInstallRequests.push(request);
     },
@@ -11215,7 +11224,7 @@ async function testBoardIncompatibleThemeStaysLocked(browser, appUrl) {
   const lockedButton = page
     .getByRole("listitem")
     .filter({ hasText: "Fixture ESP32 Only Theme" })
-    .getByRole("button", { name: "Not Supported" });
+    .getByRole("button", { name: "Not supported" });
   await lockedButton.waitFor({ timeout: 10_000 });
   assert(
     await lockedButton.isDisabled(),
@@ -11247,7 +11256,7 @@ async function testFirmwareIncompatibleThemeStaysLocked(browser, appUrl) {
   const lockedButton = page
     .getByRole("listitem")
     .filter({ hasText: "Fixture Future Firmware Theme" })
-    .getByRole("button", { name: "Update Needed" });
+    .getByRole("button", { name: "Update needed" });
   await lockedButton.waitFor({ timeout: 10_000 });
   assert(
     await lockedButton.isDisabled(),
@@ -11312,7 +11321,7 @@ async function testCapabilityIncompatibleThemeStaysLocked(browser, appUrl) {
   const lockedButton = page
     .getByRole("listitem")
     .filter({ hasText: "Fixture Synthwave Theme" })
-    .getByRole("button", { name: "Update Needed" });
+    .getByRole("button", { name: "Update needed" });
   await lockedButton.waitFor({ timeout: 10_000 });
   assert(
     await lockedButton.isDisabled(),

@@ -86,6 +86,16 @@ export type ThemeStudioSpec = {
 
 export type ThemeStudioUsage = "live" | "screensaver";
 
+/**
+ * A line written about a theme, worded for what it is about: on a screensaver
+ * it names the screensaver (issue #558).
+ */
+export function wordsForUsage(text: string, usage?: ThemeStudioUsage): string {
+  return usage === "screensaver"
+    ? text.replace(/\bTheme/g, "Screensaver").replace(/\btheme/g, "screensaver")
+    : text;
+}
+
 export type ThemeStudioDraft = {
   assets?: Record<string, ThemeStudioAsset>;
   savedAt: string;
@@ -777,7 +787,9 @@ export function buildThemePack(
   ]);
 
   return {
-    fileName: `vibetv-theme-${normalized.themeId}.zip`,
+    // Named after what the customer called the theme; the id is theirs only
+    // when they typed one, and a name without a usable character has no other.
+    fileName: `vibetv-${usage === "screensaver" ? "screensaver" : "theme"}-${fileSlug(packName) || normalized.themeId}.zip`,
     manifest,
     themeJson,
     themeSpecPath: validation.themeSpecPath,
@@ -1815,13 +1827,29 @@ function normalizeColor(value: string | undefined): string | undefined {
   return named || undefined;
 }
 
-function slugThemeId(value: string): string {
-  const slug = value
+function slug(value: string): string {
+  return value
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, "-")
     .replace(/^-+|-+$/g, "");
-  return slug || "custom-mini";
+}
+
+// The name part of the exported file: ä, ö, ü and ß spelled out the German
+// way, other accents dropped, and at most 80 characters like the name itself.
+function fileSlug(name: string): string {
+  const latin = name
+    .normalize("NFC")
+    .toLowerCase()
+    .replace(/[äöü]/g, (letter) => `${letter.normalize("NFD")[0]}e`)
+    .replace(/ß/g, "ss")
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "");
+  return slug(slug(latin).slice(0, 80));
+}
+
+function slugThemeId(value: string): string {
+  return slug(value) || "custom-mini";
 }
 
 function cleanPackName(value: string): string {

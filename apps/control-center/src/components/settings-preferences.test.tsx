@@ -154,6 +154,58 @@ describe("SettingsScreen display preferences", () => {
     expect(screen.getByRole("combobox", { name: "Usage display" }).textContent).toBe("Default");
     expect(document.body.textContent).not.toMatch(/following|codexbar/i);
   });
+
+  // Issue #558: "Usage display: Default" did not say what Default shows.
+  it.each([
+    ["used", "Default is the same as Used."],
+    ["remaining", "Default is the same as Remaining."],
+  ])("says what Default stands for while it is chosen (%s)", (effectiveValue, line) => {
+    const view = render(
+      <SettingsScreen
+        {...props({ displayPreferences: [{ ...usageDisplay, effectiveValue, value: null }] })}
+      />,
+    );
+    expect(screen.getByText(line)).toBeTruthy();
+
+    // A choice of the customer's own needs no explanation.
+    view.rerender(
+      <SettingsScreen
+        {...props({ displayPreferences: [{ ...usageDisplay, effectiveValue, value: effectiveValue }] })}
+      />,
+    );
+    expect(document.body.textContent).not.toContain("Default is the same as");
+  });
+});
+
+// Issue #558: "Show after 10 minutes" did not say minutes of what.
+describe("SettingsScreen screensaver timeout", () => {
+  it("says what the minutes of Show after count", () => {
+    const onSaveStandby = vi.fn();
+    const standby = { enabled: true, timeoutMinutes: 10, brightnessPercent: 20 };
+    render(
+      <SettingsScreen
+        {...props({
+          device: {
+            active: true, connected: true, ready: true, paired: true,
+            capabilities: { standby: { supported: true } },
+          },
+          onSaveStandby,
+          standby,
+        })}
+      />,
+    );
+
+    expect(screen.getByRole("combobox", { name: "Show after" }).textContent).toBe(
+      "10 minutes without AI usage",
+    );
+    expect(openSelect("Show after")).toEqual(
+      ["1 minute", "5 minutes", "10 minutes", "15 minutes", "30 minutes", "60 minutes"].map(
+        (minutes) => `${minutes} without AI usage`,
+      ),
+    );
+    choose("30 minutes without AI usage");
+    expect(onSaveStandby).toHaveBeenLastCalledWith({ ...standby, timeoutMinutes: 30 });
+  });
 });
 
 // Issue #558: the customer's own screensaver is named as it was saved. VibeTV
