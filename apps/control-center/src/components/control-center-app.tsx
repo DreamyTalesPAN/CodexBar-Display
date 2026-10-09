@@ -4165,9 +4165,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
   // A pending Mac App update must resolve immediately once the customer is in
   // the app — most urgently in the mixed state where the device firmware is
-  // already ahead of this app and renders degraded. Surface the native Sparkle
-  // dialog once per offered version; the Updates tab stays the manual path if
-  // the dialog is dismissed.
+  // already ahead of this app and renders degraded. Ask Sparkle in the
+  // background once per offered version, so a lagging feed does not show an
+  // unsolicited "You're up to date" alert. The Updates tab stays manual.
   const macAppUpdateOfferedVersion =
     companionRelease?.latestVersion || companionRelease?.release || "";
   const activeThemeUpdateAvailable = Boolean(
@@ -4268,7 +4268,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       return;
     }
     macAppUpdatePromptedFor.current = macAppUpdateOfferedVersion;
-    window.location.href = "vibetv://check-for-updates";
+    window.location.href = "vibetv://check-for-updates-in-background";
   }, [
     firmwareUpdateInProgress,
     hasEnteredControlCenter,

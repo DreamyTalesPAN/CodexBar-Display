@@ -18,6 +18,7 @@ private let controlCenterURLHost = "open-control-center"
 private let restartControlCenterURLHost = "restart-control-center"
 private let repairRuntimeURLHost = "repair-runtime"
 private let checkForUpdatesURLHost = "check-for-updates"
+private let checkForUpdatesInBackgroundURLHost = "check-for-updates-in-background"
 private let repairCodexBarURLHost = "repair-codexbar"
 private let finishCodexBarRecoveryURLHost = "finish-codexbar-recovery"
 private let openCodexBarURLHost = "open-codexbar"
@@ -73,10 +74,10 @@ func isOpenControlCenterURL(_ url: URL) -> Bool {
     return true
 }
 
-func isCheckForUpdatesURL(_ url: URL) -> Bool {
+private func isUpdateCheckURL(_ url: URL, host: String) -> Bool {
     guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
           components.scheme?.lowercased() == controlCenterURLScheme,
-          components.host?.lowercased() == checkForUpdatesURLHost,
+          components.host?.lowercased() == host,
           components.user == nil,
           components.password == nil,
           components.port == nil,
@@ -86,6 +87,14 @@ func isCheckForUpdatesURL(_ url: URL) -> Bool {
         return false
     }
     return true
+}
+
+func isCheckForUpdatesURL(_ url: URL) -> Bool {
+    isUpdateCheckURL(url, host: checkForUpdatesURLHost)
+}
+
+func isCheckForUpdatesInBackgroundURL(_ url: URL) -> Bool {
+    isUpdateCheckURL(url, host: checkForUpdatesInBackgroundURLHost)
 }
 
 func isRestartControlCenterURL(_ url: URL) -> Bool {
@@ -167,6 +176,7 @@ enum NativeControlCenterAction: Equatable {
     case restartControlCenter
     case repairRuntime
     case checkForUpdates
+    case checkForUpdatesInBackground
     case repairCodexBar
     case finishCodexBarRecovery
     case openCodexBar
@@ -181,6 +191,9 @@ func nativeControlCenterAction(for url: URL) -> NativeControlCenterAction? {
     }
     if isCheckForUpdatesURL(url) {
         return .checkForUpdates
+    }
+    if isCheckForUpdatesInBackgroundURL(url) {
+        return .checkForUpdatesInBackground
     }
     if isRepairCodexBarURL(url) {
         return .repairCodexBar
@@ -2159,6 +2172,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         alert.messageText = "Native updater is unavailable"
         alert.informativeText = "Install the latest signed VibeTV Control Center from app.vibetv.shop."
         alert.runModal()
+#endif
+    }
+
+    private func checkForUpdatesInBackground() {
+        guard !installationRequired else { return }
+#if canImport(Sparkle)
+        updaterController.updater.checkForUpdatesInBackground()
 #endif
     }
 
@@ -4289,6 +4309,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 beginRuntimeRepair()
             case .checkForUpdates:
                 checkForUpdates()
+            case .checkForUpdatesInBackground:
+                checkForUpdatesInBackground()
             case .repairCodexBar:
                 beginCodexBarRepair(hasJavaScriptOwner: true)
             case .finishCodexBarRecovery:

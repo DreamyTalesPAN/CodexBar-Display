@@ -292,6 +292,12 @@ func runURLSchemeTests() {
         "the exact native Sparkle action must be accepted"
     )
     require(
+        isCheckForUpdatesInBackgroundURL(
+            URL(string: "vibetv://check-for-updates-in-background")!
+        ),
+        "the automatic Sparkle action must be accepted"
+    )
+    require(
         isRestartControlCenterURL(URL(string: "vibetv://restart-control-center")!),
         "the exact native restart action must be accepted"
     )
@@ -397,6 +403,18 @@ func runURLSchemeTests() {
             for: URL(string: "vibetv://check-for-updates")!
         ) == .checkForUpdates,
         "the WebView update URL must route to the native Sparkle action"
+    )
+    require(
+        nativeControlCenterAction(
+            for: URL(string: "vibetv://check-for-updates-in-background")!
+        ) == .checkForUpdatesInBackground,
+        "the automatic update URL must route to a silent Sparkle check"
+    )
+    require(
+        nativeControlCenterAction(
+            for: URL(string: "vibetv://check-for-updates-in-background?channel=beta")!
+        ) == nil,
+        "the automatic update action must reject query parameters"
     )
     require(
         shouldHandleWebViewDownload(
