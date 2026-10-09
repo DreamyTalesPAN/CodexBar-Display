@@ -11,8 +11,10 @@ import (
 func listSerialPorts(t *testing.T, ports ...string) {
 	t.Helper()
 	old := defaultDiscoverer
-	t.Cleanup(func() { defaultDiscoverer = old })
+	oldAttached := attachedPorts
+	t.Cleanup(func() { defaultDiscoverer, attachedPorts = old, oldAttached })
 	defaultDiscoverer = discoverFunc(func() ([]string, error) { return ports, nil })
+	attachedPorts = func() ([]string, error) { return ports, nil }
 }
 
 const unplugTestHello = `{"kind":"hello","board":"esp8266-smalltv-st7789","deviceId":"5804558","capabilities":{"transport":{"active":"usb","mode":"cable"}}}` + "\n"

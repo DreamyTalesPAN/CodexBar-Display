@@ -118,6 +118,40 @@ func TestCurrentCableAbsenceOverridesLastAcknowledgedFrame(t *testing.T) {
 	}
 }
 
+// Windows physical test: a status probe on the vanished CH340 handle held the
+// device lock through its hello window, and every later status call waited.
+func TestStatusReportsUnpluggedCableWhileAProbeHoldsTheDeviceLock(t *testing.T) {
+	cfg := runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: "pair-token"}
+	server := newTestServer(t, cfg)
+	server.currentCableHello = func() (protocol.DeviceHello, bool) { return cableHelloForTest(cfg.DeviceID), true }
+	server.cablePortVanished = func() error { return cableResolveTestError(errcode.TransportSerialPortNotFound) }
+	server.resolveCablePort = func(string, string) (string, error) {
+		t.Error("an unplugged port must not be probed")
+		return "", errors.New("probed")
+	}
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{DeviceID: cfg.DeviceID, Running: true, Healthy: true, Target: cableDeviceTarget, LastTarget: cableDeviceTarget, LastSentAt: time.Now().Add(-time.Second).UTC().Format(time.RFC3339)}
+	}
+	server.firmwareUpdateStartMu.Lock() // the probe stuck on the old handle
+	defer server.firmwareUpdateStartMu.Unlock()
+	done := make(chan deviceInfo, 1)
+	go func() {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		var got statusResponse
+		_ = json.Unmarshal(rec.Body.Bytes(), &got)
+		done <- got.Device
+	}()
+	select {
+	case got := <-done:
+		if got.Connected || got.Ready || !got.Paired || got.Stream == nil || got.Stream.ErrorCode != "device_not_found" {
+			t.Fatalf("unplugged Cable not reported: %+v", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("status waited behind the stuck probe")
+	}
+}
+
 // The user's 15-second unplug must override the cached identity and last frame.
 func TestStatusDisconnectsCableWhenPortDisappearsAndReconnects(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{

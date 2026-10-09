@@ -343,7 +343,7 @@ func (s *Sender) openPortVanished(explicit string) error {
 	if path == "" || (explicit != "" && !samePort(explicit, path)) {
 		return nil
 	}
-	ports, err := ListPorts()
+	ports, err := attachedPorts()
 	if err != nil {
 		return nil
 	}

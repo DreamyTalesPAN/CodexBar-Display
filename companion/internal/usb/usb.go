@@ -24,6 +24,7 @@ func openSerialPort(path string, mode *serial.Mode) (serial.Port, error) {
 
 var defaultDiscoverer PortDiscoverer = systemDiscoverer{}
 var defaultSender = NewSender()
+var attachedPorts = listAttachedPorts
 
 const (
 	serialBaudRate       = 115200
@@ -95,6 +96,12 @@ func GetDeviceCapabilities(port string) (protocol.DeviceCapabilities, error) {
 // Cable worker. It never opens or writes to the serial port.
 func CurrentDeviceHello() (protocol.DeviceHello, bool) {
 	return defaultSender.CurrentHello()
+}
+
+// OpenCablePortVanished reports, without waiting on serial calls, that the
+// port of the running Cable worker was unplugged. It returns nil otherwise.
+func OpenCablePortVanished() error {
+	return defaultSender.openPortVanished("")
 }
 
 func SetConnectionMode(port, deviceID, mode string) error {

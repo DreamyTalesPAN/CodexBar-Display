@@ -211,6 +211,7 @@ type Server struct {
 	installTheme           func(context.Context, themeinstall.Options) (themeinstall.Result, error)
 	runSetup               func(context.Context, setup.Options) error
 	resolveCablePort       func(string, string) (string, error)
+	cablePortVanished      func() error
 	listCablePorts         func() ([]string, error)
 	discoverCableDevices   func(context.Context) ([]usb.CableDevice, error)
 	readCableHello         func(string) (protocol.DeviceHello, error)
@@ -1024,6 +1025,7 @@ func New(opts Options) (*Server, error) {
 		installTheme:           themeinstall.Install,
 		runSetup:               setup.Run,
 		resolveCablePort:       usb.ResolveVibeTVControlPort,
+		cablePortVanished:      usb.OpenCablePortVanished,
 		listCablePorts:         usb.ListPorts,
 		discoverCableDevices:   usb.DiscoverVibeTVs,
 		readCableHello:         usb.ReadDeviceHello,
@@ -1449,16 +1451,26 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if cableMode {
 		device.Capabilities = cableCapabilityBlock(cfg.DeviceTransports)
 		hello, helloKnown := s.currentCableHello()
+		// An unplugged port is answered before the lock. On Windows a probe
+		// stuck on the old handle holds it for its whole hello window.
+		var vanishedErr error
+		if strings.TrimSpace(cfg.DeviceID) != "" && s.cablePortVanished != nil {
+			vanishedErr = s.cablePortVanished()
+		}
 		// Resolution reads a fresh matching hello and repopulates the sender
 		// after a failed probe cleared it. A cached hello is metadata, not a
 		// prerequisite for asking whether the configured device is connected.
-		s.firmwareUpdateStartMu.Lock()
+		if vanishedErr == nil {
+			s.firmwareUpdateStartMu.Lock()
+		}
 		_, updateRunning := s.activeFirmwareUpdateJob()
 		cableAbsenceUnconfirmed = updateRunning || s.themeInstallInFlight()
 		port := ""
 		if !cableAbsenceUnconfirmed && strings.TrimSpace(cfg.DeviceID) != "" {
-			var portErr error
-			port, portErr = s.resolveCablePort("", cfg.DeviceID)
+			portErr := vanishedErr
+			if portErr == nil {
+				port, portErr = s.resolveCablePort("", cfg.DeviceID)
+			}
 			if portErr == nil {
 				reachable = true
 				if freshHello, ok := s.currentCableHello(); ok {
@@ -1498,7 +1510,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-		s.firmwareUpdateStartMu.Unlock()
+		if vanishedErr == nil {
+			s.firmwareUpdateStartMu.Unlock()
+		}
 	} else if strings.TrimSpace(cfg.DeviceTarget) != "" {
 		hello, probeToken, tokenRejected, err := s.getHelloProbeWithTokenFallback(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime)
 		if identity, ok := protocol.HelloIdentity(err); ok && strings.EqualFold(strings.TrimSpace(cfg.DeviceID), identity.DeviceID) {
