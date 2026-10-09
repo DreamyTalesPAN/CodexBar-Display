@@ -22,6 +22,7 @@ const approvedCustomerCopy = new Set([
   "Open VibeTV Control Center from Applications. If macOS asks, choose Open.",
   "WiFi password",
   "Enter your WiFi password.",
+  "VibeTV includes CodexBar to read your AI usage. Follow each provider&apos;s sign-in or permission instructions below.",
 ]);
 
 const forbiddenPatterns = [

@@ -95,6 +95,12 @@ function render(
 }
 
 describe("SetupProvidersScreen", () => {
+  it("names the included usage service and where provider access is granted", () => {
+    const html = render();
+    expect(html).toContain("VibeTV includes CodexBar to read your AI usage.");
+    expect(html).toContain("sign-in or permission instructions below");
+  });
+
   it("keeps an acknowledged sign-in issue dismissed while sign-in and background checks run", () => {
     const failed = provider({ providerId: "claude", label: "Claude", health: "auth_required", message: "Sign in required." });
     const onOpenSignIn = vi.fn();

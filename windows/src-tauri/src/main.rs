@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 use serde::Deserialize;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
+use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_updater::UpdaterExt;
@@ -45,6 +46,7 @@ const BUILD: &str = match option_env!("VIBETV_BUILD") {
 
 struct Shell {
     runtime_origin: Mutex<Url>,
+    pending_theme: Mutex<Option<String>>,
     preparing: Mutex<bool>,
     // Bumped on every present; a delayed hide only applies if nothing
     // presented the window again while it waited.
@@ -59,7 +61,18 @@ fn main() {
         // A second launch (autostart plus Start menu, or the updater's
         // relaunch) brings the existing window forward instead of starting a
         // second shell that would fight over the same Companion.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| present_window(app)))
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            present_window(app);
+            if args.len() == 2 && queue_install_link(app, args.get(1).map(String::as_str)) {
+                let handle = app.clone();
+                std::thread::spawn(move || {
+                    if !navigate_to_pending_theme(&handle) {
+                        prepare_and_load(handle);
+                    }
+                });
+            }
+        }))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_autostart::Builder::new()
@@ -68,6 +81,7 @@ fn main() {
         )
         .manage(Shell {
             runtime_origin: Mutex::new(Url::parse(DEFAULT_RUNTIME_ORIGIN).expect("static origin")),
+            pending_theme: Mutex::new(None),
             preparing: Mutex::new(false),
             presentations: AtomicU64::new(0),
             updating: AtomicBool::new(false),
@@ -79,6 +93,10 @@ fn main() {
                 log(&format!("could not enable autostart: {error}"));
             }
             create_window(&handle)?;
+            let args: Vec<_> = std::env::args_os().collect();
+            if args.len() == 2 {
+                queue_install_link(&handle, args[1].to_str());
+            }
             std::thread::spawn(move || prepare_and_load(handle));
             Ok(())
         })
@@ -217,6 +235,13 @@ fn create_window(app: &AppHandle) -> tauri::Result<()> {
             std::thread::spawn(move || handle_native_action(&app, &url));
             false
         })
+        .on_page_load(|window, payload| {
+            if payload.event() == PageLoadEvent::Finished {
+                let app = window.app_handle().clone();
+                let url = payload.url().clone();
+                std::thread::spawn(move || acknowledge_loaded_theme(app, url));
+            }
+        })
         .build()?;
     let handle = app.clone();
     window.on_window_event(move |event| {
@@ -237,6 +262,87 @@ fn present_window(app: &AppHandle) {
         let _ = window.unminimize();
         let _ = window.set_focus();
     }
+}
+
+fn theme_id_from_deep_link(raw: &str) -> Option<&str> {
+    // Check the original argument; URL parsing would erase dot segments first.
+    let theme_id = raw.strip_prefix("vibetv://install-theme/")?;
+    if !(3..=64).contains(&theme_id.len())
+        || !theme_id.split('-').all(|part| {
+            !part.is_empty()
+                && part
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+        })
+    {
+        return None;
+    }
+    Some(theme_id)
+}
+
+fn queue_install_link(app: &AppHandle, raw: Option<&str>) -> bool {
+    let Some(theme_id) = raw.and_then(theme_id_from_deep_link) else {
+        return false;
+    };
+    *app.state::<Shell>().pending_theme.lock().unwrap() = Some(theme_id.to_string());
+    present_window(app);
+    true
+}
+
+fn navigate_to_pending_theme(app: &AppHandle) -> bool {
+    let shell = app.state::<Shell>();
+    if *shell.preparing.lock().unwrap() {
+        return false;
+    }
+    let origin = shell.runtime_origin.lock().unwrap().clone();
+    if !runtime_ready(app, &origin) {
+        return false;
+    }
+    let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
+        return false;
+    };
+    if !window
+        .url()
+        .map(|url| url.origin() == origin.origin())
+        .unwrap_or(false)
+    {
+        return false;
+    }
+    let pending = shell.pending_theme.lock().unwrap();
+    let Some(theme_id) = pending.as_ref() else {
+        return false;
+    };
+    let target = origin.join(&format!("/control-center/install/{theme_id}")).expect("validated theme ID");
+    window.url().map(|url| url == target).unwrap_or(false) || window.navigate(target).is_ok()
+}
+
+fn clear_loaded_theme(pending: &mut Option<String>, loaded: &Url, origin: &Url, healthy: bool) -> bool {
+    let Some(theme_id) = pending.as_ref() else {
+        return false;
+    };
+    if !healthy || loaded != &origin.join(&format!("/control-center/install/{theme_id}")).expect("validated theme ID") {
+        return false;
+    }
+    pending.take();
+    true
+}
+
+fn acknowledge_loaded_theme(app: AppHandle, loaded: Url) {
+    let shell = app.state::<Shell>();
+    let origin = shell.runtime_origin.lock().unwrap().clone();
+    let pending = shell.pending_theme.lock().unwrap().clone();
+    let Some(theme_id) = pending else {
+        return;
+    };
+    if loaded != origin.join(&format!("/control-center/install/{theme_id}")).expect("validated theme ID") {
+        return;
+    }
+    if !runtime_ready(&app, &origin) {
+        prepare_and_load(app);
+        return;
+    }
+    let mut pending = shell.pending_theme.lock().unwrap();
+    clear_loaded_theme(&mut pending, &loaded, &origin, true);
 }
 
 // Theme Studio saves unsaved work on this event; give it a moment, then hide.
@@ -377,6 +483,12 @@ fn runtime_identity_matches(http: &ureq::Agent, origin: &Url) -> bool {
         .unwrap_or(false)
 }
 
+fn runtime_ready(app: &AppHandle, origin: &Url) -> bool {
+    run_companion(app, &["version", "--short"])
+        .and_then(|expected| check_runtime_health(app, &runtime_http(), origin, &expected))
+        .is_ok()
+}
+
 fn release_update_hold() {
     let http = runtime_http();
     for origin in runtime_origin_candidates() {
@@ -436,7 +548,12 @@ fn prepare_and_load(app: AppHandle) -> bool {
         Ok(origin) => {
             *shell.runtime_origin.lock().unwrap() = origin.clone();
             if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
-                let _ = window.navigate(origin.join("/control-center").expect("static path"));
+                let pending = shell.pending_theme.lock().unwrap();
+                let path = pending
+                    .as_ref()
+                    .map(|theme_id| format!("/control-center/install/{theme_id}"))
+                    .unwrap_or_else(|| "/control-center".to_string());
+                let _ = window.navigate(origin.join(&path).expect("validated local path"));
             }
         }
         Err(error) => {
@@ -445,6 +562,10 @@ fn prepare_and_load(app: AppHandle) -> bool {
         }
     }
     *shell.preparing.lock().unwrap() = false;
+    if result.is_ok() {
+        // A second link may have arrived while the first navigation held the queue.
+        navigate_to_pending_theme(&app);
+    }
     result.is_ok()
 }
 
@@ -687,4 +808,60 @@ fn show_message(message: &str) {
     }
     #[cfg(not(windows))]
     log(message);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{clear_loaded_theme, theme_id_from_deep_link};
+    use url::Url;
+
+    #[test]
+    fn theme_link_accepts_only_one_safe_catalog_id() {
+        for (input, expected) in [
+            ("vibetv://install-theme/clippy", Some("clippy")),
+            ("vibetv://install-theme/claude-creature", Some("claude-creature")),
+            ("vibetv://install-theme/ab", None),
+            ("vibetv://install-theme/Clippy", None),
+            ("vibetv://install-theme/a_b", None),
+            ("vibetv://install-theme/a--b", None),
+            ("vibetv://install-theme/-abc", None),
+            ("vibetv://install-theme/abc-", None),
+            ("vibetv://install-theme/abc/other", None),
+            ("vibetv://install-theme/abc/", None),
+            ("vibetv://install-theme/../clippy", None),
+            ("vibetv://install-theme/abc/../clippy", None),
+            ("vibetv://install-theme/%61bc", None),
+            ("vibetv://install-theme/abc?next=other", None),
+            ("vibetv://install-theme/abc#other", None),
+            ("vibetv://user@install-theme/abc", None),
+            ("vibetv://install-theme:123/abc", None),
+            ("vibetv://open-control-center/abc", None),
+            ("https://install-theme/abc", None),
+        ] {
+            assert_eq!(theme_id_from_deep_link(input), expected, "{input}");
+        }
+        let longest = format!("vibetv://install-theme/{}", "a".repeat(64));
+        assert!(theme_id_from_deep_link(&longest).is_some());
+        let long = format!("vibetv://install-theme/{}", "a".repeat(65));
+        assert_eq!(theme_id_from_deep_link(&long), None);
+    }
+
+    #[test]
+    fn theme_link_stays_queued_until_its_local_page_loads_with_a_healthy_runtime() {
+        let origin = Url::parse("http://127.0.0.1:47832").unwrap();
+        let theme_page = origin.join("/control-center/install/clippy").unwrap();
+        let mut pending = Some("clippy".to_string());
+        assert!(!clear_loaded_theme(&mut pending, &theme_page, &origin, false));
+        assert_eq!(pending.as_deref(), Some("clippy"));
+        assert!(!clear_loaded_theme(&mut pending, &origin.join("/control-center").unwrap(), &origin, true));
+        assert_eq!(pending.as_deref(), Some("clippy"));
+        assert!(!clear_loaded_theme(&mut pending, &Url::parse("http://127.0.0.1:47833/control-center/install/clippy").unwrap(), &origin, true));
+        assert_eq!(pending.as_deref(), Some("clippy"));
+        pending = Some("synthwave".to_string());
+        assert!(!clear_loaded_theme(&mut pending, &theme_page, &origin, true));
+        assert_eq!(pending.as_deref(), Some("synthwave"));
+        pending = Some("clippy".to_string());
+        assert!(clear_loaded_theme(&mut pending, &theme_page, &origin, true));
+        assert_eq!(pending, None);
+    }
 }

@@ -1,23 +1,21 @@
 # Shopify Theme Boundary
 
-## Current Decision
+## Current Flow
 
-Shopify theme products are currently independent from the VibeTV Mac App.
-Product pages do not launch Mac App theme installation, and release readiness
-must not require Shopify product copy or links to `/install/<theme_id>`.
-
-The hosted web app may still expose a Shopify-backed catalog. That web catalog
-is separate from the catalog shipped inside the Mac App and is not an install
-contract for Shopify product pages.
+Shopify theme product pages link to
+`https://app.vibetv.shop/install/<theme_id>`. For a free Shopify theme with a
+verified pack, the hosted page offers `Open Control Center` through
+`vibetv://install-theme/<theme_id>` and keeps the app download available. The
+installed app opens its local `/control-center/install/<theme_id>` route and
+retains the normal setup checks before installation. Publishing the hosted app
+and releasing installers with the registered URL scheme are separate rollout
+steps; a PR alone does not activate this handoff for customers.
 
 ## Mac App Theme Catalog
 
-The Mac App uses the generation-matched repository catalog and theme packs:
-Treat the hosted app path as the customer entrypoint, not as the full customer
-app. Theme product pages should point customers into hosted setup once the
-launch cutover is approved. From there, the Mac App opens the local Control
-Center for install and management. The direct Terminal command remains useful as
-a rollback or support fallback, not as the preferred product journey.
+The installed app uses the generation-matched repository catalog and theme
+packs. The hosted page selects the theme; installation and management happen
+inside the local Control Center.
 
 ## Product Model
 
@@ -49,7 +47,16 @@ have complete technical metadata in the current GitHub catalog.
 
 ## Product Button
 
-The preferred launch action opens hosted setup with the selected theme:
+The product button opens hosted setup with the selected theme:
+
+```text
+https://app.vibetv.shop/install/<theme_id>
+```
+
+The `theme_id` must match a free Shopify catalog entry with a verifiable pack.
+The local app validates the ID again before navigating to its install route.
+
+## Theme Pack Build
 
 ```text
 dist/theme-packs/vibetv-theme-packs-v2.json

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SettingsScreen, type SettingsScreenProps } from "./settings-screen";
 
@@ -42,6 +42,26 @@ function props(overrides: Partial<SettingsScreenProps> = {}): SettingsScreenProp
 }
 
 describe("Settings connection cards", () => {
+  it("asks before starting setup again and keeps the current setup after cancel", () => {
+    const settings = props();
+    render(<SettingsScreen {...settings} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Run setup again" }));
+    expect(screen.getByRole("dialog", { name: "Run setup again?" }).textContent).toContain(
+      "Nothing on VibeTV is erased.",
+    );
+    expect(settings.onResetSetup).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(settings.onResetSetup).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Run setup again" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Run setup again" }));
+    expect(settings.onResetSetup).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it.each([
     ["cable", "USB-C", "WiFi", "Switch to WiFi", "wifi"],
     ["wifi", "WiFi", "USB-C", "Switch to USB-C", "cable"],

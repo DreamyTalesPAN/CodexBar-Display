@@ -5,6 +5,18 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-10-09 — Return to the shop theme page after first install (#63)
+
+- User approval: Paul delegated customer UI decisions for the autonomous overnight issue work on 2026-10-09. He has not personally previewed this exact wording or layout.
+- Approved customer-visible result: On a valid shop theme handoff page, the app download now explains that after installing Control Center, the customer should return to this page and click `Open Control Center` to choose the theme. The plain download page has no extra instruction.
+- Scope: `mac-app-download-screen.tsx`, its focused test, and this approval record. No deployment, device write, or automatic theme installation is implied.
+
+## 2026-10-09 — Hosted theme handoff to the installed app (#63)
+
+- User approval: On 2026-10-09 Paul granted all approvals for autonomous overnight VibeTV issue work and delegated the choice of issues and implementation decisions. Under that delegation, this task selected the #63 hosted-to-app handoff. Paul has not personally previewed this exact copy or layout.
+- Approved customer-visible result: For an available, free Shopify theme with a verified pack, `/install/<id>` offers `Open Control Center` as the primary action. It opens `vibetv://install-theme/<id>` and keeps the platform-specific app download as a secondary fallback. The plain hosted entry remains a download page. The local app opens the requested theme in its existing library after the usual setup gates; opening the link never installs a theme on a VibeTV by itself.
+- Scope: `apps/control-center/src/lib/themes.ts`, `apps/control-center/src/components/control-center-app.tsx`, `apps/control-center/src/components/setup/mac-app-download-screen.tsx`, their focused and customer-flow tests, `docs/control-center-ui-principles.md`, and this approval record. This documents the delegated branch implementation, not personal visual acceptance, deployment, merge, release, or hardware testing.
+
 ## 2026-09-01 — Configured WiFi device continues automatically
 
 - User approval: The user explicitly instructed Codex to fix every sensible
@@ -5178,3 +5190,39 @@ issue scope, or release permission never implies UI permission.
 - User approval: While testing the PR #524 candidate on his Mac and connected VibeTV, Marcus reported that unplugging USB for 15 seconds left Overview showing "VibeTV is connected" and a preview although the VibeTV was off. After testing the correction in local Mac preview 99.0.525, he explicitly confirmed: "Ja geil, jetzt funktioniert's, sehr gut. Ja, dann passt das. Dann hast du alle Tests bestanden."
 - Approved customer-visible result: When the saved USB VibeTV's cable is missing, Overview shows the existing "Not connected" status and the preview's existing offline state instead of a cached live picture. Reconnecting USB restores the connected status and live preview. Existing WiFi reconnect behaviour and customer wording remain unchanged.
 - Scope: The USB disconnect correction in `companion/internal/companionapi/server.go`, `apps/control-center/src/components/live-vibetv-preview.tsx`, their regression tests, and this approval record, submitted in PR #593. The confirmation covers the visible result personally tested on the Mac; it does not approve merging or releasing the PR and does not claim a Windows hardware test.
+
+## 2026-10-09 — CodexBar explanation in provider setup and settings (#333)
+
+- User approval: Paul authorized the autonomous VibeTV issue nightshift on 2026-10-09, gave permission for all necessary work, and expressly delegated implementation decisions ("DU ENTSCHEIDEST ALLES" and "du darfst alles machen, nutzen, usw usw"). He did not personally review this exact sentence; Codex selected it under that delegation for draft PR #597.
+- Approved customer-visible result: The shared provider list on Setup and Settings displays exactly "VibeTV includes CodexBar to read your AI usage. Follow each provider's sign-in or permission instructions below." above the provider search. The existing provider sign-in and permission instructions remain in their rows. No new button, dialog, or provider behavior.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its Setup and Settings tests, the provider-recovery customer-flow assertion in `apps/control-center/scripts/test-customer-flows.mjs`, and this approval record. This records the delegated decision for the pull-request branch only, not merge or release.
+
+## 2026-10-09 — Provider recovery test follows the approved explanation (#333)
+
+- User approval: Paul authorized the autonomous VibeTV issue nightshift on 2026-10-09 and expressly delegated implementation decisions ("DU ENTSCHEIDEST ALLES" and "du darfst alles machen, nutzen, usw usw"). He did not review this exact test assertion; Codex aligned it with the customer-visible sentence recorded above under that delegation.
+- Approved customer-visible result: The provider-recovery screen contains the same sentence recorded above: "VibeTV includes CodexBar to read your AI usage. Follow each provider's sign-in or permission instructions below." No additional customer text or control changes in this follow-up.
+- Scope: Replace the old customer-flow assertion forbidding the word CodexBar in `apps/control-center/scripts/test-customer-flows.mjs`; this record applies to the pull-request branch only, not merge or release.
+
+## 2026-10-09 — Confirm before running setup again (#546)
+
+- User approval: Paul delegated customer-visible decisions for the 2026-10-09 night shift to the team. He has not reviewed this exact dialog wording.
+- Approved customer-visible result: In Settings, clicking `Run setup again` opens a confirmation dialog titled `Run setup again?` with `You’ll choose a VibeTV and display mode again. Nothing on VibeTV is erased.` `Cancel` closes it without resetting setup. The dialog’s `Run setup again` button starts the existing setup reset. The factory-reset dialog and other setup entry points are unchanged.
+- Scope: `apps/control-center/src/components/settings-screen.tsx`, the interaction test in `settings-connection.test.tsx`, and this approval record. This is approval to prepare the branch, not to merge, release, or write to a VibeTV.
+
+## 2026-10-09 — Windows shop theme link opens the local install page (#63)
+
+- User approval: Paul delegated VibeTV issue selection, implementation, and testing for the unattended nightshift on 2026-10-09. He has not personally reviewed this exact behavior or wording.
+- Approved customer-visible result: Opening `vibetv://install-theme/<id>` on Windows brings VibeTV Control Center forward and opens its existing local `/control-center/install/<id>` page, including when the app was not running. It does not start a theme installation or write to the VibeTV. Invalid links leave the current page unchanged.
+- Scope: Windows Tauri deep-link registration, link parsing and navigation, their tests, and this approval record. This records the delegated nightshift decision for the pull request; it does not approve merging, releasing, installation on customer machines, or a hardware write.
+
+## 2026-10-09 — Theme link accepts the actual free shop products (#63)
+
+- User approval: Paul delegated VibeTV issue selection, implementation, and testing for the unattended nightshift on 2026-10-09. He has not personally reviewed this exact refinement. The live shop readback showed the three free digital theme products are deliberately not purchasable, so the earlier entry's "available" condition would hide the action from all of them.
+- Approved customer-visible result: The hosted install page offers `Open Control Center` for a free Shopify catalog theme with a safe 3–64 character ID and complete pack URL, checksum, and size metadata. It keeps the app download as a secondary action. A missing, paid, or untrusted theme retains the download page without the deep link. The action opens the local theme page; it does not install a theme by itself.
+- Scope: `apps/control-center/src/components/setup/mac-app-download-screen.tsx`, its focused test, and this approval record. This records the delegated branch decision only, not deployment, merge, or release.
+
+## 2026-10-09 — Customer flows confirm setup reset (#546)
+
+- User approval: Paul delegated the overnight VibeTV issue work and the customer-visible decision for the `Run setup again?` confirmation recorded above. He has not reviewed this test-only follow-up.
+- Approved customer-visible result: The existing Settings button opens the confirmation dialog. Only its `Run setup again` action resets setup; the customer flow keeps the same device discovery and recovery behavior after confirmation. This entry adds no new customer text or control.
+- Scope: Update the browser customer-flow tests in `apps/control-center/scripts/test-customer-flows.mjs` to confirm the dialog before expecting setup reset, and this approval record. This is a branch test update, not merge or release approval.

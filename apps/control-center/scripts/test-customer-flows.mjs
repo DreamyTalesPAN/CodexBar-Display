@@ -394,6 +394,19 @@ async function main() {
       releaseUrl: smokeOnly ? missingAssetReleaseUrl : completeReleaseUrl,
     });
     app = appContext.app;
+    if (process.argv.includes("--theme-handoff")) {
+      await testHostedThemeEntryShowsMacAppDownload(browser, appContext.appUrl, {
+        expectDmg: true,
+      });
+      await testInstallLinkKeepsRequestedTheme(browser, appContext.appUrl);
+      await testLocalInstallLinkKeepsSetupGate(browser, appContext.appUrl);
+      await testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
+        browser,
+        appContext.appUrl,
+      );
+      console.log("control-center theme handoff flow passed");
+      return;
+    }
     if (process.argv.includes("--firmware-onboarding")) {
       await testFirmwareOnboardingTerminalStates(browser, appContext.appUrl);
       await testFirmwareAttentionDoesNotOfferSecondFlash(browser, appContext.appUrl);
@@ -3118,6 +3131,14 @@ async function testFreshDiscoveredPairedDeviceShowsRecoveryWithoutWifi(
   await page.close();
 }
 
+async function confirmRunSetupAgain(page) {
+  await page.getByRole("button", { name: "Run setup again" }).click();
+  await page
+    .getByRole("dialog", { name: "Run setup again?" })
+    .getByRole("button", { name: "Run setup again" })
+    .click();
+}
+
 async function testOfflineActiveDeviceOffersReadOnlyPickerAfterSetupReset(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
@@ -3154,7 +3175,7 @@ async function testOfflineActiveDeviceOffersReadOnlyPickerAfterSetupReset(browse
   assert(deviceWriteRequests.length === 0,
     "An admitted session must not adopt another VibeTV after disconnecting");
   await clickNavigation(page, "Settings");
-  await page.getByRole("button", { name: "Run setup again" }).click();
+  await confirmRunSetupAgain(page);
   await waitForSetupDeviceStep(page);
   await page.getByRole("radio", { name: "VibeTV device-82" }).waitFor({
     timeout: 10_000,
@@ -3829,7 +3850,7 @@ async function testEnteredControlCenterOpensPairingRecovery(browser, appUrl) {
   await pairingError.waitFor({ timeout: 10_000 });
   await pairingError.getByRole("button", { name: "OK", exact: true }).click();
   await pairingError.waitFor({ state: "detached", timeout: 5_000 });
-  await page.getByRole("button", { name: "Run setup again" }).click();
+  await confirmRunSetupAgain(page);
   await waitForSetupDeviceStep(page, 20_000);
   await setupDeviceCards(page).first().waitFor({ timeout: 10_000 });
   await setupConnectButton(page).click();
@@ -4693,11 +4714,14 @@ async function testProviderlessDeviceUsesRecoveryBeforeThemeAndOverview(
     "A connected VibeTV must never be described as disconnected",
   );
 
-  // CodexBar is the Mac App's own engine; the customer never has to know it.
+  // Setup names the bundled usage engine once so its provider instructions
+  // have a clear owner (#333).
   const visibleText = await page.evaluate(() => document.body.innerText);
   assert(
-    !/codexbar/i.test(visibleText),
-    "Provider recovery must not name CodexBar to the customer",
+    visibleText.includes(
+      "VibeTV includes CodexBar to read your AI usage. Follow each provider's sign-in or permission instructions below."
+    ),
+    "Provider recovery must explain why CodexBar appears in setup",
   );
 
   assertNoInstallRequests(installRequests);
@@ -7888,7 +7912,7 @@ async function testRunSetupAgainReturnsToWifiOnboarding(browser, appUrl) {
   await clickNavigation(page, "Settings");
   const runSetupAgain = page.getByRole("button", { name: "Run setup again" });
   await runSetupAgain.waitFor({ timeout: 10_000 });
-  await runSetupAgain.click();
+  await confirmRunSetupAgain(page);
   await page
     .getByRole("main", { name: "Welcome" })
     .waitFor({ timeout: 10_000 });
@@ -7940,7 +7964,7 @@ async function testRunSetupAgainWaitsForAPendingDisplaySave(browser, appUrl) {
     () => timeline.some((entry) => entry.pathname === "/v1/provider-display"),
     "choosing a display mode in Settings must save it",
   );
-  await page.getByRole("button", { name: "Run setup again" }).click();
+  await confirmRunSetupAgain(page);
   await waitForCondition(
     () => timeline.some((entry) => entry.pathname === "/v1/setup/reset"),
     "Run setup again must reset once the save has landed",
@@ -7989,7 +8013,7 @@ async function testRunSetupAgainWaitsForAPendingProviderToggle(browser, appUrl) 
     () => timeline.some((entry) => entry.pathname.startsWith("/v1/preferences/")),
     "switching a provider in Settings must save it",
   );
-  await page.getByRole("button", { name: "Run setup again" }).click();
+  await confirmRunSetupAgain(page);
   await waitForCondition(
     () => timeline.some((entry) => entry.pathname === "/v1/setup/reset"),
     "Run setup again must reset once the provider toggle has settled",
@@ -8064,7 +8088,7 @@ async function testFailedSetupResetReconcilesPendingProviderToggle(
       ),
     "enabling Claude must start its provider preference save",
   );
-  await page.getByRole("button", { name: "Run setup again" }).click();
+  await confirmRunSetupAgain(page);
   await waitForCondition(
     () =>
       requests.some((request) => request.pathname === "/v1/setup/reset"),
@@ -8120,7 +8144,7 @@ async function testRunSetupAgainBlocksLaterProviderWrites(browser, appUrl) {
     timeout: 10_000,
   });
   await clickNavigation(page, "Settings");
-  await page.getByRole("button", { name: "Run setup again" }).click();
+  await confirmRunSetupAgain(page);
   await waitForCondition(
     () => requests.includes("/v1/setup/reset"),
     "Run setup again did not start its reset",
@@ -10844,6 +10868,29 @@ async function testInstallLinkKeepsRequestedTheme(browser, appUrl) {
   await assertSelectedThemeRow(page, "Fixture Clippy Theme");
   await assertThemeRowNotSelected(page, "Fixture Synthwave Theme");
   await page.waitForTimeout(250);
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testLocalInstallLinkKeepsSetupGate(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  let settingsCalls = 0;
+  await routeLocalCompanionAppThroughLocalNext(page, appUrl);
+  await routeCompanionOnline(page, installRequests, () => {
+    settingsCalls += 1;
+  });
+
+  await page.goto("http://127.0.0.1:47832/control-center/install/clippy", {
+    waitUntil: "domcontentloaded",
+  });
+  await waitForCondition(
+    () => settingsCalls >= 1,
+    "expected Companion status check from the local install route",
+  );
+  await page.getByRole("button", { name: "Help" }).waitFor();
+  await assertThemeLibraryLockedBehindSetup(page);
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
   await page.close();

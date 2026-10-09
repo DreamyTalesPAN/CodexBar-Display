@@ -99,6 +99,7 @@ export function SettingsScreen({
 }: SettingsScreenProps) {
   const thisHost = windowsHost ? "this computer" : "this Mac";
   const [requestedMode, setRequestedMode] = useState<"cable" | "wifi" | null>(null);
+  const [setupRequested, setSetupRequested] = useState(false);
   const [eraseRequested, setEraseRequested] = useState(false);
   const brightnessSupport =
     device?.capabilities?.display?.brightness?.supported ?? true;
@@ -395,7 +396,7 @@ export function SettingsScreen({
         <div>
           <Button
             disabled={localActionBusy}
-            onClick={onResetSetup}
+            onClick={() => setSetupRequested(true)}
             type="button"
             variant="outline"
           >
@@ -407,6 +408,43 @@ export function SettingsScreen({
             </span>
           </Button>
         </div>
+        {setupRequested ? (
+          <Dialog
+            open
+            onOpenChange={(open) => {
+              if (!open) setSetupRequested(false);
+            }}
+          >
+            <DialogContent showCloseButton={false}>
+              <DialogHeader>
+                <DialogTitle>Run setup again?</DialogTitle>
+                <DialogDescription>
+                  You’ll choose a VibeTV and display mode again. Nothing on
+                  VibeTV is erased.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button
+                  onClick={() => setSetupRequested(false)}
+                  type="button"
+                  variant="outline"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  disabled={localActionBusy}
+                  onClick={() => {
+                    setSetupRequested(false);
+                    onResetSetup();
+                  }}
+                  type="button"
+                >
+                  Run setup again
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        ) : null}
         {onEraseDevice && connectionMode === "cable" ? (
           <div>
             <Button

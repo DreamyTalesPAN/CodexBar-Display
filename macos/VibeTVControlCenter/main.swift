@@ -15,6 +15,7 @@ private let runtimeEndpointFileName = "runtime-endpoint.json"
 private let nativeControlCenterUserAgentPrefix = "VibeTVControlCenter/"
 private let controlCenterURLScheme = "vibetv"
 private let controlCenterURLHost = "open-control-center"
+private let installThemeURLHost = "install-theme"
 private let restartControlCenterURLHost = "restart-control-center"
 private let repairRuntimeURLHost = "repair-runtime"
 private let checkForUpdatesURLHost = "check-for-updates"
@@ -71,6 +72,36 @@ func isOpenControlCenterURL(_ url: URL) -> Bool {
         return false
     }
     return true
+}
+
+func installThemeID(from url: URL) -> String? {
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          components.scheme?.lowercased() == controlCenterURLScheme,
+          components.host?.lowercased() == installThemeURLHost,
+          components.user == nil,
+          components.password == nil,
+          components.port == nil,
+          components.query == nil,
+          components.fragment == nil,
+          components.percentEncodedPath.hasPrefix("/") else {
+        return nil
+    }
+    let themeID = String(components.percentEncodedPath.dropFirst())
+    guard (3...64).contains(themeID.utf8.count),
+          themeID.range(
+              of: #"^[a-z0-9]+(?:-[a-z0-9]+)*$"#,
+              options: .regularExpression
+          ) != nil else {
+        return nil
+    }
+    return themeID
+}
+
+func controlCenterPath(for url: URL) -> String? {
+    if let themeID = installThemeID(from: url) {
+        return "control-center/install/\(themeID)"
+    }
+    return isOpenControlCenterURL(url) ? "control-center" : nil
 }
 
 func isCheckForUpdatesURL(_ url: URL) -> Bool {
@@ -245,24 +276,22 @@ func isApprovedCodexBarDownloadURL(_ url: URL) -> Bool {
 
 struct ControlCenterURLRouter {
     private(set) var isReady = false
-    private(set) var hasPendingOpen = false
+    private(set) var pendingPath: String?
+    var hasPendingOpen: Bool { pendingPath != nil }
 
-    mutating func receive(_ urls: [URL]) -> Bool {
-        guard urls.contains(where: isOpenControlCenterURL) else {
-            return false
-        }
+    mutating func receive(_ urls: [URL]) -> String? {
+        guard let path = urls.compactMap(controlCenterPath).first else { return nil }
         guard isReady else {
-            hasPendingOpen = true
-            return false
+            pendingPath = path
+            return nil
         }
-        return true
+        return path
     }
 
-    mutating func markReady() -> Bool {
+    mutating func markReady() -> String? {
         isReady = true
-        let shouldOpen = hasPendingOpen
-        hasPendingOpen = false
-        return shouldOpen
+        defer { pendingPath = nil }
+        return pendingPath
     }
 }
 
@@ -359,6 +388,19 @@ func appManagedCodexBarCLIURL(
     .appendingPathComponent("CodexBarCLI")
 }
 
+func managedCodexBarRecoveryURL(
+    applicationSupportURL: URL,
+    validatedCLIURL: URL?
+) -> URL? {
+    let appURL = appManagedCodexBarAppURL(applicationSupportURL: applicationSupportURL)
+    let cliURL = appManagedCodexBarCLIURL(applicationSupportURL: applicationSupportURL)
+    guard validatedCLIURL?.standardizedFileURL == cliURL.standardizedFileURL,
+          appURL.resolvingSymlinksInPath().standardizedFileURL == appURL.standardizedFileURL,
+          cliURL.resolvingSymlinksInPath().standardizedFileURL == cliURL.standardizedFileURL else {
+        return nil
+    }
+    return appURL
+}
 
 
 struct CodexBarCommandResult {
@@ -1349,10 +1391,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     // reruns preparation with the flag still set instead.
     private var pendingCodexBarRepairRerun = false
     private var codexBarRecoveryApplication: NSRunningApplication?
+    private var managedCodexBarOpenTask: Task<Void, Never>?
     private var installationStatusTitle = "Starting Control Center"
     private var installationStatusDetail = "Preparing the Mac App."
     private var installationStatusFailed = false
     private var activeRuntimeOrigin = URL(string: defaultRuntimeOriginString)!
+    private var controlCenterPath = "control-center"
 #if canImport(Sparkle)
     private lazy var updaterController = SPUStandardUpdaterController(
         startingUpdater: true,
@@ -1421,7 +1465,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             openManagedCodexBar()
             return
         }
-        if urlRouter.receive(urls) {
+        if let path = urlRouter.receive(urls) {
+            controlCenterPath = path
+            if installationReady, webView != nil {
+                loadControlCenter()
+            }
             presentControlCenter()
         }
     }
@@ -1495,7 +1543,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 self.codexBarRepairRequired = false
                 self.installationReady = true
                 self.installationStatus = nil
-                _ = self.urlRouter.markReady()
+                if let path = self.urlRouter.markReady() {
+                    self.controlCenterPath = path
+                }
                 self.presentControlCenter()
             case .codexBarRepairRequired:
                 self.codexBarRepairRequired = true
@@ -1632,37 +1682,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     // into CodexBar rather than after a download they already have.
     // Stopgap until #245 moves provider selection into setup and settings.
     private func openManagedCodexBar() {
-        let running = NSRunningApplication.runningApplications(
-            withBundleIdentifier: codexBarBundleIdentifier
-        )
-        let appURL: URL
-        if let bundleURL = running.first?.bundleURL {
-            appURL = bundleURL
-        } else {
-            let managed = appManagedCodexBarAppURL(
-                applicationSupportURL: applicationSupportURL()
-            )
-            guard validatedPinnedCodexBarCLI(at: managed) != nil else {
+        guard managedCodexBarOpenTask == nil else { return }
+        let supportURL = applicationSupportURL()
+        let managed = appManagedCodexBarAppURL(applicationSupportURL: supportURL)
+        let companionURL = Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Helpers", isDirectory: true)
+            .appendingPathComponent("codexbar-display")
+        managedCodexBarOpenTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.managedCodexBarOpenTask = nil }
+            let validatedCLIURL = await Task.detached(priority: .userInitiated) {
+                guard let result = runCodexBarCommand(
+                    executableURL: companionURL,
+                    arguments: ["validate-codexbar", "--app", managed.path]
+                ), result.exitCode == 0 else { return Optional<URL>.none }
+                let path = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+                return path.isEmpty ? nil : URL(fileURLWithPath: path)
+            }.value
+            guard let appURL = managedCodexBarRecoveryURL(
+                applicationSupportURL: supportURL,
+                validatedCLIURL: validatedCLIURL
+            ) else {
                 NSLog("VibeTV Control Center refused to open an unverified CodexBar app")
                 return
             }
-            appURL = managed
-        }
-        // From here the app is the customer's to use. Recovery cleanup must not
-        // terminate it under them, so drop our claim on it.
-        codexBarRecoveryApplication = nil
+            // From here the app is the customer's to use. Recovery cleanup must
+            // not terminate it under them, so drop our claim on it.
+            self.codexBarRecoveryApplication = nil
 
-        let configuration = NSWorkspace.OpenConfiguration()
-        configuration.activates = true
-        configuration.addsToRecentItems = false
-        NSWorkspace.shared.openApplication(
-            at: appURL,
-            configuration: configuration
-        ) { _, error in
-            if let error {
-                NSLog(
-                    "VibeTV Control Center could not open CodexBar: \(error.localizedDescription)"
-                )
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = true
+            configuration.addsToRecentItems = false
+            configuration.allowsRunningApplicationSubstitution = false
+            NSWorkspace.shared.openApplication(
+                at: appURL,
+                configuration: configuration
+            ) { _, error in
+                if let error {
+                    NSLog(
+                        "VibeTV Control Center could not open CodexBar: \(error.localizedDescription)"
+                    )
+                }
             }
         }
     }
@@ -2795,7 +2855,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private func loadControlCenter(
         cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy
     ) {
-        let url = activeRuntimeOrigin.appendingPathComponent("control-center")
+        let url = activeRuntimeOrigin.appendingPathComponent(controlCenterPath)
         activeNavigation = webView?.load(
             URLRequest(
                 url: url,
@@ -3113,6 +3173,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         clearPendingNativeUpdate()
 
         if legacyStates.isEmpty {
+            if legacyApps.isEmpty {
+                _ = await registerCurrentAppAsURLHandler()
+            }
             let migratedLegacyApps = await migrateLegacyAppsAfterHealthyRuntime(legacyApps)
             guard migratedLegacyApps else {
                 return .nativeRuntimeReady
@@ -3121,32 +3184,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return .nativeRuntimeReady
         }
 
-        if !legacyApps.isEmpty {
-            let registeredURLHandler = await registerCurrentAppAsURLHandler()
-            if !registeredURLHandler {
-                _ = await rollbackToLegacyAgents(
-                    legacyStates,
-                    reason: "the current app could not become the vibetv URL handler"
-                )
-                return .failure(.legacyRepair)
-            }
-        }
-
         let backupRoot = migrationBackupURL()
         let artifacts = migrationArtifacts(
             legacyAgents: legacyDescriptors,
             legacyApps: legacyApps,
             backupRoot: backupRoot
         )
-        guard moveMigrationArtifacts(artifacts) != nil else {
+        guard let moved = moveMigrationArtifacts(artifacts) else {
             _ = await rollbackToLegacyAgents(
                 legacyStates,
                 reason: "legacy artifacts could not be moved into the migration backup"
             )
             return .failure(.legacyRepair)
         }
+        if !legacyApps.isEmpty,
+           !(await registerCurrentAppAsURLHandler()) {
+            _ = restoreMigrationArtifacts(moved)
+            _ = await rollbackToLegacyAgents(
+                legacyStates,
+                reason: "the current app could not become the vibetv URL handler"
+            )
+            return .failure(.legacyRepair)
+        }
 
         recordCurrentRuntimeBundleVersion()
+        if legacyApps.isEmpty {
+            _ = await registerCurrentAppAsURLHandler()
+        }
         NSLog(
             "VibeTV Control Center migration completed with healthy Companion version \(expectedVersion); backup=\(backupRoot.path)"
         )
@@ -4009,22 +4073,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return true
         }
 
-        guard await registerCurrentAppAsURLHandler() else {
-            NSLog(
-                "VibeTV Control Center kept legacy app bundles because the vibetv URL handler could not be updated"
-            )
-            return false
-        }
-
         let backupRoot = migrationBackupURL()
         let artifacts = migrationArtifacts(
             legacyAgents: [],
             legacyApps: legacyApps,
             backupRoot: backupRoot
         )
-        guard moveMigrationArtifacts(artifacts) != nil else {
+        guard let moved = moveMigrationArtifacts(artifacts) else {
             NSLog(
                 "VibeTV Control Center kept legacy app bundles because they could not be moved"
+            )
+            return false
+        }
+        guard await registerCurrentAppAsURLHandler() else {
+            _ = restoreMigrationArtifacts(moved)
+            NSLog(
+                "VibeTV Control Center kept legacy app bundles because the vibetv URL handler could not be updated"
             )
             return false
         }
@@ -4113,6 +4177,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     }
 
     private func registerCurrentAppAsURLHandler() async -> Bool {
+        guard isInstalledApplicationsBundle(Bundle.main.bundleURL) else {
+            NSLog("VibeTV Control Center refused to register a URL handler outside Applications")
+            return false
+        }
         let errorDescription: String? = await withCheckedContinuation { continuation in
             NSWorkspace.shared.setDefaultApplication(
                 at: Bundle.main.bundleURL,
