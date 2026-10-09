@@ -979,6 +979,12 @@ func runURLSchemeTests() {
         "an app opened from a mounted DMG must not migrate persistent services"
     )
     require(
+        !isInstalledApplicationsBundle(
+            URL(fileURLWithPath: "/Users/customer/CodexBackups/Applications/VibeTV Control Center.app")
+        ),
+        "a historical backup app must not become the URL handler"
+    )
+    require(
         !requiresApplicationInstallation(
             URL(fileURLWithPath: "/Applications/VibeTV Control Center.app")
         ),
