@@ -688,7 +688,13 @@ func (s *Server) providerReadinessFor(providerID string) (providerReadinessRecor
 
 func providerDiagnosticCheck(setup codexbar.ProviderSetup) diagnosticCheck {
 	if setup.Status == codexbar.ProviderReady {
-		return diagnosticCheck{Name: "provider_setup", Status: "pass", Detail: "An AI provider is delivering usage data."}
+		check := diagnosticCheck{Name: "provider_setup", Status: "pass", Detail: "An AI provider is delivering usage data."}
+		// One working provider must not hide another one the customer was told
+		// to report: a throttled Claude next to a working Codex is the case.
+		if others := failingProviderDiagnostics(setup.Providers); others != "" {
+			check.Detail += " Other providers need attention: " + others
+		}
+		return check
 	}
 	check := diagnosticCheck{
 		Name:       "provider_setup",
@@ -699,13 +705,44 @@ func providerDiagnosticCheck(setup codexbar.ProviderSetup) diagnosticCheck {
 	}
 	if len(setup.Providers) > 0 {
 		provider := setup.Providers[0]
-		check.Detail = provider.Detail
+		check.Detail = providerDiagnosticDetail(provider)
 		if provider.NextAction != "" {
 			check.NextAction = provider.NextAction
 		}
 		if provider.Status != "" {
 			check.ErrorCode = provider.Status
 		}
+		if others := failingProviderDiagnostics(setup.Providers[1:]); others != "" {
+			check.Detail += " Other providers need attention: " + others
+		}
 	}
 	return check
+}
+
+// providerDiagnosticDetail is the row's own sentence plus CodexBar's. The
+// engine sentence names every source that failed; without it a support report
+// only says which category the app chose.
+func providerDiagnosticDetail(provider codexbar.ProviderReadiness) string {
+	detail := provider.Detail
+	if reported := reportedProviderMessage(provider.Reported); reported != "" {
+		detail = strings.TrimSpace(detail + " Provider message: " + reported)
+	}
+	return detail
+}
+
+// failingProviderDiagnostics lists every switched-on provider that is not
+// delivering usage, so a support report covers each of them.
+func failingProviderDiagnostics(providers []codexbar.ProviderReadiness) string {
+	var parts []string
+	for _, provider := range providers {
+		if provider.Status == codexbar.ProviderReady || (provider.Enabled != nil && !*provider.Enabled) {
+			continue
+		}
+		label := provider.Label
+		if label == "" {
+			label = provider.ID
+		}
+		parts = append(parts, label+": "+providerDiagnosticDetail(provider))
+	}
+	return strings.Join(parts, " | ")
 }

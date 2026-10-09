@@ -198,15 +198,24 @@ export function SetupProviderRow({
 
 /** Keep CodexBar's exact guidance in the shared popup, without provider rules. */
 export function setupProviderIssueMessage({
-  health, label, detail, reportedMessage,
+  health, label, detail, nextAction, reportedMessage,
 }: {
   health: PreferenceHealthState;
   label: string;
   detail?: string;
+  nextAction?: string;
   reportedMessage?: string;
 }): string | null {
   const variant = setupProviderRowVariant(health);
   if (variant === "toggle" || variant === "checking") return null;
+  // A throttled check needs no repair, but CodexBar's sentence lists every
+  // source that failed beside the throttle and reads like a sign-in problem.
+  // The customer gets what happens next; the sentence stays one click away.
+  // A throttled provider with a saved reading is "stale" and carries the
+  // same guidance; a stale row without guidance keeps its generic text.
+  if (detail && (health === "rate_limited" || (health === "stale" && nextAction))) {
+    return [detail, nextAction].filter(Boolean).join(" ");
+  }
   // Its own text: a generic engine message hides that an update fixes it.
   const tooOld = health === "engine_incompatible";
   const fallbackMessage =

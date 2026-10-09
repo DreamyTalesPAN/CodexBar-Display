@@ -6,11 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"regexp"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
+
+	dashboardusage "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar/dashboard"
 )
 
 const minProviderSettingsVersion = "0.27.0"
@@ -27,6 +30,10 @@ var providerProbePerProvider = runtime.GOOS == "windows"
 // rerun, and a Mac Claude check through Claude Code reported "The provider
 // check timed out." while the provider was working.
 const perProviderProbeTimeout = 40 * time.Second
+
+// dashboardProbeBudget is the shared budget of the Windows serve /usage join.
+// A variable so tests can run the budget out quickly.
+var dashboardProbeBudget = perProviderProbeTimeout
 
 // ProviderCheckBudget is the longest a caller waits for one provider check:
 // the 5 s inventory read plus one probe. Request and refresh contexts that
@@ -64,6 +71,101 @@ func providerInventoryArgs() []string {
 		return []string{"config", "providers"}
 	}
 	return []string{"config", "providers", "--json"}
+}
+
+// fetchDashboardUsage is the serve-endpoint side of the same Windows join;
+// fetch asks the serve endpoint's /usage with the given query.
+//
+// On macOS, omitting the override selects the configured enabled set, just
+// like the dashboard. Win-CodexBar 0.60.3 instead defaults to Claude, and its
+// explicit "all" fetches every provider it knows, switched on or not: on
+// every collection it looked for browser cookies of providers the customer
+// never chose and started the Antigravity CLI (#554). So Windows asks for
+// exactly the providers the dashboard snapshot lists, through the same
+// bounded parallel probing and shared budget as the CLI join.
+//
+// A provider whose request failed or answered nothing decodable is left out,
+// so the caller shows it as unavailable; the others still arrive. Only when
+// no provider answered is the collection itself failed, so the collector
+// falls back as it does for a failed single request.
+//
+// Success is counted from decoded answers: a provider the shared budget never
+// started gets no request at all, so it counts as failed too, and so does an
+// answer without an entry for the provider asked for, such as [] (#500 review).
+func fetchDashboardUsage(ctx context.Context, providerIDs []string, fetch func(ctx context.Context, query string) ([]byte, error)) ([]dashboardusage.UsageProvider, error) {
+	decode := func(raw []byte) ([]dashboardusage.UsageProvider, error) {
+		decoded, err := dashboardusage.DecodeUsage(raw)
+		if err != nil {
+			return nil, fmt.Errorf("decode dashboard usage: %w", err)
+		}
+		return decoded, nil
+	}
+	if !providerProbePerProvider {
+		raw, err := fetch(ctx, "")
+		if err != nil {
+			return nil, err
+		}
+		return decode(raw)
+	}
+	settings := make([]ProviderSetting, 0, len(providerIDs))
+	for _, id := range providerIDs {
+		settings = append(settings, ProviderSetting{ID: id, Enabled: true})
+	}
+	var mu sync.Mutex
+	answered := make(map[string]struct{})
+	var firstErr error
+	joined, err := probeEnabledProviders(ctx, dashboardProbeBudget, settings, func(setting ProviderSetting, timeout time.Duration) ([]byte, error) {
+		requestCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		raw, err := fetch(requestCtx, "?provider="+url.QueryEscape(setting.ID))
+		var decoded []dashboardusage.UsageProvider
+		if err == nil {
+			decoded, err = decode(raw)
+		}
+		if err == nil {
+			if _, ok := dashboardusage.UsageForProvider(decoded, setting.ID); !ok {
+				err = fmt.Errorf("dashboard usage has no entry for provider %q", setting.ID)
+			}
+		}
+		if err != nil {
+			mu.Lock()
+			if firstErr == nil {
+				firstErr = err
+			}
+			mu.Unlock()
+			return nil, err
+		}
+		mu.Lock()
+		answered[setting.ID] = struct{}{}
+		mu.Unlock()
+		return json.Marshal(decoded)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(settings) > 0 && len(answered) == 0 {
+		if firstErr == nil {
+			firstErr = context.DeadlineExceeded
+		}
+		return nil, firstErr
+	}
+	failed := make(map[string]struct{})
+	for _, setting := range settings {
+		if _, ok := answered[setting.ID]; !ok {
+			failed[setting.ID] = struct{}{}
+		}
+	}
+	all, err := decode(joined)
+	if err != nil {
+		return nil, err
+	}
+	usage := all[:0]
+	for _, provider := range all {
+		if _, gone := failed[provider.Provider]; !gone {
+			usage = append(usage, provider)
+		}
+	}
+	return usage, nil
 }
 
 // runUsageAllEnabled asks for usage of every switched-on provider. The Mac

@@ -495,6 +495,24 @@ func TestProviderClassificationIgnores429InsideOtherNumbers(t *testing.T) {
 	}
 }
 
+// Second customer case on #500 (1.0.62): Claude Code signed in, the browser
+// import blocked by App-Bound Encryption, OAuth throttled, the CLI screen
+// without values. Waiting fixes it; signing in again does not.
+func TestClaudeThrottleBesideBlockedBrowserImportIsRateLimited(t *testing.T) {
+	detail := "Claude usage failed from all configured sources. " +
+		"Web: Chromium App-Bound Encryption is blocking automatic browser import. " +
+		"Paste the Cookie header manually, or use Firefox if that browser has the same login.; " +
+		"OAuth: OAuth error: Claude OAuth usage endpoint is rate limited. " +
+		"Retrying in about 198s; credentials were preserved.; " +
+		"CLI: Parse error: Claude CLI did not return usage data"
+	if got := classifyProviderError(detail); got != ProviderRateLimited {
+		t.Fatalf("readiness: expected %s, got %s", ProviderRateLimited, got)
+	}
+	if got := classifyProviderHealth(detail); got != ProviderHealthRateLimited {
+		t.Fatalf("health scan: expected %s, got %s", ProviderHealthRateLimited, got)
+	}
+}
+
 // The cached health scan speaks for a row whenever no fresh exact readiness
 // does, so it has to reach the same verdict. It used to read the bundled
 // "OAuth ... rate limited" message as auth_required and offer a sign-in the

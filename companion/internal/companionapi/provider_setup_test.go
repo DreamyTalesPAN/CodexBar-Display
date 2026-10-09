@@ -797,6 +797,52 @@ func TestProviderDiagnosticsNeverRecommendFixConnection(t *testing.T) {
 	}
 }
 
+// A support report must carry the engine sentence of every switched-on
+// provider that fails, also when another provider works (#500).
+func TestProviderDiagnosticsReportEveryFailingProvider(t *testing.T) {
+	throttled := codexbar.ProviderReadiness{
+		ID: "claude", Label: "Claude", Enabled: providerEnabled(true), Status: codexbar.ProviderRateLimited,
+		Detail:   "Claude received too many usage checks and is pausing them for a few minutes.",
+		Reported: "OAuth: Claude OAuth usage endpoint is rate limited. Retrying in about 198s.",
+	}
+	signedOut := codexbar.ProviderReadiness{
+		ID: "gemini", Label: "Gemini", Enabled: providerEnabled(true), Status: codexbar.ProviderAuthRequired,
+		Detail: "Sign in to Gemini.", Reported: "Gemini credentials not found at C:\\Users\\Patrick\\.gemini.",
+	}
+	off := codexbar.ProviderReadiness{
+		ID: "cursor", Label: "Cursor", Enabled: providerEnabled(false), Status: codexbar.ProviderAuthRequired,
+		Detail: "Sign in to Cursor.",
+	}
+	working := codexbar.ProviderReadiness{ID: "codex", Label: "Codex", Enabled: providerEnabled(true), Status: codexbar.ProviderReady}
+
+	ready := providerDiagnosticCheck(codexbar.ProviderSetup{
+		Status:    codexbar.ProviderReady,
+		Providers: []codexbar.ProviderReadiness{working, throttled, off, signedOut},
+	})
+	if ready.Status != "pass" {
+		t.Fatalf("a working provider keeps the check passing: %+v", ready)
+	}
+	for _, want := range []string{"Claude: " + throttled.Detail, "Retrying in about 198s", "Gemini: Sign in to Gemini.", "~\\.gemini"} {
+		if !strings.Contains(ready.Detail, want) {
+			t.Fatalf("ready report misses %q: %s", want, ready.Detail)
+		}
+	}
+	if strings.Contains(ready.Detail, "Cursor") || strings.Contains(ready.Detail, "Patrick") {
+		t.Fatalf("ready report names a switched-off provider or the account: %s", ready.Detail)
+	}
+
+	failing := providerDiagnosticCheck(codexbar.ProviderSetup{
+		Status:    "setup_required",
+		Providers: []codexbar.ProviderReadiness{signedOut, throttled},
+	})
+	if failing.ErrorCode != codexbar.ProviderAuthRequired || !strings.HasPrefix(failing.Detail, "Sign in to Gemini.") {
+		t.Fatalf("first provider stays the headline: %+v", failing)
+	}
+	if !strings.Contains(failing.Detail, "Claude: "+throttled.Detail) || !strings.Contains(failing.Detail, "Retrying in about 198s") {
+		t.Fatalf("second failing provider missing from the report: %s", failing.Detail)
+	}
+}
+
 func setupFixture(status string) codexbar.ProviderSetup {
 	setup := codexbar.ProviderSetup{
 		Status: "setup_required",

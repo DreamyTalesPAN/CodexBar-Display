@@ -210,7 +210,8 @@ export function ProviderList({
         pendingPreferenceIds.has(provider.id)) return [];
     const message = setupProviderIssueMessage({
       health: provider.health.state, label: provider.label,
-      detail: provider.health.message, reportedMessage: provider.health.reported,
+      detail: provider.health.message, nextAction: provider.health.nextAction,
+      reportedMessage: provider.health.reported,
     });
     if (!message) return [];
     const requested = requestedIssueId === provider.id;
