@@ -431,3 +431,21 @@ func TestStatusProbesOnlyTheLastKnownCablePort(t *testing.T) {
 		t.Fatalf("answer on the last port not counted: %+v", got)
 	}
 }
+
+// Right after a Companion restart no VibeTV port is known yet. Status must not
+// start the full serial search, which can outlast the UI timeout.
+func TestStatusSkipsTheFullCableSearchBeforeAPortIsKnown(t *testing.T) {
+	cfg := runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: "pair-token"}
+	server := newTestServer(t, cfg)
+	server.lastCablePort = func() string { return "" }
+	server.resolveCablePort = func(string, string) (string, error) {
+		t.Error("status started the full cable search")
+		return "", errors.New("searched")
+	}
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{DeviceID: cfg.DeviceID, Running: true, Target: cableDeviceTarget, ErrorCode: "device_not_found"}
+	}
+	if got := cableStatusForTest(t, server); got.Stream == nil {
+		t.Fatalf("status without a known port returned no stream: %+v", got)
+	}
+}

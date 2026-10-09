@@ -13253,6 +13253,9 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 		t.Fatalf("new server: %v", err)
 	}
 	server.probeCacheTime = 0
+	// Tests model a Companion that already knows the VibeTV's port from
+	// pairing or a frame. The restart case sets this to "" itself.
+	server.lastCablePort = func() string { return "/dev/mock" }
 	// Provider checks finish on their own goroutines and log when they do. A
 	// log saved from there lands in the temp directory while the test removes
 	// it; saving has its own tests in setup_events_test.go.

@@ -1476,17 +1476,20 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		// vanished port is current proof of absence even then.
 		cableAbsenceUnconfirmed = vanishedErr == nil && (updateRunning || s.themeInstallInFlight())
 		port := ""
+		// Status polls must answer within the UI timeout, so they only ask the
+		// port the VibeTV last used. Before the Companion knows that port (right
+		// after it starts), the daemon's own search finds the device and its
+		// first frame records the port; until then absence stays undecided.
+		lastPort := ""
+		if s.lastCablePort != nil {
+			lastPort = s.lastCablePort()
+		}
+		if vanishedErr == nil && lastPort == "" {
+			cableAbsenceUnconfirmed = true
+		}
 		if !cableAbsenceUnconfirmed && strings.TrimSpace(cfg.DeviceID) != "" {
 			portErr := vanishedErr
 			if portErr == nil {
-				// Status polls must answer within the UI timeout. Asking only the
-				// port the VibeTV last used keeps silent adapters from each
-				// costing a full hello window. Before the first frame no port
-				// is known yet, and the full search finds it.
-				lastPort := ""
-				if s.lastCablePort != nil {
-					lastPort = s.lastCablePort()
-				}
 				port, portErr = s.resolveCablePort(lastPort, cfg.DeviceID)
 			}
 			if portErr == nil {
