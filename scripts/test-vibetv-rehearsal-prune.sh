@@ -52,7 +52,9 @@ expect_gone() { [[ ! -e "$1" ]] || fail "kept, but should be removed: ${1#"$REHE
 make_run cold-20200928T100000Z backed
 make_run warm-20201001T100000Z backed
 make_run cold-20201002T100000Z empty
+[[ ! -e "$REHEARSAL_STATE_DIR/candidates" ]] || fail 'candidate cache unexpectedly exists before first run'
 output="$(rehearsal::prune_runs)"
+[[ "$output" == *'candidates/ 0B'* ]] || fail "missing candidate cache was not reported as 0B: $output"
 expect_kept "$runs/cold-20200928T100000Z"
 expect_kept "$runs/warm-20201001T100000Z"
 expect_kept "$runs/cold-20201002T100000Z"

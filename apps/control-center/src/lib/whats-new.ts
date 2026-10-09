@@ -11,17 +11,8 @@
 // flows read the ids from this file, so each stays a plain string on its
 // `id:` line.
 
-import {
-  Keyboard,
-  PanelsTopLeft,
-  Percent,
-  Repeat,
-  type LucideIcon,
-} from "lucide-react";
-
 export type WhatsNewEntry = {
   id: string;
-  icon: LucideIcon;
   title: string;
   /** "{shortcut}" stands for the keys of the shortcut for the next provider. */
   body: string;
@@ -34,34 +25,29 @@ export type WhatsNewEntry = {
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
     id: "theme-gauge",
-    icon: PanelsTopLeft,
     title: "New theme: Gauge",
     body: "A half ring that fills as you use your limit.",
     theme: "gauge",
   },
   {
     id: "theme-token-counter",
-    icon: PanelsTopLeft,
     title: "New theme: Token Counter",
     body: "The tokens of your session as one large number.",
     theme: "token-counter",
   },
   {
     id: "provider-shortcut",
-    icon: Keyboard,
     title: "Switch providers with a shortcut",
     body: "Press {shortcut} in any app to show the next provider on VibeTV.",
   },
   {
     id: "switch-providers-interval",
-    icon: Repeat,
     title: "Choose how often VibeTV switches",
     body: "In Automatic mode VibeTV can switch when your activity changes, or every 30 seconds, every minute or every 5 minutes.",
     inSettings: "settings-display-mode",
   },
   {
     id: "usage-display",
-    icon: Percent,
     title: "Show what is used or what is left",
     body: "Choose whether VibeTV shows how much of your limit you have used or how much remains.",
     inSettings: "settings-display",

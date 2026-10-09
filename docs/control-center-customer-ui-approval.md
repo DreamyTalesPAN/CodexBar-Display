@@ -6394,3 +6394,16 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No new control. Settings › Setup: below `Run setup again` stands `Connect this Mac to another VibeTV.` (`this computer` on Windows), the line that stood under the heading `Setup` before; it is no longer there. Below `Reset to factory settings` stands `VibeTV forgets its WiFi details, pairing, settings and themes.`, the first part of the sentence its dialog asks with. The two buttons stay side by side in one row, as Paul asked on 2026-10-08, each above its line, and the second with its line wraps below the first on a narrow window. A VibeTV on WiFi has no reset button and no line for it. Screen readers read each line with its button. The dialog `Reset VibeTV to factory settings?` and the setup question are unchanged.
 - Scope: the Setup block and the section heading helper in `apps/control-center/src/components/settings-screen.tsx`, the test in `settings-screen.test.tsx`, and this approval record. The customer-flow script asserts neither line. Checked with unit tests only; how the two columns sit and wrap was not seen in the built app.
 - What's new: none — helper lines only
+## 2026-10-09 — A cleaner What's new dialog
+
+- User approval: Paul shared a screenshot of the built dialog and asked for a cleaner design on 2026-10-09.
+- Approved customer-visible result: The same five updates appear as a compact, divided list. The large icon tiles are gone, titles and descriptions are smaller, and the links sit quietly beside their entries on wider windows. The heading reads `What's new in version <installed version>` when the version is known, saving a separate line. The footer and its Got it button stay visible when the list scrolls.
+- Scope: the What's new dialog and its entry data only. The wording, navigation, ordering, and notice behavior are unchanged.
+- What's new: none — this changes only the design of the existing notice
+
+## 2026-10-09 — Keep the What's new layout focused on desktop
+
+- User approval: Paul clarified that customers use the app on desktop, so the notice does not need a separate mobile design.
+- Approved customer-visible result: Links remain beside their entries and the footer keeps its standard desktop button layout. A short desktop window still scrolls only the update list.
+- Scope: layout classes in `apps/control-center/src/components/whats-new-dialog.tsx` and this approval record.
+- What's new: none — this simplifies the design of the existing notice
