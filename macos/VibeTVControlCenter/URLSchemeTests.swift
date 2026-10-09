@@ -567,23 +567,78 @@ func runURLSchemeTests() {
 
     var coldRouter = ControlCenterURLRouter()
     require(
-        !coldRouter.receive([URL(string: "vibetv://open-control-center")!]),
+        coldRouter.receive([URL(string: "vibetv://open-control-center")!]) == nil,
         "cold launch must queue the request until AppKit finishes launching"
     )
     require(coldRouter.hasPendingOpen, "cold launch request was not queued")
-    require(coldRouter.markReady(), "queued cold launch request was not delivered")
+    require(coldRouter.markReady() == "control-center", "queued cold launch request was not delivered")
     require(!coldRouter.hasPendingOpen, "delivered cold launch request was not cleared")
 
     var warmRouter = ControlCenterURLRouter()
-    require(!warmRouter.markReady(), "warm router should start without a queued request")
+    require(warmRouter.markReady() == nil, "warm router should start without a queued request")
     require(
-        warmRouter.receive([URL(string: "vibetv://open-control-center")!]),
+        warmRouter.receive([URL(string: "vibetv://open-control-center")!]) == "control-center",
         "warm launch request must open immediately"
     )
 
+    let themeLink = URL(string: "vibetv://install-theme/claude-creature")!
+    require(installThemeID(from: themeLink) == "claude-creature", "valid catalog theme link must be accepted")
+    require(
+        controlCenterPath(for: themeLink) == "control-center/install/claude-creature",
+        "theme link must target the local install route"
+    )
+    var coldThemeRouter = ControlCenterURLRouter()
+    require(coldThemeRouter.receive([themeLink]) == nil, "cold theme link must wait for the runtime")
+    require(
+        coldThemeRouter.markReady() == "control-center/install/claude-creature",
+        "cold theme link must keep its selected theme"
+    )
+    require(!coldThemeRouter.hasPendingOpen, "delivered theme link must be cleared")
+    require(
+        warmRouter.receive([themeLink]) == "control-center/install/claude-creature",
+        "warm theme link must navigate immediately"
+    )
+    var queuedRouter = ControlCenterURLRouter()
+    _ = queuedRouter.receive([URL(string: "vibetv://open-control-center")!])
+    _ = queuedRouter.receive([themeLink])
+    require(
+        queuedRouter.markReady() == "control-center/install/claude-creature",
+        "the latest cold link must keep its selected theme"
+    )
+    require(
+        installThemeID(from: URL(string: "vibetv://install-theme/\(String(repeating: "a", count: 64))")!) != nil,
+        "the maximum valid theme ID must be accepted"
+    )
+    for rejectedThemeLink in [
+        "vibetv://install-theme",
+        "vibetv://install-theme/",
+        "vibetv://install-theme/clippy/",
+        "vibetv://install-theme/clippy/extra",
+        "vibetv://install-theme/Clippy",
+        "vibetv://install-theme/a",
+        "vibetv://install-theme/\(String(repeating: "a", count: 65))",
+        "vibetv://install-theme/claude_creature",
+        "vibetv://install-theme/-clippy",
+        "vibetv://install-theme/clippy-",
+        "vibetv://install-theme/clippy--dark",
+        "vibetv://install-theme/%63lippy",
+        "vibetv://install-theme/clippy%2Fextra",
+        "vibetv://install-theme/clippy?source=shop",
+        "vibetv://install-theme/clippy#install",
+        "vibetv://user@install-theme/clippy",
+        "vibetv://install-theme:42/clippy",
+        "vibetv://install-theme/clippy/../synthwave",
+        "https://install-theme/clippy",
+    ] {
+        require(
+            installThemeID(from: URL(string: rejectedThemeLink)!) == nil,
+            "malformed theme link must not enter the local app: \(rejectedThemeLink)"
+        )
+    }
+
     var invalidRouter = ControlCenterURLRouter()
     require(
-        !invalidRouter.receive([URL(string: "vibetv://install-theme")!]),
+        invalidRouter.receive([URL(string: "vibetv://install-theme")!]) == nil,
         "invalid URL must not open the Control Center"
     )
     require(!invalidRouter.hasPendingOpen, "invalid URL must not be queued")

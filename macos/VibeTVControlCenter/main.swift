@@ -15,6 +15,7 @@ private let runtimeEndpointFileName = "runtime-endpoint.json"
 private let nativeControlCenterUserAgentPrefix = "VibeTVControlCenter/"
 private let controlCenterURLScheme = "vibetv"
 private let controlCenterURLHost = "open-control-center"
+private let installThemeURLHost = "install-theme"
 private let restartControlCenterURLHost = "restart-control-center"
 private let repairRuntimeURLHost = "repair-runtime"
 private let checkForUpdatesURLHost = "check-for-updates"
@@ -71,6 +72,36 @@ func isOpenControlCenterURL(_ url: URL) -> Bool {
         return false
     }
     return true
+}
+
+func installThemeID(from url: URL) -> String? {
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          components.scheme?.lowercased() == controlCenterURLScheme,
+          components.host?.lowercased() == installThemeURLHost,
+          components.user == nil,
+          components.password == nil,
+          components.port == nil,
+          components.query == nil,
+          components.fragment == nil,
+          components.percentEncodedPath.hasPrefix("/") else {
+        return nil
+    }
+    let themeID = String(components.percentEncodedPath.dropFirst())
+    guard (3...64).contains(themeID.utf8.count),
+          themeID.range(
+              of: #"^[a-z0-9]+(?:-[a-z0-9]+)*$"#,
+              options: .regularExpression
+          ) != nil else {
+        return nil
+    }
+    return themeID
+}
+
+func controlCenterPath(for url: URL) -> String? {
+    if let themeID = installThemeID(from: url) {
+        return "control-center/install/\(themeID)"
+    }
+    return isOpenControlCenterURL(url) ? "control-center" : nil
 }
 
 func isCheckForUpdatesURL(_ url: URL) -> Bool {
@@ -245,24 +276,22 @@ func isApprovedCodexBarDownloadURL(_ url: URL) -> Bool {
 
 struct ControlCenterURLRouter {
     private(set) var isReady = false
-    private(set) var hasPendingOpen = false
+    private(set) var pendingPath: String?
+    var hasPendingOpen: Bool { pendingPath != nil }
 
-    mutating func receive(_ urls: [URL]) -> Bool {
-        guard urls.contains(where: isOpenControlCenterURL) else {
-            return false
-        }
+    mutating func receive(_ urls: [URL]) -> String? {
+        guard let path = urls.compactMap(controlCenterPath).first else { return nil }
         guard isReady else {
-            hasPendingOpen = true
-            return false
+            pendingPath = path
+            return nil
         }
-        return true
+        return path
     }
 
-    mutating func markReady() -> Bool {
+    mutating func markReady() -> String? {
         isReady = true
-        let shouldOpen = hasPendingOpen
-        hasPendingOpen = false
-        return shouldOpen
+        defer { pendingPath = nil }
+        return pendingPath
     }
 }
 
@@ -1367,6 +1396,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private var installationStatusDetail = "Preparing the Mac App."
     private var installationStatusFailed = false
     private var activeRuntimeOrigin = URL(string: defaultRuntimeOriginString)!
+    private var controlCenterPath = "control-center"
 #if canImport(Sparkle)
     private lazy var updaterController = SPUStandardUpdaterController(
         startingUpdater: true,
@@ -1435,7 +1465,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             openManagedCodexBar()
             return
         }
-        if urlRouter.receive(urls) {
+        if let path = urlRouter.receive(urls) {
+            controlCenterPath = path
+            if installationReady, webView != nil {
+                loadControlCenter()
+            }
             presentControlCenter()
         }
     }
@@ -1509,7 +1543,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 self.codexBarRepairRequired = false
                 self.installationReady = true
                 self.installationStatus = nil
-                _ = self.urlRouter.markReady()
+                if let path = self.urlRouter.markReady() {
+                    self.controlCenterPath = path
+                }
                 self.presentControlCenter()
             case .codexBarRepairRequired:
                 self.codexBarRepairRequired = true
@@ -2819,7 +2855,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private func loadControlCenter(
         cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy
     ) {
-        let url = activeRuntimeOrigin.appendingPathComponent("control-center")
+        let url = activeRuntimeOrigin.appendingPathComponent(controlCenterPath)
         activeNavigation = webView?.load(
             URLRequest(
                 url: url,
