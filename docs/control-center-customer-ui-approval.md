@@ -5444,3 +5444,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul asked for issues #577 and #578 to be fixed in this pull request, because merging it releases the whole feature.
 - Approved customer-visible result: The OpenAI key a customer connected and OpenAI accepted is kept across restarts of the app: in the login keychain on the Mac, and on Windows in a file only that Windows user can decrypt. A key that was not verified, was replaced or was disconnected is not kept. The agreement to send prompts to OpenAI is remembered with it, so after a restart Create works without entering anything again; disconnecting clears both. This replaces the earlier rule that the key must be entered again after a restart. On VibeTV, text and usage bars placed over an animated figure stay visible while the figure moves; this needs the firmware of this pull request.
+
+
+## 2026-10-09 — Layer order and honest disconnect
+
+- User approval: Paul asked for this pull request to release the whole feature and for the review findings to be fixed where relevant.
+- Approved customer-visible result: Details for one selected element offers Bring forward and Send backward, so a shape added later can be put behind a label or bar; the picture and its attached motion keep their place at the back. If the kept OpenAI key cannot be removed, disconnecting or replacing it reports a failure instead of claiming the key is gone.

@@ -151,11 +151,16 @@ func (a *aiThemeState) rememberAcross(durable SecretStore) {
 	}
 }
 
-// Called with the lock held.
-func (a *aiThemeState) forgetDurable() {
-	if a.durable != nil {
-		_ = a.durable.Delete("openai")
+// Called with the lock held. A key that could not be removed would come back
+// after the next restart, so that failure is reported.
+func (a *aiThemeState) forgetDurable() error {
+	if a.durable == nil {
+		return nil
 	}
+	if err := a.durable.Delete("openai"); err != nil && !errors.Is(err, ErrSecretNotFound) {
+		return err
+	}
+	return nil
 }
 
 func newAIThemeState(store SecretStore, client *http.Client) *aiThemeState {
@@ -284,12 +289,14 @@ func (s *aiThemeServer) handleAIThemeCredential(w http.ResponseWriter, r *http.R
 			return
 		}
 		s.aiTheme.mu.Lock()
-		err := s.aiTheme.store.Set("openai", key)
+		// The key kept so far is replaced; the new one is kept once it is verified.
+		err := s.aiTheme.forgetDurable()
+		if err == nil {
+			err = s.aiTheme.store.Set("openai", key)
+		}
 		if err == nil {
 			s.aiTheme.verificationRequired = true
 		}
-		// The key kept so far is replaced; the new one is kept once it is verified.
-		s.aiTheme.forgetDurable()
 		s.aiTheme.mu.Unlock()
 		if err != nil {
 			writeAIThemeError(w, http.StatusInternalServerError, "credential_store_failed")
@@ -298,9 +305,11 @@ func (s *aiThemeServer) handleAIThemeCredential(w http.ResponseWriter, r *http.R
 		writeJSON(w, http.StatusOK, map[string]any{"configured": true})
 	case http.MethodDelete:
 		s.aiTheme.mu.Lock()
-		err := s.aiTheme.store.Delete("openai")
-		s.aiTheme.verificationRequired = true
-		s.aiTheme.forgetDurable()
+		err := s.aiTheme.forgetDurable()
+		if err == nil {
+			err = s.aiTheme.store.Delete("openai")
+			s.aiTheme.verificationRequired = true
+		}
 		s.aiTheme.mu.Unlock()
 		if err != nil && !errors.Is(err, ErrSecretNotFound) {
 			writeAIThemeError(w, http.StatusInternalServerError, "credential_delete_failed")

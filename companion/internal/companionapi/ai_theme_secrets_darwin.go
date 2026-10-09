@@ -46,8 +46,11 @@ func (k keychainAIThemeSecrets) Set(provider, key string) error {
 }
 
 func (k keychainAIThemeSecrets) Delete(provider string) error {
-	if exec.Command("/usr/bin/security", "delete-generic-password", "-s", k.service, "-a", provider).Run() != nil {
+	err := exec.Command("/usr/bin/security", "delete-generic-password", "-s", k.service, "-a", provider).Run()
+	// 44 is the tool's "item could not be found"; anything else left the key in place.
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && exit.ExitCode() == 44 {
 		return ErrSecretNotFound
 	}
-	return nil
+	return err
 }

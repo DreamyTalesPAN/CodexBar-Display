@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
+  BringToFront,
   Download,
   Settings,
   Type,
@@ -20,6 +21,7 @@ import {
   X,
   Plus,
   Redo2,
+  SendToBack,
   Trash2,
   Undo2,
 } from "lucide-react";
@@ -39,7 +41,7 @@ import {
 } from "@/components/ui/dialog";
 import { EditableThemePreview } from "./editable-theme-preview";
 import { friendlyElementName } from "./theme-studio-customer-labels";
-import { createDesignElement, isTypingTarget, LIVE_READINGS, pinnedElement, readingKey, setReading, type AddElementKind } from "./design-controls";
+import { createDesignElement, isTypingTarget, LIVE_READINGS, moveLayer, pinnedElement, readingKey, setReading, type AddElementKind } from "./design-controls";
 import { ColorField, NumberField } from "./editor-fields";
 import {
   clampCompanionSize,
@@ -1268,6 +1270,26 @@ export function AIThemeStudioScreen({
                         );
                       })}
                     </div>
+                    {selected.length === 1 ? (
+                      <div className="flex gap-1" aria-label="Layer order">
+                        {([[BringToFront, 1, "Bring forward"], [SendToBack, -1, "Send backward"]] as const).map(([Symbol, step, label]) => (
+                          <Button
+                            key={label}
+                            size="icon"
+                            variant="outline"
+                            title={label}
+                            aria-label={label}
+                            disabled={!moveLayer([...document.spec.primitives], index, index + step)}
+                            onClick={() => {
+                              mutate((d) => { moveLayer(d.spec.primitives, index, index + step); });
+                              setSelected([index + step]);
+                            }}
+                          >
+                            <Symbol />
+                          </Button>
+                        ))}
+                      </div>
+                    ) : null}
                     <Button variant="ghost" onClick={remove}>
                       <Trash2 />
                       Remove

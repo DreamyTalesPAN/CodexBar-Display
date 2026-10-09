@@ -56,8 +56,9 @@ func (p protectedFileAIThemeSecrets) Set(provider, key string) error {
 }
 
 func (p protectedFileAIThemeSecrets) Delete(provider string) error {
-	if os.Remove(p.path(provider)) != nil {
+	err := os.Remove(p.path(provider))
+	if os.IsNotExist(err) {
 		return ErrSecretNotFound
 	}
-	return nil
+	return err
 }

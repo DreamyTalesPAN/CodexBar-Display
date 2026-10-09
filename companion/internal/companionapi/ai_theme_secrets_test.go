@@ -1,6 +1,7 @@
 package companionapi
 
 import (
+	"errors"
 	"net/http"
 	"path"
 	"strings"
@@ -51,5 +52,25 @@ func TestAIThemeKeepsOnlyAVerifiedKeyAcrossRestarts(t *testing.T) {
 	aiCall(s, "DELETE", "/v1/ai-theme/providers/openai/credential", "")
 	if _, err := durable.Get("openai"); err == nil || ready(start()) {
 		t.Fatal("a disconnected key was still kept")
+	}
+}
+
+type stuckAIThemeSecrets struct{ memoryAIThemeSecrets }
+
+func (*stuckAIThemeSecrets) Delete(string) error { return errors.New("locked") }
+
+func TestAIThemeDoesNotReportAKeyAsGoneThatItCouldNotRemove(t *testing.T) {
+	durable := &stuckAIThemeSecrets{}
+	_ = durable.Set("openai", "fixture-key-kept-one")
+	s := aiTestServer(t, aiRoundTrip(func(r *http.Request) (*http.Response, error) { return aiResponse(200, `{}`), nil }))
+	s.aiTheme.rememberAcross(durable)
+	if w := aiCall(s, "DELETE", "/v1/ai-theme/providers/openai/credential", ""); w.Code == 200 {
+		t.Fatal("disconnect reported success while the key is still kept")
+	}
+	if w := aiCall(s, "PUT", "/v1/ai-theme/providers/openai/credential", `{"apiKey":"fixture-key-new-one"}`); w.Code == 200 {
+		t.Fatal("replacement accepted while the old key would come back")
+	}
+	if !strings.Contains(aiCall(s, "GET", "/v1/ai-theme/capabilities", "").Body.String(), `"configured":true`) {
+		t.Fatal("the key that is still kept must stay visible as connected")
 	}
 }
