@@ -338,6 +338,22 @@ func TestFetchDashboardUsageFailsWhenBudgetSkipsTheRest(t *testing.T) {
 	}
 }
 
+// A request that decodes but has no entry for the provider asked for, such as
+// [], did not answer that provider. When every request does that, the
+// collection must fail (#500 review).
+func TestFetchDashboardUsageFailsWhenNoAnswerMatchesTheProvider(t *testing.T) {
+	previous := providerProbePerProvider
+	providerProbePerProvider = true
+	t.Cleanup(func() { providerProbePerProvider = previous })
+
+	usage, err := fetchDashboardUsage(context.Background(), []string{"claude", "codex"}, func(ctx context.Context, query string) ([]byte, error) {
+		return []byte(`[]`), nil
+	})
+	if err == nil {
+		t.Fatalf("no request answered its provider, the collection must fail: usage=%+v", usage)
+	}
+}
+
 func newDashboardFetchTestServer(t *testing.T, snapshot string) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()

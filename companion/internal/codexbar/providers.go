@@ -90,7 +90,8 @@ func providerInventoryArgs() []string {
 // falls back as it does for a failed single request.
 //
 // Success is counted from decoded answers: a provider the shared budget never
-// started gets no request at all, so it counts as failed too (#500 review).
+// started gets no request at all, so it counts as failed too, and so does an
+// answer without an entry for the provider asked for, such as [] (#500 review).
 func fetchDashboardUsage(ctx context.Context, providerIDs []string, fetch func(ctx context.Context, query string) ([]byte, error)) ([]dashboardusage.UsageProvider, error) {
 	decode := func(raw []byte) ([]dashboardusage.UsageProvider, error) {
 		decoded, err := dashboardusage.DecodeUsage(raw)
@@ -120,6 +121,11 @@ func fetchDashboardUsage(ctx context.Context, providerIDs []string, fetch func(c
 		var decoded []dashboardusage.UsageProvider
 		if err == nil {
 			decoded, err = decode(raw)
+		}
+		if err == nil {
+			if _, ok := dashboardusage.UsageForProvider(decoded, setting.ID); !ok {
+				err = fmt.Errorf("dashboard usage has no entry for provider %q", setting.ID)
+			}
 		}
 		if err != nil {
 			mu.Lock()
