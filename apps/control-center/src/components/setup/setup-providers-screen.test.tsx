@@ -158,6 +158,28 @@ describe("SetupProvidersScreen", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("offers the sign-in on a stale row whose live check waits for one", () => {
+    // 09.10. on the Mac: Claude's saved cookie expired while an earlier
+    // reading was still saved, and the stale row offered nothing to click.
+    const stale = provider({ providerId: "claude", label: "Claude", health: "stale",
+      message: "Live usage is unavailable; the last successful reading is still saved." });
+    const signedOut = { ...stale, health: { ...stale.health, signInState: "auth_required" } };
+    const onOpenSignIn = vi.fn();
+    const onCheckAgain = vi.fn();
+    const props = { usage, onContinue: vi.fn(), onCheckAgain, onOpenSignIn, onToggle: vi.fn(),
+      pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
+    const { rerender } = renderDom(<SetupProvidersScreen {...props} providers={[signedOut]} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Sign in to Claude" }));
+    expect(onOpenSignIn).toHaveBeenCalledWith(signedOut);
+    fireEvent.click(screen.getByRole("button", { name: "Check Claude again" }));
+    expect(onCheckAgain).toHaveBeenCalledWith(signedOut);
+    // A stale row with no sign-in behind it recovers by itself.
+    rerender(<SetupProvidersScreen {...props} providers={[stale]} />);
+    expect(screen.queryByRole("button", { name: "Sign in to Claude" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Check Claude again" })).toBeNull();
+  });
+
   it("queues simultaneous provider failures and lets a dismissed message be opened again", () => {
     const second = provider({ providerId: "openai", label: "OpenAI", health: "unavailable", message: "Second failure" });
     renderDom(<SetupProvidersScreen usage={usage} providers={[{ ...copilot, value: true }, second]}

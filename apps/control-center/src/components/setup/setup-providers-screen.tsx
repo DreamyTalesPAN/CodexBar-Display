@@ -69,6 +69,20 @@ export const SIGN_IN_PROVIDER_IDS = [
 ];
 
 /**
+ * The state the row acts on. A stale row keeps its saved reading, but when
+ * its live check only waits for a sign-in it offers the same sign-in and
+ * "Check again" as a signed-out row: a cookie that expires while a reading is
+ * still saved must not leave the customer with nothing to click.
+ */
+export function providerRowHealthState(
+  health: Pick<ProviderItem["health"], "state" | "signInState">,
+): string {
+  return health.state === "stale" && health.signInState
+    ? health.signInState
+    : health.state;
+}
+
+/**
  * Health states in which the row offers to start the provider's sign-in.
  *
  * Only the four in SIGN_IN_PROVIDER_IDS have a sign-in the Companion can
@@ -79,7 +93,8 @@ export const SIGN_IN_PROVIDER_IDS = [
 export function setupProviderOffersSignIn(
   provider: Pick<ProviderItem, "health" | "providerId">,
 ): boolean {
-  const { state, signInUrl } = provider.health;
+  const state = providerRowHealthState(provider.health);
+  const { signInUrl } = provider.health;
   // The account lost access to this provider: its own message carries the
   // migration path, and every sign-in here ends on the same refusal.
   if (state === "unsupported") {
@@ -105,7 +120,7 @@ export function setupProviderOffersSignIn(
 export function setupProviderNeedsOwnApp(
   provider: Pick<ProviderItem, "health" | "providerId">,
 ): boolean {
-  const { state } = provider.health;
+  const state = providerRowHealthState(provider.health);
   return (
     (state === "auth_required" || state === "setup_required") &&
     !SIGN_IN_PROVIDER_IDS.includes(provider.providerId.trim().toLowerCase())
@@ -247,7 +262,7 @@ export function ProviderList({
               provider.value && provider.health.state === "healthy" &&
               !setupProviderCanDisplay(provider, usage)
                 ? "checking"
-                : provider.health.state
+                : providerRowHealthState(provider.health)
             }
             key={provider.id}
             label={provider.label}

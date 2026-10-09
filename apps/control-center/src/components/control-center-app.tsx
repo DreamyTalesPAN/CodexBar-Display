@@ -106,6 +106,7 @@ import { buildAiFixPrompt } from "./setup/setup-ai-prompt";
 import type { SetupConnectSteps } from "./setup/setup-connect";
 import { displayPreviewsFor } from "./setup/setup-display-previews";
 import {
+  providerRowHealthState,
   setupProviderCanDisplay,
 } from "./setup/setup-providers-screen";
 import {
@@ -3427,9 +3428,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         providerPreferencesRef.current?.some(
           (preference) =>
             preference.providerId?.trim().toLowerCase() === providerId &&
-            (preference.health?.state === "browser_sign_in_required" ||
-              preference.health?.state === "auth_required" ||
-              preference.health?.state === "setup_required"),
+            preference.health !== undefined &&
+            ["browser_sign_in_required", "auth_required", "setup_required"].includes(
+              providerRowHealthState(preference.health),
+            ),
         ) ?? false;
       const tick = async () => {
         timer = null;
