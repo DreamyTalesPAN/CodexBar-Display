@@ -151,7 +151,9 @@ func TestDisplayLimitsPairWithoutCountdownsStaysLive(t *testing.T) {
 	}
 }
 
-func TestDisplayLimitsPairStopsAStaleProvidersCountdown(t *testing.T) {
+// A retained reading must not sit beside a fresh one as if it were live: the
+// fresh provider is shown alone until both are current again.
+func TestDisplayLimitsPairLeavesOutAStaleProvider(t *testing.T) {
 	basis := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
 	claude := displayLimitsClaude(basis)
 	codex := displayLimitsCodex(basis)
@@ -159,11 +161,8 @@ func TestDisplayLimitsPairStopsAStaleProvidersCountdown(t *testing.T) {
 	display := &runtimeconfig.ProviderDisplayConfig{Mode: "pair", ProviderIDs: []string{"codex", "claude"}}
 
 	got := applyDisplayLimits(claude.Frame, []codexbar.ParsedFrame{codex, claude}, display, basis).Normalize()
-	if got.UsageWindows[0].ResetSec != 0 || got.UsageWindows[0].Percent != 32 || got.UsageWindows[0].Pace.State != "" {
-		t.Fatalf("stale provider window=%+v want its percent without countdown or pace", got.UsageWindows[0])
-	}
-	if got.UsageWindows[1].Label != "Claude Session" || got.ResetSource != "claude:session" {
-		t.Fatalf("second window=%+v source=%q", got.UsageWindows[1], got.ResetSource)
+	if got.Provider != "claude" || got.Label != "Claude" || len(got.UsageWindows) != 3 || got.UsageWindows[0].Label != "Session" {
+		t.Fatalf("pair with a stale member=%+v want Claude alone", got)
 	}
 }
 

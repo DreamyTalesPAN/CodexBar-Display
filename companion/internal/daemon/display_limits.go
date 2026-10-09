@@ -68,8 +68,10 @@ func withVisibleUsageWindows(frame protocol.Frame, display *runtimeconfig.Provid
 // providers into one frame, first provider first, labelled with the provider
 // ("Claude Weekly"). Each provider was collected at its own time, so its
 // countdown is first expressed as of basisAt, the frame's own basis. When one
-// of the two has nothing to show, VibeTV shows the other the way One provider
-// would rather than half a pair.
+// of the two has nothing current to show, VibeTV shows the other the way One
+// provider would rather than half a pair. A retained reading counts as
+// nothing current: the frame's freshness is the selected provider's, so an old
+// percent beside it would pass for a live one.
 func pairDisplayFrame(selected protocol.Frame, providers []codexbar.ParsedFrame, display *runtimeconfig.ProviderDisplayConfig, basisAt time.Time) protocol.Frame {
 	windows := make([]protocol.UsageWindow, 0, 2)
 	ids := make([]string, 0, 2)
@@ -77,7 +79,7 @@ func pairDisplayFrame(selected protocol.Frame, providers []codexbar.ParsedFrame,
 	resetSource := ""
 	for _, providerID := range display.ProviderIDs {
 		provider, ok := parsedProviderByID(providers, providerID)
-		if !ok || provider.Frame.UsageUnavailable {
+		if !ok || provider.Stale || provider.Frame.UsageUnavailable {
 			continue
 		}
 		id := normalizeProviderKey(provider.Frame.Provider)
@@ -89,10 +91,7 @@ func pairDisplayFrame(selected protocol.Frame, providers []codexbar.ParsedFrame,
 			continue
 		}
 		window := visible[0]
-		if provider.Stale {
-			// A countdown the collector cannot vouch for must not tick.
-			window.ResetSec = 0
-		} else if window.ResetSec > 0 && !provider.CollectedAt.IsZero() && !basisAt.IsZero() {
+		if window.ResetSec > 0 && !provider.CollectedAt.IsZero() && !basisAt.IsZero() {
 			window.ResetSec -= int64(basisAt.Sub(provider.CollectedAt) / time.Second)
 			if window.ResetSec < 0 {
 				window.ResetSec = 0
