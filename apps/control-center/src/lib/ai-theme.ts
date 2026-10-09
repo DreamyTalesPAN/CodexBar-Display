@@ -132,12 +132,14 @@ export async function deleteAIThemeCredential(
   });
 }
 
+// Resolves to whether the app could keep the verified key for after a restart.
 export async function verifyAIThemeCredential(
   provider: AIThemeProviderId,
-): Promise<void> {
-  await aiRequest(`/v1/ai-theme/providers/${provider}/verify`, {
+): Promise<boolean> {
+  const result = await aiRequest<{ keptAcrossRestarts?: boolean }>(`/v1/ai-theme/providers/${provider}/verify`, {
     method: "POST",
   });
+  return result?.keptAcrossRestarts === true;
 }
 
 export async function generateAIThemeConcept(

@@ -10315,7 +10315,7 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/capabilities")) return route.fulfill({ json: { enabled: true, providers: [{ id: "openai", configured, verificationRequired: configured && !verified }] } });
     if (path.endsWith("/credential")) { configured = true; return route.fulfill({ json: { configured } }); }
-    if (path.endsWith("/verify")) { verified = true; return route.fulfill({ json: { verified } }); }
+    if (path.endsWith("/verify")) { verified = true; return route.fulfill({ json: { verified, keptAcrossRestarts: true } }); }
     plans++;
     assert(verified, "Generation must wait for credential verification");
     assert(request.postDataJSON().layout.length > 0, "Native editing must pass the opened document to AI");

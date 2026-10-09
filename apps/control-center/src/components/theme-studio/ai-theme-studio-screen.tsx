@@ -228,10 +228,15 @@ export function AIThemeStudioScreen({
     }),
     [document],
   );
-  const validation = useMemo(
-    () => validateThemeSpec(document.spec, document.assets, document.usage),
-    [document],
-  );
+  const validation = useMemo(() => {
+    const result = validateThemeSpec(document.spec, document.assets, document.usage);
+    // VibeTV draws one animated figure at a time: where two overlap, each new
+    // frame of one wipes the other.
+    const figures = document.spec.primitives.filter((p) => isCompanionSprite(p.assetPath));
+    const overlap = figures.some((a, i) => figures.slice(i + 1).some((b) =>
+      a.x < b.x + (b.width || 0) && b.x < a.x + (a.width || 0) && a.y < b.y + (b.height || 0) && b.y < a.y + (a.height || 0)));
+    return overlap ? { ...result, errors: [...result.errors, "Move the two animated figures apart. VibeTV cannot show them overlapping."] } : result;
+  }, [document]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -664,9 +669,9 @@ export function AIThemeStudioScreen({
         await saveAIThemeCredential("openai", key);
         setConfigured("pending");
       }
-      await verifyAIThemeCredential("openai");
+      const kept = await verifyAIThemeCredential("openai");
       setConfigured(true);
-      setStatus("AI is ready.");
+      setStatus(kept || !nativeInstall ? "AI is ready." : copyForHost("AI is ready. The key could not be saved on this Mac, so it is needed again after the Mac App restarts.", windowsHost));
       setPanel(null);
       if (panel === "setup" && prompt.trim()) await generate(true);
     } catch (e) {

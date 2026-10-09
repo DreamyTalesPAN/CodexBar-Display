@@ -347,11 +347,13 @@ func (s *aiThemeServer) handleAIThemeVerify(w http.ResponseWriter, r *http.Reque
 	s.aiTheme.mu.Lock()
 	current, currentErr := s.aiTheme.store.Get("openai")
 	unchanged := currentErr == nil && current == key
+	// A key that could not be kept still works until the app restarts; the
+	// answer says so instead of promising more.
+	kept := s.aiTheme.durable == nil
 	if unchanged {
 		s.aiTheme.verificationRequired = false
 		if s.aiTheme.durable != nil {
-			// Not being able to keep the key only means asking for it again later.
-			_ = s.aiTheme.durable.Set("openai", key)
+			kept = s.aiTheme.durable.Set("openai", key) == nil
 		}
 	}
 	s.aiTheme.mu.Unlock()
@@ -359,7 +361,7 @@ func (s *aiThemeServer) handleAIThemeVerify(w http.ResponseWriter, r *http.Reque
 		writeAIThemeError(w, http.StatusConflict, "credential_changed")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"verified": true})
+	writeJSON(w, http.StatusOK, map[string]any{"verified": true, "keptAcrossRestarts": s.aiTheme.durable != nil && kept})
 }
 
 // Reports a failure to the client and returns false when the key cannot use the model.

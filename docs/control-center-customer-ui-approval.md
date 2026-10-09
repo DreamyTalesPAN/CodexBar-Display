@@ -5450,3 +5450,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul asked for this pull request to release the whole feature and for the review findings to be fixed where relevant.
 - Approved customer-visible result: Details for one selected element offers Bring forward and Send backward, so a shape added later can be put behind a label or bar; the picture and its attached motion keep their place at the back. If the kept OpenAI key cannot be removed, disconnecting or replacing it reports a failure instead of claiming the key is gone.
+
+
+## 2026-10-09 — Overlapping figures and a key that could not be kept
+
+- User approval: Paul asked for this pull request to release the whole feature and for the review findings to be fixed where relevant.
+- Approved customer-visible result: A design in which the two animated figures overlap cannot be saved or sent; the editor says "Move the two animated figures apart. VibeTV cannot show them overlapping." When OpenAI accepted the key but the app could not save it, the editor says "AI is ready. The key could not be saved on this Mac, so it is needed again after the Mac App restarts." (on Windows with the app's Windows wording) instead of only "AI is ready."

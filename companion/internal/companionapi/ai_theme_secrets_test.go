@@ -59,6 +59,31 @@ type stuckAIThemeSecrets struct{ memoryAIThemeSecrets }
 
 func (*stuckAIThemeSecrets) Delete(string) error { return errors.New("locked") }
 
+type readOnlyAIThemeSecrets struct{ memoryAIThemeSecrets }
+
+func (*readOnlyAIThemeSecrets) Set(string, string) error { return errors.New("locked") }
+
+func TestAIThemeSaysWhenAVerifiedKeyCouldNotBeKept(t *testing.T) {
+	ok := aiRoundTrip(func(r *http.Request) (*http.Response, error) {
+		return aiResponse(200, `{"id":"`+path.Base(r.URL.Path)+`"}`), nil
+	})
+	for name, tc := range map[string]struct {
+		durable SecretStore
+		want    string
+	}{
+		"kept":       {&memoryAIThemeSecrets{}, `"keptAcrossRestarts":true`},
+		"not kept":   {&readOnlyAIThemeSecrets{}, `"keptAcrossRestarts":false`},
+		"no keeping": {nil, `"keptAcrossRestarts":false`},
+	} {
+		s := aiTestServer(t, ok)
+		s.aiTheme.rememberAcross(tc.durable)
+		aiCall(s, "PUT", "/v1/ai-theme/providers/openai/credential", `{"apiKey":"fixture-key-first-one"}`)
+		if w := aiCall(s, "POST", "/v1/ai-theme/providers/openai/verify", ""); w.Code != 200 || !strings.Contains(w.Body.String(), tc.want) {
+			t.Fatalf("%s: %d %s", name, w.Code, w.Body.String())
+		}
+	}
+}
+
 func TestAIThemeDoesNotReportAKeyAsGoneThatItCouldNotRemove(t *testing.T) {
 	durable := &stuckAIThemeSecrets{}
 	_ = durable.Set("openai", "fixture-key-kept-one")
