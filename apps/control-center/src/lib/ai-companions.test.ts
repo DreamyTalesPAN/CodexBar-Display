@@ -129,6 +129,21 @@ describe("flexible picture layouts",()=>{
     expect(result.spec.primitives[2].assetPath).toBe('/themes/u/ai-pet-1.cba');
   }
  });
+ it('keeps manual shapes behind usage readouts when resizing the picture',()=>{
+  const current=fixture(1).candidate();
+  const shape={type:'rect' as const,x:8,y:130,width:225,height:90,color:'#123456'};
+  current.spec.primitives.splice(3,0,shape);
+  const f=fixture(1);f.concept.artHeight=240;
+  const fullscreen=buildAIThemeCompanionCandidateFromRGBA(f.concept,new Uint8ClampedArray(240*240*4).fill(255),f.frames);
+  const expanded=applyAIThemeCandidate({...current,usage:'live'},fullscreen,'auto');
+  const reduced=applyAIThemeCandidate(expanded,fixture(1).candidate(),'auto');
+  for(const result of [expanded,reduced]) {
+    const shapeIndex=result.spec.primitives.findIndex(p=>p.color===shape.color);
+    const labelIndex=result.spec.primitives.findIndex(p=>p.text==='{usageSlot1Label}');
+    expect(shapeIndex).toBeGreaterThan(0);
+    expect(shapeIndex).toBeLessThan(labelIndex);
+  }
+ });
  it('leaves a companion beside the picture where the customer put it when the AI changes something else',()=>{
   const f=fixture(1);const first=f.candidate();
   const document={assets:first.assets,spec:first.spec,packName:'Mine',usage:'live' as const};

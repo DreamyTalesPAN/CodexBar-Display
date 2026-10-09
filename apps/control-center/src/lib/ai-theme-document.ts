@@ -1,4 +1,4 @@
-import { referencedThemeAssetPaths } from "./theme-studio";
+import { referencedThemeAssetPaths, type ThemeStudioPrimitive } from "./theme-studio";
 import { usageSectionIndices } from "@/components/theme-studio/design-controls";
 import { decodeSprite } from "@/components/live-vibetv-preview";
 import {
@@ -54,60 +54,23 @@ export function applyAIThemeCandidate(
     // companion sprites leave manually placed artwork where the customer put it.
     const hasLoop = candidate.spec.primitives.some((p) => p.assetPath === LOOP);
     const incomingArt = candidate.spec.primitives.find((p) => p.assetPath === ART);
-    // A picture of another size changes its generated layout. Independent
-    // customer elements keep their assets and their place between managed layers.
-    const drawnHeight = (path: Record<string, { data: string }>) => Number(path[ART]?.data.split("\n", 2)[1]?.split(" ")[1]);
-    // Only full screen against not full screen counts: a legacy picture such
-    // as the sample's is a little shorter than 128 and still the same layout.
-    if (artwork && incomingArt && !candidate.preserveArtwork && (drawnHeight(candidate.assets) === 240) !== (drawnHeight(current.assets) === 240)) {
-      const usage = new Set(usageSectionIndices(current.spec.primitives).flat());
-      const manual = current.spec.primitives.flatMap((p, i) => {
-        // Only the unchanged standard readout panel belongs to the template;
-        // resized or restyled shapes belong to the customer.
-        const panel = p.type === "rect" && p.x === 0 && p.y === 128 &&
-          p.width === 240 && p.height === 112 && p.borderRadius === 0 &&
-          p.color === p.bgColor && p.color === p.borderColor && !p.binding;
-        return managed(p.assetPath) || usage.has(i) || panel ? [] : [{ primitive: { ...p }, index: i }];
-      });
-      const primitives = candidate.spec.primitives.map((p) => ({ ...p }));
-      for (const { primitive, index } of manual) {
-        const above = current.spec.primitives.slice(index + 1).find((p) =>
-          managed(p.assetPath) && primitives.some((q) => q.assetPath === p.assetPath));
-        const at = above ? primitives.findIndex((p) => p.assetPath === above.assetPath) : primitives.length;
-        primitives.splice(at, 0, primitive);
-      }
-      const replaced: ThemeStudioDocument = {
-        assets: { ...current.assets, ...candidate.assets },
-        // The design stays the same theme on the device and in the library.
-        spec: { ...candidate.spec, themeId: current.spec.themeId, themeRev: current.spec.themeRev, primitives },
-        packName: current.packName,
-        usage: current.usage,
-      };
-      for (const path of candidate.retainedCompanions || []) {
-        if (!current.assets[path]) continue;
-        replaced.assets[path] = { ...current.assets[path] };
-        setAIAnimationSpeed(replaced, path, replaced.spec.primitives.find((p) => p.assetPath === path)?.fps ?? 4);
-      }
-      pruneUnusedThemeAssets(replaced);
-      return replaced;
-    }
-    const keepsPlace = Boolean(artwork && incomingArt && !hasLoop);
-    const dropped = new Set(candidate.hideUsage ? usageSectionIndices(next.spec.primitives).flat() : []);
-    // The new picture takes the layer of the old one, so a backdrop that lay
-    // beneath the old picture does not end up covering the new one.
-    const beneath = artwork
-      ? current.spec.primitives.slice(0, current.spec.primitives.indexOf(artwork)).filter((p, i) => !managed(p.assetPath) && !dropped.has(i)).length
-      : 0;
-    next.spec.primitives = next.spec.primitives.filter((_, i) => !dropped.has(i));
-    next.spec.primitives = next.spec.primitives.filter(
-      (p) => !managed(p.assetPath),
-    );
+    // Fullscreen changes the picture geometry, not the customer's other layers.
+    const drawnHeight = (assets: Record<string, { data: string }>) => Number(assets[ART]?.data.split("\n", 2)[1]?.split(" ")[1]);
+    const layoutChanged = Boolean(artwork && incomingArt && !candidate.preserveArtwork &&
+      (drawnHeight(candidate.assets) === 240) !== (drawnHeight(current.assets) === 240));
+    const keepsPlace = Boolean(artwork && incomingArt && !hasLoop && !layoutChanged);
+    const usage = new Set(usageSectionIndices(current.spec.primitives).flat());
+    const dropped = candidate.hideUsage ? usage : new Set<number>();
+    // Only the unchanged standard readout panel belongs to the template.
+    const isPanel = (p: ThemeStudioPrimitive) => p.type === "rect" && p.x === 0 && p.y === 128 &&
+      p.width === 240 && p.height === 112 && p.borderRadius === 0 &&
+      p.color === p.bgColor && p.color === p.borderColor && !p.binding;
     for (const path of Object.keys(next.assets))
       if (managed(path)) delete next.assets[path];
     const generated = candidate.spec.primitives
       .filter((p) => managed(p.assetPath))
       .map((p) => {
-        if (p.assetPath === ART && artwork && !hasLoop)
+        if (p.assetPath === ART && artwork && keepsPlace)
           return {
             ...p,
             x: artwork.x,
@@ -128,7 +91,7 @@ export function applyAIThemeCandidate(
             ? { ...placed, x: old.x, y: old.y }
             : placed;
         }
-        if (p.assetPath === ANIMATION && oldCharacter)
+        if (p.assetPath === ANIMATION && oldCharacter && !layoutChanged)
           return {
             ...p,
             x: oldCharacter.x,
@@ -138,7 +101,21 @@ export function applyAIThemeCandidate(
           };
         return { ...p };
       });
-    next.spec.primitives.splice(beneath, 0, ...generated);
+    // Replace existing artwork in place, keeping manual elements interleaved
+    // with both figures and usage readouts. Only newly added layers need a slot.
+    const oldPaths = new Set(current.spec.primitives.filter((p) => managed(p.assetPath)).map((p) => p.assetPath));
+    next.spec.primitives = next.spec.primitives.flatMap((p, i) => {
+      if (dropped.has(i) || (layoutChanged && isPanel(p))) return [];
+      if (!managed(p.assetPath)) return [p];
+      const replacement = generated.find((q) => q.assetPath === p.assetPath);
+      return replacement ? [replacement] : [];
+    });
+    const newLayers = generated.filter((p) => !oldPaths.has(p.assetPath));
+    next.spec.primitives.splice(next.spec.primitives.findLastIndex((p) => managed(p.assetPath)) + 1, 0, ...newLayers);
+    if (layoutChanged && usage.size > 0 && !candidate.hideUsage) {
+      const panel = candidate.spec.primitives.find(isPanel);
+      if (panel) next.spec.primitives.splice(next.spec.primitives.findLastIndex((p) => managed(p.assetPath)) + 1, 0, { ...panel });
+    }
     // A design without readouts that is asked to show usage again gets the
     // standard readouts of the new scene; one that has them keeps its own.
     if (candidate.showUsage && usageSectionIndices(current.spec.primitives).flat().length === 0)

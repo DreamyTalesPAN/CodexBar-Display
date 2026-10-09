@@ -5509,3 +5509,8 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Marcus requested the two reproduced review fixes, including retaining manual elements through fullscreen changes. This follow-up completes the same approved result after a regression test reproduced the bot's layering finding.
 - Approved customer-visible result: A manual element between the background picture and an animated figure remains behind that figure when switching picture layouts, in addition to retaining elements below and above the generated design.
+
+## 2026-10-09: Preserve complete manual ordering during picture layout changes
+
+- User approval: Marcus requested preserving manual additions when fixing PR #422's fullscreen transition. The follow-up addresses the verified bot finding about shapes beneath usage readouts within that same requested fix.
+- Approved customer-visible result: Existing manual elements and usage readouts retain their ordering when the picture changes size. Only generated image layers and the standard readout panel are replaced; explicit requests to remove or add usage still apply.
