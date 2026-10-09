@@ -104,13 +104,19 @@ export function applyAIThemeCandidate(
     // Replace existing artwork in place, keeping manual elements interleaved
     // with both figures and usage readouts. Only newly added layers need a slot.
     const oldPaths = new Set(current.spec.primitives.filter((p) => managed(p.assetPath)).map((p) => p.assetPath));
+    const newLayers = generated.filter((p) => !oldPaths.has(p.assetPath));
     next.spec.primitives = next.spec.primitives.flatMap((p, i) => {
       if (dropped.has(i) || (layoutChanged && isPanel(p))) return [];
       if (!managed(p.assetPath)) return [p];
-      const replacement = generated.find((q) => q.assetPath === p.assetPath);
+      let replacement = generated.find((q) => q.assetPath === p.assetPath);
+      // An animation can become companions (or a scene loop) with new paths.
+      // Use its old layer for the replacement rather than moving it past text.
+      if (!replacement && p.assetPath !== ART) {
+        const animation = newLayers.findIndex((q) => q.assetPath !== ART);
+        if (animation >= 0) replacement = newLayers.splice(animation, 1)[0];
+      }
       return replacement ? [replacement] : [];
     });
-    const newLayers = generated.filter((p) => !oldPaths.has(p.assetPath));
     next.spec.primitives.splice(next.spec.primitives.findLastIndex((p) => managed(p.assetPath)) + 1, 0, ...newLayers);
     if (layoutChanged && usage.size > 0 && !candidate.hideUsage) {
       const panel = candidate.spec.primitives.find(isPanel);

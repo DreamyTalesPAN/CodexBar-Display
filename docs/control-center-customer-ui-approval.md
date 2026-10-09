@@ -5514,3 +5514,8 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Marcus requested preserving manual additions when fixing PR #422's fullscreen transition. The follow-up addresses the verified bot finding about shapes beneath usage readouts within that same requested fix.
 - Approved customer-visible result: Existing manual elements and usage readouts retain their ordering when the picture changes size. Only generated image layers and the standard readout panel are replaced; explicit requests to remove or add usage still apply.
+
+## 2026-10-09: Preserve the layer of a replaced legacy animation
+
+- User approval: Marcus requested fixing PR #422's loss of manual design additions and preserving their layering; this follow-up covers the verified legacy-animation transition in that same edit path.
+- Approved customer-visible result: When an older animation becomes new animated figures, the replacement occupies the previous animation layer so manual text behind it stays behind it.

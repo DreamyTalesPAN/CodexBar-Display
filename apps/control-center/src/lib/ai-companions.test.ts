@@ -1,5 +1,5 @@
 import {describe,it,expect,vi} from "vitest";
-import {buildAIThemeCompanionCandidateFromRGBA,buildAIThemeCandidateFromRGBA,AI_THEME_SCREENMASTER_ASSET_PATH as ART,type AIThemeConcept} from "./ai-theme";
+import {buildAIThemeCompanionCandidateFromRGBA,buildAIThemeCandidateFromRGBA,AI_THEME_SCREENMASTER_ASSET_PATH as ART,AI_THEME_ANIMATION_ASSET_PATH as ANIMATION,type AIThemeConcept} from "./ai-theme";
 import {applyAIThemeCandidate,conceptFromDocument} from "./ai-theme-document";
 import {registerCompanionFrames} from "./ai-companion-sprites";
 import {decodeSprite} from "@/components/live-vibetv-preview";
@@ -143,6 +143,20 @@ describe("flexible picture layouts",()=>{
     expect(shapeIndex).toBeGreaterThan(0);
     expect(shapeIndex).toBeLessThan(labelIndex);
   }
+ });
+ it('replaces a legacy animation at its original layer when upgrading to companions',()=>{
+  const current=fixture(1).candidate();
+  const pet='/themes/u/ai-pet-1.cba';
+  current.assets[ANIMATION]=current.assets[pet];delete current.assets[pet];
+  current.spec.primitives[1].assetPath=ANIMATION;
+  const text={type:'text' as const,x:24,y:45,text:'Behind the cat',fontSize:1,color:'#FFFFFF'};
+  current.spec.primitives.splice(1,0,text);
+  const result=applyAIThemeCandidate({...current,usage:'live'},fixture(2).candidate(),'auto');
+  expect(result.spec.primitives[0].assetPath).toBe(ART);
+  expect(result.spec.primitives[1]).toEqual(text);
+  expect(result.spec.primitives[2].assetPath).toBe(pet);
+  expect(result.spec.primitives[3].assetPath).toBe('/themes/u/ai-pet-2.cba');
+  expect(result.spec.primitives.some(p=>p.assetPath===ANIMATION)).toBe(false);
  });
  it('leaves a companion beside the picture where the customer put it when the AI changes something else',()=>{
   const f=fixture(1);const first=f.candidate();
