@@ -747,7 +747,7 @@ export function AIThemeStudioScreen({
         return;
       }
       if (layout.mode === "layout") {
-        const next = applyAIThemeLayout(document, layout);
+        const next = applyAIThemeLayout(base, layout);
         pruneUnusedThemeAssets(next);
         const check = validateThemeSpec(next.spec, next.assets, next.usage);
         if (check.errors.length) throw new Error(check.errors[0]);

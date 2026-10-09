@@ -5492,3 +5492,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul asked the chat to rework an existing Synthwave design and got "I can only redraw pictures I created"; he said the helper must of course be able to change existing themes and their images, and asked for it to be fixed. He also reported a send that left the VibeTV without the usage limits and with a boxed figure after the transfer was interrupted.
 - Approved customer-visible result: When a design from the library, an imported design or an older design has a picture, the chat redraws that picture on request: the new picture takes the place, size and layer of the old one, and the usage readouts and other elements stay as they are. Only a second image beside the main picture is left alone, with an explanation. The chat describes a new scene in the customer's language. A cable transfer that misses one acknowledgement sends that file again instead of failing with half of the new files on the VibeTV.
+
+
+## 2026-10-09 — Moving the picture of an existing design through the chat
+
+- User approval: Paul said the helper must be able to change existing themes and their images, and asked for the review findings to be fixed where relevant.
+- Approved customer-visible result: Asking the chat to move or resize the main picture of a library, imported or older design works like it does for a generated picture, instead of being refused as a protected image.
