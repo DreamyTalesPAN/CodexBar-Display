@@ -114,8 +114,18 @@ func EnsureConfig(home string) (string, error) {
 		// %APPDATA%\CodexBar\settings.json (#415). Use its own location.
 		return ensureWindowsConfigDir()
 	}
+	path, err := macConfigPath(home)
+	if err != nil {
+		return "", err
+	}
+	return ensureConfigFile(path)
+}
+
+// macConfigPath is the config CodexBar reads: CODEXBAR_CONFIG, else the first
+// default location that exists, else where CodexBar creates it.
+func macConfigPath(home string) (string, error) {
 	if explicit := strings.TrimSpace(os.Getenv("CODEXBAR_CONFIG")); explicit != "" {
-		return ensureConfigFile(explicit)
+		return explicit, nil
 	}
 	home = strings.TrimSpace(home)
 	if home == "" {
@@ -130,10 +140,10 @@ func EnsureConfig(home string) (string, error) {
 		filepath.Join(home, ".codexbar", "config.json"),
 	} {
 		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			return ensureConfigFile(candidate)
+			return candidate, nil
 		}
 	}
-	return ensureConfigFile(filepath.Join(home, ".codexbar", "config.json"))
+	return filepath.Join(home, ".codexbar", "config.json"), nil
 }
 
 // ensureWindowsConfigDir preserves existing settings verbatim. Only a missing
@@ -800,7 +810,9 @@ func classifyProviderError(detail string) string {
 		return ProviderAuthRequired
 	case strings.Contains(lower, "free tier"), strings.Contains(lower, "free plan"), strings.Contains(lower, "subscription required"), strings.Contains(lower, "account does not expose usage"), strings.Contains(lower, "usage") && (strings.Contains(lower, "unavailable") || strings.Contains(lower, "not available") || strings.Contains(lower, "unsupported")):
 		return ProviderNoUsageAvailable
-	case strings.Contains(lower, "no available fetch strategy"), strings.Contains(lower, "no providers"):
+	// "not detected": "Antigravity language server not detected. Launch
+	// Antigravity and retry." The app has to run, which its row can start.
+	case strings.Contains(lower, "no available fetch strategy"), strings.Contains(lower, "no providers"), strings.Contains(lower, "not detected"):
 		return ProviderNotConfigured
 	default:
 		return ProviderEngineError

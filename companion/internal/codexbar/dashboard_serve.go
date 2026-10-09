@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
 	"runtime"
 	"strconv"
@@ -74,8 +75,12 @@ type DashboardServeSupervisor struct {
 	testArgsPrefix  []string
 	testEnv         []string
 
-	mu   sync.RWMutex
-	info DashboardServeInfo
+	mu      sync.RWMutex
+	info    DashboardServeInfo
+	process *os.Process
+	// restart marks the next child exit as one Restart asked for, so the
+	// replacement starts at once instead of after the crash backoff.
+	restart bool
 }
 
 func StartDashboardServe(ctx context.Context, logf func(string, ...any)) DashboardServe {
@@ -174,6 +179,14 @@ func (s *DashboardServeSupervisor) Run(ctx context.Context) {
 			s.setStopped("", err)
 			return
 		}
+		s.mu.Lock()
+		restart := s.restart
+		s.restart = false
+		s.mu.Unlock()
+		if restart {
+			backoff = dashboardServeBackoff{base: s.backoffBase, max: s.backoffMax}
+			continue
+		}
 		if err != nil && s.logf != nil {
 			s.logf("codexbar-dashboard event=child-exited retry=%s err=%v\n", backoff.Peek(), err)
 		}
@@ -230,7 +243,7 @@ func (s *DashboardServeSupervisor) runOnce(ctx context.Context) error {
 		s.setStopped(endpoint, err)
 		return err
 	}
-	s.setStarted(endpoint, cmd.Process.Pid)
+	s.setStarted(endpoint, cmd.Process)
 	if s.logf != nil {
 		s.logf("codexbar-dashboard event=child-started endpoint=%s pid=%d refreshInterval=%s\n", endpoint, cmd.Process.Pid, s.refreshInterval)
 	}
@@ -312,6 +325,39 @@ func (s *DashboardServeSupervisor) stopUnhealthyDashboardServeChild(endpoint str
 	return errors.New("unhealthy codexbar serve exited")
 }
 
+// Restart replaces the running serve with a fresh one and waits until the new
+// one answers /health. A long-running serve can keep failing a provider that a
+// fresh CodexBar reads fine: after a Mac restart it kept reporting Claude as
+// signed out until the process was replaced (2026-10-09).
+func (s *DashboardServeSupervisor) Restart(ctx context.Context) error {
+	s.mu.Lock()
+	process := s.process
+	oldPID := s.info.PID
+	s.restart = process != nil
+	s.mu.Unlock()
+	if process == nil {
+		return errors.New("codexbar serve is not running")
+	}
+	if s.logf != nil {
+		s.logf("codexbar-dashboard event=restart-requested pid=%d\n", oldPID)
+	}
+	if err := process.Kill(); err != nil {
+		return fmt.Errorf("stop codexbar serve: %w", err)
+	}
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if info := s.Info(); info.Healthy && info.PID != 0 && info.PID != oldPID {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
 func (s *DashboardServeSupervisor) checkHealth(ctx context.Context, endpoint string) bool {
 	if s == nil || s.client == nil {
 		return false
@@ -335,11 +381,12 @@ func (s *DashboardServeSupervisor) checkHealth(ctx context.Context, endpoint str
 	return true
 }
 
-func (s *DashboardServeSupervisor) setStarted(endpoint string, pid int) {
+func (s *DashboardServeSupervisor) setStarted(endpoint string, process *os.Process) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.info.Endpoint = endpoint
-	s.info.PID = pid
+	s.process = process
+	s.info.PID = process.Pid
 	s.info.Running = true
 	s.info.Healthy = false
 	s.info.LastError = ""
@@ -352,6 +399,7 @@ func (s *DashboardServeSupervisor) setStopped(endpoint string, err error) {
 	if endpoint != "" {
 		s.info.Endpoint = endpoint
 	}
+	s.process = nil
 	s.info.PID = 0
 	s.info.Running = false
 	s.info.Healthy = false

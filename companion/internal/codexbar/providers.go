@@ -602,12 +602,16 @@ func classifyProviderHealth(raw string) ProviderHealthState {
 	if isThrottlingDetail(message) && !namesUnusableCredential(message) {
 		return ProviderHealthRateLimited
 	}
-	for _, marker := range []string{"auth", "unauthorized", "oauth", "expired", "sign in", "signin", "login", "cookie", "token"} {
+	// "log in" as in CodexBar on macOS: "No Cursor session found. Please log
+	// in to cursor.com in Safari, Chrome, ...".
+	for _, marker := range []string{"auth", "unauthorized", "oauth", "expired", "sign in", "signin", "login", "log in", "logged in", "cookie", "token"} {
 		if strings.Contains(message, marker) {
 			return ProviderHealthAuthRequired
 		}
 	}
-	for _, marker := range []string{"no available fetch strategy", "not configured", "missing", "not found", "required"} {
+	// "not detected" as in "Antigravity language server not detected. Launch
+	// Antigravity and retry.": the app has to run, which its row can start.
+	for _, marker := range []string{"no available fetch strategy", "not configured", "missing", "not found", "required", "not detected"} {
 		if strings.Contains(message, marker) {
 			return ProviderHealthSetupRequired
 		}

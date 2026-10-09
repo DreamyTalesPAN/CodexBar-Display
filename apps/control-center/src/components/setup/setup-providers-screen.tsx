@@ -120,7 +120,7 @@ type ProviderListProps = {
   className?: string;
   onCheckAgain: (provider: ProviderItem) => void;
   onOpenSignIn?: (provider: ProviderItem) => void;
-  /** Present where the provider notice may link the setup guide (Windows). */
+  /** Present where the provider notice may link the setup guide. */
   onOpenSetupGuide?: () => void;
   onToggle: (provider: ProviderItem, enabled: boolean) => void;
   /** Providers whose exact check is queued or running. */

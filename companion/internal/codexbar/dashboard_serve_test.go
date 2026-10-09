@@ -147,6 +147,40 @@ func TestDashboardServeSupervisorRestartsCrashedChildWithBackoff(t *testing.T) {
 	}
 }
 
+// "Check again" replaces a serve that kept failing a provider a fresh CodexBar
+// reads fine (Mac, 2026-10-09). The replacement starts at once, not after the
+// crash backoff, and Restart returns only once it answers.
+func TestDashboardServeSupervisorRestartReplacesTheRunningChild(t *testing.T) {
+	recordPath := t.TempDir() + "/dashboard-helper.jsonl"
+	supervisor := newTestDashboardServeSupervisor(t, "serve", recordPath, 60*time.Second)
+	supervisor.backoffBase = time.Hour
+	supervisor.backoffMax = time.Hour
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		supervisor.Run(ctx)
+		close(done)
+	}()
+	defer func() {
+		cancel()
+		waitForDashboardSupervisorDone(t, done)
+	}()
+
+	first := waitForDashboardServeHealthy(t, supervisor)
+	restartCtx, cancelRestart := context.WithTimeout(context.Background(), dashboardServeTestWait)
+	defer cancelRestart()
+	if err := supervisor.Restart(restartCtx); err != nil {
+		t.Fatalf("restart: %v", err)
+	}
+	second := supervisor.Info()
+	if !second.Healthy || second.PID == 0 || second.PID == first.PID {
+		t.Fatalf("expected a new healthy child, first=%#v second=%#v", first, second)
+	}
+	if records := waitForDashboardServeRecords(t, recordPath, 2); records[1].PID != second.PID {
+		t.Fatalf("expected the second start to be the running child, got %#v", records)
+	}
+}
+
 func TestDashboardServeSupervisorRestartsChildAfterStartupTimeout(t *testing.T) {
 	recordPath := t.TempDir() + "/dashboard-helper.jsonl"
 	supervisor := newTestDashboardServeSupervisor(t, "serve", recordPath, 60*time.Second)

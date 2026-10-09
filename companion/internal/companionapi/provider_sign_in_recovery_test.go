@@ -1,0 +1,163 @@
+package companionapi
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+)
+
+// The Mac on 2026-10-09: after a restart Claude showed only "Sign in to
+// claude.ai (or refresh Claude cookies)". CodexBar's config pinned Claude to
+// an expired saved cookie, so it never looked at the browser, and the usage
+// service that was already running kept failing Claude even once the config
+// was fixed. The customer must get Claude back with the row's buttons alone:
+// "Sign in to Claude" opens claude.ai in the browser (no terminal) and hands
+// Claude back to the browser sign-in, and the check that follows replaces
+// the stale usage service.
+func TestExpiredSavedClaudeCookieRecoversWithTheRowButtonsAlone(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("CodexBar on macOS reads Claude from the browser sign-in")
+	}
+	t.Setenv("CODEXBAR_CONFIG", "")
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 10, 9, 8, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+
+	configPath := filepath.Join(server.home, ".codexbar", "config.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte(`{"version":1,"providers":[{"id":"claude","enabled":true,"cookieSource":"manual","cookieHeader":"sessionKey=expired"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	claudeReadsBrowser := func() bool {
+		raw, err := os.ReadFile(configPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var config struct {
+			Providers []struct {
+				ID           string `json:"id"`
+				CookieSource string `json:"cookieSource"`
+			} `json:"providers"`
+		}
+		if err := json.Unmarshal(raw, &config); err != nil {
+			t.Fatal(err)
+		}
+		return len(config.Providers) == 1 && config.Providers[0].CookieSource == "auto"
+	}
+
+	// A fresh CodexBar reads the config on every call: with the saved
+	// cookie it fails, with the browser it finds the signed-in session.
+	server.probeExactProvider = func(_ context.Context, _ string, id string) codexbar.ProviderSetup {
+		status := codexbar.ProviderAuthRequired
+		detail := "Sign in to claude.ai (or refresh Claude cookies) to load usage data."
+		if claudeReadsBrowser() {
+			status, detail = codexbar.ProviderReady, ""
+		}
+		return codexbar.ProviderSetup{
+			Status:    status,
+			CheckedAt: now.Format(time.RFC3339Nano),
+			Engine:    codexbar.EngineReadiness{Status: codexbar.ProviderReady},
+			Providers: []codexbar.ProviderReadiness{{
+				ID: id, Label: "Claude", Enabled: providerEnabled(true), Status: status, Detail: detail,
+			}},
+		}
+	}
+	// The running usage service keeps what it had until it is replaced; a
+	// replacement starts from the current config.
+	var serviceHasClaude, restarts, wakes atomic.Int32
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		if serviceHasClaude.Load() == 1 {
+			return freshProviderUsage("claude", "Claude", now.Add(-time.Second)), true
+		}
+		return daemon.PersistedUsage{}, false
+	}
+	server.restartUsageService = func(context.Context) error {
+		restarts.Add(1)
+		if claudeReadsBrowser() {
+			serviceHasClaude.Store(1)
+		}
+		return nil
+	}
+	server.wakeDisplayStream = func() { wakes.Add(1) }
+	var opened []string
+	originalOpen := openProviderSignInFn
+	defer func() { openProviderSignInFn = originalOpen }()
+	openProviderSignInFn = func(url string) error {
+		opened = append(opened, url)
+		return nil
+	}
+	var launched []providerSignInPlan
+	originalLaunch := launchProviderSignInFn
+	defer func() { launchProviderSignInFn = originalLaunch }()
+	launchProviderSignInFn = func(plan providerSignInPlan) error {
+		launched = append(launched, plan)
+		return nil
+	}
+	retry := func() providerSetupResponse {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/providers/retry?provider=claude", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("check again: status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		var got providerSetupResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+
+	// 1. "Check again" alone cannot help: the saved cookie is still used.
+	if got := retry(); got.ProviderSetup.Status != codexbar.ProviderAuthRequired || restarts.Load() != 0 {
+		t.Fatalf("expected Claude signed out before the sign-in: restarts=%d setup=%+v", restarts.Load(), got.ProviderSetup)
+	}
+
+	// 2. "Sign in to Claude" opens claude.ai in the browser, never a
+	// terminal, and lets CodexBar read that browser sign-in again.
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/providers/sign-in?provider=claude", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("sign in: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(launched) != 1 || launched[0].Action != providerSignInActionBrowser || launched[0].URL != "https://claude.ai/login" {
+		t.Fatalf("expected only claude.ai/login in the browser, got launched=%+v opened=%v", launched, opened)
+	}
+	if !claudeReadsBrowser() {
+		t.Fatal("the saved cookie must no longer hide the browser sign-in")
+	}
+
+	// 3. The automatic re-check finds Claude and replaces the stale usage
+	// service, so the display gets Claude's usage again.
+	if got := retry(); got.ProviderSetup.Status != codexbar.ProviderReady {
+		t.Fatalf("expected Claude ready after the sign-in: %+v", got.ProviderSetup)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for (restarts.Load() != 1 || wakes.Load() == 0) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if restarts.Load() != 1 || wakes.Load() == 0 || !server.hasFreshUsage("claude") {
+		t.Fatalf("expected one usage service restart and fresh Claude usage: restarts=%d wakes=%d", restarts.Load(), wakes.Load())
+	}
+
+	// 4. With fresh usage a later check leaves the usage service alone.
+	for server.usageServiceRestarting.Load() && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	retry()
+	if restarts.Load() != 1 {
+		t.Fatalf("a working usage service must not be restarted again: restarts=%d", restarts.Load())
+	}
+}

@@ -432,10 +432,46 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.recordProviderSetupEvents(setup, label)
-	if setup.Status == codexbar.ProviderReady && s.wakeDisplayStream != nil {
-		s.wakeDisplayStream()
+	if setup.Status == codexbar.ProviderReady {
+		if providerID != "" && !s.hasFreshUsage(providerID) && s.restartUsageService != nil &&
+			s.usageServiceRestarting.CompareAndSwap(false, true) {
+			go s.replaceUsageService(providerID)
+		} else if s.wakeDisplayStream != nil {
+			s.wakeDisplayStream()
+		}
 	}
 	writeJSON(w, http.StatusOK, providerSetupResponse{OK: true, ProviderSetup: setup})
+}
+
+// hasFreshUsage reports whether the running usage service delivered a fresh,
+// usable reading for providerID.
+func (s *Server) hasFreshUsage(providerID string) bool {
+	if s.loadUsage == nil {
+		return true
+	}
+	now := s.currentTime()
+	usage, _ := s.loadUsage(now)
+	for _, provider := range usage.Providers {
+		if readiness, ok := freshUsableUsageProviderReadiness(provider, now); ok && strings.EqualFold(readiness.ID, providerID) {
+			return true
+		}
+	}
+	return false
+}
+
+// replaceUsageService swaps the running usage service for a fresh one, then
+// collects again. "Check again" just read the provider with a fresh CodexBar,
+// so a running service that still has nothing for it is the stale part.
+func (s *Server) replaceUsageService(providerID string) {
+	defer s.usageServiceRestarting.Store(false)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := s.restartUsageService(ctx); err != nil && s.logf != nil {
+		s.logf("VibeTV usage service restart after checking %s failed: %v", providerID, err)
+	}
+	if s.wakeDisplayStream != nil {
+		s.wakeDisplayStream()
+	}
 }
 
 // openProviderSignInFn opens a URL in the customer's default browser. Tests
@@ -468,14 +504,24 @@ func (s *Server) handleProviderSetupGuide(w http.ResponseWriter, r *http.Request
 // handleProviderSignIn starts the sign-in for one provider. When CodexBar
 // named a browser page for the provider's current browser_sign_in_required
 // state, only that page opens. Otherwise the provider's own tool signs in:
-// its CLI login in a visible terminal, its app, or -- when neither is
-// installed -- its official install page. The request carries a provider id,
-// never a URL or a path.
+// its browser sign-in page (Claude and Cursor on the Mac), its CLI login
+// without a terminal window, its app, or -- when neither is installed -- its
+// official install page. The request carries a provider id, never a URL or a
+// path.
 func (s *Server) handleProviderSignIn(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 	providerID := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("provider")))
+	// A saved cookie that pins the provider would hide the browser sign-in
+	// the customer is about to make, so hand the provider back to the browser.
+	if changed, err := codexbar.UseBrowserCookies(s.home, providerID); err != nil {
+		if s.logf != nil {
+			s.logf("VibeTV provider sign-in: could not switch %s to browser cookies: %v", providerID, err)
+		}
+	} else if changed && s.logf != nil {
+		s.logf("VibeTV provider sign-in: %s now reads the browser sign-in instead of a saved cookie", providerID)
+	}
 	if url := s.providerSignInURL(providerID); url != "" {
 		if err := openProviderSignInFn(url); err != nil {
 			writeError(w, http.StatusInternalServerError, "provider_sign_in_failed", "The browser could not be opened.", "Open "+url+" in your browser, sign in, then check again.")

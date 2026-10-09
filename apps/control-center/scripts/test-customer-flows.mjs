@@ -464,7 +464,7 @@ async function main() {
     if (providerSettingsOnly) {
       await testSettingsStayCustomerOnly(browser, appContext.appUrl);
       await testUsageManagesProviderPreferences(browser, appContext.appUrl);
-      await testMacAppKeepsEveryProviderAndNoSignInButton(
+      await testMacAppShowsTheWindowsSignInButton(
         browser,
         appContext.appUrl,
       );
@@ -951,7 +951,7 @@ async function main() {
     );
     await testUsagePrioritizesProviderTokenHistory(browser, appContext.appUrl);
     await testUsageManagesProviderPreferences(browser, appContext.appUrl);
-    await testMacAppKeepsEveryProviderAndNoSignInButton(
+    await testMacAppShowsTheWindowsSignInButton(
       browser,
       appContext.appUrl,
     );
@@ -7255,18 +7255,17 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
   await page.close();
 }
 
-// The Mac app must be untouched by the Windows launch decision: a companion
-// without the sign-in feature keeps every provider CodexBar reports and shows
-// no sign-in button, exactly as the shipped Mac app does today.
-async function testMacAppKeepsEveryProviderAndNoSignInButton(browser, appUrl) {
+// Windows and the Mac look and work the same (2026-10-09). The Mac Companion
+// offers the sign-in button too: Claude's own Mac message (an expired or
+// missing claude.ai cookie) gets "Sign in to Claude", and every provider
+// CodexBar reports stays listed.
+async function testMacAppShowsTheWindowsSignInButton(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
+  const requests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
-    companionFeatures: {
-      themeInstallEnabled: true,
-      macAppSelfUpdateEnabled: false,
-      providerSignInEnabled: false,
-    },
+    companionRuntime: { version: "1.0.32", os: "darwin" },
+    onRequest: (path, method) => requests.push({ path, method }),
     preferencesResponse: {
       ok: true,
       items: [
@@ -7287,8 +7286,8 @@ async function testMacAppKeepsEveryProviderAndNoSignInButton(browser, appUrl) {
           health: {
             state: "auth_required",
             service: "outage",
-            message: "Sign in again for this provider.",
-            reported: "Claude connection failed: authentication required.",
+            message: "Sign in to claude.ai (or refresh Claude cookies) to load usage data.",
+            reported: "Sign in to claude.ai (or refresh Claude cookies) to load usage data.",
           },
         },
         disabledProviderPreferenceFixture("gemini", "Gemini"),
@@ -7305,16 +7304,23 @@ async function testMacAppKeepsEveryProviderAndNoSignInButton(browser, appUrl) {
   for (const kept of ["Gemini", "GitHub Copilot"]) {
     await panel.getByText(kept, { exact: true }).waitFor({ timeout: 10_000 });
   }
-  assert(
-    (await panel.getByRole("button", { name: "Sign in to Claude" }).count()) ===
-      0,
-    "the Mac app must not grow a sign-in button",
-  );
-  // The row still says what is wrong and still offers the re-check it has today.
+  const providerDialog = page.getByRole("dialog", { name: "Claude", exact: true });
+  await providerDialog.getByRole("button", { name: "OK", exact: true }).click();
+  const signInClaude = panel.getByRole("button", { name: "Sign in to Claude" });
+  await signInClaude.waitFor({ timeout: 10_000 });
   await panel
     .getByRole("button", { name: "Check Claude again" })
     .first()
     .waitFor({ timeout: 10_000 });
+  await signInClaude.click();
+  await waitForCondition(
+    () =>
+      requests.some(
+        (request) =>
+          request.path === "/v1/providers/sign-in" && request.method === "POST",
+      ),
+    "the Mac sign-in button must start the sign-in through the companion",
+  );
 
   assertNoInstallRequests(installRequests);
   await page.close();

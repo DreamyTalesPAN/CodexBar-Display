@@ -205,7 +205,7 @@ describe("SetupProvidersScreen", () => {
     expect(dialog.getByRole("button", { name: "Copy provider message for GitHub Copilot" })).toBeTruthy();
   });
 
-  it("keeps the notice off for sign-in providers, other states and the Mac", () => {
+  it("keeps the notice off for sign-in providers, other states and without a setup guide", () => {
     const claudeSignedOut = provider({ providerId: "claude", label: "Claude",
       health: "auth_required", message: "Sign in to Claude." });
     const timedOut = provider({ providerId: "copilot", label: "GitHub Copilot",

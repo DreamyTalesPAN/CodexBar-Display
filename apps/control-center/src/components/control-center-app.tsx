@@ -4411,9 +4411,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       : deviceSearchState;
   const recoveryPickerOpen = deviceRecoveryPickerReason !== null;
 
-  // Windows adds the sign-in button for the providers the Companion can sign
-  // in; the Mac app keeps its existing rows exactly as they are today. Both
-  // list every provider CodexBar reports.
+  // The sign-in button for the providers the Companion can sign in, on
+  // Windows and the Mac alike. Both list every provider CodexBar reports.
   const providerSignInEnabled =
     companionInfo?.features?.providerSignInEnabled === true;
   const providerPickerProps = {
