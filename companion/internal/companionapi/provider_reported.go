@@ -19,10 +19,11 @@ const reportedCredentialName = `[A-Za-z0-9._-]*(?:token|cookie|secret|key|sessio
 // it: those words are the guidance, and a visible marker is honest where a
 // silently dropped sentence would not be.
 var (
-	// A macOS home folder may hold spaces and brackets too (`/Users/Jane
-	// Doe/`), so the component goes through the next separator when one
-	// follows right after a non-space; otherwise see homeNameEnd.
-	reportedHomePath = regexp.MustCompile(`(?i)/Users/(?:[^/\r\n"]*[^/\s"]/|[^/\r\n"]+)`)
+	// A macOS home folder may hold spaces, brackets and quotes too
+	// (`/Users/Jane Doe/`, `/Users/Jane"Doe/`), so the component goes through
+	// the next separator when one follows right after a non-space; otherwise
+	// see homeNameEnd.
+	reportedHomePath = regexp.MustCompile(`(?i)/Users/(?:[^/\r\n]*[^/\s]/|[^/\r\n]+)`)
 	// The Windows engine names files under the profile folder, whose name is
 	// the account name: `C:\Users\Alice\.claude\...`, in JSON also with
 	// doubled backslashes. A folder name may hold spaces, apostrophes and
@@ -81,11 +82,12 @@ const reportedRedacted = "[redacted]"
 // homeNameEnd returns where the profile name of an unterminated home-path
 // match ends. A name may hold spaces, brackets, commas and semicolons, so
 // no character inside the match reliably ends it: everything up to a
-// trailing run of closing punctuation and whitespace counts as the name.
+// trailing run of closing punctuation, quotes and whitespace counts as the
+// name.
 // A support report may lose some prose after such a path, but never part
 // of the account name (#572 review).
 func homeNameEnd(match string) int {
-	return len(strings.TrimRight(match, " \t)]},;."))
+	return len(strings.TrimRight(match, " \t)]},;.\""))
 }
 
 // reportedProviderMessage keeps the usage service's sentence and replaces the

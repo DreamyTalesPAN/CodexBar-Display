@@ -75,6 +75,8 @@ func TestReportedProviderMessageRedactsTheHomePath(t *testing.T) {
 		{in: "Claude credentials not found at /Users/Jane Doe/.claude/.credentials.json", want: "Claude credentials not found at ~/.claude/.credentials.json"},
 		{in: "Missing profile (/Users/Jane (Work))", want: "Missing profile (~))"},
 		{in: "Missing profile /Users/Jane) Doe)", want: "Missing profile ~)"},
+		{in: "Missing /Users/Jane\"Doe/.claude/credentials.json", want: "Missing ~/.claude/credentials.json"},
+		{in: "{\"path\":\"/Users/jane\"}", want: "{\"path\":\"~\"}"},
 	} {
 		if got := reportedProviderMessage(tc.in); got != tc.want {
 			t.Fatalf("home path redaction:\n got %q\nwant %q", got, tc.want)
