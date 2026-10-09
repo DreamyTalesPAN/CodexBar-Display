@@ -295,7 +295,7 @@ fn navigate_to_pending_theme(app: &AppHandle) -> bool {
         return false;
     }
     let origin = shell.runtime_origin.lock().unwrap().clone();
-    if !runtime_identity_matches(&runtime_http(), &origin) {
+    if !runtime_ready(app, &origin) {
         return false;
     }
     let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
@@ -337,7 +337,7 @@ fn acknowledge_loaded_theme(app: AppHandle, loaded: Url) {
     if loaded != origin.join(&format!("/control-center/install/{theme_id}")).expect("validated theme ID") {
         return;
     }
-    if !runtime_identity_matches(&runtime_http(), &origin) {
+    if !runtime_ready(&app, &origin) {
         prepare_and_load(app);
         return;
     }
@@ -481,6 +481,12 @@ fn runtime_identity_matches(http: &ureq::Agent, origin: &Url) -> bool {
     serde_json::from_str::<RuntimeHealth>(&body)
         .map(|health| health.companion.runtime.listener_owner == RUNTIME_LABEL)
         .unwrap_or(false)
+}
+
+fn runtime_ready(app: &AppHandle, origin: &Url) -> bool {
+    run_companion(app, &["version", "--short"])
+        .and_then(|expected| check_runtime_health(app, &runtime_http(), origin, &expected))
+        .is_ok()
 }
 
 fn release_update_hold() {
