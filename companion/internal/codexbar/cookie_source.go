@@ -95,7 +95,13 @@ func switchCookieSource(path, providerID string) (bool, error) {
 	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
 		return false, errors.New("CodexBar config has data after its JSON object")
 	}
-	providers, _ := config["providers"].([]any)
+	if config == nil {
+		return false, errors.New("CodexBar config is not a JSON object")
+	}
+	providers, ok := config["providers"].([]any)
+	if !ok && config["providers"] != nil {
+		return false, errors.New("CodexBar config providers is not a list")
+	}
 	changed := false
 	for _, item := range providers {
 		provider, _ := item.(map[string]any)
