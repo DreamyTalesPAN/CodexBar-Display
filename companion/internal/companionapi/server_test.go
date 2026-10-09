@@ -5713,7 +5713,8 @@ func TestCableHealthProvesConnectionBeforeFirstFrame(t *testing.T) {
 				t.Fatalf("live health must prove connection, not first-frame readiness: %+v", got.Device)
 			}
 			// A cached hello is not live proof. Once the bounded existing grace expires,
-			// a failed health read must report the device offline again.
+			// failed live resolution must report the device offline again.
+			server.resolveCablePort = func(string, string) (string, error) { return "", errors.New("unplugged") }
 			server.readCableHealth = func(string, string) (deviceHealth, error) { return deviceHealth{}, errors.New("unplugged") }
 			server.now = func() time.Time { return time.Now().Add(deviceConnectedGraceWindow + time.Second) }
 			rec = httptest.NewRecorder()
