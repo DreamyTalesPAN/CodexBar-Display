@@ -12,9 +12,62 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 )
+
+type cableResolveTestError errcode.Code
+
+func (e cableResolveTestError) Error() string           { return string(e) }
+func (e cableResolveTestError) ErrorCode() errcode.Code { return errcode.Code(e) }
+
+func TestCableCurrentResolverErrorOverridesStaleAbsence(t *testing.T) {
+	for _, tc := range []struct {
+		code   errcode.Code
+		absent bool
+	}{
+		{errcode.TransportNoUSBSerialPorts, true},
+		{errcode.TransportSerialPortNotFound, true},
+		{errcode.TransportNoSerialPorts, false},
+		{errcode.TransportSerialOpen, false},
+		{errcode.TransportNoMatchingDevice, false},
+		{errcode.Unknown, false},
+	} {
+		t.Run(string(tc.code), func(t *testing.T) {
+			cfg := runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: "pair-token"}
+			server := newTestServer(t, cfg)
+			clock := time.Now()
+			server.now = func() time.Time { return clock }
+			server.withConfiguredConnectionState(cfg, deviceInfo{Target: cableDeviceTarget, DeviceID: cfg.DeviceID, Paired: true, Connected: true}, true, false, false)
+			hello := cableHelloForTest(cfg.DeviceID)
+			hello.Features = []string{protocol.FeatureCableHealthV1}
+			server.currentCableHello = func() (protocol.DeviceHello, bool) { return hello, true }
+			server.resolveCablePort = func(string, string) (string, error) { return "", cableResolveTestError(tc.code) }
+			server.streamStatus = func(context.Context, string) displayStreamInfo {
+				return displayStreamInfo{Running: true, Target: cableDeviceTarget, ErrorCode: "device_not_found"}
+			}
+			read := func() deviceInfo {
+				t.Helper()
+				rec := httptest.NewRecorder()
+				server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+				var got statusResponse
+				if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+					t.Fatal(err)
+				}
+				return got.Device
+			}
+			clock = clock.Add(15 * time.Second)
+			if got := read(); got.Connected == tc.absent || got.Ready || !got.Paired {
+				t.Fatalf("current resolver result must own absence certainty: %+v", got)
+			}
+			clock = clock.Add(deviceConnectedGraceWindow)
+			if got := read(); got.Connected {
+				t.Fatal("uncertain resolution must not extend the bounded grace")
+			}
+		})
+	}
+}
 
 // The user's 15-second unplug must override the cached identity and last frame.
 func TestStatusDisconnectsCableWhenPortDisappearsAndReconnects(t *testing.T) {
@@ -32,7 +85,7 @@ func TestStatusDisconnectsCableWhenPortDisappearsAndReconnects(t *testing.T) {
 	server.currentCableHello = func() (protocol.DeviceHello, bool) { return hello, true }
 	server.resolveCablePort = func(string, string) (string, error) {
 		if !available {
-			return "", errors.New("no USB serial candidates found")
+			return "", cableResolveTestError(errcode.TransportNoUSBSerialPorts)
 		}
 		return "/dev/mock", nil
 	}

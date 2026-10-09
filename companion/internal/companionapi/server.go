@@ -1445,7 +1445,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	reachable := false
 	identityMismatch := false
-	cableProbeSuppressed := false
+	cableAbsenceUnconfirmed := false
 	if cableMode {
 		device.Capabilities = cableCapabilityBlock(cfg.DeviceTransports)
 		if hello, ok := s.currentCableHello(); ok && cableHelloMatchesConfig(hello, cfg.DeviceID) {
@@ -1460,8 +1460,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			// chooser. The shared Sender serializes this probe with frame writes.
 			s.firmwareUpdateStartMu.Lock()
 			_, updateRunning := s.activeFirmwareUpdateJob()
-			cableProbeSuppressed = updateRunning || s.themeInstallInFlight()
-			if !cableProbeSuppressed {
+			cableAbsenceUnconfirmed = updateRunning || s.themeInstallInFlight()
+			if !cableAbsenceUnconfirmed {
 				if port, portErr := s.resolveCablePort("", cfg.DeviceID); portErr == nil {
 					if hello.HasFeature(protocol.FeatureCableHealthV1) {
 						// Resolution already read a fresh matching hello; a later
@@ -1475,6 +1475,14 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 						}
 					} else if liveHello, err := s.readCableHello(port); err == nil {
 						reachable = cableHelloMatchesConfig(liveHello, cfg.DeviceID)
+					}
+				} else {
+					// A current busy or unanswered probe cannot refresh an old
+					// absence report. Only explicitly missing ports confirm it.
+					switch errcode.Of(portErr) {
+					case errcode.TransportNoUSBSerialPorts, errcode.TransportSerialPortNotFound:
+					default:
+						cableAbsenceUnconfirmed = true
 					}
 				}
 			}
@@ -1545,7 +1553,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	device = s.withConfiguredConnectionState(cfg, device, reachable, identityMismatch, cableProbeSuppressed)
+	device = s.withConfiguredConnectionState(cfg, device, reachable, identityMismatch, cableAbsenceUnconfirmed)
 	if cfg.ConnectionModeChoiceRequired && strings.TrimSpace(cfg.DeviceID) == "" {
 		if candidate := s.currentCableConnectionChoiceDevice(); strings.TrimSpace(candidate.DeviceID) != "" {
 			device = candidate
@@ -1766,7 +1774,7 @@ func (s *Server) withConfiguredConnectionState(
 	device deviceInfo,
 	reachable bool,
 	identityMismatch bool,
-	cableProbeSuppressed bool,
+	cableAbsenceUnconfirmed bool,
 ) deviceInfo {
 	if samePublicTarget(device.Target, cableDeviceTarget) && device.Stream != nil {
 		device = withDisplayStreamInfo(device, *device.Stream)
@@ -1817,7 +1825,7 @@ func (s *Server) withConfiguredConnectionState(
 	// bounded grace window the device stays Connected in state "reconnecting";
 	// past the window the honest truth wins and Connected drops.
 	// A missing USB device is explicit disconnect evidence, not a WiFi probe miss.
-	cableNotFound := !reachable && !cableProbeSuppressed && samePublicTarget(device.Target, cableDeviceTarget) &&
+	cableNotFound := !reachable && !cableAbsenceUnconfirmed && samePublicTarget(device.Target, cableDeviceTarget) &&
 		device.Stream != nil && device.Stream.ErrorCode == "device_not_found"
 	if !device.Connected && !identityMismatch && !cableNotFound && device.Paired &&
 		!state.lastSeenAt.IsZero() && now.Sub(state.lastSeenAt) <= deviceConnectedGraceWindow {
