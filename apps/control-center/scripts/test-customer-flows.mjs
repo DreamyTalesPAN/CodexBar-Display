@@ -394,6 +394,19 @@ async function main() {
       releaseUrl: smokeOnly ? missingAssetReleaseUrl : completeReleaseUrl,
     });
     app = appContext.app;
+    if (process.argv.includes("--theme-handoff")) {
+      await testHostedThemeEntryShowsMacAppDownload(browser, appContext.appUrl, {
+        expectDmg: true,
+      });
+      await testInstallLinkKeepsRequestedTheme(browser, appContext.appUrl);
+      await testLocalInstallLinkKeepsSetupGate(browser, appContext.appUrl);
+      await testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
+        browser,
+        appContext.appUrl,
+      );
+      console.log("control-center theme handoff flow passed");
+      return;
+    }
     if (process.argv.includes("--firmware-onboarding")) {
       await testFirmwareOnboardingTerminalStates(browser, appContext.appUrl);
       await testFirmwareAttentionDoesNotOfferSecondFlash(browser, appContext.appUrl);
@@ -10847,6 +10860,29 @@ async function testInstallLinkKeepsRequestedTheme(browser, appUrl) {
   await assertSelectedThemeRow(page, "Fixture Clippy Theme");
   await assertThemeRowNotSelected(page, "Fixture Synthwave Theme");
   await page.waitForTimeout(250);
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testLocalInstallLinkKeepsSetupGate(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  let settingsCalls = 0;
+  await routeLocalCompanionAppThroughLocalNext(page, appUrl);
+  await routeCompanionOnline(page, installRequests, () => {
+    settingsCalls += 1;
+  });
+
+  await page.goto("http://127.0.0.1:47832/control-center/install/clippy", {
+    waitUntil: "domcontentloaded",
+  });
+  await waitForCondition(
+    () => settingsCalls >= 1,
+    "expected Companion status check from the local install route",
+  );
+  await page.getByRole("button", { name: "Help" }).waitFor();
+  await assertThemeLibraryLockedBehindSetup(page);
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
   await page.close();

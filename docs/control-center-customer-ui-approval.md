@@ -5,6 +5,12 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-10-09 — Hosted theme handoff to the installed app (#63)
+
+- User approval: On 2026-10-09 Paul granted all approvals for autonomous overnight VibeTV issue work and delegated the choice of issues and implementation decisions. Under that delegation, this task selected the #63 hosted-to-app handoff. Paul has not personally previewed this exact copy or layout.
+- Approved customer-visible result: For an available, free Shopify theme with a verified pack, `/install/<id>` offers `Open Control Center` as the primary action. It opens `vibetv://install-theme/<id>` and keeps the platform-specific app download as a secondary fallback. The plain hosted entry remains a download page. The local app opens the requested theme in its existing library after the usual setup gates; opening the link never installs a theme on a VibeTV by itself.
+- Scope: `apps/control-center/src/lib/themes.ts`, `apps/control-center/src/components/control-center-app.tsx`, `apps/control-center/src/components/setup/mac-app-download-screen.tsx`, their focused and customer-flow tests, `docs/control-center-ui-principles.md`, and this approval record. This documents the delegated branch implementation, not personal visual acceptance, deployment, merge, release, or hardware testing.
+
 ## 2026-09-01 — Configured WiFi device continues automatically
 
 - User approval: The user explicitly instructed Codex to fix every sensible
