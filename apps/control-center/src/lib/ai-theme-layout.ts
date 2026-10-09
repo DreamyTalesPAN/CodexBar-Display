@@ -95,6 +95,10 @@ export function applyAIThemeLayout(current:ThemeStudioDocument,plan:AIThemeLayou
     if(p.x<0||p.y<0||p.x+bounds.width>240||p.y+bounds.height>240) return fail();
   }
   next.spec.primitives=next.spec.primitives.filter((_,i)=>!removed.has(i));
+  // VibeTV draws one animated figure at a time; two that overlap wipe each other.
+  const figures=next.spec.primitives.filter(p=>isCompanionSprite(p.assetPath));
+  if(figures.some((a,i)=>figures.slice(i+1).some(b=>a.x<b.x+(b.width||0)&&b.x<a.x+(a.width||0)&&a.y<b.y+(b.height||0)&&b.y<a.y+(a.height||0))))
+    throw new Error('VibeTV cannot show two animated figures overlapping, so they stay apart. Your design is unchanged.');
   // Companions carried along with a moved picture must still be on the display.
   if(next.spec.primitives.some(p=>(isCompanionSprite(p.assetPath)||p.assetPath===ANIMATION)&&(p.x<0||p.y<0||p.x+(p.width||0)>240||p.y+(p.height||0)>240))) return fail();
   return next;

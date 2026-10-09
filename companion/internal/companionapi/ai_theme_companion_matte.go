@@ -117,6 +117,33 @@ func companionSheetIssue(encoded string) string {
 		if transparent < side*side/10 || transparent > side*side*98/100 {
 			return fmt.Sprintf("frame %d: no usable subject/matte (background %s, %d%% transparent)", frame+1, background, transparent*100/(side*side))
 		}
+		// One subject is one connected shape. Several separate shapes are props
+		// of a scene (furniture, signs) drawn around the subject.
+		opaque, largest := side*side-transparent, 0
+		visited := make([]bool, side*side)
+		for start := range pixels {
+			if visited[start] || pixels[start].A < 128 {
+				continue
+			}
+			stack, size := []int{start}, 0
+			visited[start] = true
+			for len(stack) > 0 {
+				p := stack[len(stack)-1]
+				stack = stack[:len(stack)-1]
+				size++
+				for _, q := range []int{p - 1, p + 1, p - side, p + side} {
+					if q < 0 || q >= side*side || visited[q] || pixels[q].A < 128 || (q == p-1 && p%side == 0) || (q == p+1 && q%side == 0) {
+						continue
+					}
+					visited[q] = true
+					stack = append(stack, q)
+				}
+			}
+			largest = max(largest, size)
+		}
+		if largest*100 < opaque*60 {
+			return fmt.Sprintf("frame %d: several separate shapes instead of one isolated subject (scenery or props were drawn)", frame+1)
+		}
 	}
 	return ""
 }

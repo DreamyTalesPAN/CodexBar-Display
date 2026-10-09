@@ -5480,3 +5480,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul asked for the review comment on fixed SESSION and WEEKLY labels to be fixed in this pull request, and for the review findings to be fixed where relevant.
 - Approved customer-visible result: A generated design titles each usage lane with the name of the limit it shows (for example Session, Weekly or a model limit) instead of the fixed words SESSION and WEEKLY, shrinking a long name to fit; values and bars follow the first and second limit the provider reports. A draft the customer explicitly discards is not offered again later.
+
+
+## 2026-10-09 — Findings from building five themes through the chat
+
+- User approval: Paul asked for five very different, demanding themes to be built through the chat interface, including changes and undo, and for the review findings to be fixed where relevant.
+- Approved customer-visible result: A request that asks for a picture together with native elements such as a clock, a date or a usage bar delivers both in one go. A generated figure shows only that figure, without pieces of the scene around it. The chat answers and names labels in the customer's language, with real umlauts. Two animated figures are never placed on top of each other; asking for that is declined with an explanation and the design stays unchanged. Undo clears an old error message, and loading a design clears an old transfer status. Generated pictures no longer contain a painted clock or text. Width and height typed into the size fields, and text resized on the canvas, stop at the edge of the display, so Save and Send stay available.

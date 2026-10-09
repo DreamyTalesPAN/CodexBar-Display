@@ -56,6 +56,29 @@ func TestCompanionMatteValidation(t *testing.T) {
 	}
 }
 
+// The model sometimes draws the scene's furniture around the subject in every
+// frame. Such a sheet has several separate shapes and is not one figure.
+func TestCompanionSheetRejectsSeveralSeparateShapes(t *testing.T) {
+	img := image.NewNRGBA(image.Rect(0, 0, 320, 160))
+	for y := 0; y < 160; y++ {
+		for x := 0; x < 320; x++ {
+			c := color.NRGBA{255, 0, 255, 255}
+			cx, cy := x%80, y%80
+			for _, prop := range [][4]int{{8, 8, 26, 22}, {50, 8, 72, 24}, {8, 50, 28, 72}, {46, 44, 70, 70}} {
+				if cx >= prop[0] && cx < prop[2] && cy >= prop[1] && cy < prop[3] {
+					c = color.NRGBA{90, 60, 140, 255}
+				}
+			}
+			img.SetNRGBA(x, y, c)
+		}
+	}
+	var b bytes.Buffer
+	_ = png.Encode(&b, img)
+	if issue := companionSheetIssue(base64.StdEncoding.EncodeToString(b.Bytes())); !strings.Contains(issue, "several separate shapes") {
+		t.Fatalf("accepted a sheet of scene props: %q", issue)
+	}
+}
+
 func TestCompanionRepairIsBoundedAndPreservesOtherLayers(t *testing.T) {
 	for _, repaired := range []bool{true, false} {
 		t.Run(map[bool]string{true: "repair-success", false: "repair-failure"}[repaired], func(t *testing.T) {

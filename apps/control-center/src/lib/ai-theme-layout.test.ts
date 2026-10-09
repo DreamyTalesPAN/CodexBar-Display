@@ -141,4 +141,10 @@ describe('AI native layout edits',()=>{
   doc.spec.primitives[1].assetPath='/themes/u/ai-scene-loop.cba';
   expect(()=>applyAIThemeLayout(doc,plan([{action:'update',index:0,y:100}]))).toThrow();
  });
+ it('keeps two animated figures apart',()=>{
+  const doc=structuredClone(before);
+  doc.spec.primitives=[{type:'sprite',assetPath:'/themes/u/ai-screen.cbi',x:0,y:0,width:240,height:240},{type:'sprite',assetPath:'/themes/u/ai-pet-1.cba',x:40,y:150,width:48,height:48},{type:'sprite',assetPath:'/themes/u/ai-pet-2.cba',x:150,y:60,width:40,height:40}];
+  expect(()=>applyAIThemeLayout(doc,plan([{action:'update',index:1,x:146,y:56}]))).toThrow(/overlapping/);
+  expect(applyAIThemeLayout(doc,plan([{action:'update',index:1,x:90,y:150}])).spec.primitives[1].x).toBe(90);
+ });
 });

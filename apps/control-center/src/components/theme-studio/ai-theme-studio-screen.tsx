@@ -401,6 +401,7 @@ export function AIThemeStudioScreen({
     documentVersion.current++;
     dispatch({ type });
     setSelected([]);
+    setError("");
     setStatus(type === "undo" ? "Last edit undone." : "Edit restored.");
   }
   function load(next: { document: ThemeStudioDocument; id?: string }) {
@@ -414,6 +415,7 @@ export function AIThemeStudioScreen({
     setPending(undefined);
     setError("");
     setMessages([]);
+    setTransferStatus("");
     setStatus("Design opened.");
   }
   function requestLoad(next: { document: ThemeStudioDocument; id?: string }) {
@@ -783,16 +785,36 @@ export function AIThemeStudioScreen({
       );
       const candidate = await buildAIThemeCandidate(concept);
       if (request.current !== controller || controller.signal.aborted) return;
-      const next = applyAIThemeCandidate(document, candidate, "auto");
+      let next = applyAIThemeCandidate(document, candidate, "auto");
       pruneUnusedThemeAssets(next);
       const check = validateThemeSpec(next.spec, next.assets, next.usage);
       if (check.errors.length) throw new Error(check.errors[0]);
+      // The scene step draws the picture and its figures only. A clock, a text
+      // or a bar asked for in the same request is added in a second, native
+      // step; if that fails the picture still stands.
+      let added = "";
+      try {
+        const extras = await planAIThemeLayout(
+          "The picture for the following request has just been created and is already in the design. Now add or change ONLY the native elements this request asks for (text, clock, date, usage readings, bars, shapes), placed where the request says. Do not describe or change the picture. If the request asks for no native element, answer with mode=layout and no edits. Request: " + prompt,
+          layoutContext(next), controller.signal, [], history,
+        );
+        if (request.current !== controller || controller.signal.aborted) return;
+        if (extras.mode === "layout" && extras.edits.length) {
+          const withExtras = applyAIThemeLayout(next, extras);
+          if (!validateThemeSpec(withExtras.spec, withExtras.assets, withExtras.usage).errors.length) {
+            next = withExtras;
+            added = " " + extras.notes;
+          }
+        }
+      } catch {
+        if (request.current !== controller || controller.signal.aborted) return;
+      }
       documentVersion.current++;
       dispatch({ type: "update", document: next });
       setSelected([]);
       setPrompt("");
       setAttachments([]);
-      reply(concept.style.notes);
+      reply(concept.style.notes + added);
     } catch (e) {
       if (!controller.signal.aborted) {
         setStatus("");
@@ -1101,7 +1123,10 @@ export function AIThemeStudioScreen({
                           1,
                           8,
                         );
-                        p.width = Math.max(width, textPrimitiveNaturalWidth(p));
+                        p.width = Math.min(
+                          DISPLAY_SIZE - p.x,
+                          Math.max(width, textPrimitiveNaturalWidth(p)),
+                        );
                       } else if (isAspectLockedPrimitive(p)) {
                         p.width = Math.min(width, height);
                         p.height = p.width;
@@ -1336,19 +1361,22 @@ export function AIThemeStudioScreen({
                           <NumberField
                             label="Width"
                             value={primitive.width || 24}
-                            max={240}
+                            max={DISPLAY_SIZE - primitive.x}
                             onChange={(value) =>
-                              change("width", Math.max(1, Math.min(240, value)))
+                              change(
+                                "width",
+                                Math.max(1, Math.min(DISPLAY_SIZE - primitive.x, value)),
+                              )
                             }
                           />
                           <NumberField
                             label="Height"
                             value={primitive.height || 24}
-                            max={240}
+                            max={DISPLAY_SIZE - primitive.y}
                             onChange={(value) =>
                               change(
                                 "height",
-                                Math.max(1, Math.min(240, value)),
+                                Math.max(1, Math.min(DISPLAY_SIZE - primitive.y, value)),
                               )
                             }
                           />
