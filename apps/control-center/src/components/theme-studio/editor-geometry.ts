@@ -383,6 +383,10 @@ const USAGE_BINDING_LABELS: Record<string, string> = {
   usageSlot2PaceDelta: "Usage window 2 pace %",
   usageSlot2PaceState: "Usage window 2 pace",
   usageSlot2PaceLasts: "Usage window 2 lasts",
+  usageSlot1PaceUsed: "Usage window 1 pace: used",
+  usageSlot1PaceExpected: "Usage window 1 pace: expected",
+  usageSlot2PaceUsed: "Usage window 2 pace: used",
+  usageSlot2PaceExpected: "Usage window 2 pace: expected",
 };
 
 export function bindingDisplayLabel(binding: string | undefined): string {
