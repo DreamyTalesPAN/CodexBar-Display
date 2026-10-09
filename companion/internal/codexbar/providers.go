@@ -392,7 +392,9 @@ func SetProviderEnabled(ctx context.Context, providerID string, enabled bool) er
 			return providerSettingsError(ProviderSettingsErrorUnavailable, err)
 		}
 	}
+	configWriteMu.Lock()
 	_, err = runProviderCommandFn(ctx, commandTimeout(), bin, providerToggleArgs(action, providerID)...)
+	configWriteMu.Unlock()
 	if err != nil {
 		return providerSettingsError(ProviderSettingsErrorUnavailable, err)
 	}

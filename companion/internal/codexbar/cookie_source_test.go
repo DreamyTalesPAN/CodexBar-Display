@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"sync"
 	"testing"
 )
 
@@ -77,5 +79,111 @@ func TestUseBrowserCookiesLeavesAMissingConfigAlone(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, ".codexbar")); !os.IsNotExist(err) {
 		t.Fatalf("no config may be created: %v", err)
+	}
+}
+
+func writePinnedConfig(t *testing.T, content string) (string, string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("Win-CodexBar keeps saved cookies in a file of its own")
+	}
+	t.Setenv("CODEXBAR_CONFIG", "")
+	home := t.TempDir()
+	path := filepath.Join(home, ".codexbar", "config.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return home, path
+}
+
+const twoPinnedProviders = `{"providers": [
+  {"id": "codex", "enabled": true},
+  {"id": "claude", "enabled": true, "cookieSource": "manual", "cookieHeader": "sessionKey=old"},
+  {"id": "cursor", "enabled": true, "cookieSource": "manual", "cookieHeader": "WorkosCursorSessionToken=x"}
+]}`
+
+func providersIn(t *testing.T, path string) map[string]map[string]any {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config struct {
+		Providers []map[string]any `json:"providers"`
+	}
+	if err := json.Unmarshal(raw, &config); err != nil {
+		t.Fatalf("config is no longer JSON: %v\n%s", err, raw)
+	}
+	byID := map[string]map[string]any{}
+	for _, provider := range config.Providers {
+		byID[provider["id"].(string)] = provider
+	}
+	return byID
+}
+
+// A config the sign-in cannot read may still pin the provider, so the sign-in
+// must report it instead of answering as if the pin were gone.
+func TestUseBrowserCookiesReportsAConfigThatIsNotJSON(t *testing.T) {
+	broken := `{"providers": [{"id": "claude", "cookieSource": "manual"`
+	home, path := writePinnedConfig(t, broken)
+	if changed, err := UseBrowserCookies(home, "claude"); err == nil || changed {
+		t.Fatalf("a config that is not JSON must be an error: changed=%v err=%v", changed, err)
+	}
+	if raw, _ := os.ReadFile(path); string(raw) != broken {
+		t.Fatalf("the config must stay as it was:\n%s", raw)
+	}
+}
+
+// CodexBar writes its config without the Companion's lock. A change it makes
+// while the sign-in is switching the cookie source must survive.
+func TestUseBrowserCookiesKeepsAChangeCodexBarMadeMeanwhile(t *testing.T) {
+	home, path := writePinnedConfig(t, twoPinnedProviders)
+	writes := 0
+	beforeConfigReplace = func() {
+		if writes > 0 {
+			return
+		}
+		writes++
+		codexOff := strings.Replace(twoPinnedProviders, `"id": "codex", "enabled": true`, `"id": "codex", "enabled": false`, 1)
+		if err := os.WriteFile(path, []byte(codexOff), 0o600); err != nil {
+			t.Error(err)
+		}
+	}
+	t.Cleanup(func() { beforeConfigReplace = func() {} })
+
+	if changed, err := UseBrowserCookies(home, "claude"); err != nil || !changed {
+		t.Fatalf("changed=%v err=%v", changed, err)
+	}
+	providers := providersIn(t, path)
+	if providers["codex"]["enabled"] != false {
+		t.Fatalf("CodexBar's own change was lost: %v", providers["codex"])
+	}
+	if providers["claude"]["cookieSource"] != "auto" {
+		t.Fatalf("claude must read the browser: %v", providers["claude"])
+	}
+}
+
+// Two sign-ins at once must both keep their switch.
+func TestUseBrowserCookiesKeepsBothOfTwoSignInsAtOnce(t *testing.T) {
+	for round := 0; round < 20; round++ {
+		home, path := writePinnedConfig(t, twoPinnedProviders)
+		var wg sync.WaitGroup
+		for _, id := range []string{"claude", "cursor"} {
+			wg.Add(1)
+			go func(id string) {
+				defer wg.Done()
+				if _, err := UseBrowserCookies(home, id); err != nil {
+					t.Error(err)
+				}
+			}(id)
+		}
+		wg.Wait()
+		providers := providersIn(t, path)
+		if providers["claude"]["cookieSource"] != "auto" || providers["cursor"]["cookieSource"] != "auto" {
+			t.Fatalf("round %d lost a switch: claude=%v cursor=%v", round, providers["claude"], providers["cursor"])
+		}
 	}
 }

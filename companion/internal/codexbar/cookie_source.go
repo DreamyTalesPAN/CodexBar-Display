@@ -4,19 +4,32 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 )
+
+// configWriteMu serializes the Companion's own changes to CodexBar's config:
+// a sign-in lifting a saved cookie and a provider switch toggle.
+var configWriteMu sync.Mutex
+
+// beforeConfigReplace runs between reading the config and replacing it. Tests
+// use it to change the file the way CodexBar itself might at that moment.
+var beforeConfigReplace = func() {}
+
+var errConfigChanged = errors.New("CodexBar config kept changing while switching to browser cookies")
 
 // UseBrowserCookies switches a provider whose CodexBar config pins a saved
 // cookie (cookieSource "manual") back to CodexBar's automatic browser import.
 // A pinned cookie keeps CodexBar from ever reading the browser, so once it
 // expires a fresh browser sign-in changes nothing (Mac, 2026-10-09). The saved
 // cookie stays in the file; only the source changes. It reports whether the
-// config changed. A missing config or any other shape is left alone, and so
-// is Windows: Win-CodexBar keeps pasted cookies in a file of its own and the
-// VibeTV app offers no way to paste one.
+// config changed. A missing config is left alone, and so is Windows:
+// Win-CodexBar keeps pasted cookies in a file of its own and the VibeTV app
+// offers no way to paste one. A config that is not JSON is an error, because
+// the pin it may hold could not be lifted.
 func UseBrowserCookies(home, providerID string) (bool, error) {
 	if runtime.GOOS == "windows" {
 		return false, nil
@@ -25,6 +38,20 @@ func UseBrowserCookies(home, providerID string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	configWriteMu.Lock()
+	defer configWriteMu.Unlock()
+	// CodexBar writes this file without the Companion's lock. When it changed
+	// it between our read and our replace, start over from its new content.
+	for attempt := 0; attempt < 3; attempt++ {
+		changed, err := switchCookieSource(path, providerID)
+		if !errors.Is(err, errConfigChanged) {
+			return changed, err
+		}
+	}
+	return false, errConfigChanged
+}
+
+func switchCookieSource(path, providerID string) (bool, error) {
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return false, nil
@@ -38,8 +65,8 @@ func UseBrowserCookies(home, providerID string) (bool, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
 	var config map[string]any
-	if decoder.Decode(&config) != nil {
-		return false, nil
+	if err := decoder.Decode(&config); err != nil {
+		return false, fmt.Errorf("CodexBar config is not valid JSON: %w", err)
 	}
 	providers, _ := config["providers"].([]any)
 	changed := false
@@ -76,6 +103,14 @@ func UseBrowserCookies(home, providerID string) (bool, error) {
 	}
 	if err := tmp.Close(); err != nil {
 		return false, err
+	}
+	beforeConfigReplace()
+	current, err := os.ReadFile(path)
+	if err != nil {
+		return false, err
+	}
+	if !bytes.Equal(current, raw) {
+		return false, errConfigChanged
 	}
 	return true, os.Rename(tmpPath, path)
 }
