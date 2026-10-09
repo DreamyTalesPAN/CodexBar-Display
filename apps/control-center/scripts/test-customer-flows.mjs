@@ -4693,11 +4693,14 @@ async function testProviderlessDeviceUsesRecoveryBeforeThemeAndOverview(
     "A connected VibeTV must never be described as disconnected",
   );
 
-  // CodexBar is the Mac App's own engine; the customer never has to know it.
+  // Setup names the bundled usage engine once so its provider instructions
+  // have a clear owner (#333).
   const visibleText = await page.evaluate(() => document.body.innerText);
   assert(
-    !/codexbar/i.test(visibleText),
-    "Provider recovery must not name CodexBar to the customer",
+    visibleText.includes(
+      "VibeTV includes CodexBar to read your AI usage. Follow each provider's sign-in or permission instructions below."
+    ),
+    "Provider recovery must explain why CodexBar appears in setup",
   );
 
   assertNoInstallRequests(installRequests);

@@ -5183,4 +5183,10 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul authorized the autonomous VibeTV issue nightshift on 2026-10-09, gave permission for all necessary work, and expressly delegated implementation decisions ("DU ENTSCHEIDEST ALLES" and "du darfst alles machen, nutzen, usw usw"). He did not personally review this exact sentence; Codex selected it under that delegation for draft PR #597.
 - Approved customer-visible result: The shared provider list on Setup and Settings displays exactly "VibeTV includes CodexBar to read your AI usage. Follow each provider's sign-in or permission instructions below." above the provider search. The existing provider sign-in and permission instructions remain in their rows. No new button, dialog, or provider behavior.
-- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its Setup and Settings tests, and this approval record. This records the delegated decision for the pull-request branch only, not merge or release.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its Setup and Settings tests, the provider-recovery customer-flow assertion in `apps/control-center/scripts/test-customer-flows.mjs`, and this approval record. This records the delegated decision for the pull-request branch only, not merge or release.
+
+## 2026-10-09 — Provider recovery test follows the approved explanation (#333)
+
+- User approval: Paul authorized the autonomous VibeTV issue nightshift on 2026-10-09 and expressly delegated implementation decisions ("DU ENTSCHEIDEST ALLES" and "du darfst alles machen, nutzen, usw usw"). He did not review this exact test assertion; Codex aligned it with the customer-visible sentence recorded above under that delegation.
+- Approved customer-visible result: The provider-recovery screen contains the same sentence recorded above: "VibeTV includes CodexBar to read your AI usage. Follow each provider's sign-in or permission instructions below." No additional customer text or control changes in this follow-up.
+- Scope: Replace the old customer-flow assertion forbidding the word CodexBar in `apps/control-center/scripts/test-customer-flows.mjs`; this record applies to the pull-request branch only, not merge or release.
