@@ -75,10 +75,13 @@ export function applyAIThemeCandidate(
       return replaced;
     }
     const keepsPlace = Boolean(artwork && incomingArt && !hasLoop);
-    if (candidate.hideUsage) {
-      const usage = new Set(usageSectionIndices(next.spec.primitives).flat());
-      next.spec.primitives = next.spec.primitives.filter((_, i) => !usage.has(i));
-    }
+    const dropped = new Set(candidate.hideUsage ? usageSectionIndices(next.spec.primitives).flat() : []);
+    // The new picture takes the layer of the old one, so a backdrop that lay
+    // beneath the old picture does not end up covering the new one.
+    const beneath = artwork
+      ? current.spec.primitives.slice(0, current.spec.primitives.indexOf(artwork)).filter((p, i) => !managed(p.assetPath) && !dropped.has(i)).length
+      : 0;
+    next.spec.primitives = next.spec.primitives.filter((_, i) => !dropped.has(i));
     next.spec.primitives = next.spec.primitives.filter(
       (p) => !managed(p.assetPath),
     );
@@ -118,7 +121,7 @@ export function applyAIThemeCandidate(
           };
         return { ...p };
       });
-    next.spec.primitives.unshift(...generated);
+    next.spec.primitives.splice(beneath, 0, ...generated);
     // A design without readouts that is asked to show usage again gets the
     // standard readouts of the new scene; one that has them keeps its own.
     if (candidate.showUsage && usageSectionIndices(current.spec.primitives).flat().length === 0)
@@ -203,6 +206,36 @@ export function setAIAnimationSpeed(
   document.spec.primitives.forEach((p) => {
     if (p.assetPath === path) p.fps = fps;
   });
+}
+
+// A design made in the old editor, imported or built in has its picture under
+// its own file name. For the helper that picture is the design's picture like
+// any generated one: it is shown to the helper as the current picture and the
+// redrawn picture takes its place, layer and size. The selected still image
+// wins; otherwise the largest still image at least half the display wide.
+export function adoptPicture(document: ThemeStudioDocument, selected: number[] = []): ThemeStudioDocument {
+  if (document.spec.primitives.some((p) => p.assetPath === ART)) return document;
+  const still = (i: number) => {
+    const p = document.spec.primitives[i];
+    if (!p?.assetPath || p.assetPath === ANIMATION || isCompanionSprite(p.assetPath) || isAttachedSceneAnimation(p.assetPath)) return 0;
+    const sprite = decodeSprite(document.assets[p.assetPath]?.data || "");
+    if (!sprite || sprite.frames.length !== 1) return 0;
+    return (p.width || sprite.width) * (p.height || sprite.height);
+  };
+  let index = selected.find((i) => still(i) > 0) ?? -1;
+  if (index < 0)
+    document.spec.primitives.forEach((p, i) => {
+      if (still(i) > (index < 0 ? 0 : still(index)) && (p.width || decodeSprite(document.assets[p.assetPath!].data)!.width) >= 120) index = i;
+    });
+  if (index < 0) return document;
+  const next = cloneDocument(document);
+  const picture = next.spec.primitives[index];
+  const sprite = decodeSprite(next.assets[picture.assetPath!].data)!;
+  next.assets[ART] = { ...next.assets[picture.assetPath!] };
+  picture.width ||= sprite.width;
+  picture.height ||= sprite.height;
+  picture.assetPath = ART;
+  return next;
 }
 
 // Reconstruct references from the current saved/undone document, never from a

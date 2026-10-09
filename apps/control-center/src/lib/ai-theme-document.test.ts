@@ -4,6 +4,7 @@ import {
   pruneUnusedThemeAssets,
   setAIAnimationSpeed,
   conceptFromDocument,
+  adoptPicture,
   flattenCompanionSprites,
 } from "./ai-theme-document";
 import {
@@ -198,5 +199,31 @@ describe("companion sprites on the device", () => {
     expect(pixels[0]).toMatch(/^[ab]15[ab]$/);
     expect(pixels[3]).not.toContain(".");
     expect(pixels[4]).toBe("16.");
+  });
+  it("redraws the picture of an older design in its place and keeps the rest", () => {
+    const old = "/themes/s/synth-bg.cbi";
+    const document = {
+      packName: "Synthwave Custom", usage: "live",
+      assets: { [old]: { contentType: "text/plain", encoding: "text", data: encodeAIThemeCBI1(new Uint8ClampedArray(240 * 128 * 4).fill(50), 240, 128) } },
+      spec: { themeId: "synth", themeRev: 3, bgColor: "#000000", primitives: [
+        { type: "rect", x: 0, y: 0, width: 240, height: 240, color: "#220044" },
+        { type: "sprite", assetPath: old, x: 0, y: 8 },
+        { type: "progress", binding: "session", x: 8, y: 150, width: 200, height: 8, color: "#FF00FF" },
+      ] },
+    } as unknown as ThemeStudioDocument;
+    const base = adoptPicture(document);
+    expect(document.spec.primitives[1].assetPath).toBe(old);
+    expect(base.spec.primitives[1]).toMatchObject({ assetPath: ART, x: 0, y: 8, width: 240, height: 128 });
+    expect(adoptPicture(base)).toBe(base);
+    const next = applyAIThemeCandidate(base, candidate(), "auto");
+    // Backdrop first, then the new picture in the old place, readout kept.
+    expect(next.spec.primitives[0]).toMatchObject({ type: "rect", color: "#220044" });
+    expect(next.spec.primitives[1]).toMatchObject({ assetPath: ART, x: 0, y: 8, width: 240, height: 128 });
+    expect(next.spec.primitives.at(-1)).toMatchObject({ type: "progress", binding: "session" });
+    expect(next.assets[ART].data).not.toBe(base.assets[ART].data);
+    // A small icon is no picture of the design.
+    const icon = { ...document, spec: { ...document.spec, primitives: [{ ...document.spec.primitives[1], width: 40, height: 40 }] } } as ThemeStudioDocument;
+    expect(adoptPicture(icon)).toBe(icon);
+    expect(adoptPicture(icon, [0]).spec.primitives[0].assetPath).toBe(ART);
   });
 });

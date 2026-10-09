@@ -96,6 +96,7 @@ import {
 import {
   applyAIThemeCandidate,
   pruneUnusedThemeAssets,
+  adoptPicture,
   conceptFromDocument,
   flattenCompanionSprites,
   setAIAnimationSpeed,
@@ -730,7 +731,10 @@ export function AIThemeStudioScreen({
         openPanel("setup");
         return;
       }
-      const context = layoutContext(document, selected).map((item, i) => ({
+      // The picture of an imported or older design is the design's picture
+      // for the helper too, so it can be redrawn like a generated one.
+      const base = adoptPicture(document, selected);
+      const context = layoutContext(base, selected).map((item, i) => ({
         ...item,
         ...(item.role === "companion" ? {referenceImageBase64: spritePNG(document.assets[document.spec.primitives[i].assetPath!].data, false)} : {}),
       }));
@@ -756,12 +760,12 @@ export function AIThemeStudioScreen({
         return;
       }
       if (layout.mode !== "scene" || layout.edits.length) throw new Error("The AI edit plan is invalid. Your design is unchanged.");
-      // A new scene is drawn beside an imported image, never from it.
+      // One picture per design is redrawn; a second, selected image stays.
       if (selected.some((i) => {
-        const path = document.spec.primitives[i]?.assetPath;
+        const path = base.spec.primitives[i]?.assetPath;
         return path && path !== AI_THEME_SCREENMASTER_ASSET_PATH && !isCompanionSprite(path) && !isAttachedSceneAnimation(path) && path !== AI_THEME_ANIMATION_ASSET_PATH;
       })) {
-        reply("I can only redraw pictures I created. Your imported image stays as it is; you can move, resize or replace it yourself.");
+        reply("I can redraw the main picture of this design, not a second image beside it. Select the main picture or nothing and ask again; the selected image stays as it is.");
         setPrompt("");
         setAttachments([]);
         return;
@@ -774,18 +778,18 @@ export function AIThemeStudioScreen({
             role: "user" as const,
             createdAt: new Date().toISOString(),
             content: `The current request refers to these selected elements: ${selected.map((i) => {
-              const p = document.spec.primitives[i];
-              return `${i}: ${friendlyElementName(p, document.assets)} at (${p.x}, ${p.y})`;
+              const p = base.spec.primitives[i];
+              return `${i}: ${friendlyElementName(p, base.assets)} at (${p.x}, ${p.y})`;
             }).join("; ")}`.slice(0, 2000),
           }] : [])],
-          previous: conceptFromDocument(document),
+          previous: conceptFromDocument(base),
           target: "companions",
         },
         controller.signal,
       );
       const candidate = await buildAIThemeCandidate(concept);
       if (request.current !== controller || controller.signal.aborted) return;
-      let next = applyAIThemeCandidate(document, candidate, "auto");
+      let next = applyAIThemeCandidate(base, candidate, "auto");
       pruneUnusedThemeAssets(next);
       const check = validateThemeSpec(next.spec, next.assets, next.usage);
       if (check.errors.length) throw new Error(check.errors[0]);

@@ -49,6 +49,10 @@ var ErrFirmwareUpdateCableOnly = errors.New("VibeTV installs updates only over t
 type FirmwareUpdater func(ctx context.Context, target, manifestURL string) error
 type PairTokenStore func(target, token string) error
 
+const cableUploadAttempts = 3
+
+var cableUploadRetryDelay = time.Second
+
 type CableInstallOptions struct {
 	Capabilities protocol.DeviceCapabilities
 	Prepare      func(context.Context, string) error
@@ -454,7 +458,7 @@ func installCablePack(
 	}
 	fmt.Fprintln(out, "Uploading theme files by Cable...")
 	for _, asset := range pack.Assets {
-		if err := cable.Upload(ctx, asset.Entry.Path, asset.Data, ""); err != nil {
+		if err := uploadByCable(ctx, cable, asset.Entry.Path, asset.Data, "", out); err != nil {
 			return Result{}, &InstallError{Op: "theme-pack/upload", Code: errcode.UpgradeFlashFirmware, Err: err}
 		}
 	}
@@ -464,7 +468,7 @@ func installCablePack(
 	}
 	// The Cable firmware owns the safe post-activation slot sweep because it
 	// alone can enumerate LittleFS while this serial transfer holds the device.
-	if err := cable.Upload(ctx, pack.ThemeSpecFile.Entry.Path, pack.ThemeSpecRaw, activation); err != nil {
+	if err := uploadByCable(ctx, cable, pack.ThemeSpecFile.Entry.Path, pack.ThemeSpecRaw, activation, out); err != nil {
 		return Result{}, &InstallError{Op: "theme-pack/activate", Code: errcode.UpgradeFlashFirmware, Err: err}
 	}
 	fmt.Fprintln(out, "Theme transferred and activated by Cable.")
@@ -478,6 +482,27 @@ func installCablePack(
 		ThemeRevision:     pack.ThemeSpec.ThemeRev,
 		CapabilitiesKnown: cable.Capabilities.Known,
 	}, nil
+}
+
+// A single missed acknowledgement, for example when the cable is moved, must
+// not leave the VibeTV with half of the new files: the file is sent again
+// before the install gives up. Each file transfer starts from its beginning.
+func uploadByCable(ctx context.Context, cable *CableInstallOptions, path string, data []byte, activation string, out io.Writer) error {
+	var err error
+	for attempt := 1; attempt <= cableUploadAttempts; attempt++ {
+		if err = cable.Upload(ctx, path, data, activation); err == nil || ctx.Err() != nil || !strings.Contains(err.Error(), "cable transfer interrupted") {
+			return err
+		}
+		if attempt < cableUploadAttempts {
+			fmt.Fprintln(out, "Upload interrupted, retrying...")
+			select {
+			case <-ctx.Done():
+				return err
+			case <-time.After(cableUploadRetryDelay):
+			}
+		}
+	}
+	return err
 }
 
 func themePackCapabilitiesError(err error) *InstallError {
