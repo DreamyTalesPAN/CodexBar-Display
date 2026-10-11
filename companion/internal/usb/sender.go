@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
@@ -27,6 +28,14 @@ type SenderConfig struct {
 
 type Sender struct {
 	mu sync.Mutex
+
+	// openPath mirrors path for checks that must not wait on mu. A serial
+	// call stuck on an unplugged device can hold mu for a long time.
+	openPath atomic.Value
+	// cablePath is the port a VibeTV last identified itself or took a frame
+	// on. Unlike openPath it outlives closing the port, so status can still
+	// tell that this port is unplugged after a failed probe closed it.
+	cablePath atomic.Value
 
 	opener         PortOpener
 	sleep          func(time.Duration)
@@ -106,6 +115,7 @@ func (s *Sender) Send(path string, line []byte) error {
 			err,
 		)
 	}
+	s.cablePath.Store(path)
 	return nil
 }
 
@@ -189,6 +199,9 @@ func (s *Sender) deviceHelloLocked(ctx context.Context, path string, window time
 			ErrDeviceHelloUnavailable,
 		)
 	}
+	if strings.TrimSpace(s.hello.DeviceID) != "" {
+		s.cablePath.Store(path)
+	}
 	return s.hello, nil
 }
 
@@ -230,6 +243,7 @@ func (s *Sender) ensurePort(path string) (bool, error) {
 
 	s.port = p
 	s.path = path
+	s.openPath.Store(path)
 	s.hello = protocol.DeviceHello{}
 	s.helloSeen = false
 	s.capabilities = protocol.UnknownDeviceCapabilities()
@@ -264,8 +278,9 @@ func (s *Sender) captureHelloAfterOpenLockedContext(ctx context.Context, window 
 		if err := writeWithTimeout(s.port, helloRequestLine, min(s.writeTimeout, remaining)); err != nil {
 			break
 		}
-		hello, seen = readHelloFromPort(s.port, min(time.Second, time.Until(deadline)), &carry)
-		if seen {
+		var readErr error
+		hello, seen, readErr = readHelloFromPort(s.port, min(time.Second, time.Until(deadline)), &carry)
+		if seen || readErr != nil {
 			break
 		}
 		// macOS resets the board whenever the port opens; Windows does not
@@ -289,6 +304,9 @@ func (s *Sender) captureHelloAfterOpenLockedContext(ctx context.Context, window 
 }
 
 func (s *Sender) ResolvePort(explicit, expectedDeviceID string) (string, error) {
+	if err := s.openPortVanished(explicit); err != nil {
+		return "", err
+	}
 	path, ok := s.currentMatchingPort(explicit, expectedDeviceID, false)
 	if !ok {
 		var err error
@@ -315,10 +333,61 @@ func (s *Sender) ResolvePort(explicit, expectedDeviceID string) (string, error) 
 }
 
 func (s *Sender) ResolveControlPort(explicit, expectedDeviceID string) (string, error) {
+	if err := s.openPortVanished(explicit); err != nil {
+		return "", err
+	}
 	if path, ok := s.currentMatchingPort(explicit, expectedDeviceID, true); ok {
 		return resolveVibeTVCandidatesForControl([]string{path}, path, expectedDeviceID, s.DeviceHello, true)
 	}
 	return resolveVibeTVPortForControl(explicit, expectedDeviceID, s.DeviceHello, true)
+}
+
+// openPortVanished reports an open port that left the system's port list.
+// Unplugging USB removes it there at once, while a call on the old handle can
+// block on Windows. It never waits on mu, so that call cannot hide the unplug.
+func (s *Sender) openPortVanished(explicit string) error {
+	path, _ := s.openPath.Load().(string)
+	explicit = strings.TrimSpace(explicit)
+	if path == "" || (explicit != "" && !samePort(explicit, path)) {
+		return nil
+	}
+	return s.portVanished(path)
+}
+
+// cablePortVanished reports that the last VibeTV port was unplugged, also
+// after the port was closed. Resolution must not use it: a VibeTV that comes
+// back on another port has to stay findable.
+func (s *Sender) cablePortVanished() error {
+	path, _ := s.cablePath.Load().(string)
+	if path == "" {
+		return nil
+	}
+	return s.portVanished(path)
+}
+
+func (s *Sender) portVanished(path string) error {
+	ports, err := attachedPorts()
+	if err != nil {
+		return nil
+	}
+	for _, port := range ports {
+		if samePort(port, path) {
+			return nil
+		}
+	}
+	if s.mu.TryLock() {
+		if s.port != nil && samePort(s.path, path) {
+			s.closeCurrentLocked()
+		}
+		s.mu.Unlock()
+	}
+	return wrapTransportError(
+		errcode.TransportSerialPortNotFound,
+		"resolve-vibetv",
+		path,
+		"Reconnect the VibeTV USB cable and retry.",
+		errors.New("serial port disappeared"),
+	)
 }
 
 func (s *Sender) currentMatchingPort(explicit, expectedDeviceID string, allowWiFiMode bool) (string, bool) {
@@ -662,6 +731,7 @@ func (s *Sender) closeCurrentLocked() {
 	_ = closePortBestEffort(s.port, s.path, closeTimeout)
 	s.port = nil
 	s.path = ""
+	s.openPath.Store("")
 	s.hello = protocol.DeviceHello{}
 	s.helloSeen = false
 	s.capabilities = protocol.UnknownDeviceCapabilities()

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -13,14 +14,16 @@ import (
 
 // carry keeps a line that spans two read windows. Without it a boot hello
 // arriving at a window boundary was cut in half and never recognized.
-func readHelloFromPort(port SerialPort, window time.Duration, carry *[]byte) (protocol.DeviceHello, bool) {
+// A read error other than "no data" ends the window: on Windows the handle of
+// an unplugged CH340 keeps failing instead of timing out.
+func readHelloFromPort(port SerialPort, window time.Duration, carry *[]byte) (protocol.DeviceHello, bool, error) {
 	var hello protocol.DeviceHello
-	seen := readPortLinesCarry(port, window, carry, func(line string) bool {
+	seen, err := readPortLinesUntil(port, window, carry, true, func(line string) bool {
 		var ok bool
 		hello, ok = parseDeviceHelloLine(line)
 		return ok
 	})
-	return hello, seen
+	return hello, seen, err
 }
 
 func readConnectionModeConfirmationFromPort(port SerialPort, window time.Duration, deviceID string) error {
@@ -345,8 +348,13 @@ func readPortLines(port SerialPort, window time.Duration, accept func(string) bo
 }
 
 func readPortLinesCarry(port SerialPort, window time.Duration, carry *[]byte, accept func(string) bool) bool {
+	seen, _ := readPortLinesUntil(port, window, carry, false, accept)
+	return seen
+}
+
+func readPortLinesUntil(port SerialPort, window time.Duration, carry *[]byte, stopOnError bool, accept func(string) bool) (bool, error) {
 	if port == nil || window <= 0 || accept == nil {
-		return false
+		return false, nil
 	}
 	_ = port.SetReadTimeout(helloReadStepTimeout)
 	deadline := time.Now().Add(window)
@@ -357,8 +365,11 @@ func readPortLinesCarry(port SerialPort, window time.Duration, carry *[]byte, ac
 		defer func() { *carry = append((*carry)[:0], buffer...) }()
 	}
 	for time.Now().Before(deadline) {
-		n, _ := port.Read(chunk)
+		n, err := port.Read(chunk)
 		if n <= 0 {
+			if stopOnError && !isNoDataRead(err) {
+				return false, err
+			}
 			continue
 		}
 		buffer = append(buffer, chunk[:n]...)
@@ -373,11 +384,17 @@ func readPortLinesCarry(port SerialPort, window time.Duration, carry *[]byte, ac
 			line := strings.TrimSpace(string(bytes.TrimSpace(buffer[:idx])))
 			buffer = buffer[idx+1:]
 			if accept(line) {
-				return true
+				return true, nil
 			}
 		}
 	}
-	return accept(strings.TrimSpace(string(bytes.TrimSpace(buffer))))
+	return accept(strings.TrimSpace(string(bytes.TrimSpace(buffer)))), nil
+}
+
+// isNoDataRead reports a read that only found no data in its step timeout.
+func isNoDataRead(err error) bool {
+	var timeout interface{ Timeout() bool }
+	return err == nil || errors.Is(err, io.EOF) || (errors.As(err, &timeout) && timeout.Timeout())
 }
 
 const bootHelloPrefix = `{"kind":"hello"`
