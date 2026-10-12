@@ -907,8 +907,8 @@ type usageWindowInfo struct {
 }
 
 // usageWindowPaceInfo is the usage engine's pace for one window, as the device
-// frame carries it (protocol.UsagePace). ETASeconds counts from collectedAt and
-// is set only when Lasts is false. ExpectedPercent is where the window's
+// frame carries it (protocol.UsagePace). ETASeconds counts from the response
+// and is set only when Lasts is false. ExpectedPercent is where the window's
 // percentage would stand on pace, in the same sense (used or remaining) as the
 // window's UsedPercent.
 type usageWindowPaceInfo struct {
@@ -2886,6 +2886,7 @@ func usageResponseFromPersisted(now time.Time, usage daemon.PersistedUsage) usag
 	providers := make([]usageProviderInfo, 0, len(usage.Providers))
 	for _, provider := range usage.Providers {
 		if info, ok := usageProviderFromSnapshot(provider); ok {
+			reanchorUsagePaceETA(info.Windows, now, provider.CollectedAt)
 			providers = append(providers, info)
 		}
 	}
@@ -3050,6 +3051,26 @@ func usageWindowsFromMeta(meta codexbar.ProviderUsageMeta, stale bool) []usageWi
 		return nil
 	}
 	return out
+}
+
+// The engine's runout ETA counts from its collection, which the page reads up
+// to a minute later; count that time off so "runs out in" stays true. An ETA
+// that has passed becomes 0, which the page shows without a time.
+func reanchorUsagePaceETA(windows []usageWindowInfo, now, collectedAt time.Time) {
+	if now.IsZero() || collectedAt.IsZero() {
+		return
+	}
+	age := int64(now.Sub(collectedAt) / time.Second)
+	if age <= 0 {
+		return
+	}
+	for i := range windows {
+		pace := windows[i].Pace
+		if pace == nil || pace.ETASeconds <= 0 {
+			continue
+		}
+		pace.ETASeconds = max(pace.ETASeconds-age, 0)
+	}
 }
 
 func usageStatusFromMeta(meta codexbar.ProviderUsageMeta) *usageStatusInfo {
