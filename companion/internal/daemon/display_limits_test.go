@@ -268,6 +268,27 @@ func TestCachedFrameDropsWhatWasHiddenSince(t *testing.T) {
 	if len(got.UsageWindows) != 2 || got.UsageWindows[0].ID != "weekly" || got.UsageWindows[0].Pace.State != "deficit" {
 		t.Fatalf("one provider after hiding Session: %+v", got.UsageWindows)
 	}
+
+	// "claude:claude-weekly-scoped-fable" is cut to 32 bytes on the wire, and
+	// the cached frame keeps the cut id.
+	fableShown := &runtimeconfig.ProviderDisplayConfig{
+		Mode:          "pair",
+		ProviderIDs:   []string{"claude", "codex"},
+		HiddenWindows: map[string][]string{"claude": {"session", "weekly"}},
+	}
+	cachedFable := applyDisplayLimits(claude.Frame, []codexbar.ParsedFrame{claude, codex}, fableShown, basis).Normalize()
+	if len(cachedFable.UsageWindows) != 2 || cachedFable.UsageWindows[0].ID != "claude:claude-weekly-scoped-fabl" {
+		t.Fatalf("cached pair with Fable only: %+v", cachedFable.UsageWindows)
+	}
+	fableHidden := &runtimeconfig.ProviderDisplayConfig{
+		Mode:          "pair",
+		ProviderIDs:   []string{"claude", "codex"},
+		HiddenWindows: map[string][]string{"claude": {"claude-weekly-scoped-fable"}},
+	}
+	got = limitCachedFrame(cachedFable, fableHidden)
+	if len(got.UsageWindows) != 1 || got.UsageWindows[0].ID != "codex:weekly" {
+		t.Fatalf("cached pair after hiding Fable only: %+v", got.UsageWindows)
+	}
 }
 
 func TestRunCycleWithDepsFallbackFollowsLimitsHiddenSince(t *testing.T) {

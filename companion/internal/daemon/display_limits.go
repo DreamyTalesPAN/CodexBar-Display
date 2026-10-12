@@ -50,12 +50,12 @@ func limitCachedFrame(frame protocol.Frame, display *runtimeconfig.ProviderDispl
 }
 
 // withVisiblePairWindows drops the windows of a Two at once frame whose limit
-// the customer hid since; each window id is "provider:window". Hiding both
-// would leave VibeTV blank, so then both stay.
+// the customer hid since. Hiding both would leave VibeTV blank, so then both
+// stay.
 func withVisiblePairWindows(frame protocol.Frame, members []string, display *runtimeconfig.ProviderDisplayConfig) protocol.Frame {
 	visible := make([]protocol.UsageWindow, 0, len(frame.UsageWindows))
 	for _, window := range frame.UsageWindows {
-		if provider, id, ok := strings.Cut(window.ID, ":"); ok && display.WindowHidden(provider, id) {
+		if pairWindowHidden(window.ID, display) {
 			continue
 		}
 		visible = append(visible, window)
@@ -72,6 +72,24 @@ func withVisiblePairWindows(frame protocol.Frame, members []string, display *run
 		}
 	}
 	return frame
+}
+
+// pairWindowHidden reports whether a window of a Two at once frame is one the
+// customer hid. Its id is "provider:window" cut to the wire limit, so an id cut
+// there matches the hidden window it is the start of.
+func pairWindowHidden(windowID string, display *runtimeconfig.ProviderDisplayConfig) bool {
+	provider, _, ok := strings.Cut(windowID, ":")
+	if !ok {
+		return false
+	}
+	cut := len(windowID) >= protocol.DefaultUsageWindowIDBytes
+	for _, hidden := range display.HiddenWindows[normalizeProviderKey(provider)] {
+		full := provider + ":" + hidden
+		if full == windowID || (cut && strings.HasPrefix(full, windowID)) {
+			return true
+		}
+	}
+	return false
 }
 
 // visibleUsageWindows drops the windows the customer hid for this provider.
