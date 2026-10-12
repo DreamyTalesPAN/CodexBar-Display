@@ -153,6 +153,7 @@ export async function generateAIThemeConcept(
     previous?: AIThemeConcept;
     referenceImages?: string[];
     prompt: string;
+    usage?: "live" | "screensaver";
     target?: "scene" | "animation" | "scene_motion" | "auto" | "companions";
   },
   signal?: AbortSignal,
@@ -160,6 +161,7 @@ export async function generateAIThemeConcept(
   return aiRequest<AIThemeConcept>("/v1/ai-theme/concepts", {
     body: JSON.stringify({
       prompt: input.prompt,
+      usage: input.usage,
       referenceImages: input.referenceImages,
       target: input.target,
       history: input.history
@@ -681,7 +683,10 @@ export function encodeAIThemeCBA1(
     }
     colors.push(frameColors);
   }
-  const reserved = [...new Set(priorityColors)].filter((color) => counts.has(color)).slice(0, MAX_COLORS);
+  // Leave room for the artwork baked behind transparent companions. Reserving
+  // all 26 companion colors forces every background pixel into that palette,
+  // producing a differently colored rectangle around an otherwise correct pet.
+  const reserved = [...new Set(priorityColors)].filter((color) => counts.has(color)).slice(0, 8);
   const palette = [...reserved, ...Array.from(counts.entries())
     .sort((a, b) => b[1] - a[1])
     .map(([color]) => color)

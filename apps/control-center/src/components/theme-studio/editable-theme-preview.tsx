@@ -1,6 +1,6 @@
 "use client";
 
-import type { PointerEvent as ReactPointerEvent } from "react";
+import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { ThemeStudioSpec } from "@/lib/theme-studio";
 import { ThemeSpecPreview, type ThemeRenderPack } from "../live-vibetv-preview";
@@ -11,7 +11,7 @@ import {
   clampedMoveDelta,
   DISPLAY_SIZE,
   isAspectLockedPrimitive,
-  isFullCanvasRect,
+  isFullCanvasBackground,
   normalizeSelectedIndices,
   normalizedSelectionBox,
   primitiveBounds,
@@ -30,9 +30,10 @@ type DragState =
       startY: number;
     }
   | {
-      currentX: number;
-      currentY: number;
       mode: "select";
+      clickIndex?: number;
+      additive: boolean;
+      initialSelection: number[];
       startX: number;
       startY: number;
     }
@@ -49,6 +50,8 @@ type DragState =
 
 export function EditableThemePreview({
   animate,
+  children,
+  toolbar,
   elementLabels,
   nonInteractiveIndices = [],
   onInteractionCancel,
@@ -64,6 +67,8 @@ export function EditableThemePreview({
   spec,
 }: {
   animate?: boolean;
+  children?: ReactNode;
+  toolbar?: ReactNode;
   elementLabels?: string[];
   nonInteractiveIndices?: number[];
   onInteractionCancel: () => void;
@@ -79,6 +84,8 @@ export function EditableThemePreview({
   spec: ThemeStudioSpec;
 }) {
   const svgRef = useRef<SVGSVGElement>(null);
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const surfaceRectRef = useRef<DOMRect | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const gestureRectRef = useRef<DOMRect | null>(null);
   const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
@@ -96,7 +103,7 @@ export function EditableThemePreview({
     return () => media.removeEventListener("change", handleChange);
   }, []);
 
-  function pointerPoint(event: ReactPointerEvent<SVGElement>) {
+  function pointerPoint(event: ReactPointerEvent<Element>) {
     // Selection can reveal controls and change the canvas layout mid-gesture.
     const rect = gestureRectRef.current ?? svgRef.current?.getBoundingClientRect();
     if (!rect) {
@@ -114,8 +121,8 @@ export function EditableThemePreview({
     gestureRectRef.current = svgRef.current?.getBoundingClientRect() ?? null;
     const point = pointerPoint(event);
     const primitive = spec.primitives[index];
-    if (isFullCanvasRect(primitive)) {
-      startSelection(event);
+    if (isFullCanvasBackground(primitive)) {
+      startSelection(event, index);
       return;
     }
     const normalizedSelection = normalizeSelectedIndices(
@@ -159,19 +166,34 @@ export function EditableThemePreview({
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
-  function startSelection(event: ReactPointerEvent<SVGRectElement>) {
+  function startSelection(event: ReactPointerEvent<Element>, clickIndex?: number) {
     event.preventDefault();
+    event.stopPropagation();
     gestureRectRef.current = svgRef.current?.getBoundingClientRect() ?? null;
+    surfaceRectRef.current = surfaceRef.current?.getBoundingClientRect() ?? null;
     const point = pointerPoint(event);
     dragRef.current = {
-      currentX: point.x,
-      currentY: point.y,
       mode: "select",
+      clickIndex,
+      additive: event.shiftKey || event.metaKey || event.ctrlKey,
+      initialSelection: selectedIndices,
       startX: point.x,
       startY: point.y,
     };
-    setSelectionBox(normalizedSelectionBox(point.x, point.y, point.x, point.y));
+    drawSelectionBox(point.x, point.y, point.x, point.y);
     event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function drawSelectionBox(startX: number, startY: number, x: number, y: number) {
+    const canvas = gestureRectRef.current;
+    const surface = surfaceRectRef.current;
+    if (!canvas || !surface) return;
+    setSelectionBox({
+      x: canvas.left - surface.left + Math.min(startX, x) * canvas.width / DISPLAY_SIZE,
+      y: canvas.top - surface.top + Math.min(startY, y) * canvas.height / DISPLAY_SIZE,
+      width: Math.abs(x - startX) * canvas.width / DISPLAY_SIZE,
+      height: Math.abs(y - startY) * canvas.height / DISPLAY_SIZE,
+    });
   }
 
   function startResize(event: ReactPointerEvent<SVGElement>, index: number) {
@@ -196,7 +218,7 @@ export function EditableThemePreview({
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
-  function movePointer(event: ReactPointerEvent<SVGElement>) {
+  function movePointer(event: ReactPointerEvent<Element>) {
     const drag = dragRef.current;
     if (!drag) {
       return;
@@ -204,11 +226,7 @@ export function EditableThemePreview({
     event.preventDefault();
     const point = pointerPoint(event);
     if (drag.mode === "select") {
-      drag.currentX = point.x;
-      drag.currentY = point.y;
-      setSelectionBox(
-        normalizedSelectionBox(drag.startX, drag.startY, point.x, point.y),
-      );
+      drawSelectionBox(drag.startX, drag.startY, point.x, point.y);
       return;
     }
     if (drag.mode === "resize") {
@@ -277,26 +295,33 @@ export function EditableThemePreview({
     }
   }
 
-  function finishPointer(event: ReactPointerEvent<SVGElement>) {
+  function finishPointer(event: ReactPointerEvent<Element>) {
     const drag = dragRef.current;
     if (!drag) {
       return;
     }
     if (drag.mode === "select") {
       event.preventDefault();
+      const point = pointerPoint(event);
       const box = normalizedSelectionBox(
         drag.startX,
         drag.startY,
-        drag.currentX,
-        drag.currentY,
+        point.x,
+        point.y,
       );
-      onSelectMany(
-        box.width < 2 && box.height < 2
+      if (box.width < 2 && box.height < 2 && drag.clickIndex !== undefined) {
+        onSelect(drag.clickIndex, drag.additive);
+      } else {
+        const hits = box.width < 2 && box.height < 2
           ? []
-          : selectedPrimitiveIndices(spec.primitives, box).filter(
-              (i) => !nonInteractiveIndices.includes(i),
-            ),
-      );
+          : selectedPrimitiveIndices(spec.primitives, box);
+        onSelectMany(
+          normalizeSelectedIndices(
+            [...(drag.additive ? drag.initialSelection : []), ...hits],
+            spec.primitives.length,
+          ).filter((i) => !nonInteractiveIndices.includes(i)),
+        );
+      }
     }
     stopDrag(drag.mode === "select" ? "selection" : "commit");
   }
@@ -314,6 +339,20 @@ export function EditableThemePreview({
   });
 
   return (
+    <div
+      ref={surfaceRef}
+      aria-label="Selection workspace"
+      className="relative flex w-full flex-1 flex-col justify-center py-4 [touch-action:none]"
+      onPointerDown={(event) => {
+        if (event.button === 0 && !(event.target as Element).closest("svg, button, input, textarea, select, a, [role=button], [data-selection-controls]")) startSelection(event);
+      }}
+      onPointerCancel={() => stopDrag("cancel")}
+      onPointerMove={movePointer}
+      onPointerUp={finishPointer}
+    >
+    {toolbar ? <div className="[touch-action:auto]">{toolbar}</div> : null}
+    <div className="px-8 py-8">
+    <div className="mx-auto w-full max-w-[460px] rounded-2xl border bg-muted p-3 shadow-lg group-focus-visible/canvas:ring-2 group-focus-visible/canvas:ring-ring">
     <div className="relative aspect-square w-full max-w-[480px] overflow-hidden rounded-lg border border-[#1B1B1B] bg-black p-0">
       <ThemeSpecPreview
         animate={animate ?? !prefersReducedMotion}
@@ -324,9 +363,6 @@ export function EditableThemePreview({
       <svg
         aria-label="Editable 240x240 preview"
         className="absolute inset-0 h-full w-full [touch-action:none]"
-        onPointerCancel={() => stopDrag("cancel")}
-        onPointerMove={movePointer}
-        onPointerUp={finishPointer}
         ref={svgRef}
         viewBox="0 0 240 240"
       >
@@ -349,7 +385,7 @@ export function EditableThemePreview({
             <g key={`${primitive.type}-${index}`}>
               <rect
                 aria-label={`Select ${elementLabels?.[index] || primitive.type} ${index + 1}`}
-                className="cursor-move"
+                className={isFullCanvasBackground(primitive) ? "cursor-crosshair" : "cursor-move"}
                 fill="transparent"
                 height={Math.max(8, bounds.height)}
                 onKeyDown={(event) => {
@@ -398,20 +434,21 @@ export function EditableThemePreview({
             </g>
           );
         })}
-        {selectionBox ? (
-          <rect
-            fill="#CCFF0033"
-            height={selectionBox.height}
-            pointerEvents="none"
-            stroke="#CCFF00"
-            strokeDasharray="4 3"
-            strokeWidth="1"
-            width={selectionBox.width}
-            x={selectionBox.x}
-            y={selectionBox.y}
-          />
-        ) : null}
       </svg>
+    </div>
+    </div>
+    </div>
+    {children ? <div className="[touch-action:auto]">{children}</div> : null}
+    {selectionBox ? (
+      <div aria-hidden="true" data-testid="selection-box"
+        className="pointer-events-none absolute z-10 border border-dashed border-[#CCFF00] bg-[#CCFF0033]"
+        style={{
+          left: selectionBox.x,
+          top: selectionBox.y,
+          width: selectionBox.width,
+          height: selectionBox.height,
+        }} />
+    ) : null}
     </div>
   );
 }

@@ -773,10 +773,6 @@ function ThemePrimitiveNode({
         />
       ) : null;
     }
-    const currentFrame =
-      sprite.frames[spriteFrameIndex(sprite, animationTick)] ||
-      sprite.frames[0] ||
-      [];
     return (
       <g>
         {(primitive.bg || primitive.bgColor) && (
@@ -788,23 +784,14 @@ function ThemePrimitiveNode({
             y={y}
           />
         )}
-        {scaleSpriteRects(
-          currentFrame,
-          sprite,
-          x,
-          y,
-          renderWidth,
-          renderHeight,
-        ).map((rect, index) => (
-          <rect
-            fill={rect.color}
-            height={rect.height}
-            key={index}
-            width={rect.width}
-            x={rect.x}
-            y={rect.y}
-          />
-        ))}
+        <ThemeSpriteImage
+          sprite={sprite}
+          animationTick={animationTick}
+          x={x}
+          y={y}
+          width={renderWidth}
+          height={renderHeight}
+        />
       </g>
     );
   }
@@ -1974,6 +1961,47 @@ function spriteFrameIndex(
     return 0;
   }
   return Math.floor((animationTick / 1000) * sprite.fps) % sprite.frames.length;
+}
+
+function ThemeSpriteImage({
+  sprite,
+  animationTick,
+  x,
+  y,
+  width,
+  height,
+}: {
+  sprite: DecodedSprite;
+  animationTick: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}) {
+  // Keep pixel runs inside cached image resources, out of the live DOM and
+  // accessibility tree. Animation only switches the image; moving it reuses it.
+  const images = useMemo(
+    () => sprite.frames.map((rects) => {
+      const pixels = scaleSpriteRects(rects, sprite, 0, 0, width, height)
+        .map((rect) => `<rect x="${rect.x}" y="${rect.y}" width="${rect.width}" height="${rect.height}" fill="${rect.color}"/>`)
+        .join("");
+      return `data:image/svg+xml,${encodeURIComponent(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${pixels}</svg>`,
+      )}`;
+    }),
+    [sprite, width, height],
+  );
+  return (
+    <image
+      href={images[spriteFrameIndex(sprite, animationTick)] || images[0]}
+      x={x}
+      y={y}
+      width={width}
+      height={height}
+      imageRendering="pixelated"
+      preserveAspectRatio="none"
+    />
+  );
 }
 
 function scaleSpriteRects(

@@ -204,3 +204,37 @@ func TestStaticCompanionSceneIncludesSubject(t *testing.T) {
 		t.Fatalf("Static scene failed: %v; calls=%d", err, images)
 	}
 }
+
+func TestNewCompanionThemesIncludeUsageByDefault(t *testing.T) {
+	for _, tc := range []struct {
+		name, usage string
+		omit, want  bool
+	}{
+		{"plain scene", "live", false, true}, {"legacy client", "", false, true},
+		{"screensaver", "screensaver", false, false}, {"explicit opt out", "live", true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			style, pets := companionPlanFixture(0)
+			s := aiTestServer(t, aiRoundTrip(func(r *http.Request) (*http.Response, error) {
+				if r.URL.Path == "/v1/responses" {
+					body, _ := io.ReadAll(r.Body)
+					if !strings.Contains(string(body), "omitUsageByRequest") || !strings.Contains(string(body), "must show usage by default") {
+						t.Fatal("missing default usage contract")
+					}
+					return autoTextResponse(map[string]any{"style": style, "companions": pets, "showUsage": false, "omitUsageByRequest": tc.omit}), nil
+				}
+				return aiResponse(200, `{"data":[{"b64_json":"`+aiTestPNG()+`"}]}`), nil
+			}))
+			_ = s.aiTheme.store.Set("openai", "fixture-secret")
+			body, _ := json.Marshal(aiThemeConceptRequest{Prompt: "Katzencafe", Target: "companions", Usage: tc.usage})
+			response := aiCall(s, "POST", "/v1/ai-theme/concepts", string(body))
+			var got aiThemeConcept
+			if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &got) != nil {
+				t.Fatal(response.Code, response.Body.String())
+			}
+			if got.ShowUsage != tc.want || got.HideUsage == tc.want {
+				t.Fatalf("wrong readout policy: show=%v hide=%v", got.ShowUsage, got.HideUsage)
+			}
+		})
+	}
+}

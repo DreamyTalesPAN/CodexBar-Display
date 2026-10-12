@@ -11,13 +11,14 @@ export type AIThemeLayoutEdit={
   x?:number|null; y?:number|null; width?:number|null; height?:number|null;
   fontSize?:number|null; color?:string|null; text?:string|null; reading?:string|null;
   fps?:number|null;
+  bgColor?:string|null; borderColor?:string|null; borderRadius?:number|null; progressStyle?:"solid"|"segments"|null;
 };
 export type AIThemeLayoutPlan={mode:'layout'|'scene'|'answer'|'unsupported';notes:string;edits:AIThemeLayoutEdit[]};
 
 // Send geometry and native labels only, never sprite bytes or credentials.
 export function layoutContext(document:ThemeStudioDocument, selected:number[]=[]){
   const groups=usageSectionIndices(document.spec.primitives);
-  return document.spec.primitives.map((p,index)=>({type:p.type,x:p.x,y:p.y,width:p.width,height:p.height,fontSize:p.fontSize,color:p.color,bgColor:p.bgColor,text:p.text,binding:p.binding,slot:p.slot,fps:p.fps,selected:selected.includes(index),sceneName:document.packName,usageGroup:groups.findIndex(group=>group.includes(index))+1||undefined,role:isCompanionSprite(p.assetPath)?'companion':p.assetPath===ART?'artwork':p.assetPath?'image':'ui',protected:isCompanionSprite(p.assetPath)?false:!!p.assetPath || !['text','rect','progress'].includes(p.type)}));
+  return document.spec.primitives.map((p,index)=>({type:p.type,x:p.x,y:p.y,width:p.width,height:p.height,fontSize:p.fontSize,color:p.color,bgColor:p.bgColor,borderColor:p.borderColor,borderRadius:p.borderRadius,progressStyle:p.progressStyle,text:p.text,binding:p.binding,slot:p.slot,fps:p.fps,selected:selected.includes(index),sceneName:document.packName,usageGroup:groups.findIndex(group=>group.includes(index))+1||undefined,role:isCompanionSprite(p.assetPath)?'companion':p.assetPath===ART?'artwork':p.assetPath?'image':'ui',protected:isCompanionSprite(p.assetPath)?false:!!p.assetPath || !['text','rect','progress'].includes(p.type)}));
 }
 
 // All indices refer to the original document. Apply atomically, preserving all
@@ -26,7 +27,7 @@ export function applyAIThemeLayout(current:ThemeStudioDocument,plan:AIThemeLayou
   const fail=()=>{throw new Error('The AI layout edit is invalid. Your design is unchanged.');};
   if(plan.mode!=='layout'||!Array.isArray(plan.edits)||plan.edits.length>24) return fail();
   const next=cloneDocument(current),removed=new Set<number>(),seen=new Set<number>();
-  const allowed=['action','index','kind','x','y','width','height','fontSize','color','text','reading','fps'];
+  const allowed=['action','index','kind','x','y','width','height','fontSize','color','text','reading','fps','bgColor','borderColor','borderRadius','progressStyle'];
   for(const edit of plan.edits){
     if(!edit||Object.keys(edit).some(k=>!allowed.includes(k))||!['add','update','remove'].includes(edit.action)||!Number.isInteger(edit.index)) return fail();
     let p:ThemeStudioPrimitive;
@@ -49,10 +50,10 @@ export function applyAIThemeLayout(current:ThemeStudioDocument,plan:AIThemeLayou
       seen.add(edit.index);p=next.spec.primitives[edit.index];
       if(edit.kind!=null&&edit.kind!==p.type) return fail();
       if(edit.action==='remove'){if(artwork) return fail();removed.add(edit.index);continue;}
-      if(companion&&[edit.fontSize,edit.color,edit.text,edit.reading].some(v=>v!=null)) return fail();
+      if(companion&&[edit.fontSize,edit.color,edit.bgColor,edit.borderColor,edit.borderRadius,edit.progressStyle,edit.text,edit.reading].some(v=>v!=null)) return fail();
       if(artwork){
         // The picture can only be moved; its companions travel with it.
-        if([edit.width,edit.height,edit.fontSize,edit.color,edit.text,edit.reading,edit.fps].some(v=>v!=null)) return fail();
+        if([edit.width,edit.height,edit.fontSize,edit.color,edit.bgColor,edit.borderColor,edit.borderRadius,edit.progressStyle,edit.text,edit.reading,edit.fps].some(v=>v!=null)) return fail();
         // A motion attached to the picture is drawn for its place; such a picture stays put.
         if(next.spec.primitives.some(q=>isAttachedSceneAnimation(q.assetPath))) return fail();
         const dx=(edit.x??p.x)-p.x,dy=(edit.y??p.y)-p.y;
@@ -71,6 +72,20 @@ export function applyAIThemeLayout(current:ThemeStudioDocument,plan:AIThemeLayou
     }
     if(isCompanionSprite(p.assetPath)&&(p.width!==p.height||(p.width||0)<16||(p.width||0)>80)) return fail();
     if(edit.color!=null){if(!/^#[0-9a-f]{6}$/i.test(edit.color)) return fail();p.color=edit.color;}
+    for(const key of ['bgColor','borderColor'] as const){
+      if(edit[key]==null) continue;
+      if(!['rect','progress'].includes(p.type)||!/^#[0-9a-f]{6}$/i.test(edit[key]!)) return fail();
+      p[key]=edit[key]!;
+    }
+    if(edit.borderRadius!=null){
+      if(!['rect','progress'].includes(p.type)||!Number.isInteger(edit.borderRadius)||edit.borderRadius<0||edit.borderRadius>120) return fail();
+      p.borderRadius=edit.borderRadius;
+    }
+    if(edit.progressStyle!=null){
+      if(p.type!=='progress'||!['solid','segments'].includes(edit.progressStyle)) return fail();
+      p.progressStyle=edit.progressStyle;
+      if(edit.progressStyle==='segments'){p.segments??=10;p.segmentGap??=2;}
+    }
     if(edit.text!=null){
       if(p.type!=='text'||typeof edit.text!=='string'||edit.text.length>160) return fail();
       // Classic display fonts interpret Unicode umlauts as unrelated CP437 glyphs.

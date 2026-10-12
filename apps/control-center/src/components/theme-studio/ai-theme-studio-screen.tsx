@@ -102,6 +102,7 @@ import {
 } from "@/lib/ai-theme-document";
 import { AI_THEME_SCREENMASTER_ASSET_PATH, isCompanionSprite } from "@/lib/ai-theme";
 import { isAttachedSceneAnimation } from "@/lib/ai-theme";
+import { usageSectionIndices } from "./design-controls";
 import {applyAIThemeLayout,layoutContext} from "@/lib/ai-theme-layout";
 import type { ThemeStudioScreenProps } from "../theme-studio-screen";
 import { themeRenderPackUrl } from "../control-center-runtime";
@@ -116,6 +117,16 @@ function blank(): ThemeStudioDocument {
     spec: { ...createBlankThemeSpec(), primitives: [] },
     usage: "live",
   };
+}
+
+// The planner sees the actual scene palette and negative space, not just its name.
+function planningContext(document: ThemeStudioDocument, selected: number[] = []) {
+  return layoutContext(document, selected).map((item, index) => ({
+    ...item,
+    ...(["companion", "artwork"].includes(item.role) && document.assets[document.spec.primitives[index].assetPath!]
+      ? { referenceImageBase64: spritePNG(document.assets[document.spec.primitives[index].assetPath!].data, false) }
+      : {}),
+  }));
 }
 
 export function AIThemeStudioScreen({
@@ -726,10 +737,7 @@ export function AIThemeStudioScreen({
       // The picture of an imported or older design is the design's picture
       // for the helper too, so it can be redrawn like a generated one.
       const base = adoptPicture(document, selected);
-      const context = layoutContext(base, selected).map((item, i) => ({
-        ...item,
-        ...(item.role === "companion" ? {referenceImageBase64: spritePNG(document.assets[document.spec.primitives[i].assetPath!].data, false)} : {}),
-      }));
+      const context = planningContext(base, selected);
       const layout = await planAIThemeLayout(prompt, context, controller.signal, attachments.map((image) => image.data), history);
       if (request.current !== controller || controller.signal.aborted) return;
       if (layout.mode === "unsupported" || layout.mode === "answer") {
@@ -776,6 +784,7 @@ export function AIThemeStudioScreen({
           }] : [])],
           previous: conceptFromDocument(base),
           target: "companions",
+          usage: base.usage || "live",
         },
         controller.signal,
       );
@@ -791,13 +800,13 @@ export function AIThemeStudioScreen({
       let added = "";
       try {
         const extras = await planAIThemeLayout(
-          "The picture for the following request has just been created and is already in the design. Now add or change ONLY the native elements this request asks for (text, clock, date, usage readings, bars, shapes), placed where the request says. Do not describe or change the picture. If the request asks for no native element, answer with mode=layout and no edits. Request: " + prompt,
-          layoutContext(next), controller.signal, [], history,
+          "The picture for the following request has just been created and is already in the design. Now add or change ONLY the native elements this request asks for (text, clock, date, usage readings, bars, shapes), placed where the request says. Do not describe or change the picture. For a live theme that shows usage, also harmonize its readouts with the supplied artwork: cohesive colours, compact readable typography, appropriate bar treatment and calm placement clear of the subjects. Keep at least one live percentage, meter or reset unless the customer explicitly requested no readings. For screensavers or explicitly readout-free designs, add only what was requested. Request: " + prompt,
+          planningContext(next), controller.signal, [], history,
         );
         if (request.current !== controller || controller.signal.aborted) return;
         if (extras.mode === "layout" && extras.edits.length) {
           const withExtras = applyAIThemeLayout(next, extras);
-          if (!validateThemeSpec(withExtras.spec, withExtras.assets, withExtras.usage).errors.length) {
+          if ((!concept.showUsage || usageSectionIndices(withExtras.spec.primitives).flat().length > 0) && !validateThemeSpec(withExtras.spec, withExtras.assets, withExtras.usage).errors.length) {
             next = withExtras;
             added = " " + extras.notes;
           }
@@ -950,7 +959,7 @@ export function AIThemeStudioScreen({
         } else if (command && key === "s") {
           event.preventDefault();
           if (document.spec.primitives.length && !validation.errors.length) save();
-        } else if (!panel && event.target instanceof Element && event.target.closest("#theme-design-canvas")) {
+        } else if (!panel && event.target instanceof Element && event.target.closest("#theme-design-canvas") && !event.target.closest("[data-selection-controls]")) {
           if (event.key === "Escape") { event.preventDefault(); setSelected([]); return; }
           if (command && key === "a") {
             event.preventDefault();
@@ -1019,9 +1028,25 @@ export function AIThemeStudioScreen({
         </header>
         {visibleInstallStatus ? <p role="status" className="pt-3 text-right text-sm text-muted-foreground">{copyForHost(visibleInstallStatus.error || visibleInstallStatus.message || "Sending…", windowsHost)}</p> : transferStatus ? <p role="status" className="pt-3 text-right text-sm text-muted-foreground">{transferStatus}</p> : null}
           <main className="flex min-h-0 flex-1 flex-col gap-6 pt-2 lg:flex-row">
-            <div className="my-auto max-h-full min-w-0 flex-1 py-4 lg:overflow-y-auto">
+            <div className="min-h-0 min-w-0 flex-1 lg:overflow-y-auto">
+            <div
+              id="theme-design-canvas"
+              role="region"
+              aria-label="Design canvas"
+              tabIndex={0}
+              onPointerDownCapture={(event) => {
+                if (!(event.target as Element).closest("button, input, textarea, select, a, [data-selection-controls]")) {
+                  event.currentTarget.focus({ preventScroll: true });
+                }
+              }}
+              className="group/canvas flex min-h-full w-full flex-col outline-none"
+              inert={locked}
+              aria-busy={busy}
+            >
+              <EditableThemePreview
+                toolbar={
             <div className="mx-auto mb-4 flex max-w-[680px] items-center justify-end gap-2">
-              <div className="flex gap-1">
+              <div data-selection-controls className="flex gap-1">
                 <Button
                   variant="ghost"
                   size="icon"
@@ -1044,17 +1069,7 @@ export function AIThemeStudioScreen({
                 </Button>
               </div>
             </div>
-            <div
-              id="theme-design-canvas"
-              role="region"
-              aria-label="Design canvas"
-              tabIndex={0}
-              onPointerDownCapture={(event) => event.currentTarget.focus({ preventScroll: true })}
-              className="mx-auto w-full max-w-[460px] overflow-hidden rounded-2xl border bg-muted p-3 shadow-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
-              inert={locked}
-              aria-busy={busy}
-            >
-              <EditableThemePreview
+                }
                 animate={locked ? false : undefined}
                 nonInteractiveIndices={document.spec.primitives.flatMap(
                   (p, i) =>
@@ -1134,8 +1149,7 @@ export function AIThemeStudioScreen({
                     }
                   })
                 }
-              />
-            </div>
+              >
             {!document.spec.primitives.length ? (
               <div className="mt-5 text-center">
                 <Button
@@ -1150,7 +1164,7 @@ export function AIThemeStudioScreen({
               </div>
             ) : null}
             {primitive && !isAttachedSceneAnimation(primitive.assetPath) ? (
-              <Collapsible className="mx-auto mt-4 w-full max-w-[460px]">
+              <Collapsible data-selection-controls className="mx-auto mt-4 w-full max-w-[460px]">
                 <CollapsibleTrigger asChild>
                   <Button variant="ghost" className="group w-full justify-between">
                     Details
@@ -1393,6 +1407,8 @@ export function AIThemeStudioScreen({
                 </CollapsibleContent>
               </Collapsible>
             ) : null}
+              </EditableThemePreview>
+            </div>
             </div>
             <div className="mx-auto flex min-h-0 w-full max-w-[680px] flex-col lg:w-[420px] lg:shrink-0 lg:overflow-y-auto lg:border-l lg:pl-6">
             <div className="flex min-h-24 flex-1 flex-col gap-3 overflow-y-auto pb-4" role="log" aria-label="Conversation">

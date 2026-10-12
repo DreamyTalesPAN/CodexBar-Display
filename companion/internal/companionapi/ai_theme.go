@@ -77,6 +77,7 @@ type aiThemePreviousConcept struct {
 }
 
 type aiThemeConceptRequest struct {
+	Usage           string                  `json:"usage,omitempty"`
 	ReferenceImages []string                `json:"referenceImages,omitempty"`
 	Layout          []map[string]any        `json:"layout,omitempty"`
 	Prompt          string                  `json:"prompt"`
@@ -416,6 +417,10 @@ func (s *aiThemeServer) handleAIThemeConcept(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	req.Prompt = strings.TrimSpace(req.Prompt)
+	if req.Usage != "" && req.Usage != "live" && req.Usage != "screensaver" {
+		writeAIThemeError(w, http.StatusBadRequest, "request_invalid")
+		return
+	}
 	if req.Target != "" && req.Target != "scene" && req.Target != "animation" && req.Target != "scene_motion" && req.Target != "auto" && req.Target != "companions" && req.Target != "layout" {
 		writeAIThemeError(w, http.StatusBadRequest, "request_invalid")
 		return

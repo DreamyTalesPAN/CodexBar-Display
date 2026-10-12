@@ -279,10 +279,9 @@ export function selectedPrimitiveIndices(
     };
     return selectionBoxesIntersect(selection, box) ? [index] : [];
   });
-  const foregroundHits = hits.filter(
-    (index) => !isFullCanvasRect(primitives[index]),
+  return hits.filter(
+    (index) => !isFullCanvasBackground(primitives[index]),
   );
-  return foregroundHits.length > 0 ? foregroundHits : hits;
 }
 
 function selectionBoxesIntersect(a: SelectionBox, b: SelectionBox): boolean {
@@ -294,12 +293,12 @@ function selectionBoxesIntersect(a: SelectionBox, b: SelectionBox): boolean {
   );
 }
 
-export function isFullCanvasRect(
+export function isFullCanvasBackground(
   primitive: ThemeStudioPrimitive | undefined,
 ): boolean {
   return Boolean(
     primitive &&
-      primitive.type === "rect" &&
+      ["rect", "sprite", "gif", "pixels"].includes(primitive.type) &&
       primitive.x === 0 &&
       primitive.y === 0 &&
       primitive.width === DISPLAY_SIZE &&

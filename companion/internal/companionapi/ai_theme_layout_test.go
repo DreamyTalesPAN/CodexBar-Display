@@ -167,3 +167,19 @@ func TestLayoutMovesOnlyAPictureThatFits(t *testing.T) {
 		}
 	}
 }
+
+func TestLayoutUsesArtworkForCoordinatedReadoutStyle(t *testing.T) {
+	s := aiTestServer(t, aiRoundTrip(func(r *http.Request) (*http.Response, error) {
+		body, _ := io.ReadAll(r.Body)
+		if r.URL.Path != "/v1/responses" || !strings.Contains(string(body), "artwork style reference") || !strings.Contains(string(body), `"type":"input_image"`) || strings.Count(string(body), aiTestPNG()) != 1 {
+			t.Fatal("artwork not sent as one bounded visual reference")
+		}
+		return autoTextResponse(map[string]any{"mode": "layout", "notes": "Passende Farben", "edits": []any{map[string]any{"action": "add", "index": -1, "kind": "progress", "x": 12, "y": 200, "width": 216, "height": 10, "reading": "usageSlot1Percent", "color": "#C58A42", "bgColor": "#302013", "borderColor": "#80603B", "borderRadius": 2, "progressStyle": "solid"}}}), nil
+	}))
+	_ = s.aiTheme.store.Set("openai", "fixture-secret")
+	body, _ := json.Marshal(map[string]any{"prompt": "Add matching usage", "target": "layout", "layout": []any{map[string]any{"type": "sprite", "role": "artwork", "protected": true, "referenceImageBase64": aiTestPNG()}}})
+	response := aiCall(s, "POST", "/v1/ai-theme/concepts", string(body))
+	if response.Code != 200 || !strings.Contains(response.Body.String(), `"bgColor":"#302013"`) {
+		t.Fatal(response.Code, response.Body.String())
+	}
+}

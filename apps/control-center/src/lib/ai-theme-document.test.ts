@@ -213,6 +213,30 @@ describe("companion sprites on the device", () => {
     for(const frame of decodeSprite(flattenCompanionSprites(document).assets[pet].data)!.frames)
       expect(frame.find(r=>r.x===0&&r.y===0)?.color).toBe('#0000FF');
   });
+  it("keeps warm artwork when a companion already uses all 26 palette slots", () => {
+    const pet = "/themes/u/ai-pet-1.cba";
+    const art = new Uint8ClampedArray(240 * 240 * 4);
+    for (let i = 0; i < art.length; i += 4) art.set([170, 85, 17, 255], i);
+    const frames = Array.from({ length: 8 }, () => {
+      const rgba = new Uint8ClampedArray(48 * 48 * 4);
+      for (let i = 0; i < 26; i++) rgba.set([Math.floor(i / 16) * 17, (i % 16) * 17, 204, 255], i * 4);
+      return rgba;
+    });
+    const document = { packName: "Cafe", assets: {
+      [ART]: { contentType: "text/plain", encoding: "text", data: encodeAIThemeCBI1(art, 240, 240) },
+      [pet]: { contentType: "text/plain", encoding: "text", data: encodeAIThemeCBA1(frames, 48, 48, 4) },
+    }, spec: { primitives: [
+      { type: "sprite", x: 0, y: 0, width: 240, height: 240, assetPath: ART },
+      { type: "sprite", x: 14, y: 55, width: 80, height: 80, assetPath: pet },
+    ] } } as unknown as ThemeStudioDocument;
+    const original = structuredClone(document);
+    const sprite = decodeSprite(flattenCompanionSprites(document).assets[pet].data)!;
+    for (const frame of sprite.frames) {
+      expect(frame.find(r => r.x === 0 && r.y === 47)?.color).toBe("#AA5511");
+      expect(new Set(frame.map(r => r.color)).size).toBeLessThanOrEqual(26);
+    }
+    expect(document).toEqual(original);
+  });
   it("preserves the device's rounded rectangle pixels in every animation frame", () => {
     const pet="/themes/u/ai-pet-1.cba";
     const frames=Array.from({length:4},()=>{const p=new Uint8ClampedArray(16*16*4);p.set([0,0,255,255],(8*16+8)*4);return p;});
