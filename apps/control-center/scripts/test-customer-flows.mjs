@@ -441,6 +441,7 @@ async function main() {
       return;
     }
     if (themePreviewsOnly) {
+      await testOverviewRendersThemeSpecAssetTypes(browser, appContext.appUrl);
       await testThemeLibraryRendersThemeSpecPreviews(
         browser,
         appContext.appUrl,
@@ -9969,6 +9970,16 @@ async function testOverviewRejectsInvalidDisplayFrame(browser, appUrl) {
   await page.close();
 }
 
+// Sprite runs are now cached SVG images, not thousands of live DOM nodes.
+async function cachedSpritePixelCount(preview) {
+  return preview.locator("image").evaluateAll((images) => images.reduce((count, image) => {
+    const href = image.getAttribute("href") || "";
+    if (!href.startsWith("data:image/svg+xml,")) return count;
+    const svg = new DOMParser().parseFromString(decodeURIComponent(href.slice(href.indexOf(",") + 1)), "image/svg+xml");
+    return count + svg.querySelectorAll("rect").length;
+  }, 0));
+}
+
 async function testOverviewRendersThemeSpecAssetTypes(browser, appUrl) {
   const cases = [
     { id: "mini-classic", kind: "gif", expectedLabel: "Codex" },
@@ -10046,7 +10057,7 @@ async function testOverviewRendersThemeSpecAssetTypes(browser, appUrl) {
       );
     } else {
       assert(
-        (await renderedTheme.locator("rect").count()) > 10,
+        (await cachedSpritePixelCount(renderedTheme)) > 10,
         `${theme.id} preview should render sprite primitives`,
       );
     }
@@ -10158,7 +10169,7 @@ async function testThemeLibraryRendersThemeSpecPreviews(browser, appUrl) {
   });
   await synthwavePreview.waitFor({ timeout: 10_000 });
   assert(
-    (await synthwavePreview.locator("rect").count()) > 10,
+    (await cachedSpritePixelCount(synthwavePreview)) > 10,
     "Theme Library preview should render sprite primitives",
   );
 

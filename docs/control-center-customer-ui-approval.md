@@ -5588,3 +5588,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Marcus requested fixing the slow editor and authorized merging the tested Theme Studio changes. This follow-up fixes the verified Codex-review performance finding in that same scope.
 - Approved customer-visible result: Moving an element reuses its decoded image even when the editor clones the document. Animation updates only the animated image rather than repainting static artwork. Resizing rebuilds the affected rendered image and changed source bytes still refresh it.
 - Validation: A regression using cloned asset objects fails before the fix and passes afterward; source replacement, resize and transparent animation checks remain covered.
+
+## 2026-10-12 - Align preview checks with the accepted cached rendering
+
+- User approval: Marcus accepted the faster Theme Studio preview and authorized merging it ("geil klappt. jetzt bitte mergen in main"). These test-only adjustments cover that already approved result.
+- Approved customer-visible result: No additional UI change. Overview and Library tests inspect the pixel rectangles inside cached SVG images instead of requiring individual live DOM rectangles. Updated markup fingerprints reflect this representation; card sizes and the GIF fingerprint remain unchanged.
+- Validation: The focused browser preview suite passes with animation, reduced-motion, static thumbnails and card/dialog equivalence checks. The captured library screenshot was inspected; sprite unit tests additionally check exact color, transparency and scaled coordinates.
