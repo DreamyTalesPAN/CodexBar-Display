@@ -50,8 +50,9 @@ func limitCachedFrame(frame protocol.Frame, display *runtimeconfig.ProviderDispl
 }
 
 // withVisiblePairWindows drops the windows of a Two at once frame whose limit
-// the customer hid since. Hiding both would leave VibeTV blank, so then both
-// stay.
+// the customer hid since. When both are hidden the customer chose other limits
+// this frame does not carry, so it shows usage as unavailable until the next
+// reading instead of the hidden percentages.
 func withVisiblePairWindows(frame protocol.Frame, members []string, display *runtimeconfig.ProviderDisplayConfig) protocol.Frame {
 	visible := make([]protocol.UsageWindow, 0, len(frame.UsageWindows))
 	for _, window := range frame.UsageWindows {
@@ -60,7 +61,18 @@ func withVisiblePairWindows(frame protocol.Frame, members []string, display *run
 		}
 		visible = append(visible, window)
 	}
-	if len(visible) == 0 || len(visible) == len(frame.UsageWindows) {
+	if len(visible) == len(frame.UsageWindows) {
+		return frame
+	}
+	if len(visible) == 0 {
+		frame.UsageUnavailable = true
+		frame.SessionUnavailable = true
+		frame.WeeklyUnavailable = true
+		frame.Session = 0
+		frame.Weekly = 0
+		frame.ResetSec = 0
+		frame.UsageWindows = nil
+		frame.UsageSlots = nil
 		return frame
 	}
 	frame.UsageWindows = visible

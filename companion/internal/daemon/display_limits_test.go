@@ -289,6 +289,17 @@ func TestCachedFrameDropsWhatWasHiddenSince(t *testing.T) {
 	if len(got.UsageWindows) != 1 || got.UsageWindows[0].ID != "codex:weekly" {
 		t.Fatalf("cached pair after hiding Fable only: %+v", got.UsageWindows)
 	}
+
+	// Both cached limits replaced: the frame has nothing chosen left to show.
+	bothReplaced := &runtimeconfig.ProviderDisplayConfig{
+		Mode:          "pair",
+		ProviderIDs:   []string{"claude", "codex"},
+		HiddenWindows: map[string][]string{"claude": {"session"}, "codex": {"weekly"}},
+	}
+	got = limitCachedFrame(cached, bothReplaced)
+	if !got.UsageUnavailable || len(got.UsageWindows) != 0 || got.Session != 0 || got.Weekly != 0 {
+		t.Fatalf("cached pair with both limits hidden still shows usage: %+v", got)
+	}
 }
 
 func TestRunCycleWithDepsFallbackFollowsLimitsHiddenSince(t *testing.T) {
