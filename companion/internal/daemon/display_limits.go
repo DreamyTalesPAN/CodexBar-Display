@@ -30,6 +30,50 @@ func applyDisplayLimits(frame protocol.Frame, providers []codexbar.ParsedFrame, 
 	return frame
 }
 
+// limitCachedFrame applies the current display choice to a frame kept from an
+// earlier reading, which VibeTV resends while collection fails. That frame was
+// shaped by the choice of its time, so what the customer has hidden since is
+// taken out here; what they showed again returns with the next reading.
+func limitCachedFrame(frame protocol.Frame, display *runtimeconfig.ProviderDisplayConfig) protocol.Frame {
+	if display == nil {
+		return frame
+	}
+	if members := frameProviderMembers(frame.Provider); len(members) > 1 {
+		frame = withVisiblePairWindows(frame, members, display)
+	} else {
+		frame = withVisibleUsageWindows(frame, display)
+	}
+	if display.HidePace {
+		frame = frame.WithoutUsagePace()
+	}
+	return frame
+}
+
+// withVisiblePairWindows drops the windows of a Two at once frame whose limit
+// the customer hid since; each window id is "provider:window". Hiding both
+// would leave VibeTV blank, so then both stay.
+func withVisiblePairWindows(frame protocol.Frame, members []string, display *runtimeconfig.ProviderDisplayConfig) protocol.Frame {
+	visible := make([]protocol.UsageWindow, 0, len(frame.UsageWindows))
+	for _, window := range frame.UsageWindows {
+		if provider, id, ok := strings.Cut(window.ID, ":"); ok && display.WindowHidden(provider, id) {
+			continue
+		}
+		visible = append(visible, window)
+	}
+	if len(visible) == 0 || len(visible) == len(frame.UsageWindows) {
+		return frame
+	}
+	frame.UsageWindows = visible
+	frame.ResetSource = pairResetSource(members)
+	for _, window := range visible {
+		if provider, id, ok := strings.Cut(window.ID, ":"); ok && window.ResetSec > 0 {
+			frame.ResetSource = usageWindowResetSource(provider, id)
+			break
+		}
+	}
+	return frame
+}
+
 // visibleUsageWindows drops the windows the customer hid for this provider.
 // Hiding every window would leave VibeTV blank, so then all of them stay.
 func visibleUsageWindows(provider string, windows []protocol.UsageWindow, display *runtimeconfig.ProviderDisplayConfig) []protocol.UsageWindow {

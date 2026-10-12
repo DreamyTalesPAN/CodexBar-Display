@@ -1,6 +1,8 @@
 package daemon
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -229,5 +231,94 @@ func TestProviderDisplayPairSelectsOnlyTheCurrentMember(t *testing.T) {
 		if len(got) != 1 || got[0].Frame.Provider != "codex" {
 			t.Fatalf("pair selection=%+v want only codex", got)
 		}
+	}
+}
+
+// While collection fails VibeTV resends the last good frame. A limit or the
+// reserve or deficit hidden since must leave it at once, not after recovery.
+func TestCachedFrameDropsWhatWasHiddenSince(t *testing.T) {
+	basis := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	claude := displayLimitsClaude(basis)
+	codex := displayLimitsCodex(basis)
+	shown := &runtimeconfig.ProviderDisplayConfig{Mode: "pair", ProviderIDs: []string{"claude", "codex"}}
+	cached := applyDisplayLimits(claude.Frame, []codexbar.ParsedFrame{claude, codex}, shown, basis)
+	if len(cached.UsageWindows) != 2 || cached.UsageWindows[0].ID != "claude:session" {
+		t.Fatalf("pair frame before the change: %+v", cached.UsageWindows)
+	}
+
+	hidden := &runtimeconfig.ProviderDisplayConfig{
+		Mode:          "pair",
+		ProviderIDs:   []string{"claude", "codex"},
+		HiddenWindows: map[string][]string{"claude": {"session"}},
+		HidePace:      true,
+	}
+	got := limitCachedFrame(cached, hidden)
+	if len(got.UsageWindows) != 1 || got.UsageWindows[0].ID != "codex:weekly" || got.UsageWindows[0].Pace != (protocol.UsagePace{}) {
+		t.Fatalf("pair frame after hiding Claude Session and the pace: %+v", got.UsageWindows)
+	}
+	if got.ResetSource != usageWindowResetSource("codex", "weekly") {
+		t.Fatalf("pair reset source=%q", got.ResetSource)
+	}
+	if got := limitCachedFrame(cached, shown); len(got.UsageWindows) != 2 || got.UsageWindows[1].Pace.State != "reserve" {
+		t.Fatalf("an unchanged choice changed the cached pair: %+v", got.UsageWindows)
+	}
+
+	one := &runtimeconfig.ProviderDisplayConfig{Mode: "fixed", ProviderIDs: []string{"claude"}, HiddenWindows: map[string][]string{"claude": {"session"}}}
+	got = limitCachedFrame(claude.Frame, one)
+	if len(got.UsageWindows) != 2 || got.UsageWindows[0].ID != "weekly" || got.UsageWindows[0].Pace.State != "deficit" {
+		t.Fatalf("one provider after hiding Session: %+v", got.UsageWindows)
+	}
+}
+
+func TestRunCycleWithDepsFallbackFollowsLimitsHiddenSince(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	current := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	display := runtimeconfig.ProviderDisplayConfig{Mode: "fixed", ProviderIDs: []string{"claude"}}
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	lines := make([][]byte, 0, 2)
+	deps := providerDisplayTestDeps(display)
+	deps.loadConfig = func(string) (runtimeconfig.Config, error) {
+		return runtimeconfig.Config{ProviderDisplay: &display}, nil
+	}
+	deps.now = func() time.Time { return current }
+	deps.resolvePort = func(string) (string, error) { return "/dev/cu.usbmodem-test", nil }
+	deps.deviceCaps = func(string) (protocol.DeviceCapabilities, error) {
+		return protocol.DeviceCapabilities{Known: true, NegotiatedProtocolVersion: protocol.ProtocolVersionV2, MaxFrameBytes: 2048}, nil
+	}
+	deps.logf = func(string, ...any) {}
+	deps.sendLine = func(port string, line []byte) error {
+		lines = append(lines, append([]byte(nil), line...))
+		return nil
+	}
+	deps.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return []codexbar.ParsedFrame{displayLimitsClaude(current)}, nil
+	}
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+		t.Fatalf("first cycle: %v", err)
+	}
+
+	display.HiddenWindows = map[string][]string{"claude": {"session"}}
+	current = current.Add(time.Minute)
+	deps.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return nil, &codexbar.FetchError{Kind: codexbar.FetchErrorCommand, Err: errors.New("transient failure")}
+	}
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+		t.Fatalf("fallback cycle: %v", err)
+	}
+	if len(lines) != 2 {
+		t.Fatalf("sent %d frames, want 2", len(lines))
+	}
+	first, second := decodeFrameLine(t, lines[0]), decodeFrameLine(t, lines[1])
+	if len(first.UsageWindows) == 0 || first.UsageWindows[0].ID != "session" {
+		t.Fatalf("first frame windows: %+v", first.UsageWindows)
+	}
+	for _, window := range second.UsageWindows {
+		if window.ID == "session" {
+			t.Fatalf("the fallback frame still shows the hidden Session: %+v", second.UsageWindows)
+		}
+	}
+	if len(second.UsageWindows) == 0 {
+		t.Fatalf("the fallback frame lost every window: %+v", second)
 	}
 }
