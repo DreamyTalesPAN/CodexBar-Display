@@ -131,6 +131,44 @@ describe("OverviewScreen", () => {
     expect(html).not.toContain(">Live<");
   });
 
+  it("hides a fresh cached preview when the USB device is no longer found", () => {
+    const html = renderToStaticMarkup(
+      <OverviewScreen
+        companionStatus="online"
+        device={{
+          active: true,
+          target: "cable://vibetv",
+          connected: false,
+          deviceId: "14799300",
+          paired: true,
+          ready: false,
+          connectionState: "reconnecting",
+          stream: {
+            errorCode: "device_not_found",
+            healthy: false,
+            running: true,
+          },
+        }}
+        displayFrame={{
+          ok: true,
+          deviceId: "14799300",
+          savedAt: new Date(Date.now() - 15_000).toISOString(),
+          frame: {
+            v: 1,
+            provider: "claude",
+            label: "Claude",
+            session: 16,
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain("Not connected");
+    expect(html).toContain("VibeTV live preview is offline");
+    expect(html).not.toContain("VibeTV is connected");
+    expect(html).not.toContain(">Live<");
+  });
+
   it("does not show reconnect instructions inside an available Overview", () => {
     const html = renderToStaticMarkup(
       <OverviewScreen

@@ -355,6 +355,9 @@ export function LiveVibeTVPreview({
     deviceIsCustomerConnected(device) ||
       (deviceIsActive(device) &&
         device?.paired !== false &&
+        // A missing USB device cannot be kept live by its last cached image.
+        !(deviceUsesCable(device) &&
+          device?.stream?.errorCode === "device_not_found") &&
         // Approved behavior (2026-08-03): temporary failures keep the last
         // verified preview visible while the device reconnects. But a cached
         // frame is not a live connection forever: once the companion reports
