@@ -33,14 +33,30 @@ func applyDisplayLimits(frame protocol.Frame, providers []codexbar.ParsedFrame, 
 // limitCachedFrame applies the current display choice to a frame kept from an
 // earlier reading, which VibeTV resends while collection fails. That frame was
 // shaped by the choice of its time, so what the customer has hidden since is
-// taken out here; what they showed again returns with the next reading.
+// taken out here; what they showed again returns with the next reading. A
+// pair with a hidden limit, or a provider with no chosen limit left, cannot
+// show the current choice from this frame, so it shows usage as unavailable
+// until then instead of the hidden percentages.
 func limitCachedFrame(frame protocol.Frame, display *runtimeconfig.ProviderDisplayConfig) protocol.Frame {
 	if display == nil {
 		return frame
 	}
-	if members := frameProviderMembers(frame.Provider); len(members) > 1 {
-		frame = withVisiblePairWindows(frame, members, display)
-	} else {
+	if len(frameProviderMembers(frame.Provider)) > 1 {
+		for _, window := range frame.UsageWindows {
+			if pairWindowHidden(window.ID, display) {
+				return frameWithoutUsage(frame)
+			}
+		}
+	} else if len(frame.UsageWindows) > 0 {
+		visible := 0
+		for _, window := range frame.UsageWindows {
+			if !display.WindowHidden(frame.Provider, window.ID) {
+				visible++
+			}
+		}
+		if visible == 0 {
+			return frameWithoutUsage(frame)
+		}
 		frame = withVisibleUsageWindows(frame, display)
 	}
 	if display.HidePace {
@@ -49,40 +65,15 @@ func limitCachedFrame(frame protocol.Frame, display *runtimeconfig.ProviderDispl
 	return frame
 }
 
-// withVisiblePairWindows drops the windows of a Two at once frame whose limit
-// the customer hid since. When both are hidden the customer chose other limits
-// this frame does not carry, so it shows usage as unavailable until the next
-// reading instead of the hidden percentages.
-func withVisiblePairWindows(frame protocol.Frame, members []string, display *runtimeconfig.ProviderDisplayConfig) protocol.Frame {
-	visible := make([]protocol.UsageWindow, 0, len(frame.UsageWindows))
-	for _, window := range frame.UsageWindows {
-		if pairWindowHidden(window.ID, display) {
-			continue
-		}
-		visible = append(visible, window)
-	}
-	if len(visible) == len(frame.UsageWindows) {
-		return frame
-	}
-	if len(visible) == 0 {
-		frame.UsageUnavailable = true
-		frame.SessionUnavailable = true
-		frame.WeeklyUnavailable = true
-		frame.Session = 0
-		frame.Weekly = 0
-		frame.ResetSec = 0
-		frame.UsageWindows = nil
-		frame.UsageSlots = nil
-		return frame
-	}
-	frame.UsageWindows = visible
-	frame.ResetSource = pairResetSource(members)
-	for _, window := range visible {
-		if provider, id, ok := strings.Cut(window.ID, ":"); ok && window.ResetSec > 0 {
-			frame.ResetSource = usageWindowResetSource(provider, id)
-			break
-		}
-	}
+func frameWithoutUsage(frame protocol.Frame) protocol.Frame {
+	frame.UsageUnavailable = true
+	frame.SessionUnavailable = true
+	frame.WeeklyUnavailable = true
+	frame.Session = 0
+	frame.Weekly = 0
+	frame.ResetSec = 0
+	frame.UsageWindows = nil
+	frame.UsageSlots = nil
 	return frame
 }
 

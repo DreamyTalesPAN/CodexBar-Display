@@ -245,28 +245,24 @@ func TestCachedFrameDropsWhatWasHiddenSince(t *testing.T) {
 	if len(cached.UsageWindows) != 2 || cached.UsageWindows[0].ID != "claude:session" {
 		t.Fatalf("pair frame before the change: %+v", cached.UsageWindows)
 	}
-
-	hidden := &runtimeconfig.ProviderDisplayConfig{
-		Mode:          "pair",
-		ProviderIDs:   []string{"claude", "codex"},
-		HiddenWindows: map[string][]string{"claude": {"session"}},
-		HidePace:      true,
-	}
-	got := limitCachedFrame(cached, hidden)
-	if len(got.UsageWindows) != 1 || got.UsageWindows[0].ID != "codex:weekly" || got.UsageWindows[0].Pace != (protocol.UsagePace{}) {
-		t.Fatalf("pair frame after hiding Claude Session and the pace: %+v", got.UsageWindows)
-	}
-	if got.ResetSource != usageWindowResetSource("codex", "weekly") {
-		t.Fatalf("pair reset source=%q", got.ResetSource)
-	}
 	if got := limitCachedFrame(cached, shown); len(got.UsageWindows) != 2 || got.UsageWindows[1].Pace.State != "reserve" {
 		t.Fatalf("an unchanged choice changed the cached pair: %+v", got.UsageWindows)
 	}
 
-	one := &runtimeconfig.ProviderDisplayConfig{Mode: "fixed", ProviderIDs: []string{"claude"}, HiddenWindows: map[string][]string{"claude": {"session"}}}
-	got = limitCachedFrame(claude.Frame, one)
-	if len(got.UsageWindows) != 2 || got.UsageWindows[0].ID != "weekly" || got.UsageWindows[0].Pace.State != "deficit" {
-		t.Fatalf("one provider after hiding Session: %+v", got.UsageWindows)
+	noPace := &runtimeconfig.ProviderDisplayConfig{Mode: "pair", ProviderIDs: []string{"claude", "codex"}, HidePace: true}
+	if got := limitCachedFrame(cached, noPace); len(got.UsageWindows) != 2 || got.UsageWindows[1].Pace != (protocol.UsagePace{}) {
+		t.Fatalf("cached pair after switching the pace off: %+v", got.UsageWindows)
+	}
+
+	// The pair cannot show another limit from this frame, so it shows usage
+	// as unavailable; one lane alone would still be labelled as the pair.
+	sessionHidden := &runtimeconfig.ProviderDisplayConfig{
+		Mode:          "pair",
+		ProviderIDs:   []string{"claude", "codex"},
+		HiddenWindows: map[string][]string{"claude": {"session"}},
+	}
+	if got := limitCachedFrame(cached, sessionHidden); !got.UsageUnavailable || len(got.UsageWindows) != 0 || got.Session != 0 || got.Weekly != 0 {
+		t.Fatalf("cached pair with Claude Session hidden still shows usage: %+v", got)
 	}
 
 	// "claude:claude-weekly-scoped-fable" is cut to 32 bytes on the wire, and
@@ -285,20 +281,21 @@ func TestCachedFrameDropsWhatWasHiddenSince(t *testing.T) {
 		ProviderIDs:   []string{"claude", "codex"},
 		HiddenWindows: map[string][]string{"claude": {"claude-weekly-scoped-fable"}},
 	}
-	got = limitCachedFrame(cachedFable, fableHidden)
-	if len(got.UsageWindows) != 1 || got.UsageWindows[0].ID != "codex:weekly" {
+	if got := limitCachedFrame(cachedFable, fableHidden); !got.UsageUnavailable || len(got.UsageWindows) != 0 {
 		t.Fatalf("cached pair after hiding Fable only: %+v", got.UsageWindows)
 	}
 
-	// Both cached limits replaced: the frame has nothing chosen left to show.
-	bothReplaced := &runtimeconfig.ProviderDisplayConfig{
-		Mode:          "pair",
-		ProviderIDs:   []string{"claude", "codex"},
-		HiddenWindows: map[string][]string{"claude": {"session"}, "codex": {"weekly"}},
+	one := &runtimeconfig.ProviderDisplayConfig{Mode: "fixed", ProviderIDs: []string{"claude"}, HiddenWindows: map[string][]string{"claude": {"session"}}}
+	got := limitCachedFrame(claude.Frame, one)
+	if got.UsageUnavailable || len(got.UsageWindows) != 2 || got.UsageWindows[0].ID != "weekly" || got.UsageWindows[0].Pace.State != "deficit" {
+		t.Fatalf("one provider after hiding Session: %+v", got.UsageWindows)
 	}
-	got = limitCachedFrame(cached, bothReplaced)
-	if !got.UsageUnavailable || len(got.UsageWindows) != 0 || got.Session != 0 || got.Weekly != 0 {
-		t.Fatalf("cached pair with both limits hidden still shows usage: %+v", got)
+
+	// The cached frame holds only the old limit, and the customer chose another.
+	cachedSession := claude.Frame
+	cachedSession.UsageWindows = cachedSession.UsageWindows[:1]
+	if got := limitCachedFrame(cachedSession, one); !got.UsageUnavailable || len(got.UsageWindows) != 0 {
+		t.Fatalf("one provider with its only cached limit hidden still shows it: %+v", got)
 	}
 }
 
