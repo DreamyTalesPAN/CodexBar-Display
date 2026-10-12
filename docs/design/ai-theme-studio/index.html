@@ -1,0 +1,2125 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>VibeTV Theme Studio — design prototype</title>
+    <style>
+      body {
+        margin: 16px;
+        background: light-dark(#f9f9f9, #20211e);
+      }
+      main {
+        max-width: 1024px;
+        margin: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <main aria-label="VibeTV Theme Studio design prototype">
+      <style>
+        #vu-studio {
+          --vu-bg: light-dark(#f9f9f9, #20211e);
+          --vu-panel: light-dark(#ffffff, #272823);
+          --vu-subtle: light-dark(#eeefea, #33352d);
+          --vu-border: light-dark(#e2e4db, #45483d);
+          --vu-text: light-dark(#1b1b1b, #ededed);
+          --vu-muted: light-dark(#616650, #bec3af);
+          --vu-green: light-dark(#506600, #cbe3a0);
+          --vu-brand: #ccff00;
+          --vu-size: 296px;
+          font-family:
+            Inter,
+            Geist,
+            ui-sans-serif,
+            -apple-system,
+            BlinkMacSystemFont,
+            "Segoe UI",
+            sans-serif;
+          color: var(--vu-text);
+          font-size: 14px;
+          line-height: 1.5;
+          background: var(--vu-bg);
+          border: 1px solid var(--vu-border);
+          border-radius: 12px;
+          overflow: hidden;
+          color-scheme: light dark;
+        }
+        #vu-studio * {
+          box-sizing: border-box;
+        }
+        #vu-studio [hidden] {
+          display: none !important;
+        }
+        #vu-studio button,
+        #vu-studio input,
+        #vu-studio textarea {
+          font: inherit;
+        }
+        #vu-studio button {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 7px;
+          border: 1px solid var(--vu-border);
+          border-radius: 8px;
+          background: var(--vu-panel);
+          color: var(--vu-text);
+          padding: 8px 12px;
+          min-height: 40px;
+          cursor: pointer;
+          font-weight: 500;
+        }
+        #vu-studio button:hover:not(:disabled) {
+          background: var(--vu-subtle);
+        }
+        #vu-studio button:disabled {
+          opacity: 0.45;
+          cursor: default;
+        }
+        #vu-studio .vu-primary {
+          background: var(--vu-brand);
+          border-color: var(--vu-brand);
+          color: #1b1b1b;
+        }
+        #vu-studio .vu-primary:hover:not(:disabled) {
+          background: #b9e800;
+        }
+        #vu-studio .vu-quiet {
+          background: transparent;
+          border-color: transparent;
+        }
+        #vu-studio button svg {
+          width: 16px;
+          height: 16px;
+          flex-shrink: 0;
+        }
+        #vu-studio h2,
+        #vu-studio h3,
+        #vu-studio p {
+          margin: 0;
+        }
+        #vu-studio h2 {
+          font-size: 23px;
+          line-height: 1.25;
+          letter-spacing: -0.7px;
+          font-weight: 600;
+        }
+        #vu-studio h3 {
+          font-size: 14px;
+          font-weight: 500;
+        }
+        #vu-studio .vu-header {
+          padding: 13px 20px;
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          flex-wrap: wrap;
+          background: var(--vu-panel);
+          border-bottom: 1px solid var(--vu-border);
+        }
+        #vu-studio .vu-logo {
+          font-size: 18px;
+          font-weight: 750;
+          letter-spacing: -1px;
+        }
+        #vu-studio .vu-logo span {
+          background: var(--vu-brand);
+          color: #1b1b1b;
+          padding: 1px 3px;
+          border-radius: 3px;
+        }
+        #vu-studio .vu-separator {
+          width: 1px;
+          height: 23px;
+          background: var(--vu-border);
+        }
+        #vu-studio .vu-app-name {
+          font-weight: 500;
+          font-size: 13px;
+        }
+        #vu-studio .vu-spacer {
+          flex: 1;
+        }
+        #vu-studio .vu-header button {
+          font-size: 12px;
+          min-height: 36px;
+        }
+        #vu-studio .vu-workspace {
+          display: grid;
+          grid-template-columns: 300px minmax(0, 1fr);
+          min-height: 560px;
+        }
+        #vu-studio .vu-controls {
+          background: var(--vu-panel);
+          border-right: 1px solid var(--vu-border);
+          padding: 24px 22px;
+          display: flex;
+          flex-direction: column;
+          gap: 21px;
+          min-width: 0;
+        }
+        #vu-studio .vu-overline {
+          font-size: 10px;
+          text-transform: uppercase;
+          letter-spacing: 1.5px;
+          color: var(--vu-muted);
+          margin-bottom: 7px;
+        }
+        #vu-studio .vu-subtitle {
+          font-size: 13px;
+          color: var(--vu-muted);
+          line-height: 1.65;
+          margin-top: 9px;
+        }
+        #vu-studio .vu-small {
+          font-size: 12px;
+          color: var(--vu-muted);
+        }
+        #vu-studio .vu-tiny {
+          font-size: 11px;
+          color: var(--vu-muted);
+        }
+        #vu-studio .vu-composer {
+          padding: 12px;
+          border: 1px solid var(--vu-border);
+          border-radius: 10px;
+          background: var(--vu-bg);
+        }
+        #vu-studio .vu-composer:focus-within {
+          outline: 2px solid var(--vu-green);
+          outline-offset: 2px;
+        }
+        #vu-studio .vu-composer label {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 12px;
+          font-weight: 500;
+          margin-bottom: 8px;
+        }
+        #vu-studio .vu-composer label svg {
+          width: 14px;
+          height: 14px;
+        }
+        #vu-studio textarea {
+          width: 100%;
+          display: block;
+          background: transparent;
+          border: 0;
+          padding: 0;
+          color: var(--vu-text);
+          min-height: 78px;
+          height: 78px;
+          resize: vertical;
+          font-size: 14px;
+          line-height: 1.6;
+          margin-bottom: 12px;
+        }
+        #vu-studio textarea::placeholder {
+          color: var(--vu-muted);
+        }
+        #vu-studio .vu-compose-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 7px;
+        }
+        #vu-studio .vu-compose-actions button {
+          font-size: 12px;
+          min-height: 36px;
+        }
+        #vu-studio .vu-suggestions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          margin-top: 9px;
+        }
+        #vu-studio .vu-suggestions button {
+          font-size: 11px;
+          min-height: 32px;
+          padding: 5px 9px;
+          background: transparent;
+        }
+        #vu-studio .vu-note {
+          font-size: 11px;
+          color: var(--vu-muted);
+          line-height: 1.6;
+          margin-top: 9px;
+        }
+        #vu-studio .vu-context-heading {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 6px;
+          margin-bottom: 14px;
+        }
+        #vu-studio .vu-context-heading button {
+          min-height: 30px;
+          padding: 3px 6px;
+          font-size: 11px;
+        }
+        #vu-studio .vu-inspector {
+          padding-bottom: 18px;
+          border-bottom: 1px solid var(--vu-border);
+        }
+        #vu-studio .vu-field {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          font-size: 12px;
+          margin-bottom: 14px;
+        }
+        #vu-studio input[type="text"] {
+          color: var(--vu-text);
+          background: var(--vu-bg);
+          border: 1px solid var(--vu-border);
+          padding: 9px 10px;
+          border-radius: 7px;
+          width: 100%;
+          min-width: 0;
+        }
+        #vu-studio .vu-inspector-actions {
+          display: flex;
+          gap: 7px;
+          flex-wrap: wrap;
+          margin: 12px 0;
+        }
+        #vu-studio .vu-inspector-actions button {
+          font-size: 12px;
+        }
+        #vu-studio .vu-nudge {
+          display: flex;
+          gap: 6px;
+          align-items: center;
+          margin-top: 8px;
+          flex-wrap: wrap;
+        }
+        #vu-studio .vu-nudge button {
+          width: 38px;
+          min-height: 38px;
+          padding: 7px;
+        }
+        #vu-studio .vu-label {
+          font-size: 12px;
+          font-weight: 500;
+        }
+        #vu-studio .vu-remove {
+          color: light-dark(#8b3341, #f0aeb8);
+          border-color: transparent;
+          background: transparent;
+          padding-left: 0;
+        }
+        #vu-studio .vu-context-help {
+          font-size: 11px;
+          color: var(--vu-muted);
+          line-height: 1.6;
+          margin-bottom: 11px;
+        }
+        #vu-studio .vu-focus-hint {
+          border-top: 1px solid var(--vu-border);
+          padding-top: 18px;
+          display: flex;
+          gap: 10px;
+          align-items: flex-start;
+          color: var(--vu-muted);
+          font-size: 12px;
+          line-height: 1.7;
+        }
+        #vu-studio .vu-focus-hint svg {
+          width: 18px;
+          height: 18px;
+          flex-shrink: 0;
+          margin-top: 2px;
+        }
+        #vu-studio .vu-connection {
+          margin-top: auto;
+          padding-top: 4px;
+          border-top: 1px solid var(--vu-border);
+        }
+        #vu-studio .vu-connection button {
+          padding-left: 0;
+          font-size: 12px;
+          justify-content: flex-start;
+          width: 100%;
+        }
+        #vu-studio .vu-connection .vu-dot {
+          width: 6px;
+          height: 6px;
+          background: var(--vu-muted);
+          border-radius: 50%;
+          margin-right: 2px;
+        }
+        #vu-studio .vu-connection .vu-dot.connected {
+          background: var(--vu-brand);
+          border: 1px solid var(--vu-green);
+        }
+        #vu-studio .vu-setup {
+          padding-top: 10px;
+          font-size: 12px;
+          line-height: 1.7;
+        }
+        #vu-studio .vu-setup ol {
+          margin: 12px 0;
+          padding-left: 18px;
+        }
+        #vu-studio .vu-setup li {
+          margin-bottom: 8px;
+        }
+        #vu-studio .vu-setup input {
+          margin-top: 6px;
+          font-size: 11px;
+        }
+        #vu-studio .vu-setup .vu-primary {
+          justify-content: center;
+          padding: 8px 10px;
+          margin-top: 12px;
+          width: 100%;
+        }
+        #vu-studio .vu-stage {
+          display: flex;
+          flex-direction: column;
+          min-width: 0;
+        }
+        #vu-studio .vu-stage-header {
+          padding: 17px 23px;
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+          align-items: center;
+        }
+        #vu-studio .vu-theme-title {
+          font-size: 14px;
+          font-weight: 500;
+        }
+        #vu-studio .vu-badge {
+          font-size: 10px;
+          color: var(--vu-muted);
+          padding: 3px 6px;
+          border: 1px solid var(--vu-border);
+          border-radius: 5px;
+          margin-left: 7px;
+        }
+        #vu-studio .vu-tools {
+          display: flex;
+          gap: 3px;
+          align-items: center;
+        }
+        #vu-studio .vu-tools button {
+          font-size: 11px;
+          min-height: 32px;
+          padding: 5px 8px;
+        }
+        #vu-studio .vu-tools button[aria-pressed="true"] {
+          background: var(--vu-panel);
+          border-color: var(--vu-text);
+        }
+        #vu-studio .vu-canvas-area {
+          flex: 1;
+          min-height: 390px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 18px;
+          padding: 16px 20px 24px;
+          background-image: radial-gradient(
+            var(--vu-border) 0.65px,
+            transparent 0.65px
+          );
+          background-size: 18px 18px;
+        }
+        #vu-studio .vu-device {
+          width: min(100%, calc(var(--vu-size) + 26px));
+          background: #262824;
+          border: 1px solid #44463f;
+          border-radius: 22px;
+          padding: 12px 12px 24px;
+          box-shadow:
+            0 15px 30px #00000016,
+            0 2px 5px #00000022;
+          position: relative;
+        }
+        #vu-studio .vu-device::after {
+          content: "VibeTV";
+          position: absolute;
+          bottom: 5px;
+          left: 0;
+          right: 0;
+          text-align: center;
+          color: #a8ad9b;
+          font-size: 9px;
+          letter-spacing: 2px;
+        }
+        #vu-studio .vu-screen {
+          position: relative;
+          aspect-ratio: 1;
+          width: 100%;
+          background: #0c1620;
+          border: 1px solid #10120e;
+          border-radius: 9px;
+          overflow: hidden;
+          container-type: inline-size;
+        }
+        #vu-studio button.vu-object {
+          position: absolute;
+          display: block;
+          margin: 0;
+          padding: 0;
+          border: 0;
+          border-radius: 0;
+          min-height: 0;
+          max-width: none;
+          background: transparent;
+          color: #edf2df;
+          touch-action: none;
+          user-select: none;
+          cursor: grab;
+          line-height: 1.2;
+          overflow: visible;
+          font-weight: 400;
+        }
+        #vu-studio button.vu-object:hover:not(:disabled) {
+          background: transparent;
+          outline: 1px solid #ccff0099;
+          outline-offset: -1px;
+        }
+        #vu-studio button.vu-object[aria-pressed="true"] {
+          outline: 2px solid #ccff00;
+          outline-offset: -2px;
+          z-index: 3;
+        }
+        #vu-studio button.vu-object[aria-pressed="true"]::after {
+          content: "";
+          position: absolute;
+          width: 5px;
+          height: 5px;
+          right: 0;
+          bottom: 0;
+          background: #ccff00;
+        }
+        #vu-studio button.vu-object:focus-visible {
+          outline: 2px solid #ffffff;
+          outline-offset: -2px;
+        }
+        #vu-studio button.vu-object:disabled {
+          opacity: 1;
+          cursor: default;
+        }
+        #vu-studio button.vu-object:active {
+          cursor: grabbing;
+        }
+        #vu-studio .vu-object canvas {
+          width: 100%;
+          height: 100%;
+          image-rendering: pixelated;
+          display: block;
+          border-radius: 0;
+          pointer-events: none;
+        }
+        #vu-studio .vu-reading-top {
+          display: flex;
+          justify-content: space-between;
+          align-items: baseline;
+          gap: 6px;
+          pointer-events: none;
+          font-size: 4.1cqw;
+          font-weight: 400;
+          white-space: nowrap;
+        }
+        #vu-studio .vu-reading-top strong {
+          font-weight: 500;
+          font-size: 7.2cqw;
+          font-variant-numeric: tabular-nums;
+        }
+        #vu-studio .vu-meter {
+          height: 2.1cqw;
+          margin-top: 2.1cqw;
+          background: #ffffff20;
+          pointer-events: none;
+        }
+        #vu-studio .vu-meter span {
+          height: 100%;
+          display: block;
+          background: #c6db7c;
+        }
+        #vu-studio .vu-display-foot {
+          position: absolute;
+          bottom: 3.2%;
+          left: 5.8%;
+          right: 5.8%;
+          display: flex;
+          justify-content: space-between;
+          gap: 5px;
+          font-size: 3.2cqw;
+          color: #c1cdbd;
+          pointer-events: none;
+          line-height: 1.2;
+        }
+        #vu-studio .vu-preview-caption {
+          font-size: 11px;
+          color: var(--vu-muted);
+          text-align: center;
+          max-width: 100%;
+          background: var(--vu-bg);
+          padding: 2px 7px;
+          border-radius: 4px;
+        }
+        #vu-studio .vu-data-states {
+          display: flex;
+          gap: 3px;
+          flex-wrap: wrap;
+          justify-content: center;
+          background: var(--vu-panel);
+          border: 1px solid var(--vu-border);
+          border-radius: 8px;
+          padding: 3px;
+        }
+        #vu-studio .vu-data-states button {
+          font-size: 11px;
+          min-height: 30px;
+          padding: 5px 9px;
+          border: 0;
+          background: transparent;
+          color: var(--vu-muted);
+        }
+        #vu-studio .vu-data-states button[aria-pressed="true"] {
+          background: var(--vu-subtle);
+          color: var(--vu-text);
+        }
+        #vu-studio .vu-footer {
+          padding: 15px 22px;
+          display: flex;
+          gap: 12px;
+          flex-wrap: wrap;
+          justify-content: space-between;
+          align-items: center;
+          background: var(--vu-panel);
+          border-top: 1px solid var(--vu-border);
+        }
+        #vu-studio .vu-footer-actions {
+          display: flex;
+          gap: 7px;
+          flex-wrap: wrap;
+        }
+        #vu-studio .vu-footer-actions button {
+          font-size: 12px;
+        }
+        #vu-studio .vu-status {
+          font-size: 11px;
+          color: var(--vu-muted);
+          max-width: 260px;
+          line-height: 1.6;
+        }
+        #vu-studio .vu-demo-bar {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 9px;
+          flex-wrap: wrap;
+          padding: 9px 18px;
+          background: var(--vu-subtle);
+          font-size: 10px;
+          color: var(--vu-muted);
+        }
+        #vu-studio .vu-demo-bar span:first-child {
+          letter-spacing: 1px;
+          text-transform: uppercase;
+        }
+        #vu-studio .vu-loading {
+          position: absolute;
+          inset: 0;
+          z-index: 5;
+          background: #0c1620f2;
+          color: #edf2df;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
+          padding: 22px;
+          font-size: 13px;
+          gap: 12px;
+        }
+        #vu-studio .vu-spinner {
+          width: 24px;
+          height: 24px;
+          border: 2px solid #4b5842;
+          border-top-color: #ccff00;
+          border-radius: 50%;
+          animation: vu-spin 1s linear infinite;
+        }
+        #vu-studio .vu-placeholder {
+          position: absolute;
+          inset: 0;
+          z-index: 4;
+          background: #15201de8;
+          color: #dde7d7;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
+          padding: 25px;
+          gap: 10px;
+        }
+        #vu-studio .vu-placeholder strong {
+          font-size: 21px;
+          line-height: 1.3;
+          font-weight: 500;
+          letter-spacing: -0.5px;
+        }
+        #vu-studio .vu-placeholder span {
+          font-size: 11px;
+          color: #b7c5ad;
+        }
+        #vu-studio .vu-start-options {
+          display: flex;
+          gap: 7px;
+          flex-wrap: wrap;
+          margin-top: 12px;
+        }
+        #vu-studio .vu-start-options button {
+          font-size: 12px;
+          min-height: 35px;
+        }
+        #vu-studio .vu-dirty-confirm {
+          padding: 13px 20px;
+          background: var(--vu-panel);
+          border-bottom: 1px solid var(--vu-border);
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          flex-wrap: wrap;
+          font-size: 12px;
+        }
+        #vu-studio .vu-dirty-confirm > div {
+          display: flex;
+          gap: 7px;
+        }
+        #vu-studio .vu-dirty-confirm button {
+          font-size: 12px;
+        }
+        #vu-studio .vu-hidden-elements {
+          display: flex;
+          gap: 6px;
+          flex-wrap: wrap;
+          margin-top: 10px;
+        }
+        #vu-studio .vu-hidden-elements button {
+          font-size: 11px;
+          min-height: 32px;
+        }
+        #vu-studio .vu-restore {
+          border-top: 1px solid var(--vu-border);
+          padding-top: 15px;
+        }
+        @keyframes vu-spin {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          #vu-studio .vu-spinner {
+            animation: none;
+          }
+        }
+        @media (max-width: 760px) {
+          #vu-studio .vu-workspace {
+            grid-template-columns: 270px minmax(0, 1fr);
+          }
+          #vu-studio .vu-controls {
+            padding: 21px 17px;
+          }
+          #vu-studio .vu-stage-header {
+            padding: 15px;
+          }
+          #vu-studio .vu-canvas-area {
+            padding: 12px;
+            min-height: 360px;
+          }
+          #vu-studio .vu-footer {
+            padding: 14px;
+          }
+        }
+        @media (max-width: 620px) {
+          #vu-studio .vu-workspace {
+            display: flex;
+            flex-direction: column;
+          }
+          #vu-studio .vu-controls {
+            order: 1;
+            border-right: 0;
+            border-top: 1px solid var(--vu-border);
+            padding: 22px;
+            gap: 20px;
+          }
+          #vu-studio .vu-stage {
+            order: 0;
+          }
+          #vu-studio .vu-header {
+            padding: 12px;
+            gap: 9px;
+          }
+          #vu-studio .vu-separator {
+            display: none;
+          }
+          #vu-studio .vu-header button {
+            min-height: 44px;
+          }
+          #vu-studio .vu-stage-header {
+            padding: 13px;
+          }
+          #vu-studio .vu-canvas-area {
+            padding: 12px 18px 20px;
+            min-height: 365px;
+          }
+          #vu-studio .vu-data-states button {
+            min-height: 40px;
+          }
+          #vu-studio .vu-tools button {
+            min-height: 40px;
+          }
+          #vu-studio .vu-footer {
+            padding: 15px;
+          }
+          #vu-studio .vu-footer-actions {
+            width: 100%;
+          }
+          #vu-studio .vu-footer-actions button {
+            flex: 1;
+            min-height: 44px;
+          }
+          #vu-studio textarea,
+          #vu-studio input[type="text"] {
+            font-size: 16px;
+          }
+          #vu-studio .vu-nudge button {
+            width: 44px;
+            min-height: 44px;
+          }
+          #vu-studio .vu-context-heading button,
+          #vu-studio .vu-remove,
+          #vu-studio .vu-compose-actions button {
+            min-height: 44px;
+          }
+          #vu-studio .vu-connection button {
+            min-height: 44px;
+          }
+          #vu-studio .vu-suggestions button {
+            min-height: 40px;
+          }
+          #vu-studio .vu-context-help {
+            font-size: 12px;
+          }
+          #vu-studio .vu-header .vu-app-name {
+            font-size: 12px;
+          }
+        }
+        #vu-studio .vu-canvas-area {
+          justify-content: flex-start;
+          padding-top: 30px;
+        }
+        #vu-studio .vu-motion {
+          border-bottom: 1px solid var(--vu-border);
+          padding-bottom: 14px;
+          margin-bottom: 14px;
+        }
+        #vu-studio .vu-motion select {
+          width: 100%;
+          border: 1px solid var(--vu-border);
+          border-radius: 7px;
+          padding: 8px 10px;
+          background: var(--vu-bg);
+          color: var(--vu-text);
+          font: inherit;
+          min-height: 40px;
+        }
+        #vu-studio .vu-motion button {
+          font-size: 12px;
+          min-height: 38px;
+        }
+        #vu-studio .vu-preview-playback {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 9px;
+          flex-wrap: wrap;
+        }
+        #vu-studio .vu-preview-playback button {
+          font-size: 12px;
+          background: var(--vu-panel);
+          min-height: 38px;
+        }
+        #vu-studio #vu-object-cat {
+          z-index: 2;
+        }
+        #vu-studio #vu-object-cat[aria-pressed="true"] {
+          z-index: 4;
+        }
+        #vu-studio .vu-motion-title {
+          font-size: 11px;
+          color: var(--vu-muted);
+          margin-bottom: 12px;
+        }
+        @media (max-width: 620px) {
+          #vu-studio .vu-motion select {
+            font-size: 16px;
+            min-height: 44px;
+          }
+          #vu-studio .vu-preview-playback button,
+          #vu-studio .vu-motion button {
+            min-height: 44px;
+          }
+        }
+      </style>
+      <div id="vu-studio" aria-label="Unified VibeTV Theme Studio">
+        <header class="vu-header">
+          <div class="vu-logo">Vibe<span>TV</span></div>
+          <span class="vu-separator"></span
+          ><span class="vu-app-name">Theme Studio</span
+          ><span class="vu-spacer"></span
+          ><button type="button" class="vu-quiet" id="vu-new">
+            <span aria-hidden="true">+</span>New theme
+          </button>
+        </header>
+        <div id="vu-new-confirm" class="vu-dirty-confirm" hidden>
+          <span
+            >Start a new draft? Your current changes will remain in Undo.</span
+          >
+          <div>
+            <button type="button" id="vu-keep">Keep editing</button
+            ><button type="button" class="vu-primary" id="vu-start">
+              Start new
+            </button>
+          </div>
+        </div>
+        <div class="vu-workspace">
+          <aside class="vu-controls" aria-label="Theme tools">
+            <div id="vu-welcome">
+              <div class="vu-overline">Your idea. Your display.</div>
+              <h2 id="vu-heading">Make it yours.</h2>
+              <p class="vu-subtitle" id="vu-description">
+                Describe a change, or click anything on your display to edit it.
+              </p>
+            </div>
+            <section
+              class="vu-inspector"
+              id="vu-inspector"
+              hidden
+              aria-label="Selected element settings"
+            >
+              <div class="vu-context-heading">
+                <div>
+                  <div class="vu-overline">Selected element</div>
+                  <h3 id="vu-selection-name">Session remaining</h3>
+                </div>
+                <button
+                  type="button"
+                  class="vu-quiet"
+                  id="vu-deselect"
+                  aria-label="Deselect element"
+                >
+                  <span aria-hidden="true">×</span>Done
+                </button>
+              </div>
+              <label class="vu-field" id="vu-label-field" for="vu-label"
+                >Label<input
+                  type="text"
+                  maxlength="15"
+                  id="vu-label"
+                  autocomplete="off"
+                  spellcheck="false"
+              /></label>
+              <p class="vu-context-help" id="vu-element-help">
+                Drag to move. Arrow keys work too.
+              </p>
+              <div class="vu-motion" id="vu-motion" hidden>
+                <p class="vu-motion-title" id="vu-motion-title">
+                  Blinks & swishes its tail · looping
+                </p>
+                <label class="vu-field" for="vu-speed"
+                  >Speed<select id="vu-speed">
+                    <option value="1">Relaxed</option>
+                    <option value="2" selected>Natural</option>
+                    <option value="4">Lively</option>
+                  </select></label
+                ><button type="button" id="vu-change-motion">
+                  <span aria-hidden="true">✦</span>Change movement
+                </button>
+              </div>
+              <span class="vu-label">Position</span>
+              <div
+                class="vu-nudge"
+                role="group"
+                aria-label="Move selected element"
+              >
+                <button type="button" data-move="-2,0" aria-label="Move left">
+                  <span aria-hidden="true">←</span></button
+                ><button type="button" data-move="0,-2" aria-label="Move up">
+                  <span aria-hidden="true">↑</span></button
+                ><button type="button" data-move="0,2" aria-label="Move down">
+                  <span aria-hidden="true">↓</span></button
+                ><button type="button" data-move="2,0" aria-label="Move right">
+                  <span aria-hidden="true">→</span>
+                </button>
+              </div>
+              <div class="vu-inspector-actions">
+                <button type="button" id="vu-center">Center horizontally</button
+                ><button type="button" class="vu-remove" id="vu-remove">
+                  <span aria-hidden="true">−</span>Remove element
+                </button>
+              </div>
+            </section>
+            <div>
+              <div class="vu-composer" role="group" aria-label="AI request">
+                <label for="vu-prompt"
+                  ><span aria-hidden="true">✦</span
+                  ><span id="vu-prompt-label"
+                    >Ask AI to change your theme</span
+                  ></label
+                ><textarea
+                  id="vu-prompt"
+                  maxlength="2000"
+                  placeholder="A warmer sky, keep the cabin and layout…"
+                  aria-describedby="vu-ai-note"
+                ></textarea>
+                <div class="vu-compose-actions">
+                  <button type="button" class="vu-quiet" id="vu-cancel" hidden>
+                    Cancel</button
+                  ><button
+                    type="button"
+                    class="vu-primary"
+                    id="vu-generate"
+                    disabled
+                  >
+                    <span id="vu-generate-label">Update theme</span
+                    ><span aria-hidden="true">↗</span>
+                  </button>
+                </div>
+              </div>
+              <div class="vu-suggestions" id="vu-suggestions">
+                <button
+                  type="button"
+                  data-prompt="Make the sky warmer. Keep my layout."
+                >
+                  Warmer sky</button
+                ><button
+                  type="button"
+                  data-prompt="Remove the cabin from the illustration. Keep my layout."
+                >
+                  Remove the cabin</button
+                ><button
+                  type="button"
+                  id="vu-motion-suggestion"
+                  data-prompt="Make the cat sleep with a gentle breathing loop."
+                >
+                  Sleepy cat
+                </button>
+              </div>
+              <div class="vu-start-options" id="vu-start-options" hidden>
+                <button
+                  type="button"
+                  data-prompt="A cozy cabin under a starry sky."
+                >
+                  Cozy cabin</button
+                ><button
+                  type="button"
+                  data-prompt="A warm sunset over the mountains."
+                >
+                  Golden hour
+                </button>
+              </div>
+              <p class="vu-note" id="vu-ai-note">
+                AI changes and direct edits share the same Undo.
+              </p>
+            </div>
+            <div class="vu-focus-hint" id="vu-focus-hint">
+              <span aria-hidden="true">↖</span
+              ><span
+                >Click a number, a bar or the artwork.<br />Only the tools you
+                need will appear.</span
+              >
+            </div>
+            <div class="vu-restore" id="vu-restore" hidden>
+              <span class="vu-label">Removed from this draft</span>
+              <div class="vu-hidden-elements" id="vu-hidden-elements">
+                <button type="button" data-restore="artwork" hidden>
+                  Add artwork</button
+                ><button type="button" data-restore="session" hidden>
+                  Add session</button
+                ><button type="button" data-restore="weekly" hidden>
+                  Add weekly</button
+                ><button type="button" data-restore="cat" hidden>
+                  Add cat sprite
+                </button>
+              </div>
+            </div>
+            <div class="vu-connection">
+              <button
+                type="button"
+                class="vu-quiet"
+                id="vu-connect"
+                aria-expanded="false"
+                aria-controls="vu-setup"
+              >
+                <span class="vu-dot" id="vu-dot"></span
+                ><span id="vu-connect-label">OpenAI · set up once</span
+                ><span class="vu-spacer"></span
+                ><span aria-hidden="true">⌄</span>
+              </button>
+              <section
+                class="vu-setup"
+                id="vu-setup"
+                hidden
+                aria-label="OpenAI connection walkthrough"
+              >
+                <h3>Connect AI to this Mac</h3>
+                <p class="vu-note">
+                  OpenAI interprets your idea and creates the artwork. Editing
+                  by hand never needs an AI connection.
+                </p>
+                <ol>
+                  <li>Open your OpenAI API account and enable API billing.</li>
+                  <li>Create an API key in the API keys section.</li>
+                  <li>
+                    Paste the key in the Mac app and test the connection.<input
+                      type="text"
+                      aria-label="API key field placeholder, disabled in prototype"
+                      placeholder="API key field · disabled in this demo"
+                      disabled
+                    />
+                  </li>
+                </ol>
+                <p class="vu-note">
+                  Planned: store your key in macOS Keychain. API use is billed
+                  separately from ChatGPT.
+                </p>
+                <button type="button" class="vu-primary" id="vu-demo-connect">
+                  Try the setup demo
+                </button>
+                <p class="vu-note">
+                  No real key is entered, tested or saved here.
+                </p>
+              </section>
+            </div>
+          </aside>
+          <section class="vu-stage" aria-label="Editable theme canvas">
+            <div class="vu-stage-header">
+              <div>
+                <span class="vu-theme-title" id="vu-title">Moonlight cabin</span
+                ><span class="vu-badge" id="vu-draft">Draft</span>
+              </div>
+              <div class="vu-tools">
+                <button
+                  type="button"
+                  class="vu-quiet"
+                  id="vu-before"
+                  aria-pressed="false"
+                  disabled
+                >
+                  Before</button
+                ><button
+                  type="button"
+                  class="vu-quiet"
+                  id="vu-undo"
+                  aria-label="Undo last edit"
+                  disabled
+                >
+                  <span aria-hidden="true">↶</span>Undo</button
+                ><button
+                  type="button"
+                  class="vu-quiet"
+                  id="vu-redo"
+                  aria-label="Redo edit"
+                  disabled
+                >
+                  <span aria-hidden="true">↪</span>
+                </button>
+              </div>
+            </div>
+            <div class="vu-canvas-area" id="vu-canvas-area">
+              <div class="vu-device">
+                <div class="vu-screen" id="vu-screen">
+                  <button
+                    type="button"
+                    class="vu-object"
+                    id="vu-object-artwork"
+                    data-object="artwork"
+                    aria-label="Select artwork"
+                    aria-pressed="false"
+                  >
+                    <canvas
+                      id="vu-art"
+                      width="240"
+                      height="128"
+                      aria-hidden="true"
+                    ></canvas>
+                  </button>
+                  <button
+                    type="button"
+                    class="vu-object"
+                    id="vu-object-cat"
+                    data-object="cat"
+                    aria-label="Select animated cat"
+                    aria-pressed="false"
+                  >
+                    <canvas
+                      id="vu-cat"
+                      width="32"
+                      height="32"
+                      aria-hidden="true"
+                    ></canvas>
+                  </button>
+                  <button
+                    type="button"
+                    class="vu-object"
+                    id="vu-object-session"
+                    data-object="session"
+                    aria-label="Select session remaining"
+                    aria-pressed="false"
+                  >
+                    <span class="vu-reading-top"
+                      ><span id="vu-session-label">SESSION</span
+                      ><strong id="vu-session-value">72%</strong></span
+                    ><span class="vu-meter" style="display: block"
+                      ><span id="vu-session-bar" style="width: 72%"></span
+                    ></span>
+                  </button>
+                  <button
+                    type="button"
+                    class="vu-object"
+                    id="vu-object-weekly"
+                    data-object="weekly"
+                    aria-label="Select weekly remaining"
+                    aria-pressed="false"
+                  >
+                    <span class="vu-reading-top"
+                      ><span id="vu-weekly-label">WEEKLY</span
+                      ><strong id="vu-weekly-value">46%</strong></span
+                    ><span class="vu-meter" style="display: block"
+                      ><span id="vu-weekly-bar" style="width: 46%"></span
+                    ></span>
+                  </button>
+                  <div class="vu-display-foot">
+                    <span id="vu-data-caption">REMAINING</span
+                    ><span id="vu-reset">RESET IN 2H 14M</span>
+                  </div>
+                  <div class="vu-placeholder" id="vu-placeholder" hidden>
+                    <strong>Your next favorite theme.</strong
+                    ><span>Start with a few words.</span>
+                  </div>
+                  <div class="vu-loading" id="vu-loading" hidden>
+                    <div class="vu-spinner" aria-hidden="true"></div>
+                    <span>Updating your theme…</span
+                    ><span style="font-size: 11px; color: #b7c5ad"
+                      >Simulated generation</span
+                    >
+                  </div>
+                </div>
+              </div>
+              <div class="vu-preview-caption" id="vu-preview-caption">
+                Click to select · drag to move · illustrative 240 × 240
+              </div>
+              <div class="vu-preview-playback" id="vu-preview-playback">
+                <button type="button" id="vu-playback" aria-pressed="true">
+                  <span id="vu-playback-label">Pause animation</span></button
+                ><span class="vu-tiny" id="vu-playback-note"
+                  >Cat · 4-frame sample loop</span
+                >
+              </div>
+              <div
+                class="vu-data-states"
+                role="group"
+                aria-label="Sample data states"
+              >
+                <button type="button" data-reading="normal" aria-pressed="true">
+                  Normal</button
+                ><button type="button" data-reading="low" aria-pressed="false">
+                  Almost empty</button
+                ><button
+                  type="button"
+                  data-reading="offline"
+                  aria-pressed="false"
+                >
+                  No data
+                </button>
+              </div>
+            </div>
+            <footer class="vu-footer">
+              <p
+                class="vu-status"
+                id="vu-status"
+                role="status"
+                aria-live="polite"
+              >
+                Sample theme. Nothing sent to your VibeTV.
+              </p>
+              <div class="vu-footer-actions">
+                <button type="button" id="vu-send">Send to VibeTV</button
+                ><button type="button" class="vu-primary" id="vu-save">
+                  Save draft
+                </button>
+              </div>
+            </footer>
+          </section>
+        </div>
+        <div class="vu-demo-bar">
+          <span>Interactive design concept</span
+          ><span>Editing is local · AI, saving and sending are simulated</span>
+        </div>
+      </div>
+      <script>
+        (() => {
+          const root = document.getElementById("vu-studio");
+          const $ = (id) => root.querySelector("#vu-" + id);
+          const clone = (value) => JSON.parse(JSON.stringify(value));
+          const defaults = () => ({
+            scene: 0,
+            cabin: true,
+            created: true,
+            elements: {
+              artwork: { x: 0, y: 0, w: 240, h: 128, visible: true },
+              cat: {
+                x: 46,
+                y: 76,
+                w: 48,
+                h: 48,
+                visible: false,
+                generated: false,
+                fps: 2,
+                motion: "blink",
+              },
+              session: {
+                x: 14,
+                y: 143,
+                w: 212,
+                h: 30,
+                visible: true,
+                label: "SESSION",
+              },
+              weekly: {
+                x: 14,
+                y: 183,
+                w: 212,
+                h: 30,
+                visible: true,
+                label: "WEEKLY",
+              },
+            },
+          });
+          let doc = defaults(),
+            undo = [],
+            redo = [],
+            selected = null,
+            comparing = false,
+            reading = "normal",
+            busy = false,
+            timer = null,
+            drag = null,
+            saved = null;
+          doc.elements.cat.visible = true;
+          doc.elements.cat.generated = true;
+          const motionPreference = window.matchMedia(
+            "(prefers-reduced-motion: reduce)",
+          );
+          let playing = !motionPreference.matches,
+            spriteFrame = 0,
+            lastSpriteTime = 0,
+            animationRequest = null;
+          const names = {
+            artwork: "Artwork",
+            cat: "Animated cat",
+            session: "Session remaining",
+            weekly: "Weekly remaining",
+          };
+          function message(text) {
+            $("status").textContent = text;
+          }
+          function push(before) {
+            if (JSON.stringify(before) === JSON.stringify(doc)) return;
+            undo.push(before);
+            if (undo.length > 30) undo.shift();
+            redo = [];
+            comparing = false;
+          }
+          function edit(fn) {
+            if (busy || comparing) return;
+            const before = clone(doc);
+            fn();
+            push(before);
+            render();
+          }
+          function art(canvas, scene, cabin) {
+            const c = canvas.getContext("2d");
+            c.imageSmoothingEnabled = false;
+            const p = [
+              [
+                "#142437",
+                "#233b50",
+                "#355369",
+                "#182e38",
+                "#e1e6b1",
+                "#47666b",
+              ],
+              [
+                "#49384b",
+                "#865362",
+                "#c48478",
+                "#343e49",
+                "#ffe8b5",
+                "#6e6570",
+              ],
+            ][scene];
+            function rect(x, y, w, h, col) {
+              c.fillStyle = col;
+              c.fillRect(x, y, w, h);
+            }
+            function poly(points, col) {
+              c.fillStyle = col;
+              c.beginPath();
+              points.forEach(([x, y], i) =>
+                i ? c.lineTo(x, y) : c.moveTo(x, y),
+              );
+              c.closePath();
+              c.fill();
+            }
+            rect(0, 0, 240, 128, p[0]);
+            for (let i = 0; i < 33; i++)
+              rect(
+                (i * 53 + 17) % 239,
+                (i * 23 + 9) % 60,
+                1 + (i % 3 === 0),
+                1,
+                p[4],
+              );
+            rect(169, 14, 15, 3, p[4]);
+            rect(165, 17, 22, 13, p[4]);
+            rect(168, 30, 16, 3, p[4]);
+            if (!scene) {
+              rect(165, 14, 9, 3, p[0]);
+              rect(163, 17, 10, 7, p[0]);
+            }
+            poly(
+              [
+                [0, 77],
+                [18, 69],
+                [31, 71],
+                [65, 34],
+                [81, 53],
+                [96, 38],
+                [143, 78],
+                [178, 49],
+                [203, 70],
+                [222, 53],
+                [240, 69],
+                [240, 128],
+                [0, 128],
+              ],
+              p[1],
+            );
+            poly(
+              [
+                [40, 63],
+                [65, 34],
+                [78, 52],
+                [66, 48],
+                [59, 53],
+                [58, 48],
+              ],
+              p[5],
+            );
+            poly(
+              [
+                [0, 99],
+                [25, 80],
+                [43, 89],
+                [87, 58],
+                [113, 83],
+                [143, 75],
+                [181, 94],
+                [211, 82],
+                [240, 100],
+                [240, 128],
+                [0, 128],
+              ],
+              p[2],
+            );
+            poly(
+              [
+                [0, 111],
+                [36, 106],
+                [62, 116],
+                [96, 105],
+                [123, 110],
+                [147, 102],
+                [184, 110],
+                [221, 101],
+                [240, 111],
+                [240, 128],
+                [0, 128],
+              ],
+              p[3],
+            );
+            for (let i = 0; i < 15; i++)
+              rect((i * 37) % 240, 114 + (i % 5) * 3, 6 + (i % 8), 1, p[5]);
+            const tree = (x, y, h) => {
+              rect(x - 1, y, 3, h, p[3]);
+              poly(
+                [
+                  [x, y - 3],
+                  [x - h / 3, y + h * 0.65],
+                  [x + h / 3, y + h * 0.65],
+                ],
+                p[3],
+              );
+              poly(
+                [
+                  [x, y + h * 0.17],
+                  [x - h * 0.41, y + h],
+                  [x + h * 0.41, y + h],
+                ],
+                p[3],
+              );
+            };
+            [8, 20, 31, 209, 221, 234].forEach((x, i) =>
+              tree(x, 60 + (i % 3) * 8, 39 - (i % 3) * 5),
+            );
+            if (cabin) {
+              rect(106, 91, 42, 24, "#70554a");
+              rect(108, 95, 38, 2, "#8d6b51");
+              rect(108, 103, 38, 2, "#8d6b51");
+              poly(
+                [
+                  [99, 91],
+                  [126, 71],
+                  [155, 91],
+                ],
+                "#1c2830",
+              );
+              poly(
+                [
+                  [99, 91],
+                  [126, 71],
+                  [126, 76],
+                  [105, 93],
+                ],
+                p[4],
+              );
+              rect(117, 96, 9, 10, "#f0c577");
+              rect(135, 96, 7, 19, "#302d2e");
+              rect(121, 96, 1, 10, "#80623b");
+              rect(117, 100, 9, 1, "#80623b");
+              rect(137, 76, 4, 10, "#344049");
+              rect(135, 69, 3, 5, p[5]);
+              rect(132, 63, 4, 3, p[5]);
+              rect(143, 115, 14, 2, p[4]);
+              rect(154, 118, 18, 2, p[5]);
+            }
+          }
+          function drawCat(frame, cat) {
+            const canvas = $("cat"),
+              c = canvas.getContext("2d");
+            c.clearRect(0, 0, 32, 32);
+            c.imageSmoothingEnabled = false;
+            const fur = "#c9ad85",
+              light = "#e1c89e",
+              shade = "#927657",
+              ink = "#24333b";
+            const r = (x, y, w, h, color) => {
+              c.fillStyle = color;
+              c.fillRect(x, y, w, h);
+            };
+            if (cat.motion === "sleep") {
+              const breath = frame === 1 || frame === 2 ? -1 : 0;
+              r(9, 21 + breath, 15, 7, fur);
+              r(11, 19 + breath, 11, 2, fur);
+              r(6, 24, 20, 4, shade);
+              r(6, 20, 9, 7, light);
+              r(6, 18, 3, 3, fur);
+              r(12, 18, 3, 3, fur);
+              r(8, 23, 3, 1, ink);
+              r(12, 25, 1, 1, shade);
+              r(20, 23 + breath, 7, 3, fur);
+              r(24, 21 + breath, 3, 3, fur);
+              r(11, 27, 8, 2, light);
+            } else {
+              const tails = [
+                  [24, 20, 26, 17],
+                  [24, 17, 27, 13],
+                  [24, 16, 28, 10],
+                  [24, 18, 27, 14],
+                ],
+                t = tails[frame];
+              r(21, 24, 6, 3, shade);
+              r(t[0], t[1], 3, 8, fur);
+              r(t[2], t[3], 3, 7, fur);
+              r(t[2] - 1, t[3] - 1, 3, 3, light);
+              r(10, 16, 12, 11, fur);
+              r(9, 20, 15, 6, fur);
+              r(10, 26, 5, 3, light);
+              r(18, 26, 6, 3, light);
+              r(13, 18, 6, 8, light);
+              r(8, 8, 15, 11, fur);
+              r(8, 4, 4, 5, fur);
+              r(19, 4, 4, 5, fur);
+              r(9, 6, 2, 3, shade);
+              r(20, 6, 2, 3, shade);
+              r(10, 10, 11, 7, light);
+              if (frame === 2) {
+                r(11, 12, 3, 1, ink);
+                r(18, 12, 3, 1, ink);
+              } else {
+                r(11, 11, 2, 3, ink);
+                r(18, 11, 2, 3, ink);
+                r(11, 11, 1, 1, "#edf2d8");
+                r(18, 11, 1, 1, "#edf2d8");
+              }
+              r(15, 14, 2, 1, shade);
+              r(15, 16, 1, 1, shade);
+              r(11, 7, 3, 2, shade);
+              r(16, 7, 3, 2, shade);
+            }
+            canvas.dataset.frame = String(frame);
+            canvas.dataset.motion = cat.motion;
+            canvas.dataset.fps = String(cat.fps);
+          }
+          function canAnimate() {
+            return (
+              playing &&
+              !busy &&
+              !comparing &&
+              doc.created &&
+              doc.elements.cat.visible &&
+              !document.hidden &&
+              root.isConnected
+            );
+          }
+          function spriteTick(time) {
+            animationRequest = null;
+            if (!canAnimate()) return;
+            if (!lastSpriteTime) lastSpriteTime = time;
+            if (time - lastSpriteTime >= 1000 / doc.elements.cat.fps) {
+              spriteFrame = (spriteFrame + 1) % 4;
+              lastSpriteTime = time;
+              drawCat(spriteFrame, doc.elements.cat);
+            }
+            animationRequest = requestAnimationFrame(spriteTick);
+          }
+          function syncPlayback() {
+            if (canAnimate()) {
+              if (animationRequest === null) {
+                lastSpriteTime = 0;
+                animationRequest = requestAnimationFrame(spriteTick);
+              }
+            } else if (animationRequest !== null) {
+              cancelAnimationFrame(animationRequest);
+              animationRequest = null;
+              lastSpriteTime = 0;
+            }
+            $("playback-label").textContent = playing
+              ? "Pause animation"
+              : "Play animation";
+            $("playback").setAttribute("aria-pressed", String(playing));
+            $("playback").disabled = busy || comparing;
+            $("preview-playback").hidden =
+              !doc.created || !doc.elements.cat.visible;
+            $("playback-note").textContent =
+              motionPreference.matches && !playing
+                ? "Paused · reduced motion"
+                : "Cat · 4-frame sample loop";
+          }
+          function renderCanvas() {
+            const view = comparing && undo.length ? undo[undo.length - 1] : doc;
+            art($("art"), view.scene, view.cabin);
+            for (const key of Object.keys(view.elements)) {
+              const e = view.elements[key],
+                button = $("object-" + key);
+              button.hidden = !e.visible || !view.created;
+              button.style.left = e.x / 2.4 + "%";
+              button.style.top = e.y / 2.4 + "%";
+              button.style.width = e.w / 2.4 + "%";
+              button.style.height = e.h / 2.4 + "%";
+              button.setAttribute(
+                "aria-pressed",
+                String(selected === key && !comparing),
+              );
+              button.disabled = busy || comparing;
+              if (key === "session" || key === "weekly")
+                $(key + "-label").textContent = e.label;
+            }
+            drawCat(comparing ? 0 : spriteFrame, view.elements.cat);
+            syncPlayback();
+            const low = reading === "low",
+              offline = reading === "offline";
+            ["session", "weekly"].forEach((key, i) => {
+              const value = (low ? [4, 8] : [72, 46])[i];
+              $(key + "-value").textContent = offline ? "—" : value + "%";
+              $(key + "-bar").style.width = offline ? "0%" : value + "%";
+              $(key + "-bar").style.background = view.scene
+                ? "#efb577"
+                : "#c6db7c";
+            });
+            $("reset").textContent = offline
+              ? "WAITING FOR DATA"
+              : "RESET IN 2H 14M";
+            $("data-caption").textContent = offline ? "NO DATA" : "REMAINING";
+            $("placeholder").hidden = view.created || busy;
+            $("loading").hidden = !busy;
+            $("title").textContent = view.created
+              ? view.scene
+                ? "Golden hour"
+                : view.cabin
+                  ? "Moonlight cabin"
+                  : "Quiet night"
+              : "New theme";
+            $("draft").textContent = comparing
+              ? "Before last edit"
+              : saved === JSON.stringify(doc)
+                ? "Saved · demo"
+                : "Draft";
+          }
+          function render() {
+            if (selected && !doc.elements[selected].visible) selected = null;
+            renderCanvas();
+            const selection = selected && doc.created;
+            $("welcome").hidden = !!selection;
+            $("inspector").hidden = !selection;
+            $("focus-hint").hidden = !!selection || !doc.created;
+            $("restore").hidden =
+              !doc.created ||
+              !Object.values(doc.elements).some(
+                (e) => !e.visible && e.generated !== false,
+              );
+            root.querySelectorAll("[data-restore]").forEach((b) => {
+              const e = doc.elements[b.dataset.restore];
+              b.hidden = e.visible || e.generated === false;
+              b.disabled = busy || comparing;
+            });
+            $("motion").hidden = selected !== "cat";
+            $("speed").value = String(doc.elements.cat.fps);
+            $("speed").disabled = busy || comparing;
+            $("change-motion").disabled = busy || comparing;
+            $("motion-title").textContent =
+              doc.elements.cat.motion === "sleep"
+                ? "Sleeping & breathing · looping"
+                : "Blinks & swishes its tail · looping";
+            if (selection) {
+              const isReading = selected === "session" || selected === "weekly";
+              $("selection-name").textContent = names[selected];
+              $("label-field").hidden = !isReading;
+              if (isReading && document.activeElement !== $("label"))
+                $("label").value = doc.elements[selected].label;
+              $("element-help").textContent =
+                selected === "cat"
+                  ? "A separate animated sprite. Move it without changing the background."
+                  : selected === "artwork"
+                    ? "This is one image. Move the whole artwork here; ask AI to change objects inside it."
+                    : "Drag to move, or use the arrows. Numbers remain connected to your data.";
+            }
+            $("heading").textContent = doc.created
+              ? "Make it yours."
+              : "What’s your vibe?";
+            $("description").textContent = doc.created
+              ? "Describe a change, or click anything on your display to edit it."
+              : "Describe a place, a mood, or a tiny world for your desk.";
+            $("prompt-label").textContent = selection
+              ? "Ask AI about " +
+                (selected === "cat"
+                  ? "this animation"
+                  : selected === "artwork"
+                    ? "this artwork"
+                    : "this element")
+              : doc.created
+                ? "Ask AI to change your theme"
+                : "Describe your theme";
+            $("prompt").placeholder =
+              selected === "cat"
+                ? "Make the cat sleep and breathe gently…"
+                : selected === "artwork"
+                  ? "Remove the cabin, keep the mountains…"
+                  : selected
+                    ? "Make this easier to read…"
+                    : doc.created
+                      ? "A warmer sky, keep the cabin and layout…"
+                      : "A cozy cabin under a starry sky…";
+            const hasCat = doc.elements.cat.visible;
+            $("motion-suggestion").textContent = hasCat
+              ? "Sleepy cat"
+              : "Add animation";
+            $("motion-suggestion").dataset.prompt = hasCat
+              ? "Make the cat sleep with a gentle breathing loop."
+              : "Add an animated cat that blinks and swishes its tail. Keep my layout.";
+            $("generate-label").textContent = busy
+              ? "Updating…"
+              : doc.created
+                ? "Update theme"
+                : "Create theme";
+            $("generate").disabled =
+              busy || comparing || !$("prompt").value.trim();
+            $("cancel").hidden = !busy;
+            $("suggestions").hidden = !doc.created;
+            $("start-options").hidden = doc.created;
+            $("undo").disabled = !undo.length || busy;
+            $("redo").disabled = !redo.length || busy;
+            $("before").disabled = !undo.length || busy;
+            $("before").setAttribute("aria-pressed", String(comparing));
+            $("save").disabled = !doc.created || busy || comparing;
+            $("send").disabled = !doc.created || busy || comparing;
+            $("new").disabled = busy;
+            $("label").disabled = busy || comparing;
+            ["remove", "center", "deselect"].forEach(
+              (k) => ($(k).disabled = busy || comparing),
+            );
+            root
+              .querySelectorAll("[data-move]")
+              .forEach((b) => (b.disabled = busy || comparing));
+            $("preview-caption").textContent = comparing
+              ? "Before last edit · click Before again to return"
+              : selected
+                ? names[selected] + " selected · drag or use arrow keys"
+                : "Click to select · drag to move · illustrative 240 × 240";
+            root
+              .querySelectorAll("[data-reading]")
+              .forEach((b) =>
+                b.setAttribute(
+                  "aria-pressed",
+                  String(b.dataset.reading === reading),
+                ),
+              );
+          }
+          function select(key) {
+            if (busy || comparing) return;
+            selected = key;
+            render();
+          }
+          function move(key, dx, dy) {
+            const e = doc.elements[key];
+            e.x = Math.max(0, Math.min(240 - e.w, e.x + dx));
+            e.y = Math.max(0, Math.min(240 - e.h, e.y + dy));
+          }
+          function remove() {
+            if (!selected) return;
+            const key = selected;
+            edit(() => (doc.elements[key].visible = false));
+            message(names[key] + " removed. Undo brings it back.");
+            $("undo").focus();
+          }
+          root.querySelectorAll("[data-object]").forEach((button) => {
+            const key = button.dataset.object;
+            button.addEventListener("click", () => select(key));
+            button.addEventListener("pointerdown", (event) => {
+              if (event.button !== 0 || busy || comparing) return;
+              select(key);
+              drag = {
+                key,
+                id: event.pointerId,
+                startX: event.clientX,
+                startY: event.clientY,
+                origin: clone(doc.elements[key]),
+                before: clone(doc),
+              };
+              button.setPointerCapture(event.pointerId);
+            });
+            button.addEventListener("pointermove", (event) => {
+              if (!drag || drag.id !== event.pointerId) return;
+              const scale = $("screen").clientWidth / 240;
+              const dx = Math.round((event.clientX - drag.startX) / scale),
+                dy = Math.round((event.clientY - drag.startY) / scale);
+              doc.elements[key].x = drag.origin.x;
+              doc.elements[key].y = drag.origin.y;
+              move(key, dx, dy);
+              renderCanvas();
+            });
+            button.addEventListener("pointerup", (event) => {
+              if (!drag || drag.id !== event.pointerId) return;
+              const changed =
+                JSON.stringify(drag.before) !== JSON.stringify(doc);
+              push(drag.before);
+              drag = null;
+              if (button.hasPointerCapture(event.pointerId))
+                button.releasePointerCapture(event.pointerId);
+              render();
+              if (changed) message(names[key] + " moved. One step in Undo.");
+            });
+            button.addEventListener("pointercancel", () => {
+              if (drag) {
+                doc = drag.before;
+                drag = null;
+                render();
+              }
+            });
+            button.addEventListener("keydown", (event) => {
+              if (busy || comparing) return;
+              if (
+                ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(
+                  event.key,
+                )
+              ) {
+                event.preventDefault();
+                const step = event.shiftKey ? 10 : 2;
+                const delta = {
+                  ArrowLeft: [-step, 0],
+                  ArrowRight: [step, 0],
+                  ArrowUp: [0, -step],
+                  ArrowDown: [0, step],
+                }[event.key];
+                select(key);
+                edit(() => move(key, ...delta));
+                message(names[key] + " moved.");
+              } else if (event.key === "Delete" || event.key === "Backspace") {
+                event.preventDefault();
+                selected = key;
+                remove();
+              } else if (event.key === "Escape") {
+                selected = null;
+                render();
+              }
+            });
+          });
+          $("canvas-area").addEventListener("click", (event) => {
+            if (
+              event.target === $("canvas-area") ||
+              event.target === $("screen")
+            )
+              select(null);
+          });
+          $("deselect").addEventListener("click", () => {
+            const prior = selected;
+            selected = null;
+            render();
+            if (prior && !$("object-" + prior).hidden)
+              $("object-" + prior).focus();
+          });
+          $("label").addEventListener("change", () => {
+            if (selected !== "session" && selected !== "weekly") return;
+            const text = $("label").value.trim();
+            if (!text) {
+              $("label").value = doc.elements[selected].label;
+              return;
+            }
+            edit(() => (doc.elements[selected].label = text));
+            message("Label updated without an AI request.");
+          });
+          $("speed").addEventListener("change", () => {
+            const fps = Number($("speed").value);
+            if (![1, 2, 4].includes(fps)) return;
+            edit(() => (doc.elements.cat.fps = fps));
+            lastSpriteTime = 0;
+            message(
+              "Animation speed changed locally. Undo restores the previous speed.",
+            );
+          });
+          $("playback").addEventListener("click", () => {
+            playing = !playing;
+            syncPlayback();
+            message(
+              playing
+                ? "Animation playing. This does not change your draft."
+                : "Animation paused. You can still position the sprite.",
+            );
+          });
+          $("change-motion").addEventListener("click", () => {
+            $("prompt").value =
+              doc.elements.cat.motion === "sleep"
+                ? "Make the cat blink and swish its tail again."
+                : "Make the cat sleep with a gentle breathing loop.";
+            render();
+            $("prompt").focus();
+          });
+          motionPreference.addEventListener("change", (event) => {
+            if (event.matches) {
+              const wasPlaying = playing;
+              playing = false;
+              syncPlayback();
+              if (wasPlaying)
+                message(
+                  "Animation paused to respect your reduced-motion preference.",
+                );
+            }
+          });
+          document.addEventListener("visibilitychange", () => {
+            if (root.isConnected) syncPlayback();
+          });
+          root.querySelectorAll("[data-move]").forEach((b) =>
+            b.addEventListener("click", () => {
+              if (selected) {
+                edit(() =>
+                  move(selected, ...b.dataset.move.split(",").map(Number)),
+                );
+                message(names[selected] + " moved.");
+              }
+            }),
+          );
+          $("center").addEventListener("click", () => {
+            if (selected) {
+              edit(
+                () =>
+                  (doc.elements[selected].x =
+                    (240 - doc.elements[selected].w) / 2),
+              );
+              message("Element centered.");
+            }
+          });
+          $("remove").addEventListener("click", remove);
+          root.querySelectorAll("[data-restore]").forEach((b) =>
+            b.addEventListener("click", () => {
+              const key = b.dataset.restore;
+              edit(() => (doc.elements[key].visible = true));
+              selected = key;
+              render();
+              message(names[key] + " restored.");
+            }),
+          );
+          $("prompt").addEventListener("input", () => {
+            $("generate").disabled =
+              busy || comparing || !$("prompt").value.trim();
+          });
+          root.querySelectorAll("[data-prompt]").forEach((b) =>
+            b.addEventListener("click", () => {
+              if (busy || comparing) return;
+              $("prompt").value = b.dataset.prompt;
+              render();
+              $("prompt").focus();
+            }),
+          );
+          $("generate").addEventListener("click", () => {
+            if (busy || comparing || !$("prompt").value.trim()) return;
+            busy = true;
+            const text = $("prompt").value.toLowerCase(),
+              target = selected;
+            render();
+            message("Showing a simulated AI edit. No request is sent.");
+            timer = setTimeout(() => {
+              const before = clone(doc);
+              const newTheme = !doc.created;
+              if (newTheme) {
+                doc = defaults();
+                doc.scene = /warm|sunset|gold/.test(text) ? 1 : 0;
+              }
+              if (/cat|katze/.test(text)) {
+                doc.elements.cat.visible = true;
+                doc.elements.cat.generated = true;
+                doc.elements.cat.motion = /sleep|breath|schlaf/.test(text)
+                  ? "sleep"
+                  : "blink";
+                selected = "cat";
+                spriteFrame = 0;
+              } else if (/remove.*cabin|cabin.*remove/.test(text)) {
+                doc.cabin = false;
+              } else if (/warm|sunset|gold/.test(text)) {
+                doc.scene = 1;
+              } else if (target === "session" || target === "weekly") {
+                doc.elements[target].label =
+                  target === "session" ? "SESSION LEFT" : "WEEK LEFT";
+              } else if (!newTheme) {
+                doc.scene = doc.scene ? 0 : 1;
+              }
+              push(before);
+              busy = false;
+              $("prompt").value = "";
+              render();
+              message(
+                "Sample AI edit applied. Your manual layout is preserved; Undo works for both.",
+              );
+            }, 1200);
+          });
+          $("cancel").addEventListener("click", () => {
+            clearTimeout(timer);
+            busy = false;
+            render();
+            message("Cancelled. Your draft is unchanged.");
+          });
+          $("undo").addEventListener("click", () => {
+            if (!undo.length || busy) return;
+            redo.push(clone(doc));
+            doc = undo.pop();
+            comparing = false;
+            render();
+            message(
+              "Last edit undone — AI and manual edits share this history.",
+            );
+          });
+          $("redo").addEventListener("click", () => {
+            if (!redo.length || busy) return;
+            undo.push(clone(doc));
+            doc = redo.pop();
+            comparing = false;
+            render();
+            message("Edit restored.");
+          });
+          $("before").addEventListener("click", () => {
+            comparing = !comparing;
+            render();
+          });
+          root.querySelectorAll("[data-reading]").forEach((b) =>
+            b.addEventListener("click", () => {
+              reading = b.dataset.reading;
+              renderCanvas();
+              root
+                .querySelectorAll("[data-reading]")
+                .forEach((t) =>
+                  t.setAttribute("aria-pressed", String(t === b)),
+                );
+            }),
+          );
+          $("save").addEventListener("click", () => {
+            saved = JSON.stringify(doc);
+            render();
+            message(
+              "Saved only for this demo session. No file or account changed.",
+            );
+          });
+          $("send").addEventListener("click", () =>
+            message(
+              "Demo only: sending is not connected. Your physical VibeTV is unchanged.",
+            ),
+          );
+          $("new").addEventListener("click", () => {
+            $("new-confirm").hidden = false;
+            $("keep").focus();
+          });
+          $("keep").addEventListener("click", () => {
+            $("new-confirm").hidden = true;
+            $("new").focus();
+          });
+          $("start").addEventListener("click", () => {
+            const before = clone(doc);
+            doc = defaults();
+            doc.created = false;
+            push(before);
+            selected = null;
+            comparing = false;
+            $("prompt").value = "";
+            $("new-confirm").hidden = true;
+            render();
+            message("New draft. Undo returns to your previous theme.");
+            $("prompt").focus();
+          });
+          $("connect").addEventListener("click", () => {
+            const open = $("setup").hidden;
+            $("setup").hidden = !open;
+            $("connect").setAttribute("aria-expanded", String(open));
+          });
+          $("demo-connect").addEventListener("click", () => {
+            $("dot").classList.add("connected");
+            $("connect-label").textContent = "OpenAI · connected in demo";
+            $("setup").hidden = true;
+            $("connect").setAttribute("aria-expanded", "false");
+            message(
+              "Setup simulated. No real API key or provider connection exists.",
+            );
+            $("connect").focus();
+          });
+          render();
+        })();
+      </script>
+    </main>
+  </body>
+</html>
