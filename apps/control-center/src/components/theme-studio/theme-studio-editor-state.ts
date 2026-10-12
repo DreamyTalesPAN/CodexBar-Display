@@ -3,6 +3,7 @@ import {
   type ThemeStudioPrimitive,
 } from "@/lib/theme-studio";
 import type { ThemeStudioDocument } from "@/lib/theme-studio-storage";
+import { normalizeCompanionPrimitive } from "./editor-geometry";
 
 export type { ThemeStudioDocument } from "@/lib/theme-studio-storage";
 
@@ -15,7 +16,7 @@ export type ThemeStudioEditorState = {
 };
 
 export type ThemeStudioEditorAction =
-  | { document: ThemeStudioDocument; type: "load" }
+  | { document: ThemeStudioDocument; savedDocument?: ThemeStudioDocument; type: "load" }
   | { document: ThemeStudioDocument; type: "update" }
   | { mutate: (document: ThemeStudioDocument) => void; type: "mutate" }
   | { type: "begin_transaction" }
@@ -32,6 +33,9 @@ export function createThemeStudioEditorState(
   document: ThemeStudioDocument,
 ): ThemeStudioEditorState {
   const initial = cloneDocument(document);
+  // Every opened design (auto-restore, library, import) passes through here,
+  // so companions saved outside the helper's bounds are repaired once.
+  initial.spec.primitives.forEach(normalizeCompanionPrimitive);
   return {
     future: [],
     past: [],
@@ -46,8 +50,11 @@ export function themeStudioEditorReducer(
   action: ThemeStudioEditorAction,
 ): ThemeStudioEditorState {
   switch (action.type) {
-    case "load":
-      return createThemeStudioEditorState(action.document);
+    case "load": {
+      const loaded = createThemeStudioEditorState(action.document);
+      if (action.savedDocument) loaded.savedDocument = createThemeStudioEditorState(action.savedDocument).present;
+      return loaded;
+    }
     case "update": {
       const next = cloneDocument(action.document);
       if (documentsEqual(state.present, next)) {

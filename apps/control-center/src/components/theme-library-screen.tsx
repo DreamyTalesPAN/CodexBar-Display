@@ -503,9 +503,13 @@ export function ThemeLibraryScreen({
       <ThemeStudioScreen
         deviceCapabilities={themeStudioCapabilitiesFromDevice(device)}
         initialTheme={editingTheme}
-        onBackToLibrary={() => setEditingTheme(null)}
+        onBackToLibrary={() => {
+          const draft = loadThemeStudioRecovery();
+          if (draft.ok) setRecovery(draft.value);
+          setEditingTheme(null);
+        }}
         onInstallTheme={onInstallCustomTheme}
-        onRecoveryDiscarded={() => setRecovery(null)}
+        installStatus={installStatus}
         onSaveToLibrary={saveThemeFromEditor}
         saveBlockedReason={storageLocked ? storageWarning : undefined}
         windowsHost={windowsHost}
