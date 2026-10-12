@@ -63,14 +63,18 @@ it("reuses images when moved and refreshes them when resized or edited", () => {
   const { container, rerender } = render(<ThemeSpecPreview animate={false} pack={pack} status="ready" themeId="test" />);
   const image = container.querySelector("image")!;
   const original = image.getAttribute("href");
-  const moved = { ...pack, spec: { primitives: [{ ...pack.spec!.primitives![0], x: 10 }] } };
+  const encode = vi.spyOn(globalThis, "encodeURIComponent");
+  // Geometry edits clone the complete editor document, including asset objects.
+  const moved = structuredClone(pack);
+  moved.spec!.primitives![0].x = 10;
   rerender(<ThemeSpecPreview animate={false} pack={moved} status="ready" themeId="test" />);
   expect(image.getAttribute("x")).toBe("10");
+  expect(encode).not.toHaveBeenCalled();
   expect(image.getAttribute("href")).toBe(original);
   const pixel = imageDocument(image).querySelector("rect")!;
   expect(pixel.getAttribute("x")).toBe("1");
   expect(pixel.getAttribute("width")).toBe("2");
-  const resized = { ...moved, spec: { primitives: [{ ...moved.spec.primitives[0], width: 8 }] } };
+  const resized = { ...moved, spec: { primitives: [{ ...moved.spec!.primitives![0], width: 8 }] } };
   rerender(<ThemeSpecPreview animate={false} pack={resized} status="ready" themeId="test" />);
   expect(imageDocument(image).querySelector("rect")?.getAttribute("width")).toBe("4");
   const edited = { ...resized, assets: { art: { ...pack.assets!.art, data: "CBI1\n2 1\n1\n#654321\n.a" } } };
