@@ -2975,8 +2975,8 @@ func usagePaceTestWindows(t *testing.T, stale bool, mode string) []usageWindowIn
 		t.Setenv("CODEXBAR_DISPLAY_USAGE_MODE", mode)
 	}
 	collectedAt := time.Date(2026, 10, 8, 20, 0, 0, 0, time.UTC)
-	// The page reads the reading ten minutes after it was collected.
-	server.now = func() time.Time { return collectedAt.Add(10 * time.Minute) }
+	// The page reads the reading five minutes after it was collected.
+	server.now = func() time.Time { return collectedAt.Add(5 * time.Minute) }
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
 		return daemon.PersistedUsage{
 			SavedAt:         collectedAt,
@@ -3029,7 +3029,7 @@ func TestUsageWindowCarriesEnginePace(t *testing.T) {
 		t.Fatalf("session pace: %+v", session)
 	}
 	// The engine's 1d 8h counted from the collection, ten minutes before the read.
-	if weekly == nil || weekly.State != protocol.PaceDeficit || weekly.Lasts == nil || *weekly.Lasts || weekly.ETASeconds != 115200-600 {
+	if weekly == nil || weekly.State != protocol.PaceDeficit || weekly.Lasts == nil || *weekly.Lasts || weekly.ETASeconds != 115200-300 {
 		t.Fatalf("weekly pace: %+v", weekly)
 	}
 	// Where each bar would stand on pace: used minus the engine's delta.
@@ -3061,10 +3061,25 @@ func TestUsageStaleReadingCarriesNoPace(t *testing.T) {
 
 func TestUsagePaceETAThatHasPassedHasNoTime(t *testing.T) {
 	collectedAt := time.Date(2026, 10, 8, 20, 0, 0, 0, time.UTC)
-	windows := []usageWindowInfo{{ID: "weekly", Pace: &usageWindowPaceInfo{State: protocol.PaceDeficit, ETASeconds: 300}}}
-	reanchorUsagePaceETA(windows, collectedAt.Add(10*time.Minute), collectedAt)
+	windows := []usageWindowInfo{{ID: "weekly", ResetSec: 3600, Pace: &usageWindowPaceInfo{State: protocol.PaceDeficit, ETASeconds: 300}}}
+	reanchorUsagePace(windows, collectedAt.Add(10*time.Minute), collectedAt)
 	if windows[0].Pace.ETASeconds != 0 {
 		t.Fatalf("a runout five minutes after the collection still shows a time ten minutes later: %+v", windows[0].Pace)
+	}
+}
+
+func TestUsagePaceEndsWhenItsResetHasPassed(t *testing.T) {
+	collectedAt := time.Date(2026, 10, 8, 20, 0, 0, 0, time.UTC)
+	windows := []usageWindowInfo{
+		{ID: "session", ResetSec: 30, Pace: &usageWindowPaceInfo{State: protocol.PaceDeficit, ETASeconds: 20}},
+		{ID: "weekly", ResetSec: 3600, Pace: &usageWindowPaceInfo{State: protocol.PaceReserve}},
+	}
+	reanchorUsagePace(windows, collectedAt.Add(time.Minute), collectedAt)
+	if windows[0].Pace != nil {
+		t.Fatalf("a window that reset 30s before the read still shows a pace: %+v", windows[0].Pace)
+	}
+	if windows[1].Pace == nil || windows[1].Pace.State != protocol.PaceReserve {
+		t.Fatalf("a window still running lost its pace: %+v", windows[1].Pace)
 	}
 }
 
@@ -3073,7 +3088,7 @@ func TestUsageRemainingDisplayKeepsEnginePace(t *testing.T) {
 	if windows[0].UsedPercent != 92 || windows[0].Pace == nil || windows[0].Pace.State != protocol.PaceReserve || !*windows[0].Pace.Lasts {
 		t.Fatalf("session under Remaining: %+v pace=%+v", windows[0], windows[0].Pace)
 	}
-	if windows[1].UsedPercent != 27 || windows[1].Pace == nil || windows[1].Pace.State != protocol.PaceDeficit || windows[1].Pace.ETASeconds != 115200-600 {
+	if windows[1].UsedPercent != 27 || windows[1].Pace == nil || windows[1].Pace.State != protocol.PaceDeficit || windows[1].Pace.ETASeconds != 115200-300 {
 		t.Fatalf("weekly under Remaining: %+v pace=%+v", windows[1], windows[1].Pace)
 	}
 	// The mark turns with the bar.

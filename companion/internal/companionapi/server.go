@@ -2886,7 +2886,7 @@ func usageResponseFromPersisted(now time.Time, usage daemon.PersistedUsage) usag
 	providers := make([]usageProviderInfo, 0, len(usage.Providers))
 	for _, provider := range usage.Providers {
 		if info, ok := usageProviderFromSnapshot(provider); ok {
-			reanchorUsagePaceETA(info.Windows, now, provider.CollectedAt)
+			reanchorUsagePace(info.Windows, now, provider.CollectedAt)
 			providers = append(providers, info)
 		}
 	}
@@ -3053,10 +3053,11 @@ func usageWindowsFromMeta(meta codexbar.ProviderUsageMeta, stale bool) []usageWi
 	return out
 }
 
-// The engine's runout ETA counts from its collection, which the page reads up
-// to a minute later; count that time off so "runs out in" stays true. An ETA
-// that has passed becomes 0, which the page shows without a time.
-func reanchorUsagePaceETA(windows []usageWindowInfo, now, collectedAt time.Time) {
+// The engine's runout ETA and reset count from its collection, which the page
+// reads up to a minute later; count that time off so "runs out in" stays true.
+// An ETA that has passed becomes 0, which the page shows without a time, and a
+// window whose reset has passed loses its pace like a stale reading.
+func reanchorUsagePace(windows []usageWindowInfo, now, collectedAt time.Time) {
 	if now.IsZero() || collectedAt.IsZero() {
 		return
 	}
@@ -3066,7 +3067,14 @@ func reanchorUsagePaceETA(windows []usageWindowInfo, now, collectedAt time.Time)
 	}
 	for i := range windows {
 		pace := windows[i].Pace
-		if pace == nil || pace.ETASeconds <= 0 {
+		if pace == nil {
+			continue
+		}
+		if windows[i].ResetSec <= age {
+			windows[i].Pace = nil
+			continue
+		}
+		if pace.ETASeconds <= 0 {
 			continue
 		}
 		pace.ETASeconds = max(pace.ETASeconds-age, 0)
