@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -314,7 +315,7 @@ func TestThemeActivationLimitBoundaries(t *testing.T) {
 		{"activation body one byte over", 1, 1024, maxThemeActivationBodyBytes + 1, http.StatusBadRequest, "invalid theme activation body"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			primitives := strings.TrimSuffix(strings.Repeat(`{"t":"r"},`, tt.primitives), ",")
+			primitives := strings.TrimSuffix(strings.Repeat(`{"t":"r","w":1,"h":1},`, tt.primitives), ",")
 			spec := padded(`{"id":"limit","rev":1,"p":[`+primitives+`],"pad":"`, tt.specBytes)
 			body := padded(`{"path":"`+path+`","pad":"`, tt.bodyBytes)
 			status, answer := activateStoredTheme(t, running, path, spec, body)
@@ -327,8 +328,8 @@ func TestThemeActivationLimitBoundaries(t *testing.T) {
 }
 
 // Like the ESP8266, activation refuses a stored spec that is no JSON object
-// with an id, a positive whole revision and one primitive of a known type, each
-// under its long or short key, and takes every shipped theme.
+// with an id, a positive whole revision and one primitive that compiles, each
+// under its long or short key.
 func TestThemeActivationRefusesWhatTheFirmwareRefuses(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.RebootUnavailableRequests = 0
@@ -368,17 +369,6 @@ func TestThemeActivationRefusesWhatTheFirmwareRefuses(t *testing.T) {
 		{"p behind an empty primitives", `{"id":"a","rev":1,"primitives":[],"p":[{"t":"tx"}]}`, noContent},
 		{"no primitive of a known type", `{"id":"a","rev":1,"p":[{"t":"circle"},{"x":1},7]}`, noContent},
 	}
-	packs, err := filepath.Glob(filepath.Join("..", "..", "..", "theme-packs", "*", "theme.json"))
-	if err != nil || len(packs) == 0 {
-		t.Fatalf("no shipped theme pack found: %v", err)
-	}
-	for _, pack := range packs {
-		spec, err := os.ReadFile(pack)
-		if err != nil {
-			t.Fatal(err)
-		}
-		cases = append(cases, activation{"shipped " + filepath.Base(filepath.Dir(pack)), string(spec), ""})
-	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			wantStatus := http.StatusBadRequest
@@ -388,6 +378,138 @@ func TestThemeActivationRefusesWhatTheFirmwareRefuses(t *testing.T) {
 			status, answer := activateStoredTheme(t, running, path, tt.spec, `{"path":"`+path+`"}`)
 			if status != wantStatus || !strings.Contains(answer, tt.wantRefusal) {
 				t.Fatalf("%s: status %d %q, want %d %q", tt.spec, status, answer, wantStatus, tt.wantRefusal)
+			}
+		})
+	}
+}
+
+// Like the firmware's CompilePrimitive, activation refuses a spec in which no
+// primitive compiles, judged rule by rule for each primitive type. A spec with
+// one good primitive among bad ones still activates (#354).
+func TestThemeActivationRefusesPrimitivesThatDoNotCompile(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.RebootUnavailableRequests = 0
+	running, err := Start(cfg)
+	if err != nil {
+		t.Fatalf("start virtual VibeTV: %v", err)
+	}
+	t.Cleanup(func() { _ = running.Close() })
+	const (
+		path      = "/themes/u/compile.json"
+		noContent = "theme spec has no renderable content"
+		goodRect  = `{"t":"r","w":1,"h":1}`
+	)
+	for _, tt := range []struct {
+		name, primitives string
+		refused          bool
+	}{
+		// CompilePrimitive, slots: usageIndex, slot and providerSlot are uint8
+		// after the limits of kMaxThemeSpecUsageWindows (3) and kMaxThemeSpecProviderSlots (2).
+		{"usage index 2 is the last slot", `{"t":"r","w":1,"h":1,"ui":2}`, false},
+		{"usage index 3 is past the last slot", `{"t":"r","w":1,"h":1,"ui":3}`, true},
+		{"slot 3 is the last slot", `{"t":"r","w":1,"h":1,"sl":3}`, false},
+		{"slot 4 is past the last slot", `{"t":"r","w":1,"h":1,"sl":4}`, true},
+		{"provider slot 2 is the last slot", `{"t":"r","w":1,"h":1,"pl":2}`, false},
+		{"provider slot 3 is past the last slot", `{"t":"r","w":1,"h":1,"pl":3}`, true},
+		// CompilePrimitive, rect: width and height above zero.
+		{"rect without width and height", `{"t":"r"}`, true},
+		{"rect with height 0", `{"t":"r","w":1,"h":0}`, true},
+		{"rect with width and height", `{"type":"rect","width":1,"height":1}`, false},
+		// CompilePrimitive, text: font size above zero, default 1; empty text is kept.
+		{"text with font size 0", `{"t":"tx","s":0}`, true},
+		{"text with the default font size and no text", `{"t":"tx"}`, false},
+		// CompilePrimitive, progress: width and height above zero.
+		{"progress without height", `{"t":"p","w":10}`, true},
+		{"progress with width and height", `{"t":"p","w":10,"h":10}`, false},
+		// CompilePrimitive, progress arc: start 0-359, sweep 1-360, thickness at
+		// least 1 and at most half the smaller side.
+		{"arc starting at 360", `{"t":"p","w":10,"h":10,"ps":"arc","as":360,"aw":90,"at":2}`, true},
+		{"arc sweep 0", `{"t":"p","w":10,"h":10,"ps":"arc","as":0,"aw":0,"at":2}`, true},
+		{"arc sweep 360", `{"t":"p","w":10,"h":10,"ps":"arc","as":0,"aw":360,"at":2}`, false},
+		{"arc thickness 0", `{"t":"p","w":10,"h":10,"ps":"arc","as":0,"aw":90,"at":0}`, true},
+		{"arc thicker than half its side", `{"t":"p","w":10,"h":10,"ps":"arc","as":0,"aw":90,"at":6}`, true},
+		{"arc at half its side", `{"t":"p","w":10,"h":10,"ps":"arc","as":0,"aw":90,"at":5}`, false},
+		// CompileProgressColorStops: at most 4 stops, each with gte 0-100 and a colour.
+		{"five colour stops", `{"t":"p","w":10,"h":10,"cs":[{"gte":90,"c":"#FFFFFF"},{"gte":80,"c":"#FFFFFF"},{"gte":70,"c":"#FFFFFF"},{"gte":60,"c":"#FFFFFF"},{"gte":50,"c":"#FFFFFF"}]}`, true},
+		{"colour stop above 100", `{"t":"p","w":10,"h":10,"cs":[{"gte":101,"c":"#FFFFFF"}]}`, true},
+		{"colour stop without a colour", `{"t":"p","w":10,"h":10,"cs":[{"gte":50}]}`, true},
+		{"colour stop at 0 and 100", `{"t":"p","w":10,"h":10,"cs":[{"gte":100,"color":"#FFFFFF"},{"gte":0,"c":"#000000"}]}`, false},
+		// CompilePrimitive, gif: at most 80 by 80, and the initial asset (idle, else
+		// assetPath) and any idle or coding asset end in .gif.
+		{"gif 81 wide", `{"t":"g","w":81,"h":10,"a":"/themes/u/a.gif"}`, true},
+		{"gif without a size", `{"t":"g","a":"/themes/u/a.gif"}`, true},
+		{"gif 80 by 80", `{"t":"g","w":80,"h":80,"a":"/themes/u/a.gif"}`, false},
+		{"gif without an asset", `{"t":"g","w":10,"h":10}`, true},
+		{"gif asset that is no GIF", `{"t":"g","w":10,"h":10,"a":"/themes/u/a.png"}`, true},
+		{"gif idle asset that is no GIF", `{"t":"g","w":10,"h":10,"sa":{"idle":"/themes/u/a.png"}}`, true},
+		{"gif with a GIF idle asset", `{"t":"g","w":10,"h":10,"sa":{"idle":"/themes/u/a.gif"}}`, false},
+		// CompilePrimitive, sprite and image: an assetPath, an idle or coding
+		// state asset, or a provider asset with a key and a path.
+		{"sprite without any asset", `{"t":"sp","w":10,"h":10}`, true},
+		{"sprite with an asset path", `{"t":"sp","a":"/themes/u/a.png"}`, false},
+		{"image with a coding state asset", `{"type":"image","stateAssets":{"coding":"/themes/u/a.png"}}`, false},
+		{"sprite with a provider asset", `{"t":"sp","pa":{"claude":"/themes/u/a.png"}}`, false},
+		{"sprite with an empty provider path", `{"t":"sp","pa":{"claude":""}}`, true},
+		// CompilePrimitive, pixels: width and height above zero.
+		{"pixels without width", `{"t":"px","h":2}`, true},
+		{"pixels of 1 by 1", `{"t":"px","w":1,"h":1}`, false},
+		// CompileThemeSpecObject: one primitive that compiles is enough.
+		{"bad rect next to a good one", `{"t":"r"},` + goodRect, false},
+		{"good rect next to a bad one", goodRect + `,{"t":"r"}`, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			wantStatus, wantAnswer := http.StatusOK, ""
+			if tt.refused {
+				wantStatus, wantAnswer = http.StatusBadRequest, noContent
+			}
+			spec := `{"id":"compile","rev":1,"p":[` + tt.primitives + `]}`
+			status, answer := activateStoredTheme(t, running, path, spec, `{"path":"`+path+`"}`)
+			if status != wantStatus || !strings.Contains(answer, wantAnswer) {
+				t.Fatalf("%s: status %d %q, want %d %q", spec, status, answer, wantStatus, wantAnswer)
+			}
+		})
+	}
+}
+
+// Every theme spec the repository ships must activate on the virtual device, so
+// a rule stricter than the firmware's shows up in the unit tests (#354). A pack
+// manifest is not a theme spec and is skipped.
+func TestEveryShippedThemeSpecActivates(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.RebootUnavailableRequests = 0
+	running, err := Start(cfg)
+	if err != nil {
+		t.Fatalf("start virtual VibeTV: %v", err)
+	}
+	t.Cleanup(func() { _ = running.Close() })
+	var specs []string
+	for _, root := range []string{"theme-packs", "theme-render-packs"} {
+		err := filepath.WalkDir(filepath.Join("..", "..", "..", root), func(path string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if !entry.IsDir() && filepath.Ext(path) == ".json" && entry.Name() != "manifest.json" {
+				specs = append(specs, path)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(specs) == 0 {
+		t.Fatal("no shipped theme spec found")
+	}
+	for i, spec := range specs {
+		t.Run(filepath.Base(filepath.Dir(spec))+"/"+filepath.Base(spec), func(t *testing.T) {
+			raw, err := os.ReadFile(spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := "/themes/u/shipped-" + strconv.Itoa(i) + ".json"
+			status, answer := activateStoredTheme(t, running, path, string(raw), `{"path":"`+path+`"}`)
+			if status != http.StatusOK {
+				t.Fatalf("status %d %q, want %d", status, answer, http.StatusOK)
 			}
 		})
 	}
