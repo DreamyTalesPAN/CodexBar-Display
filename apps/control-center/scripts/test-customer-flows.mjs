@@ -13533,7 +13533,11 @@ async function testReconnectReachesProvidersWithoutFreshUsage(browser, appUrl) {
   await connectDiscoveredVibeTV(page, { deviceId: "customer-device" });
   const providers = setupScreen(page, SETUP_PROVIDERS_SCREEN);
   await providers.waitFor({ timeout: 15_000 });
-  await providers.getByText("Live usage is unavailable; the last successful reading is still saved.", { exact: true }).waitFor();
+  // A saved reading does not open the provider message by itself; it is one click away.
+  await providers.getByRole("button", { name: "Show provider message for Codex" }).click();
+  const staleMessage = page.getByRole("dialog", { name: "Codex", exact: true });
+  await staleMessage.getByText("Live usage is unavailable; the last successful reading is still saved.", { exact: true }).waitFor();
+  await staleMessage.getByRole("button", { name: "OK", exact: true }).click();
   assert(!(await providers.getByRole("button", { name: "Continue" }).isDisabled()), "a bounded last-good reading must keep the existing Continue action available");
   route.setDevice(companionDevice);
   await page.waitForTimeout(6_000);
