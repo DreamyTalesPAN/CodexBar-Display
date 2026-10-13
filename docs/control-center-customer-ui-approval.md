@@ -7143,3 +7143,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. Support › Setup log, the start line of a theme install reads `Installing <theme name>.`, for example `Installing Gauge.` (before: `Installing theme.`). A screensaver reads `Installing <screensaver name>.` (before: `Installing screensaver.`). Lines of the install's end and the other entries are unchanged.
 - Scope: `companion/internal/companionapi/server.go`, the test `TestSetupLogNamesTheThemeBeingInstalled` in `setup_events_test.go` (not run here: the coordinator asked for no go test in that package), and this approval record. Night-shift branch only, not merge or release.
 - What's new: none — a correction, nothing new to announce
+
+## 2026-10-13 — Night shift: Updates: a failed check gives one reason and the next step (#579)
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-13/14; wording not yet seen by him. Issue #579: the page read `Update check failed` and nothing else, the companion sends no reason of its own for it.
+- Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. Updates, under the heading `Update check failed`, one line: `VibeTV could not check for updates. Check your internet connection and try again.` (before: no line). Shown only while the heading reads `Update check failed`; nothing else changes.
+- Scope: `updates-screen.tsx` and its test, and this approval record. Night-shift branch only, not merge or release.
+- What's new: none — a correction, nothing new to announce

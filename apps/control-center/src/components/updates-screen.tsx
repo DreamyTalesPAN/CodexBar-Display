@@ -261,6 +261,11 @@ export function UpdatesScreen({
           </Button>
         ) : null}
       </div>
+      {pageStatusHeading === "Update check failed" ? (
+        <p className="text-sm text-muted-foreground">
+          VibeTV could not check for updates. Check your internet connection and try again.
+        </p>
+      ) : null}
       <div className="grid gap-4 lg:grid-cols-2">
         <UpdateCard
           checkedAt={

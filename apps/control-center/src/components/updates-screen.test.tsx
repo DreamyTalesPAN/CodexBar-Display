@@ -573,3 +573,33 @@ describe("UpdatesScreen Mac-App-first gate", () => {
     });
   });
 });
+
+describe("UpdatesScreen failed check", () => {
+  // Issue #579: a failed check said only "Update check failed" and gave no
+  // reason. The companion sends no reason of its own, so the page says the
+  // one generic cause and what to do.
+  it("gives one reason and the next step under a failed check", () => {
+    render(
+      <UpdatesScreen
+        companionStatus="online"
+        device={{ connected: true, board: "esp8266-smalltv-st7789", firmware: "1.0.40" }}
+        firmwareUpdate={{ checkedAt: "2026-10-07T12:32:07Z", status: "check_failed", installedFirmware: "1.0.40", updateAvailable: false }}
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "Update check failed" })).toBeTruthy();
+    expect(
+      screen.getByText("VibeTV could not check for updates. Check your internet connection and try again."),
+    ).toBeTruthy();
+  });
+
+  it("gives no failure line while the checks pass", () => {
+    render(
+      <UpdatesScreen
+        companionStatus="online"
+        device={{ connected: true, board: "esp8266-smalltv-st7789", firmware: "1.0.40" }}
+        firmwareUpdate={{ checkedAt: "2026-10-07T12:32:07Z", status: "current", installedFirmware: "1.0.40", latestFirmware: "1.0.40", updateAvailable: false }}
+      />,
+    );
+    expect(screen.queryByText(/could not reach the update server/)).toBeNull();
+  });
+});
