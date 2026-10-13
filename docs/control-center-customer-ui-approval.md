@@ -7108,3 +7108,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. No visible change. The Mac App update dialog still opens once per offered version, as before; only tests were added and the prompt call moved into `openMacAppUpdatePrompt()` in `control-center-runtime.ts`.
 - Scope: `control-center-app.tsx`, `control-center-runtime.ts`, the new test `control-center-app.mac-update-prompt.test.tsx`, and this approval record. Night-shift branch only, not merge or release.
 - What's new: none — a correction, nothing new to announce
+
+## 2026-10-13 — Night shift: a click right beside a slider's handle moves the handle (#579)
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-13/14; wording not yet seen by him. It answers a leftover of issue #579 from the Windows walk-through of 2026-10-09: the Brightness track ignored clicks 6–11 px beside the handle, because the handle's invisible touch area reached 8 px to each side and swallowed them.
+- Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. No new wording or control. On every slider (Brightness, and the sliders that share the component) a click on the track next to the handle moves the handle there, however close. The handle's invisible touch area still reaches 8 px above and below it; to the sides it ends with the handle. Dragging and the arrow keys are unchanged.
+- Scope: `ui/slider.tsx` and this approval record. Not covered by a unit test (pointer geometry); to be checked in the real apps. Night-shift branch only, not merge or release.
+- What's new: none — a correction, nothing new to announce
