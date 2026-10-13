@@ -6863,3 +6863,44 @@ issue scope, or release permission never implies UI permission.
 - Scope: the settings effect in `apps/control-center/src/components/control-center-app.tsx`, `control-center-app.screensaver-setting.test.tsx`, `apps/control-center/scripts/test-customer-flows.mjs`, and this approval record. Bundle branch only, not merge or release.
 - What's new: none — a correction inside the bundle
 
+## 2026-10-08 — The Mac App installs its own update at launch and offers it during setup (#561)
+
+- User approval: Instructed by Paul on 2026-10-08. A colleague was stuck in setup on Mac App 1.0.57 while 1.0.62 was current, because nothing had ever offered him the update. Paul opened #561 ("the app installs the update right away and starts again, before it looks for a VibeTV, without the customer having to find a button"), agreed to the additions (check while the app runs; offer the update where the VibeTV is not found), raised it to P1 and said "fang an das zu bearbeiten und mach pr wenn du fertig bist". The exact texts below are drafted and not yet confirmed by Paul.
+- Approved customer-visible result: Draft, to be confirmed by Paul. On every start the native start screen reads "Starting Control Center — Checking for a Mac App update." (was "Checking the Mac App and your last connected VibeTV."). If a newer Mac App is published, the screen changes to "Updating the Mac App — Installing version x.y.z. VibeTV Control Center restarts by itself.", the app installs it without a dialog and reopens. Without an answer from the update feed within 5 seconds the start goes on as before, with no message. While the app is running it checks once a day and shows Sparkle's standard update dialog. In the Control Center window the existing rule "a pending Mac App update opens the native Sparkle dialog once per offered version" now also applies during setup, for example on "VibeTV not found"; it stays off while a firmware update is running. No new screen, button, or text in the Control Center window.
+- Scope: `macos/VibeTVControlCenter/main.swift`, `scripts/build-macos-control-center-app.sh`, `scripts/test-macos-control-center-app-bundle.sh`, `apps/control-center/src/components/control-center-app.tsx`, and this approval record. This is a draft for the pull request only, not approval for merge, release, installation, or a device operation.
+- What's new: none — Mac App maintenance, not announced to customers (line added when #599 joined the review bundle #600)
+
+## 2026-10-08 — #561 entry corrected: the start screen shows the update step in its status line
+
+- User approval: Instructed by Paul on 2026-10-08 as in the #561 entry above. The test in the real Mac App on 2026-10-08 showed that the start screen never displays a title or detail text: it has one status line ("> starting background service"). The exact wording below is drafted and not yet confirmed by Paul.
+- Approved customer-visible result: Draft, to be confirmed by Paul. The start screen's status line reads "> checking for mac app update" while the app asks the update feed, "> installing mac app x.y.z" while a found update is installed, and "> starting background service" afterwards as before. The texts "Checking for a Mac App update." and "Updating the Mac App — Installing version x.y.z. VibeTV Control Center restarts by itself." of the entry above are not shown on screen; they only appear in the support report. Seen in the real app on 2026-10-08 with local test builds 9999.0.5631 → 9999.0.5632: the update installed and the app reopened about 4 seconds after launch, with no dialog.
+- Scope: `macos/VibeTVControlCenter/main.swift` and this approval record. This is a draft for the pull request only, not approval for merge, release, installation, or a device operation.
+- What's new: none — Mac App maintenance, not announced to customers (line added when #599 joined the review bundle #600)
+
+## 2026-10-08 — Paul confirms the #561 start screen lines
+
+- User approval: On 2026-10-08 Paul was shown the two status lines of the start screen and the results of the test in the real Mac App (screenshots of the start screen during the install and of the update dialog on the last setup page) and answered "texte passen, trag meine freigabe ein".
+- Approved customer-visible result: The two #561 entries above as written, now confirmed: the start screen's status line reads "> checking for mac app update" and "> installing mac app x.y.z", a found update installs at launch without a dialog and the app reopens, the start goes on after 5 seconds without an answer, Sparkle checks once a day while the app runs, and a pending Mac App update opens Sparkle's dialog during setup as well.
+- Scope: the two #561 entries of 2026-10-08 and this approval record. This approves the customer-visible results on the pull-request branch only, not merge, release, installation, or a device operation.
+- What's new: none — Mac App maintenance, not announced to customers (line added when #599 joined the review bundle #600)
+
+## 2026-10-08 — #561 review follow-up: the Mac App update waits for a running VibeTV update
+
+- User approval: Instructed by Paul on 2026-10-08 ("check ci und fix berechtigte findings, close edge cases"). The Codex review of PR #563 found that the launch update could stop the background service while it is writing firmware, and that an update the feed reports after the 5-second limit was dropped without any hint. The alert text below is new on the Mac and not yet confirmed by Paul; it is the text the Windows app already shows in the same case.
+- Approved customer-visible result: Draft, to be confirmed by Paul. While a VibeTV update or a theme install is running, the Mac App does not install its own update. At launch the start then simply goes on, with no message. For an update the customer started in Sparkle's dialog an alert reads "Update paused — The update was not installed because a VibeTV update or theme install is running. Try again when it has finished." When the update feed answers only after the 5-second limit, Sparkle's standard dialog offers that update as soon as the answer is there, instead of nothing. "Skip This Version" in Sparkle's dialog no longer keeps that version away from the launch update.
+- Scope: `macos/VibeTVControlCenter/main.swift`, `scripts/test-macos-control-center-app-bundle.sh`, and this approval record. This is a draft for the pull request only, not approval for merge, release, installation, or a device operation.
+- What's new: none — Mac App maintenance, not announced to customers (line added when #599 joined the review bundle #600)
+
+## 2026-10-08 — #561 review follow-up corrected: no new alert, the Mac App update waits and then installs
+
+- User approval: Instructed by Paul on 2026-10-08 as in the entry above ("fix berechtigte findings"). The Codex review of PR #563 found that the alert of the entry above told the customer to try again while Sparkle kept the first update pending, so a second try did nothing. Not yet confirmed by Paul.
+- Approved customer-visible result: Draft, to be confirmed by Paul. The alert "Update paused — The update was not installed because a VibeTV update or theme install is running. Try again when it has finished." of the entry above does not exist. No new text. An update the customer started in Sparkle's dialog while a VibeTV update or theme install is running is installed when that has finished, and the app then reopens. At launch the app asks the background service first and does not check for its own update while a VibeTV update or theme install is running; the start goes on as usual.
+- Scope: `macos/VibeTVControlCenter/main.swift` and this approval record. This is a draft for the pull request only, not approval for merge, release, installation, or a device operation.
+- What's new: none — Mac App maintenance, not announced to customers (line added when #599 joined the review bundle #600)
+
+## 2026-10-13 — Review bundle: #599 (#573, #574, #563) joins #600 as one candidate
+
+- User approval: Marcus asked on 2026-10-13 to bundle and test the open review PRs together before his own test. #599 was approved by the Codex review and green in CI; it is merged into this bundle unchanged so that one signed candidate is rehearsed on Mac and Windows and tested by Marcus once. No new wording.
+- Approved customer-visible result: as in the #561 entries above and the bundle's own entries; nothing changes in how they read together. The launch check for a Mac App update and the What's new notice do not compete: the notice already waits while a newer app version is on offer.
+- Scope: merge of `codex/review-bundle-a` into `codex/review-bundle-b`; this approval record. Bundle branch only, not merge or release.
+- What's new: none — the Mac App update at launch is maintenance and not announced to customers

@@ -4486,7 +4486,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // the app — most urgently in the mixed state where the device firmware is
   // already ahead of this app and renders degraded. Surface the native Sparkle
   // dialog once per offered version; the Updates tab stays the manual path if
-  // the dialog is dismissed.
+  // the dialog is dismissed. Setup is included: a customer whose VibeTV is not
+  // found never reaches the Updates tab, and an old app can be the reason
+  // (#561).
   const macAppUpdateOfferedVersion =
     companionRelease?.latestVersion || companionRelease?.release || "";
   const activeThemeUpdateAvailable = Boolean(
@@ -4577,7 +4579,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   useEffect(() => {
     if (
       hostedSetup ||
-      !hasEnteredControlCenter ||
       !macAppUpdateAvailable ||
       !macAppUpdateOfferedVersion ||
       firmwareUpdateInProgress ||
@@ -4590,7 +4591,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     window.location.href = "vibetv://check-for-updates";
   }, [
     firmwareUpdateInProgress,
-    hasEnteredControlCenter,
     hostedSetup,
     macAppUpdateAvailable,
     macAppUpdateOfferedVersion,
