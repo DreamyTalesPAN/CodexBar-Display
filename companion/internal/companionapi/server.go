@@ -2295,8 +2295,7 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := s.currentTime()
-	cfg, _ := s.config()
-	showUsed := cfg.UsageShowsUsed(codexbar.UsageBarsShowUsed)
+	showUsed := codexbar.UsageBarsShowUsed()
 	manualRefresh := usageRefreshRequested(r)
 	if manualRefresh {
 		s.requestUsageRefresh(now)

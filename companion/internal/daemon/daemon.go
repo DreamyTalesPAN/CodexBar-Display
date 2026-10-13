@@ -1724,8 +1724,7 @@ func codingMaxAgeExpired(state *runtimeState, now time.Time) bool {
 func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
 	publicPort := publicDeviceTarget(port)
 	authoritativeFrame := result.frame
-	cfg, _ := loadRuntimeConfig(deps)
-	frame := applyUsageBarsPreference(authoritativeFrame.Normalize(), cfg.UsageShowsUsed(deps.usageBarsShowUsed))
+	frame := applyUsageBarsPreference(authoritativeFrame.Normalize(), deps.usageBarsShowUsed())
 	if !result.usageFresh && result.failureErr == nil {
 		expiredLastGood := state != nil && state.hasLastGood && !isLastGoodFreshAt(state.lastGoodAt, deps.now(), providerSnapshotMaxAge())
 		// The reading is only retained, so there is nothing new to show.
@@ -1744,7 +1743,7 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 			result.resetBasisAt = state.lastGoodAt
 			result.usageSource = "last-good"
 			result.selectionReason, result.selectionDetail = "usage-waiting", "usage-not-fresh"
-			frame = applyUsageBarsPreference(authoritativeFrame.Normalize(), cfg.UsageShowsUsed(deps.usageBarsShowUsed))
+			frame = applyUsageBarsPreference(authoritativeFrame.Normalize(), deps.usageBarsShowUsed())
 		}
 	}
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)

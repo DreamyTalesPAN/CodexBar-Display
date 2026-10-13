@@ -69,24 +69,6 @@ function provider(
   };
 }
 
-const usageDisplay: PreferenceDescriptor = {
-  allowsDefault: true,
-  availability: { state: "available" },
-  effectiveValue: "used",
-  id: "vibetv.usage.displayMode",
-  label: "Usage display",
-  options: [
-    { value: "used", label: "Used" },
-    { value: "remaining", label: "Remaining" },
-  ],
-  owner: "vibetv",
-  section: "display",
-  type: "enum",
-  value: null,
-  writable: true,
-  writeStrategy: "vibetv_override",
-};
-
 const rotation: PreferenceDescriptor = {
   allowsDefault: false,
   availability: { state: "available" },
@@ -498,27 +480,6 @@ describe("SettingsScreen standby controls", () => {
     expect(html.match(/<button[^>]*disabled=""/g)?.length).toBeGreaterThanOrEqual(2);
   });
 
-  // Issue #183: the usage display preference is one row under Display, and a
-  // Mac App that does not send it shows no such row.
-  it("offers the usage display under Display only when the app sends it", () => {
-    const html = render(
-      standbyDevice, savedStandby, providerPicker, 70, "cable", false,
-      [usageDisplay],
-    );
-    const displaySection = html.slice(
-      html.indexOf(">Display</h2>"),
-      html.indexOf(">Display mode</h2>"),
-    );
-
-    expect(displaySection).toMatch(
-      /for="vibetv\.usage\.displayMode"[^>]*>Usage display<\/label>/,
-    );
-    expect(displaySection).toMatch(
-      /role="combobox"[^>]*aria-label="Usage display"[^>]*id="vibetv\.usage\.displayMode"/,
-    );
-    expect(render(standbyDevice)).not.toContain("Usage display");
-  });
-
   // Issue #322: the timed rotation is one select under the Automatic card.
   it("offers the rotation under Display mode only while Automatic is chosen", () => {
     const displayMode = (
@@ -771,7 +732,7 @@ describe("SettingsScreen standby controls", () => {
           display: { mode: "fixed", providerIds: ["claude"], configured: true, valid: true },
           items: [provider("claude", "Claude", true), provider("codex", "Codex", false)],
         },
-        70, "cable", false, [usageDisplay, rotation],
+        70, "cable", false, [rotation],
         [{ providerLabel: "Claude", resetLabel: null, windows: [{ label: "Session", percent: 12 }] }],
       ),
     );

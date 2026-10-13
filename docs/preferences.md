@@ -91,19 +91,11 @@ collected. No provider is asked again and nothing in CodexBar is changed.
 
 | ID | Type | Values |
 | --- | --- | --- |
-| `vibetv.usage.displayMode` | `enum`, `allowsDefault` | `null` (Default), `"used"`, `"remaining"` |
 | `vibetv.display.rotateSeconds` | `enum` | `"0"` (When activity changes), `"30"`, `"60"`, `"300"` |
 
-`vibetv.usage.displayMode` decides whether percentages count what is used or
-what remains, on the VibeTV frame and in `GET /v1/usage` alike. `null` follows
-CodexBar's own setting, as before this preference existed; `effectiveValue`
-then reports the mode in use. An explicit value wins over CodexBar's setting.
-Settings shows it as `Usage display` with `Default`, `Used` and `Remaining`.
-
-```http
-PATCH /v1/preferences/vibetv.usage.displayMode
-{"value": "remaining"}
-```
+Whether percentages count what is used or what remains is CodexBar's own
+setting (`usageBarsShowUsed`). VibeTV keeps no second copy of it, as the
+CodexBar Integration Boundary in `AGENTS.md` requires.
 
 `vibetv.display.rotateSeconds` decides when the Automatic display mode moves
 to another provider. Settings shows it under the Automatic card as

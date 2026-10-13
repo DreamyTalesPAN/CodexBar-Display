@@ -205,16 +205,6 @@ export function SettingsScreen({
   const displayMode = providerPicker.display?.mode ?? "automatic";
   const providerError =
     providerPicker.preferencesError || providerPicker.displayError;
-  const usageDisplay = displayPreferences.find(
-    (item) => item.id === "vibetv.usage.displayMode",
-  );
-  // What Default stands for right now, in the row's own words (issue #558).
-  const usageDisplayDefault =
-    usageDisplay?.value === null
-      ? usageDisplay.options?.find(
-          (option) => option.value === usageDisplay.effectiveValue,
-        )?.label
-      : undefined;
   const rotation = displayPreferences.find(
     (item) => item.id === "vibetv.display.rotateSeconds",
   );
@@ -315,18 +305,6 @@ export function SettingsScreen({
                 : `${brightness}%`
           }
         />
-        {usageDisplay ? (
-          <PreferenceRow
-            descriptor={usageDisplay}
-            disabled={localActionBusy}
-            onChange={onDisplayPreferenceChange}
-          />
-        ) : null}
-        {usageDisplayDefault ? (
-          <p className="-mt-2 text-sm text-muted-foreground">
-            Default is the same as {usageDisplayDefault}.
-          </p>
-        ) : null}
       </SettingsSection>
 
       <ItemSeparator className="my-0" />

@@ -6991,3 +6991,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: when the native app reports the shortcut as unavailable, What's new leaves out the "Switch providers with a shortcut" item; the other items and the Settings explanation stay as approved. With working keys nothing changes.
 - Scope: `control-center-app.tsx`, its What's new test, and this approval record. Bundle branch only, not merge or release.
 - What's new: none — the entry is only hidden, nothing new is announced
+
+## 2026-10-13 — Review bundle: Settings drops its own Usage display row
+
+- User approval: Paul (repository owner) asked in #600 on 2026-10-13 to drop `vibetv.usage.displayMode` from the bundle before it reaches main, because it keeps a second copy of CodexBar's own Used/Remaining choice against the CodexBar Integration Boundary in `AGENTS.md`; #465 replaces it with Settings writing CodexBar's value. Marcus passed the request on for the bundle.
+- Approved customer-visible result: Settings > Display no longer shows the "Usage display" row or its "Default is the same as …" line. Used or Remaining on VibeTV and in the app follow CodexBar's setting, as on main today. "Switch providers" under Automatic is unchanged. This supersedes the #183 and #558 entries above for the Usage display row only; it never shipped.
+- Scope: `settings-screen.tsx` and its tests, the display preference adapter, runtime config, daemon and usage API in `companion`, `docs/preferences.md`, and this approval record. Bundle branch only, not merge or release.
+- What's new: none — the row never shipped, so nothing is announced or taken back
