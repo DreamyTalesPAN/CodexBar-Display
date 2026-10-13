@@ -7185,3 +7185,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. Updates, under the heading `Update check failed`: `VibeTV could not check for updates. Try again in a few minutes.` It replaces `VibeTV could not check for updates. Check your internet connection and try again.`
 - Scope: `updates-screen.tsx`, its test, and this approval record. Night-shift branch only, not merge or release.
 - What's new: none — a correction, nothing new to announce
+
+## 2026-10-13 — Night shift: correction: focus stays in the setup Help menu after an entry was used (#214)
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-13/14; wording not yet seen by him. Correction to tonight's entry on the Help menu's keys, from the automated review of #603: the used entry gives way to its outcome line, focus fell out of the menu and the arrow keys stopped working.
+- Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. No text or layout changes. After `Ask AI to fix` or `Create support report` was used with the keyboard, focus is on the first entry that is left, and the arrow keys and Escape keep working.
+- Scope: `setup/setup-help-menu.tsx`, its test, and this approval record. Night-shift branch only, not merge or release.
+- What's new: none — a correction, nothing new to announce

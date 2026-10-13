@@ -129,6 +129,13 @@ export function SetupHelpMenu({
       menuEntries(menuRef.current)[0]?.focus();
     }
   }, [open]);
+  // An entry that was just used gives way to its outcome; focus went with it
+  // and is put back on the first entry that is left.
+  useEffect(() => {
+    if (open && document.activeElement === document.body) {
+      menuEntries(menuRef.current)[0]?.focus();
+    }
+  }, [open, outcome]);
 
   useEffect(() => {
     if (!open) {
