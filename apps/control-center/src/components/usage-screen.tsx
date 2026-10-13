@@ -634,7 +634,8 @@ function UsageWindowBar({
     <p
       className={cn(
         "text-xs font-semibold",
-        pace?.state === "deficit" ? "text-[#6A5B00]" : pace?.state === "reserve" ? "text-[#3B5200]" : "text-[#444933]",
+        // Red over pace, green under it; both keep 4.5:1 on the white card.
+        pace?.state === "deficit" ? "text-[#B3261E]" : pace?.state === "reserve" ? "text-[#1E7B34]" : "text-[#444933]",
       )}
     >
       {paceWord}

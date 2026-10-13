@@ -41,11 +41,24 @@ export function readingKey(p: ThemeStudioPrimitive) {
 export function setReading(p: ThemeStudioPrimitive, key: string) {
   const reading = LIVE_READINGS.find(([id]) => id === key);
   if (!reading) return;
+  const paceStops = (p.binding || "").includes("Pace") ? p.colorStops : undefined;
   delete p.binding;
   delete p.slot;
   delete p.providerSlot;
   delete p.usageIndex;
+  delete p.colorStops;
   p.text = reading[2];
+  if (key.includes("Pace")) {
+    // VibeTV colours text by pace only through a binding: reserve matches 100,
+    // on pace 50, deficit 0. Green and red by default, on pace in the text colour.
+    p.text = "";
+    p.binding = key;
+    p.colorStops = paceStops ?? [
+      { gte: 100, color: "#22C55E" },
+      { gte: 50, color: p.color || "#FFFFFF" },
+      { gte: 0, color: "#EF4444" },
+    ];
+  }
   if (key === "session" || key.startsWith("usageSlot1")) p.slot = 1;
   if (key === "weekly" || key.startsWith("usageSlot2")) p.slot = 2;
   if (key.startsWith("providerSlot1")) p.providerSlot = 1;

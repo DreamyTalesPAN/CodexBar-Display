@@ -13,10 +13,30 @@ describe("design element catalog", () => {
   it.each(LIVE_READINGS)("supports the %s live reading", (key, _label, template) => {
     const p = { ...text("Old", 20), binding: "weekly", slot: 2 as const, providerSlot: 2 as const, usageIndex: 7 };
     setReading(p, key);
-    expect(p.text).toBe(template);
     expect(readingKey(p)).toBe(key);
-    expect(p.binding).toBeUndefined();
+    if (key.includes("Pace")) {
+      expect(p.binding).toBe(key);
+      expect(p.colorStops).toEqual([
+        { gte: 100, color: "#22C55E" },
+        { gte: 50, color: "#FFFFFF" },
+        { gte: 0, color: "#EF4444" },
+      ]);
+    } else {
+      expect(p.text).toBe(template);
+      expect(p.binding).toBeUndefined();
+      expect(p.colorStops).toBeUndefined();
+    }
     expect(p.usageIndex).toBeUndefined();
+    expect(validateThemeSpec({ ...createBlankThemeSpec(), primitives: [p] }).errors).toEqual([]);
+  });
+  it("keeps chosen pace colours when switching between pace readings and drops them otherwise", () => {
+    const p = text("Old", 20);
+    setReading(p, "usageSlot1PaceDelta");
+    p.colorStops = [{ gte: 100, color: "#00FF00" }, { gte: 0, color: "#FF0000" }];
+    setReading(p, "usageSlot2PaceState");
+    expect(p.colorStops).toEqual([{ gte: 100, color: "#00FF00" }, { gte: 0, color: "#FF0000" }]);
+    setReading(p, "time");
+    expect(p.colorStops).toBeUndefined();
     expect(validateThemeSpec({ ...createBlankThemeSpec(), primitives: [p] }).errors).toEqual([]);
   });
 });

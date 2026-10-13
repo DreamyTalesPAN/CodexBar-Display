@@ -71,7 +71,13 @@ export function applyAIThemeLayout(current:ThemeStudioDocument,plan:AIThemeLayou
       setAIAnimationSpeed(next,p.assetPath!,edit.fps);
     }
     if(isCompanionSprite(p.assetPath)&&(p.width!==p.height||(p.width||0)<16||(p.width||0)>80)) return fail();
-    if(edit.color!=null){if(!/^#[0-9a-f]{6}$/i.test(edit.color)) return fail();p.color=edit.color;}
+    if(edit.color!=null){
+      if(!/^#[0-9a-f]{6}$/i.test(edit.color)) return fail();
+      // A recoloured pace reading keeps green and red; on pace follows the new colour.
+      const onPace=(p.binding||'').includes('Pace')?p.colorStops?.find(s=>s.gte===50&&s.color.toLowerCase()===(p.color||'#FFFFFF').toLowerCase()):undefined;
+      if(onPace) onPace.color=edit.color;
+      p.color=edit.color;
+    }
     for(const key of ['bgColor','borderColor'] as const){
       if(edit[key]==null) continue;
       if(!['rect','progress'].includes(p.type)||!/^#[0-9a-f]{6}$/i.test(edit[key]!)) return fail();
