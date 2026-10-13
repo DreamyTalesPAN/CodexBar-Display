@@ -711,6 +711,7 @@ required_source = [
     'title: "Updating the Mac App"',
     "updater.checkForUpdatesInBackground()",
     "updater.automaticallyDownloadsUpdates = false",
+    'UserDefaults.standard.set(false, forKey: "SUAutomaticallyUpdate")',
     'UserDefaults.standard.removeObject(forKey: "SUSkippedVersion")',
     "retryTitle: status.retryTitle",
     "kind: status.kind",

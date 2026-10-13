@@ -1709,6 +1709,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                     launchUpdateTurnedDown = false
                     updater.checkForUpdatesInBackground()
                 }
+            } else {
+                // A launch that ended between setting the silent-install
+                // default and this point left it on, and the updater a later
+                // check creates would read it. Turned off without creating the
+                // updater, which would start checks of its own.
+                UserDefaults.standard.set(false, forKey: "SUAutomaticallyUpdate")
             }
         }
         if previous != .abandoned {
