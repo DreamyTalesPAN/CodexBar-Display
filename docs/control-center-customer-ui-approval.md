@@ -7157,3 +7157,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. No new wording or control. In Usage, each provider's line in the token chart runs unbroken from the first to the last day of the chart; a day on which a provider used no tokens sits on the zero line. Calendar days on which no provider used tokens now have their place on the time axis instead of being left out. Totals and the tooltip values of days with tokens are unchanged; a day without tokens shows 0 in the tooltip.
 - Scope: `usage-screen.tsx`, its test, and this approval record. Night-shift branch only, not merge or release.
 - What's new: none — a correction, nothing new to announce
+
+## 2026-10-13 — Night shift: Setup: the Help menu works with the arrow keys (#214)
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-13/14; wording not yet seen by him. Issue #214: the Help menu in setup did not move focus into the menu when it opened, and the arrow keys did not move between its entries.
+- Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. No text or layout changes. `Help` opens with focus on the first entry; the arrow keys move between the entries and wrap around; Home and End jump to the first and the last entry; Escape closes the menu and returns focus to Help.
+- Scope: `apps/control-center/src/components/setup/setup-help-menu.tsx` and its test `setup-help-menu-log.test.tsx`, `docs/control-center-accessibility.md`, and this approval record. Night-shift branch only, not merge or release.
+- What's new: none — a correction, nothing new to announce

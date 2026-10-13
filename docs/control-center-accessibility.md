@@ -20,6 +20,9 @@ What the Control Center does for them:
 - Outside the Theme Studio canvas, every action is a button, a link or a form
   control. It is reached with Tab and used with Enter or Space. Escape closes a
   dialog.
+- The Help menu in setup takes focus when it opens. The arrow keys move between
+  its entries and wrap around, Home and End jump to the first and the last
+  entry, and Escape closes the menu and gives focus back to Help.
 - Opening a dialog moves focus into it. Closing it puts focus back on the
   control that had it before (`components/ui/dialog.tsx`). After a theme is
   deleted its Delete button is gone, so focus goes to the page title.
@@ -140,8 +143,5 @@ and use only the keyboard.
 
 Known gaps this slice found and left open:
 
-- The Help menu in setup does not move focus into the menu when it opens, and
-  the arrow keys do not move between its entries. The entries are reachable
-  with Shift+Tab, and Escape closes the menu.
 - The choices in setup (VibeTV, theme) are radio buttons that are reached one by
   one with Tab. The arrow keys do not move between them.
