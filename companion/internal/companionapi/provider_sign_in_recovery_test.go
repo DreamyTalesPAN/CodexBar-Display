@@ -202,6 +202,7 @@ func TestProviderSignInReportsASavedCookieItCannotLift(t *testing.T) {
 		t.Skip("Win-CodexBar keeps saved cookies in a file of its own")
 	}
 	t.Setenv("CODEXBAR_CONFIG", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
 	server := newTestServer(t, runtimeconfig.Config{})
 	dir := filepath.Join(server.home, ".codexbar")
 	configPath := filepath.Join(dir, "config.json")

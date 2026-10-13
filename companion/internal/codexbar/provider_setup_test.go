@@ -20,6 +20,7 @@ import (
 func TestEnsureConfigUsesCodexBarOwnedDefaultConfig(t *testing.T) {
 	skipMacCLIContract(t)
 	t.Setenv("CODEXBAR_CONFIG", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
 	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
 		t.Fatal(err)
@@ -100,6 +101,7 @@ func TestEnsureConfigUsesCodexBarOwnedDefaultConfig(t *testing.T) {
 func TestEnsureConfigRejectsInvalidCodexBarDefaultWithoutPublishing(t *testing.T) {
 	skipMacCLIContract(t)
 	t.Setenv("CODEXBAR_CONFIG", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
 	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
 		t.Fatal(err)
@@ -129,6 +131,7 @@ func TestEnsureConfigRejectsInvalidCodexBarDefaultWithoutPublishing(t *testing.T
 func TestEnsureConfigPreservesExistingStandardConfig(t *testing.T) {
 	skipMacCLIContract(t)
 	t.Setenv("CODEXBAR_CONFIG", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
 	home := t.TempDir()
 	standard := filepath.Join(home, ".config", "codexbar", "config.json")
 	if err := os.MkdirAll(filepath.Dir(standard), 0o700); err != nil {

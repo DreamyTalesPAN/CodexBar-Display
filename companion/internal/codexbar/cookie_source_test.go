@@ -21,6 +21,7 @@ func TestUseBrowserCookiesHandsAPinnedProviderBackToTheBrowser(t *testing.T) {
 		t.Skip("Win-CodexBar keeps saved cookies in a file of its own")
 	}
 	t.Setenv("CODEXBAR_CONFIG", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
 	home := t.TempDir()
 	path := filepath.Join(home, ".codexbar", "config.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -76,6 +77,7 @@ func TestUseBrowserCookiesHandsAPinnedProviderBackToTheBrowser(t *testing.T) {
 
 func TestUseBrowserCookiesLeavesAMissingConfigAlone(t *testing.T) {
 	t.Setenv("CODEXBAR_CONFIG", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
 	home := t.TempDir()
 	if changed, err := UseBrowserCookies(home, "claude"); err != nil || changed {
 		t.Fatalf("changed=%v err=%v", changed, err)
@@ -126,6 +128,7 @@ func writePinnedConfig(t *testing.T, content string) (string, string) {
 		t.Skip("Win-CodexBar keeps saved cookies in a file of its own")
 	}
 	t.Setenv("CODEXBAR_CONFIG", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
 	home := t.TempDir()
 	path := filepath.Join(home, ".codexbar", "config.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {

@@ -614,6 +614,7 @@ func TestDashboardConfigChangedSeesAnotherFileThanTheRunningServe(t *testing.T) 
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("CODEXBAR_CONFIG", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
 	legacy := filepath.Join(home, ".codexbar", "config.json")
 	if err := os.MkdirAll(filepath.Dir(legacy), 0o700); err != nil {
 		t.Fatal(err)
