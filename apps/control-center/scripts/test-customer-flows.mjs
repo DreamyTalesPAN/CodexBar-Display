@@ -4987,7 +4987,7 @@ async function testThemeMissingDeviceChoosesThemeAndCompletesSetup(
     "Theme setup must stay inside setup instead of opening the Control Center shell",
   );
   assert(
-    (await page.getByRole("button", { name: "Create Theme" }).count()) === 0 &&
+    (await page.getByRole("button", { name: "Create theme" }).count()) === 0 &&
       (await page.getByRole("button", { name: /^Edit/ }).count()) === 0 &&
       (await page.getByText("Published", { exact: true }).count()) === 0,
     "Theme setup must show only the theme list and its install action",
@@ -10474,7 +10474,7 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
   const navigation = page.getByRole("navigation", { name: "Control Center", exact: true });
   await navigation.getByRole("button", { name: "Appearance", exact: true }).click();
   await navigation.getByRole("button", { name: screensaver ? "Screensavers" : "Themes", exact: true }).click();
-  await page.getByRole("button", { name: screensaver ? "Create Screensaver" : "Create Theme", exact: true }).click();
+  await page.getByRole("button", { name: screensaver ? "Create screensaver" : "Create theme", exact: true }).click();
   await page.getByLabel("Your idea", { exact: true }).waitFor();
   await page.locator('[data-slot="sidebar"][data-state="collapsed"]').waitFor();
   assert(await page.locator(".control-center-shell__header").isVisible(), "Studio stays inside the native shell");
@@ -10501,7 +10501,7 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
   await page.evaluate((document) => localStorage.setItem("vibetv.controlCenter.themeStudioDraft", JSON.stringify({
     schemaVersion: 1, recovery: { document: { ...document, packName: "Unsaved other design" }, source: "blank", updatedAt: new Date().toISOString() },
   })), saved.themes[0].document);
-  await page.getByRole("button", { name: screensaver ? "Create Screensaver" : "Create Theme", exact: true }).click();
+  await page.getByRole("button", { name: screensaver ? "Create screensaver" : "Create theme", exact: true }).click();
   await page.getByLabel("Your idea", { exact: true }).waitFor();
   if (screensaver) {
     await page.getByRole("button", { name: "Design settings", exact: true }).click();

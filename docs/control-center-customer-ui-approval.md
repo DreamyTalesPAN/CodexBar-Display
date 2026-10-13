@@ -7129,3 +7129,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. Support › Diagnostics, box `Usage engine`, field `Source`: `Included with the app` on the Mac as well (before: `Managed by VibeTV`). Windows unchanged; the other sources unchanged.
 - Scope: `diagnostics-panel.tsx` and its test, and this approval record. Night-shift branch only, not merge or release.
 - What's new: none — a correction, nothing new to announce
+
+## 2026-10-13 — Night shift: Appearance: the create buttons use sentence case (#579)
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-13/14; wording not yet seen by him. Issue #579 and the naming rule of the other buttons: `Create Theme` and `Create Screensaver` were the only title-case buttons.
+- Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. On Appearance › Themes the button reads `Create theme` (before: `Create Theme`); on Appearance › Screensavers it reads `Create screensaver` (before: `Create Screensaver`). Nothing else changes: same place, same action, same dialogs.
+- Scope: `theme-library-screen.tsx` and its two tests, `apps/control-center/scripts/test-customer-flows.mjs` (text only, not run), and this approval record. Night-shift branch only, not merge or release.
+- What's new: none — a correction, nothing new to announce
