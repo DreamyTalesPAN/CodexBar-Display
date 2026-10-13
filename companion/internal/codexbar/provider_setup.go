@@ -129,12 +129,10 @@ func EnsureConfig(home string) (string, error) {
 	return ensureConfigFile(path)
 }
 
-// macConfigPath is the config CodexBar reads: CODEXBAR_CONFIG, else the first
-// default location that exists, else where CodexBar creates it.
+// macConfigPath follows CodexBar's explicit config and XDG overrides, then
+// existing default locations. New Companion-managed configs keep the legacy
+// location; every CLI invocation receives the resolved path.
 func macConfigPath(home string) (string, error) {
-	if explicit := strings.TrimSpace(os.Getenv("CODEXBAR_CONFIG")); explicit != "" {
-		return explicit, nil
-	}
 	home = strings.TrimSpace(home)
 	if home == "" {
 		var err error
@@ -142,6 +140,12 @@ func macConfigPath(home string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("resolve home directory: %w", err)
 		}
+	}
+	if explicit := strings.TrimSpace(os.Getenv("CODEXBAR_CONFIG")); explicit != "" {
+		return withHome(home, explicit), nil
+	}
+	if xdg := withHome(home, os.Getenv("XDG_CONFIG_HOME")); filepath.IsAbs(xdg) {
+		return filepath.Join(xdg, "codexbar", "config.json"), nil
 	}
 	for _, candidate := range []string{
 		filepath.Join(home, ".config", "codexbar", "config.json"),

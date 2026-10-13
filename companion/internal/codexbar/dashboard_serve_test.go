@@ -196,8 +196,12 @@ func TestDashboardServeSupervisorRestartReplacesTheRunningChild(t *testing.T) {
 		t.Fatalf("a serve running on the current config must keep running, first=%#v now=%#v", first, unchanged)
 	}
 
-	changed := time.Now().Add(time.Minute)
-	if err := os.Chtimes(configPath, changed, changed); err != nil {
+	// A coarse or preserved timestamp can predate startup despite new
+	// settings. The content change must still replace the running child.
+	if err := os.WriteFile(configPath, []byte("{\"enabled_providers\":[\"claude\"]}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(configPath, beforeStart, beforeStart); err != nil {
 		t.Fatal(err)
 	}
 	if err := supervisor.Restart(restartCtx); err != nil {
@@ -210,35 +214,48 @@ func TestDashboardServeSupervisorRestartReplacesTheRunningChild(t *testing.T) {
 	if records := waitForDashboardServeRecords(t, recordPath, 2); records[1].PID != second.PID {
 		t.Fatalf("expected the second start to be the running child, got %#v", records)
 	}
+	if err := supervisor.Restart(restartCtx); err != nil {
+		t.Fatalf("recheck after replacement: %v", err)
+	}
+	if current := supervisor.Info(); current.PID != second.PID {
+		t.Fatal("the replacement already has the changed config; do not restart again")
+	}
 }
 
-// A config written while the child was starting may not be the one it read,
-// so only a write before the launch proves the serve is current. That
-// includes the config a cold start creates just before launching.
-func TestConfigChangedSinceCountsEveryWriteFromTheLaunchOn(t *testing.T) {
+// The same bytes stay current even when touched, while changed bytes with
+// an unchanged timestamp must trigger a replacement.
+func TestDashboardConfigTracksContentsInsteadOfModificationTime(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
+	t.Setenv("CODEXBAR_CONFIG", path)
 	if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	launchedAt := time.Date(2026, 10, 9, 8, 0, 0, 500_000_000, time.UTC)
-	for name, tc := range map[string]struct {
-		written time.Time
-		changed bool
-	}{
-		"written well before the launch": {launchedAt.Add(-2 * time.Second), false},
-		"created just before the launch": {launchedAt.Add(-time.Millisecond), false},
-		"written at the launch":          {launchedAt, true},
-		"written after the launch":       {launchedAt.Add(time.Millisecond), true},
-	} {
-		if err := os.Chtimes(path, tc.written, tc.written); err != nil {
-			t.Fatal(err)
-		}
-		if got := configChangedSince(path, launchedAt); got != tc.changed {
-			t.Fatalf("%s: changed=%v, want %v", name, got, tc.changed)
-		}
+	started, err := readDashboardConfig(path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !configChangedSince(filepath.Join(t.TempDir(), "missing.json"), launchedAt) {
-		t.Fatal("a config that cannot be read must count as changed")
+	future := time.Now().Add(time.Hour)
+	if err := os.Chtimes(path, future, future); err != nil {
+		t.Fatal(err)
+	}
+	if dashboardConfigChanged(started) {
+		t.Fatal("touching unchanged settings must not restart the service")
+	}
+	if err := os.WriteFile(path, []byte(`{"providers":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if !dashboardConfigChanged(started) {
+		t.Fatal("changed contents must be detected regardless of mtime")
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if !dashboardConfigChanged(started) {
+		t.Fatal("unreadable settings must remain unknown")
 	}
 }
 
@@ -590,7 +607,7 @@ func errorsIsNotExist(err error) bool {
 // read another one, the serve is stale even though its own file is old: a
 // ~/.config/codexbar/config.json that appeared later takes priority, and a
 // repointed symlink names a file whose time can predate the start.
-func TestConfigSelectionChangedSeesAnotherFileThanTheRunningServe(t *testing.T) {
+func TestDashboardConfigChangedSeesAnotherFileThanTheRunningServe(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Win-CodexBar reads one fixed settings file")
 	}
@@ -604,8 +621,11 @@ func TestConfigSelectionChangedSeesAnotherFileThanTheRunningServe(t *testing.T) 
 	if err := os.WriteFile(legacy, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	started := resolvedConfigFile(legacy)
-	if configSelectionChanged(started) {
+	started, err := readDashboardConfig(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dashboardConfigChanged(started) {
 		t.Fatal("the file the serve started with is still the selected one")
 	}
 	preferred := filepath.Join(home, ".config", "codexbar", "config.json")
@@ -615,7 +635,7 @@ func TestConfigSelectionChangedSeesAnotherFileThanTheRunningServe(t *testing.T) 
 	if err := os.WriteFile(preferred, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if !configSelectionChanged(started) {
+	if !dashboardConfigChanged(started) {
 		t.Fatal("a later ~/.config/codexbar/config.json must make the serve stale")
 	}
 
@@ -631,8 +651,11 @@ func TestConfigSelectionChangedSeesAnotherFileThanTheRunningServe(t *testing.T) 
 		t.Fatal(err)
 	}
 	t.Setenv("CODEXBAR_CONFIG", link)
-	started = resolvedConfigFile(link)
-	if configSelectionChanged(started) {
+	started, err = readDashboardConfig(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dashboardConfigChanged(started) {
 		t.Fatal("an unchanged symlink is still the selected file")
 	}
 	if err := os.Remove(link); err != nil {
@@ -641,7 +664,7 @@ func TestConfigSelectionChangedSeesAnotherFileThanTheRunningServe(t *testing.T) 
 	if err := os.Symlink(older, link); err != nil {
 		t.Fatal(err)
 	}
-	if !configSelectionChanged(started) {
+	if !dashboardConfigChanged(started) {
 		t.Fatal("a repointed symlink must make the serve stale")
 	}
 }

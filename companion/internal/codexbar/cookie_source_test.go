@@ -85,6 +85,41 @@ func TestUseBrowserCookiesLeavesAMissingConfigAlone(t *testing.T) {
 	}
 }
 
+// CodexBar 0.63.0 expands a home-relative CODEXBAR_CONFIG and honors an
+// absolute XDG_CONFIG_HOME. Sign-in must lift the pin in that same file.
+func TestUseBrowserCookiesHonorsCodexBarConfigOverrides(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Win-CodexBar reads its own fixed settings file")
+	}
+	for _, key := range []string{"CODEXBAR_CONFIG", "XDG_CONFIG_HOME"} {
+		t.Run(key, func(t *testing.T) {
+			home, legacy := writePinnedConfig(t, twoPinnedProviders)
+			path := filepath.Join(home, "custom", "codexbar", "config.json")
+			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(twoPinnedProviders), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("XDG_CONFIG_HOME", "")
+			if key == "CODEXBAR_CONFIG" {
+				t.Setenv(key, "~/custom/codexbar/config.json")
+			} else {
+				t.Setenv(key, filepath.Join(home, "custom"))
+			}
+			if changed, err := UseBrowserCookies(home, "claude"); err != nil || !changed {
+				t.Fatalf("changed=%v err=%v", changed, err)
+			}
+			if got := providersIn(t, path)["claude"]["cookieSource"]; got != "auto" {
+				t.Fatalf("CodexBar's selected config is still pinned: %v", got)
+			}
+			if raw, err := os.ReadFile(legacy); err != nil || string(raw) != twoPinnedProviders {
+				t.Fatalf("the unselected legacy config changed: %v", err)
+			}
+		})
+	}
+}
+
 func writePinnedConfig(t *testing.T, content string) (string, string) {
 	t.Helper()
 	if runtime.GOOS == "windows" {

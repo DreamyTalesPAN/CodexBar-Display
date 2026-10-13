@@ -173,7 +173,7 @@ func TestRunUsageCommandInjectsResolvedConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runUsageCommand: %v", err)
 	}
-	want := filepath.Join(home, ".codexbar", "config.json")
+	want := filepath.Join(home, ".config", "codexbar", "config.json")
 	if string(out) != want {
 		t.Fatalf("expected CODEXBAR_CONFIG=%q, got %q", want, out)
 	}
