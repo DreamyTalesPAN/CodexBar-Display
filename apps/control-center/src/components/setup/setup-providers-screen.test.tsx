@@ -98,8 +98,8 @@ function render(
 describe("SetupProvidersScreen", () => {
   it("names the included usage service and where provider access is granted", () => {
     const html = render();
-    expect(html).toContain("VibeTV includes CodexBar to read your AI usage.");
-    expect(html).toContain("sign-in or permission instructions below");
+    expect(html).toContain("VibeTV reads your AI usage with CodexBar, a helper app installed with VibeTV.");
+    expect(html).toContain("If one needs a sign-in, its row shows a Sign in button.");
   });
 
   it("leads a signed-out row to its sign-in button instead of a popup", () => {

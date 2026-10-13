@@ -90,7 +90,7 @@ function render(
 
 describe("Provider settings", () => {
   it("explains the included usage service in the shared provider list", () => {
-    expect(render(standbyDevice)).toContain("VibeTV includes CodexBar to read your AI usage.");
+    expect(render(standbyDevice)).toContain("VibeTV reads your AI usage with CodexBar, a helper app installed with VibeTV.");
   });
 });
 

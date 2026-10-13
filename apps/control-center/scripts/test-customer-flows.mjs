@@ -4728,7 +4728,7 @@ async function testProviderlessDeviceUsesRecoveryBeforeThemeAndOverview(
   const visibleText = await page.evaluate(() => document.body.innerText);
   assert(
     visibleText.includes(
-      "VibeTV includes CodexBar to read your AI usage. Follow each provider's sign-in or permission instructions below."
+      "VibeTV reads your AI usage with CodexBar, a helper app installed with VibeTV. Turn on the providers you use below. If one needs a sign-in, its row shows a Sign in button."
     ),
     "Provider recovery must explain why CodexBar appears in setup",
   );

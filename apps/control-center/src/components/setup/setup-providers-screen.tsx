@@ -292,7 +292,7 @@ export function ProviderList({
         </SetupDialog>
       ) : null}
       <p className="mb-3 text-sm text-muted-foreground">
-        VibeTV includes CodexBar to read your AI usage. Follow each provider&apos;s sign-in or permission instructions below.
+        VibeTV reads your AI usage with CodexBar, a helper app installed with VibeTV. Turn on the providers you use below. If one needs a sign-in, its row shows a Sign in button.
       </p>
       <div className="relative w-full">
         <Search
