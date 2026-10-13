@@ -5698,3 +5698,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Covered by Marcus's approval of this package on 2026-10-09 (entry "Two providers at once, limits to hide, and the reserve or deficit on VibeTV"). A finding of the Codex review of PR #592 on 81287456; no new text, control or layout.
 - Approved customer-visible result: No new screen, dialog, button, or text. Two at once with two providers whose ids together exceed the 32 bytes VibeTV accepts for a provider shows the selected provider alone, as it already does when the other one has nothing current to show. Every provider pair CodexBar ships today fits and is unchanged.
 - Scope: `pairDisplayFrame` in `companion/internal/daemon/display_limits.go`, its test in `display_limits_test.go`, and this approval record. Checked with unit tests. This approves the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-10-13 — Review follow-up for PR #592: the preview drops the pace with the reset trust
+
+- User approval: Covered by Marcus's approval of this package on 2026-10-09 (entry "Two providers at once, limits to hide, and the reserve or deficit on VibeTV"). A finding of the Codex review of PR #592 on 2ed9dd42; no new text, control or layout.
+- Approved customer-visible result: No new screen, dialog, button, or text. Once VibeTV no longer stands behind a saved reading's countdown, the live preview in the Control Center stops showing its reserve or deficit text and pace colors, as VibeTV itself does.
+- Scope: the pace of `buildFrameData` in `components/live-vibetv-preview.tsx`, its test, and this approval record. Checked with unit tests. This approves the pull-request branch only, not merge, release, installation, or a device operation.

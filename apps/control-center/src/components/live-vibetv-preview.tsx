@@ -1301,7 +1301,8 @@ export function buildFrameData(
       resetSecs: remainingResetSeconds(slot.resetSecs),
       available: true,
       idle: windowIsIdle(slot),
-      pace: slot.pace,
+      // The firmware counts no reset without a trusted basis, so its pace ends.
+      pace: basisTrusted ? slot.pace : undefined,
     })),
     usageSlot1Label: slot1?.label || "",
     usageSlot1Percent: clampPercent(slot1?.percent),

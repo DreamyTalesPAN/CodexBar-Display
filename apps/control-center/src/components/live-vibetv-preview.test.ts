@@ -630,6 +630,10 @@ describe("dynamic usage slot preview", () => {
     expect(
       render(buildFrameData(sentAt, paced, new Date("2026-09-21T08:45:00Z"))),
     ).toEqual(["", "+14%", "", "deficit", "", "runs out"]);
+    // Once the device no longer stands behind the countdown, the pace goes too.
+    expect(
+      render(buildFrameData(sentAt, { ...paced, resetTrust: "stale" }, new Date(sentAt))),
+    ).toEqual(["", "", "", "", "", ""]);
     const unknown = {
       ...paced,
       usageWindows: paced.usageWindows.map((window) => ({ ...window, pace: undefined })),
