@@ -10349,6 +10349,8 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
   await routeCompanionOnline(page, [], () => {}, {
     companionVersion: "1.0.33",
     device: { ...companionDevice, firmware: "1.0.40", display: { themeSpec: { active: true, renderOk: true, path: activeRenderPack.specPath } } },
+    // A screensaver is sent only while Show screensaver is on.
+    standbySettings: { enabled: true, timeoutMinutes: 10, brightnessPercent: 20, screensaverPath: "" },
     installStatusSequence: [{ phase: "complete", message: "Theme installed.", progress: 100, logs: [], result: {
       themeId: screensaver ? "my-screensaver" : "my-theme", name: "New Theme", activePath: "/themes/u/test.json", themeRev: 1,
     } }],
