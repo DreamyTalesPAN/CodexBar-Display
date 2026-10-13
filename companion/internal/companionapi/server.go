@@ -252,6 +252,9 @@ type Server struct {
 	displayStreamRunning   func() bool
 	firmwareUpdateActive   atomic.Bool
 	firmwareUpdateStartMu  sync.Mutex
+	// One shortcut press at a time: each reads the provider on screen and
+	// stores its successor, so two quick presses must not read the same one.
+	providerDisplayNextMu sync.Mutex
 	// Serial ports already asked on behalf of a legacy WiFi VibeTV.
 	legacyCableProbeMu     sync.Mutex
 	legacyCableProbePorts  string

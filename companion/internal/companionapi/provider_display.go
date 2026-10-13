@@ -150,6 +150,8 @@ func (s *Server) handleProviderDisplayNext(w http.ResponseWriter, r *http.Reques
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
+	s.providerDisplayNextMu.Lock()
+	defer s.providerDisplayNextMu.Unlock()
 	cfg, err := s.config()
 	if err != nil {
 		writeInternalError(w, err)
