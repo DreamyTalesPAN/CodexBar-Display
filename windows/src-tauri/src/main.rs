@@ -66,7 +66,7 @@ fn main() {
             if args.len() == 2 && queue_install_link(app, args.get(1).map(String::as_str)) {
                 let handle = app.clone();
                 std::thread::spawn(move || {
-                    if !navigate_to_pending_theme(&handle) {
+                    if !navigate_to_pending_theme(&handle, true) {
                         prepare_and_load(handle);
                     }
                 });
@@ -289,7 +289,10 @@ fn queue_install_link(app: &AppHandle, raw: Option<&str>) -> bool {
     true
 }
 
-fn navigate_to_pending_theme(app: &AppHandle) -> bool {
+// `link_just_opened`: the customer opened the link while the app was running.
+// After `prepare_and_load` the same page is still loading and the page-load
+// event clears the queue once the runtime is healthy.
+fn navigate_to_pending_theme(app: &AppHandle, link_just_opened: bool) -> bool {
     let shell = app.state::<Shell>();
     if *shell.preparing.lock().unwrap() {
         return false;
@@ -308,12 +311,21 @@ fn navigate_to_pending_theme(app: &AppHandle) -> bool {
     {
         return false;
     }
-    let pending = shell.pending_theme.lock().unwrap();
+    let mut pending = shell.pending_theme.lock().unwrap();
     let Some(theme_id) = pending.as_ref() else {
         return false;
     };
     let target = origin.join(&format!("/control-center/install/{theme_id}")).expect("validated theme ID");
-    window.url().map(|url| url == target).unwrap_or(false) || window.navigate(target).is_ok()
+    if window.url().map(|url| url == target).unwrap_or(false) {
+        // Already on that theme's page: nothing loads, so no page-load event
+        // would clear the queue, and a later runtime repair would send the
+        // customer back to this theme.
+        if link_just_opened {
+            clear_loaded_theme(&mut pending, &target, &origin, true);
+        }
+        return true;
+    }
+    window.navigate(target).is_ok()
 }
 
 fn clear_loaded_theme(pending: &mut Option<String>, loaded: &Url, origin: &Url, healthy: bool) -> bool {
@@ -564,7 +576,7 @@ fn prepare_and_load(app: AppHandle) -> bool {
     *shell.preparing.lock().unwrap() = false;
     if result.is_ok() {
         // A second link may have arrived while the first navigation held the queue.
-        navigate_to_pending_theme(&app);
+        navigate_to_pending_theme(&app, false);
     }
     result.is_ok()
 }
