@@ -41,6 +41,14 @@ func limitCachedFrame(frame protocol.Frame, display *runtimeconfig.ProviderDispl
 	if display == nil {
 		return frame
 	}
+	// A provider row keeps no window ids, so a cached row of a provider that
+	// now hides a limit may still hold it. The rows return with the next reading.
+	for _, slot := range frame.ProviderSlots {
+		if len(display.HiddenWindows[normalizeProviderKey(slot.ID)]) > 0 {
+			frame.ProviderSlots = nil
+			break
+		}
+	}
 	if len(frameProviderMembers(frame.Provider)) > 1 {
 		for _, window := range frame.UsageWindows {
 			if pairWindowHidden(window.ID, display) {
@@ -74,6 +82,7 @@ func frameWithoutUsage(frame protocol.Frame) protocol.Frame {
 	frame.ResetSec = 0
 	frame.UsageWindows = nil
 	frame.UsageSlots = nil
+	frame.ProviderSlots = nil
 	return frame
 }
 

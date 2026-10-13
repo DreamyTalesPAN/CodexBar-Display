@@ -297,6 +297,23 @@ func TestCachedFrameDropsWhatWasHiddenSince(t *testing.T) {
 	if got := limitCachedFrame(cachedSession, one); !got.UsageUnavailable || len(got.UsageWindows) != 0 {
 		t.Fatalf("one provider with its only cached limit hidden still shows it: %+v", got)
 	}
+
+	// Provider rows carry no window ids, so a row of a provider with a hidden
+	// limit leaves the cached frame; rows of other providers stay.
+	withRows := claude.Frame
+	withRows.ProviderSlots = []protocol.UsageSlot{{ID: "claude", Label: "Claude", Percent: 72, ResetSec: 7200}, {ID: "codex", Label: "Codex", Percent: 32, ResetSec: 420000}}
+	if got := limitCachedFrame(withRows, one); len(got.ProviderSlots) != 0 {
+		t.Fatalf("cached provider rows after hiding a Claude limit: %+v", got.ProviderSlots)
+	}
+	codexHidden := &runtimeconfig.ProviderDisplayConfig{Mode: "fixed", ProviderIDs: []string{"claude"}, HiddenWindows: map[string][]string{"gemini": {"session"}}}
+	if got := limitCachedFrame(withRows, codexHidden); len(got.ProviderSlots) != 2 {
+		t.Fatalf("cached provider rows without a hidden limit of theirs: %+v", got.ProviderSlots)
+	}
+	sessionRows := cachedSession
+	sessionRows.ProviderSlots = withRows.ProviderSlots[1:]
+	if got := limitCachedFrame(sessionRows, one); !got.UsageUnavailable || len(got.ProviderSlots) != 0 {
+		t.Fatalf("usage unavailable still shows cached provider rows: %+v", got.ProviderSlots)
+	}
 }
 
 func TestRunCycleWithDepsFallbackFollowsLimitsHiddenSince(t *testing.T) {
