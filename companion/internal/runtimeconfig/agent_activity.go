@@ -21,7 +21,7 @@ func (c Config) AgentActivitySettings() AgentActivitySettings {
 		s.DoneDuration = strconv.Itoa(s.DoneSeconds())
 		return s
 	}
-	return AgentActivitySettings{DoneDuration: "30", Enabled: false, Blink: true, Reminder: "5", Quiet: "off"}
+	return AgentActivitySettings{DoneDuration: "30", Enabled: true, Blink: true, Reminder: "5", Quiet: "off"}
 }
 
 func (s AgentActivitySettings) Muted(now time.Time) bool {

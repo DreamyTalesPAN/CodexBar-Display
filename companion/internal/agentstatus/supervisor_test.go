@@ -106,7 +106,7 @@ func TestSupervisorRestartsInvalidChildAndStopsOnCancellation(t *testing.T) {
 func TestSupervisorReapsSilentChild(t *testing.T) {
 	dir := helperDirectory(t, "silent")
 	t.Setenv("VIBETV_TEST_ENGINE_ENABLED", "false")
-	engine := &Engine{}
+	engine := &Engine{settings: func() runtimeconfig.AgentActivitySettings { return runtimeconfig.AgentActivitySettings{} }}
 	start := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()

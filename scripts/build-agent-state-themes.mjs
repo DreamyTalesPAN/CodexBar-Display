@@ -2,7 +2,7 @@
 // Encode approved native pixels, keeping existing working/idle source assets exact.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -199,7 +199,7 @@ async function clippyFrames(name, count) {
   }));
   return { frames, palette };
 }
-async function finish(id, spec, version, generated) {
+async function finish(id, spec, version, generated, files = {}) {
   const dir = path.join(root, "theme-packs", id),
     manifest = JSON.parse(await readFile(path.join(dir, "manifest.json")));
   const raw = JSON.stringify(spec) + "\n";
@@ -220,7 +220,9 @@ async function finish(id, spec, version, generated) {
   for (const ref of refs) {
     const name = path.basename(ref),
       file =
-        manifest.assets.find((a) => a.path === ref)?.file || `assets/${name}`,
+        files[ref] ||
+        manifest.assets.find((a) => a.path === ref)?.file ||
+        `assets/${name}`,
       data = await readFile(path.join(dir, file));
     assets.push({
       path: ref,
@@ -355,57 +357,24 @@ const eyes = mini.p.find(
   (p) => p.t === "gif" || p.t === "g" || p.a === "/themes/u/mi-eyes.cba",
 );
 assert(eyes);
-// A GIF decoder plus the 64x64 prop buffer exhausts the ESP8266 heap.
-// Use the existing eye artwork in the shared CBA renderer instead. The
-// original 14-second loop becomes 56 frames at 4 fps, within CBA's 64 limit.
-const eyeGif = sharp(path.join(root, "theme-packs/mini-classic/assets/mini.gif"), {
-  animated: true,
-});
-const eyeMeta = await eyeGif.metadata();
-const eyeRaw = await eyeGif
-  .flatten({ background: "#000000" })
-  .removeAlpha()
-  .raw()
-  .toBuffer();
-const eyeDuration = eyeMeta.delay.reduce((sum, delay) => sum + delay, 0);
-const eyeFrames = [];
-for (let ms = 125; ms < eyeDuration; ms += 250) {
-  let index = 0,
-    end = eyeMeta.delay[0];
-  while (end <= ms && index + 1 < eyeMeta.pages) end += eyeMeta.delay[++index];
-  const start = index * eyeMeta.width * eyeMeta.pageHeight * 3;
-  eyeFrames.push(
-    await sharp(
-      eyeRaw.subarray(start, start + eyeMeta.width * eyeMeta.pageHeight * 3),
-      { raw: { width: eyeMeta.width, height: eyeMeta.pageHeight, channels: 3 } },
-    )
-      .resize(40, 40, { kernel: "nearest" })
-      .raw()
-      .toBuffer(),
-  );
-}
-assert(eyeFrames.length <= 64);
-props["mi-eyes.cba"] = encode(40, 40, await paletteFrames(eyeFrames, 40, 40), 4);
-Object.assign(eyes, {
-  t: "sp",
-  a: "/themes/u/mi-eyes.cba",
-  x: 62,
-  y: 140,
-  w: 40,
-  h: 40,
-  bg: "#000000",
-});
+// The eyes stay the GIF of 1.2.2: same picture, same size, same place. The
+// agent state plays beside it, to its right. The state sprite is decoded at
+// its 32 px source size, so its frame buffer (2 KB) fits beside the GIF.
+const eyeGifPath = "/themes/u/mini-4-146563.gif";
+for (const key of Object.keys(eyes)) delete eyes[key];
+Object.assign(eyes, { t: "g", x: 82, y: 126, w: 76, h: 76, a: eyeGifPath });
+await rm(path.join(root, "theme-packs/mini-classic/assets/mi-eyes.cba"), { force: true });
 mini.p.push({
   t: "sp",
-  x: 114,
-  y: 128,
+  x: 166,
+  y: 132,
   w: 64,
   h: 64,
   bg: "#000000",
   a: sa.idle,
   sa,
 });
-await finish("mini-classic", mini, "1.2.3", props);
+await finish("mini-classic", mini, "1.2.3", props, { [eyeGifPath]: "assets/mini.gif" });
 
 // Keep the original animated Creature poses for idle and coding. The three
 // additional states use authored clawd-tank RLE frames and cadence.

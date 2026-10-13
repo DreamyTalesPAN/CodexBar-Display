@@ -7,7 +7,7 @@ import (
 
 func TestAgentQuietHoursAndDefaults(t *testing.T) {
 	s := Config{}.AgentActivitySettings()
-	if s.Enabled || !s.Blink || s.ReminderSeconds() != 300 || !s.Muted(time.Now()) {
+	if !s.Enabled || !s.Blink || s.ReminderSeconds() != 300 || s.Muted(time.Now()) {
 		t.Fatal(s)
 	}
 	s.Enabled = true

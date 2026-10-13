@@ -83,16 +83,17 @@
       "usage": "live",
       "version": "1.2.3",
       "themeRev": 10,
-      "themeSpecPath": "/themes/u/mini-10-a2f501.json",
+      "themeSpecPath": "/themes/u/mini-10-8498ae.json",
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
         "usage-slots-v1",
         "agent-theme-states-v1"
       ],
       "downloadAsset": "vibetv-theme-mini-classic-v1.2.3.zip",
-      "sha256": "73ddf69a53a3126abcd2a9d572438284f83d02f79dda26b2363486b009619cc5",
-      "bytes": 21647,
+      "sha256": "ab297cdf28423de0b63a1a1abe481ecdc36ffacf11a859d6a8d6b50ff614483d",
+      "bytes": 20259,
       "earlierThemeSpecPaths": [
+        "/themes/u/mini-10-a2f501.json",
         "/themes/u/mini-cl-1-410a37.json",
         "/themes/u/mini-cl-1-b3c3f7.json",
         "/themes/u/mini-cl-1-e4fe6b.json",
