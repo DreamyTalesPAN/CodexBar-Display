@@ -7115,3 +7115,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. No new wording or control. On every slider (Brightness, and the sliders that share the component) a click on the track next to the handle moves the handle there, however close. The handle's invisible touch area still reaches 8 px above and below it; to the sides it ends with the handle. Dragging and the arrow keys are unchanged.
 - Scope: `ui/slider.tsx` and this approval record. Not covered by a unit test (pointer geometry); to be checked in the real apps. Night-shift branch only, not merge or release.
 - What's new: none — a correction, nothing new to announce
+
+## 2026-10-13 — Night shift: the current sidebar entry scrolls the page to the top (#579)
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-13/14; wording not yet seen by him. Issue #579: clicking Settings in the sidebar while already on Settings kept the scroll position.
+- Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. No new text or layout. Clicking the sidebar entry of the screen you are on, or the VibeTV logo while on Overview, scrolls the page back to its top. Clicking another entry is unchanged.
+- Scope: `control-center-shell.tsx` and its test, and this approval record. Night-shift branch only, not merge or release.
+- What's new: none — a correction, nothing new to announce

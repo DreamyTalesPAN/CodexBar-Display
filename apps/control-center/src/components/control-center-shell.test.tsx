@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "@/test/axe";
@@ -50,6 +50,27 @@ describe("ControlCenterShell", () => {
     page.scrollTop = 300;
     rerender(shell("theme-library", "screensavers"));
     expect(page.scrollTop).toBe(0);
+  });
+
+  // Clicking the tab that is already open is a request to start over at its
+  // top; the page does not change tab, so only the click can move it back.
+  it("scrolls to the top when the current sidebar entry is clicked again", () => {
+    vi.stubGlobal("matchMedia", () => ({
+      matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }));
+    const onTabChange = vi.fn();
+    const { getByRole } = render(
+      <TooltipProvider>
+        <ControlCenterShell activeTab="settings" device={{ active: true, connected: true }} onTabChange={onTabChange}>
+          <div>Content</div>
+        </ControlCenterShell>
+      </TooltipProvider>,
+    );
+    const page = document.documentElement;
+    page.scrollTop = 1086;
+    fireEvent.click(getByRole("button", { name: "Settings" }));
+    expect(page.scrollTop).toBe(0);
+    expect(onTabChange).toHaveBeenCalledWith("settings");
   });
 
   it("does not duplicate transient device status in the header", () => {
