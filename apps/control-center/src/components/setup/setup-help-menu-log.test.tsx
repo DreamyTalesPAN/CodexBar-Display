@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "@/test/axe";
 import { SetupEventsContext } from "../setup-event-log";
@@ -132,6 +132,15 @@ describe("SetupHelpMenu keyboard", () => {
     expect(document.activeElement).toBe(create);
     fireEvent.keyDown(create, { key: "Home" });
     expect(document.activeElement).toBe(ask);
+  });
+
+  it("keeps focus in the menu when the used entry gives way to its outcome", async () => {
+    Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
+    const { ask, create } = openMenu();
+    fireEvent.click(ask);
+    await waitFor(() =>
+      expect(screen.queryByRole("menuitem", { name: "Ask AI to fix" })).toBeNull());
+    expect(document.activeElement).toBe(create);
   });
 
   it("closes on Escape and gives focus back to Help", () => {
