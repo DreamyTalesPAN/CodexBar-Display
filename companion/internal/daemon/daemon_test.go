@@ -464,8 +464,14 @@ func TestRunCycleWithDepsWaitsForFirstAvailableUsageFrame(t *testing.T) {
 	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
 		t.Fatalf("expected later unavailable usage to keep the valid frame, got %v", err)
 	}
-	if len(sentLines) != 2 {
-		t.Fatalf("expected unavailable usage to preserve the valid frame, got %d sends", len(sentLines))
+	// The valid frame is preserved by restating it: a device that hears
+	// nothing would take the writer for gone and end a working state (#369).
+	if len(sentLines) != 3 {
+		t.Fatalf("expected unavailable usage to restate the valid frame, got %d sends", len(sentLines))
+	}
+	frame = decodeFrameLine(t, sentLines[2])
+	if frame.Provider != "claude" || frame.Weekly != 11 || frame.UsageUnavailable {
+		t.Fatalf("expected the valid Claude usage frame to be restated, got %+v", frame)
 	}
 
 	now = now.Add(providerSnapshotMaxAge() + time.Second)
@@ -473,12 +479,192 @@ func TestRunCycleWithDepsWaitsForFirstAvailableUsageFrame(t *testing.T) {
 	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
 		t.Fatalf("expected expired usage to send unavailable state, got %v", err)
 	}
-	if len(sentLines) != 3 {
+	if len(sentLines) != 4 {
 		t.Fatalf("expected unavailable state after last-good expiry, got %d sends", len(sentLines))
 	}
-	frame = decodeFrameLine(t, sentLines[2])
+	frame = decodeFrameLine(t, sentLines[3])
 	if frame.Provider != "claude" || !frame.UsageUnavailable || frame.Session != 0 || frame.Weekly != 0 || frame.UsageMode != "remaining" {
 		t.Fatalf("expected expired Claude usage to become unavailable, got %+v", frame)
+	}
+}
+
+func TestActivityTTLIsThreeFrameIntervalsWithAFloor(t *testing.T) {
+	tests := []struct {
+		name      string
+		interval  time.Duration
+		transport string
+		want      time.Duration
+	}{
+		{name: "usb default cadence sits on the floor", transport: "usb", want: 10 * time.Second},
+		{name: "wifi default cadence", transport: "wifi", want: 90 * time.Second},
+		{name: "configured interval wins over the transport default", interval: time.Minute, transport: "usb", want: 3 * time.Minute},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := activityTTL(tt.interval, tt.transport); got != tt.want {
+				t.Fatalf("activityTTL(%s, %q)=%s, expected %s", tt.interval, tt.transport, got, tt.want)
+			}
+		})
+	}
+}
+
+// Issue #369: the device expires a frame's activity on its own, and only the
+// Companion knows how often frames come. Every frame it sends therefore says
+// how long it is good for, the error frame included.
+func TestRunCycleWithDepsWritesActivityTTLIntoEveryFrame(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	send := func(transport string, fetch func(context.Context) ([]codexbar.ParsedFrame, error)) protocol.Frame {
+		t.Helper()
+		var sentLine []byte
+		_ = runCycleWithDeps(context.Background(), "", &runtimeState{selector: codexbar.NewProviderSelector()}, runtimeDeps{
+			now:            func() time.Time { return now },
+			resolvePort:    func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+			fetchProviders: fetch,
+			transportName:  transport,
+			logf:           func(string, ...any) {},
+			sendLine: func(port string, line []byte) error {
+				sentLine = append([]byte(nil), line...)
+				return nil
+			},
+		})
+		if len(sentLine) == 0 {
+			t.Fatalf("expected a frame on %s", transport)
+		}
+		return decodeFrameLine(t, sentLine)
+	}
+	usage := func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return []codexbar.ParsedFrame{testParsedFrame("codex", 12, 30, 3600)}, nil
+	}
+	failed := func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return nil, &codexbar.FetchError{Kind: codexbar.FetchErrorParse, Err: errors.New("invalid json")}
+	}
+
+	if frame := send("usb", usage); frame.Error != "" || frame.ActivityTTLSec != 10 {
+		t.Fatalf("expected a usage frame valid for 10s on the cable, got %+v", frame)
+	}
+	if frame := send("usb", failed); frame.Error == "" || frame.ActivityTTLSec != 10 {
+		t.Fatalf("expected an error frame valid for 10s on the cable, got %+v", frame)
+	}
+}
+
+// Issue #369: the device's activity bound guards against the writer going
+// away. A Companion that is running and merely has no fresh reading for the
+// shown provider is not gone, so it keeps saying what it last knew instead of
+// falling silent, and a working VibeTV does not drop to idle beside it.
+func TestRunCycleWithDepsKeepsSendingTheLastGoodFrameWhileTheReadingIsOnlyRetained(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	retained := false
+	var sent []protocol.Frame
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	deps := runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			frame := testParsedFrame("codex", 12, 30, 3600)
+			frame.Frame.Activity = "coding"
+			if retained {
+				// The retained reading may differ; the device keeps the last good one.
+				frame.Frame.Session = 99
+				frame.Frame.Activity = "idle"
+			}
+			frame.Stale = retained
+			return []codexbar.ParsedFrame{frame}, nil
+		},
+		transportName: "usb",
+		logf:          func(string, ...any) {},
+		sendLine: func(_ string, line []byte) error {
+			sent = append(sent, decodeFrameLine(t, line))
+			return nil
+		},
+	}
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil || len(sent) != 1 {
+		t.Fatalf("first cycle: err=%v sent=%d", err, len(sent))
+	}
+	lastGoodAt := state.lastGoodAt
+
+	retained = true
+	for i := 1; i <= 30; i++ {
+		now = now.Add(2 * time.Second)
+		if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+			t.Fatalf("retained cycle %d: %v", i, err)
+		}
+		if len(sent) != i+1 {
+			t.Fatalf("retained cycle %d sent no frame; a frame valid for 10s was the last one", i)
+		}
+	}
+	last := sent[len(sent)-1]
+	if last.Session != 12 || last.UsageUnavailable || last.Error != "" {
+		t.Fatalf("expected the last good reading to be restated, got %+v", last)
+	}
+	if last.Activity != "idle" || last.ActivityTTLSec != 10 {
+		t.Fatalf("expected the current activity verdict with its bound, got activity=%q ttl=%d", last.Activity, last.ActivityTTLSec)
+	}
+	if last.ResetTrust != protocol.ResetTrustOffline || last.ResetSec != 3600-60 {
+		t.Fatalf("expected the countdown to continue from the last good reading, got trust=%q reset=%d", last.ResetTrust, last.ResetSec)
+	}
+	if !state.lastGoodAt.Equal(lastGoodAt) {
+		t.Fatalf("restating the last good frame must not renew it: %s -> %s", lastGoodAt, state.lastGoodAt)
+	}
+}
+
+// Issue #369: the display was just moved to a provider whose reading is only
+// retained, which clears the last good frame of the provider shown before. The
+// Companion is there and knows that reading and the current activity, so it
+// says so every interval instead of leaving the device to end a working state
+// on its own. The reading is sent as what it is: not live, and never stored
+// as a new last good frame.
+func TestRunCycleWithDepsSendsARetainedReadingWhenThereIsNoLastGoodFrame(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	collectedAt := now.Add(-time.Minute)
+	var sent []protocol.Frame
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	deps := runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			frame := testParsedFrame("claude", 40, 60, 3600)
+			frame.Frame.Activity = "coding"
+			frame.CollectedAt = collectedAt
+			frame.Stale = true
+			return []codexbar.ParsedFrame{frame}, nil
+		},
+		transportName: "usb",
+		logf:          func(string, ...any) {},
+		sendLine: func(_ string, line []byte) error {
+			sent = append(sent, decodeFrameLine(t, line))
+			return nil
+		},
+	}
+	for i := 1; i <= 10; i++ {
+		if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+			t.Fatalf("cycle %d: %v", i, err)
+		}
+		if len(sent) != i {
+			t.Fatalf("cycle %d sent no frame although the Companion knows a reading and the activity", i)
+		}
+		now = now.Add(2 * time.Second)
+	}
+	first := sent[0]
+	if first.Provider != "claude" || first.Session != 40 || first.UsageUnavailable || first.Error != "" {
+		t.Fatalf("expected the retained Claude reading, got %+v", first)
+	}
+	// Activity comes from the agent observer alone; none runs here, so a
+	// provider frame that says coding does not make the device show work.
+	if first.Activity != "idle" || first.ActivityTTLSec != 10 {
+		t.Fatalf("expected the agent activity with its bound, got activity=%q ttl=%d", first.Activity, first.ActivityTTLSec)
+	}
+	if first.ResetTrust != protocol.ResetTrustOffline || first.ResetSec != 3600-60 {
+		t.Fatalf("expected a reading that is not live, counted from when it was taken, got trust=%q reset=%d", first.ResetTrust, first.ResetSec)
+	}
+	if state.hasLastGood {
+		t.Fatal("a retained reading must not become the last good frame")
 	}
 }
 
@@ -1164,6 +1350,30 @@ func TestRunCycleWithDepsShowsRemainingWhenUsageBarsShowUsedDisabled(t *testing.
 	stale := decodeFrameLine(t, sentLines[1])
 	if stale.Session != 99 || stale.Weekly != 72 || stale.UsageMode != "remaining" {
 		t.Fatalf("last-good fallback applied remaining conversion twice: %+v", stale)
+	}
+}
+
+// A theme can bind the percentage of a cross-provider row. With Remaining
+// chosen it has to read like the windows of the same frame.
+func TestApplyUsageBarsPreferenceShowsProviderSlotsTheSameWayAsTheWindows(t *testing.T) {
+	frame := protocol.Frame{
+		V:             protocol.ProtocolVersionV2,
+		Provider:      "claude",
+		UsageWindows:  []protocol.UsageSlot{{ID: "session", Label: "Session", Percent: 30, ResetSec: 600}},
+		ProviderSlots: []protocol.UsageSlot{{ID: "claude", Label: "Claude", Percent: 30, ResetSec: 600}, {ID: "codex", Label: "Codex", Percent: 7, ResetSec: 900}},
+	}.Normalize()
+
+	remaining := applyUsageBarsPreference(frame.Normalize(), false)
+	if remaining.UsageMode != "remaining" || remaining.UsageWindows[0].Percent != 70 ||
+		remaining.ProviderSlots[0].Percent != 70 || remaining.ProviderSlots[1].Percent != 93 {
+		t.Fatalf("remaining must flip provider rows together with the windows: %#v", remaining)
+	}
+	used := applyUsageBarsPreference(frame.Normalize(), true)
+	if used.UsageMode != "used" || used.ProviderSlots[0].Percent != 30 || used.ProviderSlots[1].Percent != 7 {
+		t.Fatalf("used must leave provider rows as collected: %#v", used)
+	}
+	if frame.ProviderSlots[0].Percent != 30 {
+		t.Fatalf("the collected frame was changed: %#v", frame.ProviderSlots)
 	}
 }
 
@@ -2572,7 +2782,7 @@ func TestLoadPersistedUsageReturnsOrderedProviderSnapshots(t *testing.T) {
 				},
 			},
 		},
-	}, now); err != nil {
+	}, nil, now); err != nil {
 		t.Fatalf("persist provider snapshots: %v", err)
 	}
 	if err := persistLastGood(protocol.Frame{Provider: "claude", Label: "Claude"}, now); err != nil {
@@ -2644,7 +2854,7 @@ func TestLoadPersistedUsageClearsExpiredProviderValues(t *testing.T) {
 			},
 			TokenStatsCollected: collectedAt,
 		},
-	}, now); err != nil {
+	}, nil, now); err != nil {
 		t.Fatalf("persist provider snapshots: %v", err)
 	}
 
@@ -2690,7 +2900,7 @@ func TestPersistEmptyProviderSnapshotsClearsStoredUsage(t *testing.T) {
 				Weekly:   40,
 			},
 		},
-	}, now); err != nil {
+	}, nil, now); err != nil {
 		t.Fatalf("persist provider snapshots: %v", err)
 	}
 
@@ -2698,7 +2908,7 @@ func TestPersistEmptyProviderSnapshotsClearsStoredUsage(t *testing.T) {
 		t.Fatal("expected persisted provider snapshot before clearing")
 	}
 
-	if err := persistProviderSnapshots(map[string]providerSnapshot{}, now.Add(time.Minute)); err != nil {
+	if err := persistProviderSnapshots(map[string]providerSnapshot{}, nil, now.Add(time.Minute)); err != nil {
 		t.Fatalf("clear persisted provider snapshots: %v", err)
 	}
 	if _, _, ok := loadPersistedProviderSnapshotsAnyAge(); ok {
@@ -3613,6 +3823,89 @@ func TestDaemonSoakSimulation24hEquivalent(t *testing.T) {
 	}
 }
 
+// #500: a provider's own failure must leave a trace, once per change.
+func TestProviderCollectorLogsProviderFailureKindOnChange(t *testing.T) {
+	prepareFastTestEnv(t)
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	var logs []string
+	collector := &providerCollector{
+		now:             func() time.Time { return now },
+		logf:            func(format string, args ...any) { logs = append(logs, fmt.Sprintf(format, args...)) },
+		order:           []string{"codex", "claude"},
+		interval:        30 * time.Second,
+		timeout:         3 * time.Second,
+		snapshotMaxAge:  2 * time.Hour,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+	}
+	claudeFails := true
+	collector.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		claude := testParsedFrame("claude", 28, 35, 7200)
+		if claudeFails {
+			claude.Frame.Error = "Claude usage request timed out after 24s"
+		}
+		return []codexbar.ParsedFrame{testParsedFrame("codex", 14, 22, 3600), claude}, nil
+	}
+	collector.collectOnce(context.Background())
+	collector.collectOnce(context.Background())
+	claudeFails = false
+	collector.collectOnce(context.Background())
+	collector.collectOnce(context.Background())
+
+	var got []string
+	for _, line := range logs {
+		if strings.HasPrefix(line, "collector provider-error ") {
+			got = append(got, strings.TrimSpace(line))
+		}
+	}
+	want := []string{"collector provider-error claude=timeout", "collector provider-error claude=recovered"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("provider failure log = %q, want %q", got, want)
+	}
+	for _, line := range logs {
+		if strings.Contains(line, "24s") {
+			t.Fatalf("raw provider error text reached the log: %q", line)
+		}
+	}
+}
+
+func TestProviderCollectorStoresLastCycleCountsForDiagnostics(t *testing.T) {
+	prepareFastTestEnv(t)
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	collector := &providerCollector{
+		now:             func() time.Time { return now },
+		logf:            func(string, ...any) {},
+		interval:        30 * time.Second,
+		timeout:         3 * time.Second,
+		snapshotMaxAge:  2 * time.Hour,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+	}
+	if _, ok := LoadCollectorCycle(); ok {
+		t.Fatal("expected no cycle before the first collection")
+	}
+	claudeFails := true
+	collector.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		claude := testParsedFrame("claude", 28, 35, 7200)
+		if claudeFails {
+			claude.Frame.Error = "Claude usage request timed out after 24s"
+		}
+		return []codexbar.ParsedFrame{testParsedFrame("codex", 14, 22, 3600), claude}, nil
+	}
+	collector.collectOnce(context.Background())
+	if got, ok := LoadCollectorCycle(); !ok || got != (CollectorCycle{At: now, Providers: 2, Succeeded: 1}) {
+		t.Fatalf("after one failing provider: got %+v ok=%v", got, ok)
+	}
+
+	// A changed count is stored at once, not after the persist interval.
+	now = now.Add(30 * time.Second)
+	claudeFails = false
+	collector.collectOnce(context.Background())
+	if got, ok := LoadCollectorCycle(); !ok || got != (CollectorCycle{At: now, Providers: 2, Succeeded: 2}) {
+		t.Fatalf("after both providers delivered: got %+v ok=%v", got, ok)
+	}
+}
+
 func TestProviderCollectorCollectOnceKeepsPerProviderLastGood(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -3907,7 +4200,7 @@ func TestProviderCollectorKeepsDashboardSnapshotThroughLastGoodWindow(t *testing
 		t.Fatalf("expected sent Codex dashboard frame, got %+v", frame)
 	}
 
-	if err := persistProviderSnapshots(collector.providers, now); err != nil {
+	if err := persistProviderSnapshots(collector.providers, nil, now); err != nil {
 		t.Fatalf("persist provider snapshots: %v", err)
 	}
 	usage, ok := LoadPersistedUsage(now)
@@ -5110,6 +5403,199 @@ func TestProviderCollectorSlowTokenScanUsesPostCompletionCooldown(t *testing.T) 
 	}
 }
 
+func TestProviderCollectorScansTokensForANewlyEnabledProviderWithoutWaitingOutTheCooldown(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 10, 7, 15, 34, 0, 0, time.UTC)
+	var claudeEnabled atomic.Bool
+	collector := &providerCollector{
+		now:                func() time.Time { return now },
+		logf:               func(string, ...any) {},
+		snapshotMaxAge:     10 * time.Minute,
+		persistInterval:    time.Minute,
+		tokenStatsCooldown: tokenStatsScanCooldown,
+		providers:          make(map[string]providerSnapshot),
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			frames := []codexbar.ParsedFrame{testParsedFrame("codex", 12, 34, 3600)}
+			if claudeEnabled.Load() {
+				frames = append(frames, testParsedFrame("claude", 20, 26, 3600))
+			}
+			return frames, nil
+		},
+		fetchInventory: func(context.Context) ([]codexbar.ProviderSetting, error) {
+			return []codexbar.ProviderSetting{
+				{ID: "codex", Enabled: true},
+				{ID: "claude", Enabled: claudeEnabled.Load()},
+			}, nil
+		},
+		fetchTokenStats: func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+			return map[string]codexbar.ProviderTokenStats{
+				"codex":  {SessionTokens: 10, WeekTokens: 20, TotalTokens: 30, UpdatedAt: now},
+				"claude": {SessionTokens: 5, WeekTokens: 6, TotalTokens: 7, UpdatedAt: now},
+			}, true
+		},
+	}
+	scanFinished := func() {
+		t.Helper()
+		waitForCondition(t, time.Second, func() bool {
+			collector.tokenStatsMu.Lock()
+			defer collector.tokenStatsMu.Unlock()
+			return !collector.tokenStatsRunning
+		})
+	}
+
+	collector.collectOnce(context.Background())
+	if !collector.requestTokenStatsScan(context.Background()) {
+		t.Fatal("expected the first token scan to start")
+	}
+	scanFinished()
+	if collector.requestTokenStatsScan(context.Background()) {
+		t.Fatal("a settled token scan restarted inside its cooldown")
+	}
+
+	claudeEnabled.Store(true)
+	collector.collectOnce(context.Background())
+	if !collector.requestTokenStatsScan(context.Background()) {
+		t.Fatal("a newly enabled provider had to wait out the token scan cooldown")
+	}
+	scanFinished()
+	var claude protocol.Frame
+	for _, provider := range collector.providerFrames(now) {
+		if provider.Provider == "claude" {
+			claude = provider.Frame
+		}
+	}
+	if claude.TotalTokens != 7 || !claude.TokenTotalsKnown {
+		t.Fatalf("newly enabled provider has no token totals after the scan: %#v", claude)
+	}
+	if collector.requestTokenStatsScan(context.Background()) {
+		t.Fatal("the cooldown did not apply again after the extra scan")
+	}
+	collector.shutdownTokenStatsScan()
+}
+
+func TestProviderCollectorCountsTokenGrowthAsWorkOnceTheHistoryHasSettled(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 10, 7, 18, 0, 0, 0, time.UTC)
+	var total atomic.Int64
+	// The shape the Windows engine reports: no separate "latest" figure, so
+	// today's whole total is part of the history and changes with every scan
+	// that finds new tokens.
+	stats := func() codexbar.ProviderTokenStats {
+		tokens := total.Load()
+		return codexbar.ProviderTokenStats{
+			SessionTokens: tokens,
+			WeekTokens:    tokens,
+			TotalTokens:   tokens,
+			UpdatedAt:     now,
+			Cost: &codexbar.ProviderCostUsage{
+				Daily: []codexbar.ProviderCostDay{{Day: now.Format("2006-01-02"), TotalTokens: tokens}},
+			},
+		}
+	}
+	collector := &providerCollector{
+		now:             func() time.Time { return now },
+		logf:            func(string, ...any) {},
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("claude", 20, 26, 3600)}, nil
+		},
+		fetchTokenStats: func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+			return map[string]codexbar.ProviderTokenStats{"claude": stats()}, true
+		},
+	}
+	growing := func(tokens int64) bool {
+		t.Helper()
+		total.Store(tokens)
+		collector.collectTokenStatsOnce(context.Background())
+		frames := collector.providerFrames(now)
+		if len(frames) != 1 {
+			t.Fatalf("expected one provider, got %#v", frames)
+		}
+		return frames[0].TokenHistoryGrowing
+	}
+
+	collector.collectOnce(context.Background())
+	if !growing(1000) {
+		t.Fatal("the first scan after a start must not count as settled history")
+	}
+	if growing(1000) {
+		t.Fatal("two scans that agree must settle the history")
+	}
+	for _, tokens := range []int64{1500, 2200} {
+		if growing(tokens) {
+			t.Fatalf("new tokens (%d) after the history settled were left out as history growth", tokens)
+		}
+	}
+}
+
+func TestProviderCollectorReadsTheTokenHistoryInAgainAfterAProviderWasOff(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 10, 7, 22, 0, 0, 0, time.UTC)
+	var on atomic.Bool
+	on.Store(true)
+	var total atomic.Int64
+	total.Store(1000)
+	collector := &providerCollector{
+		now:             func() time.Time { return now },
+		logf:            func(string, ...any) {},
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			if !on.Load() {
+				return nil, nil
+			}
+			return []codexbar.ParsedFrame{testParsedFrame("claude", 20, 26, 3600)}, nil
+		},
+		fetchInventory: func(context.Context) ([]codexbar.ProviderSetting, error) {
+			return []codexbar.ProviderSetting{{ID: "claude", Label: "Claude", Enabled: on.Load()}}, nil
+		},
+		fetchTokenStats: func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+			tokens := total.Load()
+			return map[string]codexbar.ProviderTokenStats{"claude": {
+				SessionTokens: tokens, WeekTokens: tokens, TotalTokens: tokens, UpdatedAt: now,
+				Cost: &codexbar.ProviderCostUsage{
+					Daily: []codexbar.ProviderCostDay{{Day: now.Format("2006-01-02"), TotalTokens: tokens}},
+				},
+			}}, true
+		},
+	}
+	growing := func() bool {
+		t.Helper()
+		collector.collectTokenStatsOnce(context.Background())
+		frames := collector.providerFrames(now)
+		if len(frames) != 1 {
+			t.Fatalf("expected one provider, got %#v", frames)
+		}
+		return frames[0].TokenHistoryGrowing
+	}
+
+	collector.collectOnce(context.Background())
+	if growing(); growing() {
+		t.Fatal("two scans that agree must settle the history")
+	}
+	on.Store(false)
+	collector.collectOnce(context.Background())
+	if frames := collector.providerFrames(now); len(frames) != 0 {
+		t.Fatalf("a provider that was switched off is still listed: %#v", frames)
+	}
+	// Back on, with a history that differs from the one read before.
+	on.Store(true)
+	total.Store(5000)
+	collector.collectOnce(context.Background())
+	if !growing() {
+		t.Fatal("the first scan after switching a provider on again counted as settled history")
+	}
+	if growing() {
+		t.Fatal("two scans that agree must settle the history again")
+	}
+}
+
 func TestProviderCollectorFailedTokenScanUsesPostCompletionCooldown(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -5162,7 +5648,13 @@ func TestProviderCollectorFailedTokenScanUsesPostCompletionCooldown(t *testing.T
 		t.Fatal("activity tick immediately restarted a failed token scan")
 	}
 
-	clockNanos.Add(int64(tokenStatsScanCooldown))
+	// A failed scan is retried after a minute, not after the five-minute
+	// cadence of a completed one: by then the stored totals would be gone.
+	clockNanos.Add(int64(tokenStatsFailedScanCooldown - time.Second))
+	if collector.requestTokenStatsScan(context.Background()) {
+		t.Fatal("a failed token scan was retried inside its cooldown")
+	}
+	clockNanos.Add(int64(time.Second))
 	if !collector.requestTokenStatsScan(context.Background()) {
 		t.Fatal("expected failed token scan to retry after cooldown")
 	}
@@ -6063,8 +6555,11 @@ func TestRunDaemonLoopPausesDeviceCyclesDuringMaintenance(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	resume := make(chan time.Time, 1)
+	// One tick ends the wait after the first cycle, the other ends the pause.
+	resume := make(chan time.Time, 2)
 	resume <- time.Now()
+	resume <- time.Now()
+	now := time.Now()
 	var pauseChecks atomic.Int32
 	var cycleCalls atomic.Int32
 	var logged strings.Builder
@@ -6072,10 +6567,16 @@ func TestRunDaemonLoopPausesDeviceCyclesDuringMaintenance(t *testing.T) {
 	err := runDaemonLoop(ctx, Options{
 		Interval: time.Second,
 		PauseDeviceWrites: func() bool {
-			return pauseChecks.Add(1) == 1
+			// Issue #536: a firmware update pauses the loop after a cycle and
+			// for longer than the sleep-wake threshold.
+			if pauseChecks.Add(1) != 2 {
+				return false
+			}
+			now = now.Add(2 * time.Minute)
+			return true
 		},
 	}, runtimeDeps{
-		now: time.Now,
+		now: func() time.Time { return now },
 		after: func(time.Duration) <-chan time.Time {
 			return resume
 		},
@@ -6083,16 +6584,17 @@ func TestRunDaemonLoopPausesDeviceCyclesDuringMaintenance(t *testing.T) {
 			logged.WriteString(fmt.Sprintf(format, args...))
 		},
 	}, func(context.Context) error {
-		cycleCalls.Add(1)
-		cancel()
+		if cycleCalls.Add(1) == 2 {
+			cancel()
+		}
 		return nil
 	})
 
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected loop cancellation after resumed cycle, got %v", err)
 	}
-	if got := cycleCalls.Load(); got != 1 {
-		t.Fatalf("device cycle calls=%d want 1 after resume", got)
+	if got := cycleCalls.Load(); got != 2 {
+		t.Fatalf("device cycle calls=%d want 2, one before the pause and one after", got)
 	}
 	log := logged.String()
 	if !strings.Contains(log, "runtime event=device-writes-paused reason=device-maintenance") {
@@ -6100,6 +6602,9 @@ func TestRunDaemonLoopPausesDeviceCyclesDuringMaintenance(t *testing.T) {
 	}
 	if !strings.Contains(log, "runtime event=device-writes-resumed reason=device-maintenance-complete") {
 		t.Fatalf("missing resume log: %q", log)
+	}
+	if strings.Contains(log, "runtime event=sleep-wake") {
+		t.Fatalf("maintenance pause logged as sleep-wake: %q", log)
 	}
 }
 
@@ -6268,6 +6773,174 @@ func TestApplyProviderDisplaySelectionKeepsFixedProviderOmittedWhileEnabled(t *t
 		if len(got) != 0 || state.providerDisplayFallback != "" {
 			t.Fatalf("%s: got=%+v fallback=%q want the pinned provider kept", name, got, state.providerDisplayFallback)
 		}
+	}
+}
+
+func rotationTestDeps(rotateSeconds int, display *runtimeconfig.ProviderDisplayConfig) runtimeDeps {
+	return runtimeDeps{
+		homeDir: func() (string, error) { return "/tmp/provider-rotation-test", nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{ProviderDisplay: display, DisplayRotateSeconds: rotateSeconds}, nil
+		},
+		logf: func(string, ...any) {},
+	}
+}
+
+// rotationTestProvider has a live reset countdown, so it owns a provider slot.
+func rotationTestProvider(provider string, session int) codexbar.ParsedFrame {
+	parsed := testParsedFrame(provider, session, 40, 3600)
+	parsed.Frame.UsageWindows = []protocol.UsageWindow{{ID: "session", Label: "Session", Percent: session, ResetSec: 3600}}
+	return parsed
+}
+
+func TestSelectCycleFrameRotatesAutomaticProvidersOnTheInterval(t *testing.T) {
+	start := time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC)
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	deps := rotationTestDeps(30, &runtimeconfig.ProviderDisplayConfig{Mode: "automatic", ProviderIDs: []string{"codex", "claude", "cursor"}})
+	codex := rotationTestProvider("codex", 10)
+	claude := rotationTestProvider("claude", 30)
+	cursor := rotationTestProvider("cursor", 50)
+	cycle := func(after time.Duration) cycleResult {
+		return selectCycleFrameFromProviders(state, []codexbar.ParsedFrame{codex, claude, cursor}, start.Add(after), deps, nil, "select-provider", "", "", "codexbar")
+	}
+	expectShown := func(after time.Duration, want string) cycleResult {
+		t.Helper()
+		result := cycle(after)
+		if result.frame.Provider != want || result.failureErr != nil {
+			t.Fatalf("after %s: shown=%q reason=%s err=%v, want %q", after, result.frame.Provider, result.selectionReason, result.failureErr, want)
+		}
+		return result
+	}
+
+	// Cursor has no reading, so it never takes a turn. Each of the other two
+	// keeps the screen for the whole interval, and every provider with a
+	// countdown keeps its row whichever one is shown.
+	cursor.Frame.UsageUnavailable = true
+	for _, step := range []struct {
+		after time.Duration
+		want  string
+	}{
+		{0, "codex"},
+		{29 * time.Second, "codex"},
+		{30 * time.Second, "claude"},
+		{59 * time.Second, "claude"},
+		{60 * time.Second, "codex"},
+	} {
+		result := expectShown(step.after, step.want)
+		if result.selectionReason != "timed-rotation" || len(result.frame.ProviderSlots) != 2 {
+			t.Fatalf("after %s: reason=%s slots=%+v, want timed-rotation with both provider rows", step.after, result.selectionReason, result.frame.ProviderSlots)
+		}
+	}
+
+	// Usage on Claude does not cut Codex's turn short.
+	claude.Frame.Session = 35
+	expectShown(70*time.Second, "codex")
+
+	// The provider on screen loses its reading: the rotation restarts with the
+	// provider Automatic would show now and moves on from there.
+	codex.Frame.UsageUnavailable = true
+	cursor.Frame.UsageUnavailable = false
+	expectShown(75*time.Second, "claude")
+	expectShown(104*time.Second, "claude")
+	expectShown(105*time.Second, "cursor")
+
+	// One collection fails for every provider: nothing can be rotated for
+	// that cycle, but cursor keeps its turn and its timer.
+	claude.Stale, cursor.Stale = true, true
+	if result := expectShown(110*time.Second, "claude"); result.selectionReason == "timed-rotation" {
+		t.Fatalf("providers without a current reading were rotated: %s", result.selectionDetail)
+	}
+	claude.Stale, cursor.Stale = false, false
+	expectShown(115*time.Second, "cursor")
+	expectShown(135*time.Second, "claude")
+
+	// With one provider left there is nothing to rotate; it stays on screen.
+	cursor.Frame.UsageUnavailable = true
+	for _, after := range []time.Duration{140 * time.Second, 10 * time.Minute} {
+		if result := expectShown(after, "claude"); result.selectionReason == "timed-rotation" {
+			t.Fatalf("after %s: a single provider was still rotated: reason=%s", after, result.selectionReason)
+		}
+	}
+}
+
+func TestSelectCycleFrameRotatesOnlyInAutomaticWithAnInterval(t *testing.T) {
+	start := time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC)
+	for name, tt := range map[string]struct {
+		deps runtimeDeps
+		want []string
+	}{
+		// No interval: Automatic follows observed agent activity. Usage on
+		// Claude alone does not move the display.
+		"when activity changes": {
+			deps: rotationTestDeps(0, &runtimeconfig.ProviderDisplayConfig{Mode: "automatic", ProviderIDs: []string{"codex", "claude"}}),
+			want: []string{"codex", "codex", "codex"},
+		},
+		"manual ignores the interval": {
+			deps: rotationTestDeps(30, &runtimeconfig.ProviderDisplayConfig{Mode: "fixed", ProviderIDs: []string{"codex"}}),
+			want: []string{"codex", "codex", "codex"},
+		},
+		// An install from before the display choice counts as Automatic.
+		"no stored display choice": {
+			deps: rotationTestDeps(30, nil),
+			want: []string{"codex", "claude", "claude"},
+		},
+	} {
+		state := &runtimeState{selector: codexbar.NewProviderSelector()}
+		claude := rotationTestProvider("claude", 30)
+		for i, after := range []time.Duration{0, 30 * time.Second, 40 * time.Second} {
+			if i == 2 {
+				claude.Frame.Session = 35
+			}
+			providers := []codexbar.ParsedFrame{rotationTestProvider("codex", 10), claude}
+			result := selectCycleFrameFromProviders(state, providers, start.Add(after), tt.deps, nil, "select-provider", "", "", "codexbar")
+			if result.frame.Provider != tt.want[i] {
+				t.Fatalf("%s: after %s shown=%q reason=%s, want %q", name, after, result.frame.Provider, result.selectionReason, tt.want[i])
+			}
+		}
+	}
+}
+
+func TestRunCycleWithDepsSendsTheRotatedProviderAndKeepsItAsLastGood(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	current := time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC)
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	var sent []protocol.Frame
+	deps := rotationTestDeps(30, &runtimeconfig.ProviderDisplayConfig{Mode: "automatic", ProviderIDs: []string{"codex", "claude"}})
+	deps.now = func() time.Time { return current }
+	deps.resolvePort = func(string) (string, error) { return "test-port", nil }
+	deps.deviceCaps = func(string) (protocol.DeviceCapabilities, error) { return protocol.DeviceCapabilities{}, nil }
+	deps.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return []codexbar.ParsedFrame{rotationTestProvider("codex", 10), rotationTestProvider("claude", 30)}, nil
+	}
+	deps.sendLine = func(_ string, line []byte) error {
+		sent = append(sent, decodeFrameLine(t, line))
+		return nil
+	}
+
+	for _, want := range []string{"codex", "claude"} {
+		if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+			t.Fatalf("expected cycle success, got %v", err)
+		}
+		if got := sent[len(sent)-1]; got.Provider != want || got.UsageUnavailable {
+			t.Fatalf("sent provider=%q unavailable=%t, want a current %q frame", got.Provider, got.UsageUnavailable, want)
+		}
+		current = current.Add(30 * time.Second)
+	}
+	if state.lastGood.Provider != "claude" {
+		t.Fatalf("last-good provider=%q, want the rotated provider on screen", state.lastGood.Provider)
+	}
+
+	// A failed collection keeps the provider that was on screen; the rotation
+	// does not move through readings it no longer has.
+	deps.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return nil, &codexbar.FetchError{Kind: codexbar.FetchErrorCommand, Err: errors.New("temporary failure")}
+	}
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+		t.Fatalf("expected last-good fallback, got %v", err)
+	}
+	if got := sent[len(sent)-1]; got.Provider != "claude" {
+		t.Fatalf("failed collection showed %q, want the last shown provider", got.Provider)
 	}
 }
 
@@ -7420,7 +8093,7 @@ func TestStaleUsageRequiresValidEnabledAgentPresentation(t *testing.T) {
 		name               string
 		enabled, supported bool
 		health, phase      string
-		wantSend           bool
+		wantAgent          bool
 	}{
 		{"master off", false, true, "ready", "working", false},
 		{"observer unavailable", true, true, "unavailable", "working", false},
@@ -7450,11 +8123,17 @@ func TestStaleUsageRequiresValidEnabledAgentPresentation(t *testing.T) {
 			if err := sendCycleResult(context.Background(), "/test", caps, 2048, state, deps, result); err != nil {
 				t.Fatal(err)
 			}
-			if (sends > 0) != tc.wantSend {
-				t.Fatalf("sent %d frames; wantSend=%t", sends, tc.wantSend)
+			// A frame goes out every cycle so the device does not end a
+			// state on its own (#369). Only a valid, enabled observation
+			// turns the stale quota into an agent frame without usage.
+			if sends != 1 {
+				t.Fatalf("sent %d frames, want 1", sends)
 			}
-			if tc.wantSend && (!sent.UsageUnavailable || sent.Activity != tc.phase) {
+			if tc.wantAgent && (!sent.UsageUnavailable || sent.Activity != tc.phase) {
 				t.Fatalf("stale quota must be unavailable while retaining lifecycle: %+v", sent)
+			}
+			if !tc.wantAgent && sent.UsageUnavailable {
+				t.Fatalf("the retained reading was hidden without an agent to show: %+v", sent)
 			}
 			if state.hasLastGood {
 				t.Fatal("stale quota entered recovery cache")

@@ -16,13 +16,13 @@ Center on the customer's Mac.
 - [Control Center readiness](control-center-customer-readiness.md): launch-readiness checks and support flow.
 - [Control Center UI principles](control-center-ui-principles.md): customer-facing UI rules.
 - [Control Center UI approvals](control-center-customer-ui-approval.md): append-only approval log for visible UI changes.
+- [Control Center accessibility](control-center-accessibility.md): supported screen readers, the automated check, and the VoiceOver release checklist.
 
 ## Device And Release Docs
 
 - [Hardware contract](hardware-contract.md): firmware, WiFi (incl. the 802.11g interop rule), display, and endpoint contract.
 - [Firmware provisioning](firmware-provisioning.md): provisioning and OTA packaging.
 - [Firmware guardrails](firmware-guardrails.md): firmware safety rules.
-- [EN 18031 self-assessment](en18031-self-assessment.md): draft EU cybersecurity (RED) assessment for the test lab.
 - [ThemeSpec slot budget](themespec-slot-budget.md): measured RAM and transition cost of a second resident ThemeSpec.
 - [Operator runbook](operator-runbook.md): support, recovery, and smoke-test procedures.
 - [Firmware migrations](firmware-migrations/1.0.36-to-1.0.37.md): per-version migration notes and their compatibility modes.

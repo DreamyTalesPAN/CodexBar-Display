@@ -1,0 +1,8 @@
+# Proposes updates for the commit-SHA-pinned Actions (#208). Tool versions are
+# updated by hand; scripts/check-ci-pins.sh says how and keeps them exact.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

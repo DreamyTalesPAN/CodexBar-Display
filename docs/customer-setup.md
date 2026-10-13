@@ -79,8 +79,11 @@ when the step is really done, not when a button was pressed.
    again. Leave VibeTV powered during any required update.
 3. `Choose AI providers` — switch on the tools whose usage VibeTV should show.
    At least one has to be switched on and working before you can continue.
-4. `Display Mode` — `Automatic` follows observed agent activity when enabled, `Manual` pins
-   the display to one of them.
+4. `Display Mode` — `Automatic` switches between your providers, `Manual` pins
+   the display to one of them. With `Agent activity` on, Automatic follows the
+   observed agent activity. Otherwise it shows the provider whose usage changed
+   last, or switches on the timer you set in `Settings`: every 30 seconds,
+   every minute, or every 5 minutes.
 5. `Choose your theme`, then `Install`. The install runs on the device and
    reports its steps.
 6. `Your VibeTV is live`. This screen hands over to Control Center by itself.
@@ -159,6 +162,32 @@ only over the USB cable: if VibeTV cannot reconnect to its saved network, it
 shows `Connect USB cable`. Connect it to your Mac and choose the new 2.4 GHz
 network in the Mac App. This changes only the WiFi name and password. Existing
 pairing, themes, brightness, and other VibeTV settings stay unchanged.
+
+## On Windows
+
+Everything above applies on a Windows PC as well, with these differences:
+
+- **Download and install.** [app.vibetv.shop](https://app.vibetv.shop) offers
+  `Download for Windows` there (`VibeTV-Control-Center-Setup.exe`, 64-bit,
+  installed for your user account only). Open the downloaded installer,
+  confirm the installation and wait for it to finish, then open
+  `VibeTV Control Center` from the Start menu. There is no DMG and no
+  `Applications` folder.
+- **The app lives in the tray.** Closing the window hides it; the tray icon
+  offers Open, Reload, Check for Updates and Quit. The app starts with Windows.
+- **Setup in the app is the same six steps.** The screens say `app` and
+  `this computer` where the Mac screens say `Mac App` and `this Mac`.
+- **Updates.** Use `Update` on the Updates tab or `Check for Updates` in the
+  tray. The app also looks for a newer version when it starts and installs it
+  before setup continues.
+- **Support commands.** The `install-control-center-companion.sh` commands
+  above are for macOS only. On Windows, reinstall by running the downloaded
+  installer again. The status check
+  `http://127.0.0.1:47832/v1/status` is the same.
+
+Powering VibeTV, the display messages, changing WiFi and the help under
+`If Something Does Not Work` are the same as on a Mac; read "your Mac" as
+"your PC" and "the Mac App" as "the app".
 
 ## Important
 

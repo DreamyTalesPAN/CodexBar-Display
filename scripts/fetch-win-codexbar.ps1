@@ -6,13 +6,15 @@
 # /usage probe fixes the Companion needs (probe retries, cross-process lock,
 # shared probe result) on top of upstream v0.60.3. Switch back to the
 # upstream URL once those patches land there.
+# Any replacement must link the C runtime statically (+crt-static): CI fails
+# on a CLI that needs the Visual C++ Redistributable (issue #501).
 param([Parameter(Mandatory=$true)][string]$Destination)
 $ErrorActionPreference = 'Stop'
 # Version the CLI reports with --version (unchanged from upstream in the fork).
 $version = '0.60.3'
-$releaseTag = 'v0.60.3-vibetv.3'
+$releaseTag = 'v0.60.3-vibetv.8'
 $releaseRepo = 'marcus7989/Win-CodexBar'
-$sha256 = 'ed0937f8a9e914aa9e8c10954c3903ae46a735c426ad2a4ab6f535d15551d101'
+$sha256 = 'c2405079761f27be90fbffa64b916527f995b0ac7a1afe08246af3f422606403'
 New-Item -ItemType Directory -Force $Destination | Out-Null
 $zip = Join-Path $Destination "CodexBarCLI-$releaseTag-windows-x64.zip"
 Invoke-WebRequest "https://github.com/$releaseRepo/releases/download/$releaseTag/CodexBarCLI-$releaseTag-windows-x64.zip" -OutFile $zip

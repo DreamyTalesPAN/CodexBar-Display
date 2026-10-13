@@ -1,14 +1,16 @@
 "use client";
 
 import { Clipboard, Download, FileText, RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import { onNativeDownloadFinished } from "./control-center-runtime";
 import type { SupportDiagnostics } from "./control-center-types";
 import {
   downloadSupportReport,
   serializeSupportReport,
+  supportReportFilename,
 } from "./support-report";
 
 type Props = {
@@ -18,6 +20,8 @@ type Props = {
   diagnostics?: SupportDiagnostics | null;
   emphasis?: "primary" | "secondary";
   onCreate?: () => void;
+  /** The app runs on Windows, which saves a download without asking where. */
+  windowsHost?: boolean;
 };
 
 export function SupportReportActions({
@@ -27,10 +31,30 @@ export function SupportReportActions({
   diagnostics,
   emphasis = "primary",
   onCreate,
+  windowsHost = false,
 }: Props) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
     "idle",
   );
+  // The report that was saved; one created afterwards has not been.
+  const [savedReport, setSavedReport] = useState<SupportDiagnostics | null>(
+    null,
+  );
+  const downloaded = Boolean(diagnostics) && savedReport === diagnostics;
+  // Issue #582: the Mac app says when its save dialog saved the report.
+  useEffect(() => {
+    if (!diagnostics) {
+      return;
+    }
+    return onNativeDownloadFinished(
+      supportReportFilename(diagnostics.generatedAt),
+      (saved) => {
+        if (saved) {
+          setSavedReport(diagnostics);
+        }
+      },
+    );
+  }, [diagnostics]);
   const diagnosticsText = diagnostics
     ? serializeSupportReport(diagnostics)
     : "";
@@ -64,6 +88,11 @@ export function SupportReportActions({
     }
     if (diagnostics) {
       downloadSupportReport(diagnostics);
+      // The Mac asks where to save and can be cancelled, so only the silent
+      // save on Windows is confirmed here; the Mac app confirms its own.
+      if (windowsHost) {
+        setSavedReport(diagnostics);
+      }
     }
   }
 
@@ -106,7 +135,7 @@ export function SupportReportActions({
               variant="outline"
             >
               <Download data-icon="inline-start" aria-hidden />
-              <span>Download</span>
+              <span>{downloaded ? "Downloaded" : "Download"}</span>
             </Button>
             {onCreate ? (
               <Button
@@ -137,6 +166,19 @@ export function SupportReportActions({
       {statusMessage ? (
         <p aria-live="polite" className="sr-only" role="status">
           {statusMessage}
+        </p>
+      ) : null}
+      {/* On the Mac the customer chose the folder, so none is named there. */}
+      {downloaded && diagnostics && windowsHost ? (
+        <p
+          className={cn(
+            "text-sm text-muted-foreground",
+            align === "center" && "text-center",
+          )}
+          role="status"
+        >
+          Saved as {supportReportFilename(diagnostics.generatedAt)} in your
+          Downloads folder.
         </p>
       ) : null}
       {copyState === "failed" ? (

@@ -23,10 +23,6 @@ inline State DisplayState(const char* phase) {
 }
 inline bool IsWorking(const char* value) { return DisplayState(value) == State::Working; }
 
-// Stale already renders as unknown, like an expired lease, so it needs none.
-inline bool HasLease(const char* value) {
-  return value != nullptr && std::strcmp(value, "coding") != 0 && DisplayState(value) > State::Idle;
-}
 inline void StatusText(const char* phase, const char* name, char* out, size_t size) {
   const State state = DisplayState(phase);
   if (state == State::Idle) { std::snprintf(out, size, "Nothing running"); return; }

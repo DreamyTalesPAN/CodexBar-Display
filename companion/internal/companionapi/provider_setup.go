@@ -58,6 +58,7 @@ func (s *Server) currentProviderSetup(ctx context.Context, force bool) codexbar.
 		probe = codexbar.ProbeProviderSetup
 	}
 	setup := probe(ctx, s.home)
+	s.logProviderCheckCauses(setup)
 	s.providerSetupCache = setup
 	s.providerSetupCachedAt = now
 	s.providerSetupMu.Unlock()
@@ -86,7 +87,9 @@ func (s *Server) providerSetupForStatus() codexbar.ProviderSetup {
 	if s.providerSetupRefresh.CompareAndSwap(false, true) {
 		go func() {
 			defer s.providerSetupRefresh.Store(false)
-			ctx, cancel := context.WithTimeout(context.Background(), providerCheckTimeout)
+			// Nobody asked for this check, so it may read what the usage
+			// service delivered last instead of asking every provider again.
+			ctx, cancel := context.WithTimeout(codexbar.WithServeReading(context.Background()), providerCheckTimeout)
 			defer cancel()
 			_ = s.currentProviderSetup(ctx, false)
 		}()
@@ -177,6 +180,9 @@ func freshTokenUsageReadiness(usage daemon.PersistedUsage, now time.Time) []code
 	return out
 }
 
+// Token history older than this no longer proves the provider is readable.
+const tokenUsageReadinessMaxAge = 15 * time.Minute
+
 func freshTokenUsageProviderReadiness(snapshot daemon.ProviderUsageSnapshot, now time.Time) (codexbar.ProviderReadiness, bool) {
 	if snapshot.TokenStatsCollectedAt.IsZero() {
 		return codexbar.ProviderReadiness{}, false
@@ -185,7 +191,7 @@ func freshTokenUsageProviderReadiness(snapshot daemon.ProviderUsageSnapshot, now
 		now = time.Now().UTC()
 	}
 	tokenAt := snapshot.TokenStatsCollectedAt.UTC()
-	if tokenAt.After(now.UTC().Add(5*time.Minute)) || now.Sub(tokenAt) > exactUsageCacheMaxAge {
+	if tokenAt.After(now.UTC().Add(5*time.Minute)) || now.Sub(tokenAt) > tokenUsageReadinessMaxAge {
 		return codexbar.ProviderReadiness{}, false
 	}
 	if strings.TrimSpace(snapshot.Frame.Normalize().Error) != "" {
@@ -364,6 +370,7 @@ func (s *Server) currentExactProviderSetup(ctx context.Context, providerID strin
 		probe = codexbar.ProbeProviderSetupForProvider
 	}
 	setup := probe(ctx, s.home, providerID)
+	s.logProviderCheckCauses(setup)
 
 	s.exactProviderProbeMu.Lock()
 	flight.setup = setup
@@ -371,6 +378,21 @@ func (s *Server) currentExactProviderSetup(ctx context.Context, providerID strin
 	delete(s.exactProviderProbes, providerID)
 	s.exactProviderProbeMu.Unlock()
 	return setup
+}
+
+// logProviderCheckCauses writes why a check ended as a settings error (or
+// lost its inventory read) to the runtime log, redacted like every reported
+// provider message. The row and the setup log only carry the generic sentence,
+// so without this line the cause of #527 could not be read back afterwards.
+func (s *Server) logProviderCheckCauses(setup codexbar.ProviderSetup) {
+	if s.logf == nil {
+		return
+	}
+	for _, provider := range setup.Providers {
+		if provider.Cause != "" {
+			s.logf("VibeTV provider check: %s is %s (%s)", provider.ID, provider.Status, reportedProviderMessage(provider.Cause))
+		}
+	}
 }
 
 func timedOutExactProviderSetup(providerID string, now time.Time) codexbar.ProviderSetup {
@@ -408,7 +430,7 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	s.recordProviderSetupEvents(setup, label)
+	s.recordProviderSetupEvents(setup, providerID, label)
 	if setup.Status == codexbar.ProviderReady && s.wakeDisplayStream != nil {
 		s.wakeDisplayStream()
 	}
@@ -573,10 +595,9 @@ func (s *Server) recordExactProviderSetup(providerID string, providerRevision ui
 	if !enabled {
 		return
 	}
+	// A ready check only wakes the collector. Its own reading never stands in
+	// for the collector's: what setup shows is what VibeTV can send (#480).
 	if exactReadiness.Status == codexbar.ProviderReady {
-		if setup.ExactUsage != nil {
-			s.cacheExactProviderUsage(*setup.ExactUsage)
-		}
 		if s.wakeDisplayStream != nil {
 			s.wakeDisplayStream()
 		}

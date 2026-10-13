@@ -44,6 +44,23 @@ data or recovery port, so they run the rehearsal without a USB backup. Every
 hardware write still requires the exact device ID and explicit confirmation;
 an unclear OTA result stops without retry or automatic rollback.
 
+## What Virtual VibeTV proves
+
+`companion/cmd/virtual-vibetv` answers with the ESP8266 limits read from the
+firmware sources: frame size, ThemeSpec bytes and primitives, stored-theme
+bytes, usage windows and GIF limits. Like the firmware, theme activation
+refuses a stored spec above 4,096 bytes or 32 primitives and a request body
+above 160 bytes. `TestCapabilitiesMatchFirmware` fails CI
+when the two drift, and `--scenario` starts the deterministic failures
+(`healthy`, `unavailable`, `unhealthy`, `render-rejected`, `lost-ota-response`,
+`never-returns-after-update`, `allow-second-flash`; comma-separated).
+`unavailable` answers every request with 503, like the reboot window.
+
+It does not prove the firmware's own parsing and drawing, WiFi joining and
+roaming, the ROM bootloader and flash writes, power cycles, or what the
+physical screen shows. Those still need the bench device (see the customer
+rehearsal in `AGENTS.md`).
+
 ## Current dependency
 
 The current main branch contains Issue #177 Core's

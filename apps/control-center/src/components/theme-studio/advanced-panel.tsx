@@ -51,7 +51,10 @@ export function AdvancedPanel({
         >
           <TabsList
             aria-label="Advanced editor sections"
-            className="grid h-auto w-full grid-cols-2"
+            // The list's own height is set under this variant, so only the
+            // same variant lifts it; a plain h-auto leaves the second row of
+            // tabs hanging out over the panel below.
+            className="grid w-full grid-cols-2 group-data-horizontal/tabs:h-auto"
           >
             {TABS.map((tab) => (
               <TabsTrigger

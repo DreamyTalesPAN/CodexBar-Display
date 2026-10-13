@@ -270,6 +270,41 @@ func TestFindBinaryUsesOnlyAppManagedPinnedPayload(t *testing.T) {
 	}
 }
 
+// The app-managed copy's version is the pinned one its path is keyed by, so a
+// probe or settings read never waits on starting it (#508). Any other CLI is
+// still asked.
+func TestInstalledVersionDoesNotRunTheAppManagedCLI(t *testing.T) {
+	t.Setenv(appManagedCodexBarVersionEnvVar, "0.63.0")
+	home := t.TempDir()
+	testenv.Home(t, home)
+	privateCLI := runtimepaths.Path(home, "CodexBar", "0.63.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI")
+	otherCLI := filepath.Join(t.TempDir(), "codexbar")
+	for _, path := range []string{privateCLI, otherCLI} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 1\n"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	original := runVersionCommandFn
+	t.Cleanup(func() { runVersionCommandFn = original })
+	var ran []string
+	runVersionCommandFn = func(_ context.Context, _ time.Duration, bin string, _ ...string) ([]byte, error) {
+		ran = append(ran, bin)
+		return nil, errors.New("slow first launch")
+	}
+
+	version, err := installedVersion(context.Background(), privateCLI)
+	want, _ := parseLooseVersion("0.63.0")
+	if err != nil || version.Compare(want) != 0 || len(ran) != 0 {
+		t.Fatalf("app-managed CLI: version=%s err=%v ran=%v, want 0.63.0 without running it", version, err, ran)
+	}
+	if _, err := installedVersion(context.Background(), otherCLI); err == nil || len(ran) != 1 || ran[0] != otherCLI {
+		t.Fatalf("other CLI: err=%v ran=%v, want it asked and failing", err, ran)
+	}
+}
+
 func TestFindBinaryRejectsSymlinkedAppManagedPinnedPayload(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -375,6 +410,114 @@ func TestProviderReadinessClassifiesStructuredFixtures(t *testing.T) {
 	}
 }
 
+// Anthropic answers 429 while a customer is connecting Claude during setup.
+// That is not a fault they can repair: the sign-in works and the usage service
+// is healthy, so it must not be classified as an auth or engine failure and
+// must not advise repairing anything.
+func TestProviderReadinessClassifiesRateLimitAsWaitAndRetry(t *testing.T) {
+	for _, detail := range []string{
+		"Claude CLI usage endpoint is rate limited right now. Please try again later.",
+		"usage request failed: too many requests",
+		"unexpected status 429 from usage endpoint",
+	} {
+		if got := classifyProviderError(detail); got != ProviderRateLimited {
+			t.Fatalf("%q: expected %s, got %s", detail, ProviderRateLimited, got)
+		}
+	}
+
+	result := providerResult("claude", ProviderRateLimited)
+	advice := strings.ToLower(result.Detail + " " + result.NextAction)
+	for _, wrong := range []string{"repair", "sign in", "permission"} {
+		if strings.Contains(advice, wrong) {
+			t.Fatalf("rate-limit copy should not mention %q: %+v", wrong, result)
+		}
+	}
+	if !strings.Contains(advice, "wait") {
+		t.Fatalf("rate-limit copy should tell the customer to wait: %+v", result)
+	}
+}
+
+// A sign-in failure may name the data it wanted to read. Telling that customer
+// to wait hides the sign-in they must repair, so the bare noun must not be
+// mistaken for throttling.
+func TestProviderReadinessKeepsAuthFailuresThatMentionRateLimitData(t *testing.T) {
+	for _, detail := range []string{
+		"Codex connection failed: codex account authentication required to read rate limits",
+		"no cookies in session while reading rate limit data",
+	} {
+		if got := classifyProviderError(detail); got != ProviderAuthRequired {
+			t.Fatalf("%q: expected %s, got %s", detail, ProviderAuthRequired, got)
+		}
+	}
+}
+
+// "429" inside a request id, a process id or a duration is not an HTTP status.
+// Reading it as throttling hid the sign-in or the timeout behind "wait a few
+// minutes, nothing needs to be fixed".
+func TestProviderClassificationIgnores429InsideOtherNumbers(t *testing.T) {
+	for detail, want := range map[string]string{
+		"HTTP 401 authentication_error (request req_01429ab)": ProviderAuthRequired,
+		"session expired, helper pid 14290":                   ProviderAuthRequired,
+		"timed out after 14290ms":                             ProviderTimeout,
+	} {
+		if got := classifyProviderError(detail); got != want {
+			t.Fatalf("%q: expected %s, got %s", detail, want, got)
+		}
+		if got := classifyProviderHealth(detail); got == ProviderHealthRateLimited {
+			t.Fatalf("%q: the health scan read a number as throttling", detail)
+		}
+	}
+	// The status on its own still is throttling.
+	if got := classifyProviderError("usage endpoint answered HTTP 429."); got != ProviderRateLimited {
+		t.Fatalf("a standalone 429 must stay rate_limited, got %s", got)
+	}
+}
+
+// The cached health scan speaks for a row whenever no fresh exact readiness
+// does, so it has to reach the same verdict. It used to read the bundled
+// "OAuth ... rate limited" message as auth_required and offer a sign-in the
+// customer did not need (#448).
+func TestProviderHealthClassifiesThrottlingLikeReadiness(t *testing.T) {
+	for _, detail := range []string{
+		"OAuth error: Claude OAuth usage endpoint is rate limited",
+		"usage request failed: too many requests",
+		"unexpected status 429 from usage endpoint",
+	} {
+		if got := classifyProviderHealth(detail); got != ProviderHealthRateLimited {
+			t.Fatalf("%q: expected %s, got %s", detail, ProviderHealthRateLimited, got)
+		}
+	}
+	// A credential the provider could not use at all is still a sign-in
+	// failure, even when throttling is mentioned in the same summary.
+	for _, detail := range []string{
+		"Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: rate limited.",
+		"OAuth token expired",
+		"authentication required to read rate limits",
+	} {
+		if got := classifyProviderHealth(detail); got != ProviderHealthAuthRequired {
+			t.Fatalf("%q: expected %s, got %s", detail, ProviderHealthAuthRequired, got)
+		}
+	}
+}
+
+// A provider-scoped probe answers through CodexBar's own stand-in when the
+// usage call itself fails. Losing the rate limit there told the customer their
+// account exposes no usage instead of asking them to wait.
+func TestExactProviderReadinessKeepsRateLimitFromStandIn(t *testing.T) {
+	got := exactProviderReadinessFromOutput(
+		"claude",
+		nil,
+		errors.New("usage request failed: too many requests"),
+		nil,
+	)
+	if got.Status != ProviderRateLimited {
+		t.Fatalf("exact probe dropped the rate limit: %+v", got)
+	}
+	if got.ID != "claude" {
+		t.Fatalf("exact probe must answer for the requested provider: %+v", got)
+	}
+}
+
 func TestProviderReadinessClassifiesTimeoutWithoutSecrets(t *testing.T) {
 	got := providerReadinessFromOutput(nil, context.DeadlineExceeded, context.DeadlineExceeded)
 	if len(got) != 1 || got[0].Status != ProviderTimeout || strings.Contains(got[0].Detail, "deadline") {
@@ -473,11 +616,6 @@ func TestProbeProviderSetupForProviderUsesExactAutoUsage(t *testing.T) {
 	if got.Providers[0].Source != "cli" || got.Providers[0].CollectedAt != "2026-07-24T08:00:00Z" {
 		t.Fatalf("missing safe source/freshness diagnostics: %+v", got.Providers[0])
 	}
-	if got.ExactUsage == nil || got.ExactUsage.Provider != "antigravity" ||
-		got.ExactUsage.Frame.Session != 17 || got.ExactUsage.Frame.Weekly != 23 ||
-		got.ExactUsage.CollectedAt.Format(time.RFC3339) != "2026-07-24T08:00:00Z" {
-		t.Fatalf("exact usage was not retained for immediate companion refresh: %+v", got.ExactUsage)
-	}
 	want := []string{"usage", "--json", "--provider", "antigravity", "--source", "auto", "--web-timeout", "8"}
 	if !reflect.DeepEqual(usageArgs, want) {
 		t.Fatalf("unexpected exact usage args: got %v want %v", usageArgs, want)
@@ -551,35 +689,6 @@ func TestProbeProviderSetupGivesEachWindowsProviderProbeItsOwnBudget(t *testing.
 		if hasDeadline {
 			t.Fatalf("probe %d ran under the shared aggregate deadline; each provider needs its own budget", i)
 		}
-	}
-}
-
-func TestProbeProviderSetupForProviderDoesNotCacheUndatedExactUsage(t *testing.T) {
-	originalUsage := runUsageCommandFn
-	originalVersion := runVersionCommandFn
-	defer func() {
-		runUsageCommandFn = originalUsage
-		runVersionCommandFn = originalVersion
-	}()
-	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
-	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("CODEXBAR_BIN", bin)
-	setExistingConfig(t)
-	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
-		return []byte("CodexBar 0.44.0"), nil
-	}
-	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
-		if len(args) >= 2 && args[0] == "config" && args[1] == "providers" {
-			return []byte(`[{"provider":"future-provider","displayName":"Future Provider","enabled":true}]`), nil
-		}
-		return []byte(`[{"provider":"future-provider","source":"oauth","usage":{"secondary":{"usedPercent":23}}}]`), nil
-	}
-
-	got := ProbeProviderSetupForProvider(context.Background(), t.TempDir(), "future-provider")
-	if got.Status != ProviderReady || got.ExactUsage != nil {
-		t.Fatalf("undated provider usage must be ready but not immediately cached: %+v", got)
 	}
 }
 
@@ -932,5 +1041,24 @@ func TestProviderVersionTimeoutDoesNotRequestEngineRepair(t *testing.T) {
 	}
 	if got := ProbeProviderSetup(context.Background(), t.TempDir()); got.Engine.Status != ProviderEngineIncompatible {
 		t.Fatalf("old engine must still require repair: %+v", got)
+	}
+}
+
+func TestPermissionCopyNamesTheHostSystem(t *testing.T) {
+	original := providerCopyGOOS
+	t.Cleanup(func() { providerCopyGOOS = original })
+
+	providerCopyGOOS = "darwin"
+	mac := providerResult("claude", ProviderPermissionRequired)
+	if mac.Detail != "macOS blocked access required by this provider." ||
+		mac.NextAction != "Allow the requested macOS permission, then check again." {
+		t.Fatalf("macOS copy changed: %+v", mac)
+	}
+
+	providerCopyGOOS = "windows"
+	windows := providerResult("claude", ProviderPermissionRequired)
+	if windows.Detail != "Windows blocked access required by this provider." ||
+		windows.NextAction != "Allow the requested access, then check again." {
+		t.Fatalf("Windows copy = %+v", windows)
 	}
 }

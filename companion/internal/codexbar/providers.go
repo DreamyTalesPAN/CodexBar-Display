@@ -17,8 +17,9 @@ const minProviderSettingsVersion = "0.27.0"
 
 var runProviderCommandFn = runUsageCommand
 
-// providerProbePerProvider is true where the CLI is Win-CodexBar 0.56.8: no usage call
-// for every switched-on provider (Win-CodexBar 0.56.8, see runUsageAllEnabled).
+// providerProbePerProvider is true where the CLI is the pinned Win-CodexBar
+// (scripts/fetch-win-codexbar.ps1): it has no usage call for every
+// switched-on provider (see runUsageAllEnabled).
 // A variable so the Windows path is testable on the Mac.
 var providerProbePerProvider = runtime.GOOS == "windows"
 
@@ -57,7 +58,7 @@ func withoutDeadline(ctx context.Context) (context.Context, context.CancelFunc) 
 }
 
 // providerInventoryArgs is the CLI command for the provider inventory.
-// Win-CodexBar 0.56.8 has no JSON inventory (#415), so Windows reads the
+// The pinned Win-CodexBar has no JSON inventory (#415), so Windows reads the
 // text form that parseProviderSettings also understands.
 func providerInventoryArgs() []string {
 	if runtime.GOOS == "windows" {
@@ -66,21 +67,68 @@ func providerInventoryArgs() []string {
 	return []string{"config", "providers", "--json"}
 }
 
+var engineInventory engineAnswer[[]byte]
+
+// inventoryMaxAge is the longest an inventory answer is kept. Win-CodexBar
+// 0.60.3 answers with its default switches, Claude and Codex on, and exit
+// code 0 whenever it cannot read or decrypt settings.json. One answer can
+// therefore be wrong while the file is untouched; asked again, the CLI
+// corrects itself. A minute keeps that as short as the engine's own refresh
+// and still takes away most of the starts: the five readers asked every 30 s.
+const inventoryMaxAge = time.Minute
+
+// readProviderInventory runs the inventory command with the caller's runner.
+// Where engine answers are reused (Windows, reuseEngineAnswers) it returns
+// the last answer instead for as long as the CLI and its settings.json are
+// unchanged, up to inventoryMaxAge: Win-CodexBar 0.60.3 builds the inventory
+// from those two files and nothing else. Every write to settings.json moves
+// its stamp, the CLI's own on a provider switch included, and
+// SetProviderEnabled forgets the answer as well. Only an answer that parses
+// is kept.
+//
+// The check of one named provider -- "Check again" on its row, and the check
+// after it was switched on -- does not come through here; it always asks the
+// CLI (probeProviderSetup).
+func readProviderInventory(ctx context.Context, timeout time.Duration, bin string, run func(context.Context, time.Duration, string, ...string) ([]byte, error)) ([]byte, error) {
+	stamp := engineStamp(bin, windowsSettingsPath())
+	if raw, ok := engineInventory.load(stamp, inventoryMaxAge); ok {
+		return raw, nil
+	}
+	raw, err := run(ctx, timeout, bin, providerInventoryArgs()...)
+	if stamp != "" && err == nil {
+		if _, parseErr := parseProviderSettings(raw); parseErr == nil {
+			engineInventory.store(stamp, raw)
+		}
+	}
+	return raw, err
+}
+
 // runUsageAllEnabled asks for usage of every switched-on provider. The Mac
-// CLI does that with a plain "usage --json". Win-CodexBar 0.56.8 defaults to
-// Claude only and its "--provider all" walks all 69 providers, which does not
-// finish inside the probe timeout (#415). Windows therefore reads the
+// CLI does that with a plain "usage --json". The pinned Win-CodexBar defaults
+// to Claude only and its "--provider all" walks every provider it knows,
+// which does not finish inside the probe timeout (#415). Windows therefore reads the
 // inventory and asks each switched-on provider on its own, side by side, then
 // joins the answers into the same JSON array the Mac CLI returns.
 func runUsageAllEnabled(ctx context.Context, timeout time.Duration, bin string, extra ...string) ([]byte, error) {
+	if !providerProbePerProvider && !UsesServeReading(ctx) {
+		return runUsageCommandFn(ctx, timeout, bin, append([]string{"usage", "--json"}, extra...)...)
+	}
+	// Serve's reading answers only for the providers the inventory has
+	// switched on, on the Mac too: what serve lists may still be the set from
+	// before a switch.
+	raw, err := readProviderInventory(ctx, 5*time.Second, bin, runUsageCommandFn)
+	var inventory []ProviderSetting
+	if err == nil {
+		inventory, err = parseProviderSettings(raw)
+	}
+	if err == nil {
+		if answer, ok := serveUsageAnswer(ctx, inventory); ok {
+			return answer, nil
+		}
+	}
 	if !providerProbePerProvider {
 		return runUsageCommandFn(ctx, timeout, bin, append([]string{"usage", "--json"}, extra...)...)
 	}
-	raw, err := runUsageCommandFn(ctx, 5*time.Second, bin, providerInventoryArgs()...)
-	if err != nil {
-		return nil, fmt.Errorf("read provider inventory: %w", err)
-	}
-	inventory, err := parseProviderSettings(raw)
 	if err != nil {
 		return nil, fmt.Errorf("read provider inventory: %w", err)
 	}
@@ -196,6 +244,10 @@ type ProviderHealthState string
 const (
 	ProviderHealthHealthy      ProviderHealthState = "healthy"
 	ProviderHealthAuthRequired ProviderHealthState = "auth_required"
+	// ProviderHealthRateLimited: the sign-in works and the provider's own
+	// usage endpoint refused this check for being too frequent. Waiting fixes
+	// it, so the row must not offer a sign-in the customer does not need.
+	ProviderHealthRateLimited ProviderHealthState = "rate_limited"
 	// ProviderHealthBrowserSignIn: signed in to the tool, but the usage
 	// endpoint only answers a browser session. See ProviderBrowserSignInRequired.
 	ProviderHealthBrowserSignIn ProviderHealthState = "browser_sign_in_required"
@@ -268,6 +320,9 @@ func ProviderSettingsErrorKindOf(err error) ProviderSettingsErrorKind {
 
 // FetchProviderSettings reads CodexBar's dynamic provider inventory and joins
 // best-effort health. Provider errors are classified here and never exposed.
+// On Windows, under WithServeReading, the health is serve's last reading
+// where that covers every switched-on provider. The Mac always runs its own
+// scan, which also brings the service status.
 func FetchProviderSettings(ctx context.Context) ([]ProviderSetting, error) {
 	settings, bin, err := fetchProviderInventory(ctx)
 	if err != nil {
@@ -295,7 +350,7 @@ func FetchProviderSettings(ctx context.Context) ([]ProviderSetting, error) {
 
 // runProviderHealthProbe reads best-effort health for the switched-on
 // providers. The Mac CLI answers a plain "usage --json --status" for all of
-// them. Win-CodexBar 0.56.8 answers that call for Claude only and leaves the
+// them. The pinned Win-CodexBar answers that call for Claude only and leaves the
 // other switched-on providers out entirely, so they would stay "checking"
 // forever and block the provider step (#437). Windows therefore probes each
 // switched-on provider on its own, exactly like runUsageAllEnabled, and joins
@@ -303,7 +358,14 @@ func FetchProviderSettings(ctx context.Context) ([]ProviderSetting, error) {
 func runProviderHealthProbe(ctx context.Context, timeout time.Duration, bin string, settings []ProviderSetting) ([]byte, error) {
 	statusArgs := []string{"--status", "--web-timeout", "8"}
 	if !providerProbePerProvider {
+		// Never answered from serve's reading: this is the one call that
+		// brings the provider's status page, and serve's answer has none.
 		return runProviderCommandFn(ctx, timeout, bin, append([]string{"usage", "--json"}, statusArgs...)...)
+	}
+	// Win-CodexBar prints the status as status.level, which is not read
+	// here, so on Windows the probes add nothing to serve's reading (#555).
+	if answer, ok := serveUsageAnswer(ctx, settings); ok {
+		return answer, nil
 	}
 	// Each probe gets its own short budget (#437): under the caller's shared
 	// deadline (25 s in the background health refresh) a slow first provider
@@ -347,8 +409,7 @@ func fetchProviderInventory(ctx context.Context) ([]ProviderSetting, string, err
 		return nil, "", err
 	}
 
-	timeout := commandTimeout()
-	raw, err := runProviderCommandFn(ctx, timeout, bin, providerInventoryArgs()...)
+	raw, err := readProviderInventory(ctx, commandTimeout(), bin, runProviderCommandFn)
 	if err != nil {
 		return nil, "", providerSettingsError(ProviderSettingsErrorUnavailable, err)
 	}
@@ -381,6 +442,10 @@ func SetProviderEnabled(ctx context.Context, providerID string, enabled bool) er
 	if enabled {
 		action = "enable"
 	}
+	// The switch ends whatever the inventory said before it, also when it
+	// fails halfway: the next read asks the CLI.
+	defer engineInventory.store("", nil)
+	defer forgetServeUsage()
 	// Consent first: if the settings file cannot take the flag, Claude
 	// stays switched off and the UI matches CodexBar without a rollback.
 	if enabled && providerID == "claude" && providerProbePerProvider {
@@ -402,7 +467,7 @@ func SetProviderEnabled(ctx context.Context, providerID string, enabled bool) er
 }
 
 // providerToggleArgs is the CLI command that switches one provider on or off.
-// The Mac CLI takes the provider as "--provider <id>"; Win-CodexBar 0.56.8
+// The Mac CLI takes the provider as "--provider <id>"; the pinned Win-CodexBar
 // takes it as a positional argument and rejects the flag (#437). The ID has
 // been validated against the live inventory, so it can never be mistaken for
 // an option.
@@ -444,7 +509,7 @@ func parseProviderSettings(raw []byte) ([]ProviderSetting, error) {
 		DefaultEnabled bool   `json:"defaultEnabled"`
 	}
 	if err := json.Unmarshal(bytes.TrimSpace(raw), &inventory); err != nil {
-		// Win-CodexBar (0.56.8) has no JSON inventory yet; see #415.
+		// The pinned Win-CodexBar has no JSON inventory yet; see #415.
 		return parseProviderSettingsText(raw)
 	}
 	settings := make([]ProviderSetting, 0, len(inventory))
@@ -595,6 +660,15 @@ func classifyProviderHealth(raw string) ProviderHealthState {
 		return ProviderHealthUnsupported
 	}
 	message := strings.ToLower(raw)
+	// Before the auth markers, and for the same reason classifyProviderError
+	// puts it first: the provider names the endpoint that refused ("usage
+	// endpoint is rate limited") while the sign-in it used is still valid.
+	// Reading that as auth_required sent the customer to re-authenticate
+	// something that already works, whenever the cached health scan spoke for
+	// the row instead of a fresh exact readiness.
+	if isThrottlingDetail(message) && !namesUnusableCredential(message) {
+		return ProviderHealthRateLimited
+	}
 	for _, marker := range []string{"auth", "unauthorized", "oauth", "expired", "sign in", "signin", "login", "cookie", "token"} {
 		if strings.Contains(message, marker) {
 			return ProviderHealthAuthRequired

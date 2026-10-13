@@ -669,6 +669,60 @@ func TestSenderReadsCableHealthForExactDevice(t *testing.T) {
 	}
 }
 
+func TestSenderAsksForCableHealthAgainWhenAnExchangeIsLost(t *testing.T) {
+	path := "/dev/mock"
+	port := newMockSerialPort()
+	reply := []byte(`{"kind":"health","deviceId":"14799300","health":{"ok":true}}` + "\n")
+	answered := false
+	// The first request goes unanswered, as when VibeTV is busy drawing.
+	port.readHook = func(int) {
+		port.mu.Lock()
+		defer port.mu.Unlock()
+		if len(port.writePayloads) >= 2 && !answered {
+			answered = true
+			port.readQueue = append(port.readQueue, reply)
+		}
+	}
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener:      &mockOpener{portsByPath: map[string]SerialPort{path: port}},
+		Sleep:       func(time.Duration) {},
+		HelloWindow: 30 * time.Second,
+	})
+	sender.requestRetryStep = 20 * time.Millisecond
+	defer sender.Close()
+
+	started := time.Now()
+	health, err := sender.ReadHealth(path, "14799300")
+	if err != nil {
+		t.Fatalf("read health after a lost exchange: %v", err)
+	}
+	if !strings.Contains(string(health), `"ok":true`) {
+		t.Fatalf("unexpected health payload: %s", health)
+	}
+	if elapsed := time.Since(started); elapsed > 5*time.Second {
+		t.Fatalf("a lost health exchange held the port for %s", elapsed)
+	}
+	if len(port.writePayloads) != 2 {
+		t.Fatalf("expected the request to be sent twice, got %d", len(port.writePayloads))
+	}
+}
+
+func TestSenderGivesUpOnCableHealthAfterTheWindow(t *testing.T) {
+	path := "/dev/mock"
+	port := newMockSerialPort()
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener:      &mockOpener{portsByPath: map[string]SerialPort{path: port}},
+		Sleep:       func(time.Duration) {},
+		HelloWindow: 60 * time.Millisecond,
+	})
+	sender.requestRetryStep = 20 * time.Millisecond
+	defer sender.Close()
+
+	if _, err := sender.ReadHealth(path, "14799300"); !errors.Is(err, errHealthUnanswered) {
+		t.Fatalf("expected the unanswered error after the window, got %v", err)
+	}
+}
+
 func TestSenderConfiguresWiFiWithoutLoggingOrReusingTheSecret(t *testing.T) {
 	port := newMockSerialPort()
 	port.readQueue = [][]byte{[]byte(`{"kind":"connection-mode","status":"switching","deviceId":"14799300","mode":"wifi"}` + "\n")}

@@ -16,6 +16,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Item, ItemGroup } from "@/components/ui/item";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatResetCountdown, secondsSince } from "@/lib/reset-countdown";
 import { cn } from "@/lib/utils";
 import { SETUP_REVEAL } from "./setup-reveal";
 import type { ProviderItem } from "../provider-picker";
@@ -111,6 +112,23 @@ export function setupProviderNeedsOwnApp(
   );
 }
 
+/**
+ * How long ago a provider that is on delivered its last usage reading, or
+ * that it has not delivered one yet (#368).
+ * Beside the message, never part of it.
+ */
+export function setupProviderNoReadingLine(
+  since: string | undefined,
+  now = new Date(),
+): string | null {
+  if (!since) return "No usage reading yet.";
+  const seconds = secondsSince(since, now);
+  // Below a minute the provider only just stopped: nothing to say.
+  return seconds < 60
+    ? null
+    : `No usage reading for ${formatResetCountdown(seconds)}.`;
+}
+
 type ProviderListProps = {
   className?: string;
   onCheckAgain: (provider: ProviderItem) => void;
@@ -186,6 +204,7 @@ export function ProviderList({
               key={provider.id}
               label={provider.label}
               detail={provider.health.message}
+              noReadingLine={setupProviderNoReadingLine(provider.health.noReadingSince)}
               onOpenSignIn={onOpenSignIn && setupProviderOffersSignIn(provider) ? () => onOpenSignIn(provider) : undefined}
               onCheckAgain={() => onCheckAgain(provider)}
               onOpenSetupGuide={onOpenSetupGuide && setupProviderNeedsOwnApp(provider) ? onOpenSetupGuide : undefined}
@@ -195,22 +214,23 @@ export function ProviderList({
             />
           );
         })}
-        {matching.length === 0 ? (
-          <Empty
-            className={cn(
-              "bg-muted/50 py-8 ring-1 ring-foreground/10",
-              SETUP_REVEAL,
-            )}
-          >
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <SearchX size={17} aria-hidden />
-              </EmptyMedia>
-              <EmptyTitle>No AI providers match your search.</EmptyTitle>
-            </EmptyHeader>
-          </Empty>
-        ) : null}
       </ItemGroup>
+      {/* After the list, not in it: a list may only hold list items. */}
+      {matching.length === 0 ? (
+        <Empty
+          className={cn(
+            "bg-muted/50 py-8 ring-1 ring-foreground/10",
+            SETUP_REVEAL,
+          )}
+        >
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <SearchX size={17} aria-hidden />
+            </EmptyMedia>
+            <EmptyTitle>No AI providers match your search.</EmptyTitle>
+          </EmptyHeader>
+        </Empty>
+      ) : null}
 
       {remaining > 0 ? (
         <Button

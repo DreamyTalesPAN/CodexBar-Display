@@ -4,6 +4,7 @@ import {
   themeStudioSpecUsesProviderSlots,
   themeStudioSpecUsesProviderAssets,
   themeStudioSpecUsesColorStops,
+  themeStudioSpecUsesProgressArc,
   themeStudioSpecUsesTextValign,
   themeStudioSpecUsesAgentStates,
   themeStudioSpecUsesUsageWindows,
@@ -22,6 +23,7 @@ export type ThemeStudioDeviceCapabilities = {
   supportsColorStopsV1?: boolean;
   supportsTextValignV1?: boolean;
   supportsAgentThemeStatesV1?: boolean;
+  supportsProgressArcV1?: boolean;
   maxUsageWindows?: number;
   supportsStoredThemes?: boolean;
   maxThemeSpecBytes?: number;
@@ -126,6 +128,14 @@ export function validateThemeAgainstCapabilities(
   }
   if (themeStudioSpecUsesAgentStates(normalized) && caps.supportsAgentThemeStatesV1 !== true) {
     errors.push("This VibeTV needs a firmware update before it can use this theme.");
+  }
+  if (
+    themeStudioSpecUsesProgressArc(normalized) &&
+    caps.supportsProgressArcV1 !== true
+  ) {
+    errors.push(
+      "This VibeTV needs a firmware update before it can use this theme.",
+    );
   }
   const maxUsageIndex = Math.max(
     -1,

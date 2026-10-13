@@ -6,9 +6,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/testenv"
 )
 
@@ -46,7 +49,6 @@ func TestValidatePinnedCLIEnforcesTrustBeforeExecuting(t *testing.T) {
 	for _, failure := range []string{"signature", "identity", "gatekeeper", "version", ""} {
 		t.Run(failure, func(t *testing.T) {
 			// The fixture supplies a different fake version for the same file.
-			lastInstalledVersion.Store(nil)
 			versionCalled := false
 			pinnedRun = func(_ context.Context, name string, args ...string) ([]byte, error) {
 				if name == "/usr/bin/codesign" && args[0] == "--verify" && failure == "signature" {
@@ -63,8 +65,12 @@ func TestValidatePinnedCLIEnforcesTrustBeforeExecuting(t *testing.T) {
 				}
 				return nil, nil
 			}
-			runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+			runVersionCommandFn = func(_ context.Context, timeout time.Duration, _ string, _ ...string) ([]byte, error) {
 				versionCalled = true
+				// The first start of a new copy takes about 3 s on a busy Mac.
+				if timeout < 10*time.Second {
+					return nil, context.DeadlineExceeded
+				}
 				if failure == "version" {
 					return []byte("CodexBar 0.45.0"), nil
 				}
@@ -89,6 +95,42 @@ func TestPreparePinnedCLIRejectsUnsafePathBeforeReadingArchive(t *testing.T) {
 	}
 	if _, err := PreparePinnedCLI(context.Background(), "missing.zip", false); err == nil {
 		t.Fatal("accepted symlink")
+	}
+}
+
+// Issue #556: an installed copy that passes the check is used as it is. Only
+// one that fails sends the app back to the bundled archive.
+func TestPreparePinnedCLIChecksTheInstalledCopyBeforeUnpacking(t *testing.T) {
+	home := t.TempDir()
+	testenv.Home(t, home)
+	installed := filepath.Join(runtimepaths.Root(home), "CodexBar", PinnedVersion, "CodexBar.app", "Contents", "Helpers", "CodexBarCLI")
+	writeExecutable(t, installed)
+	oldRun, oldVersion := pinnedRun, runVersionCommandFn
+	t.Cleanup(func() { pinnedRun = oldRun; runVersionCommandFn = oldVersion })
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte("CodexBar " + PinnedVersion), nil
+	}
+	signatureHolds := true
+	var ran []string
+	pinnedRun = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		ran = append(ran, filepath.Base(name))
+		if name == "/usr/bin/codesign" && args[0] == "--verify" && !signatureHolds {
+			return nil, errors.New("bad signature")
+		}
+		return []byte("Identifier=" + pinnedBundle + "\nTeamIdentifier=" + pinnedTeam + "\n"), nil
+	}
+
+	bin, err := PreparePinnedCLI(context.Background(), "missing.zip", false)
+	if err != nil || bin != installed {
+		t.Fatalf("a copy that passes must be used without the archive: bin=%q err=%v", bin, err)
+	}
+	if slices.Contains(ran, "ditto") {
+		t.Fatalf("the archive was unpacked over a copy that passes: %v", ran)
+	}
+
+	signatureHolds = false
+	if _, err := PreparePinnedCLI(context.Background(), "missing.zip", false); err == nil || !strings.Contains(err.Error(), "missing.zip") {
+		t.Fatalf("a copy that fails must send the app to the archive, got %v", err)
 	}
 }
 

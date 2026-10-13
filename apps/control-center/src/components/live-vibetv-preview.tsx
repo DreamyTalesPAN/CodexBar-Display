@@ -20,6 +20,11 @@ import {
   themeRenderPackUrl,
 } from "./control-center-runtime";
 import { loadLocalThemeRenderPack } from "@/lib/local-theme-render-pack";
+import {
+  formatResetCountdown,
+  remainingResetSecs,
+  secondsSince,
+} from "@/lib/reset-countdown";
 
 type LiveVibeTVPreviewProps = {
   device: DeviceInfo | null;
@@ -82,6 +87,9 @@ type DisplayFrame = {
   sessionUnavailable?: boolean;
   weeklyUnavailable?: boolean;
   resetSecs?: number;
+  resetTrust?: string;
+  resetTrustSecs?: number;
+  resetSource?: string;
   usageMode?: string;
   usageWindows?: UsageWindowFrame[];
   usageSlots?: UsageSlotFrame[];
@@ -155,6 +163,12 @@ export type ThemePrimitive = {
   sg?: number;
   segmentGap?: number;
   gg?: number;
+  arcStart?: number;
+  as?: number;
+  arcSweep?: number;
+  aw?: number;
+  arcThickness?: number;
+  at?: number;
   colorStops?: Array<{ gte?: number; color?: string; c?: string }>;
   cs?: Array<{ gte?: number; color?: string; c?: string }>;
   assetPath?: string;
@@ -183,20 +197,24 @@ export type FrameData = {
     percent: number;
     resetSecs: number;
     available: boolean;
+    idle: boolean;
   }>;
   usageSlot1Label: string;
   usageSlot1Percent: number;
   usageSlot1ResetSecs: number;
   usageSlot1Available: boolean;
+  usageSlot1Idle: boolean;
   usageSlot2Label: string;
   usageSlot2Percent: number;
   usageSlot2ResetSecs: number;
   usageSlot2Available: boolean;
+  usageSlot2Idle: boolean;
   providerSlots: Array<{
     label: string;
     percent: number;
     resetSecs: number;
     available: boolean;
+    idle: boolean;
   }>;
   activity: string;
   agentName?: string;
@@ -225,20 +243,22 @@ export const THEME_CATALOG_PREVIEW_FRAME: FrameData = {
   resetSecs: 3600,
   usageMode: "used",
   usageWindows: [
-    { label: "Session", percent: 64, resetSecs: 3600, available: true },
-    { label: "Weekly", percent: 28, resetSecs: 7200, available: true },
+    { label: "Session", percent: 64, resetSecs: 3600, available: true, idle: false },
+    { label: "Weekly", percent: 28, resetSecs: 7200, available: true, idle: false },
   ],
   usageSlot1Label: "Session",
   usageSlot1Percent: 64,
   usageSlot1ResetSecs: 3600,
   usageSlot1Available: true,
+  usageSlot1Idle: false,
   usageSlot2Label: "Weekly",
   usageSlot2Percent: 28,
   usageSlot2ResetSecs: 7200,
   usageSlot2Available: true,
+  usageSlot2Idle: false,
   providerSlots: [
-    { label: "Claude", percent: 64, resetSecs: 3600, available: true },
-    { label: "Codex", percent: 28, resetSecs: 12000, available: true },
+    { label: "Claude", percent: 64, resetSecs: 3600, available: true, idle: false },
+    { label: "Codex", percent: 28, resetSecs: 12000, available: true, idle: false },
   ],
   activity: "preview",
   sessionTokens: 1_400_000,
@@ -508,6 +528,8 @@ export function LiveVibeTVPreview({
       assets={pack.assets || {}}
       deviceFrameMs={device?.display?.themeSpec?.cbaLastFrameDurationMs}
       frame={frame}
+      // In standby VibeTV reports its screensaver as the active theme.
+      screensaver={device?.standby?.active ? pack.name || "" : undefined}
       spec={pack.spec}
       themeId={pack.themeId || themeId}
     />
@@ -652,12 +674,14 @@ function ThemeSpecSVG({
   deviceFrameMs = 0,
   assets,
   frame,
+  screensaver,
   spec,
   themeId,
 }: {
   animate?: boolean;
   assets: Record<string, ThemePackAsset>;
   frame: FrameData;
+  screensaver?: string;
   spec: ThemeSpec;
   themeId: string;
   deviceFrameMs?: number;
@@ -711,7 +735,7 @@ function ThemeSpecSVG({
   return (
     <svg
       ref={svgRef}
-      aria-label={themeSpecAriaLabel(themeId, renderedFrame)}
+      aria-label={themeSpecAriaLabel(themeId, renderedFrame, screensaver)}
       className="size-full bg-black [image-rendering:pixelated]"
       role="img"
       viewBox="0 0 240 240"
@@ -1059,7 +1083,33 @@ function ThemeProgress({
   );
   const innerWidth = Math.max(0, width - 2);
   const innerHeight = Math.max(0, height - 2);
-  const style = primitive.progressStyle || primitive.ps || "";
+  // A long-form key that is present decides, also when it is empty, as on
+  // VibeTV: `"progressStyle":""` beside `"ps":"arc"` is a straight bar.
+  const style = primitive.progressStyle ?? primitive.ps ?? "";
+  if (style === "arc") {
+    const arc = themeProgressArc(primitive, percent);
+    // Each stroke runs clockwise along the middle of the ring. A circle's
+    // outline starts at 3 o'clock, a quarter turn after 12 o'clock.
+    const stroke = (degrees: number, color: string) =>
+      arc && degrees > 0 ? (
+        <circle
+          cx={arc.cx}
+          cy={arc.cy}
+          fill="none"
+          r={arc.radius}
+          stroke={color}
+          strokeDasharray={`${(arc.radius * degrees * Math.PI) / 180} ${arc.radius * 2 * Math.PI}`}
+          strokeWidth={arc.thickness}
+          transform={`rotate(${arc.start - 90} ${arc.cx} ${arc.cy})`}
+        />
+      ) : null;
+    return (
+      <g>
+        {stroke(arc?.sweep ?? 0, bgColor)}
+        {stroke(arc?.filled ?? 0, fillColor)}
+      </g>
+    );
+  }
   const segmented = style === "segments" || style === "segmented";
   const radius = clampRadius(
     primitive.borderRadius ?? primitive.br ?? 0,
@@ -1321,7 +1371,9 @@ export function buildFrameData(
   displayFrame: DisplayFrame,
   currentTime = new Date(),
 ): FrameData {
-  if (displayFrame.usageUnavailable) {
+  // A lifecycle-only carrier shows the agent and none of the retained quota.
+  // Without an agent, retained windows stay listed and read unavailable below.
+  if (displayFrame.usageUnavailable && displayFrame.agentName?.trim()) {
     displayFrame = {
       ...displayFrame,
       session: undefined, weekly: undefined, resetSecs: undefined,
@@ -1331,14 +1383,9 @@ export function buildFrameData(
       sessionTokens: undefined, weekTokens: undefined, totalTokens: undefined,
     };
   }
-  const savedAt = generatedAt ? new Date(generatedAt) : currentTime;
-  const usableSavedAt = Number.isNaN(savedAt.getTime()) ? currentTime : savedAt;
-  const elapsedSeconds = Math.max(
-    0,
-    Math.floor((currentTime.getTime() - usableSavedAt.getTime()) / 1000),
-  );
+  const elapsedSeconds = secondsSince(generatedAt, currentTime);
   const remainingResetSeconds = (seconds: number | undefined) =>
-    Math.max(0, (seconds ?? 0) - elapsedSeconds);
+    remainingResetSecs(seconds, generatedAt, currentTime);
   const sourceUsageMode = frameUsageMode(displayFrame);
   const slots = (
     (displayFrame.usageWindows?.length
@@ -1347,6 +1394,40 @@ export function buildFrameData(
   ).filter((slot) => Boolean(slot.id?.trim() && slot.label?.trim()));
   const slot1 = slots[0];
   const slot2 = slots[1];
+  const providerSlots = (displayFrame.providerSlots || []).filter((slot) =>
+    Boolean(slot.id?.trim() && slot.label?.trim()),
+  );
+  // Mirrors ApplyFrameResetTrust and CurrentResetTrust in
+  // codexbar_display_core.h: the device stands behind a frame only while it is
+  // not marked stale and its trust budget has not run out. A "live" frame is
+  // the host's statement that the basis is current and stands without a
+  // deadline (an account in which no window has a reset time, #532); every
+  // other frame needs at least one deadline. Without that basis a window with
+  // no deadline is unavailable, not idle.
+  const trustEnforced =
+    displayFrame.resetTrust === "live" || displayFrame.resetTrust === "offline";
+  const basisTrusted =
+    displayFrame.resetTrust !== "stale" &&
+    // Retained windows of a failed collection stay unavailable, as on the device.
+    displayFrame.usageUnavailable !== true &&
+    (displayFrame.resetTrust === "live" ||
+      [displayFrame, ...slots, ...providerSlots].some(
+        (carrier) => (carrier.resetSecs ?? 0) > 0,
+      )) &&
+    (!trustEnforced ||
+      (Boolean(displayFrame.resetSource) &&
+        (displayFrame.resetTrustSecs ?? 0) - elapsedSeconds > 0));
+  // Mirrors CurrentUsageWindowRemainingSecs: idle is a window the host sent
+  // with no deadline and nothing used. No deadline alone is not enough -- the
+  // host also sends 0 for a deadline that ran out before the frame left and
+  // for a provider that names none. In "remaining" mode the host sends what is
+  // left, so nothing used reads 100. A provider slot is only sent with a
+  // deadline and is never idle.
+  const nothingUsedPercent = sourceUsageMode === "remaining" ? 100 : 0;
+  const windowIsIdle = (slot: UsageWindowFrame | UsageSlotFrame | undefined) =>
+    basisTrusted &&
+    (slot?.resetSecs ?? 0) <= 0 &&
+    clampPercent(slot?.percent) === nothingUsedPercent;
   return {
     provider: displayFrame.provider || "",
     label: displayFrame.label || displayFrame.provider || "",
@@ -1361,23 +1442,25 @@ export function buildFrameData(
       percent: clampPercent(slot.percent),
       resetSecs: remainingResetSeconds(slot.resetSecs),
       available: true,
+      idle: windowIsIdle(slot),
     })),
     usageSlot1Label: slot1?.label || "",
     usageSlot1Percent: clampPercent(slot1?.percent),
     usageSlot1ResetSecs: remainingResetSeconds(slot1?.resetSecs),
     usageSlot1Available: Boolean(slot1),
+    usageSlot1Idle: Boolean(slot1) && windowIsIdle(slot1),
     usageSlot2Label: slot2?.label || "",
     usageSlot2Percent: clampPercent(slot2?.percent),
     usageSlot2ResetSecs: remainingResetSeconds(slot2?.resetSecs),
     usageSlot2Available: Boolean(slot2),
-    providerSlots: (displayFrame.providerSlots || [])
-      .filter((slot) => Boolean(slot.id?.trim() && slot.label?.trim()))
-      .map((slot) => ({
-        label: slot.label || "",
-        percent: clampPercent(slot.percent),
-        resetSecs: remainingResetSeconds(slot.resetSecs),
-        available: true,
-      })),
+    usageSlot2Idle: Boolean(slot2) && windowIsIdle(slot2),
+    providerSlots: providerSlots.map((slot) => ({
+      label: slot.label || "",
+      percent: clampPercent(slot.percent),
+      resetSecs: remainingResetSeconds(slot.resetSecs),
+      available: true,
+      idle: false,
+    })),
     activity: displayFrame.activity || "idle",
     agentName: displayFrame.agentName,
     animationsDisabled: displayFrame.animationsDisabled,
@@ -1427,11 +1510,21 @@ export function primitiveUsageSlotVisible(
   return true;
 }
 
-export function themeSpecAriaLabel(themeId: string, frame: FrameData): string {
+export function themeSpecAriaLabel(
+  themeId: string,
+  frame: FrameData,
+  // The title of the screensaver when that is what the picture shows; it may
+  // be empty.
+  screensaver?: string,
+): string {
   const usage = frame.usageWindows
     .filter((window) => window.available)
     .map((window) => `${window.label} ${window.percent}% ${frame.usageMode}`);
-  return `Rendered VibeTV theme ${themeId} showing ${frame.label}, ${usage.length > 0 ? usage.join(", ") : "no usage windows available"}`;
+  const shown =
+    screensaver === undefined
+      ? `theme ${themeId}`
+      : `screensaver ${screensaver}`.trim();
+  return `Rendered VibeTV ${shown} showing ${frame.label}, ${usage.length > 0 ? usage.join(", ") : "no usage windows available"}`;
 }
 
 function frameUsageMode(displayFrame: DisplayFrame | undefined): string {
@@ -1530,6 +1623,33 @@ export function themeRenderPackMatchesActiveRevision(
 // device never shows.
 const RESET_UNAVAILABLE = "Reset unavailable";
 
+// Mirrors kResetIdleText in theme_spec_renderer_core.h. A window that is
+// current and measured but has no deadline is idle, not broken: the customer
+// simply has not started a session yet, so nothing is scheduled to reset.
+const RESET_IDLE = "No active session";
+
+// Mirrors RootResetIsIdle in theme_spec_renderer_core.h. The root {reset}
+// token owns no window, so it is idle only when every window the frame does
+// carry is idle; a stale basis leaves no idle window behind and keeps the
+// unavailable wording.
+function rootResetIsIdle(frame: FrameData): boolean {
+  const windows = frame.usageWindows.filter((window) => window.available);
+  return windows.length > 0 && windows.every((window) => window.idle);
+}
+
+// Whether a theme draws a value that boundValue shows as "--" on a computer
+// without token history.
+export function themeShowsTokenTotals(spec?: ThemeSpec | null): boolean {
+  return (spec?.primitives || spec?.p || []).some((primitive) => {
+    const binding = primitive.binding || primitive.b;
+    return binding
+      ? /^(sessionTokens|weekTokens|totalTokens|st|wt|tt)$/.test(binding)
+      : /\{(sessionTokens|weekTokens|totalTokens|st|wt|tt)\}/.test(
+          primitive.text || primitive.v || "",
+        );
+  });
+}
+
 export function renderTextPrimitive(
   primitive: ThemePrimitive,
   frame: FrameData,
@@ -1539,17 +1659,107 @@ export function renderTextPrimitive(
     return boundValue(binding, frame);
   }
   const raw = primitive.text || primitive.v || "";
-  // RenderTextTemplate replaces the whole template for an expired root
-  // countdown instead of substituting in place, so the surrounding literal
-  // text disappears. Only the root tokens do this — {usage.N.reset}, {us1r}
-  // and {pv1r} substitute inline, and the device really does render
-  // "Reset in Reset unavailable" for those.
+  // RenderTextTemplate replaces the whole template for an expired countdown
+  // instead of substituting in place, so the surrounding literal text
+  // disappears. This covers the root tokens and, since the idle-session fix,
+  // any template whose only substitution is an unavailable slot countdown:
+  // shipped themes hard-code "Resets in {usageSlot1Reset}", and substituting
+  // in place produced "Resets in Reset unavailable" on a customer's screen.
   if (frame.resetSecs <= 0 && /\{reset\}|\{resetCountdown\}|\{r\}/.test(raw)) {
-    return RESET_UNAVAILABLE;
+    return rootResetIsIdle(frame) ? RESET_IDLE : RESET_UNAVAILABLE;
+  }
+  const countdownOnly = templateCountdownOnlyText(raw, frame);
+  if (countdownOnly) {
+    return countdownOnly;
   }
   return raw.replace(/\{([a-zA-Z0-9_.-]+)\}/g, (_match, key: string) =>
     boundValue(key, frame),
   );
+}
+
+// Mirrors TemplateCountdownOnlyText in theme_spec_renderer_core.h.
+// A template that also substitutes a label or a percentage still carries
+// information, so it keeps its in-place substitution; an unavailable window
+// renders empty rather than as the unavailable text, so it is left alone too.
+function templateCountdownOnlyText(
+  raw: string,
+  frame: FrameData,
+): string | null {
+  const tokens = raw.match(/\{([a-zA-Z0-9_.-]+)\}/g);
+  if (!tokens || tokens.length === 0) {
+    return null;
+  }
+  let sawUnavailableCountdown = false;
+  let allIdle = true;
+  for (const token of tokens) {
+    const key = token.slice(1, -1);
+    const slot = slotCountdownFor(key, frame);
+    if (!slot) {
+      return null;
+    }
+    if (!slot.available || slot.resetSecs > 0) {
+      return null;
+    }
+    sawUnavailableCountdown = true;
+    allIdle = allIdle && slot.idle;
+  }
+  if (!sawUnavailableCountdown) {
+    return null;
+  }
+  return allIdle ? RESET_IDLE : RESET_UNAVAILABLE;
+}
+
+function slotCountdownFor(
+  key: string,
+  frame: FrameData,
+): { available: boolean; resetSecs: number; idle: boolean } | undefined {
+  const usageMatch = /^usage\.(\d+)\.reset$/.exec(key);
+  if (usageMatch) {
+    const window = frame.usageWindows[Number(usageMatch[1])];
+    return window
+      ? {
+          available: window.available,
+          resetSecs: window.resetSecs,
+          idle: window.idle,
+        }
+      : undefined;
+  }
+  switch (key) {
+    case "usageSlot1Reset":
+    case "us1r":
+      return {
+        available: frame.usageSlot1Available,
+        resetSecs: frame.usageSlot1ResetSecs,
+        idle: frame.usageSlot1Idle,
+      };
+    case "usageSlot2Reset":
+    case "us2r":
+      return {
+        available: frame.usageSlot2Available,
+        resetSecs: frame.usageSlot2ResetSecs,
+        idle: frame.usageSlot2Idle,
+      };
+    case "providerSlot1Reset":
+    case "pv1r":
+      return frame.providerSlots[0]
+        ? {
+            available: frame.providerSlots[0].available,
+            resetSecs: frame.providerSlots[0].resetSecs,
+            idle: frame.providerSlots[0].idle,
+          }
+        : undefined;
+    case "providerSlot2Reset":
+    case "pv2r":
+      return frame.providerSlots[1]
+        ? {
+            available: frame.providerSlots[1].available,
+            resetSecs: frame.providerSlots[1].resetSecs,
+            idle: frame.providerSlots[1].idle,
+          }
+        : undefined;
+    default:
+      return undefined;
+  }
 }
 
 // Mirrors the firmware's FormatTokenCount digit for digit (truncated
@@ -1607,7 +1817,7 @@ export function boundValue(key: string, frame: FrameData): string {
       return window.label;
     }
     if (field === "reset") {
-      return formatReset(window.resetSecs);
+      return formatReset(window.resetSecs, window.idle);
     }
     return String(window.percent);
   }
@@ -1630,7 +1840,7 @@ export function boundValue(key: string, frame: FrameData): string {
     case "reset":
     case "resetCountdown":
     case "r":
-      return formatReset(frame.resetSecs);
+      return formatReset(frame.resetSecs, rootResetIsIdle(frame));
     case "usageSlot1Label":
     case "us1l":
       return frame.usageSlot1Available ? frame.usageSlot1Label : "";
@@ -1640,7 +1850,7 @@ export function boundValue(key: string, frame: FrameData): string {
     case "usageSlot1Reset":
     case "us1r":
       return frame.usageSlot1Available
-        ? formatReset(frame.usageSlot1ResetSecs)
+        ? formatReset(frame.usageSlot1ResetSecs, frame.usageSlot1Idle)
         : "";
     case "usageSlot1Available":
     case "us1a":
@@ -1654,7 +1864,7 @@ export function boundValue(key: string, frame: FrameData): string {
     case "usageSlot2Reset":
     case "us2r":
       return frame.usageSlot2Available
-        ? formatReset(frame.usageSlot2ResetSecs)
+        ? formatReset(frame.usageSlot2ResetSecs, frame.usageSlot2Idle)
         : "";
     case "usageSlot2Available":
     case "us2a":
@@ -1670,7 +1880,7 @@ export function boundValue(key: string, frame: FrameData): string {
     case "providerSlot1Reset":
     case "pv1r":
       return frame.providerSlots[0]?.available
-        ? formatReset(frame.providerSlots[0].resetSecs)
+        ? formatReset(frame.providerSlots[0].resetSecs, frame.providerSlots[0].idle)
         : "";
     case "providerSlot1Available":
     case "pv1a":
@@ -1686,7 +1896,7 @@ export function boundValue(key: string, frame: FrameData): string {
     case "providerSlot2Reset":
     case "pv2r":
       return frame.providerSlots[1]?.available
-        ? formatReset(frame.providerSlots[1].resetSecs)
+        ? formatReset(frame.providerSlots[1].resetSecs, frame.providerSlots[1].idle)
         : "";
     case "providerSlot2Available":
     case "pv2a":
@@ -1737,6 +1947,40 @@ export function progressPercent(
     return frame.weeklyUnavailable ? 0 : frame.weekly;
   }
   return frame.sessionUnavailable ? 0 : frame.session;
+}
+
+// The ring an arc-style progress draws, as CompilePrimitive and
+// DrawProgressArc in theme_spec_renderer_core.h work it out: inside the box,
+// angles in whole degrees clockwise from 12 o'clock, and the filled share of
+// the sweep cut to whole degrees. The device skips an arc outside its limits,
+// so there is none here either.
+export function themeProgressArc(primitive: ThemePrimitive, percent: number) {
+  const width = primitive.width || primitive.w || 0;
+  const height = primitive.height || primitive.h || 0;
+  const diameter = Math.min(width, height);
+  const start = primitive.arcStart ?? primitive.as ?? 0;
+  const sweep = primitive.arcSweep ?? primitive.aw ?? 0;
+  const thickness = primitive.arcThickness ?? primitive.at ?? 0;
+  if (
+    ![start, sweep, thickness].every(Number.isInteger) ||
+    start < 0 ||
+    start > 359 ||
+    sweep < 1 ||
+    sweep > 360 ||
+    thickness < 1 ||
+    thickness * 2 > diameter
+  ) {
+    return null;
+  }
+  return {
+    cx: (primitive.x || 0) + width / 2,
+    cy: (primitive.y || 0) + height / 2,
+    radius: (diameter - thickness) / 2,
+    thickness,
+    start,
+    sweep,
+    filled: Math.floor((sweep * Math.max(0, Math.min(100, percent))) / 100),
+  };
 }
 
 function resolveProgressFillColor(
@@ -2253,19 +2497,9 @@ function clampPercent(value?: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
-function formatReset(seconds?: number): string {
+function formatReset(seconds?: number, idle = false): string {
   if (!seconds || seconds <= 0) {
-    return RESET_UNAVAILABLE;
+    return idle ? RESET_IDLE : RESET_UNAVAILABLE;
   }
-  const totalMinutes = Math.floor(seconds / 60);
-  const days = Math.floor(totalMinutes / (24 * 60));
-  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
-  const minutes = totalMinutes % 60;
-  if (days > 0) {
-    return `${days}d ${hours}h`;
-  }
-  if (hours > 0) {
-    return `${hours}h ${minutes}m`;
-  }
-  return `${minutes}m`;
+  return formatResetCountdown(seconds);
 }

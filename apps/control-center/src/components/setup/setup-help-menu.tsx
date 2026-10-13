@@ -9,11 +9,18 @@ import { copyForHost } from "@/lib/customer-platform";
 import { SETUP_REVEAL } from "./setup-reveal";
 import type { SupportDiagnostics } from "../control-center-types";
 import { SetupEventLog, SetupEventsContext } from "../setup-event-log";
-import { downloadSupportReport } from "../support-report";
+import { isNativeControlCenterApp, onNativeDownloadFinished } from "../control-center-runtime";
+import { downloadSupportReport, supportReportFilename } from "../support-report";
 
 const OUTCOME_MS = 5000;
 
-export type Outcome = "prompt-copied" | "report-saved" | "report-partial" | "failed";
+export type Outcome =
+  | "prompt-copied"
+  | "report-created"
+  | "report-saved"
+  | "report-saved-as-chosen"
+  | "report-partial"
+  | "failed";
 
 /** An outcome replaces the entry that produced it, never the other one. */
 export function belongsToReport(outcome: Outcome | null): boolean {
@@ -26,8 +33,19 @@ export const HELP_OUTCOME_COPY: Record<Outcome, { detail: string; title: string 
       "Paste it into any AI. It includes your support log and current screen.",
     title: "Prompt copied!",
   },
+  // The Mac app asks where to save, and the customer can cancel (issue #588):
+  // until its save dialog has ended, nothing says the report was saved.
+  "report-created": {
+    detail: "Choose where to save the report.",
+    title: "Report created",
+  },
   "report-saved": {
     detail: "It is in your Downloads folder. Attach it when you ask for help.",
+    title: "Report saved",
+  },
+  // Saved through the Mac app's dialog: the customer chose the folder.
+  "report-saved-as-chosen": {
+    detail: "Attach it when you ask for help.",
     title: "Report saved",
   },
   // A report the Mac App could not contribute to is still worth having, but
@@ -71,6 +89,12 @@ export function SetupHelpMenu({
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
+  // The report the Mac app's save dialog is open for, and what to say once
+  // it was saved.
+  const [awaitingSave, setAwaitingSave] = useState<{
+    fileName: string;
+    saved: Outcome;
+  } | null>(null);
   const [showLog, setShowLog] = useState(false);
   const setupLogAvailable = useContext(SetupEventsContext) !== null;
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -116,6 +140,22 @@ export function SetupHelpMenu({
     outcomeTimerRef.current = setTimeout(() => setOutcome(null), OUTCOME_MS);
   }
 
+  // The Mac app says how its save dialog ended: a saved report is confirmed,
+  // and after Cancel nothing is shown. An older Mac app says nothing.
+  useEffect(() => {
+    if (!awaitingSave) {
+      return;
+    }
+    return onNativeDownloadFinished(awaitingSave.fileName, (saved) => {
+      setAwaitingSave(null);
+      if (saved) {
+        reportOutcome(awaitingSave.saved);
+      } else {
+        setOutcome((current) => (current === "report-created" ? null : current));
+      }
+    });
+  }, [awaitingSave]);
+
   async function askAiToFix() {
     if (!aiFixPrompt) {
       return;
@@ -142,9 +182,16 @@ export function SetupHelpMenu({
         return;
       }
       downloadSupportReport(report);
-      reportOutcome(
-        report.collectionErrors?.length ? "report-partial" : "report-saved",
-      );
+      const partial = Boolean(report.collectionErrors?.length);
+      if (!windowsHost && isNativeControlCenterApp()) {
+        setAwaitingSave({
+          fileName: supportReportFilename(report.generatedAt),
+          saved: partial ? "report-partial" : "report-saved-as-chosen",
+        });
+        reportOutcome("report-created");
+        return;
+      }
+      reportOutcome(partial ? "report-partial" : "report-saved");
     } catch {
       reportOutcome("failed");
     } finally {

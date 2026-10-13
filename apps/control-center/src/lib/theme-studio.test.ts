@@ -108,6 +108,58 @@ describe("validateThemeSpec", () => {
     },
   );
 
+  // The Mac App refuses such a pack, so Theme Studio must not call it valid.
+  // Themes saved before single pictures were named .cbi still hold the first.
+  it.each([
+    ["face.cba", "CBI1\n1 1\n1\n#FFFFFF\na\n", "a single picture saved as an animation"],
+    ["blink.cbi", "CBA1\n1 1 2 8\n1\n#FFFFFF\na\na\n", "an animation saved as a single picture"],
+  ])("rejects the sprite %s whose name does not match its content", (file, data, problem) => {
+    const spec = validSpec();
+    const assetPath = `/themes/u/${file}`;
+    spec.primitives = [
+      { assetPath, height: 1, type: "sprite", width: 1, x: 0, y: 0 },
+    ];
+    const assets = {
+      [assetPath]: { contentType: "text/plain", data, encoding: "text" as const },
+    };
+    const error = `Element 1: ${assetPath} is ${problem}. Remove this element and import the sprite again.`;
+
+    expect(validateThemeSpec(spec, assets).errors).toEqual([error]);
+    expect(() => buildThemePack(spec, "Mismatched sprite", assets)).toThrow(error);
+  });
+
+  // Issue #558: the export of "QA3 Night" was called vibetv-theme-my-theme-5.zip.
+  it.each([
+    ["QA3 Night", "vibetv-theme-qa3-night.zip"],
+    ["  Müsli / Bar: 2  ", "vibetv-theme-muesli-bar-2.zip"],
+    // German umlauts are spelled out, other accents dropped; before, both of
+    // these gave "gr-e".
+    ["Größe", "vibetv-theme-groesse.zip"],
+    ["Grüße", "vibetv-theme-gruesse.zip"],
+    ["ÄÖÜ Café Olé", "vibetv-theme-aeoeue-cafe-ole.zip"],
+    // At most 80 characters of the name, and no "-" left at the cut.
+    ["a".repeat(300), `vibetv-theme-${"a".repeat(80)}.zip`],
+    [`${"a".repeat(79)} b`, `vibetv-theme-${"a".repeat(79)}.zip`],
+    ["夜", "vibetv-theme-my-theme-5.zip"],
+    ["", "vibetv-theme-my-theme-5.zip"],
+  ])("names the exported file after the theme %j", (name, fileName) => {
+    const spec = { ...validSpec(), themeId: "my-theme-5" };
+    expect(buildThemePack(spec, name, {}).fileName).toBe(fileName);
+  });
+
+  // Seen on the Windows app on 2026-10-09: a screensaver's export was called
+  // vibetv-theme-….zip.
+  it("names an exported screensaver a screensaver", () => {
+    const spec = { ...validSpec(), themeId: "my-screensaver" };
+    expect(buildThemePack(spec, "Night Drift", {}, "screensaver").fileName).toBe(
+      "vibetv-screensaver-night-drift.zip",
+    );
+    expect(buildThemePack(spec, "", {}, "screensaver").fileName).toBe(
+      "vibetv-screensaver-my-screensaver.zip",
+    );
+    expect(buildThemePack(spec, "Night Drift", {}).fileName).toBe("vibetv-theme-night-drift.zip");
+  });
+
   it("builds a screensaver pack in its own slot without hidden state assets", () => {
     const spec = validSpec();
     spec.primitives = [
@@ -539,6 +591,50 @@ describe("buildThemePack capability declaration", () => {
       "text-valign-v1",
     ]);
     expect(pack.manifest.minFirmware).toBe("1.0.42");
+  });
+});
+
+describe("arc-style progress", () => {
+  const arc = { t: "p", x: 20, y: 30, w: 200, h: 180, b: "us1p", ps: "arc", as: 225, aw: 270, at: 16, c: "#22C55E", bg: "#1E293B" };
+  const specWith = (primitive: Record<string, unknown>) =>
+    importThemeSpec({ v: 1, id: "arc-test", rev: 1, bg: "#000000", p: [primitive] });
+
+  it("opens, validates and exports an arc unchanged", () => {
+    const imported = specWith(arc);
+    expect(imported.primitives[0]).toMatchObject({
+      type: "progress", progressStyle: "arc", arcStart: 225, arcSweep: 270, arcThickness: 16,
+      binding: "usageSlot1Percent", bgColor: "#1E293B",
+    });
+    expect(validateThemeSpec(imported).errors).toEqual([]);
+    expect(JSON.parse(deviceThemeSpecJson(imported)).p[0]).toEqual(arc);
+    // Saving normalizes the spec; a second round must not lose the arc either.
+    expect(JSON.parse(deviceThemeSpecJson(normalizeThemeSpec(imported))).p[0]).toEqual(arc);
+    const long = specWith({ type: "progress", x: 0, y: 0, width: 100, height: 100, progressStyle: "arc", arcStart: 0, arcSweep: 360, arcThickness: 50 });
+    expect(validateThemeSpec(long).errors).toEqual([]);
+    expect(JSON.parse(deviceThemeSpecJson(long)).p[0]).toMatchObject({ ps: "arc", as: 0, aw: 360, at: 50 });
+  });
+
+  it("declares progress-arc-v1 for an arc and not for a bar", () => {
+    const pack = buildThemePack(specWith(arc), "Arc");
+    expect(pack.manifest.requiredCapabilities).toEqual(["usage-slots-v1", "progress-arc-v1"]);
+    expect(pack.manifest.minFirmware).toBe("1.0.42");
+    expect(JSON.parse(pack.themeJson).p[0]).toMatchObject({ ps: "arc", as: 225, aw: 270, at: 16 });
+    const bar = buildThemePack(specWith({ ...arc, ps: "segments", h: 12 }), "Bar");
+    expect(bar.manifest.requiredCapabilities).toEqual(["usage-slots-v1"]);
+  });
+
+  it.each([
+    ["a start of a full turn", { arcStart: 360 }, "arc start must be between 0 and 359."],
+    ["a start below 0", { arcStart: -1 }, "arc start must be between 0 and 359."],
+    ["no sweep", { arcSweep: undefined }, "arc sweep must be between 1 and 360."],
+    ["a sweep above a full turn", { arcSweep: 361 }, "arc sweep must be between 1 and 360."],
+    ["a sweep with a fraction", { arcSweep: 90.5 }, "arc sweep must be between 1 and 360."],
+    ["no thickness", { arcThickness: undefined }, "arc thickness must be between 1 and half the smaller of width and height."],
+    ["a ring thicker than the radius", { arcThickness: 91 }, "arc thickness must be between 1 and half the smaller of width and height."],
+  ])("refuses %s, which the device would skip", (_name, change, error) => {
+    const spec = specWith(arc);
+    Object.assign(spec.primitives[0], change);
+    expect(validateThemeSpec(spec).errors).toEqual([`Element 1: ${error}`]);
   });
 });
 

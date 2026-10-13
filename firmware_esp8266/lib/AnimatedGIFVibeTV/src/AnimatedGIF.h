@@ -73,6 +73,9 @@
 #define MAX_COLORS 256
 #ifdef __LINUX__
 #define MAX_WIDTH 2048
+#elif ANIMATEDGIF_VIBETV_PROFILE
+// VibeTV's display is 240 px wide; open() rejects a wider canvas.
+#define MAX_WIDTH 240
 #else
 #define MAX_WIDTH 480
 #endif // __LINUX__
@@ -88,6 +91,20 @@
 #define LINK_UNUSED 5911 // 0x1717 to use memset
 #define LINK_END 5912
 #define MAX_HASH 5003
+#if ANIMATEDGIF_VIBETV_PROFILE
+// VibeTV keeps the decode buffers out of the decoder object. The caller lends
+// one GIF_WORKSPACE_SIZE buffer for each open() and playFrame() call and may
+// free it in between: every frame re-reads its header and rebuilds the LZW
+// table, so nothing in these buffers outlives a call. Layout (4-byte aligned):
+// file buffer, LZW data, code table, pixel table, line buffer, and 8 bytes of
+// slack for the word-sized over-reads of the decoder.
+#define GIF_WS_FILE_BUF 0
+#define GIF_WS_LZW (GIF_WS_FILE_BUF + FILE_BUF_SIZE)
+#define GIF_WS_GIF_TABLE (GIF_WS_LZW + ((LZW_BUF_SIZE + 3) & ~3))
+#define GIF_WS_GIF_PIXELS (GIF_WS_GIF_TABLE + (2<<MAX_CODE_SIZE))
+#define GIF_WS_LINE_BUF (GIF_WS_GIF_PIXELS + (PIXEL_LAST*2))
+#define GIF_WORKSPACE_SIZE (GIF_WS_LINE_BUF + MAX_WIDTH + 8)
+#endif
 // expanded LZW buffer for Turbo mode
 #define LZW_BUF_SIZE_TURBO (LZW_BUF_SIZE + (2<<MAX_CODE_SIZE) + (PIXEL_LAST*2) + MAX_WIDTH)
 #define LZW_HIGHWATER_TURBO ((LZW_BUF_SIZE_TURBO * 14) / 16)
@@ -208,6 +225,17 @@ typedef struct gif_image_tag
     unsigned char *pFrameBuffer;
     unsigned char *pTurboBuffer;
     unsigned char *pPixels, *pOldPixels;
+#if ANIMATEDGIF_VIBETV_PROFILE
+    // Point into the lent workspace (see GIF_WORKSPACE_SIZE); NULL between calls.
+    unsigned char *ucFileBuf;
+    unsigned char *ucLZW;
+    unsigned short *usGIFTable;
+    unsigned char *ucGIFPixels;
+    unsigned char *ucLineBuf;
+    // The VibeTV profile only ever stores RGB565 palettes.
+    unsigned short pPalette[MAX_COLORS];
+    unsigned short pLocalPalette[MAX_COLORS];
+#else
     unsigned char ucFileBuf[FILE_BUF_SIZE]; // holds temp data and pixel stack
     unsigned short pPalette[(MAX_COLORS * 3)/2]; // can hold RGB565 or RGB888 - set in begin()
     unsigned short pLocalPalette[(MAX_COLORS * 3)/2]; // color palettes for GIF images
@@ -216,6 +244,7 @@ typedef struct gif_image_tag
     unsigned short usGIFTable[1<<MAX_CODE_SIZE];
     unsigned char ucGIFPixels[(PIXEL_LAST*2)];
     unsigned char ucLineBuf[MAX_WIDTH]; // current line
+#endif
 } GIFIMAGE;
 
 #ifdef __cplusplus
@@ -252,6 +281,11 @@ class AnimatedGIF
     int getInfo(GIFINFO *pInfo);
     int getLastError();
     int getComment(char *destBuffer);
+#if ANIMATEDGIF_VIBETV_PROFILE
+    // Lends GIF_WORKSPACE_SIZE bytes for the next open()/playFrame() calls;
+    // NULL takes them back. Set it after begin(), which clears the decoder.
+    void setWorkspace(uint8_t *pWorkspace);
+#endif
 
   private:
     GIFIMAGE _gif;

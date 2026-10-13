@@ -2,7 +2,6 @@ package transport
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -197,11 +196,12 @@ func probeWiFiHello(ctx context.Context, client *http.Client, target string) (pr
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
 		return protocol.DeviceHello{}, fmt.Errorf("get device hello: status=%d body=%q", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
-	var hello protocol.DeviceHello
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&hello); err != nil {
+	// Discovery saves an address and a transport, so a hello without
+	// capabilities (issue #526) is not a found VibeTV here.
+	hello, err := protocol.DecodeWiFiHello(resp.Body)
+	if err != nil {
 		return protocol.DeviceHello{}, fmt.Errorf("decode device hello: %w", err)
 	}
-	hello = hello.Normalize()
 	if !isVibeTVHello(hello) {
 		return protocol.DeviceHello{}, fmt.Errorf("device hello does not look like VibeTV: board=%q", hello.Board)
 	}

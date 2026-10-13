@@ -29,8 +29,12 @@ const (
 	dashboardServeDefaultBackoffMax      = 30 * time.Second
 	dashboardServeDefaultHealthInterval  = 2 * time.Second
 	dashboardServeDefaultStartupTimeout  = 30 * time.Second
-	dashboardServeHealthTimeout          = 2 * time.Second
-	dashboardServeMaxHealthFailures      = 3
+	// On a Mac with every core busy the engine answers /health late, not
+	// never. With 2 s here a late answer skipped that collection, and three
+	// in a row killed a working engine, whose restart is the most expensive
+	// thing it can be asked to do under load (#557).
+	dashboardServeHealthTimeout     = 10 * time.Second
+	dashboardServeMaxHealthFailures = 3
 )
 
 type DashboardServe interface {
@@ -218,7 +222,8 @@ func (s *DashboardServeSupervisor) runOnce(ctx context.Context) error {
 		"--refresh-interval", strconv.Itoa(durationSecondsCeil(s.refreshInterval)),
 	)
 	if runtime.GOOS != "windows" {
-		// Win-CodexBar 0.56.8 rejects the flag and exits; see #415.
+		// The pinned Win-CodexBar (scripts/fetch-win-codexbar.ps1) rejects
+		// the flag and exits; see #415.
 		args = append(args, "--request-timeout", "0")
 	}
 
@@ -353,6 +358,9 @@ func (s *DashboardServeSupervisor) setStarted(endpoint string, pid int) {
 }
 
 func (s *DashboardServeSupervisor) setStopped(endpoint string, err error) {
+	// The collector does not read a stopped serve, so its last reading ends
+	// here.
+	forgetServeUsage()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if endpoint != "" {

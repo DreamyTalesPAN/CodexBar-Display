@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { SetupProviderRow } from "./setup-provider-row";
+import { SetupProviderRow, setupProviderRowVariant } from "./setup-provider-row";
 
 function render(props: Partial<Parameters<typeof SetupProviderRow>[0]> = {}) {
   return renderToStaticMarkup(
@@ -127,7 +127,7 @@ describe("SetupProviderRow", () => {
   it("hands a missing permission to CodexBar without sniffing its text", () => {
     const html = render({ health: "permission_required" });
 
-    expect(html).toContain("Allow access in macOS");
+    expect(html).toContain("Allow access on this computer");
     expect(html).toContain('aria-label="Check Claude Code again"');
     expect(html).not.toContain('aria-label="Open CodexBar"');
     expect(html).not.toContain("Full Disk Access settings");
@@ -262,4 +262,10 @@ describe("provider notices", () => {
     expect(html).toContain("Copy provider message");
     expect(html).toContain('role="switch"');
   });
+});
+
+// A throttled check is nothing the customer can repair. It needs no case of
+// its own: the re-check presentation is what every unnamed state gets.
+it("gives a rate-limited provider the re-check presentation, not a sign-in", () => {
+  expect(setupProviderRowVariant("rate_limited")).toBe("timed_out");
 });

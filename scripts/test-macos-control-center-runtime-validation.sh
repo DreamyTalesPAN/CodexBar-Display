@@ -4,7 +4,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HARNESS="${ROOT}/scripts/validate-macos-control-center-runtime.sh"
 SWIFT_SOURCE="${ROOT}/macos/VibeTVControlCenter/main.swift"
-FIRMWARE_VERSIONS="${ROOT}/release/firmware-versions.json"
 TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-runtime-contract.XXXXXX")"
 trap 'rm -rf "$TMP_ROOT"' EXIT HUP INT TERM
 
@@ -18,7 +17,6 @@ assert_contains() {
 }
 
 [[ -x "$HARNESS" ]] || die "runtime validation harness is missing or not executable"
-[[ -f "$FIRMWARE_VERSIONS" ]] || die "release firmware versions are missing"
 
 source_app="$TMP_ROOT/Signed Fixture.app"
 output="$("$HARNESS" --dry-run --app "$source_app" --expected-version v1.2.3)"
@@ -52,35 +50,14 @@ if "$HARNESS" --dry-run --app "$source_app" --expected-version latest \
   die "harness accepted an unpinned expected version"
 fi
 
-python3 - "$HARNESS" "$SWIFT_SOURCE" "$FIRMWARE_VERSIONS" <<'PY'
-import json
+python3 - "$HARNESS" "$SWIFT_SOURCE" <<'PY'
 import sys
 
 harness = open(sys.argv[1], encoding="utf-8").read()
 swift = open(sys.argv[2], encoding="utf-8").read()
-with open(sys.argv[3], encoding="utf-8") as source:
-    firmware_versions = json.load(source)
-
-esp8266_artifacts = [
-    artifact
-    for artifact in firmware_versions.get("artifacts", [])
-    if artifact.get("firmwareEnv") == "esp8266_smalltv_st7789"
-    and artifact.get("board") == "esp8266-smalltv-st7789"
-]
-if len(esp8266_artifacts) != 1:
-    raise SystemExit("release manifest must contain exactly one ESP8266 VibeTV artifact")
-version = str(esp8266_artifacts[0].get("firmwareVersion", "")).removeprefix("v")
-try:
-    version_parts = tuple(int(part) for part in version.split("."))
-except ValueError:
-    raise SystemExit(f"release ESP8266 firmware version is invalid: {version!r}")
-if len(version_parts) != 3:
-    raise SystemExit("release ESP8266 firmware version must use x.y.z semver")
 
 required_harness = [
-    'FIRMWARE_VERSIONS="$ROOT/release/firmware-versions.json"',
-    'artifact.get("firmwareEnv") == "esp8266_smalltv_st7789"',
-    'artifact.get("board") == "esp8266-smalltv-st7789"',
+    'FAKE_DEVICE_FIRMWARE="1.0.41"',
     'python3 - "$PORT_FILE" "$REQUEST_LOG" "$FAKE_DEVICE_FIRMWARE" "$FAKE_DEVICE_PAIRING_TOKEN"',
     'port_file, request_log, firmware, pairing_token = sys.argv[1:]',
     '"firmware":firmware',

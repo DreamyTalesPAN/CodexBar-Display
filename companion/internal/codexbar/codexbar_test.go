@@ -275,6 +275,40 @@ func TestParseProviderPayloadReadsExtraRateWindows(t *testing.T) {
 	}
 }
 
+// A customer's Claude account had no active session: Anthropic sent
+// `five_hour` with a real 0% and no `resets_at`, while the weekly window kept
+// a live deadline. The root countdown used to be overwritten with the session
+// window's zero, so the frame claimed a deadline of 0 while resetSource still
+// named the weekly window, and themes binding the root countdown showed
+// "Reset unavailable" despite a known weekly reset.
+func TestParseProviderPayloadKeepsWeeklyDeadlineWhenSessionIsIdle(t *testing.T) {
+	raw := []byte(`[
+		{
+			"provider":"claude",
+			"usage":{
+				"primary":{"usedPercent":0,"windowMinutes":300},
+				"secondary":{"usedPercent":32,"windowMinutes":10080,"resetsAt":"2099-01-02T01:00:00Z"}
+			}
+		}
+	]`)
+
+	parsed, err := parseAllProviders(raw)
+	if err != nil {
+		t.Fatalf("parseAllProviders failed: %v", err)
+	}
+	frame := parsed[0].Frame
+	if frame.ResetSec <= 0 {
+		t.Fatalf("expected the weekly deadline to survive an idle session, got %+v", frame)
+	}
+	if frame.ResetSource == "" {
+		t.Fatalf("a deadline without a source is unattributable: %+v", frame)
+	}
+	// The session window itself still reports no deadline of its own.
+	if len(frame.UsageWindows) == 0 || frame.UsageWindows[0].ResetSec != 0 {
+		t.Fatalf("expected the idle session window to carry no deadline, got %+v", frame.UsageWindows)
+	}
+}
+
 func TestParseProviderPayloadTreatsNamedOnlyUsageWindowsAsAvailable(t *testing.T) {
 	tests := []struct {
 		name string
@@ -512,66 +546,6 @@ func TestUsageBarsShowUsedFromEnv(t *testing.T) {
 	t.Setenv(usageModeEnvVar, "invalid")
 	if _, ok := usageBarsShowUsedFromEnv(); ok {
 		t.Fatalf("expected invalid env to skip override")
-	}
-}
-
-func TestInstalledVersionReusesOnlyUnchangedExecutable(t *testing.T) {
-	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
-	if err := os.WriteFile(bin, []byte("original"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	original := runVersionCommandFn
-	t.Cleanup(func() { runVersionCommandFn = original })
-	calls := 0
-	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
-		calls++
-		if calls > 1 {
-			return nil, context.DeadlineExceeded
-		}
-		return []byte("CodexBar 0.63.0"), nil
-	}
-	for range 3 {
-		version, err := installedVersion(context.Background(), bin)
-		if err != nil || version.String() != "0.63" {
-			t.Fatalf("unchanged executable: version=%v err=%v", version, err)
-		}
-	}
-	if calls != 1 {
-		t.Fatalf("unchanged executable was probed %d times", calls)
-	}
-	// An atomic app update can preserve the old size and timestamp.
-	info, err := os.Stat(bin)
-	if err != nil {
-		t.Fatal(err)
-	}
-	replacement := bin + ".new"
-	if err := os.WriteFile(replacement, []byte("replaced"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chtimes(replacement, info.ModTime(), info.ModTime()); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Rename(replacement, bin); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := installedVersion(context.Background(), bin); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("replaced executable used the old version: %v", err)
-	}
-	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
-		calls++
-		return []byte("CodexBar 0.22.0"), nil
-	}
-	if err := CheckMinimumVersion(context.Background(), bin); err == nil {
-		t.Fatal("replacement with old version must still be rejected")
-	}
-	if calls != 3 {
-		t.Fatalf("failed probe was cached: calls=%d", calls)
-	}
-	if err := os.WriteFile(bin, []byte("changed in place"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := installedVersion(context.Background(), bin); err != nil || calls != 4 {
-		t.Fatalf("in-place change must be probed: calls=%d err=%v", calls, err)
 	}
 }
 

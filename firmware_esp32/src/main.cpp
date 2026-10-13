@@ -102,10 +102,6 @@ void loop() {
   const unsigned long loopStartUs = micros();
   bool rendered = false;
   unsigned long renderDurationUs = 0;
-  if (codexbar_display::core::ExpireAgentActivity(runtimeCtx.runtime, millis())) {
-    runtimeCtx.screenDirty = true;
-  }
-
 
   String serialLine;
   if (codexbar_display::app::ReadSerialLine(runtimeCtx, serialLine)) {
@@ -120,6 +116,11 @@ void loop() {
         Serial.println("frame_received");
       }
     }
+  }
+
+  codexbar_display::core::SerialConsumeEvent expiry;
+  if (codexbar_display::core::ExpireActivity(runtimeCtx.runtime, millis(), expiry)) {
+    renderer.OnFrameAccepted(runtimeCtx, expiry);
   }
 
   if (codexbar_display::app::HasFrame(runtimeCtx) &&

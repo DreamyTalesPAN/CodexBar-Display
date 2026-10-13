@@ -245,6 +245,31 @@ func TestFindLegacyCableVibeTVAcceptsOnlyOnePreIdentityESP8266(t *testing.T) {
 	}
 }
 
+// Issue #536: a port another program holds was never asked, and the VibeTV
+// that needs the rescue may be on it, so the finder says so instead of "no
+// VibeTV answered". A VibeTV that answered on another port is still found.
+func TestFindLegacyCableVibeTVReportsABusyPort(t *testing.T) {
+	legacy := cableHello("")
+	legacy.Capabilities.Transport.Mode = ""
+	busy := wrapTransportError(errcode.TransportSerialOpen, "open-port", "/dev/cu.usbserial-busy", "", errors.New("resource busy"))
+	read := func(port string) (protocol.DeviceHello, error) {
+		if strings.Contains(port, "busy") {
+			return protocol.DeviceHello{}, busy
+		}
+		if strings.Contains(port, "legacy") {
+			return legacy, nil
+		}
+		return protocol.DeviceHello{}, ErrDeviceHelloUnavailable
+	}
+
+	if _, err := findLegacyCableVibeTV([]string{"/dev/cu.usbserial-busy", "/dev/cu.usbserial-silent"}, read); !errors.Is(err, busy) {
+		t.Fatalf("a busy port next to a silent one: got %v, want %v", err, busy)
+	}
+	if got, err := findLegacyCableVibeTV([]string{"/dev/cu.usbserial-busy", "/dev/cu.usbserial-legacy"}, read); err != nil || got.Port != "/dev/cu.usbserial-legacy" {
+		t.Fatalf("a busy port next to the VibeTV must not hide it: got=%+v err=%v", got, err)
+	}
+}
+
 func TestDiscoverVibeTVsReportsTheLegacyVibeTVItFound(t *testing.T) {
 	legacy := cableHello("")
 	legacy.Capabilities.Transport.Mode = ""
@@ -260,5 +285,42 @@ func TestDiscoverVibeTVsReportsTheLegacyVibeTVItFound(t *testing.T) {
 	}
 	if found.Board != legacy.Board || found.Firmware != "1.0.39" {
 		t.Fatalf("legacy VibeTV = %+v, want board %s firmware 1.0.39", found, legacy.Board)
+	}
+}
+
+// Issue #529: a port another program holds was never asked, and the VibeTV may
+// be on it, so the resolver says so whatever the other ports did. A device
+// that answered is still named, and a matching VibeTV is still found.
+func TestResolveVibeTVControlCandidatesReportsPortsThatCouldNotBeOpened(t *testing.T) {
+	busy := wrapTransportError(errcode.TransportSerialOpen, "open-port", "/dev/cu.usbserial-busy", "", errors.New("resource busy"))
+	silent := wrapTransportError(errcode.ProtocolDeviceHelloUnavailable, "read-hello", "/dev/cu.usbserial-silent", "", ErrDeviceHelloUnavailable)
+	readHello := func(path string) (protocol.DeviceHello, error) {
+		if strings.Contains(path, "busy") {
+			return protocol.DeviceHello{}, busy
+		}
+		if strings.Contains(path, "foreign") {
+			return protocol.DeviceHello{Kind: "hello", Board: "some-other-board"}, nil
+		}
+		if strings.Contains(path, "vibetv") {
+			return cableHello("14799300"), nil
+		}
+		return protocol.DeviceHello{}, silent
+	}
+	if got, err := resolveVibeTVCandidatesForControl([]string{"/dev/cu.usbserial-busy", "/dev/cu.usbserial-vibetv"}, "", "14799300", readHello, true); err != nil || got != "/dev/cu.usbserial-vibetv" {
+		t.Fatalf("a busy port next to the VibeTV must not hide it: got=%q err=%v", got, err)
+	}
+	for _, tc := range []struct {
+		name  string
+		ports []string
+		want  errcode.Code
+	}{
+		{"only busy ports", []string{"/dev/cu.usbserial-busy", "/dev/cu.usbserial-busy2"}, errcode.TransportSerialOpen},
+		{"a busy port next to a silent one", []string{"/dev/cu.usbserial-busy", "/dev/cu.usbserial-silent"}, errcode.TransportSerialOpen},
+		{"a busy port next to a foreign device", []string{"/dev/cu.usbserial-busy", "/dev/cu.usbserial-foreign"}, errcode.TransportForeignDevice},
+		{"only silent ports", []string{"/dev/cu.usbserial-silent"}, errcode.TransportNoMatchingDevice},
+	} {
+		if _, err := resolveVibeTVCandidatesForControl(tc.ports, "", "14799300", readHello, true); errcode.Of(err) != tc.want {
+			t.Fatalf("%s: got %v, want code %s", tc.name, err, tc.want)
+		}
 	}
 }

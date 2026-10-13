@@ -13,11 +13,15 @@ import {
 } from "@/components/ui/item";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import type { ApiError, DeviceCandidate } from "../control-center-types";
 import {
   DEVICE_TARGET_PLACEHOLDER,
   normalizeManualDeviceTarget,
 } from "../device-target-copy";
+import { candidateKey } from "./setup-connection";
+import { SetupDeviceCard } from "./setup-device-card";
 import { SetupDialog } from "./setup-dialog";
+import { selectedItemClass } from "./setup-selectable-card";
 
 const ADDRESS_ERROR = "Enter the IP address shown on the VibeTV screen.";
 
@@ -128,6 +132,10 @@ type NotFoundDialogProps = {
   windowsHost?: boolean;
 };
 
+// The two ways out of "not found" are buttons, so they look like the
+// connection cards in Settings: outlined, on the card background, with hover.
+const notFoundChoiceClass = `${selectedItemClass(false)} bg-card p-4 disabled:cursor-not-allowed disabled:opacity-50`;
+
 /** 02c — neither Cable nor WiFi discovery found a VibeTV. */
 export function SetupDeviceNotFoundDialog({
   busy = false,
@@ -151,8 +159,8 @@ export function SetupDeviceNotFoundDialog({
       }}
       title="We couldn't find your VibeTV"
     >
-      <ItemGroup className="gap-1">
-        <Item asChild>
+      <div className="flex w-full flex-col gap-3">
+        <Item asChild className={notFoundChoiceClass} variant="outline">
           <button
             className="text-left"
             disabled={busy}
@@ -171,7 +179,7 @@ export function SetupDeviceNotFoundDialog({
             </ItemContent>
           </button>
         </Item>
-        <Item asChild>
+        <Item asChild className={notFoundChoiceClass} variant="outline">
           <button
             className="text-left"
             disabled={busy}
@@ -189,7 +197,7 @@ export function SetupDeviceNotFoundDialog({
             </ItemContent>
           </button>
         </Item>
-      </ItemGroup>
+      </div>
     </SetupDialog>
   );
 }
@@ -298,5 +306,57 @@ export function SetupConnectFailedDialog({
       }}
       title={title}
     />
+  );
+}
+
+type DevicePickerDialogProps = {
+  candidates: DeviceCandidate[];
+  /** The last connect attempt's failure, shown in place of the prompt. */
+  error: ApiError | null;
+  onConnect: (candidate: DeviceCandidate) => void;
+  onOpenChange: (open: boolean) => void;
+};
+
+/**
+ * The device step's list, over the current screen: the VibeTV was lost after
+ * setup and the recovery search found VibeTVs it did not reconnect on its own.
+ */
+export function SetupDevicePickerDialog({
+  candidates,
+  error,
+  onConnect,
+  onOpenChange,
+}: DevicePickerDialogProps) {
+  const [selectedKey, setSelectedKey] = useState("");
+  const selected =
+    candidates.find((candidate) => candidateKey(candidate) === selectedKey) ??
+    candidates.find((candidate) => candidate.known) ??
+    candidates[0];
+  return (
+    <SetupDialog
+      description={
+        error?.nextAction ??
+        "Your VibeTV is not reachable. Choose it to connect again."
+      }
+      icon={CircleAlert}
+      onOpenChange={onOpenChange}
+      open
+      primaryAction={{
+        label: "Connect",
+        onSelect: () => selected && onConnect(selected),
+      }}
+      title={error?.message ?? "Choose your VibeTV"}
+    >
+      <ItemGroup aria-label="VibeTVs found" className="gap-3" role="radiogroup">
+        {candidates.map((candidate) => (
+          <SetupDeviceCard
+            candidate={candidate}
+            key={candidateKey(candidate)}
+            onSelect={() => setSelectedKey(candidateKey(candidate))}
+            selected={candidate === selected}
+          />
+        ))}
+      </ItemGroup>
+    </SetupDialog>
   );
 }

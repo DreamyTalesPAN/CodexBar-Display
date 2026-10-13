@@ -162,6 +162,122 @@
         "resetSource": "gemini",
         "resetTrust": "live"
       }
+    },
+    {
+      "name": "live-no-deadline",
+      "description": "Fresh collection of an account in which no window has a reset time: nothing is scheduled to reset. The basis is current, so the frame is live under the provider key and the device may say the account is idle.",
+      "collectedAgeSecs": 12,
+      "sourceLive": true,
+      "inputFrame": {
+        "v": 2,
+        "provider": "claude",
+        "label": "Claude",
+        "usageWindows": [
+          {"id": "session", "label": "Session", "percent": 0, "resetSecs": 0},
+          {"id": "weekly", "label": "Weekly", "percent": 0, "resetSecs": 0}
+        ]
+      },
+      "expectedFrame": {
+        "v": 2,
+        "provider": "claude",
+        "label": "Claude",
+        "resetSecs": 0,
+        "resetAgeSecs": 12,
+        "resetTrustSecs": 17988,
+        "resetSource": "claude",
+        "resetTrust": "live",
+        "usageWindows": [
+          {"id": "session", "label": "Session", "percent": 0, "resetSecs": 0},
+          {"id": "weekly", "label": "Weekly", "percent": 0, "resetSecs": 0}
+        ]
+      }
+    },
+    {
+      "name": "stale-no-deadline-last-good-resend",
+      "description": "The same frame resent after a failed collection. It says what the account looked like earlier, not that it is idle now, so it stays stale.",
+      "collectedAgeSecs": 300,
+      "sourceLive": false,
+      "inputFrame": {
+        "v": 2,
+        "provider": "claude",
+        "label": "Claude",
+        "usageWindows": [
+          {"id": "session", "label": "Session", "percent": 0, "resetSecs": 0},
+          {"id": "weekly", "label": "Weekly", "percent": 0, "resetSecs": 0}
+        ]
+      },
+      "expectedFrame": {
+        "v": 2,
+        "provider": "claude",
+        "label": "Claude",
+        "resetSecs": 0,
+        "resetAgeSecs": 300,
+        "resetTrustSecs": 0,
+        "resetSource": "claude",
+        "resetTrust": "stale",
+        "usageWindows": [
+          {"id": "session", "label": "Session", "percent": 0, "resetSecs": 0},
+          {"id": "weekly", "label": "Weekly", "percent": 0, "resetSecs": 0}
+        ]
+      }
+    },
+    {
+      "name": "stale-no-deadline-collection-time-unknown",
+      "description": "No window has a reset time and the host cannot say when the values were collected. The age is unknowable, so the frame stays stale.",
+      "basisUnknown": true,
+      "sourceLive": true,
+      "inputFrame": {
+        "v": 2,
+        "provider": "claude",
+        "label": "Claude",
+        "usageWindows": [
+          {"id": "session", "label": "Session", "percent": 0, "resetSecs": 0},
+          {"id": "weekly", "label": "Weekly", "percent": 0, "resetSecs": 0}
+        ]
+      },
+      "expectedFrame": {
+        "v": 2,
+        "provider": "claude",
+        "label": "Claude",
+        "resetSecs": 0,
+        "resetAgeSecs": 0,
+        "resetTrustSecs": 0,
+        "resetSource": "claude",
+        "resetTrust": "stale",
+        "usageWindows": [
+          {"id": "session", "label": "Session", "percent": 0, "resetSecs": 0},
+          {"id": "weekly", "label": "Weekly", "percent": 0, "resetSecs": 0}
+        ]
+      }
+    },
+    {
+      "name": "stale-no-deadline-deadline-ran-out",
+      "description": "The only reset time ran out between collection and send. That is an expired deadline, not an idle account, so the frame stays stale even though the source is live.",
+      "collectedAgeSecs": 900,
+      "sourceLive": true,
+      "inputFrame": {
+        "v": 2,
+        "provider": "claude",
+        "label": "Claude",
+        "usageWindows": [
+          {"id": "session", "label": "Session", "percent": 0, "resetSecs": 300},
+          {"id": "weekly", "label": "Weekly", "percent": 0, "resetSecs": 0}
+        ]
+      },
+      "expectedFrame": {
+        "v": 2,
+        "provider": "claude",
+        "label": "Claude",
+        "resetSecs": 0,
+        "resetAgeSecs": 900,
+        "resetTrustSecs": 0,
+        "resetSource": "claude",
+        "resetTrust": "stale",
+        "usageWindows": [
+          {"id": "session", "label": "Session", "percent": 0, "resetSecs": 0},
+          {"id": "weekly", "label": "Weekly", "percent": 0, "resetSecs": 0}
+        ]
+      }
     }
   ]
 }

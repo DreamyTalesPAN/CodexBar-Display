@@ -3,6 +3,7 @@ import {
   type ThemeStudioPrimitive,
   type ThemeStudioSpec,
 } from "@/lib/theme-studio";
+import { themeFirmwareTextMetrics } from "../live-vibetv-preview";
 
 export const DISPLAY_SIZE = 240;
 
@@ -90,7 +91,7 @@ export function defaultPrimitive(
       y: 118 + Math.min(40, offset),
       width: 190,
       height: 16,
-      binding: "session",
+      binding: "usageSlot1Percent",
       color: "#C7FF68",
       bgColor: "#111111",
       borderColor: "#3B4552",
@@ -113,9 +114,39 @@ export function setPrimitiveField(
 ) {
   if (value === "") {
     delete primitive[field];
+  } else {
+    (primitive as Record<FieldKey, unknown>)[field] = value;
+  }
+  if (primitive.progressStyle !== "arc") {
     return;
   }
-  (primitive as Record<FieldKey, unknown>)[field] = value;
+  // A bar that becomes an arc gets its ring in the same change, so one Undo
+  // takes all of it back: three quarters of a circle open at the bottom, up to
+  // 12 px thick. A bar that kept part of an arc, as an imported one may, gets
+  // only what is missing; a start angle that is left out means 12 o'clock.
+  if (field === "progressStyle") {
+    if (primitive.arcSweep === undefined) {
+      primitive.arcStart ??= 225;
+      primitive.arcSweep = 270;
+    }
+    primitive.arcThickness ??= 12;
+  }
+  // The ring is at most half as thick as the smaller side of its box, so that
+  // side is at least 2 px. A box made smaller takes the ring with it;
+  // otherwise the arc could not be saved until Thickness was lowered by hand.
+  if (field === "progressStyle" || field === "width" || field === "height") {
+    if (primitive.width !== undefined) {
+      primitive.width = Math.max(2, primitive.width);
+    }
+    if (primitive.height !== undefined) {
+      primitive.height = Math.max(2, primitive.height);
+    }
+    const { height, width } = primitiveBounds(primitive);
+    primitive.arcThickness = Math.max(
+      1,
+      Math.min(primitive.arcThickness ?? 1, Math.floor(Math.min(width, height) / 2)),
+    );
+  }
 }
 
 export function primitiveBounds(primitive: ThemeStudioPrimitive) {
@@ -299,11 +330,12 @@ export function textPrimitiveNaturalWidth(
   const text = primitive.binding
     ? boundText(primitive.binding)
     : substituteText(primitive.text || "Text");
-  const renderFontSize = textPrimitiveRenderFontSize(primitive, fontSize);
-  return Math.min(
-    Math.max(1, DISPLAY_SIZE - primitive.x),
-    Math.ceil(text.length * renderFontSize * 0.6),
-  );
+  // The preview draws fonts 1 and 2 with the firmware's glyph widths; the box
+  // around the text has to be measured the same way or it ends short of it.
+  const width =
+    themeFirmwareTextMetrics(text, primitive.font || 1, fontSize)?.width ??
+    text.length * textPrimitiveRenderFontSize(primitive, fontSize) * 0.6;
+  return Math.min(Math.max(1, DISPLAY_SIZE - primitive.x), Math.ceil(width));
 }
 
 function textPrimitiveRenderFontSize(

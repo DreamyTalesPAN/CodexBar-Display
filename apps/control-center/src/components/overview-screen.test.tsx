@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { expectNoAxeViolations } from "@/test/axe";
 import { OverviewScreen } from "./overview-screen";
 
 vi.mock("./vibetv-3d-preview", () => ({
@@ -83,5 +84,16 @@ describe("OverviewScreen", () => {
 
     expect(html).toContain("Agent status unavailable");
     expect(html).not.toContain("Codex CLI");
+  });
+
+  it.each([true, false])("has no accessibility violations (connected=%s)", async (connected) => {
+    await expectNoAxeViolations(
+      renderToStaticMarkup(
+        <OverviewScreen
+          companionStatus="online"
+          device={{ active: true, connected, deviceId: "14799300", paired: true, ready: connected }}
+        />,
+      ),
+    );
   });
 });

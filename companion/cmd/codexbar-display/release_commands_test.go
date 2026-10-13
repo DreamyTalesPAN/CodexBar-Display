@@ -1162,9 +1162,80 @@ func TestRunInstallUpdateCableRescueWritesNothingWithoutAPreIdentityVibeTV(t *te
 		return nil
 	}
 
-	err := runInstallUpdate([]string{"--target", "cable-rescue://vibetv", "--manifest-url", manifestURL, "--skip-launchagent-pause"})
-	if err == nil || !strings.Contains(err.Error(), "pre-Cable firmware") || probes != 2 {
-		t.Fatalf("expected rescue refusal after one fresh probe, got %v after %d probes", err, probes)
+	output, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{"--target", "cable-rescue://vibetv", "--manifest-url", manifestURL, "--skip-launchagent-pause"})
+	})
+	if err == nil || !strings.Contains(err.Error(), "pre-Cable firmware") || probes != 3 {
+		t.Fatalf("expected rescue refusal after three probes, got %v after %d probes", err, probes)
+	}
+	// Issue #536: the update log keeps this output, and it must name every probe.
+	for _, want := range []string{"probe 1/3 failed", "probe 2/3 failed", "probe 3/3 failed: no VibeTV with pre-Cable firmware"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("missing %q in the updater output:\n%s", want, output)
+		}
+	}
+}
+
+// Issue #536: the first probes can miss the boot hello. A later one that finds
+// the VibeTV still rescues it.
+func TestRunInstallUpdateCableRescueFindsTheVibeTVOnALaterProbe(t *testing.T) {
+	_, manifestURL, firmwareVersion := prepareCableFirmwareUpdateTest(t)
+	pinCableRescue(t)
+	readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{DeviceID: "device-cable", Board: "esp8266-smalltv-st7789", Firmware: *firmwareVersion}, nil
+	}
+	probes := 0
+	findLegacyCableVibeTVFn = func() (usb.CableDevice, error) {
+		if probes++; probes < 3 {
+			return usb.CableDevice{}, errors.New("no VibeTV with pre-Cable firmware answered hello")
+		}
+		return usb.CableDevice{Port: "/dev/mock-legacy", Hello: protocol.DeviceHello{Board: "esp8266-smalltv-st7789", Firmware: "1.0.0"}}, nil
+	}
+	flashedPort := ""
+	flashCableRescueFn = func(_ context.Context, port string, _ []byte, _ func(int)) error {
+		flashedPort = port
+		*firmwareVersion = "1.0.1"
+		return nil
+	}
+
+	output, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{"--target", "cable-rescue://vibetv", "--manifest-url", manifestURL, "--skip-launchagent-pause"})
+	})
+	if err != nil || probes != 3 || flashedPort != "/dev/mock-legacy" {
+		t.Fatalf("rescue after two missed probes: err=%v probes=%d flashed=%q\n%s", err, probes, flashedPort, output)
+	}
+	if strings.Count(output, "failed: no VibeTV with pre-Cable firmware") != 2 {
+		t.Fatalf("the two missed probes are not both in the updater output:\n%s", output)
+	}
+}
+
+// Issue #478: only the release artifact with the manifest's SHA-256 reaches
+// the ROM loader. A download that does not match is never written.
+func TestRunInstallUpdateCableRescueWritesNothingOnAHashMismatch(t *testing.T) {
+	prepareCableFirmwareUpdateTest(t)
+	pinCableRescue(t)
+	findLegacyCableVibeTVFn = func() (usb.CableDevice, error) {
+		return usb.CableDevice{Port: "/dev/mock-legacy", Hello: protocol.DeviceHello{Board: "esp8266-smalltv-st7789", Firmware: "1.0.0"}}, nil
+	}
+	flashCableRescueFn = func(context.Context, string, []byte, func(int)) error {
+		t.Fatal("rescue flashed an image that does not match the manifest")
+		return nil
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/firmware.bin" {
+			_, _ = io.WriteString(w, "tampered firmware")
+			return
+		}
+		_, _ = fmt.Fprintf(w, `{"schemaVersion":1,"release":"v1.0.1","artifacts":[{"firmwareEnv":"esp8266_smalltv_st7789","board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.1","asset":"firmware.bin","firmwareUrl":"http://%s/firmware.bin","sha256":"%s"}]}`, r.Host, sha256String("cable firmware"))
+	}))
+	t.Cleanup(server.Close)
+	releaseHTTPClient = server.Client()
+
+	_, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{"--target", "cable-rescue://vibetv", "--manifest-url", server.URL + "/manifest.json", "--skip-launchagent-pause"})
+	})
+	if err == nil || !strings.Contains(err.Error(), "sha256 mismatch") {
+		t.Fatalf("expected the hash mismatch to stop the rescue, got %v", err)
 	}
 }
 
@@ -3269,6 +3340,35 @@ func gzipString(t *testing.T, text string) string {
 		t.Fatalf("gzip close: %v", err)
 	}
 	return buf.String()
+}
+
+// Issue #526: firmware 1.0.45 over WiFi at low heap answers /hello without its
+// capabilities block. The updater reads device ID, board and firmware from a
+// WiFi hello and nothing else, so this answer must not stop the update that
+// frees the heap.
+func TestFirmwareUpdateReadsIdentityFromHelloWithoutCapabilities(t *testing.T) {
+	body, err := os.ReadFile("../../internal/protocol/testdata/wifi-hello-1.0.45-without-capabilities.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}))
+	defer server.Close()
+
+	for _, token := range []string{"", "pair-token"} {
+		hello, err := fetchDeviceHelloHTTPWithToken(context.Background(), server.URL, token)
+		if err != nil {
+			t.Fatalf("token=%q: %v", token, err)
+		}
+		if hello.DeviceID != "16198106" || hello.Board != "esp8266-smalltv-st7789" || hello.Firmware != "1.0.45" {
+			t.Fatalf("token=%q: unexpected identity %+v", token, hello)
+		}
+	}
+	if err := waitForHTTPFirmwareVersion(context.Background(), server.URL, "1.0.45", time.Second); err != nil {
+		t.Fatalf("the firmware check after the update must read the version: %v", err)
+	}
 }
 
 // DO NOT weaken: this locks a device-proven transport rule. Sending the pairing

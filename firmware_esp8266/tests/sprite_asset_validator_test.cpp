@@ -320,6 +320,30 @@ bool testInconsistentFrameTablesAreRejected() {
       "extra frame rows beyond the frame table must be rejected");
 }
 
+// The Companion preflight rejects these packs before installing because the
+// device does (#467): the header is the first line, and only spaces and tabs
+// are trimmed or separate fields.
+bool testOnlySpacesAndTabsAreLineWhitespace() {
+  const struct {
+    const char* data;
+    const char* message;
+  } cases[] = {
+      {"\nCBI1\n1 1\n1\n#FFFFFF\na\n", "a leading blank line must be an empty header"},
+      {" \t\nCBI1\n1 1\n1\n#FFFFFF\na\n", "a leading whitespace-only line must be an empty header"},
+      {"CBI1\n1\f1\n1\n#FFFFFF\na\n", "a form feed must not separate dimensions"},
+      {"CBI1\n1\xC2\xA0" "1\n1\n#FFFFFF\na\n", "a no-break space must not separate dimensions"},
+      {"CBI1\v\n1 1\n1\n#FFFFFF\na\n", "a vertical tab must not be trimmed from the header"},
+  };
+  for (const auto& entry : cases) {
+    if (!expect(validate(entry.data) != SpriteValidationError::None, entry.message)) {
+      return false;
+    }
+  }
+  return expect(
+      validate("  CBI1\n1 1\n1\n#FFFFFF\na\n") == SpriteValidationError::None,
+      "leading spaces on the header line must stay valid");
+}
+
 bool testShippedThemePackAssetsValidate(int argc, char** argv) {
   if (!expect(argc > 1, "shipped sprite asset paths are required")) {
     return false;
@@ -384,6 +408,9 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (!testInconsistentFrameTablesAreRejected()) {
+    return 1;
+  }
+  if (!testOnlySpacesAndTabsAreLineWhitespace()) {
     return 1;
   }
   if (!testShippedThemePackAssetsValidate(argc, argv)) {

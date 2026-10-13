@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -514,7 +515,14 @@ type ParsedFrame struct {
 	Meta               ProviderUsageMeta
 	CollectedAt        time.Time
 	ActivityObservedAt time.Time
-	Stale              bool
+	// TokenStatsCollectedAt is when the last token scan for this provider
+	// completed, with or without new tokens.
+	TokenStatsCollectedAt time.Time
+	// TokenHistoryGrowing is set until the token history has settled once
+	// since the start: while it is first read in, the totals rise from scan
+	// to scan without anyone working.
+	TokenHistoryGrowing bool
+	Stale               bool
 	// Terminal marks a provider error CodexBar states as permanent (see
 	// providerErrorIsTerminal): retained quota for that provider is void.
 	Terminal bool
@@ -641,20 +649,94 @@ func (v looseVersion) Compare(other looseVersion) int {
 
 var looseVersionPattern = regexp.MustCompile(`\bv?([0-9]+)\.([0-9]+)(?:\.([0-9]+))?\b`)
 
-type installedVersionEntry struct {
-	path    string
-	file    os.FileInfo
-	version looseVersion
+// reuseEngineAnswers is true on Windows. There every poll started a new CLI
+// process only to hear the CLI's version and the provider inventory again
+// (#555). Neither answer can change unless a file does, so each is kept for
+// as long as engineStamp of its files stays the same. The Mac is left as it
+// is: its app-managed CLI is not run for its version at all
+// (installedVersion), and which files its inventory is built from has only
+// been checked for Win-CodexBar (readProviderInventory). A variable so the
+// Windows path is testable on the Mac.
+var reuseEngineAnswers = runtime.GOOS == "windows"
+
+// engineStampSettle is how long a file must have been left alone before an
+// answer read from it is kept. A second write inside one step of the file
+// system's clock (2 s on FAT) leaves size and modification time as they were.
+const engineStampSettle = 3 * time.Second
+
+// engineStamp names the state of the files an answer depends on: path, size
+// and modification time of each. It is empty, and nothing is kept, where
+// answers are not reused, when a file cannot be read, and while a file is
+// younger than engineStampSettle. Take it before asking the CLI: a file that
+// changes during the call then no longer matches the answer.
+func engineStamp(paths ...string) string {
+	if !reuseEngineAnswers {
+		return ""
+	}
+	var stamp strings.Builder
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil || time.Since(info.ModTime()) < engineStampSettle {
+			return ""
+		}
+		fmt.Fprintf(&stamp, "%s\x00%d\x00%d\x00", path, info.Size(), info.ModTime().UnixNano())
+	}
+	return stamp.String()
 }
 
-var lastInstalledVersion atomic.Pointer[installedVersionEntry]
-
-func sameVersionFile(a, b os.FileInfo) bool {
-	return a != nil && b != nil && os.SameFile(a, b) &&
-		a.Size() == b.Size() && a.ModTime().Equal(b.ModTime())
+// engineAnswer is the CLI's last answer to one question, the engineStamp it
+// was read under and when.
+type engineAnswer[T any] struct {
+	mu    sync.Mutex
+	stamp string
+	at    time.Time
+	value T
 }
 
+// load returns the answer kept for stamp unless it is older than maxAge.
+// Zero accepts any age.
+func (a *engineAnswer[T]) load(stamp string, maxAge time.Duration) (T, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.value, stamp != "" && stamp == a.stamp && (maxAge == 0 || time.Since(a.at) < maxAge)
+}
+
+// store keeps value for stamp. An empty stamp forgets the answer.
+func (a *engineAnswer[T]) store(stamp string, value T) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.stamp, a.at, a.value = stamp, time.Now(), value
+}
+
+var engineVersion engineAnswer[looseVersion]
+
+// installedVersion is the CLI's version. The app-managed copy is not run for
+// it: its path is keyed by the pinned version, and that version was checked
+// against the binary itself when the copy was installed. Running it again on
+// every probe and settings read hit the 2 s deadline on a fresh Mac, which
+// reported a broken engine and sent the app to reinstall it (#508).
+//
+// Windows has no pinned copy: its CLI sits next to the Companion. It is run
+// once per state of that file (reuseEngineAnswers).
 func installedVersion(ctx context.Context, bin string) (looseVersion, error) {
+	if pinned := strings.TrimSpace(os.Getenv(appManagedCodexBarVersionEnvVar)); pinned != "" {
+		if managed, err := findAppManagedBinary(pinned); err == nil && managed == strings.TrimSpace(bin) {
+			return parseLooseVersion(pinned)
+		}
+	}
+	stamp := engineStamp(strings.TrimSpace(bin))
+	if version, ok := engineVersion.load(stamp, 0); ok {
+		return version, nil
+	}
+	version, err := reportedVersion(ctx, bin, versionCheckTimeout)
+	if err == nil {
+		engineVersion.store(stamp, version)
+	}
+	return version, err
+}
+
+// reportedVersion runs the CLI and reads the version it reports.
+func reportedVersion(ctx context.Context, bin string, timeout time.Duration) (looseVersion, error) {
 	bin = strings.TrimSpace(bin)
 	if bin == "" {
 		return looseVersion{}, errors.New("CodexBar binary path is empty")
@@ -662,23 +744,11 @@ func installedVersion(ctx context.Context, bin string) (looseVersion, error) {
 	if err := ctx.Err(); err != nil {
 		return looseVersion{}, fmt.Errorf("%w: %w", errVersionUnavailable, err)
 	}
-	// Version metadata belongs to the executable, not to a usage refresh.
-	// Avoid spawning another CLI on every settings read; replacing or editing
-	// the executable invalidates this single bounded entry immediately.
-	file, _ := os.Stat(bin)
-	if cached := lastInstalledVersion.Load(); cached != nil && cached.path == bin && sameVersionFile(cached.file, file) {
-		return cached.version, nil
-	}
-
-	out, err := runVersionCommandFn(ctx, versionCheckTimeout, bin, "--version")
+	out, err := runVersionCommandFn(ctx, timeout, bin, "--version")
 	if err != nil {
 		return looseVersion{}, fmt.Errorf("%w from %s --version: %w", errVersionUnavailable, bin, err)
 	}
 	if version, ok := extractLooseVersion(string(out)); ok {
-		current, _ := os.Stat(bin)
-		if sameVersionFile(file, current) {
-			lastInstalledVersion.Store(&installedVersionEntry{path: bin, file: current, version: version})
-		}
 		return version, nil
 	}
 

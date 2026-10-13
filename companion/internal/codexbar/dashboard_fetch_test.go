@@ -2,9 +2,10 @@ package codexbar
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -177,10 +178,7 @@ func TestFetchDashboardProvidersKeepsProviderErrorUnavailable(t *testing.T) {
 	}
 }
 
-func TestFetchDashboardProvidersDoesNotProbeDisabledMacProviders(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Win-CodexBar defaults to Claude, not the configured provider set")
-	}
+func TestFetchDashboardProvidersDoesNotProbeDisabledProviders(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case dashboardSnapshotPath:
@@ -204,6 +202,40 @@ func TestFetchDashboardProvidersDoesNotProbeDisabledMacProviders(t *testing.T) {
 	}
 }
 
+// Win-CodexBar answers "provider=all" by fetching every provider it knows.
+// On the test laptop that was 71 providers every 30 seconds with only Claude
+// switched on, including a start of the Antigravity CLI each time (#554).
+func TestFetchDashboardProvidersAsksTheWindowsEngineOnlyForListedProviders(t *testing.T) {
+	previous := dashboardUsageByProvider
+	dashboardUsageByProvider = true
+	t.Cleanup(func() { dashboardUsageByProvider = previous })
+
+	var asked []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case dashboardSnapshotPath:
+			_, _ = w.Write([]byte(`{"schemaVersion":1,"providers":[
+			  {"id":"claude","name":"Claude","windows":[{"id":"session","kind":"session","usedPercent":12}]},
+			  {"id":"codex","name":"Codex","windows":[{"id":"session","kind":"session","usedPercent":34}]}
+			]}`))
+		case dashboardUsagePath:
+			asked = append(asked, r.URL.RawQuery)
+			_, _ = fmt.Fprintf(w, `[{"provider":%q,"usage":{}}]`, r.URL.Query().Get("provider"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	providers, err := FetchDashboardProviders(context.Background(), dashboardFetchTestInfo(server), time.Now())
+	if err != nil || len(providers) != 2 {
+		t.Fatalf("both listed providers must come back: providers=%+v err=%v", providers, err)
+	}
+	if got := strings.Join(asked, " "); got != "provider=claude provider=codex" {
+		t.Fatalf("usage must be asked for the listed providers only, got %q", got)
+	}
+}
+
 func newDashboardFetchTestServer(t *testing.T, snapshot string) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -216,11 +248,13 @@ func newDashboardFetchTestServer(t *testing.T, snapshot string) *httptest.Server
 		_, _ = w.Write([]byte(snapshot))
 	})
 	mux.HandleFunc(dashboardUsagePath, func(w http.ResponseWriter, r *http.Request) {
-		wantQuery := ""
-		if runtime.GOOS == "windows" {
-			wantQuery = "provider=all"
+		// Windows asks once per listed provider; this stub answers each with
+		// the whole list.
+		wrongQuery := r.URL.RawQuery != ""
+		if dashboardUsageByProvider {
+			wrongQuery = r.URL.Query().Get("provider") == "" || r.URL.Query().Get("provider") == "all"
 		}
-		if r.Header.Get("Authorization") != "Bearer test-token" || r.URL.RawQuery != wantQuery {
+		if r.Header.Get("Authorization") != "Bearer test-token" || wrongQuery {
 			http.Error(w, "usage requires bearer and platform provider selection", http.StatusUnauthorized)
 			return
 		}

@@ -9,6 +9,7 @@ import {
 } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { expectNoAxeViolations } from "@/test/axe";
 import type { PreferenceHealthState, UsageSnapshot } from "../control-center-types";
 import type { ProviderItem } from "../provider-picker";
 import {
@@ -17,6 +18,7 @@ import {
   SetupProvidersScreen,
   setupProviderCanDisplay,
   setupProviderMatchesQuery,
+  setupProviderNoReadingLine,
   setupProviderOffersSignIn,
 } from "./setup-providers-screen";
 import { hideUsageEngineName } from "../customer-support-text";
@@ -114,6 +116,111 @@ describe("SetupProvidersScreen", () => {
     expect(props.onCheckAgain).toHaveBeenCalledWith(changed);
     fireEvent.click(screen.getByRole("switch", { name: "Claude" }));
     expect(props.onToggle).toHaveBeenCalledWith(changed, false);
+  });
+
+  // Issue #368: a provider was on, used daily and silent for 16 days, and
+  // nothing said for how long.
+  it("says how long a provider that is on has gone without a usage reading", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-13T09:43:00Z"));
+    const props = { usage, onContinue: vi.fn(), onCheckAgain: vi.fn(), onToggle: vi.fn(),
+      pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
+    const failing = provider({ providerId: "codex", label: "Codex", health: "auth_required",
+      message: "Sign in required." });
+    const since = (item: ProviderItem, noReadingSince: string): ProviderItem =>
+      ({ ...item, health: { ...item.health, noReadingSince } });
+
+    const { rerender } = renderDom(<SetupProvidersScreen {...props}
+      providers={[since(failing, "2026-07-28T08:29:00Z")]} />);
+    expect(screen.getByText("No usage reading for 16d 1h.")).toBeTruthy();
+
+    // Never read at all.
+    rerender(<SetupProvidersScreen {...props} providers={[failing]} />);
+    expect(screen.getByText("No usage reading yet.")).toBeTruthy();
+
+    // Nothing for a provider that delivers or one that is switched off.
+    rerender(<SetupProvidersScreen {...props} providers={[
+      since(claude, "2026-08-13T09:42:00Z"),
+      since({ ...failing, value: false }, "2026-07-28T08:29:00Z"),
+    ]} />);
+    expect(document.body.textContent).not.toContain("No usage reading");
+
+    // The provider only just stopped: nothing to say yet.
+    expect(setupProviderNoReadingLine("2026-08-14T09:42:30Z")).toBeNull();
+    rerender(<SetupProvidersScreen {...props} providers={[since(failing, "2026-08-13T09:42:30Z")]} />);
+    expect(screen.getByText("Sign in required.")).toBeTruthy();
+    expect(document.body.textContent).not.toContain("No usage reading");
+    vi.setSystemTime(new Date("2026-08-14T09:43:00Z"));
+    expect(setupProviderNoReadingLine("2026-08-14T09:42:00Z")).toBe("No usage reading for 1m.");
+    expect(setupProviderNoReadingLine("2026-08-14T07:40:00Z")).toBe("No usage reading for 2h 3m.");
+  });
+
+  // Windows, Claude delivering usage, Codex just switched on: one throttled
+  // check made the usage engine ask for a browser sign-in, and its list of
+  // failed sources was shown under "Claude". The Mac App now keeps that row
+  // healthy and sends no engine sentence for a browser sign-in.
+  it("shows nothing for a healthy provider and no engine text for a browser sign-in", () => {
+    const summary = "Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: OAuth error: Claude OAuth usage endpoint is rate limited. Retrying in about 1s; credentials were preserved.; CLI: Claude CLI /usage opened, but this Claude version returned local activity stats instead of plan limit percentages. Use Auto, OAuth, or Web mode for Claude limits. [claude:browser-sign-in-required https://claude.ai/login]";
+    const engineText = /OAuth|cookies|https:\/\/|\[claude:/;
+    const codex = provider({ providerId: "codex", label: "Codex", health: "checking" });
+    const props = { usage, onOpenSignIn: vi.fn(), onContinue: vi.fn(), onCheckAgain: vi.fn(),
+      onToggle: vi.fn(), pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
+    // A healthy row has nothing to say, whatever an earlier check left on it.
+    const { rerender } = renderDom(<SetupProvidersScreen {...props}
+      providers={[codex, { ...claude, health: { ...claude.health, reported: summary } }]} />);
+    expect(screen.queryByRole("button", { name: /Copy provider message/ })).toBeNull();
+    expect(document.body.innerHTML).not.toMatch(engineText);
+
+    // A provider that really needs the browser session says so in our words.
+    const message = "Claude usage needs a signed-in claude.ai session in your browser. Sign in to claude.ai in your browser, close the browser, then check again.";
+    const signIn = provider({ providerId: "claude", label: "Claude Code", health: "browser_sign_in_required", message });
+    rerender(<SetupProvidersScreen {...props}
+      providers={[codex, { ...signIn, health: { ...signIn.health, signInUrl: "https://claude.ai/login" } }]} />);
+    expect(screen.getByText(message)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Copy provider message/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Open Claude Code sign-in in your browser" })).toBeTruthy();
+    expect(document.body.innerHTML).not.toMatch(engineText);
+
+    // Issue #551: support still gets the engine's summary. It can be copied
+    // from the notice and is not shown in it.
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    rerender(<SetupProvidersScreen {...props} providers={[codex, { ...signIn,
+      health: { ...signIn.health, signInUrl: "https://claude.ai/login", reported: summary } }]} />);
+    expect(screen.getByText(message)).toBeTruthy();
+    expect(document.body.innerHTML).not.toMatch(engineText);
+    fireEvent.click(screen.getByRole("button", { name: "Copy provider message for Claude Code" }));
+    expect(writeText).toHaveBeenCalledWith(summary);
+    vi.unstubAllGlobals();
+  });
+
+  // Issue #558: the button copied the message and showed nothing. It answers
+  // like Copy on Support, and only once the text is on the clipboard.
+  it("confirms a copied provider message on the button", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    const failed = { ...copilot, value: true,
+      health: { ...copilot.health, reported: "No available fetch strategy for copilot." } };
+    const openai = provider({ providerId: "openai", label: "OpenAI", health: "unavailable", message: "Second failure" });
+    const props = { usage, onContinue: vi.fn(), onCheckAgain: vi.fn(), onToggle: vi.fn(),
+      pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
+    const { rerender } = renderDom(<SetupProvidersScreen {...props}
+      providers={[failed, { ...openai, health: { ...openai.health, reported: "Authentication required" } }]} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Copy provider message for GitHub Copilot" }));
+    });
+    expect(writeText).toHaveBeenCalledWith("No available fetch strategy for copilot.");
+    expect(screen.getByRole("button", { name: "Copied" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Copy provider message for GitHub Copilot" })).toBeNull();
+    // The other provider's message has not been copied.
+    expect(screen.getByRole("button", { name: "Copy provider message for OpenAI" })).toBeTruthy();
+    // A new message offers its copy again.
+    rerender(<SetupProvidersScreen {...props}
+      providers={[{ ...failed, health: { ...failed.health, reported: "Another failure." } }]} />);
+    expect(screen.getByRole("button", { name: "Copy provider message for GitHub Copilot" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Copied" })).toBeNull();
+    expect(writeText).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
   });
 
   // The Companion can start the sign-in of these four only; every other
@@ -588,3 +695,16 @@ describe("SetupProvidersScreen", () => {
      expect(render({providers:[gemini]})).not.toContain("Turn on Antigravity");
    });
  });
+
+describe("SetupProvidersScreen accessibility", () => {
+  it("has no violations with the list, without a match, while loading and with a provider message shown", async () => {
+    await expectNoAxeViolations(render());
+    await expectNoAxeViolations(render({ providers: [] }));
+    await expectNoAxeViolations(render({ providers: [], loading: true }));
+    const failed = { ...copilot, value: true,
+      health: { ...copilot.health, reported: "No available fetch strategy for copilot." } };
+    const html = render({ providers: [claude, failed] });
+    expect(html).toContain('data-slot="provider-notice"');
+    await expectNoAxeViolations(html);
+  });
+});

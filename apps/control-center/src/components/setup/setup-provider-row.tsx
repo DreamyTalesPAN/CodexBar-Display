@@ -2,6 +2,7 @@
 
 import { Copy, ExternalLink, LogIn, RefreshCw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -66,6 +67,9 @@ export function setupProviderRowVariant(
       return "no_usage";
     case "service_outage":
       return "outage";
+    // Everything else gets the re-check presentation and no repair prompt.
+    // That includes "rate_limited": the sign-in works and the provider only
+    // refused this check for being too frequent.
     default:
       return "timed_out";
   }
@@ -85,6 +89,8 @@ type SetupProviderRowProps = {
   label: string;
   detail?: string;
   reportedMessage?: string;
+  /** How long this provider has had no usage reading (#368). */
+  noReadingLine?: string | null;
   onCheckAgain: () => void;
   /**
    * Starts the provider's sign-in through the companion: the browser page
@@ -118,6 +124,7 @@ export function SetupProviderRow({
   onCheckAgain,
   detail,
   reportedMessage,
+  noReadingLine,
   onOpenSignIn,
   onOpenSetupGuide,
   onToggle,
@@ -132,11 +139,17 @@ export function SetupProviderRow({
       onClick={onCheckAgain}
     />
   );
+  // The message whose copy reached the clipboard; the button then says so,
+  // like Copy on Support. A new message starts over.
+  const [copied, setCopied] = useState("");
   const copyReportedMessage = reportedMessage ? (
     <SetupProviderRowAction
       icon={Copy}
-      label={`Copy provider message for ${label}`}
-      onClick={() => void navigator.clipboard?.writeText(reportedMessage)}
+      label={copied === reportedMessage ? "Copied" : `Copy provider message for ${label}`}
+      onClick={() => {
+        void navigator.clipboard?.writeText(reportedMessage)
+          .then(() => setCopied(reportedMessage), () => undefined);
+      }}
     />
   ) : null;
   // Its own text: a generic engine message hides that an update fixes it.
@@ -148,7 +161,7 @@ export function SetupProviderRow({
       : variant === "browser_sign_in"
         ? `Sign in to ${label} in your browser, close the browser, then check again`
       : variant === "permission"
-        ? "Allow access in macOS"
+        ? "Allow access on this computer"
         : variant === "unsupported"
           ? "This provider is no longer supported for this account"
         : variant === "no_usage"
@@ -158,7 +171,10 @@ export function SetupProviderRow({
             : variant === "stale"
               ? "Live usage is unavailable"
             : "Check timed out";
-  const guidance = hideUsageEngineName(reportedMessage || detail || fallbackMessage);
+  // A browser sign-in is said in the app's own sentence. What the engine
+  // reported for it lists every source it tried and is only there to copy.
+  const reported = variant === "browser_sign_in" ? "" : reportedMessage;
+  const guidance = hideUsageEngineName(reported || detail || fallbackMessage);
 
   const hasNotice = variant !== "checking" && variant !== "toggle";
   const actions = variant === "unsupported" ? copyReportedMessage : (
@@ -219,12 +235,16 @@ export function SetupProviderRow({
             <div className="flex min-w-0 flex-1 flex-col items-start gap-1 text-xs leading-normal text-muted-foreground">
               <p>{`VibeTV reads ${label} usage from ${label}'s own app on this computer. Make sure it is installed and signed in, then click Check again.`}</p>
               <p>{guidance}</p>
+              {noReadingLine ? <p>{noReadingLine}</p> : null}
               <Button className="h-auto px-0 text-xs" onClick={onOpenSetupGuide} type="button" variant="link">
                 Open setup guide
               </Button>
             </div>
           ) : (
-            <p className="text-xs leading-normal text-muted-foreground min-w-0 flex-1">{guidance}</p>
+            <div className="flex min-w-0 flex-1 flex-col gap-1 text-xs leading-normal text-muted-foreground">
+              <p>{guidance}</p>
+              {noReadingLine ? <p>{noReadingLine}</p> : null}
+            </div>
           )}
           {((variant !== "unsupported" && variant !== "stale") || copyReportedMessage) ? (
             <div className="flex shrink-0 items-center justify-end gap-2">{actions}</div>

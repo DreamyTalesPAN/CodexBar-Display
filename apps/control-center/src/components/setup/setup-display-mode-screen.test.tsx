@@ -46,12 +46,24 @@ describe("SetupDisplayModeScreen", () => {
 
     expect(html).toContain("Automatic");
     expect(html).toContain(
-      "With Agent activity on, VibeTV follows your agents. Agents that need you come first. Otherwise, the current provider stays on screen.",
+      "With Agent activity on, VibeTV follows your agents. Agents that need you come first. Otherwise, VibeTV switches between your providers based on recent activity and usage.",
     );
     expect(html).toContain("Manual");
     expect(html).toContain(
       "VibeTV always shows the one provider you pick — nothing else.",
     );
+  });
+
+  // The row stretches both cards to one height. Centred, the card with the
+  // shorter description showed its preview 9 px lower (#548).
+  it("holds both previews at the top of their cards", () => {
+    const cards = render().match(/<button[^>]*aria-pressed[^>]*>/g) ?? [];
+
+    expect(cards).toHaveLength(2);
+    for (const card of cards) {
+      expect(card).toContain("items-start");
+      expect(card).not.toContain("items-center");
+    }
   });
 
   it("offers the provider list only in Manual", () => {

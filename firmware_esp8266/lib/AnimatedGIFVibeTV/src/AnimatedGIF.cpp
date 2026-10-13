@@ -245,6 +245,22 @@ void AnimatedGIF::reset()
     (*_gif.pfnSeek)(&_gif.GIFFile, 0);
 } /* reset() */
 
+#if ANIMATEDGIF_VIBETV_PROFILE
+void AnimatedGIF::setWorkspace(uint8_t *pWorkspace)
+{
+    if (pWorkspace == NULL) {
+        _gif.ucFileBuf = _gif.ucLZW = _gif.ucGIFPixels = _gif.ucLineBuf = NULL;
+        _gif.usGIFTable = NULL;
+        return;
+    }
+    _gif.ucFileBuf = &pWorkspace[GIF_WS_FILE_BUF];
+    _gif.ucLZW = &pWorkspace[GIF_WS_LZW];
+    _gif.usGIFTable = (unsigned short *)&pWorkspace[GIF_WS_GIF_TABLE];
+    _gif.ucGIFPixels = &pWorkspace[GIF_WS_GIF_PIXELS];
+    _gif.ucLineBuf = &pWorkspace[GIF_WS_LINE_BUF];
+} /* setWorkspace() */
+#endif
+
 void AnimatedGIF::begin(unsigned char ucPaletteType)
 {
     memset(&_gif, 0, sizeof(_gif));

@@ -50,6 +50,28 @@ inline void RenderYield() {
 #endif
 }
 
+// An idle window is measured, current and simply has no deadline because
+// nothing has been used yet. It is not an error: the renderer says "No active
+// session" for it instead of the stale/offline "Reset unavailable".
+//
+// The state rides in resetSecs as a negative sentinel rather than in a
+// separate flag. The ESP8266 image sits at its flash ceiling, and a flag on
+// every window plus its legacy-slot copies cost more than this build can
+// spend. Every reader already branches on "resetSecs <= 0" before formatting a
+// duration, so the sentinel lands on paths that are checked anyway. A basis
+// the device cannot stand behind never carries it, so the trust path keeps its
+// own wording.
+//
+// This is the same value the countdown helpers in codexbar_display_core.h
+// return (kRemainingSecsIdle); the frame carries it straight through. It is
+// restated here because this header is the lower of the two and cannot
+// include that one.
+constexpr int64_t kResetSecsIdle = -1;
+
+inline bool ResetSecsAreIdle(int64_t resetSecs) {
+  return resetSecs < 0;
+}
+
 struct UsageWindowData {
   const char* label = "";
   int percent = 0;
@@ -167,6 +189,7 @@ constexpr size_t kMaxCompiledThemeSpecPrimitives = 32;
 constexpr size_t kMaxCompiledThemeSpecStringBytes = 1024;
 constexpr size_t kMaxCompiledProviderAssets = 16;
 constexpr size_t kMaxCompiledColorStops = 4;
+constexpr int kProgressStyleArc = 2;
 
 struct CompiledProviderAsset {
   const char* key = nullptr;
@@ -710,6 +733,42 @@ inline void FormatTokenCount(int64_t value, char* out, size_t outSize) {
   }
 }
 
+// A countdown the device cannot stand behind reads "Reset unavailable": the
+// basis went stale or offline and the number would be a guess. A window that
+// is measured and current but simply has no deadline is a different state --
+// nothing has been used, so nothing is scheduled to reset. Saying "Reset
+// unavailable" there reported a fault for a perfectly healthy account.
+constexpr const char* kResetUnavailableText = "Reset unavailable";
+constexpr const char* kResetIdleText = "No active session";
+
+inline const char* ResetTextFor(bool idle) {
+  return idle ? kResetIdleText : kResetUnavailableText;
+}
+
+// The root {reset} token carries no window of its own. It is idle only when
+// every window the frame does carry is idle, so a genuinely stale basis (which
+// leaves no idle window behind) keeps the unavailable wording.
+inline bool RootResetIsIdle(const FrameData& frame) {
+  if (frame.usageUnavailable) {
+    return false;
+  }
+  bool sawWindow = false;
+  for (size_t i = 0; i < kMaxThemeSpecUsageWindows; ++i) {
+    if (!frame.usageWindows[i].available) {
+      continue;
+    }
+    if (!ResetSecsAreIdle(frame.usageWindows[i].resetSecs)) {
+      return false;
+    }
+    sawWindow = true;
+  }
+  return sawWindow;
+}
+
+inline const char* RootResetUnavailableText(const FrameData& frame) {
+  return ResetTextFor(RootResetIsIdle(frame));
+}
+
 inline void BoundValue(const char* key, const FrameData& frame, char* out, size_t outSize) {
   if (out == nullptr || outSize == 0) {
     return;
@@ -743,7 +802,7 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
   }
   if (std::strcmp(key, "reset") == 0 || std::strcmp(key, "resetCountdown") == 0 || std::strcmp(key, "r") == 0) {
     if (frame.usageUnavailable || frame.resetSecs <= 0) {
-      std::snprintf(out, outSize, "Reset unavailable");
+      std::snprintf(out, outSize, "%s", RootResetUnavailableText(frame));
     } else {
       FormatDuration(frame.resetSecs, out, outSize);
     }
@@ -766,7 +825,8 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
       std::snprintf(out, outSize, "%s", SafeText(slot.label));
     } else if (std::strcmp(field, "reset") == 0 || std::strcmp(key, resetShort) == 0) {
       if (slot.resetSecs <= 0) {
-        std::snprintf(out, outSize, "Reset unavailable");
+        // A provider slot is only sent with a deadline, so it is never idle.
+        std::snprintf(out, outSize, "%s", kResetUnavailableText);
       } else {
         FormatDuration(slot.resetSecs, out, outSize);
       }
@@ -792,7 +852,7 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
       std::snprintf(out, outSize, "%s", SafeText(window.label));
     } else if (std::strcmp(field, "reset") == 0 || std::strcmp(key, resetShort) == 0) {
       if (window.resetSecs <= 0) {
-        std::snprintf(out, outSize, "Reset unavailable");
+        std::snprintf(out, outSize, "%s", ResetTextFor(ResetSecsAreIdle(window.resetSecs)));
       } else {
         FormatDuration(window.resetSecs, out, outSize);
       }
@@ -854,6 +914,89 @@ inline void AppendText(char* out, size_t outSize, size_t& outLen, const char* te
   }
 }
 
+// The replacement for a template whose only substitution is a countdown with
+// no deadline, or nullptr when the template must substitute in place.
+//
+// Shipped themes hard-code the prose around the countdown ("Resets in {us1r}",
+// "Reset in {usageSlot1Reset}"). Substituting the unavailable text in place
+// rendered "Resets in Reset unavailable" on a customer's screen: a doubled,
+// self-contradicting line that reads like a defect. The whole template
+// collapses to the unavailable text instead, exactly as the root {reset} token
+// has always behaved, so the surrounding prose cannot contradict it.
+//
+// Only the countdown tokens are probed. A template that also substitutes a
+// label or a percentage still carries information worth rendering, so it keeps
+// its in-place substitution.
+//
+// An idle window collapses to the idle wording instead. Mixed idle and stale
+// countdowns in one template keep the unavailable wording: the line cannot
+// claim everything is merely idle while one of its values is untrustworthy.
+inline const char* TemplateCountdownOnlyText(const char* raw, const FrameData& frame) {
+  raw = SafeText(raw);
+  bool sawUnavailableCountdown = false;
+  bool allIdle = true;
+  for (size_t i = 0; raw[i] != '\0';) {
+    if (raw[i] != '{') {
+      ++i;
+      continue;
+    }
+    const char* close = std::strchr(raw + i + 1, '}');
+    if (close == nullptr) {
+      break;
+    }
+    char key[32] = {0};
+    const size_t keyLen = static_cast<size_t>(close - (raw + i + 1));
+    if (keyLen == 0 || keyLen >= sizeof(key)) {
+      return nullptr;
+    }
+    std::memcpy(key, raw + i + 1, keyLen);
+
+    const int providerSlotIndex = ProviderSlotBindingIndex(key);
+    const int usageSlotIndex = UsageWindowBindingIndex(key);
+    // The compact aliases carry no "Reset" substring, so UsageWindowField
+    // reads them as "percent". BoundValue matches them by name; this probe
+    // has to do the same or {us1r} keeps rendering the doubled sentence on
+    // the device while the Control Center preview already collapses it.
+    // With a slot index found, a four-character key ending in "r" is one of
+    // us1r, us2r, pv1r, pv2r.
+    const bool isShortReset = keyLen == 4 && key[3] == 'r';
+    const bool isCountdown =
+        ((providerSlotIndex >= 0 || usageSlotIndex >= 0) &&
+         (isShortReset || std::strcmp(UsageWindowField(key), "reset") == 0));
+    if (!isCountdown) {
+      // Any other substitution carries its own information.
+      return nullptr;
+    }
+
+    int64_t resetSecs = 0;
+    bool available = false;
+    if (providerSlotIndex >= 0) {
+      const UsageWindowData& slot = frame.providerSlots[providerSlotIndex];
+      resetSecs = slot.resetSecs;
+      available = slot.available;
+    } else {
+      const UsageWindowData window = BoundUsageWindowFor(frame, key, usageSlotIndex);
+      resetSecs = window.resetSecs;
+      available = window.available;
+    }
+    // An unavailable window renders empty, not as the unavailable text, and
+    // collapsing the line would hide prose the theme wants standing.
+    if (!available) {
+      return nullptr;
+    }
+    if (resetSecs > 0) {
+      return nullptr;
+    }
+    sawUnavailableCountdown = true;
+    allIdle = allIdle && ResetSecsAreIdle(resetSecs);
+    i += keyLen + 2;
+  }
+  if (!sawUnavailableCountdown) {
+    return nullptr;
+  }
+  return ResetTextFor(allIdle);
+}
+
 inline void RenderTextTemplate(const char* raw, const FrameData& frame, char* out, size_t outSize) {
   if (out == nullptr || outSize == 0) {
     return;
@@ -865,7 +1008,12 @@ inline void RenderTextTemplate(const char* raw, const FrameData& frame, char* ou
       (std::strstr(raw, "{reset}") != nullptr ||
        std::strstr(raw, "{resetCountdown}") != nullptr ||
        std::strstr(raw, "{r}") != nullptr)) {
-    std::snprintf(out, outSize, "Reset unavailable");
+    std::snprintf(out, outSize, "%s", RootResetUnavailableText(frame));
+    return;
+  }
+
+  if (const char* countdownOnly = TemplateCountdownOnlyText(raw, frame)) {
+    std::snprintf(out, outSize, "%s", countdownOnly);
     return;
   }
 
@@ -900,7 +1048,9 @@ inline bool StringEqualsAny(const char* value, const char* a, const char* b, con
          (c != nullptr && std::strcmp(value, c) == 0);
 }
 
-inline bool TemplateUsesField(const char* raw, const char* a, const char* b, const char* c = nullptr) {
+// Calls fn(key) for every "{key}" placeholder in a text template.
+template <typename Fn>
+inline void ForEachTemplateKey(const char* raw, Fn fn) {
   raw = SafeText(raw);
   for (size_t i = 0; raw[i] != '\0'; ++i) {
     if (raw[i] != '{') {
@@ -908,19 +1058,18 @@ inline bool TemplateUsesField(const char* raw, const char* a, const char* b, con
     }
     const char* close = std::strchr(raw + i + 1, '}');
     if (close == nullptr) {
-      return false;
+      return;
     }
     char key[32] = {0};
     const size_t keyLen = static_cast<size_t>(close - (raw + i + 1));
+    // Like RenderTextTemplate: a brace too long to be a key is literal text,
+    // so placeholders inside it still draw and must still count.
     if (keyLen > 0 && keyLen < sizeof(key)) {
       std::memcpy(key, raw + i + 1, keyLen);
-      if (StringEqualsAny(key, a, b, c)) {
-        return true;
-      }
+      fn(static_cast<const char*>(key));
+      i += keyLen + 1;
     }
-    i += keyLen + 1;
   }
-  return false;
 }
 
 inline uint32_t BindingFieldMask(const char* binding) {
@@ -971,66 +1120,10 @@ inline uint32_t BindingFieldMask(const char* binding) {
   return 0;
 }
 
+// A placeholder draws exactly what the same key would draw as a binding.
 inline uint32_t TextTemplateFieldMask(const char* raw) {
   uint32_t fields = 0;
-  if (TemplateUsesField(raw, "usageSlot1Reset", "us1r") ||
-      TemplateUsesField(raw, "usageSlot2Reset", "us2r")) {
-    fields |= kThemeSpecFieldUsageWindowReset;
-  }
-  for (size_t i = 0; i < kMaxThemeSpecUsageWindows; ++i) {
-    char binding[24];
-    std::snprintf(binding, sizeof(binding), "usage.%u.reset", static_cast<unsigned>(i));
-    if (TemplateUsesField(raw, binding, nullptr)) {
-      fields |= kThemeSpecFieldUsageWindowReset;
-    }
-  }
-  if (TemplateUsesField(raw, "provider", "pr")) {
-    fields |= kThemeSpecFieldProvider;
-  }
-  if (TemplateUsesField(raw, "label", "providerLabel", "l")) {
-    fields |= kThemeSpecFieldLabel;
-  }
-  if (TemplateUsesField(raw, "session", "sessionPercent", "s")) {
-    fields |= kThemeSpecFieldSession;
-  }
-  if (TemplateUsesField(raw, "weekly", "weeklyPercent", "w")) {
-    fields |= kThemeSpecFieldWeekly;
-  }
-  if (TemplateUsesField(raw, "reset", "resetCountdown", "r")) {
-    fields |= kThemeSpecFieldReset;
-  }
-  if (std::strstr(SafeText(raw), "{usage.") != nullptr ||
-      TemplateUsesField(raw, "usageSlot1Label", "us1l") ||
-      TemplateUsesField(raw, "usageSlot1Percent", "us1p") ||
-      TemplateUsesField(raw, "usageSlot1Reset", "us1r") ||
-      TemplateUsesField(raw, "usageSlot1Available", "us1a") ||
-      TemplateUsesField(raw, "usageSlot2Label", "us2l") ||
-      TemplateUsesField(raw, "usageSlot2Percent", "us2p") ||
-      TemplateUsesField(raw, "usageSlot2Reset", "us2r") ||
-      TemplateUsesField(raw, "usageSlot2Available", "us2a")) {
-    fields |= kThemeSpecFieldUsageWindows;
-  }
-  if (TemplateUsesField(raw, "usageMode", "u")) {
-    fields |= kThemeSpecFieldUsageMode;
-  }
-  if (TemplateUsesField(raw, "activity", "act")) {
-    fields |= kThemeSpecFieldActivity;
-  }
-  if (TemplateUsesField(raw, "time", "tm")) {
-    fields |= kThemeSpecFieldTime;
-  }
-  if (TemplateUsesField(raw, "date", "dt")) {
-    fields |= kThemeSpecFieldDate;
-  }
-  if (TemplateUsesField(raw, "sessionTokens", "st")) {
-    fields |= kThemeSpecFieldSessionTokens;
-  }
-  if (TemplateUsesField(raw, "weekTokens", "wt")) {
-    fields |= kThemeSpecFieldWeekTokens;
-  }
-  if (TemplateUsesField(raw, "totalTokens", "tt")) {
-    fields |= kThemeSpecFieldTotalTokens;
-  }
+  ForEachTemplateKey(raw, [&fields](const char* key) { fields |= BindingFieldMask(key); });
   return fields;
 }
 
@@ -1061,9 +1154,12 @@ inline void ReleaseCompiledThemeSpec(CompiledThemeSpec& scene) {
   scene = CompiledThemeSpec{};
 }
 
+// `outOfMemory` separates a spec that does not fit the heap right now from one
+// that can never compile, wherever a caller has to tell the two apart.
 inline bool AllocateCompiledThemeSpecStorage(
     CompiledThemeSpec& scene,
-    const CompiledThemeSpecStoragePlan& plan) {
+    const CompiledThemeSpecStoragePlan& plan,
+    bool* outOfMemory = nullptr) {
   ReleaseCompiledThemeSpec(scene);
   if (plan.primitiveCapacity == 0 || plan.primitiveCapacity > kMaxCompiledThemeSpecPrimitives ||
       plan.stringPoolCapacity > kMaxCompiledThemeSpecStringBytes ||
@@ -1081,6 +1177,9 @@ inline bool AllocateCompiledThemeSpecStorage(
       (plan.stringPoolCapacity > 0 && scene.stringPool == nullptr) ||
       (plan.providerAssetCapacity > 0 && scene.providerAssets == nullptr)) {
     ReleaseCompiledThemeSpec(scene);
+    if (outOfMemory != nullptr) {
+      *outOfMemory = true;
+    }
     return false;
   }
 
@@ -1344,9 +1443,25 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
     if (progressStyle != nullptr && (std::strcmp(progressStyle, "segments") == 0 || std::strcmp(progressStyle, "segmented") == 0)) {
       out.style = 1;
     }
-    out.segments = JsonIntFor(primitive, "segments", "sg", 0);
-    out.segmentGap = JsonIntFor(primitive, "segmentGap", "gg", 1);
-    out.borderRadius = JsonIntFor(primitive, "borderRadius", "br", 0);
+    if (progressStyle != nullptr && std::strcmp(progressStyle, "arc") == 0) {
+      // An arc has no segments, gap or corners. Those three fields hold its
+      // start angle, sweep and thickness instead, so a compiled primitive
+      // stays as small as it is: the device keeps up to 32 of them in RAM.
+      out.style = kProgressStyleArc;
+      out.segments = JsonIntFor(primitive, "arcStart", "as", 0);
+      out.segmentGap = JsonIntFor(primitive, "arcSweep", "aw", 0);
+      out.borderRadius = JsonIntFor(primitive, "arcThickness", "at", 0);
+      const int diameter = out.width < out.height ? out.width : out.height;
+      if (out.segments < 0 || out.segments > 359 ||
+          out.segmentGap < 1 || out.segmentGap > 360 ||
+          out.borderRadius < 1 || out.borderRadius * 2 > diameter) {
+        return false;
+      }
+    } else {
+      out.segments = JsonIntFor(primitive, "segments", "sg", 0);
+      out.segmentGap = JsonIntFor(primitive, "segmentGap", "gg", 1);
+      out.borderRadius = JsonIntFor(primitive, "borderRadius", "br", 0);
+    }
     out.color = ParseColor(JsonStringFor(primitive, "color", "c"), 0xFFFF);
     out.bg = ParseColor(JsonStringFor(primitive, "bgColor", "bg"), 0x0000);
     out.border = ParseColor(JsonStringFor(primitive, "borderColor", "bc"), 0x7BEF);
@@ -1441,7 +1556,8 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
   return false;
 }
 
-inline bool CompileThemeSpecObject(JsonObjectConst spec, CompiledThemeSpec& scene) {
+inline bool CompileThemeSpecObject(
+    JsonObjectConst spec, CompiledThemeSpec& scene, bool* outOfMemory = nullptr) {
   ReleaseCompiledThemeSpec(scene);
   JsonArrayConst primitives = JsonArrayFor(spec, "primitives", "p");
   if (primitives.isNull() || primitives.size() == 0 || primitives.size() > kMaxCompiledThemeSpecPrimitives) {
@@ -1449,7 +1565,7 @@ inline bool CompileThemeSpecObject(JsonObjectConst spec, CompiledThemeSpec& scen
   }
   CompiledThemeSpecStoragePlan storagePlan;
   if (!CountCompiledThemeSpecStorage(spec, storagePlan) ||
-      !AllocateCompiledThemeSpecStorage(scene, storagePlan)) {
+      !AllocateCompiledThemeSpecStorage(scene, storagePlan, outOfMemory)) {
     return false;
   }
 
@@ -1478,16 +1594,23 @@ inline bool CompileThemeSpecObject(JsonObjectConst spec, CompiledThemeSpec& scen
   return true;
 }
 
-inline bool CompileThemeSpec(const char* themeSpecRaw, JsonDocument& doc, CompiledThemeSpec& scene) {
+inline bool CompileThemeSpec(
+    const char* themeSpecRaw,
+    JsonDocument& doc,
+    CompiledThemeSpec& scene,
+    bool* outOfMemory = nullptr) {
   if (themeSpecRaw == nullptr || themeSpecRaw[0] == '\0') {
     return false;
   }
   doc.clear();
   const DeserializationError err = deserializeJson(doc, themeSpecRaw);
   if (err) {
+    if (outOfMemory != nullptr) {
+      *outOfMemory = err == DeserializationError::NoMemory;
+    }
     return false;
   }
-  return CompileThemeSpecObject(doc.as<JsonObjectConst>(), scene);
+  return CompileThemeSpecObject(doc.as<JsonObjectConst>(), scene, outOfMemory);
 }
 
 struct Bounds {
@@ -1677,6 +1800,82 @@ inline bool CompileProgressColorStops(JsonObjectConst primitive, CompiledPrimiti
   return true;
 }
 
+// sin(degrees) times 4096 by Bhaskara's formula: whole numbers only, no table
+// and no float library. It is off by at most 0.1 degree, less than half a
+// pixel at the edge of the display.
+inline int ArcSin4096(int degrees) {
+  const int half = degrees % 180;
+  const int k = half * (180 - half);
+  const int value = (k << 14) / (40500 - k);
+  return degrees % 360 < 180 ? value : -value;
+}
+
+// A direction from the arc centre, or a pixel measured from it. Angles run
+// clockwise from 12 o'clock; y grows downwards as on the display.
+struct ArcVector {
+  int x;
+  int y;
+};
+
+inline ArcVector ArcDirection(int degrees) {
+  return {ArcSin4096(degrees), -ArcSin4096(degrees + 90)};
+}
+
+// Whether `to` lies at most half a turn clockwise of `from`.
+inline bool ArcClockwise(const ArcVector& from, const ArcVector& to) {
+  return from.x * to.y - from.y * to.x >= 0;
+}
+
+inline bool ArcSweepContains(const ArcVector& start, const ArcVector& end, int sweep, const ArcVector& pixel) {
+  const bool afterStart = ArcClockwise(start, pixel);
+  const bool beforeEnd = ArcClockwise(pixel, end);
+  return sweep >= 360 || (sweep > 180 ? afterStart || beforeEnd : afterStart && beforeEnd);
+}
+
+// Draws the ring row by row as FillRect runs: the track over the whole sweep
+// and, from the start angle, the filled share of it. 0 % is track only, 100 %
+// is filled to the end.
+inline void DrawProgressArc(const CompiledPrimitive& primitive, int percent, uint16_t fillColor, Sink& sink) {
+  const int start = primitive.segments;
+  const int sweep = primitive.segmentGap;
+  const int filled = sweep * percent / 100;
+  // Distances are doubled so that a box with an even side has its centre
+  // between two pixels.
+  const int outer = primitive.width < primitive.height ? primitive.width : primitive.height;
+  const int inner = outer - 2 * primitive.borderRadius;
+  const ArcVector startEdge = ArcDirection(start);
+  const ArcVector filledEdge = ArcDirection(start + filled);
+  const ArcVector endEdge = ArcDirection(start + sweep);
+  RectCommand run;
+  run.height = 1;
+  for (int row = 0; row < primitive.height; ++row) {
+    run.y = primitive.y + row;
+    int kind = 0;  // 0 outside the arc, 1 track, 2 filled
+    for (int col = 0; col <= primitive.width; ++col) {
+      const ArcVector pixel = {2 * col + 1 - primitive.width, 2 * row + 1 - primitive.height};
+      const int distance = pixel.x * pixel.x + pixel.y * pixel.y;
+      int next = 0;
+      if (col < primitive.width && distance <= outer * outer && distance >= inner * inner) {
+        if (filled > 0 && ArcSweepContains(startEdge, filledEdge, filled, pixel)) {
+          next = 2;
+        } else if (ArcSweepContains(startEdge, endEdge, sweep, pixel)) {
+          next = 1;
+        }
+      }
+      if (next == kind) {
+        continue;
+      }
+      if (kind != 0) {
+        run.width = primitive.x + col - run.x;
+        run.color = kind == 2 ? fillColor : primitive.bg;
+        sink.FillRect(run);
+      }
+      run.x = primitive.x + col;
+      kind = next;
+    }
+  }
+}
+
 inline bool CompiledProgressLaneUnavailable(const CompiledPrimitive& primitive, const FrameData& frame) {
   const int slotIndex = UsageWindowBindingIndex(primitive.binding);
   if (slotIndex >= 0) {
@@ -1826,6 +2025,11 @@ inline bool DrawCompiledPrimitive(
   if (primitive.kind == PrimitiveKind::Progress) {
     if (CompiledProgressLaneUnavailable(primitive, frame)) {
       return false;
+    }
+    if (primitive.style == kProgressStyleArc) {
+      const int percent = CompiledProgressPercentFor(primitive, frame);
+      DrawProgressArc(primitive, percent, ResolveProgressFillColor(primitive, percent, frame.usageMode), sink);
+      return true;
     }
     ProgressCommand cmd;
     cmd.x = primitive.x;

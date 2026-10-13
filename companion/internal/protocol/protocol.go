@@ -96,20 +96,24 @@ type Frame struct {
 	// reset across that provider's windows. Unlike UsageWindows, which carry
 	// the currently displayed provider, these rows span all providers so a
 	// theme can render "Claude 1h / Codex 3h" style overviews.
-	ProviderSlots       []UsageSlot     `json:"providerSlots,omitempty"`
-	Time                string          `json:"time,omitempty"`
-	Date                string          `json:"date,omitempty"`
-	NextClockTransition *ClockSchedule  `json:"clockSchedule,omitempty"`
-	SessionTokens       int64           `json:"sessionTokens,omitempty"`
-	WeekTokens          int64           `json:"weekTokens,omitempty"`
-	TotalTokens         int64           `json:"totalTokens,omitempty"`
-	Activity            string          `json:"activity,omitempty"`
-	AgentName           string          `json:"agentName,omitempty"`
-	AgentReminderSecs   int             `json:"agentReminderSecs,omitempty"`
-	Theme               string          `json:"theme,omitempty"`
-	ThemeSpec           json.RawMessage `json:"themeSpec,omitempty"`
-	Update              *UpdateState    `json:"update,omitempty"`
-	Error               string          `json:"error,omitempty"`
+	ProviderSlots       []UsageSlot    `json:"providerSlots,omitempty"`
+	Time                string         `json:"time,omitempty"`
+	Date                string         `json:"date,omitempty"`
+	NextClockTransition *ClockSchedule `json:"clockSchedule,omitempty"`
+	SessionTokens       int64          `json:"sessionTokens,omitempty"`
+	WeekTokens          int64          `json:"weekTokens,omitempty"`
+	TotalTokens         int64          `json:"totalTokens,omitempty"`
+	Activity            string         `json:"activity,omitempty"`
+	// ActivityTTLSec is how long the device may keep showing Activity without
+	// a fresh frame, counted from receipt. Past it the device shows idle on
+	// its own (#369). Zero means no expiry.
+	ActivityTTLSec    int64           `json:"activityTtlSecs,omitempty"`
+	AgentName         string          `json:"agentName,omitempty"`
+	AgentReminderSecs int             `json:"agentReminderSecs,omitempty"`
+	Theme             string          `json:"theme,omitempty"`
+	ThemeSpec         json.RawMessage `json:"themeSpec,omitempty"`
+	Update            *UpdateState    `json:"update,omitempty"`
+	Error             string          `json:"error,omitempty"`
 }
 
 type UpdateState struct {
@@ -435,6 +439,14 @@ func ResetSourceKey(provider string, window string) string {
 // collectedAt is when the underlying usage data was read, sendAt when this frame
 // leaves the host, and sourceLive reports whether that data is current rather
 // than a resend of the last known good frame.
+//
+// A frame in which no window has a reset time is still a statement about the
+// account: nothing is scheduled to reset. It leaves as `live` with the usual
+// budget, under the provider key as its source (ResetSourceKey with no window),
+// so the device can tell a measured idle account from data it cannot stand
+// behind. That holds only for a current collection. A resend of the last good
+// frame, unavailable usage, and deadlines that ran out before the frame left
+// stay `stale`: none of them says the account is idle now.
 func (f Frame) ApplyResetTrust(collectedAt time.Time, sendAt time.Time, sourceLive bool) Frame {
 	if sendAt.IsZero() {
 		sendAt = time.Now()
@@ -451,6 +463,7 @@ func (f Frame) ApplyResetTrust(collectedAt time.Time, sendAt time.Time, sourceLi
 	if f.ResetTrustSec < 0 {
 		f.ResetTrustSec = 0
 	}
+	hadCountdown := hasResetCountdown(f)
 	f.ResetSec = reanchorResetSec(f.ResetSec, age)
 	for i := range f.UsageWindows {
 		f.UsageWindows[i].ResetSec = reanchorResetSec(f.UsageWindows[i].ResetSec, age)
@@ -465,8 +478,10 @@ func (f Frame) ApplyResetTrust(collectedAt time.Time, sendAt time.Time, sourceLi
 		f.ResetSource = ResetSourceKey(f.Provider, "")
 	}
 
+	noCountdown := !hasResetCountdown(f)
 	switch {
-	case !basisKnown, !hasResetCountdown(f), f.ResetTrustSec <= 0, f.ResetSource == "":
+	case !basisKnown, f.ResetTrustSec <= 0, f.ResetSource == "",
+		noCountdown && (hadCountdown || !sourceLive || f.UsageUnavailable):
 		// Expired, unknown, or unattributable: never hand the device a number
 		// it could keep counting down as if it were real.
 		f.ResetTrust = ResetTrustStale

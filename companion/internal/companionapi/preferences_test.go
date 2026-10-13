@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -88,6 +89,45 @@ func TestPreferencesMarksUnavailableProviderStaleFromPersistedUsage(t *testing.T
 	_ = json.Unmarshal(recorder.Body.Bytes(), &response)
 	if response.Items[0].Health.State != "stale" || response.Items[0].Health.LastSuccessAt != collectedAt.Format(time.RFC3339) {
 		t.Fatalf("unexpected stale health: %#v", response.Items[0].Health)
+	}
+}
+
+// Issue #368: a provider that stopped delivering says since when, also once
+// its saved reading is too old to show and lastSuccessAt is gone. A provider
+// the collector never stored says nothing.
+func TestPreferencesReportNoReadingSinceFromStoredCollectionTime(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	collectedAt := time.Date(2026, 7, 28, 8, 29, 0, 0, time.UTC)
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{
+			{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthAuthRequired},
+			{ID: "cursor", Label: "Cursor", Enabled: true, Health: codexbar.ProviderHealthAuthRequired},
+		}, nil
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
+			Provider: "claude", Frame: protocol.Frame{Provider: "claude", UsageUnavailable: true}, CollectedAt: collectedAt, Stale: true,
+		}, {
+			// Never delivered: this time is its first failed reading.
+			Provider: "cursor", Frame: protocol.Frame{Provider: "cursor", UsageUnavailable: true}, CollectedAt: collectedAt, Stale: true, NoReading: true,
+		}}}, true
+	}
+
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+	var response preferencesResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Items) != 2 {
+		t.Fatalf("expected two providers, got %#v", response.Items)
+	}
+	claude, cursor := response.Items[0].Health, response.Items[1].Health
+	if claude.State != "auth_required" || claude.LastSuccessAt != "" || claude.NoReadingSince != "2026-07-28T08:29:00Z" {
+		t.Fatalf("unexpected health for the failing provider: %#v", claude)
+	}
+	if cursor.NoReadingSince != "" {
+		t.Fatalf("a provider that never delivered must not name a time: %#v", cursor)
 	}
 }
 
@@ -594,6 +634,127 @@ func TestFreshUsageAfterExactFailureRestoresHealthyPreference(t *testing.T) {
 	}
 }
 
+// Review of #524: a health scan the provider throttled is like one that got no
+// answer. It must not hide a reading that did arrive, or the row stops being
+// healthy and setup refuses to continue for a provider that is delivering.
+func TestRateLimitedHealthScanDoesNotOverrideUsageEvidence(t *testing.T) {
+	now := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	rateLimited := []codexbar.ProviderSetting{{
+		ID: "codex", Label: "Codex", Enabled: true,
+		Health: codexbar.ProviderHealthRateLimited, Reported: "usage request failed: too many requests",
+	}}
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.now = func() time.Time { return now }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return freshProviderUsage("codex", "Codex", now), true
+	}
+	if items := server.providerDescriptors(rateLimited); len(items) != 1 || items[0].Health.State != "healthy" {
+		t.Fatalf("fresh usage must keep the row healthy: %#v", items[0].Health)
+	}
+
+	// A saved reading that is no longer fresh is still the last good one.
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		usage := freshProviderUsage("codex", "Codex", now)
+		for i := range usage.Providers {
+			usage.Providers[i].Stale = true
+		}
+		return usage, true
+	}
+	if items := server.providerDescriptors(rateLimited); len(items) != 1 || items[0].Health.State != providerHealthStateStale {
+		t.Fatalf("a saved reading must show as stale: %#v", items[0].Health)
+	}
+
+	// Without any reading the row still says what the scan found.
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
+	if items := server.providerDescriptors(rateLimited); len(items) != 1 || items[0].Health.State != "rate_limited" {
+		t.Fatalf("no reading: the row must stay rate_limited: %#v", items[0].Health)
+	}
+}
+
+// Seen in the Windows app: Claude was delivering usage, Codex was switched on,
+// and the next health scan met one Claude call the provider throttled. CodexBar
+// marks that summary as a browser sign-in, the row left "healthy" and its
+// dialog opened by itself. A reading that did arrive answers the diagnosis;
+// without one the row still asks for the browser session.
+func TestBrowserSignInHealthScanDoesNotOverrideUsageEvidence(t *testing.T) {
+	const summary = "Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: OAuth error: Claude OAuth usage endpoint is rate limited. Retrying in about 1s; credentials were preserved.; CLI: Claude CLI /usage opened, but this Claude version returned local activity stats instead of plan limit percentages. Use Auto, OAuth, or Web mode for Claude limits. [claude:browser-sign-in-required https://claude.ai/login]"
+	now := time.Date(2026, 10, 7, 22, 0, 0, 0, time.UTC)
+	scanned := []codexbar.ProviderSetting{{
+		ID: "claude", Label: "Claude", Enabled: true,
+		Health:    providerHealthFromReadiness(codexbar.ProviderErrorKind("claude", summary)),
+		SignInURL: "https://claude.ai/login", Reported: summary,
+	}}
+	if scanned[0].Health != codexbar.ProviderHealthBrowserSignIn {
+		t.Fatalf("the summary must classify as a browser sign-in, got %s", scanned[0].Health)
+	}
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.now = func() time.Time { return now }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return freshProviderUsage("claude", "Claude", now), true
+	}
+	items := server.providerDescriptors(scanned)
+	if len(items) != 1 || items[0].Health.State != "healthy" || items[0].Health.SignInURL != "" {
+		t.Fatalf("fresh usage must keep the row healthy: %#v", items[0].Health)
+	}
+
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
+	// The sentence approved for this row on 2026-09-17, from the health scan
+	// and from the exact check alike: a dismissed message opens again when its
+	// text changes, and the exact check ages out after five minutes.
+	const guidance = "Claude usage needs a signed-in claude.ai session in your browser. Sign in to claude.ai in your browser, close the browser, then check again."
+	for _, source := range []string{"health scan", "exact check"} {
+		items = server.providerDescriptors(scanned)
+		if len(items) != 1 || items[0].Health.State != "browser_sign_in_required" ||
+			items[0].Health.SignInURL != "https://claude.ai/login" ||
+			items[0].Health.Message != guidance {
+			t.Fatalf("no reading, %s: the row must ask for the browser session in our words: %#v", source, items[0].Health)
+		}
+		// The engine's summary travels beside the message, for "Copy provider
+		// message" only (issue #551).
+		// Word for word: nothing in this summary is a secret.
+		if items[0].Health.Reported != summary {
+			t.Fatalf("no reading, %s: support needs the engine's summary to copy: %#v", source, items[0].Health)
+		}
+		server.providerReadiness = map[string]providerReadinessRecord{"claude": {
+			Status:    codexbar.ProviderBrowserSignInRequired,
+			Detail:    "Claude usage needs a signed-in claude.ai session in your browser.",
+			SignInURL: "https://claude.ai/login", CheckedAt: now, Reported: summary,
+		}}
+	}
+}
+
+// A fresh reading speaks over a browser sign-in diagnosis only until the next
+// collection. A customer who really signed out stops delivering usage: that
+// collection fails, the reading is merely kept, and the row leaves "healthy".
+func TestBrowserSignInHealthScanIsOnlyOverriddenByAFreshReading(t *testing.T) {
+	now := time.Date(2026, 10, 7, 22, 0, 0, 0, time.UTC)
+	scanned := []codexbar.ProviderSetting{{
+		ID: "claude", Label: "Claude", Enabled: true,
+		Health:    codexbar.ProviderHealthBrowserSignIn,
+		SignInURL: "https://claude.ai/login",
+		Reported:  "Claude usage failed from all configured sources. [claude:browser-sign-in-required https://claude.ai/login]",
+	}}
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.now = func() time.Time { return now }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		usage := freshProviderUsage("claude", "Claude", now.Add(-40*time.Second))
+		usage.Providers[0].Retained = true
+		usage.Providers[0].Stale = true
+		return usage, true
+	}
+
+	items := server.providerDescriptors(scanned)
+	if len(items) != 1 || items[0].Health.State != providerHealthStateStale {
+		t.Fatalf("a reading that is only kept must not report the provider healthy: %#v", items[0].Health)
+	}
+	// The stale row shows what it reports, so the summary stays off it.
+	if items[0].Health.Reported != "" {
+		t.Fatalf("the stale row must not carry the browser sign-in summary: %#v", items[0].Health)
+	}
+}
+
 func TestPreferencesKeepCodexBarNoStrategySentence(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
@@ -882,7 +1043,10 @@ func TestDisablingProviderRemovesItsPersistedUsageCard(t *testing.T) {
 	}
 }
 
-func TestEnabledProviderExactUsageDoesNotReplaceUnavailableCollectorSnapshot(t *testing.T) {
+// #480: a ready provider check must not put its own reading in front of the
+// collector's. Setup shows a provider's usage only once the collector, which
+// feeds VibeTV, has it.
+func TestReadyProviderCheckWaitsForTheCollectorReading(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	enabled := false
 	now := time.Now().UTC()
@@ -893,463 +1057,79 @@ func TestEnabledProviderExactUsageDoesNotReplaceUnavailableCollectorSnapshot(t *
 			{ID: "future-provider", Label: "Future Provider", Enabled: enabled, Health: codexbar.ProviderHealthChecking},
 		}, nil
 	}
-	server.providerPreferences.set = func(_ context.Context, id string, value bool) error {
-		if id != "future-provider" {
-			t.Fatalf("unexpected provider ID %q", id)
-		}
+	server.providerPreferences.set = func(_ context.Context, _ string, value bool) error {
 		enabled = value
 		return nil
 	}
-	probeDone := make(chan struct{})
 	server.probeExactProvider = func(_ context.Context, _ string, id string) codexbar.ProviderSetup {
-		defer close(probeDone)
 		return codexbar.ProviderSetup{
 			Status: codexbar.ProviderReady,
 			Providers: []codexbar.ProviderReadiness{{
 				ID: id, Label: "Future Provider", Enabled: providerEnabled(true), Status: codexbar.ProviderReady,
 			}},
-			ExactUsage: &codexbar.ParsedFrame{
-				Provider:    id,
-				Frame:       protocol.Frame{Provider: id, Label: "Future Provider", Weekly: 43, UsageUnavailable: true},
-				Source:      "oauth",
-				CollectedAt: now,
-				Meta: codexbar.ProviderUsageMeta{Windows: []codexbar.UsageWindow{{
-					ID: "secondary", Label: "Weekly", UsedPercent: 43,
-				}}},
-			},
 		}
 	}
-	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
-		return daemon.PersistedUsage{
-			SavedAt:         now.Add(-time.Hour),
-			CurrentProvider: "gemini",
-			Providers: []daemon.ProviderUsageSnapshot{
-				{
-					Provider:    "codex",
-					Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Session: 12, Weekly: 34},
-					CollectedAt: now,
-				},
-				{
-					Provider:    "future-provider",
-					Frame:       protocol.Frame{Provider: "future-provider", Label: "Future Provider"},
-					CollectedAt: now.Add(-time.Hour),
-					Stale:       true,
-				},
-			},
-		}, true
+	woken := make(chan struct{}, 1)
+	server.wakeDisplayStream = func() {
+		select {
+		case woken <- struct{}{}:
+		default:
+		}
 	}
+	collected := []daemon.ProviderUsageSnapshot{{
+		Provider:    "codex",
+		Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Session: 12, Weekly: 34},
+		CollectedAt: now,
+	}}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{SavedAt: now, CurrentProvider: "codex", Providers: collected}, true
+	}
+	usage := func() usageResponse {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+		var response usageResponse
+		if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+			t.Fatalf("decode usage: %v (status=%d)", err, recorder.Code)
+		}
+		return response
+	}
+
 	recorder := httptest.NewRecorder()
-	server.Handler().ServeHTTP(
-		recorder,
-		httptest.NewRequest(
-			http.MethodPatch,
-			"/v1/preferences/codexbar.providers.future-provider.enabled",
-			bytes.NewBufferString(`{"value":true}`),
-		),
-	)
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(
+		http.MethodPatch,
+		"/v1/preferences/codexbar.providers.future-provider.enabled",
+		bytes.NewBufferString(`{"value":true}`),
+	))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("enable future provider: status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 	select {
-	case <-probeDone:
+	case <-woken:
 	case <-time.After(time.Second):
-		t.Fatal("exact provider probe did not finish")
+		t.Fatal("a ready provider check must wake the collector")
 	}
-	deadline := time.Now().Add(time.Second)
-	for {
-		server.usageCacheMu.RLock()
-		cached := server.usageCache != nil
-		server.usageCacheMu.RUnlock()
-		if cached {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("exact provider usage was not cached")
-		}
-		time.Sleep(time.Millisecond)
-	}
-
-	recorder = httptest.NewRecorder()
-	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("get usage: status=%d body=%s", recorder.Code, recorder.Body.String())
-	}
-	var response usageResponse
-	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
-		t.Fatalf("decode usage: %v", err)
-	}
+	response := usage()
 	if response.CurrentProvider != "codex" {
-		t.Fatalf("exact cache displaced the collector current provider: %#v", response)
+		t.Fatalf("the check moved the current provider: %#v", response)
 	}
 	for _, provider := range response.Providers {
-		if provider.ID != "future-provider" {
-			continue
+		if provider.ID == "future-provider" && (provider.Weekly != 0 || len(provider.Windows) != 0) {
+			t.Fatalf("setup shows usage the collector does not have: %#v", provider)
 		}
-		if provider.Weekly != 0 || len(provider.Windows) != 0 || !provider.Stale || !provider.UsageUnavailable {
-			t.Fatalf("exact provider usage replaced unavailable collector state: %#v", provider)
-		}
-		return
-	}
-	t.Fatalf("enabled unavailable provider missing from usage: %#v", response)
-}
-
-func TestFreshExactZeroUsageDisplacesStaleGeminiSnapshot(t *testing.T) {
-	server := newTestServer(t, runtimeconfig.Config{})
-	now := time.Date(2026, 7, 24, 8, 0, 0, 0, time.UTC)
-	server.now = func() time.Time { return now }
-	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
-		return daemon.PersistedUsage{
-			SavedAt:         now.Add(-48 * time.Hour),
-			CurrentProvider: "gemini",
-			Providers: []daemon.ProviderUsageSnapshot{{
-				Provider:    "gemini",
-				Frame:       protocol.Frame{Provider: "gemini", Label: "Gemini", Session: 0, Weekly: 0},
-				CollectedAt: now.Add(-48 * time.Hour),
-				Stale:       true,
-			}},
-		}, true
 	}
 
-	server.cacheExactProviderUsage(codexbar.ParsedFrame{
-		Provider:    "antigravity",
-		Frame:       protocol.Frame{Provider: "antigravity", Label: "Antigravity", Session: 0, Weekly: 0},
-		Source:      "cli",
+	collected = append(collected, daemon.ProviderUsageSnapshot{
+		Provider:    "future-provider",
+		Frame:       protocol.Frame{Provider: "future-provider", Label: "Future Provider", Weekly: 43},
 		CollectedAt: now,
 	})
-
-	server.usageCacheMu.RLock()
-	defer server.usageCacheMu.RUnlock()
-	if server.usageCache == nil || server.usageCache.CurrentProvider != "antigravity" {
-		t.Fatalf("fresh Antigravity did not become current: %#v", server.usageCache)
-	}
-	for _, provider := range server.usageCache.Providers {
-		if provider.ID == "antigravity" && !provider.Stale && !provider.UsageUnavailable {
+	for _, provider := range usage().Providers {
+		if provider.ID == "future-provider" && provider.Weekly == 43 {
 			return
 		}
 	}
-	t.Fatalf("fresh zero-usage Antigravity snapshot missing: %#v", server.usageCache)
-}
-
-func TestCachedExactUsageOverlayDoesNotShareProvidersWithConcurrentWriter(t *testing.T) {
-	server := newTestServer(t, runtimeconfig.Config{})
-	now := time.Date(2026, 7, 29, 10, 30, 0, 0, time.UTC)
-	server.now = func() time.Time { return now }
-	parsed := func(weekly int) codexbar.ParsedFrame {
-		return codexbar.ParsedFrame{
-			Provider: "codex",
-			Frame: protocol.Frame{
-				Provider: "codex",
-				Label:    "Codex",
-				Weekly:   weekly,
-			},
-			Meta: codexbar.ProviderUsageMeta{Windows: []codexbar.UsageWindow{{
-				ID: "weekly", Label: "Weekly", UsedPercent: weekly,
-			}}},
-			CollectedAt: now,
-		}
-	}
-	server.cacheExactProviderUsage(parsed(10))
-
-	readerReady := make(chan usageResponse, 1)
-	writerDone := make(chan struct{})
-	result := make(chan usageResponse, 1)
-	go func() {
-		snapshot, ok := server.cachedExactUsageOverlay(now, daemon.PersistedUsage{})
-		if !ok {
-			snapshot = usageResponse{}
-		}
-		readerReady <- snapshot
-		<-writerDone
-		result <- snapshot
-	}()
-
-	if snapshot := <-readerReady; len(snapshot.Providers) != 1 {
-		t.Fatalf("cached usage reader did not return a snapshot: %#v", snapshot)
-	}
-	server.cacheExactProviderUsage(parsed(90))
-	close(writerDone)
-
-	snapshot := <-result
-	if len(snapshot.Providers) != 1 ||
-		snapshot.Providers[0].Weekly != 10 ||
-		len(snapshot.Providers[0].Windows) != 1 ||
-		snapshot.Providers[0].Windows[0].UsedPercent != 10 {
-		t.Fatalf("concurrent cache write mutated the reader snapshot: %#v", snapshot.Providers)
-	}
-}
-
-func TestCachedExactUsageOverlayOwnsMutableWindows(t *testing.T) {
-	server := newTestServer(t, runtimeconfig.Config{})
-	now := time.Date(2026, 7, 29, 10, 30, 0, 0, time.UTC)
-	server.usageCache = &usageResponse{
-		CurrentProvider: "codex",
-		Providers: []usageProviderInfo{{
-			ID:          "codex",
-			UsageMode:   "used",
-			CollectedAt: now.Format(time.RFC3339),
-			Windows:     []usageWindowInfo{{ID: "weekly", UsedPercent: 10}},
-		}},
-	}
-
-	snapshot, ok := server.cachedExactUsageOverlay(now, daemon.PersistedUsage{})
-	if !ok {
-		t.Fatal("expected cached usage snapshot")
-	}
-	_ = usageResponseForDisplayMode(snapshot, false)
-
-	server.usageCacheMu.RLock()
-	defer server.usageCacheMu.RUnlock()
-	if got := server.usageCache.Providers[0].Windows[0].UsedPercent; got != 10 {
-		t.Fatalf("display conversion mutated cached window: got %d want 10", got)
-	}
-}
-
-func TestExactUsageCacheRejectsOldOrUndatedSnapshots(t *testing.T) {
-	server := newTestServer(t, runtimeconfig.Config{})
-	now := time.Date(2026, 7, 24, 8, 0, 0, 0, time.UTC)
-	server.now = func() time.Time { return now }
-
-	for _, collectedAt := range []time.Time{{}, now.Add(-16 * time.Minute)} {
-		server.cacheExactProviderUsage(codexbar.ParsedFrame{
-			Provider:    "future-provider",
-			Frame:       protocol.Frame{Provider: "future-provider", Label: "Future Provider", Weekly: 42},
-			CollectedAt: collectedAt,
-		})
-	}
-
-	server.usageCacheMu.RLock()
-	defer server.usageCacheMu.RUnlock()
-	if server.usageCache != nil {
-		t.Fatalf("untrusted exact usage was cached as fresh: %#v", server.usageCache)
-	}
-}
-
-func TestExactUsageCacheExpiresFromCollectionTime(t *testing.T) {
-	server := newTestServer(t, runtimeconfig.Config{})
-	now := time.Date(2026, 7, 24, 8, 0, 0, 0, time.UTC)
-	server.now = func() time.Time { return now }
-	server.cacheExactProviderUsage(codexbar.ParsedFrame{
-		Provider:    "codex",
-		Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 42},
-		CollectedAt: now.Add(-14 * time.Minute),
-	})
-
-	if _, ok := server.cachedExactUsageOverlay(now, daemon.PersistedUsage{}); !ok {
-		t.Fatal("fresh exact usage was not cached")
-	}
-	if got, ok := server.cachedExactUsageOverlay(now.Add(2*time.Minute), daemon.PersistedUsage{}); ok {
-		t.Fatalf("exact usage outlived its collection timestamp: %#v", got)
-	}
-}
-
-func TestExactUsageCacheDoesNotReplaceUnavailableCollectorSnapshot(t *testing.T) {
-	server := newTestServer(t, runtimeconfig.Config{})
-	now := time.Date(2026, 7, 24, 8, 0, 0, 0, time.UTC)
-	server.now = func() time.Time { return now }
-	server.cacheExactProviderUsage(codexbar.ParsedFrame{
-		Provider:    "codex",
-		Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 42},
-		CollectedAt: now,
-	})
-
-	for _, snapshot := range []daemon.ProviderUsageSnapshot{
-		{Provider: "codex", Frame: protocol.Frame{Provider: "codex"}, CollectedAt: now.Add(-time.Minute), Stale: true},
-		{Provider: "codex", Frame: protocol.Frame{Provider: "codex", UsageUnavailable: true}, CollectedAt: now.Add(-time.Minute)},
-	} {
-		usage := daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{snapshot}}
-		if got, ok := server.cachedExactUsageOverlay(now, usage); ok {
-			t.Fatalf("exact usage replaced unavailable collector state: %#v", got)
-		}
-	}
-}
-
-func TestExactUsageCacheOnlyOverlaysItsProviderOntoCurrentSnapshots(t *testing.T) {
-	server := newTestServer(t, runtimeconfig.Config{})
-	now := time.Date(2026, 7, 29, 10, 30, 0, 0, time.UTC)
-	server.now = func() time.Time { return now }
-
-	previous := daemon.PersistedUsage{
-		CurrentProvider: "codex",
-		Providers: []daemon.ProviderUsageSnapshot{
-			{
-				Provider: "codex",
-				Frame: protocol.Frame{
-					Provider: "codex", Label: "Codex", Weekly: 10,
-				},
-				Source: "old-codex", CollectedAt: now.Add(-time.Minute), Stale: true,
-			},
-			{
-				Provider: "claude",
-				Frame: protocol.Frame{
-					Provider: "claude", Label: "Claude", Weekly: 31,
-				},
-				Source: "old-claude", CollectedAt: now.Add(-time.Minute),
-				Meta: codexbar.ProviderUsageMeta{Windows: []codexbar.UsageWindow{{
-					ID: "weekly", Label: "Old weekly", UsedPercent: 31,
-				}}},
-			},
-			{
-				Provider: "gemini",
-				Frame:    protocol.Frame{Provider: "gemini", Label: "Gemini", Weekly: 22},
-				Source:   "old-gemini", CollectedAt: now.Add(-time.Minute),
-			},
-		},
-	}
-	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return previous, true }
-	server.cacheExactProviderUsage(codexbar.ParsedFrame{
-		Provider:    "codex",
-		Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 77},
-		Source:      "exact-probe",
-		CollectedAt: now,
-	})
-
-	current := daemon.PersistedUsage{
-		CurrentProvider: "claude",
-		Providers: []daemon.ProviderUsageSnapshot{
-			{
-				Provider: "claude",
-				Frame: protocol.Frame{
-					Provider: "claude", Label: "Claude", Weekly: 66,
-				},
-				Source: "fresh-claude", CollectedAt: now,
-				Meta: codexbar.ProviderUsageMeta{Windows: []codexbar.UsageWindow{{
-					ID: "monthly", Label: "Current monthly", UsedPercent: 66,
-				}}},
-			},
-			{
-				Provider: "codex",
-				Frame:    protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 10},
-				Source:   "older-codex", CollectedAt: now.Add(-time.Minute),
-			},
-			{
-				Provider: "gemini",
-				Frame:    protocol.Frame{Provider: "gemini", Error: "current collector error"},
-				Source:   "current-gemini", CollectedAt: now,
-			},
-		},
-	}
-
-	got, ok := server.cachedExactUsageOverlay(now, current)
-	if !ok {
-		t.Fatal("expected exact Codex cache to overlay the older Codex snapshot")
-	}
-	if got.Source != "codexbar-display" || got.CurrentProvider != "codex" {
-		t.Fatalf("expected current response metadata with exact current provider, got %#v", got)
-	}
-	if len(got.Providers) != 2 || got.Providers[0].ID != "claude" || got.Providers[1].ID != "codex" {
-		t.Fatalf("expected current provider ordering and no cached Gemini after its error, got %#v", got.Providers)
-	}
-	if claude := got.Providers[0]; claude.Weekly != 66 || claude.Source != "fresh-claude" || len(claude.Windows) != 1 || claude.Windows[0].Label != "Current monthly" {
-		t.Fatalf("latest Claude snapshot was replaced by the old cache: %#v", claude)
-	}
-	if codex := got.Providers[1]; codex.Weekly != 77 || codex.Source != "exact-probe" || codex.Stale {
-		t.Fatalf("exact Codex cache did not replace only Codex: %#v", codex)
-	}
-}
-
-func TestExactUsageCacheNeverOutranksNewerCollectorTokenHistory(t *testing.T) {
-	server := newTestServer(t, runtimeconfig.Config{})
-	now := time.Date(2026, 7, 30, 11, 45, 0, 0, time.UTC)
-	server.now = func() time.Time { return now }
-
-	partial := daemon.PersistedUsage{
-		CurrentProvider: "codex",
-		Providers: []daemon.ProviderUsageSnapshot{{
-			Provider:              "codex",
-			Frame:                 protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 10, TotalTokens: 120},
-			Source:                "collector",
-			CollectedAt:           now.Add(-10 * time.Minute),
-			TokenStatsCollectedAt: now.Add(-10 * time.Minute),
-			Meta: codexbar.ProviderUsageMeta{Cost: &codexbar.ProviderCostUsage{
-				Last30DaysTokens: 120,
-				Daily:            []codexbar.ProviderCostDay{{Day: "2026-07-30", TotalTokens: 120}},
-			}},
-		}},
-	}
-	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return partial, true }
-	server.cacheExactProviderUsage(codexbar.ParsedFrame{
-		Provider:    "codex",
-		Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 77},
-		Source:      "exact-probe",
-		CollectedAt: now.Add(-9 * time.Minute),
-	})
-
-	cleared := daemon.PersistedUsage{
-		CurrentProvider: "codex",
-		Providers: []daemon.ProviderUsageSnapshot{{
-			Provider:    "codex",
-			Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 10},
-			Source:      "collector",
-			CollectedAt: now.Add(-10 * time.Minute),
-		}},
-	}
-	clearedOverlay, ok := server.cachedExactUsageOverlay(now, cleared)
-	if !ok || clearedOverlay.TokenUsageReady || len(clearedOverlay.Providers) != 1 ||
-		clearedOverlay.Providers[0].TokenUsageReady || !clearedOverlay.Providers[0].TokenStatsCollectedAt.IsZero() {
-		t.Fatalf("exact cache restored cleared token readiness: ok=%t %#v", ok, clearedOverlay)
-	}
-
-	complete := daemon.PersistedUsage{
-		CurrentProvider: "codex",
-		Providers: []daemon.ProviderUsageSnapshot{{
-			Provider:    "codex",
-			Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 10, TotalTokens: 1617381357},
-			Source:      "collector",
-			CollectedAt: now.Add(-10 * time.Minute),
-			Meta: codexbar.ProviderUsageMeta{Cost: &codexbar.ProviderCostUsage{
-				Last30DaysTokens: 1617381357,
-				Daily: []codexbar.ProviderCostDay{
-					{Day: "2026-07-29", TotalTokens: 1617381237},
-					{Day: "2026-07-30", TotalTokens: 120},
-				},
-			}},
-		}},
-	}
-
-	got, ok := server.cachedExactUsageOverlay(now, complete)
-	if !ok || len(got.Providers) != 1 {
-		t.Fatalf("expected the exact cache to overlay one provider, got ok=%t %#v", ok, got.Providers)
-	}
-	codex := got.Providers[0]
-	if codex.Weekly != 77 || codex.Source != "exact-probe" {
-		t.Fatalf("expected the exact probe to keep owning quota values: %#v", codex)
-	}
-	if codex.Cost == nil || codex.Cost.Last30DaysTokens != 1617381357 || len(codex.Cost.Daily) != 2 {
-		t.Fatalf("older cached token history outranked the newer collector scan: %#v", codex.Cost)
-	}
-	if codex.TotalTokens != 1617381357 {
-		t.Fatalf("expected the newer collector token totals, got %d", codex.TotalTokens)
-	}
-	if !got.TokenUsageReady {
-		t.Fatalf("expected the complete collector history to mark token usage ready: %#v", got)
-	}
-}
-
-func TestExactUsageCacheNeverOutranksNewerCollectorQuotaSnapshot(t *testing.T) {
-	server := newTestServer(t, runtimeconfig.Config{})
-	now := time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
-	server.now = func() time.Time { return now }
-
-	server.cacheExactProviderUsage(codexbar.ParsedFrame{
-		Provider:    "codex",
-		Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 77},
-		Source:      "exact-probe",
-		CollectedAt: now.Add(-2 * time.Minute),
-	})
-
-	current := daemon.PersistedUsage{
-		CurrentProvider: "codex",
-		Providers: []daemon.ProviderUsageSnapshot{{
-			Provider:    "codex",
-			Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 42},
-			Source:      "collector",
-			CollectedAt: now.Add(-time.Minute),
-		}},
-	}
-
-	if got, ok := server.cachedExactUsageOverlay(now, current); ok {
-		t.Fatalf("older exact probe outranked the newer collector snapshot: %#v", got.Providers)
-	}
+	t.Fatal("the collector's reading must appear as soon as it exists")
 }
 
 func TestStaleUsageSnapshotNeverPresentsUnknownPercentagesAsRealZero(t *testing.T) {
@@ -1380,53 +1160,6 @@ func TestStaleUsageSnapshotNeverPresentsUnknownPercentagesAsRealZero(t *testing.
 	}
 	if len(response.Providers) != 1 || !response.Providers[0].UsageUnavailable {
 		t.Fatalf("stale zero usage looked trustworthy: %#v", response)
-	}
-}
-
-func TestEnablingProviderInvalidatesWarmUsageCache(t *testing.T) {
-	server := newTestServer(t, runtimeconfig.Config{})
-	enabled := false
-	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
-		return []codexbar.ProviderSetting{
-			{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy},
-			{ID: "future-provider", Label: "Future Provider", Enabled: enabled, Health: codexbar.ProviderHealthHealthy},
-		}, nil
-	}
-	server.providerPreferences.set = func(_ context.Context, id string, value bool) error {
-		if id != "future-provider" {
-			t.Fatalf("unexpected provider ID %q", id)
-		}
-		enabled = value
-		return nil
-	}
-	server.probeExactProvider = func(_ context.Context, _ string, id string) codexbar.ProviderSetup {
-		return codexbar.ProviderSetup{Status: codexbar.ProviderReady, Providers: []codexbar.ProviderReadiness{{
-			ID: id, Label: "Future Provider", Enabled: providerEnabled(true), Status: codexbar.ProviderReady,
-		}}}
-	}
-	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
-	server.usageCache = &usageResponse{
-		CurrentProvider: "codex",
-		Providers:       []usageProviderInfo{{ID: "codex", Label: "Codex", Session: 12, Weekly: 34}},
-	}
-
-	recorder := httptest.NewRecorder()
-	server.Handler().ServeHTTP(
-		recorder,
-		httptest.NewRequest(
-			http.MethodPatch,
-			"/v1/preferences/codexbar.providers.future-provider.enabled",
-			bytes.NewBufferString(`{"value":true}`),
-		),
-	)
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("enable future provider: status=%d body=%s", recorder.Code, recorder.Body.String())
-	}
-
-	server.usageCacheMu.RLock()
-	defer server.usageCacheMu.RUnlock()
-	if server.usageCache != nil {
-		t.Fatalf("warm exact-usage overlay survived enable: %#v", server.usageCache)
 	}
 }
 
@@ -1742,6 +1475,79 @@ func TestPreferenceRegistrySupportsTypedDescriptorsWithoutNewRoutes(t *testing.T
 	}
 }
 
+func TestDisplayRotatePreferenceStoresTheIntervalAndSurvivesProviderDisplayWrites(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{
+			{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+			{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+		}, nil
+	}
+	renders := 0
+	server.renderDisplayStream = func() { renders++ }
+
+	request := func(method, path, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		server.Handler().ServeHTTP(recorder, httptest.NewRequest(method, path, bytes.NewBufferString(body)))
+		return recorder
+	}
+	read := func() preferenceDescriptor {
+		t.Helper()
+		recorder := request(http.MethodGet, "/v1/preferences?section=display", "")
+		var response preferencesResponse
+		if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil || recorder.Code != http.StatusOK {
+			t.Fatalf("list display preferences: %d %s", recorder.Code, recorder.Body.String())
+		}
+		for _, item := range response.Items {
+			if item.ID == displayRotatePreferenceID {
+				return item
+			}
+		}
+		t.Fatalf("rotation preference is not listed: %s", recorder.Body.String())
+		return preferenceDescriptor{}
+	}
+
+	item := read()
+	labels := make([]string, 0, len(item.Options))
+	for _, option := range item.Options {
+		labels = append(labels, option.Value+"="+option.Label)
+	}
+	if item.Label != "Switch providers" || item.Value != "0" || item.AllowsDefault ||
+		strings.Join(labels, "|") != "0=When activity changes|30=Every 30 seconds|60=Every minute|300=Every 5 minutes" {
+		t.Fatalf("unexpected rotation descriptor: %#v", item)
+	}
+
+	path := "/v1/preferences/" + displayRotatePreferenceID
+	if recorder := request(http.MethodPatch, path, `{"value":"30"}`); recorder.Code != http.StatusOK {
+		t.Fatalf("patch 30 seconds: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if cfg, _ := server.config(); cfg.DisplayRotateSeconds != 30 || read().Value != "30" || renders != 1 {
+		t.Fatalf("interval was not stored and rendered: cfg=%d renders=%d", cfg.DisplayRotateSeconds, renders)
+	}
+	for _, invalid := range []string{`"45"`, `30`, `null`} {
+		if recorder := request(http.MethodPatch, path, `{"value":`+invalid+`}`); recorder.Code != http.StatusBadRequest {
+			t.Fatalf("value %s was accepted: %d %s", invalid, recorder.Code, recorder.Body.String())
+		}
+	}
+
+	// The Control Center rewrites the display selection whenever a provider is
+	// switched on or off. That write must leave the interval alone.
+	if recorder := request(http.MethodPatch, "/v1/provider-display", `{"mode":"automatic","providerIds":["codex","claude"]}`); recorder.Code != http.StatusOK {
+		t.Fatalf("patch provider display: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if cfg, _ := server.config(); cfg.DisplayRotateSeconds != 30 || cfg.ProviderDisplay == nil {
+		t.Fatalf("provider display write lost the interval: %+v", cfg)
+	}
+
+	if recorder := request(http.MethodPatch, path, `{"value":"0"}`); recorder.Code != http.StatusOK {
+		t.Fatalf("patch back to activity: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if cfg, _ := server.config(); cfg.DisplayRotateSeconds != 0 || read().Value != "0" {
+		t.Fatalf("interval was not cleared: %d", cfg.DisplayRotateSeconds)
+	}
+}
+
 func TestPreferenceRegistryRejectsInvalidEnumRangeAndDefault(t *testing.T) {
 	minimum := int64(30)
 	maximum := int64(120)
@@ -1853,7 +1659,7 @@ func TestUnsupportedProviderKeepsGuidanceWithoutInventingReadiness(t *testing.T)
 		return usage, true
 	}
 	items := server.providerDescriptors(settings)
-	if len(items) != 1 || items[0].Health.State != "unsupported" || items[0].Health.Reported != message {
+	if len(items) != 1 || items[0].Health.State != "unsupported" || items[0].Health.Reported != reportedProviderMessage(message) {
 		t.Fatalf("unsupported provider lost its state or guidance: %+v", items)
 	}
 	if providerReadinessNextAction(codexbar.ProviderUnsupported) != "Read the provider message, then switch this provider off and use another one." {
@@ -1896,7 +1702,8 @@ if [ "$1" = "write" ]; then printf '%s' "$5" > "$CODEX_TEST_USAGE_PREFERENCE"; e
 		if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
 			t.Fatal(err)
 		}
-		if len(got.Items) != 1 || got.Items[0].Value != value {
+		index := slices.IndexFunc(got.Items, func(item preferenceDescriptor) bool { return item.ID == usageDisplayPreferenceID })
+		if index < 0 || got.Items[index].Value != value {
 			t.Fatalf("unexpected readback: %+v", got)
 		}
 	}
@@ -1904,5 +1711,28 @@ if [ "$1" = "write" ]; then printf '%s' "$5" > "$CODEX_TEST_USAGE_PREFERENCE"; e
 	server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPatch, "/v1/preferences/"+usageDisplayPreferenceID, strings.NewReader(`{"value":"remaining"}`)))
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("invalid value accepted: %d", response.Code)
+	}
+}
+
+func TestProviderPermissionCopyNamesTheHostSystem(t *testing.T) {
+	original := providerCopyGOOS
+	t.Cleanup(func() { providerCopyGOOS = original })
+
+	providerCopyGOOS = "darwin"
+	if got := providerReadinessMessage(codexbar.ProviderPermissionRequired); got != "macOS blocked access required by this provider." {
+		t.Fatalf("macOS message = %q", got)
+	}
+	if got := providerReadinessNextAction(codexbar.ProviderPermissionRequired); got != "Allow the required macOS access, then check this provider." {
+		t.Fatalf("macOS next action = %q", got)
+	}
+
+	providerCopyGOOS = "windows"
+	for _, got := range []string{
+		providerReadinessMessage(codexbar.ProviderPermissionRequired),
+		providerReadinessNextAction(codexbar.ProviderPermissionRequired),
+	} {
+		if strings.Contains(got, "macOS") {
+			t.Fatalf("Windows copy names macOS: %q", got)
+		}
 	}
 }

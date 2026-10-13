@@ -151,7 +151,15 @@ type DisplayModeChoiceProps = Pick<
   | "providers"
   | "saving"
   | "selectedProviderId"
-> & { className?: string; simplePreview?: boolean };
+> & {
+  /**
+   * What Automatic does without agent activity. Settings says so when it
+   * follows a timer instead of activity.
+   */
+  automaticDescription?: string;
+  className?: string;
+  simplePreview?: boolean;
+};
 
 /**
  * The display-mode choice itself: two cards showing what each mode would put
@@ -165,6 +173,7 @@ export function DisplayModeChoice({
   simplePreview,
   previewTheme,
   usageMode,
+  automaticDescription = "VibeTV switches between your providers based on recent activity and usage.",
   automaticPreview,
   className,
   manualPreview,
@@ -179,7 +188,7 @@ export function DisplayModeChoice({
     <div className={cn("flex w-full flex-col gap-4", className)}>
       <div className="grid w-full grid-cols-2 items-stretch gap-4">
         <ModeCard
-          description="With Agent activity on, VibeTV follows your agents. Agents that need you come first. Otherwise, the current provider stays on screen."
+          description={`With Agent activity on, VibeTV follows your agents. Agents that need you come first. Otherwise, ${automaticDescription}`}
           disabled={saving}
           onSelect={() => onSelectMode("automatic")}
           selected={mode === "automatic"}
@@ -247,6 +256,8 @@ export function ModeCard({
   return (
     <Item
       asChild
+      // The row stretches both cards to one height; a shorter description
+      // must not move its preview down.
       className={cn(selectedItemClass(selected), "items-start overflow-hidden p-0")}
       variant="outline"
     >

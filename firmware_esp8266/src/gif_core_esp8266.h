@@ -37,6 +37,8 @@ struct GifCoreStatusSnapshot {
   bool filePresent = false;
   bool decoderAllocated = false;
   bool decoderOpen = false;
+  unsigned long framesPlayed = 0;
+  unsigned long workspaceSkips = 0;
   String lastErrorStage;
 };
 
@@ -101,6 +103,8 @@ class GifCoreESP8266 {
   bool decoderOpen_ = false;
   bool suppressDraw_ = false;
   unsigned long nextFrameAtMs_ = 0;
+  unsigned long framesPlayed_ = 0;
+  unsigned long workspaceSkips_ = 0;
   int gifWidth_ = 0;
   int gifHeight_ = 0;
   int drawX_ = 0;

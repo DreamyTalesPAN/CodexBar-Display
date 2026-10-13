@@ -24,6 +24,7 @@
 #include "gif_asset_validator_file.h"
 #include "sprite_asset_validator_file.h"
 #include "renderer_esp8266.h"
+#include "wifi_known_networks.h"
 #include "wifi_recovery_policy.h"
 #include "wifi_setup_portal.h"
 
@@ -37,7 +38,7 @@
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
 const char kThemeFeatureJSON[] =
-    "[\"agent-activity-v1\",\"agent-theme-states-v1\",\"theme-spec-v1\",\"provider-slots-v1\",\"provider-assets-v1\",\"color-stops-v1\",\"text-valign-v1\",\"cable-transfer-v1\",\"cable-transfer-v2\",\"cable-health-v1\"]";
+    "[\"agent-activity-v1\",\"agent-theme-states-v1\",\"theme-spec-v1\",\"provider-slots-v1\",\"provider-assets-v1\",\"color-stops-v1\",\"text-valign-v1\",\"progress-arc-v1\",\"cable-transfer-v1\",\"cable-transfer-v2\",\"cable-health-v1\"]";
 #else
 const char kThemeFeatureJSON[] = "[\"agent-activity-v1\"]";
 #endif
@@ -98,6 +99,8 @@ const char kDeviceSettingsPath[] = "/s";
 const char kDeviceSettingsTemporaryPath[] = "/s.tmp";
 const char kConnectionTransitionPath[] = "/cm";
 const char kConnectionTransitionTemporaryPath[] = "/cm.tmp";
+const char kKnownWifiPath[] = "/wk";
+const char kKnownWifiTemporaryPath[] = "/wk.tmp";
 // The device settings record stays append-only: brightness byte, learned UTC
 // offset, standby, then optional next UTC-offset transitions. A shorter file is
 // an older record, so every reader must length-check its own section instead of
@@ -129,32 +132,32 @@ constexpr unsigned long kFirmwareUpdateSurfaceRecheckMs = 1000UL;
 
 String themeCapabilitiesJSON(bool enabled, bool compact = false) {
   String out;
-  out.reserve(compact ? 320 : 400);
+  out.reserve(compact ? 352 : 432);
   if (!enabled) {
-    return "{\"supportsThemeSpecV1\":false,\"supportsUsageSlotsV1\":false,\"supportsUsageWindowsV1\":false,\"supportsProviderSlotsV1\":false,\"supportsProviderAssetsV1\":false,\"supportsColorStopsV1\":false,\"supportsTextValignV1\":false,\"maxUsageWindows\":0,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0}";
+    return "{\"supportsThemeSpecV1\":false,\"supportsUsageSlotsV1\":false,\"supportsUsageWindowsV1\":false,\"supportsProviderSlotsV1\":false,\"supportsProviderAssetsV1\":false,\"supportsColorStopsV1\":false,\"supportsTextValignV1\":false,\"supportsProgressArcV1\":false,\"maxUsageWindows\":0,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0}";
   }
-  out += "{\"supportsThemeSpecV1\":true,\"supportsUsageSlotsV1\":true,\"supportsUsageWindowsV1\":true,\"supportsProviderSlotsV1\":true,\"supportsProviderAssetsV1\":true,\"supportsColorStopsV1\":true,\"supportsAgentThemeStatesV1\":true,\"supportsTextValignV1\":true,\"maxUsageWindows\":";
+  out += "{\"supportsThemeSpecV1\":true,\"supportsUsageSlotsV1\":true,\"supportsUsageWindowsV1\":true,\"supportsProviderSlotsV1\":true,\"supportsProviderAssetsV1\":true,\"supportsColorStopsV1\":true,\"supportsAgentThemeStatesV1\":true,\"supportsTextValignV1\":true,\"supportsProgressArcV1\":true,\"maxUsageWindows\":";
   out += String(codexbar_display::core::kAdvertisedMaxUsageWindows);
   out += ",\"maxThemeSpecBytes\":2048,\"maxThemePrimitives\":";
-  out += String(codexbar_display::themespec::kMaxCompiledThemeSpecPrimitives);
+  out += codexbar_display::themespec::kMaxCompiledThemeSpecPrimitives;
   if (!compact) {
     out += ",\"supportedPrimitiveTypes\":[\"text\",\"rect\",\"progress\",\"gif\",\"sprite\",\"pixels\"]";
     out += ",\"supportsStoredThemes\":true";
   }
   out += ",\"maxStoredThemeSpecBytes\":";
-  out += String(kMaxStoredThemeSpecBytes);
+  out += kMaxStoredThemeSpecBytes;
   out += ",\"maxThemeGifAssets\":";
-  out += String(codexbar_display::themespec::kMaxThemeSpecGifAssets);
+  out += codexbar_display::themespec::kMaxThemeSpecGifAssets;
   out += ",\"maxThemeGifBytes\":";
-  out += String(codexbar_display::themespec::kMaxThemeSpecGifAssetBytes);
+  out += codexbar_display::themespec::kMaxThemeSpecGifAssetBytes;
   out += ",\"maxThemeGifWidth\":";
-  out += String(codexbar_display::themespec::kMaxThemeSpecGifWidth);
+  out += codexbar_display::themespec::kMaxThemeSpecGifWidth;
   out += ",\"maxThemeGifHeight\":";
-  out += String(codexbar_display::themespec::kMaxThemeSpecGifHeight);
+  out += codexbar_display::themespec::kMaxThemeSpecGifHeight;
   out += ",\"maxThemeGifPixels\":";
-  out += String(codexbar_display::themespec::kMaxThemeSpecGifPixels);
+  out += codexbar_display::themespec::kMaxThemeSpecGifPixels;
   out += ",\"maxThemeGifLzwBits\":";
-  out += String(codexbar_display::esp8266::kMaxThemeGifLzwBits);
+  out += codexbar_display::esp8266::kMaxThemeGifLzwBits;
   out += "}";
   return out;
 }
@@ -210,8 +213,6 @@ struct CableTransferState {
   codexbar_display::esp8266::cable_transfer::State flow;
   CableTransferSink sink = CableTransferSink::kNone;
   CableTransferActivation activation = CableTransferActivation::kNone;
-  MD5Builder hash;
-  uint8_t expectedHash[16] = {};
   // Non-zero while a v2 firmware transfer runs at a faster serial rate.
   unsigned long baudRate = 0;
 };
@@ -237,6 +238,19 @@ bool assetUploadInProgress = false;
 String assetUploadError;
 String assetUploadPath;
 size_t assetUploadBytesSeen = 0;
+// A Cable transfer, and a WiFi upload that names its MD5, must match that MD5
+// before it replaces anything (#60). Only one of them runs at a time.
+MD5Builder transferHash;
+uint8_t transferExpectedHash[16] = {};
+bool assetUploadHashExpected = false;
+bool decodeTransferHash(const char* encoded, uint8_t* out);
+
+bool transferHashMatches() {
+  uint8_t actual[16];
+  transferHash.calculate();
+  transferHash.getBytes(actual);
+  return memcmp(actual, transferExpectedHash, sizeof(actual)) == 0;
+}
 File assetUploadFile;
 String activeThemeSpecPath;
 String activeThemeSpecHash;
@@ -293,14 +307,12 @@ constexpr const char* kLegacyMiniThemeSpecPath = "/themes/u/mini-cl-1-410a37.jso
 constexpr const char* kLegacyMiniGIFPath = "/themes/mini/mini.gif";
 #endif
 
-void recordRenderFull(const char* kind, unsigned long durationUs) {
-  (void)durationUs;
+void recordRenderFull(const char* kind) {
   renderDiagnostics.fullCount++;
   renderDiagnostics.lastKind = kind;
 }
 
-void recordRenderPartial(const char* kind, unsigned long durationUs) {
-  (void)durationUs;
+void recordRenderPartial(const char* kind) {
   renderDiagnostics.partialCount++;
   renderDiagnostics.lastKind = kind;
 }
@@ -375,21 +387,48 @@ void applyDeviceSettings() {
   }
 }
 
+// Replaces a small record file through a temporary copy, so a power cut leaves
+// the old or the new record, never half of one.
+bool writeRecordFile(const char* path, const char* temporaryPath, const uint8_t* record, size_t size) {
+  if (!LittleFS.begin()) {
+    return false;
+  }
+  File file = LittleFS.open(temporaryPath, "w");
+  if (!file) {
+    return false;
+  }
+  const size_t written = file.write(record, size);
+  file.close();
+  if (written != size || !LittleFS.rename(temporaryPath, path)) {
+    LittleFS.remove(temporaryPath);
+    return false;
+  }
+  return true;
+}
+
+// The bytes read from a record file, or -1 when there is none.
+int readRecordFile(const char* path, uint8_t* record, size_t size) {
+  if (!LittleFS.begin() || !LittleFS.exists(path)) {
+    return -1;
+  }
+  File file = LittleFS.open(path, "r");
+  if (!file) {
+    return -1;
+  }
+  const int readBytes = file.read(record, size);
+  file.close();
+  return readBytes;
+}
+
 bool loadDeviceSettings() {
   deviceSettings = DeviceSettings{};
   deviceSettingsClassified = false;
-  if (!LittleFS.begin() || !LittleFS.exists(kDeviceSettingsPath)) {
-    applyDeviceSettings();
-    return false;
-  }
-  File file = LittleFS.open(kDeviceSettingsPath, "r");
-  if (!file) {
-    applyDeviceSettings();
-    return false;
-  }
   uint8_t record[kDeviceSettingsRecordBytes] = {};
-  const int readBytes = file.read(record, sizeof(record));
-  file.close();
+  const int readBytes = readRecordFile(kDeviceSettingsPath, record, sizeof(record));
+  if (readBytes < 0) {
+    applyDeviceSettings();
+    return false;
+  }
   const int brightness = readBytes >= 1 ? record[0] : -1;
   deviceSettings.brightnessPercent =
       codexbar_display::esp8266::device_settings::BrightnessFromPersistedByte(brightness);
@@ -440,13 +479,6 @@ bool loadDeviceSettings() {
 }
 
 bool saveDeviceSettings() {
-  if (!LittleFS.begin()) {
-    return false;
-  }
-  File file = LittleFS.open(kDeviceSettingsTemporaryPath, "w");
-  if (!file) {
-    return false;
-  }
   uint8_t record[kDeviceSettingsRecordBytes] = {};
   record[0] = deviceSettings.brightnessPercent;
   deviceclock::EncodeUtcOffset(runtimeCtx.clock, record + 1);
@@ -456,17 +488,7 @@ bool saveDeviceSettings() {
   record[kConnectionModeRecordOffset] =
       static_cast<uint8_t>(deviceSettings.connectionMode);
   record[kCableOnlyClassifiedRecordOffset] = 1;
-  const size_t written = file.write(record, sizeof(record));
-  file.close();
-  if (written != sizeof(record)) {
-    LittleFS.remove(kDeviceSettingsTemporaryPath);
-    return false;
-  }
-  if (!LittleFS.rename(kDeviceSettingsTemporaryPath, kDeviceSettingsPath)) {
-    LittleFS.remove(kDeviceSettingsTemporaryPath);
-    return false;
-  }
-  return true;
+  return writeRecordFile(kDeviceSettingsPath, kDeviceSettingsTemporaryPath, record, sizeof(record));
 }
 
 bool clearConnectionTransition() {
@@ -487,42 +509,20 @@ bool clearConnectionTransition() {
 }
 
 bool saveConnectionTransition(const device_settings::ConnectionTransition& transition) {
-  if (!LittleFS.begin()) {
-    return false;
-  }
-  File file = LittleFS.open(kConnectionTransitionTemporaryPath, "w");
-  if (!file) {
-    return false;
-  }
   uint8_t record[device_settings::kConnectionTransitionRecordBytes] = {};
   device_settings::EncodeConnectionTransition(transition, record);
-  const size_t written = file.write(record, sizeof(record));
-  file.close();
-  if (written != sizeof(record)) {
-    LittleFS.remove(kConnectionTransitionTemporaryPath);
-    return false;
-  }
-  if (!LittleFS.rename(kConnectionTransitionTemporaryPath, kConnectionTransitionPath)) {
-    LittleFS.remove(kConnectionTransitionTemporaryPath);
-    return false;
-  }
-  return true;
+  return writeRecordFile(kConnectionTransitionPath, kConnectionTransitionTemporaryPath, record, sizeof(record));
 }
 
 bool loadConnectionTransition() {
   connectionTransition = {};
   connectionTransitionPending = false;
   connectionTransitionStartedAtMs = 0;
-  if (!LittleFS.begin() || !LittleFS.exists(kConnectionTransitionPath)) {
-    return false;
-  }
-  File file = LittleFS.open(kConnectionTransitionPath, "r");
-  if (!file) {
-    return false;
-  }
   uint8_t record[device_settings::kConnectionTransitionRecordBytes] = {};
-  const int readBytes = file.read(record, sizeof(record));
-  file.close();
+  const int readBytes = readRecordFile(kConnectionTransitionPath, record, sizeof(record));
+  if (readBytes < 0) {
+    return false;
+  }
   if (!device_settings::DecodeConnectionTransition(
           record, static_cast<size_t>(readBytes), connectionTransition) ||
       deviceSettings.connectionMode != connectionTransition.target) {
@@ -824,6 +824,13 @@ bool requestHasValidOtaAuth() {
       requestHasValidAuth());
 }
 
+bool rejectMissingPairingToken() {
+  addCorsHeaders();
+  webServer.sendHeader("WWW-Authenticate", "VibeTV token");
+  webServer.send(401, "text/plain; charset=utf-8", "pairing token required");
+  return false;
+}
+
 bool authorizeWifiCredentialWrite() {
   if (codexbar_display::esp8266::WifiSecurityPolicy::AllowsCredentialWrite(
           setupMode,
@@ -831,13 +838,11 @@ bool authorizeWifiCredentialWrite() {
           requestHasValidAuth())) {
     return true;
   }
-  addCorsHeaders();
   if (deviceAuthConfigured()) {
-    webServer.sendHeader("WWW-Authenticate", "VibeTV token");
-    webServer.send(401, "text/plain; charset=utf-8", "pairing token required");
-  } else {
-    webServer.send(403, "text/plain; charset=utf-8", "physical setup confirmation required");
+    return rejectMissingPairingToken();
   }
+  addCorsHeaders();
+  webServer.send(403, "text/plain; charset=utf-8", "physical setup confirmation required");
   return false;
 }
 
@@ -853,13 +858,12 @@ bool rejectUnlessLegacyWifi() {
 }
 
 bool requireWriteAuth() {
-  if (requestHasValidAuth()) {
-    return true;
-  }
-  addCorsHeaders();
-  webServer.sendHeader("WWW-Authenticate", "VibeTV token");
-  webServer.send(401, "text/plain; charset=utf-8", "pairing token required");
-  return false;
+  return requestHasValidAuth() || rejectMissingPairingToken();
+}
+
+void redirectToRoot() {
+  webServer.sendHeader("Location", "/");
+  webServer.send(303);
 }
 
 void appendAuthStatusJSON(String& out) {
@@ -876,9 +880,9 @@ void appendBrightnessCapabilityJSON(String& out) {
     return;
   }
   out += "{\"supported\":true,\"minPercent\":";
-  out += String(kMinBrightnessPercent);
+  out += kMinBrightnessPercent;
   out += ",\"maxPercent\":";
-  out += String(kMaxBrightnessPercent);
+  out += kMaxBrightnessPercent;
   out += "}";
 }
 
@@ -888,11 +892,11 @@ void appendBrightnessCapabilityJSON(String& out) {
 void appendStandbyCapabilityJSON(String& out) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   out += "{\"supported\":true,\"minTimeoutMinutes\":";
-  out += String(standby::kMinTimeoutMinutes);
+  out += standby::kMinTimeoutMinutes;
   out += ",\"maxTimeoutMinutes\":";
-  out += String(standby::kMaxTimeoutMinutes);
+  out += standby::kMaxTimeoutMinutes;
   out += ",\"defaultTimeoutMinutes\":";
-  out += String(standby::kDefaultTimeoutMinutes);
+  out += standby::kDefaultTimeoutMinutes;
   out += ",\"screensaverSlot\":true}";
 #else
   out += "{\"supported\":false}";
@@ -906,7 +910,7 @@ void appendStandbyStateJSON(String& out) {
   out += "\"standby\":{\"active\":";
   out += standbyState.active ? "true" : "false";
   out += ",\"idleSecs\":";
-  out += String((millis() - standbyState.lastActivityMs) / 1000UL);
+  out += (millis() - standbyState.lastActivityMs) / 1000UL;
   // While standby draws the screensaver, display.themeSpec.path is the
   // screensaver, not the live slot. A host that restores the live theme has to
   // read this instead, or it would write the screensaver into the live slot.
@@ -921,21 +925,15 @@ void appendStandbyStateJSON(String& out) {
 
 void appendSettingsJSON(String& out) {
   out += "\"settings\":{\"display\":{\"brightnessPercent\":";
-  out += String(deviceSettings.brightnessPercent);
+  out += deviceSettings.brightnessPercent;
   out += "},\"standby\":{\"enabled\":";
   out += deviceSettings.standby.enabled ? "true" : "false";
   out += ",\"timeoutMinutes\":";
-  out += String(deviceSettings.standby.timeoutMinutes);
+  out += deviceSettings.standby.timeoutMinutes;
   out += ",\"brightnessPercent\":";
-  out += String(deviceSettings.standby.brightnessPercent);
+  out += deviceSettings.standby.brightnessPercent;
   out += ",\"screensaverPath\":";
-  if (standby::HasScreensaver(deviceSettings.standby)) {
-    out += "\"";
-    out += jsonEscape(String(deviceSettings.standby.screensaverPath));
-    out += "\"";
-  } else {
-    out += "null";
-  }
+  appendJSONNullableString(out, String(deviceSettings.standby.screensaverPath));
   out += "}}";
 }
 
@@ -954,26 +952,34 @@ void appendClockJSON(String& out) {
   out += ",\"source\":\"";
   out += deviceclock::SourceName(source);
   out += "\",\"epoch\":";
-  out += String(static_cast<long>(deviceclock::UtcNow(runtimeCtx.clock, nowMs)));
+  out += static_cast<long>(deviceclock::UtcNow(runtimeCtx.clock, nowMs));
   out += ",\"utcOffsetMinutes\":";
   if (runtimeCtx.clock.hasUtcOffset) {
-    out += String(static_cast<int>(runtimeCtx.clock.utcOffsetMinutes));
+    out += static_cast<int>(runtimeCtx.clock.utcOffsetMinutes);
   } else {
     out += "null";
   }
   out += ",\"lastSyncAgeMs\":";
   if (runtimeCtx.clock.synced) {
-    out += String(nowMs - runtimeCtx.clock.syncMillis);
+    out += nowMs - runtimeCtx.clock.syncMillis;
   } else {
     out += "null";
   }
   out += ",\"syncCount\":";
-  out += String(runtimeCtx.clock.syncCount);
+  out += runtimeCtx.clock.syncCount;
   out += ",\"time\":\"";
   out += timeText;
   out += "\",\"date\":\"";
   out += dateText;
   out += "\"},";
+}
+
+// The screensaver is not where an update is announced: screensavers have no
+// notice slot, so every phase toggle forced a full repaint of the whole
+// screensaver about every 1.5 s. Standby and the post-install preview both put
+// one on screen; the notice returns with the live theme.
+bool screensaverOwnsDisplay() {
+  return standbyState.active || screensaverPreviewState.showing;
 }
 
 void markFirmwareUpdateNoticeDirty() {
@@ -994,6 +1000,7 @@ void markFirmwareUpdateNoticeDirty() {
 bool shouldShowFirmwareUpdateNotice() {
   return firmwareUpdate.noticeEnabled &&
          firmwareUpdate.notice.visible &&
+         !screensaverOwnsDisplay() &&
          !setupMode &&
          !waitStatusRendered &&
          !frameStaleStatusRendered &&
@@ -1057,6 +1064,7 @@ void clearFirmwareUpdateNotice() {
 
 void maintainFirmwareUpdateNotice() {
   if (!firmwareUpdate.noticeEnabled ||
+      screensaverOwnsDisplay() ||
       setupMode ||
       frameStaleStatusRendered ||
       !codexbar_display::app::HasFrame(runtimeCtx) ||
@@ -1142,23 +1150,20 @@ void drawWaitingForCompanionStatus() {
       !codexbar_display::esp8266::ConnectedSetupPolicy::IsStationIPv4(stationIp.c_str())) {
     stationIp = "";
   }
-  const unsigned long renderStartUs = micros();
   renderer.DrawConnectedSetupInstructions(runtimeCtx, stationIp);
-  recordRenderFull("connected_setup", micros() - renderStartUs);
+  recordRenderFull("connected_setup");
   lastConnectedSetupIp = stationIp;
   waitStatusRendered = true;
 }
 
-void drawWifiConnectingStatus(const String& ssid) {
-  const unsigned long renderStartUs = micros();
+void drawWifiConnectingStatus(const char* ssid) {
   renderer.DrawStatus(runtimeCtx, "VIBE TV", "Connecting WiFi", ssid);
-  recordRenderFull("status", micros() - renderStartUs);
+  recordRenderFull("status");
 }
 
-void drawWifiResetStatus(const String& line2) {
-  const unsigned long renderStartUs = micros();
+void drawWifiResetStatus(const char* line2) {
   renderer.DrawStatus(runtimeCtx, "VIBE TV RESET", "WiFi reset", line2);
-  recordRenderFull("status", micros() - renderStartUs);
+  recordRenderFull("status");
 }
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
@@ -1186,11 +1191,10 @@ void finishThemeInstallStatus(bool restore = true) {
 #endif
 }
 
-void drawUpdateStatus(const String& line2) {
+void drawUpdateStatus(const char* line2) {
   finishThemeInstallStatus();
-  const unsigned long renderStartUs = micros();
   renderer.DrawStatus(runtimeCtx, "VIBE TV UPDATE", "Update running", line2);
-  recordRenderFull("update_status", micros() - renderStartUs);
+  recordRenderFull("update_status");
 }
 
 bool statusScreenLocked() {
@@ -1265,28 +1269,18 @@ void resetWifiReconnectState() {
   wifiReconnectStatusRendered = false;
 }
 
-String displayErrorMessage(const String& message) {
+const char* displayErrorMessage(const String& message) {
   if (message == "runtime/codexbar-version" || message == "runtime/codexbar-parse") {
     return "Update Mac App";
   }
   if (message == "runtime/codexbar-binary") {
     return "Install Mac App";
   }
-  if (message == "runtime/no-providers") {
-    return "Open App";
-  }
-  if (message == "runtime/codexbar-cmd") {
-    return "Open App";
-  }
-  if (message == "runtime/cycle-timeout") {
-    return "Open App";
-  }
   return "Open App";
 }
 
 void renderAcceptedFrame(const codexbar_display::core::SerialConsumeEvent& event) {
   const bool maybeThemeSpecPartial = event.themeSpecPartialRender && !runtimeCtx.screenDirty;
-  const unsigned long partialStartUs = maybeThemeSpecPartial ? micros() : 0;
   const unsigned long partialSuccessesBefore =
       maybeThemeSpecPartial ? renderer.DebugSnapshot().themeSpecPartialSuccesses : 0;
   renderer.OnFrameAccepted(runtimeCtx, event);
@@ -1298,8 +1292,25 @@ void renderAcceptedFrame(const codexbar_display::core::SerialConsumeEvent& event
   if (maybeThemeSpecPartial) {
     const codexbar_display::esp8266::RendererDebugSnapshot snapshot = renderer.DebugSnapshot();
     if (snapshot.themeSpecPartialSuccesses > partialSuccessesBefore && !runtimeCtx.screenDirty) {
-      recordRenderPartial("theme_spec_frame", micros() - partialStartUs);
+      recordRenderPartial("theme_spec_frame");
     }
+  }
+}
+
+// The device's own activity expiry (#369): once the last frame's bound has
+// passed without a fresh frame, the screen stops showing the customer as
+// working. Standby needs nothing from this: its clock already counts from the
+// last frame that reported working, so a device left without a writer goes
+// idle here and reaches the screensaver on the same countdown as any idle one.
+void maintainActivityExpiry() {
+  codexbar_display::core::SerialConsumeEvent event;
+  if (!codexbar_display::core::ExpireActivity(runtimeCtx.runtime, millis(), event)) {
+    return;
+  }
+  Serial.println("activity_expired");
+  // A status screen owns the display; the frame that ends it repaints in full.
+  if (!statusScreenLocked() && !setupMode && !waitStatusRendered && !frameStaleStatusRendered) {
+    renderAcceptedFrame(event);
   }
 }
 
@@ -1342,9 +1353,8 @@ void maintainDeviceClock() {
       codexbar_display::app::CurrentFrame(runtimeCtx).hasError) {
     return;
   }
-  const unsigned long renderStartUs = micros();
   if (renderer.DrawClock(runtimeCtx)) {
-    recordRenderPartial("clock", micros() - renderStartUs);
+    recordRenderPartial("clock");
   }
 }
 
@@ -1456,9 +1466,8 @@ void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, 
     // Reuse the Companion's existing ThemeSpec, including its progress bar.
     // Hold it between files so standby cannot replace the install screen.
     pendingHttpRender = false;
-    const unsigned long renderStartUs = micros();
     renderer.DrawUsage(runtimeCtx);
-    recordRenderFull("theme_install", micros() - renderStartUs);
+    recordRenderFull("theme_install");
     runtimeCtx.screenDirty = false;
     themeInstallStatusVisible = true;
     themeInstallStatusActivityMs = millis();
@@ -1603,7 +1612,47 @@ bool readWifiCredentials(WifiCredentials& creds) {
   return String(creds.ssid).length() > 0;
 }
 
+namespace wifi_known = codexbar_display::esp8266::wifi_known;
+static_assert(wifi_known::kSsidBytes == kWifiSsidBytes && wifi_known::kPasswordBytes == kWifiPasswordBytes,
+              "remembered networks use the VTB1 field sizes");
+
+bool loadKnownWifiNetworks(wifi_known::List& list) {
+  uint8_t record[wifi_known::kEncodedBytes] = {};
+  const int readBytes = readRecordFile(kKnownWifiPath, record, sizeof(record));
+  return wifi_known::Decode(record, readBytes < 0 ? 0 : static_cast<size_t>(readBytes), list);
+}
+
+bool saveKnownWifiNetworks(const wifi_known::List& list) {
+  uint8_t record[wifi_known::kEncodedBytes] = {};
+  wifi_known::Encode(list, record);
+  return writeRecordFile(kKnownWifiPath, kKnownWifiTemporaryPath, record, sizeof(record));
+}
+
+bool forgetKnownWifiNetworks() {
+  if (!LittleFS.begin()) {
+    return false;  // a list this mount cannot reach may come back on a later one
+  }
+  LittleFS.remove(kKnownWifiTemporaryPath);  // a save cut short by power loss
+  return !LittleFS.exists(kKnownWifiPath) || LittleFS.remove(kKnownWifiPath);
+}
+
+// The network a save replaces stays known, so moving back to it needs no new
+// credentials (#187). Only the current network lives in the VTB1 record.
+void rememberReplacedWifiNetwork(const String& ssid) {
+  wifi_known::List list;
+  (void)loadKnownWifiNetworks(list);
+  bool changed = wifi_known::Forget(list, ssid.c_str());
+  WifiCredentials current;
+  if (readWifiCredentials(current) && ssid != current.ssid) {
+    changed = wifi_known::Remember(list, current.ssid, current.password) || changed;
+  }
+  if (changed && !saveKnownWifiNetworks(list)) {
+    Serial.println("wifi_known_networks_save_failed");
+  }
+}
+
 bool saveWifiCredentials(const String& ssid, const String& password) {
+  rememberReplacedWifiNetwork(ssid);
   EEPROM.begin(kEepromBytes);
   EEPROM.put(0, kWifiCredsMagic);
   for (size_t i = 0; i < kWifiSsidBytes; ++i) {
@@ -1619,6 +1668,11 @@ bool saveWifiCredentials(const String& ssid, const String& password) {
 }
 
 bool clearWifiCredentials() {
+  // Reset forgets every remembered network, not only the current one.
+  if (!forgetKnownWifiNetworks()) {
+    Serial.println("wifi_credentials_clear_failed reason=known_networks");
+    return false;
+  }
   EEPROM.begin(kEepromBytes);
   for (size_t i = 0; i < kWifiCredsBytes; ++i) {
     EEPROM.write(i, 0);
@@ -1692,6 +1746,48 @@ bool connectToSavedWifi(const WifiCredentials& creds) {
   return true;
 }
 
+// The current network did not answer: try the ones it replaced that a scan
+// can see, strongest first, each once (#187). The one that answers becomes
+// current, so the next boot tries it first.
+bool connectToKnownWifi() {
+  wifi_known::List list;
+  if (!loadKnownWifiNetworks(list) || list.count == 0) {
+    return false;
+  }
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect(false);  // stop the failed attempt before scanning
+  const int found = WiFi.scanNetworks(false, false);
+  int32_t seenRssi[wifi_known::kMaxNetworks];
+  for (uint8_t i = 0; i < list.count; ++i) {
+    seenRssi[i] = wifi_known::kNotSeen;
+    if (wifi_known::SameSsid(list.items[i], savedWifiCredentials.ssid)) {
+      continue;  // already tried as the current network
+    }
+    for (int n = 0; n < found; ++n) {
+      if (WiFi.SSID(n) == list.items[i].ssid && WiFi.RSSI(n) > seenRssi[i]) {
+        seenRssi[i] = WiFi.RSSI(n);
+      }
+    }
+  }
+  WiFi.scanDelete();
+  uint8_t order[wifi_known::kMaxNetworks] = {};
+  const uint8_t candidates = wifi_known::Candidates(list, seenRssi, order);
+  for (uint8_t c = 0; c < candidates; ++c) {
+    WifiCredentials creds;
+    std::memcpy(creds.ssid, list.items[order[c]].ssid, sizeof(creds.ssid));
+    std::memcpy(creds.password, list.items[order[c]].password, sizeof(creds.password));
+    if (!connectToSavedWifi(creds)) {
+      continue;
+    }
+    if (saveWifiCredentials(creds.ssid, creds.password)) {
+      savedWifiCredentials = creds;
+      savedWifiCredentialsAvailable = true;
+    }
+    return true;
+  }
+  return false;
+}
+
 bool connectToSdkWifiConfig() {
   WiFi.mode(WIFI_STA);
   applyWifiInteropPhyMode();
@@ -1701,7 +1797,7 @@ bool connectToSdkWifiConfig() {
     return false;
   }
   Serial.printf("wifi_sdk_connect ssid=%s\n", ssid.c_str());
-  drawWifiConnectingStatus(ssid);
+  drawWifiConnectingStatus(ssid.c_str());
   WiFi.begin();
 
   const unsigned long startedAt = millis();
@@ -1986,7 +2082,7 @@ bool parseConnectionModeRequest(
     String& expectedDeviceID,
     String& error) {
   JsonDocument doc;
-  if (deserializeJson(doc, webServer.arg("plain"))) {
+  if (deserializeJson(doc, webServer.arg("plain").c_str())) {
     error = "invalid JSON body";
     return false;
   }
@@ -2039,7 +2135,7 @@ void handleConnectionModeConfirmation() {
     return;
   }
   JsonDocument doc;
-  if (deserializeJson(doc, webServer.arg("plain"))) {
+  if (deserializeJson(doc, webServer.arg("plain").c_str())) {
     webServer.send(400, "text/plain; charset=utf-8", "invalid JSON body");
     return;
   }
@@ -2181,7 +2277,7 @@ void leaveLegacyWifiOnCableContact() {
 
 bool handleSerialControlLine(const String& line) {
   JsonDocument doc;
-  if (deserializeJson(doc, line)) {
+  if (deserializeJson(doc, line.c_str())) {
     return false;
   }
   const char* kind = doc["kind"] | "";
@@ -2472,7 +2568,7 @@ void appendAssetEntriesJSON(String& out, const String& dirPath, bool& first, Str
     out += "{\"path\":\"";
     out += jsonEscape(path);
     out += "\",\"sizeBytes\":";
-    out += String(dir.fileSize());
+    out += dir.fileSize();
     out += "}";
   }
 }
@@ -2499,11 +2595,11 @@ void appendResetTrustJSON(String& out) {
   out += F("\"reset\":{\"trust\":\"");
   out += core::ResetTrustName(core::CurrentResetTrust(state, now));
   out += F("\",\"deadlineSecs\":");
-  out += String(static_cast<long>(core::CurrentRemainingSecs(runtimeCtx.runtime, now)));
+  out += static_cast<long>(core::CurrentRemainingSecs(runtimeCtx.runtime, now));
   out += F(",\"trustSecs\":");
-  out += String(static_cast<long>(core::ResetTrustBudgetSecs(state, now)));
+  out += static_cast<long>(core::ResetTrustBudgetSecs(state, now));
   out += F(",\"basisAgeSecs\":");
-  out += String(static_cast<long>(core::ResetBasisAgeSecs(state, now)));
+  out += static_cast<long>(core::ResetBasisAgeSecs(state, now));
   out += F(",\"source\":");
   appendJSONNullableString(out, state.source);
   out += F("},");
@@ -2516,27 +2612,27 @@ String healthJSON() {
   // Sized for the full payload: #280 added the clock block, #279 the reset
   // trust block, #284 the standby state and #221 the failing sprite asset
   // path, and growing this String mid-build fragments a tight heap.
-  out.reserve(1408);
+  out.reserve(1520);
   out += "{\"ok\":true,\"firmware\":\"";
   out += jsonEscape(CODEXBAR_DISPLAY_FW_VERSION);
   out += "\",\"system\":{\"freeHeap\":";
-  out += String(ESP.getFreeHeap());
+  out += ESP.getFreeHeap();
   out += ",\"maxFreeBlock\":";
-  out += String(ESP.getMaxFreeBlockSize());
+  out += ESP.getMaxFreeBlockSize();
   out += ",\"heapFragmentationPercent\":";
-  out += String(ESP.getHeapFragmentation());
+  out += ESP.getHeapFragmentation();
   out += ",\"bootId\":\"";
   out += jsonEscape(bootID);
   out += "\",\"uptimeMs\":";
-  out += String(millis());
+  out += millis();
   out += ",\"resetCount\":";
-  out += String(bootResetCounter);
+  out += bootResetCounter;
   out += ",\"resetReason\":";
   out += bootResetReasonJSON;
   out += "},\"wifi\":{\"rssi\":";
-  out += String(WiFi.RSSI());
+  out += WiFi.RSSI();
   out += ",\"channel\":";
-  out += String(WiFi.channel());
+  out += WiFi.channel();
   out += ",\"phyMode\":\"";
   switch (WiFi.getPhyMode()) {
     case WIFI_PHY_MODE_11B: out += "11b"; break;
@@ -2566,17 +2662,19 @@ String healthJSON() {
   out += ",\"renderErrorAsset\":";
   appendJSONNullableString(out, snapshot.themeSpecRenderErrorAsset);
   out += ",\"renderFailures\":";
-  out += String(snapshot.themeSpecRenderFailures);
+  out += snapshot.themeSpecRenderFailures;
   out += ",\"cbaCompletedFrames\":";
-  out += String(snapshot.cbaCompletedFrames);
+  out += snapshot.cbaCompletedFrames;
   out += ",\"cbaLastFrameDurationMs\":";
-  out += String(snapshot.cbaLastFrameDurationMs);
+  out += snapshot.cbaLastFrameDurationMs;
   out += ",\"cbaBufferBytes\":";
-  out += String(snapshot.cbaBufferBytes);
+  out += snapshot.cbaBufferBytes;
   out += ",\"cbaBufferAllocationFailures\":";
-  out += String(snapshot.cbaBufferAllocationFailures);
+  out += snapshot.cbaBufferAllocationFailures;
   out += ",\"cbaLastPushDurationUs\":";
-  out += String(snapshot.cbaLastPushDurationUs);
+  out += snapshot.cbaLastPushDurationUs;
+  out += ",\"animationLowHeapSkips\":";
+  out += snapshot.animationLowHeapSkips;
   out += "},\"gif\":{\"activePath\":\"";
   out += jsonEscape(snapshot.gifActivePath);
   out += "\",\"filePresent\":";
@@ -2585,17 +2683,26 @@ String healthJSON() {
   out += snapshot.gifDecoderAllocated ? "true" : "false";
   out += ",\"decoderOpen\":";
   out += snapshot.gifDecoderOpen ? "true" : "false";
+  out += ",\"framesPlayed\":";
+  out += snapshot.gifFramesPlayed;
   out += ",\"lastError\":";
   appendJSONNullableString(out, snapshot.gifLastErrorStage);
   out += "}},\"render\":{\"fullCount\":";
-  out += String(renderDiagnostics.fullCount);
+  out += renderDiagnostics.fullCount;
   out += ",\"partialCount\":";
-  out += String(renderDiagnostics.partialCount);
+  out += renderDiagnostics.partialCount;
   out += ",\"lastKind\":\"";
   out += jsonEscape(renderDiagnostics.lastKind);
   out += "\"},";
   appendClockJSON(out);
   appendResetTrustJSON(out);
+  // What the screen shows as activity right now, and how long that still
+  // holds without a fresh frame (0: no bound, or already expired).
+  out += F("\"activity\":{\"state\":");
+  appendJSONNullableString(out, codexbar_display::app::CurrentFrame(runtimeCtx).activity);
+  out += F(",\"ttlSecs\":");
+  out += codexbar_display::core::ActivityTtlRemainingSecs(runtimeCtx.runtime, millis());
+  out += F("},");
   appendStandbyStateJSON(out);
   out += ",";
   appendSettingsJSON(out);
@@ -2747,8 +2854,7 @@ void handleSettingsAPI() {
     return;
   }
   if (!apiResponse && webServer.hasArg("b")) {
-    webServer.sendHeader("Location", "/");
-    webServer.send(303);
+    redirectToRoot();
     return;
   }
   String out;
@@ -2780,8 +2886,7 @@ void handlePairingAPI() {
     webServer.send(200, "application/json", out);
     return;
   }
-  webServer.sendHeader("Location", "/");
-  webServer.send(303);
+  redirectToRoot();
 }
 
 void handleAssetsList() {
@@ -2976,6 +3081,14 @@ void handleAssetUpload() {
       setAssetUploadError("invalid asset path");
       return;
     }
+    const String expectedHash = webServer.arg("hash");
+    assetUploadHashExpected = expectedHash.length() > 0;
+    if (assetUploadHashExpected &&
+        !decodeTransferHash(expectedHash.c_str(), transferExpectedHash)) {
+      setAssetUploadError("asset hash mismatch");
+      return;
+    }
+    transferHash.begin();
     if (assetUploadContentLengthWouldExceedLimits(upload)) {
       setAssetUploadError("gif asset too large");
       return;
@@ -3014,12 +3127,16 @@ void handleAssetUpload() {
     if (assetUploadFile.write(upload.buf, upload.currentSize) != upload.currentSize) {
       setAssetUploadError("write asset failed");
     }
+    transferHash.add(upload.buf, static_cast<uint16_t>(upload.currentSize));
     assetUploadBytesSeen += upload.currentSize;
     ESP.wdtFeed();
   } else if (upload.status == UPLOAD_FILE_END) {
     if (assetUploadFile) {
       assetUploadFile.flush();
       assetUploadFile.close();
+    }
+    if (assetUploadError.length() == 0 && assetUploadHashExpected && !transferHashMatches()) {
+      setAssetUploadError("asset hash mismatch");
     }
     if (assetUploadError.length() == 0 &&
         validateCompletedAssetUpload() &&
@@ -3192,7 +3309,7 @@ bool themeSpecMetadata(const String& raw, String& themeId, int& themeRev, String
   filter["rev"] = true;
 
   JsonDocument doc;
-  const DeserializationError err = deserializeJson(doc, raw, DeserializationOption::Filter(filter));
+  const DeserializationError err = deserializeJson(doc, raw.c_str(), DeserializationOption::Filter(filter));
   if (err) {
     error = String("bad theme json: ") + err.c_str();
     return false;
@@ -3285,6 +3402,10 @@ void activateStoredThemeSpec(const String& path, const String& raw, const String
 // for nothing.
 bool activateStoredThemePath(
     const String& path, bool persist, String& themeId, int& themeRev, String& error) {
+  // Reading and compiling the stored theme needs the heap that the running
+  // theme's GIF decoder holds. In WiFi mode the activation otherwise answers
+  // "theme spec not renderable" for a theme that renders (#521).
+  renderer.ResetGifStateForAssetUpdate();
   String raw;
   if (!readValidatedStoredThemeSpec(path, raw, themeId, themeRev, error)) {
     return false;
@@ -3461,7 +3582,7 @@ void handleThemeActive() {
     }
 
     JsonDocument doc;
-    const DeserializationError err = deserializeJson(doc, body);
+    const DeserializationError err = deserializeJson(doc, body.c_str());
     if (err) {
       addCorsHeaders();
       webServer.send(400, "text/plain; charset=utf-8", "bad theme activation json");
@@ -3493,8 +3614,7 @@ void handleThemeActive() {
 
   if (formMode) {
     webServer.keepAlive(false);
-    webServer.sendHeader("Location", "/");
-    webServer.send(303);
+    redirectToRoot();
     return;
   }
 
@@ -3505,7 +3625,7 @@ void handleThemeActive() {
   out += "\",\"id\":\"";
   out += jsonEscape(themeId);
   out += "\",\"rev\":";
-  out += String(themeRev);
+  out += themeRev;
   out += ",\"hash\":\"";
   out += jsonEscape(activeThemeSpecHash);
   out += "\"";
@@ -3536,7 +3656,7 @@ void handleScreensaverActive() {
   }
 
   JsonDocument doc;
-  const DeserializationError err = deserializeJson(doc, body);
+  const DeserializationError err = deserializeJson(doc, body.c_str());
   if (err) {
     webServer.send(400, "text/plain; charset=utf-8", "bad screensaver activation json");
     return;
@@ -3570,13 +3690,7 @@ void handleScreensaverActive() {
   String out;
   out.reserve(120);
   out += "{\"ok\":true,\"path\":";
-  if (standby::HasScreensaver(deviceSettings.standby)) {
-    out += "\"";
-    out += jsonEscape(String(deviceSettings.standby.screensaverPath));
-    out += "\"";
-  } else {
-    out += "null";
-  }
+  appendJSONNullableString(out, String(deviceSettings.standby.screensaverPath));
   out += "}";
   webServer.send(200, "application/json", out);
 #else
@@ -3857,9 +3971,7 @@ void handleOtaResult() {
   if (otaUploadError == "unauthorized") {
     otaUploadInProgress = false;
     otaUploadNeedsReboot = false;
-    addCorsHeaders();
-    webServer.sendHeader("WWW-Authenticate", "VibeTV token");
-    webServer.send(401, "text/plain; charset=utf-8", "pairing token required");
+    rejectMissingPairingToken();
     return;
   }
   if (!otaUploadSucceeded || otaUploadError.length() > 0 || Update.hasError()) {
@@ -4052,8 +4164,8 @@ bool startCableTransfer(JsonDocument& doc) {
       cableTransfer.flow, expectedBytes, millis());
   cableTransfer.sink = target;
   cableTransfer.activation = targetActivation;
-  memcpy(cableTransfer.expectedHash, expectedDigest, sizeof(expectedDigest));
-  cableTransfer.hash.begin();
+  memcpy(transferExpectedHash, expectedDigest, sizeof(expectedDigest));
+  transferHash.begin();
 
   if (target == CableTransferSink::kAsset) {
     assetUploadSucceeded = false;
@@ -4148,7 +4260,7 @@ bool writeCableTransferChunk(JsonDocument& doc) {
     return true;
   }
 
-  cableTransfer.hash.add(decoded, static_cast<uint16_t>(bytes));
+  transferHash.add(decoded, static_cast<uint16_t>(bytes));
   codexbar_display::esp8266::cable_transfer::AcceptChunk(
       cableTransfer.flow, bytes, expectedChecksum, millis());
   ESP.wdtFeed();
@@ -4161,12 +4273,8 @@ bool finishCableTransfer(JsonDocument& doc) {
     emitSerialError("transfer-rejected");
     return true;
   }
-  uint8_t actualDigest[16];
-  cableTransfer.hash.calculate();
-  cableTransfer.hash.getBytes(actualDigest);
   if (!codexbar_display::esp8266::cable_transfer::CanFinish(
-          cableTransfer.flow,
-          memcmp(actualDigest, cableTransfer.expectedHash, sizeof(actualDigest)) == 0)) {
+          cableTransfer.flow, transferHashMatches())) {
     emitSerialError("transfer-rejected");
     resetCableTransfer(true);
     return true;
@@ -4377,9 +4485,8 @@ void startSetupAccessPoint() {
   captiveDnsStarted = true;
   Serial.printf("captive_dns_started port=%u ip=%s\n", kDnsPort, WiFi.softAPIP().toString().c_str());
   startHttpServer();
-  const unsigned long renderStartUs = micros();
   renderer.DrawStatus(runtimeCtx, "VIBE TV", "Download Mac App", kCustomerAppHost);
-  recordRenderFull("setup", micros() - renderStartUs);
+  recordRenderFull("setup");
   waitStatusRendered = true;
 }
 
@@ -4404,9 +4511,8 @@ void enterWifiSetup() {
   resetWifiReconnectState();
   wifiReconnectAttemptAtMs = millis();
   Serial.println("wifi_setup_waiting_for_cable");
-  const unsigned long renderStartUs = micros();
   renderer.DrawStatus(runtimeCtx, "VIBE TV", "Connect USB cable", kCustomerAppHost);
-  recordRenderFull("setup", micros() - renderStartUs);
+  recordRenderFull("setup");
   waitStatusRendered = true;
 }
 
@@ -4467,9 +4573,8 @@ void maintainWifiConnection() {
   }
 
   if (!wifiReconnectStatusRendered) {
-    const unsigned long renderStartUs = micros();
     renderer.DrawStatus(runtimeCtx, "VIBE TV", "Reconnecting WiFi", "Please wait");
-    recordRenderFull("status", micros() - renderStartUs);
+    recordRenderFull("status");
     wifiReconnectStatusRendered = true;
   }
 
@@ -4549,7 +4654,7 @@ void setup() {
   deviceID = String(ESP.getChipId());
   bootID = String(ESP.getChipId(), HEX);
   bootID += "-";
-  bootID += String(bootResetCounter);
+  bootID += bootResetCounter;
   bootID += "-";
   bootID += String(ESP.getCycleCount(), HEX);
   renderer.Setup(runtimeCtx);
@@ -4578,9 +4683,8 @@ void setup() {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   loadActiveStoredThemeSpecCache();
 #endif
-  const unsigned long startupRenderStartUs = micros();
   renderer.DrawStatus(runtimeCtx, "VIBE TV", "Starting", "Please wait");
-  recordRenderFull("status", micros() - startupRenderStartUs);
+  recordRenderFull("status");
   if (deviceSettings.connectionMode ==
       codexbar_display::esp8266::device_settings::ConnectionMode::kCable) {
     codexbar_display::app::EmitDeviceHello(makeTransportConfig("usb"));
@@ -4599,18 +4703,21 @@ void setup() {
     WiFi.setAutoReconnect(false);
     WiFi.disconnect(false);
     WiFi.mode(WIFI_OFF);
-    const unsigned long renderStartUs = micros();
-    // Cable mode is only ever chosen in the app, so it is already installed.
+      // Cable mode is only ever chosen in the app, so it is already installed.
     // A setup hint here flashed on every restart, e.g. after switching back
     // from WiFi, and read as if VibeTV had gone back to setup.
     renderer.DrawStatus(runtimeCtx, "VIBE TV", "Waiting for app", "");
-    recordRenderFull("cable_setup", micros() - renderStartUs);
+    recordRenderFull("cable_setup");
     waitStatusRendered = true;
     return;
   }
 
+  // Remembered networks back up the current one. Without a current network
+  // (Reset WiFi, also on older firmware) they are not used, and a switch to new
+  // credentials keeps its own rollback instead of landing on an old network.
   if (!wifiConnected && hasSavedWifi) {
-    wifiConnected = connectToSavedWifi(savedWifiCredentials);
+    wifiConnected = connectToSavedWifi(savedWifiCredentials) ||
+                    (!connectionTransitionPending && connectToKnownWifi());
   }
   if (wifiConnected) {
     setupMode = false;
@@ -4631,10 +4738,6 @@ void loop() {
   const unsigned long loopStartUs = micros();
   bool rendered = false;
   unsigned long renderDurationUs = 0;
-  if (codexbar_display::core::ExpireAgentActivity(runtimeCtx.runtime, millis())) {
-    runtimeCtx.screenDirty = true;
-  }
-
 
   if (pendingHttpRender) {
     const codexbar_display::core::SerialConsumeEvent event = pendingHttpRenderEvent;
@@ -4661,11 +4764,19 @@ void loop() {
       millis() - themeInstallStatusActivityMs >= kCableTransferTimeoutMs) {
     finishThemeInstallStatus();
   }
-  if (otaUploadInProgress || assetUploadInProgress || themeInstallStatusVisible) {
+  const bool installing = otaUploadInProgress || assetUploadInProgress || themeInstallStatusVisible;
+  if (installing || cableTransfer.flow.active) {
+    // No frame is accepted now, so the activity bound waits: otherwise a
+    // customer coding through a long install would see idle between its end
+    // and the next frame.
+    codexbar_display::core::HoldActivityTtl(runtimeCtx.runtime, millis());
+  }
+  if (installing) {
     delay(1);
     return;
   }
 
+  maintainActivityExpiry();
   maintainStandby();
   maintainScreensaverPreview();
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
@@ -4700,10 +4811,9 @@ void loop() {
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY
       runtimeCtx.screenDirty = true;
 #else
-      const unsigned long renderStartUs = micros();
       if (renderer.DrawReset(runtimeCtx, remain)) {
         drawFirmwareUpdateNotice();
-        recordRenderPartial("reset", micros() - renderStartUs);
+        recordRenderPartial("reset");
       }
 #endif
     }
@@ -4719,7 +4829,7 @@ void loop() {
     drawFirmwareUpdateNotice();
     rendered = true;
     renderDurationUs = micros() - renderStartUs;
-    recordRenderPartial("update_notice", renderDurationUs);
+    recordRenderPartial("update_notice");
   }
 
   if (!setupMode &&
@@ -4731,9 +4841,8 @@ void loop() {
       !frameStaleStatusRendered &&
       lastFrameAcceptedAtMs > 0 &&
       (millis() - lastFrameAcceptedAtMs) > kFrameStaleWarningMs) {
-    const unsigned long renderStartUs = micros();
     renderer.DrawStatus(runtimeCtx, "VIBE TV", "Open App", kCustomerAppHost);
-    recordRenderFull("status", micros() - renderStartUs);
+    recordRenderFull("status");
     frameStaleStatusRendered = true;
   }
 
@@ -4768,10 +4877,9 @@ void loop() {
     }
 #endif
     rendered = true;
-    renderDurationUs = micros() - renderStartUs;
     drawFirmwareUpdateNotice();
     renderDurationUs = micros() - renderStartUs;
-    recordRenderFull(fullKind, renderDurationUs);
+    recordRenderFull(fullKind);
     if (!keepDirty) {
       runtimeCtx.screenDirty = false;
       firmwareUpdateNoticeDirty = false;

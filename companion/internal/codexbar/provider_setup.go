@@ -40,8 +40,14 @@ const (
 	ProviderUnsupported      = "unsupported"
 	ProviderNoUsageAvailable = "no_usage_available"
 	ProviderTimeout          = "timeout"
-	ProviderConfigError      = "config_error"
-	ProviderEngineError      = "engine_error"
+	// ProviderRateLimited: the provider's own usage endpoint refused this
+	// check for being too frequent. The sign-in is fine and nothing needs
+	// repairing, so the only correct advice is to wait and check again.
+	// Anthropic answers 429 during first-run setup, and routing that into
+	// engine_error told customers to repair a healthy usage service.
+	ProviderRateLimited = "rate_limited"
+	ProviderConfigError = "config_error"
+	ProviderEngineError = "engine_error"
 	// ProviderEngineIncompatible: the engine reported a readable version that
 	// is older than MinimumSupportedVersion. An unreadable version stays
 	// ProviderEngineError.
@@ -79,14 +85,17 @@ type ProviderReadiness struct {
 	// /v1/status or retry responses; the preferences adapter redacts it before
 	// exposing it.
 	Reported string `json:"-"`
+	// Cause names where a config_error came from and carries the raw reason
+	// ("inventory: ...", "provider message: ..."). Internal like Reported: the
+	// Companion redacts it and writes it to its log only (#527).
+	Cause string `json:"-"`
 }
 
 type ProviderSetup struct {
-	Status     string              `json:"status"`
-	CheckedAt  string              `json:"checkedAt"`
-	Engine     EngineReadiness     `json:"engine"`
-	Providers  []ProviderReadiness `json:"providers"`
-	ExactUsage *ParsedFrame        `json:"-"`
+	Status    string              `json:"status"`
+	CheckedAt string              `json:"checkedAt"`
+	Engine    EngineReadiness     `json:"engine"`
+	Providers []ProviderReadiness `json:"providers"`
 }
 
 var runConfigBootstrapCommandFn = runConfigBootstrapCommand
@@ -100,7 +109,8 @@ const ()
 // provider inventory remain owned by CodexBar.
 func EnsureConfig(home string) (string, error) {
 	if runtime.GOOS == "windows" {
-		// Win-CodexBar 0.56.8 ignores CODEXBAR_CONFIG and has no
+		// The pinned Win-CodexBar (scripts/fetch-win-codexbar.ps1) ignores
+		// CODEXBAR_CONFIG and has no
 		// "config validate --format json"; it only reads
 		// %APPDATA%\CodexBar\settings.json (#415). Use its own location.
 		return ensureWindowsConfigDir()
@@ -127,20 +137,29 @@ func EnsureConfig(home string) (string, error) {
 	return ensureConfigFile(filepath.Join(home, ".codexbar", "config.json"))
 }
 
+// windowsSettingsPath is the one file Win-CodexBar keeps its settings in,
+// the provider switches among them (#415). Empty without APPDATA.
+func windowsSettingsPath() string {
+	appData := strings.TrimSpace(os.Getenv("APPDATA"))
+	if appData == "" {
+		return ""
+	}
+	return filepath.Join(appData, "CodexBar", "settings.json")
+}
+
 // ensureWindowsConfigDir preserves existing settings verbatim. Only a missing
-// file receives an empty provider selection; Win-CodexBar 0.56.8 fills omitted
+// file receives an empty provider selection; the pinned Win-CodexBar fills omitted
 // settings with its own defaults. Publish the complete seed without replacing
 // a config another process may have created during startup.
 func ensureWindowsConfigDir() (string, error) {
-	appData := strings.TrimSpace(os.Getenv("APPDATA"))
-	if appData == "" {
+	path := windowsSettingsPath()
+	if path == "" {
 		return "", errors.New("APPDATA is not set")
 	}
-	dir := filepath.Join(appData, "CodexBar")
+	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("create CodexBar config directory: %w", err)
 	}
-	path := filepath.Join(dir, "settings.json")
 	probe, err := os.CreateTemp(dir, ".vibetv-write-check-*")
 	if err != nil {
 		return path, fmt.Errorf("CodexBar config directory is not writable: %w", err)
@@ -264,7 +283,13 @@ func runConfigBootstrapCommand(
 ) ([]byte, error) {
 	cmd := childproc.Hide(exec.CommandContext(ctx, bin, args...))
 	cmd.Env = environmentWithConfig(configPath)
-	return cmd.Output()
+	out, err := cmd.Output()
+	if err != nil && ctx.Err() != nil {
+		// Like runUsageCommand: a killed child is the timeout, not its
+		// "signal: killed".
+		return out, ctx.Err()
+	}
+	return out, err
 }
 
 func writableConfig(path string) error {
@@ -334,7 +359,8 @@ func configPathFromContext(ctx context.Context) string {
 	return strings.TrimSpace(path)
 }
 
-// ProbeProviderSetup performs one bounded, read-only CodexBar usage probe. Raw
+// ProbeProviderSetup performs one bounded, read-only CodexBar usage probe, or
+// under WithServeReading reads serve's last answer in its place. Raw
 // provider text stays in the internal json:"-" field so status and retry JSON
 // expose only the generic Detail until the preferences adapter redacts it.
 func ProbeProviderSetup(ctx context.Context, home string) ProviderSetup {
@@ -363,8 +389,16 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 	result.Engine.ConfigPath = configPath
 	result.Engine.Writable = configErr == nil
 	if configErr != nil {
-		result.Engine.Status = ProviderConfigError
-		result.Providers = []ProviderReadiness{providerResult("codexbar", ProviderConfigError)}
+		// The first config is rendered by CodexBar itself under a time limit.
+		// Running out of it on a busy computer says nothing about the settings.
+		status := ProviderConfigError
+		if cutShort(configErr) {
+			status = ProviderTimeout
+		}
+		row := providerResult("codexbar", status)
+		row.Cause = "config bootstrap: " + configErr.Error()
+		result.Engine.Status = status
+		result.Providers = []ProviderReadiness{row}
 		return result
 	}
 	configuredCtx := context.WithValue(ctx, configPathContextKey{}, configPath)
@@ -427,7 +461,10 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 		inventoryRaw, inventoryErr := runUsageCommandFn(probeCtx, 5*time.Second, bin, providerInventoryArgs()...)
 		inventory, parseErr := parseProviderSettings(inventoryRaw)
 		if inventoryErr != nil || parseErr != nil {
-			result.Providers = []ProviderReadiness{providerResult(exactProvider, ProviderConfigError)}
+			status, cause := inventoryFailure(inventoryRaw, inventoryErr, parseErr)
+			row := providerResult(exactProvider, status)
+			row.Cause = cause
+			result.Providers = []ProviderReadiness{row}
 			return result
 		}
 		for i := range inventory {
@@ -460,20 +497,6 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 		provider.Label = exactSetting.Label
 		provider.Enabled = &exactSetting.Enabled
 		result.Providers = []ProviderReadiness{provider}
-		if provider.Status == ProviderReady {
-			collectedAt, collectedErr := time.Parse(time.RFC3339, provider.CollectedAt)
-			if parsed, parseErr := parseAllProviders(out); parseErr == nil && collectedErr == nil {
-				for i := range parsed {
-					if providerKey(parsed[i]) != exactProvider {
-						continue
-					}
-					parsed[i].Frame = parsed[i].Frame.Normalize()
-					parsed[i].CollectedAt = collectedAt.UTC()
-					result.ExactUsage = &parsed[i]
-					break
-				}
-			}
-		}
 	}
 	for _, provider := range result.Providers {
 		if provider.Status == ProviderReady {
@@ -484,13 +507,64 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 	return result
 }
 
+// cutShort reports a call that ended because its time ran out or its caller
+// went away. Such a call never got CodexBar's answer.
+func cutShort(err error) bool {
+	return errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)
+}
+
+// inventoryFailure names why `config providers` gave no inventory. Only
+// CodexBar can say its settings are unreadable, and it does (#527): 0.63.0
+// answers {"provider":"cli","error":{"kind":"config",...}} on stdout with
+// --json and "Error: Failed to decode CodexBar config: ..." on stderr without.
+// A call that was cut short, could not start or answered anything else is not
+// a settings error -- every such failure used to be reported as one.
+func inventoryFailure(raw []byte, runErr, parseErr error) (status, cause string) {
+	if message := engineSettingsError(raw, runErr); message != "" {
+		return ProviderConfigError, "inventory: " + message
+	}
+	if cutShort(runErr) {
+		return ProviderTimeout, "inventory: " + runErr.Error()
+	}
+	if runErr == nil {
+		runErr = parseErr
+	}
+	return ProviderEngineError, "inventory: " + commandErrorDetail(runErr)
+}
+
+// engineSettingsError returns CodexBar's own settings failure, or "".
+func engineSettingsError(raw []byte, runErr error) string {
+	if items, err := extractProvidersFromRawJSON(raw); err == nil {
+		for _, item := range items {
+			payload, _ := item.(map[string]any)
+			if failure, _ := payload["error"].(map[string]any); errorKindIsConfig(failure) {
+				return firstString(failure, "message", "kind")
+			}
+		}
+	}
+	var exitErr *exec.ExitError
+	if errors.As(runErr, &exitErr) && classifyProviderError(string(exitErr.Stderr)) == ProviderConfigError {
+		return strings.TrimSpace(string(exitErr.Stderr))
+	}
+	return ""
+}
+
+func errorKindIsConfig(failure map[string]any) bool {
+	return strings.EqualFold(strings.TrimSpace(firstString(failure, "kind")), "config")
+}
+
 func exactProviderReadinessFromOutput(providerID string, raw []byte, commandErr, contextErr error) ProviderReadiness {
 	for _, provider := range providerReadinessFromOutput(raw, commandErr, contextErr) {
 		if provider.ID == providerID {
 			return provider
 		}
-		if provider.ID == "codexbar" && provider.Status == ProviderTimeout {
-			return providerResult(providerID, ProviderTimeout)
+		// The stand-in explains why the whole usage call failed, so an
+		// engine-level verdict about the requested provider survives the
+		// translation. Dropping a rate limit here made the row claim the
+		// account exposes no usage instead of asking the customer to wait.
+		if provider.ID == "codexbar" &&
+			(provider.Status == ProviderTimeout || provider.Status == ProviderRateLimited) {
+			return providerResult(providerID, provider.Status)
 		}
 	}
 	return providerResult(providerID, ProviderNoUsageAvailable)
@@ -515,7 +589,7 @@ func providersWithSwitchState(ctx context.Context, bin string, providers []Provi
 			return providers
 		}
 	}
-	raw, runErr := runUsageCommandFn(ctx, 5*time.Second, bin, providerInventoryArgs()...)
+	raw, runErr := readProviderInventory(ctx, 5*time.Second, bin, runUsageCommandFn)
 	inventory, parseErr := parseProviderSettings(raw)
 	if runErr != nil || parseErr != nil || len(inventory) == 0 {
 		return providers
@@ -559,7 +633,9 @@ func providersWithSwitchState(ctx context.Context, bin string, providers []Provi
 }
 
 func providerReadinessFromOutput(raw []byte, commandErr, contextErr error) []ProviderReadiness {
-	if errors.Is(contextErr, context.DeadlineExceeded) || errors.Is(commandErr, context.DeadlineExceeded) {
+	// A cancelled call (the caller went away, the Companion is stopping) got
+	// no answer either; it used to be read as "no usage for this account".
+	if cutShort(contextErr) || cutShort(commandErr) {
 		return []ProviderReadiness{providerResult("codexbar", ProviderTimeout)}
 	}
 	providers, parseErr := extractProvidersFromRawJSON(raw)
@@ -585,11 +661,22 @@ func providerReadinessFromOutput(raw []byte, commandErr, contextErr error) []Pro
 		if providerPayloadHasError(payload) {
 			reported = providerHealthErrorText(payload["error"])
 			status = classifyProviderErrorFor(id, reported)
+			// CodexBar types its failures. One it attributes to the provider
+			// ("kind":"provider") is not the usage service failing to read its
+			// settings, whatever words the sentence contains ("... is
+			// configured", "... could not be saved").
+			if failure, typed := payload["error"].(map[string]any); status == ProviderConfigError && typed &&
+				firstString(failure, "kind") != "" && !errorKindIsConfig(failure) {
+				status = ProviderEngineError
+			}
 		} else if !providerPayloadHasUsage(payload) {
 			status = ProviderNoUsageAvailable
 		}
 		provider := providerResultWithSignIn(id, status, browserSignInPage(id, reported))
 		provider.Reported = reported
+		if status == ProviderConfigError {
+			provider.Cause = "provider message: " + reported
+		}
 		provider.Source = safeProviderSource(firstString(payload, "source"))
 		if collectedAt := firstRFC3339AtPaths(payload, "usage.updatedAt", "updatedAt"); !collectedAt.IsZero() {
 			provider.CollectedAt = collectedAt.Format(time.RFC3339)
@@ -647,6 +734,38 @@ func providerPayloadHasUsage(payload map[string]any) bool {
 	return false
 }
 
+// 429 counts only as a number of its own. As a bare substring it also matched
+// request ids, process ids and durations ("req_01429ab", "14290ms") and told a
+// customer with a sign-in failure or a timeout to wait.
+var httpStatus429 = regexp.MustCompile(`\b429\b`)
+
+// Throttling wording: the endpoint answered and refused this call for being
+// too frequent.
+func isThrottlingDetail(lower string) bool {
+	for _, marker := range []string{
+		"rate limited", "ratelimited", "rate-limited",
+		"rate limit exceeded", "too many requests",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return httpStatus429.MatchString(lower)
+}
+
+// Wording that reports a credential the provider could not use at all. Waiting
+// never repairs that, so it outranks throttling mentioned in the same summary.
+func namesUnusableCredential(lower string) bool {
+	for _, marker := range []string{
+		"no cookies", "not logged in", "no credentials", "token expired", "unauthorized",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 func classifyProviderError(detail string) string {
 	lower := strings.ToLower(detail)
 	switch {
@@ -672,6 +791,23 @@ func classifyProviderError(detail string) string {
 	case strings.Contains(lower, "no longer supports gemini cli oauth"),
 		strings.Contains(lower, "enable codexbar's antigravity provider"):
 		return ProviderUnsupported
+	// Before the timeout rule: a rate-limit message routinely also mentions
+	// retrying later, and before the auth rule, because the provider names the
+	// endpoint that refused ("usage endpoint is rate limited") while the
+	// sign-in it used is still valid. Classifying it as auth_required would
+	// send the customer to re-authenticate something that already works.
+	//
+	// Only actual throttling wording counts. A sign-in failure can name the
+	// data it wanted ("authentication required to read rate limits"); telling
+	// that customer to wait would hide the sign-in they must repair, so the
+	// bare noun "rate limits" must not match.
+	//
+	// A summary that also reports an unusable credential ("No cookies available",
+	// "not logged in") is a sign-in failure that happens to mention throttling
+	// among several failed sources. Waiting cannot fix a credential that is
+	// missing, so the sign-in advice wins there.
+	case isThrottlingDetail(lower) && !namesUnusableCredential(lower):
+		return ProviderRateLimited
 	case strings.Contains(lower, "timeout"), strings.Contains(lower, "timed out"), strings.Contains(lower, "deadline exceeded"):
 		return ProviderTimeout
 	case strings.Contains(lower, "permission"), strings.Contains(lower, "not permitted"), strings.Contains(lower, "access denied"), strings.Contains(lower, "keychain") && (strings.Contains(lower, "denied") || strings.Contains(lower, "locked") || strings.Contains(lower, "not allowed")):
@@ -720,11 +856,21 @@ func browserSignInPage(id, detail string) string {
 // that case; telling the customer to "sign in again" would send them in a
 // circle.
 func classifyProviderErrorFor(id, detail string) string {
+	return ProviderErrorKind(id, detail)
+}
+
+// ProviderErrorKind names a CodexBar provider failure by its readiness status
+// (timeout, auth_required, ...) without repeating the raw message.
+func ProviderErrorKind(id, detail string) string {
 	if browserSignInPage(id, detail) != "" {
 		return ProviderBrowserSignInRequired
 	}
 	return classifyProviderError(detail)
 }
+
+// providerCopyGOOS names the system in permission copy: Windows has no macOS
+// permission to allow (#479). A variable so tests cover both hosts.
+var providerCopyGOOS = runtime.GOOS
 
 func providerResult(id, status string) ProviderReadiness {
 	return providerResultWithSignIn(id, status, "")
@@ -750,6 +896,10 @@ func providerResultWithSignIn(id, status, signInURL string) ProviderReadiness {
 	case ProviderPermissionRequired:
 		result.Detail = "macOS blocked access required by this provider."
 		result.NextAction = "Allow the requested macOS permission, then check again."
+		if providerCopyGOOS == "windows" {
+			result.Detail = "Windows blocked access required by this provider."
+			result.NextAction = "Allow the requested access, then check again."
+		}
 	case ProviderUnsupported:
 		// No sign-in wording: the account cannot use this provider at all, so
 		// the provider's own message carries the migration path and the row
@@ -762,6 +912,9 @@ func providerResultWithSignIn(id, status, signInURL string) ProviderReadiness {
 	case ProviderTimeout:
 		result.Detail = "The provider check timed out."
 		result.NextAction = "Confirm the provider sign-in, then check again."
+	case ProviderRateLimited:
+		result.Detail = label + " is limiting usage checks right now."
+		result.NextAction = "Wait a few minutes, then check again. Nothing needs to be fixed."
 	case ProviderConfigError:
 		result.Detail = "The usage service could not save or read its provider settings."
 		result.NextAction = "Repair the usage service, then check again."
@@ -776,6 +929,13 @@ func providerResultWithSignIn(id, status, signInURL string) ProviderReadiness {
 		result.NextAction = "Check this provider, then try again."
 	}
 	return result
+}
+
+// BrowserSignInGuidance is the customer sentence for a provider that needs a
+// signed-in browser session on signInURL.
+func BrowserSignInGuidance(id, signInURL string) string {
+	result := providerResultWithSignIn(id, ProviderBrowserSignInRequired, signInURL)
+	return result.Detail + " " + result.NextAction
 }
 
 func signInHost(url string) string {

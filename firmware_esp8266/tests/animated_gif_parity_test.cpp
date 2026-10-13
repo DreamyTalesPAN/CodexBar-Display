@@ -19,6 +19,16 @@ uint64_t hashValue = 0;
 int frameCount = 0;
 int lineCount = 0;
 long delayTotalMs = 0;
+std::vector<uint8_t> workspace(GIF_WORKSPACE_SIZE);
+uint8_t poison = 0;
+
+// The firmware frees the workspace between calls. Lending it freshly filled
+// with junk before every call proves that no decoder state lives in it.
+void lendWorkspace(AnimatedGIF& decoder) {
+  poison = static_cast<uint8_t>(poison + 0x5B);
+  std::fill(workspace.begin(), workspace.end(), poison);
+  decoder.setWorkspace(workspace.data());
+}
 
 void mix(uint8_t byte) {
   hashValue ^= byte;
@@ -79,7 +89,9 @@ bool decodePass(
   delayTotalMs = 0;
   for (int attempt = 0; attempt < 100; ++attempt) {
     int delayMs = 0;
+    lendWorkspace(decoder);
     const int result = decoder.playFrame(false, &delayMs, nullptr);
+    decoder.setWorkspace(nullptr);
     delayTotalMs += delayMs;
     if (result <= 0) {
       break;
@@ -108,7 +120,10 @@ int main(int argc, char** argv) {
   }
   AnimatedGIF decoder;
   decoder.begin(BIG_ENDIAN_PIXELS);
-  if (!decoder.open(argv[1], openFile, closeFile, readFile, seekFile, drawLine)) {
+  lendWorkspace(decoder);
+  const int opened = decoder.open(argv[1], openFile, closeFile, readFile, seekFile, drawLine);
+  decoder.setWorkspace(nullptr);
+  if (!opened) {
     std::fprintf(stderr, "FAIL: decoder open\n");
     return 1;
   }

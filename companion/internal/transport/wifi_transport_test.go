@@ -7,10 +7,13 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 )
 
 func TestWiFiTransportDeviceCapabilitiesReadsHello(t *testing.T) {
@@ -394,7 +397,7 @@ func TestWiFiTransportUploadAssetPostsMultipart(t *testing.T) {
 	var gotPath string
 	var gotFilename string
 	var gotBody string
-	var gotToken string
+	var gotToken, gotHash string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/assets" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
@@ -406,6 +409,7 @@ func TestWiFiTransportUploadAssetPostsMultipart(t *testing.T) {
 		}
 		gotToken = r.Header.Get(deviceAuthHeader)
 		gotPath = r.URL.Query().Get("path")
+		gotHash = r.URL.Query().Get("hash")
 		reader, err := r.MultipartReader()
 		if err != nil {
 			t.Fatalf("MultipartReader returned error: %v", err)
@@ -434,6 +438,10 @@ func TestWiFiTransportUploadAssetPostsMultipart(t *testing.T) {
 	}
 	if gotPath != "/themes/u/cm.cbi" || gotFilename != "cm.cbi" || gotBody != "CBI1\n" {
 		t.Fatalf("unexpected upload path=%q filename=%q body=%q", gotPath, gotFilename, gotBody)
+	}
+	// MD5 of "CBI1\n": VibeTV refuses the file unless its bytes match (#60).
+	if gotHash != "c97acf5b8f1b8e61fa88247b813e97c2" {
+		t.Fatalf("upload hash = %q", gotHash)
 	}
 	if gotToken != "env-token-456" {
 		t.Fatalf("unexpected auth token %q", gotToken)
@@ -685,5 +693,37 @@ func TestAssetUploadPaceStaysInsideFirmwareReadWait(t *testing.T) {
 	}
 	if assetUploadBytesPerSec < 8192 {
 		t.Fatalf("asset pace %d B/s would stretch a 24 KB GIF past a few seconds", assetUploadBytesPerSec)
+	}
+}
+
+// Issue #526: frames, theme installs and discovery need what the missing
+// capabilities block carries, so for them this answer is a hello that failed.
+func TestWiFiHelloWithoutCapabilitiesIsNotACompleteHello(t *testing.T) {
+	body, err := os.ReadFile("../protocol/testdata/wifi-hello-1.0.45-without-capabilities.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}))
+	defer server.Close()
+
+	caps, err := NewWiFiTransportWithClient(server.Client()).DeviceCapabilities(server.URL)
+	if err == nil || caps.Known {
+		t.Fatalf("capabilities must stay unknown: %+v %v", caps, err)
+	}
+	if _, ok := protocol.HelloIdentity(err); !ok {
+		t.Fatalf("the error must name the hello without capabilities, got %v", err)
+	}
+
+	result, err := DiscoverWiFiDevice(context.Background(), WiFiDiscoveryOptions{
+		Candidates:       []string{server.URL},
+		Client:           server.Client(),
+		Timeout:          time.Second,
+		ExpectedDeviceID: "16198106",
+	})
+	if err == nil {
+		t.Fatalf("discovery must not save a VibeTV whose transport is unknown: %+v", result)
 	}
 }

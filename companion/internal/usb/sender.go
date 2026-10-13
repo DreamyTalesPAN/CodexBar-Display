@@ -36,6 +36,7 @@ type Sender struct {
 	// silentResetAfter is zero where opening the port already resets the
 	// board, as on macOS.
 	silentResetAfter time.Duration
+	requestRetryStep time.Duration
 
 	port          SerialPort
 	path          string
@@ -84,6 +85,7 @@ func NewSenderWithConfig(cfg SenderConfig) *Sender {
 		helloWindow:      window,
 		writeTimeout:     writeLimit,
 		silentResetAfter: max(silentReset, 0),
+		requestRetryStep: requestRetryStep,
 	}
 }
 
@@ -516,22 +518,31 @@ func (s *Sender) ReadHealth(path, deviceID string) ([]byte, error) {
 		return nil, err
 	}
 	line = append(line, '\n')
-	_ = s.port.ResetInputBuffer()
-	if err := writeWithTimeout(s.port, line, s.writeTimeout); err != nil {
-		s.closeCurrentLocked()
-		return nil, wrapTransportError(
-			errcode.TransportSerialWrite,
-			"health",
-			path,
-			"Keep the selected VibeTV connected by Cable and retry.",
-			err,
-		)
+	// An answer can arrive garbled, or a request be lost, while VibeTV is busy
+	// drawing. Ask again every step, like hello does, so one bad exchange
+	// costs a step and not the whole boot window with every frame queued
+	// behind it.
+	deadline := time.Now().Add(s.helloWindow)
+	for {
+		_ = s.port.ResetInputBuffer()
+		if err := writeWithTimeout(s.port, line, s.writeTimeout); err != nil {
+			s.closeCurrentLocked()
+			return nil, wrapTransportError(
+				errcode.TransportSerialWrite,
+				"health",
+				path,
+				"Keep the selected VibeTV connected by Cable and retry.",
+				err,
+			)
+		}
+		health, err := readHealthFromPort(s.port, min(s.requestRetryStep, time.Until(deadline)), deviceID)
+		if err == nil {
+			return health, nil
+		}
+		if !errors.Is(err, errHealthUnanswered) || !time.Now().Before(deadline) {
+			return nil, fmt.Errorf("health on %s: %w", path, err)
+		}
 	}
-	health, err := readHealthFromPort(s.port, s.helloWindow, deviceID)
-	if err != nil {
-		return nil, fmt.Errorf("health on %s: %w", path, err)
-	}
-	return health, nil
 }
 
 func (s *Sender) WriteSettings(path, deviceID string, patch protocol.DeviceSettingsPatch) (protocol.DeviceSettings, error) {

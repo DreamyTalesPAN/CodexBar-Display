@@ -16,6 +16,7 @@ import {
   THEME_CATALOG_PREVIEW_FRAME,
   ThemeSpecPreview,
   themeFirmwareTextMetrics,
+  themeProgressArc,
   themeTextAlignedY,
   themeTextFittedSize,
   themeTextLayout,
@@ -393,10 +394,204 @@ describe("dynamic usage slot preview", () => {
       ],
       providerSlots: [{ id: "codex", label: "Codex", percent: 10, resetSecs: 0 }],
     });
+    // A frame that carries no deadline anywhere gives the device no basis to
+    // stand behind, so nothing in it is idle.
     expect(boundValue("us1r", frame)).toBe("Reset unavailable");
     expect(boundValue("us2r", frame)).toBe("Reset unavailable");
     expect(boundValue("usage.0.reset", frame)).toBe("Reset unavailable");
     expect(boundValue("pv1r", frame)).toBe("Reset unavailable");
+  });
+
+  // The Companion clears every countdown of a stale frame to zero but keeps
+  // its windows. The device renders "Reset unavailable" for those, and so must
+  // the preview: zero alone does not make a window idle.
+  it("calls a window idle only over a basis the device still trusts", () => {
+    const customerFrame = {
+      v: 2,
+      provider: "claude",
+      label: "Claude",
+      resetSecs: 4 * 24 * 3600,
+      resetTrust: "live",
+          resetSource: "claude:secondary",
+      resetTrustSecs: 18000,
+      usageWindows: [
+        { id: "primary", label: "Session", percent: 0, resetSecs: 0 },
+        { id: "secondary", label: "Weekly", percent: 32, resetSecs: 4 * 24 * 3600 },
+      ],
+    };
+    const savedAt = "2026-07-24T10:30:00Z";
+    const line = { t: "tx", v: "Resets in {usageSlot1Reset}" } as const;
+    expect(
+      renderTextPrimitive(line, buildFrameData(savedAt, customerFrame, new Date(savedAt))),
+    ).toBe("No active session");
+    // Past the five-hour trust budget.
+    expect(
+      renderTextPrimitive(
+        line,
+        buildFrameData(savedAt, customerFrame, new Date("2026-07-24T15:30:01Z")),
+      ),
+    ).toBe("Reset unavailable");
+    const stale = {
+      ...customerFrame,
+      resetSecs: 0,
+      resetTrust: "stale",
+      resetTrustSecs: 0,
+      usageWindows: customerFrame.usageWindows.map((window) => ({ ...window, resetSecs: 0 })),
+    };
+    expect(
+      renderTextPrimitive(line, buildFrameData(savedAt, stale, new Date(savedAt))),
+    ).toBe("Reset unavailable");
+  });
+
+  // Issue #532: an account in which no window has a reset time. The host
+  // marks the current collection "live"; that stands without a deadline, on
+  // the device and here. Anything else without a deadline stays unavailable.
+  it("calls an account with no reset time anywhere idle only on a live frame", () => {
+    const savedAt = "2026-10-07T10:30:00Z";
+    const idleAccount = {
+      v: 2,
+      provider: "claude",
+      label: "Claude",
+      resetTrust: "live",
+      resetSource: "claude",
+      resetTrustSecs: 17988,
+      usageWindows: [
+        { id: "session", label: "Session", percent: 0, resetSecs: 0 },
+        { id: "weekly", label: "Weekly", percent: 0, resetSecs: 0 },
+      ],
+    };
+    const textFor = (frame: object, now = savedAt) => {
+      const data = buildFrameData(savedAt, frame, new Date(now));
+      return [
+        boundValue("reset", data),
+        boundValue("us1r", data),
+        renderTextPrimitive({ t: "tx", v: "Resets in {usageSlot2Reset}" }, data),
+      ];
+    };
+    const idle = ["No active session", "No active session", "No active session"];
+    const unavailable = ["Reset unavailable", "Reset unavailable", "Reset unavailable"];
+    expect(textFor(idleAccount)).toEqual(idle);
+    // Past the budget the host sent.
+    expect(textFor(idleAccount, "2026-10-07T15:29:49Z")).toEqual(unavailable);
+    // What a Companion before #532 sends, and a resend after a failed collection.
+    expect(textFor({ ...idleAccount, resetTrust: "stale", resetTrustSecs: 0 })).toEqual(
+      unavailable,
+    );
+    expect(textFor({ ...idleAccount, resetTrust: "offline" })).toEqual(unavailable);
+    expect(textFor({ ...idleAccount, resetTrust: undefined })).toEqual(unavailable);
+    expect(textFor({ ...idleAccount, resetSource: "" })).toEqual(unavailable);
+    expect(textFor({ ...idleAccount, usageUnavailable: true })).toEqual(unavailable);
+    // A window with usage and no deadline is still not idle, and neither is
+    // the root line that speaks for all windows.
+    expect(
+      textFor({
+        ...idleAccount,
+        usageWindows: [
+          { id: "session", label: "Session", percent: 40, resetSecs: 0 },
+          { id: "weekly", label: "Weekly", percent: 0, resetSecs: 0 },
+        ],
+      }),
+    ).toEqual(["Reset unavailable", "Reset unavailable", "No active session"]);
+  });
+
+  // Review of #524: the host sends resetSecs 0 not only for a window without
+  // a deadline but also for a deadline that ran out before the frame left and
+  // for a provider that names none. Idle needs nothing used as well, exactly
+  // as on the device.
+  it("does not call a window with usage and no deadline idle", () => {
+    const savedAt = "2026-07-24T10:30:00Z";
+    const frameWith = (extra: object) =>
+      buildFrameData(
+        savedAt,
+        {
+          v: 2,
+          provider: "claude",
+          label: "Claude",
+          resetSecs: 4 * 24 * 3600,
+          resetTrust: "live",
+          resetSource: "claude:secondary",
+          resetTrustSecs: 18000,
+          ...extra,
+        },
+        new Date(savedAt),
+      );
+    const used = frameWith({
+      usageWindows: [
+        { id: "primary", label: "Session", percent: 93, resetSecs: 0 },
+        { id: "secondary", label: "Weekly", percent: 0, resetSecs: 0 },
+      ],
+      providerSlots: [
+        { id: "codex", label: "Codex", percent: 0, resetSecs: 0 },
+        { id: "claude", label: "Claude", percent: 32, resetSecs: 4 * 24 * 3600 },
+      ],
+    });
+    expect(boundValue("us1r", used)).toBe("Reset unavailable");
+    expect(
+      renderTextPrimitive({ t: "tx", v: "Resets in {usage.0.reset}" }, used),
+    ).toBe("Reset unavailable");
+    expect(boundValue("us2r", used)).toBe("No active session");
+    // A provider slot is only sent with a deadline, so 0 is one that ran out.
+    expect(boundValue("pv1r", used)).toBe("Reset unavailable");
+
+    // A trusted basis names its source, as on the device.
+    const unnamed = frameWith({
+      resetSource: "",
+      usageWindows: [
+        { id: "primary", label: "Session", percent: 93, resetSecs: 0 },
+        { id: "secondary", label: "Weekly", percent: 0, resetSecs: 0 },
+      ],
+    });
+    expect(boundValue("us2r", unnamed)).toBe("Reset unavailable");
+
+    // Windows kept from a failed collection are unavailable, not idle.
+    const retained = frameWith({
+      usageUnavailable: true,
+      usageWindows: [
+        { id: "primary", label: "Session", percent: 0, resetSecs: 0 },
+        { id: "secondary", label: "Weekly", percent: 32, resetSecs: 4 * 24 * 3600 },
+      ],
+    });
+    expect(boundValue("us1r", retained)).toBe("Reset unavailable");
+
+    // "remaining" mode sends what is left: nothing used reads 100.
+    const remaining = frameWith({
+      usageMode: "remaining",
+      usageWindows: [
+        { id: "primary", label: "Session", percent: 100, resetSecs: 0 },
+        { id: "secondary", label: "Weekly", percent: 0, resetSecs: 0 },
+      ],
+    });
+    expect(boundValue("us1r", remaining)).toBe("No active session");
+    expect(boundValue("us2r", remaining)).toBe("Reset unavailable");
+  });
+
+  // A deadline that ran out between the frame being saved and now is not idle:
+  // it reached the reset the host did send, so the countdown is genuinely
+  // unavailable until the next frame arrives.
+  it("separates an idle window from a countdown that ran out", () => {
+    const frame = buildFrameData(
+      "2026-07-24T10:30:00Z",
+      {
+        v: 2,
+        provider: "claude",
+        label: "Claude",
+        resetSecs: 60,
+        usageSlots: [
+          { id: "session", label: "Session", percent: 40, resetSecs: 60 },
+          { id: "weekly", label: "Weekly", percent: 0, resetSecs: 0 },
+        ],
+      },
+      new Date("2026-07-24T11:30:00Z"),
+    );
+    expect(boundValue("us1r", frame)).toBe("Reset unavailable");
+    expect(boundValue("us2r", frame)).toBe("No active session");
+    expect(
+      renderTextPrimitive({ t: "tx", v: "Resets in {us1r}" }, frame),
+    ).toBe("Reset unavailable");
+    // One line binding both cannot claim everything is merely idle.
+    expect(
+      renderTextPrimitive({ t: "tx", v: "{us1r} / {us2r}" }, frame),
+    ).toBe("Reset unavailable");
   });
 
   it("keeps an unavailable slot empty rather than reporting it unavailable", () => {
@@ -423,23 +618,90 @@ describe("dynamic usage slot preview", () => {
     );
   });
 
-  // Pins the asymmetry so nobody "tidies" it later: RenderTextTemplate probes
-  // only the root tokens, so slot tokens really do substitute in place on the
-  // device and leave the surrounding text standing.
-  it("substitutes slot countdown tokens in place, like the firmware", () => {
-    const expired = buildFrameData("2026-07-24T10:30:00Z", {
+  // The root token owns no window of its own, so it may only name the idle
+  // state when every window the frame carries is idle. Anything else would
+  // dress an untrustworthy screen up as a merely idle account.
+  it("lets the root countdown name the idle state only when every window is idle", () => {
+    const idle = buildFrameData("2026-07-24T10:30:00Z", {
       v: 2,
-      provider: "codex",
-      label: "Codex",
+      provider: "claude",
+      label: "Claude",
       resetSecs: 0,
-      usageSlots: [{ id: "session", label: "Session", percent: 10, resetSecs: 0 }],
+      usageSlots: [{ id: "session", label: "Session", percent: 0, resetSecs: 0 }],
+      // Another provider's deadline is the basis the device stands behind.
+      providerSlots: [{ id: "codex", label: "Codex", percent: 10, resetSecs: 7200 }],
+    });
+    expect(boundValue("reset", idle)).toBe("No active session");
+    expect(
+      renderTextPrimitive({ t: "tx", v: "Reset in {reset}" }, idle),
+    ).toBe("No active session");
+
+    const mixed = buildFrameData(
+      "2026-07-24T10:30:00Z",
+      {
+        v: 2,
+        provider: "claude",
+        label: "Claude",
+        resetSecs: 60,
+        usageSlots: [
+          { id: "session", label: "Session", percent: 0, resetSecs: 0 },
+          { id: "weekly", label: "Weekly", percent: 32, resetSecs: 60 },
+        ],
+      },
+      new Date("2026-07-24T11:30:00Z"),
+    );
+    expect(boundValue("reset", mixed)).toBe("Reset unavailable");
+  });
+
+  // A customer received a VibeTV reading "Resets in Reset unavailable": an idle
+  // Claude session carries no deadline, and the shipped theme hard-codes the
+  // "Resets in " prefix. A line whose only substitution is a countdown without
+  // a deadline collapses on the device, and an idle window names that state
+  // instead of reporting a fault, so the preview has to match.
+  it("collapses a line whose only value is an unavailable countdown", () => {
+    const idle = buildFrameData("2026-07-24T10:30:00Z", {
+      v: 2,
+      provider: "claude",
+      label: "Claude",
+      resetSecs: 4 * 24 * 3600,
+      usageSlots: [
+        { id: "session", label: "Session", percent: 0, resetSecs: 0 },
+        { id: "weekly", label: "Weekly", percent: 32, resetSecs: 4 * 24 * 3600 },
+      ],
     });
     expect(
-      renderTextPrimitive({ t: "tx", v: "Reset in {usage.0.reset}" }, expired),
-    ).toBe("Reset in Reset unavailable");
+      renderTextPrimitive({ t: "tx", v: "Resets in {usage.0.reset}" }, idle),
+    ).toBe("No active session");
     expect(
-      renderTextPrimitive({ t: "tx", v: "Reset in {us1r}" }, expired),
-    ).toBe("Reset in Reset unavailable");
+      renderTextPrimitive({ t: "tx", v: "Resets in {us1r}" }, idle),
+    ).toBe("No active session");
+  });
+
+  // The collapse is limited to countdown-only templates. A line that also
+  // substitutes a label or a percentage still carries information, so it keeps
+  // substituting in place exactly as the firmware does.
+  it("keeps substituting in place when the line carries another real value", () => {
+    const idle = buildFrameData(
+      "2026-07-24T10:30:00Z",
+      {
+        v: 2,
+        provider: "claude",
+        label: "Claude",
+        resetSecs: 0,
+        usageSlots: [
+          { id: "session", label: "Session", percent: 0, resetSecs: 0 },
+          { id: "weekly", label: "Weekly", percent: 32, resetSecs: 4 * 24 * 3600 },
+        ],
+      },
+      new Date("2026-07-24T10:30:00Z"),
+    );
+    expect(
+      renderTextPrimitive({ t: "tx", v: "{us1l} {us1r}" }, idle),
+    ).toBe("Session No active session");
+    // A window that does have a deadline is untouched.
+    expect(
+      renderTextPrimitive({ t: "tx", v: "Resets in {us2r}" }, idle),
+    ).toBe("Resets in 4d 0h");
   });
 
   it("uses a legacy render cache only when its path matches the active Custom Theme", async () => {
@@ -729,6 +991,103 @@ describe("firmware-compatible ThemeSpec text layout", () => {
       /<text[^>]*y="22\.8"[^>]*text-anchor="start"[^>]*x="10">/,
     );
     expect(markup).toContain('lengthAdjust="spacingAndGlyphs"');
+  });
+});
+
+describe("arc-style progress", () => {
+  // The arc of the firmware's own test: a 100 px box at 20,30 with a 10 px
+  // ring from 7:30 clockwise over three quarters of a turn.
+  const arc: ThemePrimitive = {
+    t: "p", x: 20, y: 30, w: 100, h: 100, b: "us1p", ps: "arc", as: 225, aw: 270, at: 10,
+    c: "#00FF00", bg: "#333333",
+  };
+  const frameAt = (percent: number) => ({
+    ...THEME_CATALOG_PREVIEW_FRAME,
+    usageSlot1Percent: percent,
+  });
+  const markupFor = (primitive: ThemePrimitive, percent: number) =>
+    renderToStaticMarkup(
+      createElement(ThemeSpecPreview, {
+        animate: false,
+        frame: frameAt(percent),
+        pack: { ok: true, themeId: "arc", spec: { p: [primitive] } },
+        status: "ready",
+        themeId: "arc",
+      }),
+    );
+  const strokes = (markup: string) =>
+    [...markup.matchAll(/<circle[^>]*>/g)].map(([circle]) => ({
+      color: /stroke="([^"]+)"/.exec(circle)?.[1],
+      degrees: Number(/stroke-dasharray="([\d.]+) /.exec(circle)?.[1]) / ((45 * Math.PI) / 180),
+      circle,
+    }));
+
+  it("places the ring in the middle of the box and fills whole degrees like the firmware", () => {
+    expect(themeProgressArc(arc, 50)).toEqual({
+      cx: 70, cy: 80, radius: 45, thickness: 10, start: 225, sweep: 270, filled: 135,
+    });
+    // 270 * 33 / 100 is 89.1: the device cuts it to 89 degrees.
+    expect(themeProgressArc(arc, 33)?.filled).toBe(89);
+    expect(themeProgressArc(arc, 0)?.filled).toBe(0);
+    expect(themeProgressArc(arc, 100)?.filled).toBe(270);
+    expect(themeProgressArc(arc, 140)?.filled).toBe(270);
+    expect(themeProgressArc(arc, -20)?.filled).toBe(0);
+    // A box that is not square holds the ring in its middle.
+    expect(themeProgressArc({ ...arc, w: 140 }, 50)).toMatchObject({ cx: 90, cy: 80, radius: 45 });
+    expect(
+      themeProgressArc({ type: "progress", x: 0, y: 0, width: 60, height: 60, progressStyle: "arc", arcSweep: 360, arcThickness: 30 }, 50),
+    ).toMatchObject({ radius: 15, thickness: 30, start: 0, sweep: 360, filled: 180 });
+  });
+
+  it("draws the track over the sweep and the fill clockwise from the start angle", () => {
+    const empty = strokes(markupFor(arc, 0));
+    expect(empty).toHaveLength(1);
+    expect(empty[0].color).toBe("#333333");
+    expect(empty[0].degrees).toBeCloseTo(270);
+    expect(empty[0].circle).toContain('cx="70" cy="80"');
+    expect(empty[0].circle).toContain('r="45"');
+    expect(empty[0].circle).toContain('stroke-width="10"');
+    expect(empty[0].circle).toContain('fill="none"');
+    // 225 degrees from 12 o'clock is 135 degrees from a circle's 3 o'clock start.
+    expect(empty[0].circle).toContain('transform="rotate(135 70 80)"');
+
+    const half = strokes(markupFor(arc, 50));
+    expect(half.map((stroke) => stroke.color)).toEqual(["#333333", "#00FF00"]);
+    expect(half[0].degrees).toBeCloseTo(270);
+    expect(half[1].degrees).toBeCloseTo(135);
+    expect(half[1].circle).toContain('transform="rotate(135 70 80)"');
+
+    const full = strokes(markupFor(arc, 100));
+    expect(full[1].degrees).toBeCloseTo(270);
+    // No bar is drawn beside the ring.
+    expect(markupFor(arc, 50)).not.toMatch(/<rect[^>]*x="2[01]"/);
+  });
+
+  it("picks the fill colour from the colour stops like the bar", () => {
+    const stops = { ...arc, cs: [{ gte: 0, c: "#FF0000" }, { gte: 40, c: "#00FF00" }] };
+    // The catalog frame counts used percent: 70 % used leaves 30 %.
+    expect(strokes(markupFor(stops, 70))[1].color).toBe("#FF0000");
+    expect(strokes(markupFor(stops, 30))[1].color).toBe("#00FF00");
+  });
+
+  it.each([
+    ["no thickness", { at: undefined }],
+    ["a ring thicker than the radius", { at: 51 }],
+    ["no sweep", { aw: undefined }],
+    ["a sweep above a full turn", { aw: 361 }],
+    ["a start of a full turn", { as: 360 }],
+    ["a start below 0", { as: -1 }],
+  ])("draws nothing for %s, which the firmware skips", (_name, change) => {
+    const primitive = { ...arc, ...change };
+    expect(themeProgressArc(primitive, 50)).toBeNull();
+    expect(markupFor(primitive, 50)).not.toContain("<circle");
+  });
+
+  // VibeTV reads the long-form key when it is there, also when it is empty.
+  it("draws a straight bar when an empty progressStyle stands beside ps arc", () => {
+    const markup = markupFor({ ...arc, progressStyle: "" }, 50);
+    expect(markup).not.toContain("<circle");
+    expect(markup).toContain("<rect");
   });
 });
 
