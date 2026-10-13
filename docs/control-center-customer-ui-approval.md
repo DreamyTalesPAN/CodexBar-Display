@@ -6977,3 +6977,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: both approved results hold together. A provider row that offers "Sign in to <Provider>" opens no message by itself, as #590 approved; this also applies to the browser sign-in row of #551, whose engine summary is therefore not offered for copying on that row. A message the customer acknowledged in Settings stays closed after leaving Settings and coming back, as the bundle approved; a message asked for from the warning icon, Check again or the switch still opens.
 - Scope: merge of main into `codex/review-bundle-b`; `setup/setup-providers-screen.tsx`, its test, `scripts/test-customer-flows.mjs`, `companion` merge resolutions, and this approval record. Bundle branch only, not merge or release.
 - What's new: none — the merge adds no feature of its own
+
+## 2026-10-13 — Review bundle: approval marker for the main merge
+
+- User approval: Marcus asked on 2026-10-13 to bundle and test the open review PRs together before his own test. The UI review gate cannot read a merge commit as approval marker, so this entry stands for the merge of main (#590) recorded in the entry above. No new wording.
+- Approved customer-visible result: as in the entry above; nothing else changes.
+- Scope: this approval record only. Bundle branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
