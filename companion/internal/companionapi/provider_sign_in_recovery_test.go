@@ -214,10 +214,11 @@ func TestProviderSignInReportsASavedCookieItCannotLift(t *testing.T) {
 	if err := os.WriteFile(configPath, []byte(original), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(dir, 0o500); err != nil {
+	// A directory where the writable lock file belongs fails even as root.
+	// Directory permissions alone do not reliably prevent the config write.
+	if err := os.Mkdir(configPath+".lock", 0o700); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
 	server.providerReadinessMu.Lock()
 	server.providerReadiness = map[string]providerReadinessRecord{"claude": {
 		Status: codexbar.ProviderBrowserSignInRequired, SignInURL: "https://claude.ai/login", CheckedAt: time.Now(),

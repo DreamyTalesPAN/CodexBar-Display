@@ -5633,3 +5633,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul's provider-row design request above covers its affected customer-flow checks on Mac and Windows.
 - Approved customer-visible result: No further UI change. The existing retry race now uses an unavailable provider, since a signed-out provider has only the approved sign-in action. Its ordinary notice is dismissed after navigation before checking the race.
+
+
+## 2026-10-13 - Verify the approved sign-in rows with relative locators
+
+- User approval: Paul's exact Mac/Windows provider-row design approval above includes verification of that result.
+- Approved customer-visible result: No further UI change. The browser checks locate each row by its own sign-in button, without referring to an ancestor section from inside the row.

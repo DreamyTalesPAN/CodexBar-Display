@@ -2567,10 +2567,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       healthState: "auth_required",
       reportedMessage:
         "Codex connection failed: codex account authentication required to read rate limits",
-      rowActions: [
-        "Sign in to Codex",
-        "Check Codex again",
-      ],
+      rowActions: ["Sign in to Codex"],
     },
     {
       status: "permission_required",
@@ -2612,10 +2609,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       expected: "No usable AI provider is configured yet.",
       healthState: "setup_required",
       reportedMessage: "No available fetch strategy for codex.",
-      rowActions: [
-        "Sign in to Codex",
-        "Check Codex again",
-      ],
+      rowActions: ["Sign in to Codex"],
     },
   ];
 
@@ -2740,27 +2734,21 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       .waitFor({ timeout: 10_000 });
     const providerDialog = page.getByRole("dialog", { name: "Codex", exact: true });
     const shownMessage = fixture.shownMessage ?? fixture.reportedMessage;
-    // A row with its own sign-in button opens its message only from the
-    // warning icon, and that popup leads to the same sign-in (09.10.).
     const signInRow = fixture.rowActions.includes("Sign in to Codex");
     if (signInRow) {
-      await page.getByRole("button", { name: "Sign in to Codex" }).first()
+      await page.getByRole("button", { name: "Sign in to Codex" })
         .waitFor({ timeout: 10_000 });
-      assert(
-        (await page.getByRole("dialog", { name: "Codex", exact: true }).count()) === 0,
-        `${fixture.status} must not open a popup over the sign-in button`,
-      );
-      await page.getByRole("button", { name: "Show provider message for Codex" }).click();
-    }
-    await providerDialog.getByText(shownMessage, { exact: true })
-      .waitFor({ timeout: 10_000 });
-    await providerDialog.getByRole("button", { name: "Copy provider message for Codex" })
-      .waitFor({ timeout: 10_000 });
-    if (signInRow) {
-      await providerDialog.getByRole("button", { name: "Sign in to Codex" })
-        .waitFor({ timeout: 10_000 });
-      await providerDialog.getByRole("button", { name: "Close" }).click();
+      assert(await providerDialog.count() === 0,
+        `${fixture.status} must not open a popup over the sign-in action`);
+      assert(await page.getByRole("button", { name: "Show provider message for Codex" }).count() === 0,
+        `${fixture.status} must not duplicate the sign-in action in a warning`);
+      assert(await page.getByRole("switch", { name: "Codex" }).count() === 0,
+        `${fixture.status} must replace the toggle with sign-in`);
     } else {
+      await providerDialog.getByText(shownMessage, { exact: true })
+        .waitFor({ timeout: 10_000 });
+      await providerDialog.getByRole("button", { name: "Copy provider message for Codex" })
+        .waitFor({ timeout: 10_000 });
       await providerDialog.getByRole("button", { name: "OK", exact: true }).click();
     }
     assert(
@@ -7208,7 +7196,7 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
     "A signed-out row must lead to its sign-in button, not a popup over it",
   );
   const signInRow = panel.getByRole("listitem").filter({
-    has: panel.getByRole("button", { name: "Sign in to Claude" }),
+    has: page.getByRole("button", { name: "Sign in to Claude" }),
   });
   assert(await signInRow.getByRole("button").count() === 1,
     "Windows must show only the sign-in action");
@@ -7335,7 +7323,7 @@ async function testMacAppShowsTheWindowsSignInButton(browser, appUrl) {
     (await page.getByRole("dialog", { name: "Claude", exact: true }).count()) === 0,
     "The Mac must lead signed-out Claude to its sign-in button, not a popup",
   );
-  const row = panel.getByRole("listitem").filter({ has: signInClaude });
+  const row = panel.getByRole("listitem").filter({ has: page.getByRole("button", { name: "Sign in to Claude" }) });
   assert(await row.getByRole("button").count() === 1,
     "signed-out Claude must have only the sign-in action");
   assert(await row.getByRole("switch").count() === 0,
@@ -7699,7 +7687,7 @@ async function testProviderOnboardingUsesSharedHealthyDescriptor(
     (await page.getByRole("dialog", { name: "Claude", exact: true }).count()) === 0,
     "setup must lead signed-out Claude to its sign-in button, not a popup",
   );
-  const signInRow = providersScreen.getByRole("listitem").filter({ has: signInClaude });
+  const signInRow = providersScreen.getByRole("listitem").filter({ has: page.getByRole("button", { name: "Sign in to Claude" }) });
   assert(await signInRow.getByRole("button").count() === 1,
     "the sign-in row must not duplicate the action in a warning popup");
   assert(await signInRow.getByRole("switch").count() === 0,
