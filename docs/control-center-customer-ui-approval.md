@@ -7192,3 +7192,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. No text or layout changes. After `Ask AI to fix` or `Create support report` was used with the keyboard, focus is on the first entry that is left, and the arrow keys and Escape keep working.
 - Scope: `setup/setup-help-menu.tsx`, its test, and this approval record. Night-shift branch only, not merge or release.
 - What's new: none — a correction, nothing new to announce
+
+## 2026-10-13 — Night shift: the device photo on Overview no longer ends in a hard shadow edge (#579)
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-13/14; wording not yet seen by him. It answers a leftover of issue #579 (`the Overview device photo has a hard shadow edge on the right`), seen again in the Windows app tonight: the shadow under the VibeTV was cut off straight at the picture's right border.
+- Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. No new wording or control. On Overview the shadow to the right of the VibeTV photo fades out over its last 57 pixels instead of ending in a vertical line. The VibeTV itself, its size and its place are unchanged; only the transparency of the shadow at the right border of the picture file changed.
+- Scope: `public/images/vibetv-device-overview-cutout.png` and this approval record. Night-shift branch only, not merge or release.
+- What's new: none — a correction, nothing new to announce
