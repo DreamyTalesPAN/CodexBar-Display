@@ -6904,3 +6904,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the #561 entries above and the bundle's own entries; nothing changes in how they read together. The launch check for a Mac App update and the What's new notice do not compete: the notice already waits while a newer app version is on offer.
 - Scope: merge of `codex/review-bundle-a` into `codex/review-bundle-b`; this approval record. Bundle branch only, not merge or release.
 - What's new: none — the Mac App update at launch is maintenance and not announced to customers
+
+## 2026-10-13 — Review bundle: two quick presses of the provider shortcut each move one provider on
+
+- User approval: Marcus asked on 2026-10-13 to bundle, test and fix the open review PRs before his own test. This corrects a finding of the automated Codex review on the bundle (PR #600); no new wording.
+- Approved customer-visible result: pressing the provider shortcut twice quickly (⌃⌥⌘P on a Mac, Ctrl+Alt+Shift+P on Windows) now shows the provider after next, as two slow presses do. Before, both presses could pick the same provider and one press was lost.
+- Scope: `companion/internal/companionapi/provider_display.go`, `server.go`, `provider_display_test.go`, and this approval record. This entry also stands as the approval marker after the merge of #599, whose entries are above. Bundle branch only, not merge or release.
+- What's new: none — a correction inside the bundle
