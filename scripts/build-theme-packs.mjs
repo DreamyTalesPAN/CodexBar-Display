@@ -37,6 +37,29 @@ const preservedFactoryRenderPacks = [
     themeId: "mini-classic",
   },
 ];
+// Until 2026-07-17 (217239a1) the unversioned legacy ZIPs were rebuilt in
+// place, so releases v1.0.18 to v1.0.46 shipped first revisions under file
+// names that no ZIP and no render revision holds any more. Recovered from the
+// ZIPs in the history of main; the list is closed, because those ZIPs are
+// frozen now (scripts/check-theme-pack-history.sh).
+const rebuiltLegacyThemeSpecPaths = {
+  "claude-creature": [
+    "/themes/u/claude--1-cac214.json",
+    "/themes/u/claude--1-defca1.json",
+    "/themes/u/claude--1-12ab01.json",
+  ],
+  clippy: [
+    "/themes/u/clippy-1-bb9192.json",
+    "/themes/u/clippy-1-5d86bb.json",
+    "/themes/u/clippy-1-ca9590.json",
+  ],
+  "mini-classic": ["/themes/u/mini-cl-1-b3c3f7.json"],
+  synthwave: [
+    "/themes/u/synthwa-1-0a355b.json",
+    "/themes/u/synthwa-1-0432f1.json",
+    "/themes/u/synthwa-1-cf338e.json",
+  ],
+};
 
 await mkdir(distRoot, { recursive: true });
 
@@ -105,8 +128,11 @@ for (const theme of themeDirs) {
   console.log(`built ${zipName} (${zipBytes.byteLength} bytes)`);
 }
 
-await writeCatalog(catalog);
 await writeRenderPacks();
+for (const theme of catalog.themes) {
+  theme.earlierThemeSpecPaths = await earlierThemeSpecPaths(theme);
+}
+await writeCatalog(catalog);
 console.log(`built GitHub theme catalog dist/theme-packs/${currentCatalogName} (${catalog.themes.length} themes)`);
 
 async function buildImmutableZip(themeDir, themeId, zipPath) {
@@ -204,6 +230,21 @@ function usesLabelBinding(specRaw) {
 async function writeCatalog(catalog) {
   catalog.themes.sort((a, b) => a.id.localeCompare(b.id));
   await writeFile(path.join(distRoot, currentCatalogName), `${JSON.stringify(catalog, null, 2)}\n`);
+}
+
+// Every file name this theme was shipped under before its current one. The app
+// takes a file VibeTV holds for this theme's only when it is the current one or
+// listed here: a theme the customer made can have the same id and a file name
+// that starts the same way (#559). The render revisions are the record, they
+// are immutable and never deleted.
+async function earlierThemeSpecPaths(theme) {
+  const revisionDir = path.join(renderRoot, theme.id);
+  const paths = new Set(rebuiltLegacyThemeSpecPaths[theme.id]);
+  for (const file of await readdir(revisionDir)) {
+    paths.add(JSON.parse(await readFile(path.join(revisionDir, file), "utf8")).specPath);
+  }
+  paths.delete(theme.themeSpecPath);
+  return [...paths].sort();
 }
 
 async function writeRenderPacks() {

@@ -504,7 +504,7 @@ expected_agent_values = {
     "BundleProgram": "Contents/Helpers/codexbar-display",
     "RunAtLoad": True,
     "KeepAlive": True,
-    "ProcessType": "Background",
+    "ProcessType": "Standard",
     "ThrottleInterval": 10,
 }
 for key, value in expected_agent_values.items():

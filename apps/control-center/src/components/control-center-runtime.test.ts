@@ -3,6 +3,8 @@ import {
   FINISH_CODEXBAR_RECOVERY_URL,
   isNativeControlCenterUserAgent,
   localThemeRenderPackUrl,
+  nativeControlCenterAppBuild,
+  nativeProviderShortcut,
   REPAIR_CODEXBAR_URL,
   REPAIR_CONTROL_CENTER_RUNTIME_URL,
   RESTART_CONTROL_CENTER_URL,
@@ -19,6 +21,24 @@ describe("native Control Center recovery", () => {
       ),
     ).toBe(false);
     expect(isNativeControlCenterUserAgent("Mozilla/5.0")).toBe(false);
+  });
+
+  // Issue #424: the app reports through its user agent when the system
+  // refused the keys of its provider shortcut.
+  it("reads from the user agent whether the provider shortcut is available", () => {
+    const refused = "VibeTVControlCenter/1.2.3+45 ProviderShortcut/unavailable";
+
+    expect(nativeProviderShortcut("VibeTVControlCenter/1.2.3+45")).toBe(
+      "available",
+    );
+    expect(nativeProviderShortcut(refused)).toBe("unavailable");
+    // A browser has no global shortcut at all.
+    expect(nativeProviderShortcut("Mozilla/5.0")).toBeNull();
+    // The support report still names the app's version and build.
+    expect(nativeControlCenterAppBuild(refused)).toEqual({
+      version: "1.2.3",
+      build: "45",
+    });
   });
 
   it("keeps automatic repair separate from the full app restart", () => {

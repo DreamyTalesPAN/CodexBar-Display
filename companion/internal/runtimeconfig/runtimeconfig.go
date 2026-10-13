@@ -42,22 +42,28 @@ var processPermissionMigrations permissionMigrationCache
 var configTransactionLocks sync.Map
 
 type Config struct {
-	WiFiTransitionStartedAt        int64                  `json:"wifiTransitionStartedAt,omitempty"`
-	Theme                          string                 `json:"theme,omitempty"`
-	ConnectionMode                 string                 `json:"connectionMode,omitempty"`
-	DeviceTarget                   string                 `json:"deviceTarget,omitempty"`
-	DeviceToken                    string                 `json:"deviceToken,omitempty"`
-	DeviceID                       string                 `json:"deviceId,omitempty"`
-	DeviceTransports               []string               `json:"deviceTransports,omitempty"`
-	KnownDevices                   []KnownDevice          `json:"knownDevices,omitempty"`
-	CableAutoBindDisabled          bool                   `json:"cableAutoBindDisabled,omitempty"`
-	ConnectionModeChoiceRequired   bool                   `json:"connectionModeChoiceRequired,omitempty"`
+	WiFiTransitionStartedAt      int64         `json:"wifiTransitionStartedAt,omitempty"`
+	Theme                        string        `json:"theme,omitempty"`
+	ConnectionMode               string        `json:"connectionMode,omitempty"`
+	DeviceTarget                 string        `json:"deviceTarget,omitempty"`
+	DeviceToken                  string        `json:"deviceToken,omitempty"`
+	DeviceID                     string        `json:"deviceId,omitempty"`
+	DeviceTransports             []string      `json:"deviceTransports,omitempty"`
+	KnownDevices                 []KnownDevice `json:"knownDevices,omitempty"`
+	CableAutoBindDisabled        bool          `json:"cableAutoBindDisabled,omitempty"`
+	ConnectionModeChoiceRequired bool          `json:"connectionModeChoiceRequired,omitempty"`
 	// LegacyWiFiDeviceID is the WiFi VibeTV that ran, or was updated from,
 	// firmware from before cable-only updates. Once it answers over the USB
 	// cable the app connects it by Cable (issue #498).
-	LegacyWiFiDeviceID string `json:"legacyWifiDeviceId,omitempty"`
+	LegacyWiFiDeviceID             string                 `json:"legacyWifiDeviceId,omitempty"`
 	ProviderDisplay                *ProviderDisplayConfig `json:"providerDisplay,omitempty"`
 	ProviderSelectionSetupComplete *bool                  `json:"providerSelectionSetupComplete,omitempty"`
+	// UsageDisplayMode is the customer's own "used" or "remaining" choice.
+	// Empty follows CodexBar's setting (issue #183).
+	UsageDisplayMode string `json:"usageDisplayMode,omitempty"`
+	// DisplayRotateSeconds makes Automatic move to the next provider on a
+	// timer. Zero keeps the activity-based choice (issue #322).
+	DisplayRotateSeconds int `json:"displayRotateSeconds,omitempty"`
 }
 
 type ProviderDisplayConfig struct {
@@ -385,6 +391,14 @@ func (cfg *Config) Normalize() {
 	if cfg.ProviderDisplay != nil {
 		cfg.ProviderDisplay.Normalize()
 	}
+	if cfg.UsageDisplayMode != "used" && cfg.UsageDisplayMode != "remaining" {
+		cfg.UsageDisplayMode = ""
+	}
+	switch cfg.DisplayRotateSeconds {
+	case 30, 60, 300:
+	default:
+		cfg.DisplayRotateSeconds = 0
+	}
 	for index := range cfg.DeviceTransports {
 		cfg.DeviceTransports[index] = strings.TrimSpace(strings.ToLower(cfg.DeviceTransports[index]))
 	}
@@ -410,6 +424,19 @@ func (cfg *ProviderDisplayConfig) Normalize() {
 		providerIDs = append(providerIDs, providerID)
 	}
 	cfg.ProviderIDs = providerIDs
+}
+
+// UsageShowsUsed resolves the usage display for the VibeTV frame and the usage
+// API alike: the customer's own choice wins, otherwise codexBarShowsUsed
+// reports CodexBar's setting.
+func (cfg Config) UsageShowsUsed(codexBarShowsUsed func() bool) bool {
+	switch cfg.UsageDisplayMode {
+	case "used":
+		return true
+	case "remaining":
+		return false
+	}
+	return codexBarShowsUsed()
 }
 
 // ProviderSelectionSetupIsComplete preserves completed legacy installations

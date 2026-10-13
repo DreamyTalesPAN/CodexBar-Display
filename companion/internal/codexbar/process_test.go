@@ -28,6 +28,10 @@ func TestMain(m *testing.M) {
 		fmt.Print(`[{"provider":"codex","source":"local","updatedAt":"2026-07-28T09:00:00Z","sessionTokens":120,"last30DaysTokens":240,"totals":{"totalTokens":240}}]`)
 		os.Exit(0)
 	}
+	// Tests give one CLI file a different answer per test, which Windows
+	// would otherwise carry from one test into the next (reuseEngineAnswers).
+	// A test of that reuse switches it on itself.
+	reuseEngineAnswers = false
 	os.Exit(m.Run())
 }
 

@@ -220,10 +220,8 @@ function SetupEventRow({
           <span>{status.text}</span>
         </span>
         {event.count && event.count > 1 ? (
-          <span
-            aria-label={"Repeated " + event.count + " times"}
-            className="text-muted-foreground"
-          >
+          <span className="text-muted-foreground">
+            <span className="sr-only">Repeated </span>
             {event.count + " times"}
           </span>
         ) : null}

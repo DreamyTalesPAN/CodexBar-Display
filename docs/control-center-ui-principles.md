@@ -88,12 +88,30 @@ Before shipping customer-facing UI changes, answer these in order:
 7. Is any paragraph explaining something that could be solved by hiding, disabling, merging, or automating an action?
 8. Did the change add a new customer decision that the software could make automatically?
 9. Does mobile have the same decision order and no wrapped or crowded action rows?
+10. Does the change give the customer something new to use? Then it gets an entry in "What's new" (see below); if not, the approval entry says why not.
 
 ## Automated Copy Guard
 
 Run `npm run check:customer-ui-copy` in `apps/control-center` before shipping customer-facing UI changes. It parses customer-facing TSX copy and blocks internal wording such as `Companion`, `Bridge`, local API terms, release/package diagnostics, and technical setup substeps.
 
-The repository gate also blocks every customer-facing UI diff until the same change includes a new approval entry with both `User approval:` and `Approved customer-visible result:`. A general implementation or release approval is not enough; the visible result must be named.
+The repository gate also blocks every customer-facing UI diff until the same change includes a new approval entry with `User approval:`, `Approved customer-visible result:` and `What's new:`. A general implementation or release approval is not enough; the visible result must be named.
+
+## What's New
+
+After an update, the first time a customer who was already set up lands on Overview, the dialog `What's new` tells them what they can now do. `What's new` on Updates opens it again. A customer who is setting VibeTV up never gets it. The entries are the list in `apps/control-center/src/lib/whats-new.ts`.
+
+Every approval entry therefore ends with a line `- What's new:`. Its value is one of:
+
+- the ids of the entries this change adds to that list, each in backticks, for example ``- What's new: `provider-shortcut` ``;
+- `none — <reason>`, for example `- What's new: none — a fix, nothing new to use`.
+
+The gate fails when the line is missing, when `none` has no reason, when an id is not in the list, or when an id is named by more than one approval entry: an entry is added once. When one change adds several approval entries, each needs its own `User approval:`, `Approved customer-visible result:` and `What's new:` lines.
+
+- An entry is one title plus one sentence that says how to use the feature. It is customer-facing copy and needs the same approval as any other.
+- A new entry goes to the end of the list, with a new kebab-case id. An id never changes and is never used again: the app stores the ids a customer has seen.
+- The dialog shows at most three entries at once, the newest the customer has not seen. So add an entry only for something a customer would look for.
+- A theme that is added to the catalog always gets an entry: its title is `New theme: <name>`, and it carries the theme's catalog id as `theme`. Theme entries stand first, link to Themes, and are shown beside the three others (at most three themes). `whats-new.test.ts` fails when a live theme in `dist/theme-packs/vibetv-theme-packs-v2.json` has no entry, or an entry names a theme the catalog does not hold. This holds for themes, not for screensavers.
+- Pure fixes get `none`, and so does every change that gives the customer nothing new to do.
 
 ## Verification Budget
 

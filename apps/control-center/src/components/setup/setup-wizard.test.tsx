@@ -14,6 +14,7 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { expectNoAxeViolations } from "@/test/axe";
 
 import type { DeviceCandidate } from "../control-center-types";
 import type { ProviderItem } from "../provider-picker";
@@ -564,6 +565,44 @@ describe("SetupWizard: direct connection", () => {
     const dialog = await screen.findByRole("dialog", { name: "The app did not answer." });
     expect(dialog.textContent).toContain("Restart the app on this computer, then try again.");
     expect(dialog.textContent).not.toContain("Mac");
+  });
+
+  // Issue #548: these two dialogs showed the runtime's sentence as it came.
+  it("words a failed WiFi step and a failed manual address for the Windows app", async () => {
+    const failure = {
+      message: "Mac App did not answer.",
+      nextAction: "Quit VibeTV Control Center, then open it again from Applications.",
+    };
+    render(<SetupWizard {...baseProps({
+      step: "device", windowsHost: true,
+      initialWiFiSetup: { status: "wifi_credentials_required", deviceId: "configured-device" },
+      onScanWiFiNetworks: vi.fn().mockResolvedValue([]),
+      onConfigureWiFi: vi.fn().mockRejectedValue(failure),
+    })} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Enter hidden network" }));
+    fireEvent.change(screen.getByLabelText("WiFi network"), { target: { value: "Home" } });
+    fireEvent.change(screen.getByLabelText("WiFi password"), { target: { value: "test-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Connect to WiFi" }));
+    const wifi = await screen.findByRole("dialog", { name: "WiFi setup failed" });
+    expect(wifi.textContent).toContain(
+      "App did not answer. Quit VibeTV Control Center, then open it again from the Start menu.",
+    );
+    expect(wifi.textContent).not.toContain("Mac");
+    cleanup();
+
+    render(<SetupWizard {...baseProps({
+      step: "welcome", deviceSearchState: "searching", windowsHost: true,
+      onFindManualTarget: vi.fn().mockRejectedValue(failure),
+    })} />);
+    fireEvent.click(screen.getByRole("button", { name: "Enter IP address manually" }));
+    fireEvent.change(screen.getByLabelText("IP address"), { target: { value: "192.168.1.42" } });
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Enter IP address" })).getByRole("button", { name: "Connect" }),
+    );
+    const address = await screen.findByText(/did not answer/);
+    expect(address.textContent).toBe(
+      "App did not answer. Quit VibeTV Control Center, then open it again from the Start menu.",
+    );
   });
 
   it("sends a VibeTV that pairs only over the cable to the cable (#489)", async () => {
@@ -2127,3 +2166,24 @@ describe("SetupWizard with a broken usage service", () => {
     },
   );
 });
+
+describe("SetupWizard: accessibility", () => {
+  it.each(["welcome", "device", "providers", "display", "theme", "live"] as const)(
+    "has no violations on the %s step",
+    async (step) => {
+      render(<SetupWizard {...baseProps({ step })} />);
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+      await expectNoAxeViolations(document.body.innerHTML);
+    },
+  );
+
+  it("moves focus to the new step's title once the pressed button is gone", () => {
+    const view = render(<SetupWizard {...baseProps({ step: "providers" })} />);
+    const pressed = screen.getByRole("button", { name: "Continue" });
+    pressed.focus();
+    expect(document.activeElement).toBe(pressed);
+    view.rerender(<SetupWizard {...baseProps({ step: "display" })} />);
+    expect(document.activeElement).toBe(screen.getByRole("heading", { level: 1 }));
+  });
+});
+

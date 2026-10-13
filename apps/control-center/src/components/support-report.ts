@@ -7,14 +7,17 @@ import {
   isNativeControlCenterApp,
   nativeControlCenterAppBuild,
 } from "./control-center-runtime";
+import { copyForHost } from "@/lib/customer-platform";
 
 export async function collectSupportReport(
   loadDiagnostics: () => Promise<SupportDiagnostics>,
   state: SupportReportClientState,
+  /** The app runs on Windows; the report then names that app as its surface. */
+  windowsHost = false,
 ): Promise<SupportDiagnostics> {
   const generatedAt = new Date().toISOString();
   const client = {
-    environment: readClientEnvironment(),
+    environment: readClientEnvironment(windowsHost),
     state,
   };
 
@@ -23,8 +26,10 @@ export async function collectSupportReport(
     return {
       ...diagnostics,
       generatedAt: diagnostics.generatedAt || generatedAt,
-      // An older Mac App has no setup log; say so rather than leave it out.
+      // An older Mac App has no setup log or timeline; say so rather than
+      // leave them out.
       setupLog: diagnostics.setupLog ?? { unavailable: true },
+      timeline: diagnostics.timeline ?? { unavailable: true },
       client,
     };
   } catch (error) {
@@ -35,6 +40,7 @@ export async function collectSupportReport(
       generatedAt,
       client,
       setupLog: { unavailable: true },
+      timeline: { unavailable: true },
       collectionErrors: [
         {
           source: "Mac App diagnostics",
@@ -55,7 +61,54 @@ export async function collectSupportReport(
 }
 
 export function serializeSupportReport(report: SupportDiagnostics): string {
-  return JSON.stringify(redactSensitiveValues(report), null, 2);
+  // The runtime's texts name the Mac on every system. A report from the
+  // Windows app says what that app's screens say (issue #558).
+  const windowsHost =
+    report.client?.environment.surface === "native-windows-app";
+  const homeAsTilde = homeFolderAsTilde(report);
+  return JSON.stringify(
+    redactSensitiveValues(report),
+    (_key, value) =>
+      typeof value === "string"
+        ? copyForHost(homeAsTilde(value), windowsHost)
+        : value,
+    2,
+  );
+}
+
+// The home folder's last part is the account name of the computer, and the
+// report does not need it (issue #580). The report's own paths say which
+// folder that is: the first of them that lies in `/Users/<name>`,
+// `/home/<name>`, `C:\Users\<name>` or `\\server\Users\<name>`. Exactly that
+// folder reads `~` in every text of the report and nothing else is touched;
+// a report without such a path stays as it is. The app keeps the real path.
+const homeFolder =
+  /^(?:\/(?:Users|home)\/[^/]+|(?:[A-Za-z]:|\\\\[^\\/]+)[\\/]Users[\\/][^\\/]+)(?=[\\/])/;
+
+function homeFolderAsTilde(
+  report: SupportDiagnostics,
+): (value: string) => string {
+  const engine = report.providerSetup?.engine;
+  const home = [report.usageEngine?.path, engine?.path, engine?.configPath]
+    .map((path) => homeFolder.exec(path ?? "")?.[0])
+    // `Shared` and `Public` are on every computer and name nobody.
+    .find((folder) => folder && !/[\\/](?:Shared|Public)$/i.test(folder));
+  if (!home) {
+    return (value) => value;
+  }
+  if (home.startsWith("/")) {
+    return (value) => value.split(home).join("~");
+  }
+  // Windows takes either slash and any case for the same folder, and a line
+  // printed as JSON doubles the backslashes.
+  const spellings = new RegExp(
+    home
+      .split(/[\\/]/)
+      .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .join(String.raw`(?:\\\\|[\\/])`),
+    "gi",
+  );
+  return (value) => value.replace(spellings, "~");
 }
 
 export function downloadSupportReport(report: SupportDiagnostics): void {
@@ -74,13 +127,19 @@ export function downloadSupportReport(report: SupportDiagnostics): void {
 
 export function supportReportFilename(value?: string): string {
   const timestamp = value ? new Date(value) : new Date();
+  // The customer's own date and time: the UTC time put a report saved around
+  // midnight on another day (issue #579). To the second: a report's time has
+  // no milliseconds, so the name always ended in "-000".
   const safeTimestamp = Number.isNaN(timestamp.getTime())
     ? "session"
-    : timestamp.toISOString().replace(/[:.]/g, "-");
+    : new Date(timestamp.getTime() - timestamp.getTimezoneOffset() * 60_000)
+        .toISOString()
+        .slice(0, 19)
+        .replace(/:/g, "-");
   return `vibetv-support-report-${safeTimestamp}.json`;
 }
 
-function readClientEnvironment() {
+function readClientEnvironment(windowsHost: boolean) {
   if (typeof window === "undefined" || typeof navigator === "undefined") {
     return {};
   }
@@ -95,7 +154,11 @@ function readClientEnvironment() {
     viewport: `${window.innerWidth}x${window.innerHeight}@${window.devicePixelRatio}`,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     visibility: document.visibilityState,
-    surface: native ? "native-mac-app" : "browser",
+    surface: native
+      ? windowsHost
+        ? "native-windows-app"
+        : "native-mac-app"
+      : "browser",
     appVersion: version,
     appBuild: build,
     // A loopback route is only served to the native Mac App: in a browser the

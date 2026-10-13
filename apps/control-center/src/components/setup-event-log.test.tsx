@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { expectNoAxeViolations } from "@/test/axe";
 import type { SetupLog } from "./control-center-types";
 import {
   SETUP_EVENTS_POLL_MS,
@@ -52,13 +53,34 @@ describe("SetupEventList", () => {
     render(<SetupEventList log={log} />);
     expect(rows()[1]).toContain("3 times");
     expect(rows()[1]).not.toContain("×");
-    expect(screen.getByLabelText("Repeated 3 times")).toBeTruthy();
+    expect(rows()[1]).toContain("Repeated 3 times");
   });
 
   it("never shows the engine's product name", () => {
     render(<SetupEventList log={log} />);
     expect(document.body.textContent).not.toMatch(/codexbar/i);
     expect(rows()[2]).toContain("Usage engine 0.17 is too old.");
+  });
+
+  // Issue #558: the Mac App files a screensaver install under a stage of its
+  // own. The page has no entry for it and words the stage itself.
+  it("names a screensaver install as one, next to a theme install", () => {
+    const at = "2026-10-08T14:17:00Z";
+    render(
+      <SetupEventList
+        log={{
+          ...log,
+          events: [
+            { seq: 1, at, stage: "theme_install", status: "started", message: "Installing theme." },
+            { seq: 2, at, stage: "screensaver_install", status: "started", message: "Installing screensaver." },
+          ],
+        }}
+      />,
+    );
+    expect(rows()[0]).toContain("Theme install");
+    expect(rows()[1]).toContain("Screensaver install");
+    expect(rows()[1]).toContain("Installing screensaver.");
+    expect(rows()[1]).not.toMatch(/theme/i);
   });
 
   it("says when older entries were removed", () => {
@@ -81,6 +103,11 @@ describe("SetupEventList", () => {
     render(<SetupEventList log={restarted} windowsHost />);
     expect(rows()[0]).not.toContain("Mac");
     expect(rows()[0]).toContain("The app's background service started again.");
+  });
+
+  it("has no accessibility violations", async () => {
+    render(<SetupEventList log={{ ...log, truncated: true }} />);
+    await expectNoAxeViolations(document.body.innerHTML);
   });
 
   it("has an empty state", () => {
