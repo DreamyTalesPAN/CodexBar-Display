@@ -2731,33 +2731,17 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       '[data-slot="spinner"]',
     );
     assert(
-      (await tokenHistoryLoading.getAttribute("data-slot")) === "card",
-      "Token history loading must use the full token card placeholder",
+      (await tokenHistoryLoading.locator('[data-slot="skeleton"]').count()) > 0,
+      "Token history loading must draw the graph skeleton",
     );
     assert(
-      (await tokenHistorySpinner.count()) === 1,
-      "Token history loading must use the existing spinner",
+      (await tokenHistorySpinner.count()) === 0,
+      "Token history loading must not show a spinner (issue #598)",
     );
     const tokenHistoryCardBox = await tokenHistoryLoading.boundingBox();
-    const tokenHistorySpinnerBox = await tokenHistorySpinner.boundingBox();
     assert(
       tokenHistoryCardBox && tokenHistoryCardBox.height >= 294,
-      "Token history loading card must reserve the token chart height",
-    );
-    assert(
-      tokenHistoryCardBox &&
-        tokenHistorySpinnerBox &&
-        Math.abs(
-          tokenHistorySpinnerBox.x +
-            tokenHistorySpinnerBox.width / 2 -
-            (tokenHistoryCardBox.x + tokenHistoryCardBox.width / 2),
-        ) <= 1 &&
-        Math.abs(
-          tokenHistorySpinnerBox.y +
-            tokenHistorySpinnerBox.height / 2 -
-            (tokenHistoryCardBox.y + tokenHistoryCardBox.height / 2),
-        ) <= 1,
-      "Token history spinner must be centered in its placeholder card",
+      "Token history loading must reserve the token chart height",
     );
     assert(
       (await page

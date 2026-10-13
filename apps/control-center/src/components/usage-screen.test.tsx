@@ -181,10 +181,12 @@ describe("UsageScreen", () => {
 
     expect(html).toContain("Token history is loading");
     expect(html).toContain('data-testid="token-history-loading"');
+    expect(html).toContain('role="status"');
     expect(html).toContain('data-slot="card"');
-    expect(html).toContain("min-h-[294px]");
-    expect(html).toContain("items-center justify-center");
-    expect(html).toContain('data-slot="spinner"');
+    expect(html).toContain('data-slot="skeleton"');
+    expect(html).toContain("motion-reduce:animate-none");
+    expect(html).not.toContain('data-slot="spinner"');
+    expect(html).not.toContain("min-h-[294px]");
     expect(html).toContain("Codex");
     expect(html).toContain("Session: 12% used");
     expect(html).toContain("Weekly: 34% used");
@@ -193,6 +195,29 @@ describe("UsageScreen", () => {
     expect(html).not.toContain("Loading usage");
     expect(html).not.toContain("Total tokens in the last 30 days");
     expect(html).not.toContain("Tokens used over time");
+  });
+
+  it("draws the graph outline without a spinner while token history loads, and passes axe", async () => {
+    const html = renderUsage("usage", {
+      ...usage,
+      tokenUsageReady: false,
+      providers: usage.providers.map((provider) => ({ ...provider, cost: undefined })),
+    });
+
+    // The loading block sits above the provider list (<ol>).
+    const loading = html.slice(
+      html.lastIndexOf("<div", html.indexOf('data-testid="token-history-loading"')),
+      html.indexOf("<ol"),
+    );
+    expect(loading).toContain("Token history is loading");
+    expect(loading).toContain('role="status"');
+    expect(loading).toContain('aria-live="polite"');
+    expect(loading).toContain('data-slot="skeleton"');
+    expect(loading).not.toContain('data-slot="spinner"');
+    // The skeleton shows no figures and no finished headings.
+    expect(loading).not.toContain("Total tokens in the last 30 days");
+    expect(loading).not.toContain("Tokens used over time");
+    await expectNoAxeViolations(html);
   });
 
   it("shows a growing token total immediately and marks it as still counting", () => {
