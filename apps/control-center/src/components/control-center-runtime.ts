@@ -76,6 +76,12 @@ export function onNativeDownloadFinished(
   return () => window.removeEventListener("vibetv:download-finished", handle);
 }
 
+// Opens the Mac App's own update dialog (issue #566). Plain navigation, as
+// before: the Mac App answers the custom scheme with its Sparkle check.
+export function openMacAppUpdatePrompt(): void {
+  window.location.href = "vibetv://check-for-updates";
+}
+
 export function isNativeControlCenterApp(): boolean {
   return (
     typeof navigator !== "undefined" &&

@@ -41,6 +41,7 @@ import {
   launchCodexBarRepair,
   nativeProviderShortcut,
   needsLoopbackTargetAddressSpace,
+  openMacAppUpdatePrompt,
   repairLocalControlCenterRuntime,
   restartLocalControlCenterApp,
   shouldRedirectToLocalControlCenter,
@@ -4581,7 +4582,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       return;
     }
     macAppUpdatePromptedFor.current = macAppUpdateOfferedVersion;
-    window.location.href = "vibetv://check-for-updates";
+    openMacAppUpdatePrompt();
   }, [
     firmwareUpdateInProgress,
     hostedSetup,

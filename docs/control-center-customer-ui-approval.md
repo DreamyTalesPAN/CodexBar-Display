@@ -7101,3 +7101,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. The provider message for blocked access adds the next step the app already knows, in the same paragraph: on a Mac `macOS blocked access required by this provider. Allow the required macOS access, then check this provider.`, on Windows `Windows blocked access required by this provider. Allow the required access, then check this provider.` Its main button reads `Check again` instead of `OK`; it closes the message and checks that provider, and the message returns if the access is still blocked. The close button and `Copy provider message for <Provider>` are unchanged. No provider-specific rule is added: both sentences are the ones the service already sends.
 - Scope: `setup/setup-provider-row.tsx`, `setup/setup-providers-screen.tsx`, their tests, and this approval record. Night-shift branch only, not merge or release.
 - What's new: none — a correction, nothing new to announce
+
+## 2026-10-13 — Night shift: a test covers the automatic Mac App update prompt (#566)
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-13/14; wording not yet seen by him. Issue #566: no test covered the automatic Mac App update prompt in the Control Center window; the prompt call now goes through a named function so the test can see it.
+- Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. No visible change. The Mac App update dialog still opens once per offered version, as before; only tests were added and the prompt call moved into `openMacAppUpdatePrompt()` in `control-center-runtime.ts`.
+- Scope: `control-center-app.tsx`, `control-center-runtime.ts`, the new test `control-center-app.mac-update-prompt.test.tsx`, and this approval record. Night-shift branch only, not merge or release.
+- What's new: none — a correction, nothing new to announce
