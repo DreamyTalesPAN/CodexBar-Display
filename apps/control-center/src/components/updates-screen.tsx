@@ -263,7 +263,7 @@ export function UpdatesScreen({
       </div>
       {pageStatusHeading === "Update check failed" ? (
         <p className="text-sm text-muted-foreground">
-          VibeTV could not check for updates. Check your internet connection and try again.
+          VibeTV could not check for updates. Try again in a few minutes.
         </p>
       ) : null}
       <div className="grid gap-4 lg:grid-cols-2">

@@ -7178,3 +7178,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. When the engine reported its own sentence for blocked access, the message shows that sentence as before tonight, for example `Safari cookie file is not readable. Enable Full Disk Access for usage engine.` Only without such a sentence the message reads `macOS blocked access required by this provider. Allow the required macOS access, then check this provider.` (Windows wording as in the entry). In both cases the main button is `Check again`; the message closes with its close button.
 - Scope: `setup/setup-provider-row.tsx`, its test, `scripts/test-customer-flows.mjs`, and this approval record. Night-shift branch only, not merge or release.
 - What's new: none — a correction, nothing new to announce
+
+## 2026-10-13 — Night shift: correction: a failed update check does not blame the internet connection (#579)
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-13/14; wording not yet seen by him. Correction to tonight's entry on the Updates page, from the automated review of #603: a check also fails for reasons that are not the network (an unreadable version), and the sentence sent those customers to their internet connection.
+- Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. Updates, under the heading `Update check failed`: `VibeTV could not check for updates. Try again in a few minutes.` It replaces `VibeTV could not check for updates. Check your internet connection and try again.`
+- Scope: `updates-screen.tsx`, its test, and this approval record. Night-shift branch only, not merge or release.
+- What's new: none — a correction, nothing new to announce

@@ -588,7 +588,7 @@ describe("UpdatesScreen failed check", () => {
     );
     expect(screen.getByRole("heading", { name: "Update check failed" })).toBeTruthy();
     expect(
-      screen.getByText("VibeTV could not check for updates. Check your internet connection and try again."),
+      screen.getByText("VibeTV could not check for updates. Try again in a few minutes."),
     ).toBeTruthy();
   });
 
