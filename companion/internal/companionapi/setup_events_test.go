@@ -744,6 +744,34 @@ func TestSetupLogFilesAScreensaverInstallUnderItsOwnStage(t *testing.T) {
 	}
 }
 
+// Issue #579: the setup log said "Installing theme." without the name of the
+// theme, while Recent activity names it. The start line names it too.
+func TestSetupLogNamesTheThemeBeingInstalled(t *testing.T) {
+	device := newThemeInstallReadyDeviceServer(t)
+	defer device.Close()
+
+	for _, tc := range []struct{ slot, body, want string }{
+		{"live", `{"themeId":"gauge","themeName":"Gauge","packUrl":"https://example.com/gauge.zip","async":true}`, "Installing Gauge."},
+		{"screensaver", `{"themeId":"stars","themeName":"Starfield","packUrl":"https://example.com/stars.zip","slot":"screensaver","async":true}`, "Installing Starfield."},
+	} {
+		server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+		server.installTheme = func(_ context.Context, opts themeinstall.Options) (themeinstall.Result, error) {
+			return themeinstall.Result{ThemeID: opts.ThemeID, Slot: opts.Slot}, nil
+		}
+		req := httptest.NewRequest(http.MethodPost, "/v1/themes/install", strings.NewReader(tc.body))
+		req.Header.Set("Content-Type", "application/json")
+		server.Handler().ServeHTTP(httptest.NewRecorder(), req)
+		var events []setupEvent
+		for attempt := 0; attempt < 100 && len(events) < 2; attempt++ {
+			time.Sleep(10 * time.Millisecond)
+			events = getSetupLog(t, server).Events
+		}
+		if len(events) != 2 || events[0].Message != tc.want {
+			t.Fatalf("install in slot %q was logged as %+v, want the start line %q", tc.slot, events, tc.want)
+		}
+	}
+}
+
 // Issue #579: two different screensavers installed one after the other stood
 // as one "Started 2 times" and one "Done 2 times". Only the same install made
 // again is a repeat.

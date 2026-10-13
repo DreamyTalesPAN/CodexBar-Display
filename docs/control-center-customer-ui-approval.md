@@ -7136,3 +7136,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. On Appearance › Themes the button reads `Create theme` (before: `Create Theme`); on Appearance › Screensavers it reads `Create screensaver` (before: `Create Screensaver`). Nothing else changes: same place, same action, same dialogs.
 - Scope: `theme-library-screen.tsx` and its two tests, `apps/control-center/scripts/test-customer-flows.mjs` (text only, not run), and this approval record. Night-shift branch only, not merge or release.
 - What's new: none — a correction, nothing new to announce
+
+## 2026-10-13 — Night shift: Support: the setup log names the theme being installed (#579)
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-13/14; wording not yet seen by him. Issue #579: the setup log wrote `Installing theme.` for every install, while Recent activity names the theme.
+- Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. Support › Setup log, the start line of a theme install reads `Installing <theme name>.`, for example `Installing Gauge.` (before: `Installing theme.`). A screensaver reads `Installing <screensaver name>.` (before: `Installing screensaver.`). Lines of the install's end and the other entries are unchanged.
+- Scope: `companion/internal/companionapi/server.go`, the test `TestSetupLogNamesTheThemeBeingInstalled` in `setup_events_test.go` (not run here: the coordinator asked for no go test in that package), and this approval record. Night-shift branch only, not merge or release.
+- What's new: none — a correction, nothing new to announce
