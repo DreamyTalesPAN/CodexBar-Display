@@ -13423,7 +13423,16 @@ async function clickNavigation(page, name) {
 async function runSetupAgain(page) {
   const button = page.getByRole("button", { name: "Run setup again" });
   await button.waitFor({ timeout: 10_000 });
-  await button.click();
+  try {
+    await button.click({ timeout: 15_000 });
+  } catch (error) {
+    // Name what lies over the button; the click error alone only shows markup.
+    const open = [];
+    for (const dialog of await page.getByRole("dialog").all()) {
+      open.push((await dialog.innerText()).replace(/\s+/g, " ").slice(0, 200));
+    }
+    throw new Error(`"Run setup again" could not be clicked; open dialogs: ${JSON.stringify(open)}`, { cause: error });
+  }
   await page
     .getByRole("dialog", { name: "Run setup again?" })
     .getByRole("button", { name: "Run setup again" })

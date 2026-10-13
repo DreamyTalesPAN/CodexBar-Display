@@ -7900,7 +7900,14 @@ func TestDeviceActivityNegotiatesOldFirmwareWithoutChangingSource(t *testing.T) 
 	for _, phase := range []string{"working", "thinking", "tool_use", "compacting", "waiting_for_permission", "waiting_for_answer", "waiting_for_review", "done", "error", "stale", "idle", "unavailable"} {
 		original := protocol.Frame{Activity: phase}
 		modern := protocol.CapabilitiesFromHello(protocol.DeviceHello{Features: []string{protocol.FeatureAgentActivityV1}})
-		if got := applyDeviceActivity(original, modern); got.Activity != phase {
+		// The working phases reach the device as one state; every other
+		// phase is kept.
+		wire := phase
+		switch phase {
+		case "thinking", "tool_use", "compacting":
+			wire = "working"
+		}
+		if got := applyDeviceActivity(original, modern); got.Activity != wire {
 			t.Fatalf("lost full state: %+v", got)
 		}
 		want := "idle"
@@ -8027,7 +8034,7 @@ func TestAgentTransitionsStayOutOfUsageRecoveryCache(t *testing.T) {
 		if err := sendCycleResult(context.Background(), "/test", protocol.DeviceCapabilities{SupportsAgentActivityV1: true, SupportsAgentThemeStatesV1: true}, 2048, state, deps, result); err != nil {
 			t.Fatal(err)
 		}
-		if sent.Activity != phase {
+		if want := map[string]string{"tool_use": "working"}[phase]; sent.Activity != phase && sent.Activity != want {
 			t.Fatalf("device lost transition: %+v", sent)
 		}
 		cached, _, ok := loadPersistedLastGood(now)
@@ -8086,6 +8093,19 @@ func TestAutomaticDisplayFollowsObservedAgents(t *testing.T) {
 	check("codex") // Observations cannot manufacture usable quota.
 	providers = providers[:1]
 	check("codex") // An agent cannot resurrect a disabled provider.
+}
+
+func TestDeviceGetsOneWorkingStateForEveryWorkingPhase(t *testing.T) {
+	caps := protocol.DeviceCapabilities{SupportsAgentActivityV1: true, SupportsAgentThemeStatesV1: true}
+	for phase, want := range map[string]string{
+		"working": "working", "thinking": "working", "tool_use": "working", "compacting": "working",
+		"waiting_for_permission": "waiting_for_permission", "waiting_for_answer": "waiting_for_answer",
+		"done": "done", "error": "error", "idle": "idle", "unavailable": "unavailable",
+	} {
+		if got := applyDeviceActivity(protocol.Frame{Activity: phase, AgentName: "Claude"}, caps).Activity; got != want {
+			t.Fatalf("phase %s reached the device as %q, want %q", phase, got, want)
+		}
+	}
 }
 
 func TestAgentStatusNamesTheShownProviderByItsShortLabel(t *testing.T) {

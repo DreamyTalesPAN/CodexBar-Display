@@ -1627,6 +1627,14 @@ func applyDeviceActivity(frame protocol.Frame, caps protocol.DeviceCapabilities)
 		default:
 			frame.Activity = "idle"
 		}
+		return frame
+	}
+	// The device shows one working state. An agent moves between thinking,
+	// tools and compacting many times a minute; sending each move made the
+	// VibeTV repaint its status line and restart the animation for nothing.
+	switch frame.Activity {
+	case "thinking", "tool_use", "compacting":
+		frame.Activity = "working"
 	}
 	return frame
 }

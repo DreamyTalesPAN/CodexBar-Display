@@ -351,6 +351,9 @@ for (const [key, name, fps] of [
 const creatureSprite = creature.p.find((p) => p.t === "sp");
 creatureSprite.a = creatureStates.idle;
 creatureSprite.sa = creatureStates;
+// The status line is a sentence now ("Claude is working"). At the theme's
+// large size it is 216 px wide; the label lane was 212. Use the full width.
+Object.assign(creature.p.find((p) => p.v === "{label}"), { x: 4, w: 232 });
 creature.rev = 10;
 await finish("claude-creature", creature, "1.3.3", creatureAssets);
 

@@ -7293,3 +7293,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: (1) Mini Classic is unchanged from 1.2.2; version 1.2.3 with state artwork is withdrawn before it was published. (2) When the agent belongs to the provider on screen, the status line uses the provider's short label: `Claude is working`, `Codex needs you`, `Claude is done`. That sentence fits the theme's large text. An agent of another provider, or of none, keeps its own name (`Claude Code is working`). This replaces the Mini Classic part of the previous entry.
 - Scope: `companion/internal/daemon/daemon.go` and its test, the Mini Classic theme pack and catalog, two provider flows in `test-customer-flows.mjs` that read the provider message from its popup, and this approval record. Not merge or release.
 - What's new: none — agent activity gets its own entry when it ships
+
+## 2026-10-13 — Claude Creature status line at full width; one working state on the device (#465)
+
+- User approval: Paul in this chat on 2026-10-13, with a photo of Claude Creature on his VibeTV: "schrift ist aber immer noch sehr klein. außerdem wird die coding animation ab und zu neu gezeichnet".
+- Approved customer-visible result: (1) Claude Creature 1.3.3 gives the status line the full width (232 px instead of 212), so `Claude is working` and `Claude needs you` are drawn in the theme's large text. (2) The device is told `working` for thinking, tool use and compacting alike; the status line and the animation are no longer repainted when an agent moves between them. Paul has not yet confirmed the result on the device.
+- Scope: `companion/internal/daemon/daemon.go` and its tests, the Claude Creature theme pack and its generator, a clearer failure message in one browser flow helper, and this approval record. Not merge or release. Clippy, Pixel Battery, Synthwave and Tiny Office have narrower status lanes and still show long sentences small.
+- What's new: none — agent activity gets its own entry when it ships

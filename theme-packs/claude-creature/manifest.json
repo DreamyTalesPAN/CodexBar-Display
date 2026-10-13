@@ -10,10 +10,10 @@
     "agent-theme-states-v1"
   ],
   "themeSpec": {
-    "path": "/themes/u/claude-10-7643a9.json",
+    "path": "/themes/u/claude-10-ca931b.json",
     "file": "theme.json",
-    "bytes": 1233,
-    "sha256": "7643a9f2b8a67269d4c3a979afc29ec11d71da68836415500e39884ed79f9a3c",
+    "bytes": 1232,
+    "sha256": "ca931bdf865e8082a9b39051551dce4cff21307aca488dd414af08a31b50dcd7",
     "contentType": "application/json"
   },
   "assets": [
