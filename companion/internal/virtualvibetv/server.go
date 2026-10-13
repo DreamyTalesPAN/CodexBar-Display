@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -590,13 +589,17 @@ func (s *Server) handleThemeActive(w http.ResponseWriter, r *http.Request) {
 // knows.
 //
 // A primitive counts when primitiveCompiles accepts it, as CompilePrimitive does.
+// The whole-spec limits of CompileThemeSpecObject answer the same 400: a second
+// compiled GIF, and the storage that CountCompiledThemeSpecStorage counts over
+// every primitive (see storageOf).
 //
-// Not mirrored: the limits on GIF primitives (one per spec), string bytes and
-// provider assets of a whole spec (CompileThemeSpecObject,
-// CountCompiledThemeSpecStorage). JSON is judged by Go's parser and refused as
-// "bad theme json": ArduinoJson appends its error name, answers with a later
-// wording where its filtered first pass does not reach the error, takes single
-// quotes and unquoted keys, and refuses more than 10 nested levels.
+// Not mirrored: JSON is judged by Go's parser and refused as "bad theme json":
+// ArduinoJson appends its error name, answers with a later wording where its
+// filtered first pass does not reach the error, takes single quotes and unquoted
+// keys, and refuses more than 10 nested levels. Strings that are invalid UTF-8 or
+// hold a lone surrogate escape are counted as Go decodes them, which may differ
+// from the bytes ArduinoJson stores. The GIF and sprite asset rules do not cut a
+// path at a NUL as the firmware does.
 func storedThemeRefusal(spec []byte) string {
 	if len(bytes.TrimSpace(spec)) == 0 || len(spec) > maxStoredThemeSpecBytes {
 		return "theme file too large"
@@ -623,14 +626,78 @@ func storedThemeRefusal(spec []byte) string {
 		return "theme id/rev missing"
 	}
 	primitives := jsonFor[[]any](object, "primitives", "p")
-	compiles := slices.ContainsFunc(primitives, func(primitive any) bool {
+	var compiling, gifs, stringBytes, providerAssets int
+	for _, primitive := range primitives {
 		fields, _ := primitive.(map[string]any)
-		return primitiveCompiles(fields)
-	})
-	if len(primitives) > maxThemePrimitives || !compiles {
+		primitiveBytes, primitiveAssets := storageOf(fields)
+		stringBytes += primitiveBytes
+		providerAssets += primitiveAssets
+		if primitiveCompiles(fields) {
+			compiling++
+			if kind := jsonFor[string](fields, "type", "t"); kind == "gif" || kind == "g" {
+				gifs++
+			}
+		}
+	}
+	if len(primitives) > maxThemePrimitives || compiling == 0 || gifs > themeGifAssets ||
+		stringBytes > themeStringBytes || providerAssets > themeProviderAssets {
 		return "theme spec has no renderable content"
 	}
 	return ""
+}
+
+// Whole-spec limits of CompileThemeSpecObject and CountCompiledThemeSpecStorage
+// in firmware_shared/theme_spec_renderer_core.h: kMaxThemeSpecGifAssets,
+// kMaxCompiledThemeSpecStringBytes and kMaxCompiledProviderAssets.
+const (
+	themeGifAssets      = 1
+	themeStringBytes    = 1024
+	themeProviderAssets = 16
+)
+
+// storageOf is CountCompiledThemeSpecStorage for one primitive, whether or not it
+// compiles. Each string of the types the firmware copies into its pool takes its
+// bytes up to a NUL plus one, an empty one nothing, and no two strings share
+// bytes. The provider assets are the entries with a key and a path of a sprite or
+// image; a GIF has none counted.
+func storageOf(primitive map[string]any) (stringBytes, providerAssets int) {
+	var strs []string
+	switch jsonFor[string](primitive, "type", "t") {
+	case "text", "tx":
+		strs = []string{jsonFor[string](primitive, "binding", "b"), jsonFor[string](primitive, "text", "v")}
+	case "progress", "p":
+		strs = []string{jsonFor[string](primitive, "binding", "b")}
+	case "gif", "g":
+		strs = assetStrings(primitive)
+	case "sprite", "sp", "image", "img":
+		strs = assetStrings(primitive)
+		for key, value := range jsonFor[map[string]any](primitive, "providerAssets", "pa") {
+			if path, _ := value.(string); cString(key) != "" && cString(path) != "" {
+				providerAssets++
+				strs = append(strs, key, path)
+			}
+		}
+	case "pixels", "px":
+		strs = []string{jsonFor[string](primitive, "data", "d")}
+	}
+	for _, value := range strs {
+		if text := cString(value); text != "" {
+			stringBytes += len(text) + 1
+		}
+	}
+	return stringBytes, providerAssets
+}
+
+// assetStrings are the assetPath and the idle and coding state assets of a GIF,
+// sprite or image.
+func assetStrings(primitive map[string]any) []string {
+	return []string{jsonFor[string](primitive, "assetPath", "a"), stateAsset(primitive, "idle"), stateAsset(primitive, "coding")}
+}
+
+// cString is the C string the firmware reads from a JSON string: up to its first NUL.
+func cString(value string) string {
+	before, _, _ := strings.Cut(value, "\x00")
+	return before
 }
 
 // Slot and colour stop limits of the firmware: usage_window_contract.h kMaxWindows,

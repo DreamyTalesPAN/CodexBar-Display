@@ -471,6 +471,112 @@ func TestThemeActivationRefusesPrimitivesThatDoNotCompile(t *testing.T) {
 	}
 }
 
+// Like CompileThemeSpecObject, activation refuses a whole spec with a second GIF
+// that compiles, with more string bytes than CountCompiledThemeSpecStorage allows
+// or with more provider assets. Each limit is met and then exceeded by one (#354).
+func TestThemeActivationRefusesWholeSpecLimits(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.RebootUnavailableRequests = 0
+	running, err := Start(cfg)
+	if err != nil {
+		t.Fatalf("start virtual VibeTV: %v", err)
+	}
+	t.Cleanup(func() { _ = running.Close() })
+	const (
+		path      = "/themes/u/limits.json"
+		noContent = "theme spec has no renderable content"
+		goodRect  = `{"t":"r","w":1,"h":1}`
+		gif       = `{"t":"g","w":10,"h":10,"a":"/themes/u/a.gif"}`
+		badGif    = `{"t":"g","w":81,"h":10,"a":"/themes/u/a.gif"}`
+	)
+	chars := func(n int) string { return strings.Repeat("a", n) }
+	text := func(n int) string { return `{"t":"tx","v":"` + chars(n) + `"}` }
+	providers := func(prefix string, n int) string {
+		entries := make([]string, n)
+		for i := range entries {
+			entries[i] = `"` + prefix + strconv.Itoa(i) + `":"/themes/u/` + prefix + strconv.Itoa(i) + `.png"`
+		}
+		return `{` + strings.Join(entries, ",") + `}`
+	}
+	sprite := func(pa string) string { return `{"t":"sp","w":10,"h":10,"pa":` + pa + `}` }
+	for _, tt := range []struct {
+		name, primitives string
+		refused          bool
+	}{
+		// kMaxThemeSpecGifAssets is 1: a second GIF that compiles refuses the spec,
+		// a GIF that does not compile does not count.
+		{"one gif", goodRect + "," + gif, false},
+		{"two gifs", gif + "," + gif, true},
+		{"second gif that does not compile", gif + "," + badGif, false},
+		{"first gif that does not compile", badGif + "," + gif, false},
+		// kMaxCompiledThemeSpecStringBytes is 1024: the bytes of each string with its
+		// NUL, repeated strings counted again, and primitives that do not compile
+		// counted too. A string ends at its first NUL.
+		{"text of 1023 characters", goodRect + "," + text(1023), false},
+		{"text of 1024 characters", goodRect + "," + text(1024), true},
+		{"two texts of 511 characters", goodRect + "," + text(511) + "," + text(511), false},
+		{"two texts of 512 characters", goodRect + "," + text(512) + "," + text(512), true},
+		{"text of 1024 characters that does not compile", goodRect + `,{"t":"tx","ui":3,"v":"` + chars(1024) + `"}`, true},
+		{"progress binding of 1023 characters", goodRect + `,{"t":"p","w":10,"h":10,"b":"` + chars(1023) + `"}`, false},
+		{"progress binding of 1024 characters", goodRect + `,{"t":"p","w":10,"h":10,"b":"` + chars(1024) + `"}`, true},
+		{"pixels data of 1024 characters", goodRect + `,{"t":"px","w":1,"h":1,"d":"` + chars(1024) + `"}`, true},
+		{"long text key counts instead of the short one", goodRect + `,{"t":"tx","text":"","v":"` + chars(1024) + `"}`, false},
+		{"NUL ends a string", goodRect + `,{"t":"tx","v":"` + chars(1023) + `\u0000zzzz"}`, false},
+		{"NUL ends a string, one byte over", goodRect + `,{"t":"tx","v":"` + chars(1024) + `\u0000zzzz"}`, true},
+		// kMaxCompiledProviderAssets is 16: entries of sprites and images with a key
+		// and a path, also on a sprite that does not compile. A GIF has none counted.
+		{"16 provider assets on a sprite", goodRect + "," + sprite(providers("a", 16)), false},
+		{"17 provider assets on a sprite", goodRect + "," + sprite(providers("a", 17)), true},
+		{"16 provider assets on two sprites", goodRect + "," + sprite(providers("a", 10)) + "," + sprite(providers("b", 6)), false},
+		{"17 provider assets on two sprites", goodRect + "," + sprite(providers("a", 10)) + "," + sprite(providers("b", 7)), true},
+		{"provider assets of a sprite that does not compile", goodRect + "," + sprite(providers("a", 16)) + `,{"t":"sp","ui":3,"pa":{"x":"/themes/u/x.png"}}`, true},
+		{"empty provider entries do not count", goodRect + "," + sprite(providers("a", 16)) + `,{"t":"sp","a":"/themes/u/s.png","pa":{"e1":"","e2":""}}`, false},
+		{"17 provider assets on a gif", goodRect + `,{"t":"g","w":10,"h":10,"a":"/themes/u/a.gif","pa":` + providers("a", 17) + `}`, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			wantStatus, wantAnswer := http.StatusOK, ""
+			if tt.refused {
+				wantStatus, wantAnswer = http.StatusBadRequest, noContent
+			}
+			spec := `{"id":"limits","rev":1,"p":[` + tt.primitives + `]}`
+			status, answer := activateStoredTheme(t, running, path, spec, `{"path":"`+path+`"}`)
+			if status != wantStatus || !strings.Contains(answer, wantAnswer) {
+				t.Fatalf("%s: status %d %q, want %d %q", spec, status, answer, wantStatus, wantAnswer)
+			}
+		})
+	}
+}
+
+// The string bytes of single primitives, with the values the firmware's own budget
+// tests expect (testStringBudgetCountsInstalledAliasesAndSpellings and
+// testStringBudgetCountsInstalledBindingSpelling in
+// firmware_esp8266/test/test_native_theme_spec/test_theme_spec_renderer.cpp).
+func TestStoredThemeStringBytesMatchFirmwareBudget(t *testing.T) {
+	for _, tt := range []struct {
+		primitive string
+		bytes     int
+	}{
+		{`{"t":"tx","text":"","v":"ignored","b":"l"}`, 2},
+		{`{"t":"tx","text":null,"v":"ignored","b":"l"}`, 10},
+		{`{"t":"tx","text":"kept","v":"ignored","b":"l"}`, 7},
+		{`{"t":"p","w":40,"h":10,"binding":"","b":"us1p"}`, 0},
+		{`{"t":"p","w":40,"h":10,"b":"us1p"}`, 5},
+		{`{"t":"sp","assetPath":"","a":"/themes/u/y.cbi","sa":{"idle":"/themes/u/x.cbi"}}`, 16},
+		{`{"t":"sp","a":"/themes/u/x.cbi","stateAssets":{},"sa":{"idle":"/themes/u/y.cbi"}}`, 16},
+		{`{"t":"px","w":1,"h":1,"data":"","d":"FF","p":["#FFFFFF"],"r":["a"]}`, 0},
+		{`{"t":"sp","a":"/themes/u/x.cbi "}`, 17},
+		{`{"t":"sp","a":"/themes/u/x.cbi","sa":{"idle":"/themes/u/y.cbi "}}`, 33},
+	} {
+		var fields map[string]any
+		if err := json.Unmarshal([]byte(tt.primitive), &fields); err != nil {
+			t.Fatal(err)
+		}
+		if got, _ := storageOf(fields); got != tt.bytes {
+			t.Errorf("%s: %d string bytes, the firmware counts %d", tt.primitive, got, tt.bytes)
+		}
+	}
+}
+
 // Every theme spec the repository ships must activate on the virtual device, so
 // a rule stricter than the firmware's shows up in the unit tests (#354). A pack
 // manifest is not a theme spec and is skipped.
