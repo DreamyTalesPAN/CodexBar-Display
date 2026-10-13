@@ -6855,3 +6855,11 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: The customer sees the AI editor of #422 for themes and screensavers. The stack's changes to the old editor (its notices, the transparent sprite colour, the Gauge arc handles, the name and ID fields, Apply JSON) are not part of this bundle. The Gauge theme itself, the What's new notice, the menu bar status, the support timeline and the other stack results stay as approved in their own entries. New in the AI editor: Send for a screensaver is refused with "Turn on Show screensaver first." while Show screensaver is off, and with "Screensaver installs are not available right now." while the setting is not known, the same rule and text as Install in the list.
 - Scope: `apps/control-center/src/components/theme-library-screen.tsx` (the send check), `apps/control-center/src/lib/theme-install.ts` (the install timeout names a screensaver as a screensaver), tests, and this approval record. This approves the result on the bundle branch only, not merge or release.
 - What's new: none — the bundle adds no new feature of its own
+
+## 2026-10-13 — Review bundle: leaving Screensavers does not read the settings again
+
+- User approval: Marcus asked on 2026-10-13 to bundle, test and fix the open review PRs before his own test. This corrects a finding of the automated Codex review on the bundle (PR #600); no new wording.
+- Approved customer-visible result: While VibeTV's settings could not be read, opening Screensavers still reads them once more, as approved for the stack. Leaving Screensavers no longer starts another read, so the app does not show itself busy again on the page the customer went to. The Theme Studio safety test now runs the screensaver send with Show screensaver on, as the send rule of the entry above requires.
+- Scope: the settings effect in `apps/control-center/src/components/control-center-app.tsx`, `control-center-app.screensaver-setting.test.tsx`, `apps/control-center/scripts/test-customer-flows.mjs`, and this approval record. Bundle branch only, not merge or release.
+- What's new: none — a correction inside the bundle
+

@@ -65,6 +65,8 @@ it.each([
   [1, 2],
   // and when that fails too, when Screensavers is opened.
   [2, 3],
+  // Leaving Screensavers while the setting is still missing reads nothing.
+  [3, 3],
 ])("reads the screensaver setting again after %s failed read(s), without a visit to Settings", async (failures, reads) => {
   let settingsReads = 0;
   window.localStorage.clear();
@@ -178,6 +180,12 @@ it.each([
   await wait(2);
 
   expect(settingsReads).toBe(reads);
+  if (failures >= reads) {
+    fireEvent.click(screen.getByRole("button", { name: "Themes" }));
+    await wait(2);
+    expect(settingsReads).toBe(reads);
+    return;
+  }
   const row = screen
     .getAllByRole("listitem")
     .find((item) => within(item).queryByText("Retro 3D"))!;

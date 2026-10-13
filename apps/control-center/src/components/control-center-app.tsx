@@ -1169,8 +1169,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     standby === null && Boolean(device?.standby) && deviceIsReady(device);
   const screensaversOpen =
     activeTab === "theme-library" && appearanceSection === "screensavers";
+  const screensaversWereOpen = useRef(screensaversOpen);
   useEffect(() => {
-    if (!screensaverSettingMissing) {
+    // Leaving Screensavers is no reason to read them again.
+    const leftScreensavers = screensaversWereOpen.current && !screensaversOpen;
+    screensaversWereOpen.current = screensaversOpen;
+    if (!screensaverSettingMissing || leftScreensavers) {
       return;
     }
     const timer = window.setTimeout(() => {
