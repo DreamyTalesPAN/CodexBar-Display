@@ -214,7 +214,7 @@ export const THEME_CATALOG_PREVIEW_FRAME: FrameData = {
   provider: "vibetv",
   label: "VibeTV",
   session: 64,
-  weekly: 64,
+  weekly: 28,
   sessionUnavailable: false,
   weeklyUnavailable: false,
   resetSecs: 3600,
@@ -644,13 +644,7 @@ function ThemeSpecSVG({
   spec: ThemeSpec;
   themeId: string;
 }) {
-  const sprites = useMemo(() => decodeSpriteAssets(assets), [assets]);
   const primitives = spec.primitives || spec.p || [];
-  const animationFps = useMemo(
-    () => (animate ? maximumAnimatedSpriteFps(sprites) : 0),
-    [animate, sprites],
-  );
-  const animationTick = useAnimationTick(animationFps);
   return (
     <svg
       aria-label={themeSpecAriaLabel(themeId, frame)}
@@ -666,11 +660,10 @@ function ThemeSpecSVG({
       {primitives.map((primitive, index) => (
         <ThemePrimitiveNode
           assets={assets}
-          animationTick={animationTick}
+          animate={animate}
           frame={frame}
           key={index}
           primitive={primitive}
-          sprites={sprites}
         />
       ))}
     </svg>
@@ -679,16 +672,14 @@ function ThemeSpecSVG({
 
 function ThemePrimitiveNode({
   assets,
-  animationTick,
+  animate,
   frame,
   primitive,
-  sprites,
 }: {
   assets: Record<string, ThemePackAsset>;
-  animationTick: number;
+  animate: boolean;
   frame: FrameData;
   primitive: ThemePrimitive;
-  sprites: Record<string, DecodedSprite>;
 }) {
   const type = primitive.type || primitive.t || "";
   const x = primitive.x || 0;
@@ -762,54 +753,16 @@ function ThemePrimitiveNode({
     type === "img"
   ) {
     const assetPath = activeAssetPath(primitive, frame);
-    const sprite = assetPath ? sprites[assetPath] : undefined;
-    const renderWidth = width || sprite?.width || 0;
-    const renderHeight = height || sprite?.height || 0;
-    if (!sprite) {
-      return primitive.bg || primitive.bgColor ? (
-        <rect
-          fill={colorFor(primitive.bg || primitive.bgColor, "#000000")}
-          height={renderHeight}
-          width={renderWidth}
-          x={x}
-          y={y}
-        />
-      ) : null;
-    }
-    const currentFrame =
-      sprite.frames[spriteFrameIndex(sprite, animationTick)] ||
-      sprite.frames[0] ||
-      [];
-    return (
-      <g>
-        {(primitive.bg || primitive.bgColor) && (
-          <rect
-            fill={colorFor(primitive.bg || primitive.bgColor, "#000000")}
-            height={renderHeight}
-            width={renderWidth}
-            x={x}
-            y={y}
-          />
-        )}
-        {scaleSpriteRects(
-          currentFrame,
-          sprite,
-          x,
-          y,
-          renderWidth,
-          renderHeight,
-        ).map((rect, index) => (
-          <rect
-            fill={rect.color}
-            height={rect.height}
-            key={index}
-            width={rect.width}
-            x={rect.x}
-            y={rect.y}
-          />
-        ))}
-      </g>
-    );
+    const asset = assetPath ? assets[assetPath] : undefined;
+    return <ThemeSpriteImage
+      raw={asset?.encoding === "text" ? asset.data : ""}
+      animate={animate}
+      x={x}
+      y={y}
+      width={width}
+      height={height}
+      background={primitive.bg || primitive.bgColor}
+    />;
   }
 
   if (type === "gif" || type === "g") {
@@ -1844,23 +1797,7 @@ function activeAssetPath(primitive: ThemePrimitive, frame: FrameData): string {
   return stateAssets.idle || primitive.assetPath || primitive.a || "";
 }
 
-function decodeSpriteAssets(
-  assets: Record<string, ThemePackAsset>,
-): Record<string, DecodedSprite> {
-  const decoded: Record<string, DecodedSprite> = {};
-  for (const [assetPath, asset] of Object.entries(assets)) {
-    if (asset.encoding !== "text") {
-      continue;
-    }
-    const sprite = decodeSprite(asset.data);
-    if (sprite) {
-      decoded[assetPath] = sprite;
-    }
-  }
-  return decoded;
-}
-
-function decodeSprite(raw: string): DecodedSprite | null {
+export function decodeSprite(raw: string): DecodedSprite | null {
   const lines = raw
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -1891,19 +1828,6 @@ function decodeSprite(raw: string): DecodedSprite | null {
     frames.push(decodeRleRows(rows, width, palette));
   }
   return { width, height, fps, frames };
-}
-
-function maximumAnimatedSpriteFps(
-  sprites: Record<string, DecodedSprite>,
-): number {
-  const maximumFps = Object.values(sprites).reduce(
-    (currentMaximum, sprite) =>
-      sprite.frames.length > 1
-        ? Math.max(currentMaximum, sprite.fps)
-        : currentMaximum,
-    0,
-  );
-  return Math.min(20, Math.max(0, maximumFps));
 }
 
 function useAnimationTick(framesPerSecond: number): number {
@@ -1977,6 +1901,59 @@ function spriteFrameIndex(
     return 0;
   }
   return Math.floor((animationTick / 1000) * sprite.fps) % sprite.frames.length;
+}
+
+function ThemeSpriteImage({
+  raw,
+  animate,
+  x,
+  y,
+  width,
+  height,
+  background,
+}: {
+  raw: string;
+  animate: boolean;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  background?: string;
+}) {
+  // Editor geometry changes clone asset objects. Cache by their immutable text,
+  // so only changed image bytes are decoded again, not every pointer move.
+  const sprite = useMemo(() => decodeSprite(raw), [raw]);
+  const renderWidth = width || sprite?.width || 0;
+  const renderHeight = height || sprite?.height || 0;
+  const animationTick = useAnimationTick(
+    animate && sprite && sprite.frames.length > 1 ? sprite.fps : 0,
+  );
+  // Animation updates only this image, leaving the static background alone.
+  const images = useMemo(
+    () => sprite?.frames.map((rects) => {
+      const pixels = scaleSpriteRects(rects, sprite, 0, 0, renderWidth, renderHeight)
+        .map((rect) => `<rect x="${rect.x}" y="${rect.y}" width="${rect.width}" height="${rect.height}" fill="${rect.color}"/>`)
+        .join("");
+      return `data:image/svg+xml,${encodeURIComponent(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${renderWidth}" height="${renderHeight}" viewBox="0 0 ${renderWidth} ${renderHeight}">${pixels}</svg>`,
+      )}`;
+    }) || [],
+    [sprite, renderWidth, renderHeight],
+  );
+  return (
+    <g>
+      {background && <rect fill={colorFor(background, "#000000")} x={x} y={y} width={renderWidth} height={renderHeight} />}
+      {sprite && <image
+        href={images[spriteFrameIndex(sprite, animationTick)] || images[0]}
+        x={x}
+        y={y}
+        width={renderWidth}
+        height={renderHeight}
+        imageRendering="pixelated"
+        preserveAspectRatio="none"
+      />}
+    </g>
+  );
 }
 
 function scaleSpriteRects(

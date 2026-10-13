@@ -40,6 +40,7 @@ type EncodedSprite = {
 export async function importSpriteFile(
   file: File,
   usage: ThemeStudioUsage = "live",
+  rasterLayout: "sheet" | "image" = "sheet",
 ): Promise<SpriteImportResult> {
   if (isSpriteTextFile(file)) {
     const raw = ensureTrailingNewline(await file.text());
@@ -69,15 +70,24 @@ export async function importSpriteFile(
 
   const bitmap = await createImageBitmap(file);
   try {
-    const frame = inferSpriteSheetFrame(bitmap.width, bitmap.height);
-    const sprite = spriteFromBitmap(bitmap, frame);
+    // The customer scene editor imports ordinary pictures, not inferred sprite
+    // sheets. Keep the full image and its aspect ratio; explicit CBA files above
+    // retain their animation. The technical editor keeps its sheet workflow.
+    const frame = rasterLayout === "image"
+      ? { columns: 1, frameCount: 1, ...importedImageSize(bitmap.width, bitmap.height) }
+      : inferSpriteSheetFrame(bitmap.width, bitmap.height);
+    const sprite = spriteFromBitmap(bitmap, frame, rasterLayout === "image");
     return {
       asset: {
         contentType: "text/plain",
         data: encodeSpriteAsset(sprite),
         encoding: "text",
       },
-      assetPath: themeAssetPathForFile(file.name, ".cba", usage),
+      assetPath: themeAssetPathForFile(
+        file.name,
+        rasterLayout === "image" ? ".cbi" : ".cba",
+        usage,
+      ),
       fps: sprite.fps,
       frameCount: sprite.frameCount,
       height: sprite.height,
@@ -87,6 +97,26 @@ export async function importSpriteFile(
   } finally {
     bitmap.close();
   }
+}
+
+/**
+ * Display size for a whole imported picture: keeps the aspect ratio, fits the
+ * 240x240 display and stays within the firmware's static-sprite pixel budget
+ * so the imported design can still be validated, saved and exported.
+ */
+export function importedImageSize(width: number, height: number): { width: number; height: number } {
+  const scale = Math.min(
+    1,
+    240 / width,
+    240 / height,
+    Math.sqrt(MAX_SPRITE_TOTAL_PIXELS / (width * height)),
+  );
+  let w = Math.max(1, Math.round(width * scale));
+  let h = Math.max(1, Math.round(height * scale));
+  while (w * h > MAX_SPRITE_TOTAL_PIXELS) {
+    if (w >= h) w -= 1; else h -= 1;
+  }
+  return { width: w, height: h };
 }
 
 function inferSpriteSheetFrame(width: number, height: number) {
@@ -135,6 +165,7 @@ function inferSpriteSheetFrame(width: number, height: number) {
 function spriteFromBitmap(
   bitmap: ImageBitmap,
   frame: { columns: number; frameCount: number; height: number; width: number },
+  wholeImage = false,
 ): EncodedSprite {
   const canvas = document.createElement("canvas");
   canvas.width = frame.width;
@@ -161,8 +192,8 @@ function spriteFromBitmap(
       bitmap,
       sx,
       sy,
-      frame.width,
-      frame.height,
+      wholeImage ? bitmap.width : frame.width,
+      wholeImage ? bitmap.height : frame.height,
       0,
       0,
       frame.width,
@@ -335,6 +366,34 @@ export function themeAssetPathForFile(
     name,
     extension,
   )}`;
+}
+
+/** Every AI-generated asset (screen, animation, scene loops, pets) lives under this prefix. */
+const AI_MANAGED_ASSET_PATTERN = /^\/themes\/u\/ai-/;
+
+/**
+ * Returns `path` unchanged when free, otherwise appends -2, -3, … before the
+ * extension so a second import with the same file name never overwrites the
+ * first asset. AI-managed names are always treated as taken so an import can
+ * never be mistaken for generated artwork and replaced on the next creation.
+ * Keeps the firmware's 21-character name limit.
+ */
+export function uniqueAssetPath(path: string, taken: Record<string, unknown>): string {
+  const reserved = (candidate: string) => candidate in taken || AI_MANAGED_ASSET_PATTERN.test(candidate);
+  if (!reserved(path)) return path;
+  const slash = path.lastIndexOf("/");
+  const dir = path.slice(0, slash + 1);
+  const file = path.slice(slash + 1);
+  const dot = file.lastIndexOf(".");
+  const extension = file.slice(dot);
+  const base = AI_MANAGED_ASSET_PATTERN.test(path) ? `my-${file.slice(0, dot)}` : file.slice(0, dot);
+  for (let n = 2; n < 1000; n += 1) {
+    const suffix = `-${n}`;
+    const maxBase = 21 - extension.length - suffix.length;
+    const candidate = `${dir}${base.slice(0, maxBase).replace(/[._-]+$/g, "") || "asset"}${suffix}${extension}`;
+    if (!reserved(candidate)) return candidate;
+  }
+  throw new Error("Too many assets with the same name.");
 }
 
 function safeAssetName(name: string, extension: ".cba" | ".cbi" | ".gif"): string {

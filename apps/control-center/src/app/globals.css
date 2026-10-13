@@ -122,21 +122,6 @@ body {
   border-radius: var(--radius-control);
 }
 
-/* Theme Studio owns the full app canvas while it is open inside Theme Library. */
-.control-center-shell:has([data-theme-studio-root]) .control-center-shell__layout {
-  display: block;
-}
-
-.control-center-shell:has([data-theme-studio-root]) .control-center-shell__sidebar,
-.control-center-shell:has([data-theme-studio-root]) .control-center-shell__header {
-  display: none;
-}
-
-.control-center-shell:has([data-theme-studio-root]) .control-center-shell__content {
-  padding-left: 1.25rem;
-  padding-right: 1.25rem;
-}
-
 @keyframes vibetv-caret-blink {
   0%,
   49% {

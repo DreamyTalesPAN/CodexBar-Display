@@ -38,13 +38,12 @@ This is the customer-facing design standard for VibeTV Control Center. The targe
    screen of its own, and every step carries one Help control offering `Ask AI
    to fix` and `Create support report`. The Control Center shell and navigation
    stay hidden for the whole wizard.
-   On the provider step, every row keeps its on/off switch whatever the provider
-   reports. The health state decides what help the row offers -- sign in, allow
-   access in macOS, check again -- never whether the customer may switch the
-   provider off. A provider that cannot be switched off is one that cannot be
-   kept off the display, and only providers that can actually produce a reading
-   reach the display step. This is a deliberate departure from the design's
-   "Provider row states" board, decided by the product owner on 2026-08-30.
+   In setup and Settings, a provider that needs a sign-in the app can start
+   shows only "Sign in to <Provider>" and a circular arrow, replacing its
+   switch, warning and retry controls (product-owner design, 2026-10-13).
+   After sign-in, automatic checks restore the normal switch when ready.
+   Other provider states keep their switch and the relevant help action.
+   Only providers that can actually produce a reading reach the display step.
 4. Every launch stays in the wizard until the selected VibeTV is connected,
    ready, and its live preview has rendered. Existing setup choices are reused
    without repeated setup writes or extra confirmation; saved completion never

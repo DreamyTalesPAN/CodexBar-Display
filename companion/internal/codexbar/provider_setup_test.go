@@ -20,6 +20,7 @@ import (
 func TestEnsureConfigUsesCodexBarOwnedDefaultConfig(t *testing.T) {
 	skipMacCLIContract(t)
 	t.Setenv("CODEXBAR_CONFIG", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
 	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
 		t.Fatal(err)
@@ -100,6 +101,7 @@ func TestEnsureConfigUsesCodexBarOwnedDefaultConfig(t *testing.T) {
 func TestEnsureConfigRejectsInvalidCodexBarDefaultWithoutPublishing(t *testing.T) {
 	skipMacCLIContract(t)
 	t.Setenv("CODEXBAR_CONFIG", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
 	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
 		t.Fatal(err)
@@ -129,6 +131,7 @@ func TestEnsureConfigRejectsInvalidCodexBarDefaultWithoutPublishing(t *testing.T
 func TestEnsureConfigPreservesExistingStandardConfig(t *testing.T) {
 	skipMacCLIContract(t)
 	t.Setenv("CODEXBAR_CONFIG", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
 	home := t.TempDir()
 	standard := filepath.Join(home, ".config", "codexbar", "config.json")
 	if err := os.MkdirAll(filepath.Dir(standard), 0o700); err != nil {
@@ -173,7 +176,7 @@ func TestRunUsageCommandInjectsResolvedConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runUsageCommand: %v", err)
 	}
-	want := filepath.Join(home, ".codexbar", "config.json")
+	want := filepath.Join(home, ".config", "codexbar", "config.json")
 	if string(out) != want {
 		t.Fatalf("expected CODEXBAR_CONFIG=%q, got %q", want, out)
 	}
@@ -434,6 +437,28 @@ func TestProviderReadinessClassifiesRateLimitAsWaitAndRetry(t *testing.T) {
 	}
 	if !strings.Contains(advice, "wait") {
 		t.Fatalf("rate-limit copy should tell the customer to wait: %+v", result)
+	}
+}
+
+// CodexBar 0.63.0's own sentences on the Mac for the providers whose sign-in
+// the row can start. The health scan and the exact check must agree, or the
+// row only offers the button after the customer pressed "Check again".
+func TestMacProviderSentencesOfferTheRowSignIn(t *testing.T) {
+	for detail, want := range map[string]struct {
+		readiness string
+		health    ProviderHealthState
+	}{
+		"Sign in to claude.ai (or refresh Claude cookies) to load usage data.":                                                                                        {ProviderAuthRequired, ProviderHealthAuthRequired},
+		"No Cursor session found. Please log in to cursor.com in Safari, Chrome, Edge, Brave, Arc, or Firefox.":                                                       {ProviderAuthRequired, ProviderHealthAuthRequired},
+		"No Cursor session found. If you use Safari, grant CodexBar Full Disk Access in System Settings > Privacy & Security. Please log in to cursor.com in Chrome.": {ProviderAuthRequired, ProviderHealthAuthRequired},
+		"Antigravity language server not detected. Launch Antigravity and retry.":                                                                                     {ProviderNotConfigured, ProviderHealthSetupRequired},
+	} {
+		if got := classifyProviderError(detail); got != want.readiness {
+			t.Fatalf("%q: exact check %s, want %s", detail, got, want.readiness)
+		}
+		if got := classifyProviderHealth(detail); got != want.health {
+			t.Fatalf("%q: health scan %s, want %s", detail, got, want.health)
+		}
 	}
 }
 

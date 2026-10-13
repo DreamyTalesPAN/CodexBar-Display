@@ -192,14 +192,22 @@ type Options struct {
 	PauseDisplayStream   func(bool)
 	WakeDisplayStream    func()
 	RenderDisplayStream  func()
+	// RestartUsageService replaces the running CodexBar serve with a fresh
+	// one when CodexBar's config changed after it started, and waits until it
+	// answers. Nil when no serve is supervised.
+	RestartUsageService func(context.Context) error
 	// Supplied only by the process supervising the actual worker. Running alone
 	// never establishes frame freshness or device readiness.
 	DisplayStreamRunning func() bool
 	// Logf writes one line to the runtime's log. Nil outside the runtime.
 	Logf func(string, ...any)
+	// Where Theme Studio keeps the customer's verified OpenAI key across
+	// restarts. Nil (tests, tools) keeps it in memory only.
+	AIThemeSecrets SecretStore
 }
 
 type Server struct {
+	aiThemeServer          *aiThemeServer
 	logf                   func(string, ...any)
 	addr                   string
 	home                   string
@@ -243,9 +251,13 @@ type Server struct {
 	pauseDisplayStream     func(bool)
 	wakeDisplayStream      func()
 	renderDisplayStream    func()
-	displayStreamRunning   func() bool
-	firmwareUpdateActive   atomic.Bool
-	firmwareUpdateStartMu  sync.Mutex
+	restartUsageService    func(context.Context) error
+	usageServiceRestarting atomic.Bool
+	// A successful check that arrived while a replacement was running.
+	usageServiceRestartPending atomic.Bool
+	displayStreamRunning       func() bool
+	firmwareUpdateActive       atomic.Bool
+	firmwareUpdateStartMu      sync.Mutex
 	// Serial ports already asked on behalf of a legacy WiFi VibeTV.
 	legacyCableProbeMu     sync.Mutex
 	legacyCableProbePorts  string
@@ -775,10 +787,9 @@ type companionRuntimeInfo struct {
 type companionFeatures struct {
 	ThemeInstallEnabled     bool `json:"themeInstallEnabled"`
 	MacAppSelfUpdateEnabled bool `json:"macAppSelfUpdateEnabled"`
-	// ProviderSignInEnabled and the shortened provider list are Windows-only
-	// launch decisions. The Mac app keeps CodexBar's full provider inventory
-	// and its existing rows, so the app must be told which platform it runs
-	// on rather than deciding from the user agent.
+	// ProviderSignInEnabled tells the app that this Companion can start a
+	// provider sign-in. Older Mac Companions cannot, so the app asks rather
+	// than deciding from the user agent.
 	ProviderSignInEnabled bool `json:"providerSignInEnabled"`
 }
 
@@ -1014,7 +1025,11 @@ func New(opts Options) (*Server, error) {
 			return nil, fmt.Errorf("load embedded control center: %w", err)
 		}
 	}
+	ai := &aiThemeServer{aiTheme: newAIThemeState(nil, nil)}
+	ai.aiTheme.enabled = true
+	ai.aiTheme.rememberAcross(opts.AIThemeSecrets)
 	server := &Server{
+		aiThemeServer:          ai,
 		addr:                   addr,
 		home:                   home,
 		setupEvents:            setupEventLog{path: runtimepaths.Path(home, "setup-log.json")},
@@ -1057,6 +1072,7 @@ func New(opts Options) (*Server, error) {
 		pauseDisplayStream:    opts.PauseDisplayStream,
 		wakeDisplayStream:     opts.WakeDisplayStream,
 		renderDisplayStream:   opts.RenderDisplayStream,
+		restartUsageService:   opts.RestartUsageService,
 		displayStreamRunning:  opts.DisplayStreamRunning,
 		pairAttempts:          defaultPairAttempts,
 		pairAttemptTimeout:    defaultPairAttemptTimeout,
@@ -1129,6 +1145,7 @@ func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	s.registerControlCenterRoutes(mux)
+	s.aiThemeServer.registerAIThemeRoutes(mux)
 	mux.HandleFunc("/v1/status", s.handleStatus)
 	mux.HandleFunc("/v1/runtime-health", s.handleRuntimeHealth)
 	mux.HandleFunc("/v1/runtime-health/update-hold", s.handleRuntimeUpdateHold)

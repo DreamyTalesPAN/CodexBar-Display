@@ -1933,3 +1933,46 @@ func TestValidateThemeHealthSnapshotNamesOnlyAFailedRender(t *testing.T) {
 		}
 	}
 }
+
+func TestCableInstallSendsAnInterruptedFileAgain(t *testing.T) {
+	pack, err := themepack.LoadZipBytes(zipMinimalThemePack(t, writeMinimalThemePack(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cableUploadRetryDelay = 0
+	calls := map[string]int{}
+	cable := &CableInstallOptions{
+		Capabilities: FallbackThemeSpecCapabilities(),
+		Prepare:      func(context.Context, string) error { return nil },
+		SendLine:     func([]byte) error { return nil },
+		Upload: func(_ context.Context, path string, _ []byte, _ string) error {
+			calls[path]++
+			if calls[path] == 1 {
+				return errors.New("cable transfer interrupted: VibeTV did not acknowledge chunk 3")
+			}
+			return nil
+		},
+	}
+	if _, err := installCablePack(context.Background(), pack, themepack.UsageLive, "test", cable, io.Discard); err != nil {
+		t.Fatalf("one missed acknowledgement per file must not fail the install: %v", err)
+	}
+	for path, n := range calls {
+		if n != 2 {
+			t.Fatalf("%s sent %d times, want 2", path, n)
+		}
+	}
+	// A VibeTV that stays silent still ends the install, after three tries.
+	calls = map[string]int{}
+	cable.Upload = func(_ context.Context, path string, _ []byte, _ string) error {
+		calls[path]++
+		return errors.New("cable transfer interrupted: VibeTV did not acknowledge")
+	}
+	if _, err := installCablePack(context.Background(), pack, themepack.UsageLive, "test", cable, io.Discard); err == nil || len(calls) != 1 {
+		t.Fatalf("err=%v calls=%v", err, calls)
+	}
+	for _, n := range calls {
+		if n != cableUploadAttempts {
+			t.Fatalf("tried %d times, want %d", n, cableUploadAttempts)
+		}
+	}
+}
