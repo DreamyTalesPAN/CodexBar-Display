@@ -450,6 +450,10 @@ main() {
     --output "$preview_app" >/dev/null
   [[ "$(plutil -extract VibeTVLocalPreviewRuntime raw -o - "${preview_app}/Contents/Info.plist")" == "true" ]] \
     || die "local preview bundle must opt into its isolated preview runtime"
+  # A local build carries a small build number, so the launch update would
+  # replace it with the public release.
+  [[ "$(plutil -extract SUEnableAutomaticChecks raw -o - "${preview_app}/Contents/Info.plist")" == "false" ]] \
+    || die "local preview app must not check for updates by itself"
 
   python3 - \
     "${app}/Contents/Info.plist" \
@@ -471,7 +475,7 @@ expected = {
     "CFBundleVersion": "146",
     "CFBundlePackageType": "APPL",
     "LSMinimumSystemVersion": "14.0",
-    "SUEnableAutomaticChecks": False,
+    "SUEnableAutomaticChecks": True,
     "SUFeedURL": "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/appcast.xml",
     "SUPublicEDKey": "2txeIAd+ofTbffzPR5hy5J4lvGX8LGclIdG82es1qPA=",
     "VibeTVLocalPreviewRuntime": False,
@@ -703,6 +707,11 @@ required_source = [
     '"--max-time",',
     'title: "Create report"',
     'title: "Starting Control Center"',
+    'detail: "Checking for a Mac App update."',
+    'title: "Updating the Mac App"',
+    "updater.checkForUpdatesInBackground()",
+    "updater.automaticallyDownloadsUpdates = false",
+    'UserDefaults.standard.removeObject(forKey: "SUSkippedVersion")',
     "retryTitle: status.retryTitle",
     "kind: status.kind",
     "case .failure(let failure):",
@@ -785,12 +794,25 @@ launch_end = source.find("func application(_ application:", launch_start)
 launch_method = source[launch_start:launch_end]
 install_guard = launch_method.find("guard !installationRequired else")
 install_alert = launch_method.find("presentInstallationRequiredAlert()", install_guard)
-sparkle_start = launch_method.find("_ = updaterController", install_guard)
-runtime_start = launch_method.find("Task {", install_guard)
-runtime_start = launch_method.find("startRuntimePreparation()", install_guard)
-if not (0 <= install_guard < install_alert < sparkle_start < runtime_start):
+# launch_method reaches to the next delegate method, so it includes the
+# launch update check the launch hands over to.
+update_check = launch_method.find("startLaunchUpdateCheck()", install_guard)
+sparkle_start = launch_method.find("_ = updaterController", update_check)
+runtime_start = launch_method.find("startRuntimePreparation()", sparkle_start)
+if not (
+    0 <= install_guard < install_alert < update_check < sparkle_start
+    < runtime_start
+):
     raise SystemExit(
-        "native app must stop at the install dialog before starting Sparkle, the runtime, or WebView"
+        "native app must stop at the install dialog before starting Sparkle, and check for its own update before the runtime or WebView"
+    )
+
+postpone_start = source.find("shouldPostponeRelaunchForUpdate item:")
+postpone_hold = source.find("await runtimeShouldDeferRepairForUpdate()", postpone_start)
+postpone_stop = source.find("await unregisterBundledRuntimeService()", postpone_start)
+if not (0 <= postpone_start < postpone_hold < postpone_stop):
+    raise SystemExit(
+        "native app must not stop the runtime for its own update while a VibeTV update or theme install runs"
     )
 
 prepare_start = source.find("private func startRuntimePreparation()")
