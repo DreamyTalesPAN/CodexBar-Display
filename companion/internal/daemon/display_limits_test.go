@@ -32,6 +32,19 @@ func displayLimitsCodex(collectedAt time.Time) codexbar.ParsedFrame {
 	return codex
 }
 
+// A pair is known by its joined ids, which the wire cuts at 32 bytes; ids
+// too long for that show the selected provider alone.
+func TestPairWithIDsTooLongForTheWireShowsTheSelectedProvider(t *testing.T) {
+	basis := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	first := providerFrameWithWindows("first-provider-with-a-long-id", basis, protocol.UsageWindow{ID: "weekly", Label: "Weekly", Percent: 40, ResetSec: 3600})
+	second := providerFrameWithWindows("second-provider", basis, protocol.UsageWindow{ID: "weekly", Label: "Weekly", Percent: 20, ResetSec: 7200})
+	display := &runtimeconfig.ProviderDisplayConfig{Mode: "pair", ProviderIDs: []string{"first-provider-with-a-long-id", "second-provider"}}
+	got := applyDisplayLimits(first.Frame, []codexbar.ParsedFrame{first, second}, display, basis)
+	if got.Provider != first.Frame.Provider || len(got.UsageWindows) != 1 || got.UsageWindows[0].ID != "weekly" {
+		t.Fatalf("long pair: provider=%q windows=%+v", got.Provider, got.UsageWindows)
+	}
+}
+
 func TestDisplayLimitsLeaveTheFrameAloneWithoutAChoice(t *testing.T) {
 	basis := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
 	claude := displayLimitsClaude(basis)

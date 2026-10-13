@@ -190,7 +190,10 @@ func pairDisplayFrame(selected protocol.Frame, providers []codexbar.ParsedFrame,
 		ids = append(ids, id)
 		labels = append(labels, label)
 	}
-	if len(windows) < 2 {
+	// The pair is known by its ids joined in Frame.Provider, which the wire cuts
+	// to DefaultProviderBytes. Cut, the cached pair would lose its identity, so
+	// ids too long to join show the selected provider alone, as above.
+	if len(windows) < 2 || len(strings.Join(ids, pairProviderSeparator)) > protocol.DefaultProviderBytes {
 		return withVisibleUsageWindows(selected, display)
 	}
 	if resetSource == "" {
