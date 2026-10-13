@@ -7150,3 +7150,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. Updates, under the heading `Update check failed`, one line: `VibeTV could not check for updates. Check your internet connection and try again.` (before: no line). Shown only while the heading reads `Update check failed`; nothing else changes.
 - Scope: `updates-screen.tsx` and its test, and this approval record. Night-shift branch only, not merge or release.
 - What's new: none — a correction, nothing new to announce
+
+## 2026-10-13 — Night shift: the token chart draws a day without tokens as zero, not as a gap (#579)
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-13/14; wording not yet seen by him. It answers a leftover of issue #579 from the Mac walk-through of 2026-10-08: the Claude line of the Usage chart was broken into pieces with a short stub around Sep 18–19. The token history lists only days with tokens; on the bench Mac Claude had none on Sep 17 and Sep 20–25, and the chart drew those days as holes.
+- Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. No new wording or control. In Usage, each provider's line in the token chart runs unbroken from the first to the last day of the chart; a day on which a provider used no tokens sits on the zero line. Calendar days on which no provider used tokens now have their place on the time axis instead of being left out. Totals and the tooltip values of days with tokens are unchanged; a day without tokens shows 0 in the tooltip.
+- Scope: `usage-screen.tsx`, its test, and this approval record. Night-shift branch only, not merge or release.
+- What's new: none — a correction, nothing new to announce

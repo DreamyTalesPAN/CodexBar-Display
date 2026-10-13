@@ -6,6 +6,7 @@ import {
   UsageScreen,
   usageTokenHistoryUnavailable,
   usageTokenHistoryUnavailableOnVibeTV,
+  buildProviderTokenChart,
 } from "./usage-screen";
 
 const usage: UsageSnapshot = {
@@ -538,5 +539,37 @@ describe("UsageScreen", () => {
       }),
     );
     await expectNoAxeViolations(renderUsage(null, { ...usage, providers: [] }));
+  });
+});
+
+describe("token chart days (#579)", () => {
+  const provider = (id: string) => ({ id, label: id });
+  it("draws a day the history leaves out as a day without tokens", () => {
+    const { chartData } = buildProviderTokenChart([
+      { provider: provider("codex"), days: [
+        { day: "2026-09-16", totalTokens: 5 },
+        { day: "2026-09-17", totalTokens: 6 },
+        { day: "2026-09-20", totalTokens: 7 },
+      ] },
+      { provider: provider("claude"), days: [
+        { day: "2026-09-18", totalTokens: 9 },
+      ] },
+    ] as Parameters<typeof buildProviderTokenChart>[0]);
+    expect(chartData).toEqual([
+      { day: "2026-09-16", provider1: 5, provider2: 0 },
+      { day: "2026-09-17", provider1: 6, provider2: 0 },
+      { day: "2026-09-18", provider1: 0, provider2: 9 },
+      { day: "2026-09-19", provider1: 0, provider2: 0 },
+      { day: "2026-09-20", provider1: 7, provider2: 0 },
+    ]);
+  });
+
+  it("keeps a single day and an empty history as they are", () => {
+    expect(buildProviderTokenChart([
+      { provider: provider("codex"), days: [{ day: "2026-09-16", totalTokens: 5 }] },
+    ] as Parameters<typeof buildProviderTokenChart>[0]).chartData).toEqual([
+      { day: "2026-09-16", provider1: 5 },
+    ]);
+    expect(buildProviderTokenChart([]).chartData).toEqual([]);
   });
 });
