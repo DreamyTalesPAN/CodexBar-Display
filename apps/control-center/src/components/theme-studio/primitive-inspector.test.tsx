@@ -13,8 +13,8 @@ const initial: ThemeStudioPrimitive = {
     { gte: 25, color: "#F97316" }, { gte: 0, color: "#EF4444" },
   ],
 };
-function Harness() {
-  const [primitive, setPrimitive] = useState(initial);
+function Harness({ start = initial }: { start?: ThemeStudioPrimitive }) {
+  const [primitive, setPrimitive] = useState(start);
   return createElement(PrimitiveInspector, {
     primitive, onDelete: () => {}, onInsertToken: () => {},
     onChange: (field, value) => setPrimitive(p => normalizeThemeSpec({
@@ -46,4 +46,31 @@ it("can remove a threshold, add one, and return to a solid color", () => {
   fireEvent.click(screen.getByRole("button", { name: "Use solid bar color" }));
   expect(screen.queryByRole("button", { name: /Remove remaining threshold/ })).toBeNull();
   expect(screen.getByRole("textbox", { name: "Bar color" })).toBeTruthy();
+});
+
+it("gives a pace bar colors by state", () => {
+  const start: ThemeStudioPrimitive = {
+    type: "progress", x: 0, y: 0, width: 100, height: 8,
+    binding: "usageSlot1PaceExpected", color: "#FFFFFF",
+  };
+  render(createElement(Harness, { start }));
+  fireEvent.click(screen.getByRole("button", { name: "Add pace colors" }));
+  expect(screen.getByRole("spinbutton", { name: "At pace ≥" }).getAttribute("value")).toBe("100");
+  expect(screen.getByRole("button", { name: "Remove pace threshold 50" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Remove pace threshold 0" })).toBeTruthy();
+  expect(screen.getByRole("textbox", { name: "Fallback color (no pace)" })).toBeTruthy();
+});
+
+it("colors pace text by state and drops the colors once the text is typed", () => {
+  const start: ThemeStudioPrimitive = {
+    type: "text", x: 0, y: 0, binding: "usageSlot1PaceState", color: "#FFFFFF",
+  };
+  render(createElement(Harness, { start }));
+  expect(screen.getByRole("textbox", { name: "Text color" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Add pace colors" }));
+  expect(screen.getByRole("button", { name: "Remove pace threshold 100" })).toBeTruthy();
+  fireEvent.change(screen.getByRole("textbox", { name: "Text" }), { target: { value: "Hi" } });
+  expect(screen.queryByRole("button", { name: /Remove pace threshold/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Add pace colors" })).toBeNull();
+  expect(screen.getByRole("textbox", { name: "Text color" })).toBeTruthy();
 });

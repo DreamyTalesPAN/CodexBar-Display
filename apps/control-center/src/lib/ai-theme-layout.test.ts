@@ -8,6 +8,12 @@ const before:ThemeStudioDocument={packName:'Office cat',usage:'live',assets:{'/t
 const add={action:'add',index:-1,kind:'text',x:12,y:224,fontSize:1,color:'#FFFFFF',reading:'usageSlot1Reset'} as const;
 const plan=(edits:AIThemeLayoutPlan['edits']):AIThemeLayoutPlan=>({mode:'layout',notes:'Added reset countdown',edits});
 describe('AI native layout edits',()=>{
+ it('colours an added reserve or deficit reading green and red, with on pace in its own colour',()=>{
+  const next=applyAIThemeLayout(before,plan([{...add,color:'#C58A42',reading:'usageSlot1PaceDelta'}]));
+  expect(next.spec.primitives.at(-1)).toMatchObject({binding:'usageSlot1PaceDelta',slot:1,colorStops:[{gte:100,color:'#22C55E'},{gte:50,color:'#C58A42'},{gte:0,color:'#EF4444'}]});
+  const recoloured=applyAIThemeLayout(next,plan([{action:'update',index:2,kind:'text',color:'#F0E0C0'}]));
+  expect(recoloured.spec.primitives[2].colorStops).toEqual([{gte:100,color:'#22C55E'},{gte:50,color:'#F0E0C0'},{gte:0,color:'#EF4444'}]);
+ });
  it('applies coordinated scene colours to bars without changing their live binding or artwork',()=>{
   const next=applyAIThemeLayout(before,plan([{action:'add',index:-1,kind:'progress',x:12,y:200,width:216,height:10,reading:'usageSlot1Percent',color:'#C58A42',bgColor:'#302013',borderColor:'#80603B',borderRadius:2,progressStyle:'segments'}]));
   expect(next.spec.primitives.at(-1)).toMatchObject({binding:'usageSlot1Percent',color:'#C58A42',bgColor:'#302013',borderColor:'#80603B',borderRadius:2,progressStyle:'segments',segments:10,segmentGap:2});

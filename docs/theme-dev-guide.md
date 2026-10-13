@@ -137,6 +137,37 @@ slot-2 equivalents. Compact binding keys are supported for shipped specs, but
 the meaning must remain the same; a compact key is not permission to invent a
 provider-specific fallback.
 
+Slots 1 and 2 are the first and second limit the customer chose to show, not
+fixed windows. In `Limits on VibeTV` the customer can untick limits per
+provider; the Companion then leaves those windows out and the next ones move
+up, so `{usageSlot1Label}` may read `Weekly` on one VibeTV and `Session` on
+another. In the display mode `Two at once` slot 1 is the first shown limit of
+the first provider and slot 2 that of the second, labelled `<Provider>
+<Window>` (`Claude Weekly`, `Codex Weekly`), and `{label}` names both
+(`Claude + Codex`). Bind the slot label next to each slot's numbers instead
+of writing `Session` or `Weekly` into the theme. A theme shows as many limits
+as it binds slots; Control Center tells the customer that number.
+
+CodexBar's reserve pace for usage windows 1 and 2 has its own bindings:
+`{usageSlot1PaceDelta}` renders CodexBar's signed `deltaPercent` (`-25%` is in
+reserve, `+14%` in deficit), `{usageSlot1PaceState}` its stage family
+(`reserve`, `on pace`, `deficit`), and `{usageSlot1PaceLasts}` whether the
+pace lasts until the reset (`lasts until reset`, `runs out`), plus their slot-2
+equivalents. They render empty whenever CodexBar sent no pace for the window or
+its countdown has run out, so give each one its own text primitive instead of
+mixing it into a sentence. Packs that use them declare `usage-pace-v1`: older
+firmware would draw the window's percent in their place. `theme-packs/two-limits`
+is the reference pack. When the customer switches off `Show reserve or deficit`,
+the Companion sends no pace and these bindings render empty.
+
+A `progress` primitive can show the pace too. Bound to `usageSlot1PaceUsed` it
+fills like the window's percent; bound to `usageSlot1PaceExpected` it fills to
+where CodexBar expects the window to be by now, and stays empty without a
+pace. On any pace binding, `colorStops` are matched against CodexBar's state
+instead of the quota: `reserve` is 100, `on pace` 50, `deficit` 0. That also
+holds for a `text` primitive bound to a pace key, the only text that may carry
+`colorStops`. Without a pace the solid `c` is used.
+
 Preview data is deliberately neutral example data. A preview proving that the
 provider line renders only proves the binding and geometry; it does not prove
 that a specific provider is connected or that the hardware can render the pack.

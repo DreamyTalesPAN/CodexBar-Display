@@ -20,6 +20,16 @@ export type ThemeStudioBinding =
   | "usageSlot2Percent"
   | "usageSlot2Reset"
   | "usageSlot2Available"
+  | "usageSlot1PaceDelta"
+  | "usageSlot1PaceState"
+  | "usageSlot1PaceLasts"
+  | "usageSlot2PaceDelta"
+  | "usageSlot2PaceState"
+  | "usageSlot2PaceLasts"
+  | "usageSlot1PaceUsed"
+  | "usageSlot1PaceExpected"
+  | "usageSlot2PaceUsed"
+  | "usageSlot2PaceExpected"
   | "providerSlot1Label"
   | "providerSlot1Percent"
   | "providerSlot1Reset"
@@ -698,6 +708,7 @@ export function buildThemePack(
   const usesProviderAssets = themeStudioSpecUsesProviderAssets(normalized);
   const usesColorStops = themeStudioSpecUsesColorStops(normalized);
   const usesTextValign = themeStudioSpecUsesTextValign(normalized);
+  const usesUsagePace = themeStudioSpecUsesUsagePace(normalized);
   // What the pack declares is the only thing standing between a design and a
   // VibeTV that cannot render it: install checks the manifest, not the spec.
   // Provider slots arrived after usage slots, so they carry the later floor.
@@ -710,9 +721,12 @@ export function buildThemePack(
     ...(usesProviderAssets ? ["provider-assets-v1"] : []),
     ...(usesColorStops ? ["color-stops-v1"] : []),
     ...(usesTextValign ? ["text-valign-v1"] : []),
+    ...(usesUsagePace ? ["usage-pace-v1"] : []),
   ];
-  const minFirmware =
-    usesProviderAssets || usesColorStops || usesTextValign
+  // Pace arrived last; its floor matches the Two Limits pack that ships it.
+  const minFirmware = usesUsagePace
+    ? "1.0.63"
+    : usesProviderAssets || usesColorStops || usesTextValign
       ? "1.0.42"
       : usesProviderSlots
         ? "1.0.41"
@@ -788,6 +802,44 @@ export function themeStudioSpecUsesUsageSlots(
       primitive.text?.includes("{us1") ||
       primitive.text?.includes("{us2"),
   );
+}
+
+// Older firmware renders an unknown usageSlotN key as that window's percent,
+// so a pace binding must never reach it.
+// The firmware reads any usage window key containing "Pace" as pace
+// (usageSlot1PaceDelta, us1PaceDelta, usage.1.PaceDelta).
+export function themeStudioSpecUsesUsagePace(spec: ThemeStudioSpec): boolean {
+  return spec.primitives.some(
+    (primitive) =>
+      (primitive.binding ?? "").includes("Pace") ||
+      /\{[^{}]*Pace[^{}]*\}/.test(primitive.text ?? ""),
+  );
+}
+
+/**
+ * How many of the customer's usage limits a theme has a place for: its
+ * highest usage slot (1 or 2) or usage window (`usage.N`, counted from 0).
+ * The provider-wide bindings (`session`, `weekly`, provider slots) do not
+ * count; they name a provider's lane, not the customer's ticked limits.
+ */
+export function themeStudioSpecUsageLimitCount(spec: ThemeStudioSpec): number {
+  let count = 0;
+  for (const primitive of spec.primitives) {
+    if (primitive.slot) {
+      count = Math.max(count, primitive.slot);
+    }
+    if (primitive.usageIndex !== undefined) {
+      count = Math.max(count, primitive.usageIndex + 1);
+    }
+    const bound = `${primitive.binding ?? ""} ${primitive.text ?? ""}`;
+    for (const match of bound.matchAll(/\b(?:usageSlot|us)([12])/g)) {
+      count = Math.max(count, Number(match[1]));
+    }
+    for (const match of bound.matchAll(/\busage\.(\d+)\./g)) {
+      count = Math.max(count, Number(match[1]) + 1);
+    }
+  }
+  return count;
 }
 
 export function themeStudioSpecUsesProviderSlots(
@@ -947,7 +999,8 @@ function validatePrimitive(
   }
   if (
     (primitive.colorStops || []).length > 0 &&
-    primitive.type !== "progress"
+    primitive.type !== "progress" &&
+    !(primitive.type === "text" && (primitive.binding ?? "").includes("Pace"))
   ) {
     errors.push(`${prefix}: colorStops is only supported on progress.`);
   }

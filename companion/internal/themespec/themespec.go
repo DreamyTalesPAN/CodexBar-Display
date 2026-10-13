@@ -269,6 +269,9 @@ func validateAgainstCapabilities(spec Spec, raw json.RawMessage, caps protocol.D
 	if specUsesTextValign(spec) && !caps.SupportsTextValignV1 {
 		return errors.New("device does not advertise text-valign-v1 support")
 	}
+	if specUsesUsagePace(spec) && !caps.SupportsUsagePaceV1 {
+		return errors.New("device does not advertise usage-pace-v1 support")
+	}
 	if maxIndex := maxUsageWindowIndex(spec); maxIndex >= 0 && caps.MaxUsageWindows > 0 && maxIndex >= caps.MaxUsageWindows {
 		return fmt.Errorf("theme usage window index exceeds device limit: index=%d limit=%d", maxIndex, caps.MaxUsageWindows)
 	}
@@ -363,6 +366,21 @@ func specUsesTextValign(spec Spec) bool {
 	}
 	return false
 }
+
+// Older firmware renders an unknown usage window key as that window's
+// percent, so a pace binding must never reach it. The firmware reads any
+// usage window key containing "Pace" as pace (usageSlot1PaceDelta,
+// us1PaceDelta, usage.1.PaceDelta), so every such key counts here too.
+func specUsesUsagePace(spec Spec) bool {
+	for _, primitive := range spec.Primitives {
+		if strings.Contains(primitive.Binding, "Pace") || usagePaceTextKey.MatchString(primitive.Text) {
+			return true
+		}
+	}
+	return false
+}
+
+var usagePaceTextKey = regexp.MustCompile(`\{[^{}]*Pace[^{}]*\}`)
 
 func specUsesProviderSlots(spec Spec) bool {
 	for _, primitive := range spec.Primitives {
@@ -1015,7 +1033,8 @@ func validateColorStops(p Primitive) error {
 	if len(p.ColorStops) == 0 {
 		return nil
 	}
-	if p.Type != "progress" {
+	// Text bound to a pace key takes its colour from the pace state (usage-pace-v1).
+	if p.Type != "progress" && !(p.Type == "text" && strings.Contains(p.Binding, "Pace")) {
 		return errors.New("colorStops is only supported on progress primitives")
 	}
 	if len(p.ColorStops) > 4 {

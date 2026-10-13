@@ -141,6 +141,23 @@
       "downloadAsset": "vibetv-theme-token-fire-v0.2.3.zip",
       "sha256": "5c8f340a9a18ddd46ffad8983a214c0fd088dbe7c4d13ea72a8c4536bc488bc1",
       "bytes": 5030
+    },
+    {
+      "id": "two-limits",
+      "title": "Two Limits",
+      "usage": "live",
+      "version": "0.1.0",
+      "themeRev": 2,
+      "themeSpecPath": "/themes/u/tl-2-aaeb9f9d.json",
+      "requiresFirmware": "1.0.63",
+      "requiredCapabilities": [
+        "usage-slots-v1",
+        "color-stops-v1",
+        "usage-pace-v1"
+      ],
+      "downloadAsset": "vibetv-theme-two-limits-v0.1.0.zip",
+      "sha256": "e4fb7992c8b41746760d27eced586f906461977fbf14918f3aa96531ec6da262",
+      "bytes": 934
     }
   ]
 }

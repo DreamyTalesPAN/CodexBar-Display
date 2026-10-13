@@ -137,11 +137,21 @@ export type ProviderSelectionSetup = {
 };
 
 export type ProviderDisplaySelection = {
-  mode: "automatic" | "fixed";
+  mode: "automatic" | "fixed" | "pair";
   providerIds: string[];
+  /** Usage windows taken off VibeTV, by provider id. Absent: none. */
+  hiddenWindows?: Record<string, string[]>;
+  /** Themes that can show reserve or deficit show it. Absent: true. */
+  showPace?: boolean;
   configured: boolean;
   valid: boolean;
 };
+
+/** What a display-choice write sends; fields left out stay as stored. */
+export type ProviderDisplayChange = Pick<
+  ProviderDisplaySelection,
+  "mode" | "providerIds" | "hiddenWindows" | "showPace"
+>;
 
 export type SupportDiagnostics = {
   ok?: boolean;
@@ -342,6 +352,7 @@ export type DeviceInfo = {
       supportsProviderAssetsV1?: boolean;
       supportsColorStopsV1?: boolean;
       supportsTextValignV1?: boolean;
+      supportsUsagePaceV1?: boolean;
       maxUsageWindows?: number;
       supportsStoredThemes?: boolean;
       maxThemeSpecBytes?: number;
@@ -427,7 +438,6 @@ export type UsageProviderInfo = {
   resetCredits?: UsageResetCreditsInfo;
   cost?: UsageCostInfo;
   costSettled?: boolean;
-  pace?: UsagePaceInfo[];
   usageOverTime?: UsageOverTimePoint[];
 };
 
@@ -437,6 +447,18 @@ export type UsageWindowInfo = {
   usedPercent: number;
   resetSecs?: number;
   windowMinutes?: number;
+  pace?: UsageWindowPace;
+};
+
+// The usage engine's pace for one window; absent when it sent none.
+// etaSeconds counts from the provider's collectedAt and comes with
+// lasts: false only. expectedPercent is where the window's percentage would
+// stand on pace, in the same sense (used or remaining) as usedPercent.
+export type UsageWindowPace = {
+  state: "reserve" | "on pace" | "deficit" | string;
+  lasts?: boolean;
+  etaSeconds?: number;
+  expectedPercent?: number;
 };
 
 export type UsageStatusInfo = {
@@ -479,16 +501,6 @@ export type UsageCostModel = {
   name: string;
   totalTokens?: number;
   costUSD?: number;
-};
-
-export type UsagePaceInfo = {
-  window: string;
-  stage?: string;
-  deltaPercent?: number;
-  expectedUsedPercent?: number;
-  willLastToReset?: boolean;
-  etaSeconds?: number;
-  summary?: string;
 };
 
 export type UsageOverTimePoint = {
@@ -890,7 +902,8 @@ export function deviceCompletedThemeSetup(
  * provider is switched off. Kept as it is, the selection pins VibeTV to a
  * provider that no longer reports anything, and the device went blank while
  * other providers had usage. It then becomes Automatic over the providers that
- * are still on. Only a provider listed as off counts: one missing from the
+ * are still on; Two at once does the same once either of its two is off.
+ * Only a provider listed as off counts: one missing from the
  * inventory is unknown, and that Manual choice is left for the customer to
  * resolve. An empty pool is a selection the companion refuses, and
  * switching off the last provider is a real state -- it is what the provider
@@ -912,7 +925,7 @@ export function automaticPoolForEnabledProviders(
   const currentPool = display.providerIds || [];
   if (display.mode !== "automatic") {
     return currentPool.length > 0 &&
-      currentPool.every((id) => disabledProviderIds.includes(id))
+      currentPool.some((id) => disabledProviderIds.includes(id))
       ? { mode: "automatic", providerIds }
       : null;
   }

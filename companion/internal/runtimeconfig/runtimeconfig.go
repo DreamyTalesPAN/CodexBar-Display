@@ -63,6 +63,12 @@ type Config struct {
 type ProviderDisplayConfig struct {
 	Mode        string   `json:"mode"`
 	ProviderIDs []string `json:"providerIds"`
+	// HiddenWindows lists, per provider, the CodexBar usage windows the
+	// customer took off VibeTV. It names what is hidden, so a window CodexBar
+	// adds later is shown until the customer hides it too.
+	HiddenWindows map[string][]string `json:"hiddenWindows,omitempty"`
+	// HidePace turns off the reserve or deficit in themes that show it.
+	HidePace bool `json:"hidePace,omitempty"`
 }
 
 type KnownDevice struct {
@@ -396,20 +402,58 @@ func (cfg *ProviderDisplayConfig) Normalize() {
 		return
 	}
 	cfg.Mode = strings.TrimSpace(strings.ToLower(cfg.Mode))
-	seen := make(map[string]struct{}, len(cfg.ProviderIDs))
-	providerIDs := make([]string, 0, len(cfg.ProviderIDs))
-	for _, raw := range cfg.ProviderIDs {
-		providerID := strings.TrimSpace(strings.ToLower(raw))
-		if providerID == "" {
+	cfg.ProviderIDs = normalizeIDs(cfg.ProviderIDs)
+	cfg.HiddenWindows = NormalizeHiddenWindows(cfg.HiddenWindows)
+}
+
+// NormalizeHiddenWindows lowercases and deduplicates provider and window ids
+// and drops providers with nothing hidden.
+func NormalizeHiddenWindows(hidden map[string][]string) map[string][]string {
+	var normalized map[string][]string
+	for rawProvider, rawWindows := range hidden {
+		provider := strings.TrimSpace(strings.ToLower(rawProvider))
+		windows := normalizeIDs(append(normalized[provider], rawWindows...))
+		if provider == "" || len(windows) == 0 {
 			continue
 		}
-		if _, ok := seen[providerID]; ok {
-			continue
+		if normalized == nil {
+			normalized = make(map[string][]string)
 		}
-		seen[providerID] = struct{}{}
-		providerIDs = append(providerIDs, providerID)
+		normalized[provider] = windows
 	}
-	cfg.ProviderIDs = providerIDs
+	return normalized
+}
+
+// WindowHidden reports whether the customer took this usage window of this
+// provider off VibeTV.
+func (cfg *ProviderDisplayConfig) WindowHidden(provider string, window string) bool {
+	if cfg == nil {
+		return false
+	}
+	window = strings.TrimSpace(strings.ToLower(window))
+	for _, hidden := range cfg.HiddenWindows[strings.TrimSpace(strings.ToLower(provider))] {
+		if hidden == window {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeIDs(raw []string) []string {
+	seen := make(map[string]struct{}, len(raw))
+	ids := make([]string, 0, len(raw))
+	for _, value := range raw {
+		id := strings.TrimSpace(strings.ToLower(value))
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 // ProviderSelectionSetupIsComplete preserves completed legacy installations

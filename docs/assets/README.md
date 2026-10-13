@@ -20,6 +20,10 @@ These are static example states, not live device readings.
 | [Synthwave](vibetv-theme-synthwave.png) | [render pack](../../dist/theme-packs/render/synthwave/synthwa-5-0f760a.json) | `/themes/u/synthwa-5-0f760a.json` | `0f760a70` |
 | [Tiny Office](vibetv-theme-tiny-office.png) | [render pack](../../dist/theme-packs/render/tiny-office/to-7-d7799cec.json) | `/themes/u/to-7-d7799cec.json` | `6b398ec9` |
 | [Token Fire](vibetv-screensaver-token-fire.png) | [render pack](../../dist/theme-packs/render/token-fire/tf-5-9aeed240.json) | `/themes/s/tf-5-9aeed240.json` | `f589d51e` |
+| [Two Limits](vibetv-theme-two-limits.png) | [render pack](../../dist/theme-packs/render/two-limits/tl-2-aaeb9f9d.json) | `/themes/u/tl-2-aaeb9f9d.json` | `9ae17a9b` |
+
+Two Limits was added for issue #322 on 2026-10-09 with the same capture
+settings.
 
 ## Hero image
 

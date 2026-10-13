@@ -1,7 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import type { UsageSnapshot } from "./control-center-types";
-import { UsageScreen } from "./usage-screen";
+import type { UsageSnapshot, UsageWindowInfo } from "./control-center-types";
+import {
+  UsageScreen,
+  usagePaceHint,
+  usagePaceWord,
+} from "./usage-screen";
 
 const usage: UsageSnapshot = {
   ok: true,
@@ -459,5 +463,110 @@ describe("UsageScreen", () => {
     expect(html).toContain("Weekly: 57% used");
     expect(html).not.toContain("Weekly: ??");
     expect(html).not.toContain("Session: 0%");
+  });
+
+  // Issue #210, first slice: under a window's bar the page says in one word
+  // pair whether the usage engine sees it under, on or over pace, with a mark
+  // on the bar where on pace would be, and nothing when the engine said nothing.
+  describe("pace of a usage window", () => {
+    const session: UsageWindowInfo = {
+      id: "session",
+      label: "Session",
+      usedPercent: 8,
+      resetSecs: 9000,
+      pace: { state: "reserve", lasts: true, expectedPercent: 33 },
+    };
+    const weekly: UsageWindowInfo = {
+      id: "weekly",
+      label: "Weekly",
+      usedPercent: 73,
+      resetSecs: 400000,
+      pace: { state: "deficit", lasts: false, etaSeconds: 115200, expectedPercent: 43 },
+    };
+    const withWindows = (
+      windows: UsageWindowInfo[],
+      provider: Partial<UsageSnapshot["providers"][number]> = {},
+    ) =>
+      renderUsage(null, {
+        ...usage,
+        providers: [{ ...usage.providers[0], windows, ...provider }],
+      });
+    const paceWords = /(Under|On|Over) pace|At this pace|usage-pace-mark/;
+    const marks = (html: string) => [...html.matchAll(/usage-pace-mark" style="left:(\d+)%"/g)].map((m) => m[1]);
+
+    it("has one word pair for each state and one hint for each projection", () => {
+      expect(usagePaceWord({ state: "reserve" })).toBe("Under pace");
+      expect(usagePaceWord({ state: "on pace" })).toBe("On pace");
+      expect(usagePaceWord({ state: "deficit" })).toBe("Over pace");
+      // A state this app does not know says nothing.
+      expect(usagePaceWord({ state: "sideways", lasts: true })).toBe("");
+      expect(usagePaceHint({ state: "reserve", lasts: true }, 0)).toBe(
+        "At this pace your limit lasts until the reset.",
+      );
+      // The engine's ETA, in the countdown's own format.
+      expect(usagePaceHint({ state: "deficit", lasts: false }, 115200)).toBe(
+        "At this pace your limit runs out in 1d 8h, before the reset.",
+      );
+      // "Runs out now", or an ETA that has passed since the reading: no "0m".
+      expect(usagePaceHint({ state: "deficit", lasts: false }, 0)).toBe(
+        "At this pace your limit runs out before the reset.",
+      );
+      // The engine projected neither outcome: the page promises none.
+      expect(usagePaceHint({ state: "on pace" }, 0)).toBe("");
+    });
+
+    it("shows word, mark and hint of each window at that window's bar", () => {
+      const html = withWindows([session, weekly]);
+      expect(marks(html)).toEqual(["33", "43"]);
+      expect(html).toContain("At this pace your limit lasts until the reset.");
+      expect(html).toContain("At this pace your limit runs out in 1d 8h, before the reset.");
+      expect(html.indexOf("Session: 8% used")).toBeLessThan(html.indexOf("Under pace"));
+      expect(html.indexOf("Under pace")).toBeLessThan(html.indexOf("Weekly: 73% used"));
+      expect(html.indexOf("Weekly: 73% used")).toBeLessThan(html.indexOf("Over pace"));
+      // Our words, not the engine's summary.
+      expect(html).not.toMatch(/in reserve|in deficit|Expected \d+%/);
+    });
+
+    it("shows the word without a hint when the engine projected nothing, and no mark without a position", () => {
+      const html = withWindows([{ ...session, pace: { state: "on pace" } }]);
+      expect(html).toContain("On pace");
+      expect(html).not.toMatch(/At this pace|usage-pace-mark/);
+    });
+
+    it("shows nothing for a window without a pace", () => {
+      const html = withWindows([{ ...session, pace: undefined }, weekly]);
+      expect(html).toContain("Session: 8% used");
+      expect(html).not.toContain("Under pace");
+      expect(marks(html)).toEqual(["43"]);
+      expect(withWindows([{ ...session, pace: undefined }])).not.toMatch(paceWords);
+      // The two-bar fallback without a window list has no pace either.
+      expect(renderUsage()).not.toMatch(paceWords);
+    });
+
+    it("shows no pace on a stale card", () => {
+      const html = withWindows([session, weekly], { stale: true, usageUnavailable: true });
+      expect(html).toContain("Session: ??");
+      expect(html).not.toMatch(paceWords);
+    });
+
+    it("shows no pace for a window whose reset has passed or is unknown", () => {
+      expect(withWindows([{ ...session, resetSecs: 0 }])).not.toMatch(paceWords);
+      expect(withWindows([{ ...session, resetSecs: undefined }])).not.toMatch(paceWords);
+    });
+
+    it("says the same under Remaining, where percentage and mark are turned round", () => {
+      const html = withWindows(
+        [
+          { ...session, usedPercent: 92, pace: { ...session.pace!, expectedPercent: 67 } },
+          { ...weekly, usedPercent: 27, pace: { ...weekly.pace!, expectedPercent: 57 } },
+        ],
+        { usageMode: "remaining" },
+      );
+      expect(html).toContain("Session: 92% remaining");
+      expect(html).toContain("Under pace");
+      expect(html).toContain("Weekly: 27% remaining");
+      expect(html).toContain("Over pace");
+      expect(marks(html)).toEqual(["67", "57"]);
+    });
   });
 });

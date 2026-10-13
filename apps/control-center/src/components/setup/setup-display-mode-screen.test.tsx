@@ -50,9 +50,9 @@ describe("SetupDisplayModeScreen", () => {
     expect(html).toContain(
       "VibeTV switches between your providers based on recent activity and usage.",
     );
-    expect(html).toContain("Manual");
+    expect(html).toContain("One provider");
     expect(html).toContain(
-      "VibeTV always shows the one provider you pick — nothing else.",
+      "VibeTV always shows the one provider you pick.",
     );
   });
 
@@ -179,6 +179,26 @@ describe("SetupDisplayModeScreen", () => {
     });
 
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);
+  });
+
+  // Most customers use one provider; a pair is only a choice with two.
+  it("offers Two at once only when there are two providers to pair", () => {
+    expect(render({ onSelectPair: vi.fn() })).toContain("Two at once");
+    expect(
+      render({ onSelectPair: vi.fn(), providers: [codex] }),
+    ).not.toContain("Two at once");
+  });
+
+  it("holds Continue until the pair names two different providers", () => {
+    const pair = (pairProviderIds: string[]) =>
+      render({ mode: "pair", onSelectPair: vi.fn(), pairProviderIds });
+
+    expect(pair(["codex", "codex"])).toMatch(
+      /<button[^>]*disabled=""[^>]*>Continue<\/button>/,
+    );
+    expect(pair(["codex", "cursor"])).not.toMatch(
+      /<button[^>]*disabled=""[^>]*>Continue<\/button>/,
+    );
   });
 
 });

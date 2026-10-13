@@ -12,6 +12,12 @@ export const LIVE_READINGS = [
   ["usageSlot2Label", "Second usage window — name", "{usageSlot2Label}"],
   ["usageSlot1Reset", "First usage window — reset countdown", "Reset in {usageSlot1Reset}"],
   ["usageSlot2Reset", "Second usage window — reset countdown", "Reset in {usageSlot2Reset}"],
+  ["usageSlot1PaceDelta", "First usage window — reserve or deficit %", "{usageSlot1PaceDelta}"],
+  ["usageSlot1PaceState", "First usage window — reserve or deficit", "{usageSlot1PaceState}"],
+  ["usageSlot1PaceLasts", "First usage window — lasts until reset", "{usageSlot1PaceLasts}"],
+  ["usageSlot2PaceDelta", "Second usage window — reserve or deficit %", "{usageSlot2PaceDelta}"],
+  ["usageSlot2PaceState", "Second usage window — reserve or deficit", "{usageSlot2PaceState}"],
+  ["usageSlot2PaceLasts", "Second usage window — lasts until reset", "{usageSlot2PaceLasts}"],
   ["providerSlot1Label", "First provider — name", "{providerSlot1Label}"],
   ["providerSlot2Label", "Second provider — name", "{providerSlot2Label}"],
   ["providerSlot1Percent", "First provider — usage", "{providerSlot1Percent}%"],
@@ -35,11 +41,24 @@ export function readingKey(p: ThemeStudioPrimitive) {
 export function setReading(p: ThemeStudioPrimitive, key: string) {
   const reading = LIVE_READINGS.find(([id]) => id === key);
   if (!reading) return;
+  const paceStops = (p.binding || "").includes("Pace") ? p.colorStops : undefined;
   delete p.binding;
   delete p.slot;
   delete p.providerSlot;
   delete p.usageIndex;
+  delete p.colorStops;
   p.text = reading[2];
+  if (key.includes("Pace")) {
+    // VibeTV colours text by pace only through a binding: reserve matches 100,
+    // on pace 50, deficit 0. Green and red by default, on pace in the text colour.
+    p.text = "";
+    p.binding = key;
+    p.colorStops = paceStops ?? [
+      { gte: 100, color: "#22C55E" },
+      { gte: 50, color: p.color || "#FFFFFF" },
+      { gte: 0, color: "#EF4444" },
+    ];
+  }
   if (key === "session" || key.startsWith("usageSlot1")) p.slot = 1;
   if (key === "weekly" || key.startsWith("usageSlot2")) p.slot = 2;
   if (key.startsWith("providerSlot1")) p.providerSlot = 1;
