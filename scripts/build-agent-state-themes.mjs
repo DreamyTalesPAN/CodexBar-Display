@@ -2,7 +2,7 @@
 // Encode approved native pixels, keeping existing working/idle source assets exact.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -199,7 +199,7 @@ async function clippyFrames(name, count) {
   }));
   return { frames, palette };
 }
-async function finish(id, spec, version, generated, files = {}) {
+async function finish(id, spec, version, generated) {
   const dir = path.join(root, "theme-packs", id),
     manifest = JSON.parse(await readFile(path.join(dir, "manifest.json")));
   const raw = JSON.stringify(spec) + "\n";
@@ -220,9 +220,7 @@ async function finish(id, spec, version, generated, files = {}) {
   for (const ref of refs) {
     const name = path.basename(ref),
       file =
-        files[ref] ||
-        manifest.assets.find((a) => a.path === ref)?.file ||
-        `assets/${name}`,
+        manifest.assets.find((a) => a.path === ref)?.file || `assets/${name}`,
       data = await readFile(path.join(dir, file));
     assets.push({
       path: ref,
@@ -327,54 +325,8 @@ office.p = office.p.filter(
 office.p.splice(3, 0, ...tiles);
 office.rev = 8;
 await finish("tiny-office", office, "0.7.0", generated);
-const mini = JSON.parse(
-  await readFile(path.join(root, "theme-packs/mini-classic/theme.json")),
-);
-mini.p = mini.p.filter(
-  (p) => !p.a?.startsWith("/themes/u/mi-") || p.a === "/themes/u/mi-eyes.cba",
-);
-mini.rev = 10;
-const props = {},
-  sa = { idle: "/themes/u/mi-blank.cbi" };
-props["mi-blank.cbi"] = encode(1, 1, [["#000000"]], 0);
-for (const [key, name, repeats] of [
-  ["coding", "working", 11],
-  ["needs_you", "needs", 9],
-  ["done", "finished", 13],
-  ["error", "error", 12],
-]) {
-  const frames = await pngFrames("mini", name, 2, 32, 32),
-    asset = `mi-${name}.cba`;
-  props[asset] = encode(
-    32,
-    32,
-    frames.flatMap((f) => Array(repeats).fill(f)),
-    20,
-  );
-  sa[key] = `/themes/u/${asset}`;
-}
-const eyes = mini.p.find(
-  (p) => p.t === "gif" || p.t === "g" || p.a === "/themes/u/mi-eyes.cba",
-);
-assert(eyes);
-// The eyes stay the GIF of 1.2.2: same picture, same size, same place. The
-// agent state plays beside it, to its right. The state sprite is decoded at
-// its 32 px source size, so its frame buffer (2 KB) fits beside the GIF.
-const eyeGifPath = "/themes/u/mini-4-146563.gif";
-for (const key of Object.keys(eyes)) delete eyes[key];
-Object.assign(eyes, { t: "g", x: 82, y: 126, w: 76, h: 76, a: eyeGifPath });
-await rm(path.join(root, "theme-packs/mini-classic/assets/mi-eyes.cba"), { force: true });
-mini.p.push({
-  t: "sp",
-  x: 166,
-  y: 132,
-  w: 64,
-  h: 64,
-  bg: "#000000",
-  a: sa.idle,
-  sa,
-});
-await finish("mini-classic", mini, "1.2.3", props, { [eyeGifPath]: "assets/mini.gif" });
+// Mini Classic has no state artwork: the status line names the agent state,
+// and the theme stays as released (1.2.2).
 
 // Keep the original animated Creature poses for idle and coding. The three
 // additional states use authored clawd-tank RLE frames and cadence.

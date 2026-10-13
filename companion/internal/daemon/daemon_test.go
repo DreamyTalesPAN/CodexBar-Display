@@ -8088,6 +8088,25 @@ func TestAutomaticDisplayFollowsObservedAgents(t *testing.T) {
 	check("codex") // An agent cannot resurrect a disabled provider.
 }
 
+func TestAgentStatusNamesTheShownProviderByItsShortLabel(t *testing.T) {
+	snapshot := agentstatus.Snapshot{Health: "ready", Phase: "working",
+		Sessions: []agentstatus.Session{{ID: "a", Source: "claude-code", Phase: "working"}},
+		Sources:  []agentstatus.Source{{ID: "claude-code", Name: "Claude Code", UsageProvider: "claude"}},
+	}
+	state := &runtimeState{agentSnapshot: func() agentstatus.Snapshot { return snapshot }}
+	for _, tc := range []struct{ provider, label, want string }{
+		{"claude", "Claude", "Claude"},
+		// Another provider is on screen: its label would name the wrong agent.
+		{"codex", "Codex", "Claude Code"},
+		{"claude", "", "Claude Code"},
+	} {
+		frame, _ := applyAgentActivity(protocol.Frame{Provider: tc.provider, Label: tc.label}, state, nil)
+		if frame.Activity != "working" || frame.AgentName != tc.want {
+			t.Fatalf("provider=%s label=%q: activity=%s agentName=%q, want %q", tc.provider, tc.label, frame.Activity, frame.AgentName, tc.want)
+		}
+	}
+}
+
 func TestStaleUsageRequiresValidEnabledAgentPresentation(t *testing.T) {
 	for _, tc := range []struct {
 		name               string

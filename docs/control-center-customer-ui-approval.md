@@ -7286,3 +7286,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: (1) `Show agent activity` is on for a new install and for an install that never chose; Settings switches it off. Switching it on installs VibeTV's own hooks in the installed agents, as before. (2) Mini Classic 1.2.3 shows the eyes exactly as 1.2.2 (the same GIF, 76 x 76, centred). The agent state animation plays to the right of it and is empty while idle.
 - Scope: `companion/internal/runtimeconfig/agent_activity.go`, the Mini Classic theme pack and its generator, and this approval record. Not merge or release. The speed of the Mini state animation beside the GIF has not been judged on the device yet.
 - What's new: none — agent activity gets its own entry when it ships
+
+## 2026-10-13 — Mini Classic stays 1.2.2; the status line names the agent state in large text (#465)
+
+- User approval: Paul in this chat on 2026-10-13, looking at his VibeTV. On Mini Classic: "oben in der status bar steht ja schon claude code is working. das reicht mir" and "die sprites neben dem gif können dann weg". On the status line: "viel zu klein geschrieben, die muss ganze breite ausfüllen"; asked how, he chose the short provider name.
+- Approved customer-visible result: (1) Mini Classic is unchanged from 1.2.2; version 1.2.3 with state artwork is withdrawn before it was published. (2) When the agent belongs to the provider on screen, the status line uses the provider's short label: `Claude is working`, `Codex needs you`, `Claude is done`. That sentence fits the theme's large text. An agent of another provider, or of none, keeps its own name (`Claude Code is working`). This replaces the Mini Classic part of the previous entry.
+- Scope: `companion/internal/daemon/daemon.go` and its test, the Mini Classic theme pack and catalog, two provider flows in `test-customer-flows.mjs` that read the provider message from its popup, and this approval record. Not merge or release.
+- What's new: none — agent activity gets its own entry when it ships

@@ -81,19 +81,17 @@
       "id": "mini-classic",
       "title": "Mini Classic",
       "usage": "live",
-      "version": "1.2.3",
-      "themeRev": 10,
-      "themeSpecPath": "/themes/u/mini-10-8498ae.json",
+      "version": "1.2.2",
+      "themeRev": 9,
+      "themeSpecPath": "/themes/u/mini-cl-9-6d1af3.json",
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
-        "usage-slots-v1",
-        "agent-theme-states-v1"
+        "usage-slots-v1"
       ],
-      "downloadAsset": "vibetv-theme-mini-classic-v1.2.3.zip",
-      "sha256": "ab297cdf28423de0b63a1a1abe481ecdc36ffacf11a859d6a8d6b50ff614483d",
-      "bytes": 20259,
+      "downloadAsset": "vibetv-theme-mini-classic-v1.2.2.zip",
+      "sha256": "3352e3b1bae4c502791eb2e46afc3e27605701f314175c6052a9ccf123c1e552",
+      "bytes": 18499,
       "earlierThemeSpecPaths": [
-        "/themes/u/mini-10-a2f501.json",
         "/themes/u/mini-cl-1-410a37.json",
         "/themes/u/mini-cl-1-b3c3f7.json",
         "/themes/u/mini-cl-1-e4fe6b.json",
@@ -103,8 +101,7 @@
         "/themes/u/mini-cl-5-14d68f.json",
         "/themes/u/mini-cl-6-024b0e.json",
         "/themes/u/mini-cl-7-c7cbf4.json",
-        "/themes/u/mini-cl-8-803dd6.json",
-        "/themes/u/mini-cl-9-6d1af3.json"
+        "/themes/u/mini-cl-8-803dd6.json"
       ]
     },
     {

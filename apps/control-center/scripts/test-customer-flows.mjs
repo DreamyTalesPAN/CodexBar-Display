@@ -2796,7 +2796,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
     await page
       .getByRole("heading", { name: "AI providers", exact: true })
       .waitFor({ timeout: 10_000 });
-    const providerDialog = page.getByRole("listitem").filter({ has: page.getByRole("switch", { name: "Codex", exact: true }) });
+    const providerDialog = page.getByRole("dialog", { name: "Codex", exact: true });
     const shownMessage = fixture.shownMessage ?? fixture.reportedMessage;
     const signInRow = fixture.rowActions.includes("Sign in to Codex");
     if (signInRow) {
@@ -2816,8 +2816,8 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       await providerDialog.getByRole("button", { name: "OK", exact: true }).click();
     }
     assert(
-      (await providerDialog.getByText(shownMessage, { exact: true }).count()) === 1,
-      `${fixture.status} must keep the reported message on its provider row`,
+      (await page.getByText(shownMessage, { exact: true }).count()) === 0,
+      `${fixture.status} must keep the reported message in the dismissible dialog, not on the row`,
     );
     for (const action of fixture.rowActions) {
       await page
@@ -13608,7 +13608,17 @@ async function testProviderMigrationHandoff(browser, appUrl) {
   });
   await page.goto(appUrl, {waitUntil: "domcontentloaded"});
   const panel = setupScreen(page, SETUP_PROVIDERS_SCREEN);
-  await panel.getByText(shown, {exact: true}).waitFor({timeout: 10_000});
+  // The provider message is a popup: it opens by itself once, and stays one
+  // click away after it was closed.
+  const readGeminiMessage = async () => {
+    const message = page.getByRole("dialog", {name: "Gemini", exact: true});
+    await panel.getByRole("button", {name: "Show provider message for Gemini"}).waitFor({timeout: 10_000});
+    if (!(await message.isVisible())) await panel.getByRole("button", {name: "Show provider message for Gemini"}).click();
+    await message.getByText(shown, {exact: true}).waitFor({timeout: 10_000});
+    await message.getByRole("button", {name: "OK", exact: true}).click();
+    await message.waitFor({state: "hidden"});
+  };
+  await readGeminiMessage();
   assert(await panel.getByRole("button", {name: "Continue"}).isDisabled(), "unsupported access alone must not complete setup");
   assert(await panel.getByRole("button", {name: "Check Gemini again"}).count() === 0, "terminal access must not offer Retry");
   if (migrationScreenshotDir) {
@@ -13620,7 +13630,7 @@ async function testProviderMigrationHandoff(browser, appUrl) {
   await waitForCondition(() => writes.some((request) => request.path.includes("antigravity") && request.method === "PATCH"), "the explicit toggle did not use the provider settings endpoint");
   await waitForCondition(async () => !(await panel.getByRole("button", {name: "Continue"}).isDisabled()), "healthy Antigravity must unblock setup alongside unsupported Gemini");
   assert(await panel.getByRole("button", {name: "Turn on Antigravity"}).count() === 0, "already enabled replacement must not offer another enable action");
-  await panel.getByText(shown, {exact: true}).waitFor();
+  await readGeminiMessage();
   assert(await panel.getByRole("switch", {name: "Gemini"}).isChecked(), "enabling the alternative must not silently disable Gemini");
   if (migrationScreenshotDir) {
     await page.screenshot({path: join(migrationScreenshotDir, "gemini-migration-antigravity-ready.png"), fullPage: true});
