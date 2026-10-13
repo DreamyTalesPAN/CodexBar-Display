@@ -1370,6 +1370,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     }
     private var launchUpdateCheck = LaunchUpdateCheck.done
     private var launchUpdateTurnedDown = false
+    // Creating the controller starts Sparkle, which may show an overdue
+    // scheduled check at once. A launch check skipped for a running VibeTV
+    // update must not create it.
+    private var updaterStarted = false
 #endif
     private var installationRequired: Bool {
         requiresApplicationInstallation(Bundle.main.bundleURL)
@@ -1454,6 +1458,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             // "Skip This Version" in Sparkle's dialog would otherwise keep
             // that version away from the launch check as well.
             UserDefaults.standard.removeObject(forKey: "SUSkippedVersion")
+            self.updaterStarted = true
             _ = updaterController
             let updater = self.updaterController.updater
             // A rehearsal turns the automatic checks off to keep the
@@ -1478,15 +1483,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 return
             }
             launchUpdateCheck = .done
-            // Later checks show Sparkle's dialog: a silent install would
-            // restart the app under a customer who is using it.
-            let updater = updaterController.updater
-            updater.automaticallyDownloadsUpdates = false
-            if launchUpdateTurnedDown {
-                // The feed answered after the limit. Offer that update in
-                // Sparkle's dialog now instead of dropping it for a day.
-                launchUpdateTurnedDown = false
-                updater.checkForUpdatesInBackground()
+            if updaterStarted {
+                // Later checks show Sparkle's dialog: a silent install would
+                // restart the app under a customer who is using it.
+                let updater = updaterController.updater
+                updater.automaticallyDownloadsUpdates = false
+                if launchUpdateTurnedDown {
+                    // The feed answered after the limit. Offer that update in
+                    // Sparkle's dialog now instead of dropping it for a day.
+                    launchUpdateTurnedDown = false
+                    updater.checkForUpdatesInBackground()
+                }
             }
         }
         if previous != .abandoned {
@@ -2247,6 +2254,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return
         }
 #if canImport(Sparkle)
+        updaterStarted = true
         updaterController.checkForUpdates(nil)
 #else
         let alert = NSAlert()
