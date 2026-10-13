@@ -1698,9 +1698,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 return
             }
             launchUpdateCheck = .done
+            // Later checks show Sparkle's dialog: a silent install would
+            // restart the app under a customer who is using it. The default
+            // is written here because Sparkle's setter below stores nothing
+            // while automatic checks are off, and a launch that ended before
+            // creating the updater has no setter to call. Sparkle watches
+            // this default and follows it.
+            UserDefaults.standard.set(false, forKey: "SUAutomaticallyUpdate")
             if updaterStarted {
-                // Later checks show Sparkle's dialog: a silent install would
-                // restart the app under a customer who is using it.
                 let updater = updaterController.updater
                 updater.automaticallyDownloadsUpdates = false
                 if launchUpdateTurnedDown {
@@ -1709,12 +1714,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                     launchUpdateTurnedDown = false
                     updater.checkForUpdatesInBackground()
                 }
-            } else {
-                // A launch that ended between setting the silent-install
-                // default and this point left it on, and the updater a later
-                // check creates would read it. Turned off without creating the
-                // updater, which would start checks of its own.
-                UserDefaults.standard.set(false, forKey: "SUAutomaticallyUpdate")
             }
         }
         if previous != .abandoned {
