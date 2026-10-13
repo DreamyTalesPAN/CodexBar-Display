@@ -149,14 +149,6 @@ candidate above stays what the merge gate and a release need.
   platforms, not only read from the API. The result goes into the pull request
   description: per platform and start the times, the build, the device, and
   what was not checked.
-- The purge leaves the app's web storage in place (`localStorage`, on the Mac
-  `~/Library/WebKit/shop.vibetv.control-center`, #571). Until the purge does it
-  itself: with the app closed, move that folder aside before the cold start
-  and again before the public app of the warm start is installed, and put the
-  first copy back after the last run (it can hold themes saved in Theme
-  Studio). The app creates a fresh one on its next start. Otherwise the cold
-  start reads what an earlier candidate stored, and the warm start reads what
-  the cold start stored.
 - Do not start the Mac's cold start and the Windows preparation in the same
   minute: the Windows VibeTV is on WiFi for a moment, the Mac App then finds
   two VibeTVs and waits for a choice.
