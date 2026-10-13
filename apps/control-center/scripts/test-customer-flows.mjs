@@ -2813,7 +2813,14 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
         .waitFor({ timeout: 10_000 });
       await providerDialog.getByRole("button", { name: "Copy provider message for Codex" })
         .waitFor({ timeout: 10_000 });
-      await providerDialog.getByRole("button", { name: "OK", exact: true }).click();
+      // Blocked access offers the re-check in the message itself (#602).
+      if (fixture.status === "permission_required") {
+        await providerDialog.getByRole("button", { name: "Check again", exact: true })
+          .waitFor({ timeout: 10_000 });
+        await providerDialog.getByRole("button", { name: "Close", exact: true }).click();
+      } else {
+        await providerDialog.getByRole("button", { name: "OK", exact: true }).click();
+      }
     }
     assert(
       (await page.getByText(shownMessage, { exact: true }).count()) === 0,

@@ -120,6 +120,12 @@ describe("provider popup guidance", () => {
       health: "permission_required", label: "Cursor",
       detail: "macOS blocked access required by this provider.",
     })).toBe("macOS blocked access required by this provider.");
+    expect(setupProviderIssueMessage({
+      health: "permission_required", label: "Cursor",
+      detail: "macOS blocked access required by this provider.",
+      nextAction: "Allow the required macOS access, then check this provider.",
+      reportedMessage: "Safari cookie file is not readable. Enable Full Disk Access for CodexBar.",
+    })).toBe("Safari cookie file is not readable. Enable Full Disk Access for usage engine.");
   });
 
   it("preserves the exact reported message before generic detail", () => {

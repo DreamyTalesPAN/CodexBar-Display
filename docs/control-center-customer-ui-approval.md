@@ -7171,3 +7171,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. No text or layout changes. `Tab` reaches the group of choices once, on the selected one; the arrow keys move to the next or previous choice, wrap around and select it; Space and Enter select as before.
 - Scope: `apps/control-center/src/components/setup/setup-selectable-card.tsx`, `setup-device-card.tsx`, `setup-device-screen.tsx`, `setup-device-dialogs.tsx`, `setup-theme-screen.tsx`, the new test `setup-choice-keyboard.test.tsx`, `docs/control-center-accessibility.md`, and this approval record. Night-shift branch only, not merge or release.
 - What's new: none — a correction, nothing new to announce
+
+## 2026-10-13 — Night shift: correction: the engine's own sentence stays the message for blocked access (#602)
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-13/14; wording not yet seen by him. Correction to tonight's entry `the message for blocked access says what to do and checks again (#602)`, found by the customer-flow test in CI: when the usage engine reports the exact access that is missing, the entry's two general sentences replaced it.
+- Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. When the engine reported its own sentence for blocked access, the message shows that sentence as before tonight, for example `Safari cookie file is not readable. Enable Full Disk Access for usage engine.` Only without such a sentence the message reads `macOS blocked access required by this provider. Allow the required macOS access, then check this provider.` (Windows wording as in the entry). In both cases the main button is `Check again`; the message closes with its close button.
+- Scope: `setup/setup-provider-row.tsx`, its test, `scripts/test-customer-flows.mjs`, and this approval record. Night-shift branch only, not merge or release.
+- What's new: none — a correction, nothing new to announce

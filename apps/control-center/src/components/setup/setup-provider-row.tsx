@@ -210,7 +210,8 @@ export function setupProviderIssueMessage({
     return [detail, nextAction].filter(Boolean).join(" ");
   }
   // Blocked access: "blocked" alone leaves the customer without a step (#602).
-  if (detail && nextAction && health === "permission_required") {
+  // What the engine reported names the exact access and stays the message.
+  if (detail && nextAction && !reportedMessage && health === "permission_required") {
     return `${detail} ${nextAction}`;
   }
   // Its own text: a generic engine message hides that an update fixes it.
