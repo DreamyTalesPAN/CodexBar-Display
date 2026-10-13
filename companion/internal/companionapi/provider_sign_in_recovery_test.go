@@ -33,6 +33,7 @@ func TestExpiredSavedClaudeCookieRecoversWithTheRowButtonsAlone(t *testing.T) {
 		t.Skip("CodexBar on macOS reads Claude from the browser sign-in")
 	}
 	t.Setenv("CODEXBAR_CONFIG", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 10, 9, 8, 0, 0, 0, time.UTC)
 	server.now = func() time.Time { return now }
