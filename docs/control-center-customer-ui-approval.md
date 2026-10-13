@@ -5686,3 +5686,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Covered by Marcus's approval of this package on 2026-10-09 (entry "Two providers at once, limits to hide, and the reserve or deficit on VibeTV"). A finding of the Codex review of PR #592 on da27674c; no new text, control or layout.
 - Approved customer-visible result: No new screen, dialog, button, or text. While usage collection fails and VibeTV shows the last good reading, a theme that lists each provider with its usage and soonest reset no longer shows these cached rows once a limit of a listed provider is hidden, nor while usage shows as unavailable. The rows return with the next reading.
 - Scope: `limitCachedFrame` and `frameWithoutUsage` in `companion/internal/daemon/display_limits.go`, its test in `display_limits_test.go`, and this approval record. Checked with unit tests. This approves the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-10-13 — Review follow-up for PR #592: leaving Two at once during a collection failure
+
+- User approval: Covered by Marcus's approval of this package on 2026-10-09 (entry "Two providers at once, limits to hide, and the reserve or deficit on VibeTV"). A finding of the Codex review of PR #592 on 84379225; no new text, control or layout.
+- Approved customer-visible result: No new screen, dialog, button, or text. While usage collection fails and VibeTV shows the last good reading of Two at once, switching Display mode to Automatic makes VibeTV show its existing usage unavailable state until the next reading, which then shows Automatic, instead of the old pair.
+- Scope: `limitCachedFrame` in `companion/internal/daemon/display_limits.go`, its test in `display_limits_test.go`, and this approval record. Checked with unit tests. This approves the pull-request branch only, not merge, release, installation, or a device operation.

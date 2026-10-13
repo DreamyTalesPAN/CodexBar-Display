@@ -38,6 +38,12 @@ func applyDisplayLimits(frame protocol.Frame, providers []codexbar.ParsedFrame, 
 // show the current choice from this frame, so it shows usage as unavailable
 // until then instead of the hidden percentages.
 func limitCachedFrame(frame protocol.Frame, display *runtimeconfig.ProviderDisplayConfig) protocol.Frame {
+	pair := len(frameProviderMembers(frame.Provider)) > 1
+	// A pair kept from before the customer left Two at once is no longer
+	// their choice; the next reading shows the new one.
+	if pair && (display == nil || display.Mode != providerDisplayModePair) {
+		return frameWithoutUsage(frame)
+	}
 	if display == nil {
 		return frame
 	}
@@ -49,7 +55,7 @@ func limitCachedFrame(frame protocol.Frame, display *runtimeconfig.ProviderDispl
 			break
 		}
 	}
-	if len(frameProviderMembers(frame.Provider)) > 1 {
+	if pair {
 		for _, window := range frame.UsageWindows {
 			if pairWindowHidden(window.ID, display) {
 				return frameWithoutUsage(frame)

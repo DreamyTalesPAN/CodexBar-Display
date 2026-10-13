@@ -314,6 +314,13 @@ func TestCachedFrameDropsWhatWasHiddenSince(t *testing.T) {
 	if got := limitCachedFrame(sessionRows, one); !got.UsageUnavailable || len(got.ProviderSlots) != 0 {
 		t.Fatalf("usage unavailable still shows cached provider rows: %+v", got.ProviderSlots)
 	}
+
+	// Leaving Two at once for Automatic must not keep sending the old pair.
+	for _, display := range []*runtimeconfig.ProviderDisplayConfig{nil, {Mode: "automatic", ProviderIDs: []string{"claude", "codex"}}} {
+		if got := limitCachedFrame(cached, display); !got.UsageUnavailable || len(got.UsageWindows) != 0 {
+			t.Fatalf("cached pair after leaving Two at once (%+v): %+v", display, got.UsageWindows)
+		}
+	}
 }
 
 func TestRunCycleWithDepsFallbackFollowsLimitsHiddenSince(t *testing.T) {
