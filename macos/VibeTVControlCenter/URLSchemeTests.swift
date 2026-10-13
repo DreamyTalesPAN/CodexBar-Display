@@ -1071,6 +1071,189 @@ private func testLegacyTerminalAppDetection() {
         ),
         "the currently running app must never migrate itself"
     )
+
+    // Issue #220: what the menu bar item shows for one /v1/status answer.
+    func menuBar(_ json: String?) -> MenuBarStatus {
+        menuBarStatus(statusJSON: json.map { Data($0.utf8) })
+    }
+    let notReachable = MenuBarStatus(
+        icon: .offline,
+        lines: ["Mac App: Not reachable", "VibeTV: Not connected", "Display: Not available"]
+    )
+    require(
+        menuBar(nil) == notReachable,
+        "a background service that does not answer must read as not reachable"
+    )
+    require(
+        menuBar("<html>") == notReachable,
+        "an answer that is not a status must read as not reachable"
+    )
+    require(
+        menuBar(
+            #"{"ok":true,"companion":{"version":"1.9.0"},"device":{"connected":false,"paired":false,"ready":false,"active":false,"connectionState":"setup_required"},"setup":{"providerSelectionRequired":true}}"#
+        ) == MenuBarStatus(
+            icon: .actionRequired,
+            lines: ["Mac App: Online 1.9.0", "VibeTV: Not set up", "Display: Not available"]
+        ),
+        "a Mac without a chosen VibeTV must ask for setup"
+    )
+    require(
+        menuBar(
+            #"{"ok":true,"companion":{"version":"1.9.0"},"device":{"target":"cable://vibetv","deviceId":"16199235","connected":true,"paired":true,"ready":true,"active":true,"connectionState":"ready","capabilities":{"transport":{"active":"usb","mode":"cable"}},"stream":{"healthy":true,"running":true},"standby":{"active":false}},"setup":{"providerSelectionRequired":false}}"#
+        ) == MenuBarStatus(
+            icon: .healthy,
+            lines: ["Mac App: Online 1.9.0", "VibeTV 16199235: Connected by Cable", "Display: Live"]
+        ),
+        "a ready VibeTV on the cable must read as connected by Cable"
+    )
+    let wifiReady =
+        #"{"ok":true,"companion":{"version":"1.9.0"},"device":{"target":"http://192.168.178.163","deviceId":"vibetv-8caab5","connected":true,"paired":true,"ready":true,"active":true,"connectionState":"ready","capabilities":{"transport":{"active":"wifi","mode":"wifi","supported":["wifi","usb"]}},"stream":{"healthy":true,"running":true}STANDBY},"setup":{"providerSelectionRequired":SETUP}FIRMWARE}"#
+    func wifi(
+        standby: String = "",
+        setup: String = "false",
+        firmware: String = ""
+    ) -> MenuBarStatus {
+        menuBar(
+            wifiReady
+                .replacingOccurrences(of: "STANDBY", with: standby)
+                .replacingOccurrences(of: "SETUP", with: setup)
+                .replacingOccurrences(of: "FIRMWARE", with: firmware)
+        )
+    }
+    require(
+        wifi() == MenuBarStatus(
+            icon: .healthy,
+            lines: ["Mac App: Online 1.9.0", "VibeTV vibetv-8caab5: Connected over WiFi", "Display: Live"]
+        ),
+        "a ready VibeTV on WiFi must read as connected over WiFi"
+    )
+    // Several VibeTVs: the status names the one this Mac controls, and the
+    // menu names that one by its ID, as the picker in setup does.
+    require(
+        wifi().lines[1].hasPrefix("VibeTV vibetv-8caab5: "),
+        "the menu must name the selected VibeTV"
+    )
+    require(
+        wifi(standby: #","standby":{"active":true}"#).lines[2] == "Display: Screensaver",
+        "a VibeTV in standby must read as showing its screensaver"
+    )
+    require(
+        wifi(setup: "true") == MenuBarStatus(
+            icon: .actionRequired,
+            lines: ["Mac App: Online 1.9.0", "VibeTV vibetv-8caab5: Connected over WiFi", "Display: Needs attention"]
+        ),
+        "an open provider choice must read as needing attention"
+    )
+    require(
+        wifi(firmware: #","firmwareUpdate":{"phase":"installing"}"#).icon == .updating,
+        "a firmware update must show while VibeTV still answers"
+    )
+    require(
+        wifi(firmware: #","firmwareUpdate":{"phase":"completed"}"#).icon == .healthy,
+        "a finished firmware update must not read as updating"
+    )
+    require(
+        menuBar(
+            #"{"ok":true,"companion":{"version":"1.9.0"},"device":{"target":"http://192.168.178.163","deviceId":"vibetv-8caab5","connected":false,"paired":true,"ready":false,"active":true,"connectionState":"reconnecting"},"firmwareUpdate":{"phase":"installing"}}"#
+        ) == MenuBarStatus(
+            icon: .updating,
+            lines: ["Mac App: Online 1.9.0", "VibeTV vibetv-8caab5: Restarting", "Display: Update running"]
+        ),
+        "a VibeTV that restarts during its update must not read as lost"
+    )
+    func notReady(_ device: String) -> MenuBarStatus {
+        menuBar(
+            #"{"ok":true,"companion":{"version":"1.9.0"},"device":{"target":"http://192.168.178.163","deviceId":"vibetv-8caab5","active":true,"ready":false,"#
+                + device + "}}"
+        )
+    }
+    require(
+        notReady(#""connected":false,"paired":true,"connectionState":"reconnecting""#)
+            == MenuBarStatus(
+                icon: .offline,
+                lines: ["Mac App: Online 1.9.0", "VibeTV vibetv-8caab5: Not connected", "Display: Not available"]
+            ),
+        "a VibeTV that does not answer must read as not connected"
+    )
+    require(
+        notReady(#""connected":true,"paired":false,"stream":{"healthy":false,"running":true,"errorCode":"pairing_token_rejected"}"#)
+            == MenuBarStatus(
+                icon: .actionRequired,
+                lines: ["Mac App: Online 1.9.0", "VibeTV vibetv-8caab5: Needs attention", "Display: Not available"]
+            ),
+        "a rejected pairing must read as needing attention"
+    )
+    require(
+        notReady(#""connected":true,"paired":true,"connectionState":"provider_setup_required","stream":{"healthy":false,"running":true,"errorCode":"display_send_failed"}"#)
+            == MenuBarStatus(
+                icon: .healthy,
+                lines: ["Mac App: Online 1.9.0", "VibeTV vibetv-8caab5: Connected over WiFi", "Display: Waiting for first image"]
+            ),
+        "a stream that fails to send must read as waiting for the first image"
+    )
+    require(
+        notReady(#""connected":true,"paired":true,"connectionState":"provider_setup_required","stream":{"healthy":false,"running":true}"#)
+            .lines[2] == "Display: Waiting for usage",
+        "a running stream without usage yet must read as waiting for usage"
+    )
+    require(
+        notReady(#""connected":true,"paired":true,"connectionState":"provider_setup_required","stream":{"healthy":false,"running":true,"errorCode":"provider_setup_required"}"#)
+            == MenuBarStatus(
+                icon: .actionRequired,
+                lines: ["Mac App: Online 1.9.0", "VibeTV vibetv-8caab5: Connected over WiFi", "Display: Needs attention"]
+            ),
+        "a VibeTV without usage from any provider must read as needing attention"
+    )
+    require(
+        notReady(#""connected":true,"paired":true,"connectionState":"display_render_failed","stream":{"healthy":false,"running":true}"#)
+            == MenuBarStatus(
+                icon: .actionRequired,
+                lines: ["Mac App: Online 1.9.0", "VibeTV vibetv-8caab5: Connected over WiFi", "Display: Theme not shown"]
+            ),
+        "a theme VibeTV cannot draw must be named"
+    )
+    // Without a place of its own the item lands off the screen on a full
+    // menu bar; macOS reads the place under this key, for this name.
+    require(
+        menuBarItemDefaults["NSStatusItem Preferred Position VibeTVMenuBarItem"] == 400,
+        "the menu bar item must start at a place right of the notch"
+    )
+    // A VibeTV that stopped answering stays "connected" for a short while,
+    // in the state "reconnecting", with the stream error it had before.
+    for staleStream in [
+        #","stream":{"healthy":false,"running":true,"errorCode":"provider_setup_required"}"#,
+        #","stream":{"healthy":false,"running":true}"#,
+        "",
+    ] {
+        require(
+            notReady(#""connected":true,"paired":true,"connectionState":"reconnecting""# + staleStream)
+                == MenuBarStatus(
+                    icon: .offline,
+                    lines: ["Mac App: Online 1.9.0", "VibeTV vibetv-8caab5: Reconnecting", "Display: Not available"]
+                ),
+            "a VibeTV that is reconnecting must not send the customer to the providers"
+        )
+    }
+    require(
+        menuBar(
+            #"{"ok":true,"companion":{"version":"1.9.0"},"device":{"deviceId":"vibetv-8caab5","connected":true,"paired":true,"ready":false,"active":true,"connectionState":"reconnecting"},"firmwareUpdate":{"phase":"installing"}}"#
+        ).icon == .updating,
+        "a VibeTV that reconnects during its update must read as updating"
+    )
+    // The state is told without colour: by the symbol, a mark, and in words.
+    require(
+        [MenuBarIcon.starting, .healthy, .actionRequired, .offline, .updating]
+            .map { "\($0.symbolName)\($0.mark)" }
+            == ["tv", "tv", "tv!", "tv.slash", "tv↑"],
+        "each state must have a shape of its own"
+    )
+    require(
+        Set(
+            [MenuBarIcon.starting, .healthy, .actionRequired, .offline, .updating]
+                .map(\.accessibilityLabel)
+        ).count == 5,
+        "each state must be said in words of its own"
+    )
 }
 
 

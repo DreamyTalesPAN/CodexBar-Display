@@ -3,13 +3,16 @@ package codexbar
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -78,8 +81,14 @@ type DashboardServeSupervisor struct {
 	testArgsPrefix  []string
 	testEnv         []string
 
-	mu   sync.RWMutex
-	info DashboardServeInfo
+	mu      sync.RWMutex
+	info    DashboardServeInfo
+	process *os.Process
+	// Fingerprint captured before launch; no credentials are retained here.
+	config dashboardConfig
+	// restart marks the next child exit as one Restart asked for, so the
+	// replacement starts at once instead of after the crash backoff.
+	restart bool
 }
 
 func StartDashboardServe(ctx context.Context, logf func(string, ...any)) DashboardServe {
@@ -180,6 +189,14 @@ func (s *DashboardServeSupervisor) Run(ctx context.Context) {
 			s.setStopped("", err)
 			return
 		}
+		s.mu.Lock()
+		restart := s.restart
+		s.restart = false
+		s.mu.Unlock()
+		if restart {
+			backoff = dashboardServeBackoff{base: s.backoffBase, max: s.backoffMax}
+			continue
+		}
 		if err != nil && s.logf != nil {
 			s.logf("codexbar-dashboard event=child-exited retry=%s err=%v\n", backoff.Peek(), err)
 		}
@@ -237,11 +254,14 @@ func (s *DashboardServeSupervisor) runOnce(ctx context.Context) error {
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 
+	// Capture both the selected file and its contents before the child
+	// exists. Missing/unreadable settings remain unknown, never current.
+	config, _ := readDashboardConfig(environmentValue(env, "CODEXBAR_CONFIG"))
 	if err := cmd.Start(); err != nil {
 		s.setStopped(endpoint, err)
 		return err
 	}
-	s.setStarted(endpoint, cmd.Process.Pid)
+	s.setStarted(endpoint, cmd.Process, config)
 	if s.logf != nil {
 		s.logf("codexbar-dashboard event=child-started endpoint=%s pid=%d refreshInterval=%s\n", endpoint, cmd.Process.Pid, s.refreshInterval)
 	}
@@ -323,6 +343,90 @@ func (s *DashboardServeSupervisor) stopUnhealthyDashboardServeChild(endpoint str
 	return errors.New("unhealthy codexbar serve exited")
 }
 
+// Restart replaces the running serve when CodexBar's config changed after it
+// started, and waits until the new one answers /health. A serve keeps the
+// settings it started with: after a Mac restart it kept reporting Claude as
+// signed out once Claude's saved cookie had been switched off, until the
+// process was replaced (2026-10-09). A serve started after the latest change
+// already runs on it; a reading it has not delivered yet is a collection still
+// under way, so it keeps running.
+func (s *DashboardServeSupervisor) Restart(ctx context.Context) error {
+	s.mu.Lock()
+	process := s.process
+	oldPID := s.info.PID
+	stale := process != nil && dashboardConfigChanged(s.config)
+	s.restart = stale
+	s.mu.Unlock()
+	if process == nil {
+		return errors.New("codexbar serve is not running")
+	}
+	if !stale {
+		if s.logf != nil {
+			s.logf("codexbar-dashboard event=restart-skipped pid=%d reason=settings-unchanged\n", oldPID)
+		}
+		return nil
+	}
+	if s.logf != nil {
+		s.logf("codexbar-dashboard event=restart-requested pid=%d\n", oldPID)
+	}
+	if err := process.Kill(); err != nil {
+		return fmt.Errorf("stop codexbar serve: %w", err)
+	}
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if info := s.Info(); info.Healthy && info.PID != 0 && info.PID != oldPID {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+type dashboardConfig struct {
+	path   string
+	digest [sha256.Size]byte
+}
+
+func readDashboardConfig(path string) (dashboardConfig, error) {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return dashboardConfig{}, err
+	}
+	raw, err := os.ReadFile(resolved)
+	if err != nil {
+		return dashboardConfig{}, err
+	}
+	return dashboardConfig{path: resolved, digest: sha256.Sum256(raw)}, nil
+}
+
+// Compare what a new child would read, including a changed config selection
+// or symlink. Contents, not filesystem timestamps, establish freshness.
+func dashboardConfigChanged(started dashboardConfig) bool {
+	path := started.path
+	if runtime.GOOS != "windows" {
+		var err error
+		path, err = macConfigPath("")
+		if err != nil {
+			return true
+		}
+	}
+	current, err := readDashboardConfig(path)
+	return err != nil || current != started
+}
+
+func environmentValue(env []string, key string) string {
+	for _, entry := range env {
+		if value, ok := strings.CutPrefix(entry, key+"="); ok {
+			return value
+		}
+	}
+	return ""
+}
+
 func (s *DashboardServeSupervisor) checkHealth(ctx context.Context, endpoint string) bool {
 	if s == nil || s.client == nil {
 		return false
@@ -346,11 +450,13 @@ func (s *DashboardServeSupervisor) checkHealth(ctx context.Context, endpoint str
 	return true
 }
 
-func (s *DashboardServeSupervisor) setStarted(endpoint string, pid int) {
+func (s *DashboardServeSupervisor) setStarted(endpoint string, process *os.Process, config dashboardConfig) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.info.Endpoint = endpoint
-	s.info.PID = pid
+	s.process = process
+	s.config = config
+	s.info.PID = process.Pid
 	s.info.Running = true
 	s.info.Healthy = false
 	s.info.LastError = ""
@@ -366,6 +472,7 @@ func (s *DashboardServeSupervisor) setStopped(endpoint string, err error) {
 	if endpoint != "" {
 		s.info.Endpoint = endpoint
 	}
+	s.process = nil
 	s.info.PID = 0
 	s.info.Running = false
 	s.info.Healthy = false

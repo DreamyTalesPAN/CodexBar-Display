@@ -25,14 +25,6 @@ export function overviewConnectionStatus(
     return { label: windowsHost ? "Connecting to app" : "Connecting to Mac App", compactLabel: "Connecting", ready: false };
   }
   if (deviceIsCustomerConnected(device)) {
-    // Issue #498: the Companion names a theme the VibeTV cannot draw.
-    if (device?.connectionState === "display_render_failed") {
-      return { label: "Theme not shown · VibeTV can't show this theme. Choose another theme.", compactLabel: "Theme not shown", ready: false };
-    }
-    // Issue #265: the Mac App names a WiFi signal too weak for reliable updates.
-    if (device?.health?.wifi?.weak === true) {
-      return { label: "Weak WiFi signal · Move VibeTV closer to your router.", compactLabel: "Weak WiFi signal", ready: true };
-    }
     return { label: appVersion ? `Online · v${appVersion}` : "Online", compactLabel: "Online", ready: true };
   }
   if (firmwareUpdatePhase === "installing") {

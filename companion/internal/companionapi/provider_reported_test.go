@@ -70,6 +70,52 @@ func TestReportedProviderMessageRedactsTheHomePath(t *testing.T) {
 	if got := reportedProviderMessage(input); got != want {
 		t.Fatalf("home path redaction:\n got %q\nwant %q", got, want)
 	}
+	// Review of #572: a macOS home folder may hold spaces and brackets.
+	for _, tc := range []struct{ in, want string }{
+		{in: "Claude credentials not found at /Users/Jane Doe/.claude/.credentials.json", want: "Claude credentials not found at ~/.claude/.credentials.json"},
+		{in: "Missing profile (/Users/Jane (Work))", want: "Missing profile (~))"},
+		{in: "Missing /Users/Jane\"Doe/.claude/credentials.json", want: "Missing ~/.claude/credentials.json"},
+		{in: "{\"path\":\"/Users/jane\"}", want: "{\"path\":\"~\"}"},
+	} {
+		if got := reportedProviderMessage(tc.in); got != tc.want {
+			t.Fatalf("home path redaction:\n got %q\nwant %q", got, tc.want)
+		}
+	}
+}
+
+// The Windows engine names files under C:\Users\<account>; a support report
+// carries that sentence, so the account name has to go there too.
+func TestReportedProviderMessageRedactsTheWindowsHomePath(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{
+			in:   `Claude credentials not found at C:\Users\Patrick\.claude\.credentials.json.`,
+			want: `Claude credentials not found at ~\.claude\.credentials.json.`,
+		},
+		{
+			in:   `{"path":"c:\\Users\\Patrick\\AppData\\Roaming\\CodexBar\\settings.json"}`,
+			want: `{"path":"~\\AppData\\Roaming\\CodexBar\\settings.json"}`,
+		},
+		{
+			in:   `Missing file (C:\Users\Patrick)`,
+			want: `Missing file (~)`,
+		},
+		{
+			in:   `Claude credentials not found at C:\Users\Jane O'Doe\.claude\.credentials.json.`,
+			want: `Claude credentials not found at ~\.claude\.credentials.json.`,
+		},
+		{
+			in:   `Claude credentials not found at C:\Users\Jane (Work)\.claude\.credentials.json.`,
+			want: `Claude credentials not found at ~\.claude\.credentials.json.`,
+		},
+		{
+			in:   `Missing profile [C:\Users\Jane (Work)]`,
+			want: `Missing profile [~)]`,
+		},
+	} {
+		if got := reportedProviderMessage(tc.in); got != tc.want {
+			t.Fatalf("windows home path redaction:\n got %q\nwant %q", got, tc.want)
+		}
+	}
 }
 
 // The account name is the folder name under the home root on every system:

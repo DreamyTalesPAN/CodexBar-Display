@@ -150,6 +150,7 @@ var displayStreamLogKeys = []string{
 	"code",
 	"op",
 	"retry",
+	"cause",
 	"recovery",
 	"err",
 	"transport",
@@ -200,17 +201,25 @@ type Options struct {
 	PauseDisplayStream   func(bool)
 	WakeDisplayStream    func()
 	RenderDisplayStream  func()
+	// RestartUsageService replaces the running CodexBar serve with a fresh
+	// one when CodexBar's config changed after it started, and waits until it
+	// answers. Nil when no serve is supervised.
+	RestartUsageService func(context.Context) error
 	// Supplied only by the process supervising the actual worker. Running alone
 	// never establishes frame freshness or device readiness.
 	DisplayStreamRunning func() bool
 	// Logf writes one line to the runtime's log. Nil outside the runtime.
 	Logf func(string, ...any)
+	// Where Theme Studio keeps the customer's verified OpenAI key across
+	// restarts. Nil (tests, tools) keeps it in memory only.
+	AIThemeSecrets SecretStore
 }
 
 type Server struct {
 	agentSnapshot          func() agentstatus.Snapshot
 	agentPreferencesMu     sync.Mutex
 	configureAgents        func(context.Context, bool) (agentstatus.Snapshot, error)
+	aiThemeServer          *aiThemeServer
 	logf                   func(string, ...any)
 	addr                   string
 	home                   string
@@ -222,6 +231,8 @@ type Server struct {
 	installTheme           func(context.Context, themeinstall.Options) (themeinstall.Result, error)
 	runSetup               func(context.Context, setup.Options) error
 	resolveCablePort       func(string, string) (string, error)
+	cablePortVanished      func() error
+	lastCablePort          func() string
 	listCablePorts         func() ([]string, error)
 	discoverCableDevices   func(context.Context) ([]usb.CableDevice, error)
 	readCableHello         func(string) (protocol.DeviceHello, error)
@@ -252,9 +263,16 @@ type Server struct {
 	pauseDisplayStream     func(bool)
 	wakeDisplayStream      func()
 	renderDisplayStream    func()
-	displayStreamRunning   func() bool
-	firmwareUpdateActive   atomic.Bool
-	firmwareUpdateStartMu  sync.Mutex
+	restartUsageService    func(context.Context) error
+	usageServiceRestarting atomic.Bool
+	// A successful check that arrived while a replacement was running.
+	usageServiceRestartPending atomic.Bool
+	displayStreamRunning       func() bool
+	firmwareUpdateActive       atomic.Bool
+	firmwareUpdateStartMu      sync.Mutex
+	// One shortcut press at a time: each reads the provider on screen and
+	// stores its successor, so two quick presses must not read the same one.
+	providerDisplayNextMu sync.Mutex
 	// Serial ports already asked on behalf of a legacy WiFi VibeTV.
 	legacyCableProbeMu     sync.Mutex
 	legacyCableProbePorts  string
@@ -817,10 +835,9 @@ type companionRuntimeInfo struct {
 type companionFeatures struct {
 	ThemeInstallEnabled     bool `json:"themeInstallEnabled"`
 	MacAppSelfUpdateEnabled bool `json:"macAppSelfUpdateEnabled"`
-	// ProviderSignInEnabled and the shortened provider list are Windows-only
-	// launch decisions. The Mac app keeps CodexBar's full provider inventory
-	// and its existing rows, so the app must be told which platform it runs
-	// on rather than deciding from the user agent.
+	// ProviderSignInEnabled tells the app that this Companion can start a
+	// provider sign-in. Older Mac Companions cannot, so the app asks rather
+	// than deciding from the user agent.
 	ProviderSignInEnabled bool `json:"providerSignInEnabled"`
 }
 
@@ -1056,6 +1073,9 @@ func New(opts Options) (*Server, error) {
 			return nil, fmt.Errorf("load embedded control center: %w", err)
 		}
 	}
+	ai := &aiThemeServer{aiTheme: newAIThemeState(nil, nil)}
+	ai.aiTheme.enabled = true
+	ai.aiTheme.rememberAcross(opts.AIThemeSecrets)
 	// The runtime that owns the display stream holds the display writer lock,
 	// so there is one of it per home folder. Only that one saves the setup
 	// log and the timeline; an API server beside it reads them.
@@ -1065,6 +1085,7 @@ func New(opts Options) (*Server, error) {
 		openTimeline = timeline.Open
 	}
 	server := &Server{
+		aiThemeServer:          ai,
 		addr:                   addr,
 		agentSnapshot:          opts.AgentSnapshot,
 		configureAgents:        opts.ConfigureAgents,
@@ -1079,6 +1100,8 @@ func New(opts Options) (*Server, error) {
 		installTheme:           themeinstall.Install,
 		runSetup:               setup.Run,
 		resolveCablePort:       usb.ResolveVibeTVControlPort,
+		cablePortVanished:      usb.OpenCablePortVanished,
+		lastCablePort:          usb.LastCablePort,
 		listCablePorts:         usb.ListPorts,
 		discoverCableDevices:   usb.DiscoverVibeTVs,
 		readCableHello:         usb.ReadDeviceHello,
@@ -1108,6 +1131,7 @@ func New(opts Options) (*Server, error) {
 		pauseDisplayStream:    opts.PauseDisplayStream,
 		wakeDisplayStream:     opts.WakeDisplayStream,
 		renderDisplayStream:   opts.RenderDisplayStream,
+		restartUsageService:   opts.RestartUsageService,
 		displayStreamRunning:  opts.DisplayStreamRunning,
 		pairAttempts:          defaultPairAttempts,
 		pairAttemptTimeout:    defaultPairAttemptTimeout,
@@ -1181,6 +1205,7 @@ func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	s.registerControlCenterRoutes(mux)
+	s.aiThemeServer.registerAIThemeRoutes(mux)
 	mux.HandleFunc("/v1/status", s.handleStatus)
 	mux.HandleFunc("/v1/runtime-health", s.handleRuntimeHealth)
 	mux.HandleFunc("/v1/runtime-health/update-hold", s.handleRuntimeUpdateHold)
@@ -1518,9 +1543,79 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	reachable := false
 	identityMismatch := false
+	cableAbsenceUnconfirmed := false
 	if cableMode {
 		device.Capabilities = cableCapabilityBlock(cfg.DeviceTransports)
-		if hello, ok := s.currentCableHello(); ok && cableHelloMatchesConfig(hello, cfg.DeviceID) {
+		// An unplugged port is answered before any lock. On Windows a probe
+		// stuck on the old handle holds the device and sender locks for its
+		// whole hello window. The sender drops its hello when that handle
+		// closes, so skipping the cached hello here loses nothing lasting.
+		var vanishedErr error
+		if strings.TrimSpace(cfg.DeviceID) != "" && s.cablePortVanished != nil {
+			vanishedErr = s.cablePortVanished()
+		}
+		var hello protocol.DeviceHello
+		helloKnown := false
+		if vanishedErr == nil {
+			hello, helloKnown = s.currentCableHello()
+		}
+		// Resolution reads a fresh matching hello and repopulates the sender
+		// after a failed probe cleared it. A cached hello is metadata, not a
+		// prerequisite for asking whether the configured device is connected.
+		if vanishedErr == nil {
+			s.firmwareUpdateStartMu.Lock()
+		}
+		_, updateRunning := s.activeFirmwareUpdateJob()
+		// Maintenance skips the probe, which leaves absence unconfirmed. A
+		// vanished port is current proof of absence even then.
+		cableAbsenceUnconfirmed = vanishedErr == nil && (updateRunning || s.themeInstallInFlight())
+		port := ""
+		// Status polls must answer within the UI timeout, so they only ask the
+		// port the VibeTV last used. Before the Companion knows that port (right
+		// after it starts), the daemon's own search finds the device and its
+		// first frame records the port; until then absence stays undecided.
+		lastPort := ""
+		if s.lastCablePort != nil {
+			lastPort = s.lastCablePort()
+		}
+		if vanishedErr == nil && lastPort == "" {
+			cableAbsenceUnconfirmed = true
+		}
+		if !cableAbsenceUnconfirmed && strings.TrimSpace(cfg.DeviceID) != "" {
+			portErr := vanishedErr
+			if portErr == nil {
+				port, portErr = s.resolveCablePort(lastPort, cfg.DeviceID)
+			}
+			if portErr == nil {
+				if freshHello, ok := s.currentCableHello(); ok {
+					hello, helloKnown = freshHello, true
+				}
+				// The control resolver also accepts the device in WiFi mode so
+				// it can be switched back. Only a Cable-mode hello proves the
+				// display stream can use it; anything else stays undecided.
+				if helloKnown && cableHelloMatchesConfig(hello, cfg.DeviceID) {
+					reachable = true
+				} else {
+					cableAbsenceUnconfirmed = true
+				}
+			} else {
+				// A current busy or unanswered probe cannot refresh an old
+				// absence report. Only explicitly missing ports confirm it.
+				switch errcode.Of(portErr) {
+				case errcode.TransportNoUSBSerialPorts, errcode.TransportSerialPortNotFound:
+					// Current port absence overrides the daemon's last
+					// acknowledged frame, even before its next send fails.
+					stream.Healthy = false
+					stream.Target = cableDeviceTarget
+					stream.ErrorCode = "device_not_found"
+					stream.Detail = "VibeTV's USB connection is disconnected."
+					device.Stream = streamPointer(stream)
+				default:
+					cableAbsenceUnconfirmed = true
+				}
+			}
+		}
+		if helloKnown && cableHelloMatchesConfig(hello, cfg.DeviceID) {
 			observed := deviceFromHello(cableDeviceTarget, cfg.DeviceToken, hello)
 			device.Paired = observed.Paired || hello.Capabilities.Auth == nil
 			device.Board = observed.Board
@@ -1530,21 +1625,14 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			// status cannot distinguish a live usage screen from the firmware's
 			// "Theme missing" screen and incorrectly skips the existing theme
 			// chooser. The shared Sender serializes this probe with frame writes.
-			s.firmwareUpdateStartMu.Lock()
-			if _, running := s.activeFirmwareUpdateJob(); !running && !s.themeInstallInFlight() {
-				if port, portErr := s.resolveCablePort("", cfg.DeviceID); portErr == nil {
-					if hello.HasFeature(protocol.FeatureCableHealthV1) {
-						if health, healthErr := s.readCableHealth(port, cfg.DeviceID); healthErr == nil {
-							// The device just answered. Usage may not exist yet on a fresh Mac.
-							reachable = true
-							device.Connected = true
-							device = s.withVerifiedDeviceHealth(device, health, cableDeviceTarget, cfg.DeviceToken, false)
-						}
-					} else if liveHello, err := s.readCableHello(port); err == nil {
-						reachable = cableHelloMatchesConfig(liveHello, cfg.DeviceID)
-					}
+			if reachable && hello.HasFeature(protocol.FeatureCableHealthV1) {
+				if health, healthErr := s.readCableHealth(port, cfg.DeviceID); healthErr == nil {
+					device.Connected = true
+					device = s.withVerifiedDeviceHealth(device, health, cableDeviceTarget, cfg.DeviceToken, false)
 				}
 			}
+		}
+		if vanishedErr == nil {
 			s.firmwareUpdateStartMu.Unlock()
 		}
 	} else if strings.TrimSpace(cfg.DeviceTarget) != "" {
@@ -1612,7 +1700,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	device = s.withConfiguredConnectionState(cfg, device, reachable, identityMismatch)
+	device = s.withConfiguredConnectionState(cfg, device, reachable, identityMismatch, cableAbsenceUnconfirmed)
 	if cfg.ConnectionModeChoiceRequired && strings.TrimSpace(cfg.DeviceID) == "" {
 		if candidate := s.currentCableConnectionChoiceDevice(); strings.TrimSpace(candidate.DeviceID) != "" {
 			device = candidate
@@ -1834,6 +1922,7 @@ func (s *Server) withConfiguredConnectionState(
 	device deviceInfo,
 	reachable bool,
 	identityMismatch bool,
+	cableAbsenceUnconfirmed bool,
 ) deviceInfo {
 	if samePublicTarget(device.Target, cableDeviceTarget) && device.Stream != nil {
 		device = withDisplayStreamInfo(device, *device.Stream)
@@ -1883,7 +1972,10 @@ func (s *Server) withConfiguredConnectionState(
 	// single-threaded ESP8266 drops connections while rendering). Within the
 	// bounded grace window the device stays Connected in state "reconnecting";
 	// past the window the honest truth wins and Connected drops.
-	if !device.Connected && !identityMismatch && device.Paired &&
+	// A missing USB device is explicit disconnect evidence, not a WiFi probe miss.
+	cableNotFound := !reachable && !cableAbsenceUnconfirmed && samePublicTarget(device.Target, cableDeviceTarget) &&
+		device.Stream != nil && device.Stream.ErrorCode == "device_not_found"
+	if !device.Connected && !identityMismatch && !cableNotFound && device.Paired &&
 		!state.lastSeenAt.IsZero() && now.Sub(state.lastSeenAt) <= deviceConnectedGraceWindow {
 		device.Connected = true
 	}
@@ -2619,6 +2711,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			cfg,
 			device,
 			providerSetupStreamForTarget(device.Stream, device.Target),
+			false,
 			false,
 		)
 		writeDeviceReport(device)
@@ -5131,7 +5224,7 @@ func (s *Server) cableDeviceInfo(ctx context.Context, cfg runtimeconfig.Config, 
 		Active:       true,
 		Paired:       strings.TrimSpace(cfg.DeviceToken) != "" || hello.Capabilities.Auth == nil,
 		Capabilities: &hello.Capabilities,
-	}, stream), providerSetupStreamForTarget(streamPointer(stream), cableDeviceTarget), false)
+	}, stream), true, false, false)
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
@@ -10279,8 +10372,12 @@ func lastDisplayStreamErrorRecordAfter(path string, boundary time.Time) (time.Ti
 				detail = "Display stream could not send to VibeTV and is reconnecting."
 				code = "display_send_failed"
 			} else if op == "resolve-target" {
-				detail = "Display stream could not find VibeTV and is reconnecting."
-				code = "device_not_found"
+				// An unanswered or busy port does not prove that USB was unplugged.
+				switch errcode.Code(displayStreamLogValue(line, "cause")) {
+				case errcode.TransportNoUSBSerialPorts, errcode.TransportSerialPortNotFound:
+					detail = "Display stream could not find VibeTV and is reconnecting."
+					code = "device_not_found"
+				}
 			} else if strings.Contains(line, "cycle timeout:") {
 				detail = "Display stream timed out and is reconnecting."
 				code = "display_stream_timeout"

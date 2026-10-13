@@ -179,6 +179,23 @@ for bad in 2.5 abc '' -3; do
   [[ "$message" == *'REHEARSAL_MIN_FREE_GB'* ]] || fail "refusal for '$bad' does not name the variable: $message"
 done
 
+# --- opening a new run keeps the run `latest` pointed to ---------------------
+rm -rf "$runs" "$REHEARSAL_STATE_DIR/latest"
+mkdir -p "$runs"
+make_run cold-20190101T100000Z backed      # oldest with a backup, kept anyway
+make_run cold-20200101T100000Z backed      # beyond the count and old, but latest
+make_run warm-20200102T100000Z backed
+make_run warm-20200103T100000Z backed
+ln -sfn "$runs/cold-20200101T100000Z" "$REHEARSAL_STATE_DIR/latest"
+fake_free_kb=$((100 * 1024 * 1024))
+(REHEARSAL_MODE=warm REHEARSAL_KEEP_RUNS=1 rehearsal::open_run_dir) >/dev/null 2>&1 \
+  || fail 'could not open a new run'
+expect_kept "$runs/cold-20200101T100000Z"
+expect_gone "$runs/warm-20200102T100000Z"
+new_latest="$(readlink "$REHEARSAL_STATE_DIR/latest")"
+[[ "$new_latest" == "$runs/warm-"* && "$new_latest" != "$runs/warm-20200103T100000Z" ]] \
+  || fail "latest does not point to the new run: $new_latest"
+
 if [[ "$failures" -gt 0 ]]; then
   printf '\n%d check(s) failed\n' "$failures" >&2
   exit 1

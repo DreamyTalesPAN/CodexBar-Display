@@ -86,6 +86,11 @@ type preferenceHealth struct {
 	// SignInURL is the browser page that satisfies a browser_sign_in_required
 	// state; the shell opens it in the default browser.
 	SignInURL string `json:"signInUrl,omitempty"`
+	// SignInState is the sign-in a "stale" row is waiting for: auth_required,
+	// setup_required or browser_sign_in_required. The saved reading keeps the
+	// row stale, yet the live check fails only because the customer is signed
+	// out, so the row still offers the sign-in. Empty for every other state.
+	SignInState string `json:"signInState,omitempty"`
 	// What the usage service itself said, with its home path redacted. Empty
 	// only when it said nothing, so the screen falls back to generic Detail.
 	Reported string `json:"reported,omitempty"`
@@ -687,6 +692,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 		checkedAt := ""
 		nextAction := ""
 		signInURL := ""
+		signInState := ""
 		// A running check only speaks for the provider when nothing else does.
 		// A fresh exact readiness is other evidence, exactly like a fresh usage
 		// reading, so resolve it before deciding to hold the row at "checking".
@@ -708,6 +714,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			} else if reported != "" {
 				reported = message + " " + reported
 			}
+			signInState, signInURL, nextAction = staleProviderSignIn(setting, readiness, readinessApplies)
 		} else if _, fresh := freshSuccess[setting.ID]; setting.Health == codexbar.ProviderHealthChecking &&
 			!fresh && !readinessApplies {
 			// A check is running and nothing else speaks for the provider. A
@@ -745,7 +752,27 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			state = providerHealthStateStale
 			message = "Live usage is unavailable; the last successful reading is still saved."
 		}
-		if state != string(codexbar.ProviderHealthBrowserSignIn) {
+		// The exact check reports a throttle as well. A saved reading the
+		// device can still show keeps such a row stale, exactly like a
+		// throttle from the background scan above; otherwise setup refused to
+		// continue although the display had something to render.
+		if state == string(codexbar.ProviderHealthRateLimited) && lastSuccess[setting.ID] != "" {
+			state = providerHealthStateStale
+		}
+		// A throttled provider that delivered before keeps its saved reading
+		// and stays stale, but the customer still has to learn why live usage
+		// stopped and that waiting fixes it. Without this, the popup showed the
+		// usage engine's sentence, which reads like a sign-in problem (#500).
+		if state == providerHealthStateStale &&
+			(setting.Health == codexbar.ProviderHealthRateLimited ||
+				readinessApplies && readiness.Status == codexbar.ProviderRateLimited) {
+			message = providerHealthMessage(codexbar.ProviderHealthRateLimited)
+			nextAction = providerReadinessNextAction(codexbar.ProviderRateLimited)
+		}
+		if state == string(codexbar.ProviderHealthRateLimited) && nextAction == "" {
+			nextAction = providerReadinessNextAction(codexbar.ProviderRateLimited)
+		}
+		if state != string(codexbar.ProviderHealthBrowserSignIn) && signInState != string(codexbar.ProviderHealthBrowserSignIn) {
 			signInURL = ""
 		} else {
 			if signInURL == "" {
@@ -786,6 +813,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 				CheckedAt:      checkedAt,
 				NextAction:     nextAction,
 				SignInURL:      signInURL,
+				SignInState:    signInState,
 				NoReadingSince: noReadingSince[setting.ID],
 			},
 		})
@@ -809,6 +837,29 @@ func noReadingSinceByProvider(usage daemon.PersistedUsage, staleOnly bool) map[s
 		since[id] = provider.CollectedAt.UTC().Format(time.RFC3339)
 	}
 	return since
+}
+
+// staleProviderSignIn names the sign-in behind a stale row: the exact check
+// while it applies, otherwise the background scan. A saved reading outlives
+// an expired cookie or token, and without this the row hid every action while
+// the customer only had to sign in again.
+func staleProviderSignIn(
+	setting codexbar.ProviderSetting,
+	readiness providerReadinessRecord,
+	readinessApplies bool,
+) (state, signInURL, nextAction string) {
+	if readinessApplies {
+		switch readiness.Status {
+		case codexbar.ProviderAuthRequired, codexbar.ProviderBrowserSignInRequired, codexbar.ProviderNotConfigured:
+			return providerReadinessHealthState(readiness.Status), readiness.SignInURL, providerReadinessNextAction(readiness.Status)
+		}
+		return "", "", ""
+	}
+	switch setting.Health {
+	case codexbar.ProviderHealthAuthRequired, codexbar.ProviderHealthBrowserSignIn, codexbar.ProviderHealthSetupRequired:
+		return string(setting.Health), setting.SignInURL, ""
+	}
+	return "", "", ""
 }
 
 func providerReadinessAppliesToSetting(readiness providerReadinessRecord, setting codexbar.ProviderSetting, freshSuccess codexbar.ProviderReadiness, now time.Time) bool {
@@ -918,7 +969,7 @@ func providerReadinessMessage(status string) string {
 	case codexbar.ProviderTimeout:
 		return "The provider check timed out."
 	case codexbar.ProviderRateLimited:
-		return "This provider is limiting usage checks right now."
+		return "This provider received too many usage checks and is pausing them for a few minutes."
 	case codexbar.ProviderConfigError:
 		return "Provider settings could not be read or saved."
 	case codexbar.ProviderEngineError:
@@ -950,7 +1001,7 @@ func providerReadinessNextAction(status string) string {
 	case codexbar.ProviderTimeout:
 		return "Wait a moment, then check this provider again."
 	case codexbar.ProviderRateLimited:
-		return "Wait a few minutes, then check this provider again."
+		return codexbar.RateLimitedNextAction
 	case codexbar.ProviderConfigError, codexbar.ProviderEngineError:
 		return "Repair the usage service, then check this provider again."
 	case codexbar.ProviderEngineIncompatible:
@@ -992,7 +1043,7 @@ func providerHealthMessage(state codexbar.ProviderHealthState) string {
 	case codexbar.ProviderHealthNoUsage:
 		return "This account does not expose usage data."
 	case codexbar.ProviderHealthRateLimited:
-		return "This provider is limiting usage checks right now."
+		return "This provider received too many usage checks and is pausing them for a few minutes."
 	case codexbar.ProviderHealthUnavailable:
 		return "Provider is not responding right now."
 	default:

@@ -9,7 +9,11 @@ import { afterEach, expect, it, vi } from "vitest";
 import { createBlankThemeSpec } from "@/lib/theme-studio";
 import { ThemeLibraryScreen, type ThemeLibraryScreenProps } from "./theme-library-screen";
 
-const stored = vi.hoisted(() => ({ cleared: 0, recovery: true }));
+const stored = vi.hoisted(() => ({
+  cleared: 0,
+  recovery: true,
+  studioInstall: undefined as undefined | ((payload: unknown) => Promise<boolean>),
+}));
 
 vi.mock("@/lib/theme-studio-storage", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -33,16 +37,19 @@ vi.mock("@/lib/theme-studio-storage", async (importOriginal) => ({
 vi.mock("./theme-studio-screen", () => ({
   ThemeStudioScreen: ({
     initialTheme,
-    installBlockedReason,
+    onInstallTheme,
   }: {
     initialTheme?: { packName: string };
-    installBlockedReason?: string;
-  }) => (
-    <>
-      <p>Editor open{installBlockedReason ? `, no send: ${installBlockedReason}` : ""}</p>
-      <p>Editing {initialTheme?.packName}</p>
-    </>
-  ),
+    onInstallTheme?: (payload: unknown) => Promise<boolean>;
+  }) => {
+    stored.studioInstall = onInstallTheme;
+    return (
+      <>
+        <p>Editor open</p>
+        <p>Editing {initialTheme?.packName}</p>
+      </>
+    );
+  },
 }));
 
 afterEach(() => {
@@ -186,7 +193,7 @@ it.each([
   ["on", { device: withSlot, standby: on }, ""],
   // Firmware without a screensaver setting reports no standby at all.
   ["not there on this VibeTV", { device: { ...withSlot, standby: undefined }, standby: null }, ""],
-] as const)("closes Install and Send for a screensaver while its setting is %s", (_state, props, reason) => {
+] as const)("closes Install and Send for a screensaver while its setting is %s", async (_state, props, reason) => {
   stored.recovery = false;
   renderLibrary({
     ...props,
@@ -206,5 +213,13 @@ it.each([
     expect(install.disabled).toBe(true);
   }
   fireEvent.click(screen.getByRole("button", { name: "Create Screensaver" }));
-  expect(screen.getByText(reason ? `Editor open, no send: ${reason}` : "Editor open")).toBeTruthy();
+  expect(screen.getByText("Editor open")).toBeTruthy();
+  const send = stored.studioInstall?.({
+    assets: {}, packName: "Mine", spec: createBlankThemeSpec(), usage: "screensaver",
+  });
+  if (reason) {
+    await expect(send).rejects.toThrow(reason);
+  } else {
+    await expect(send).resolves.toBeDefined();
+  }
 });

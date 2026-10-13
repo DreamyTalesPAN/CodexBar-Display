@@ -2024,3 +2024,15 @@ func anyToBool(v any) (bool, bool) {
 		return false, false
 	}
 }
+
+func withHome(home, value string) string {
+	v := strings.TrimSpace(value)
+	switch {
+	case v == "~":
+		return home
+	case strings.HasPrefix(filepath.ToSlash(v), "~/"):
+		return filepath.Join(home, v[2:])
+	default:
+		return v
+	}
+}

@@ -87,7 +87,8 @@ func TestPreferencesMarksUnavailableProviderStaleFromPersistedUsage(t *testing.T
 	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
 	var response preferencesResponse
 	_ = json.Unmarshal(recorder.Body.Bytes(), &response)
-	if response.Items[0].Health.State != "stale" || response.Items[0].Health.LastSuccessAt != collectedAt.Format(time.RFC3339) {
+	if response.Items[0].Health.State != "stale" || response.Items[0].Health.LastSuccessAt != collectedAt.Format(time.RFC3339) ||
+		response.Items[0].Health.SignInState != "" {
 		t.Fatalf("unexpected stale health: %#v", response.Items[0].Health)
 	}
 }
@@ -161,7 +162,46 @@ func TestPreferencesKeepRetainedUsageStaleAcrossHealthRefresh(t *testing.T) {
 				response.Items[0].Health.Reported != "Live usage is unavailable; the last successful reading is still saved. Codex sign-in expired." {
 				t.Fatalf("retained reading lost eligibility after %s refresh: %#v", health, response.Items)
 			}
+			// The saved reading keeps the row stale, but the customer still
+			// needs the sign-in the live check is waiting for.
+			if got := response.Items[0].Health.SignInState; got != string(health) {
+				t.Fatalf("stale row lost its sign-in after %s refresh: signInState=%q", health, got)
+			}
 		})
+	}
+}
+
+// The 09.10. Mac incident: Claude's saved cookie expired while a reading from
+// before was still saved. The exact check said what to do, yet the stale row
+// offered no action at all. The row stays stale and names the sign-in, with
+// the page the check found.
+func TestPreferencesStaleRowCarriesExactSignIn(t *testing.T) {
+	now := time.Date(2026, 10, 9, 9, 0, 0, 0, time.UTC)
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.now = func() time.Time { return now }
+	server.providerReadiness = map[string]providerReadinessRecord{
+		"claude": {
+			Status:    codexbar.ProviderBrowserSignInRequired,
+			SignInURL: "https://claude.ai/login",
+			CheckedAt: now.Add(-time.Minute),
+		},
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
+			Provider: "claude", Frame: protocol.Frame{Provider: "claude", Session: 5}, CollectedAt: now.Add(-10 * time.Minute), Retained: true,
+		}}}, true
+	}
+
+	items := server.providerDescriptors([]codexbar.ProviderSetting{{
+		ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthUnavailable,
+	}})
+	if len(items) != 1 {
+		t.Fatalf("items=%#v", items)
+	}
+	health := items[0].Health
+	if health.State != providerHealthStateStale || health.SignInState != "browser_sign_in_required" ||
+		health.SignInURL != "https://claude.ai/login" || health.NextAction == "" {
+		t.Fatalf("stale row without its exact sign-in: %#v", health)
 	}
 }
 
@@ -664,11 +704,76 @@ func TestRateLimitedHealthScanDoesNotOverrideUsageEvidence(t *testing.T) {
 	if items := server.providerDescriptors(rateLimited); len(items) != 1 || items[0].Health.State != providerHealthStateStale {
 		t.Fatalf("a saved reading must show as stale: %#v", items[0].Health)
 	}
+	// Stale because of the throttle: the row says why and what to do, the
+	// same as a throttled row without a reading (#500).
+	if items := server.providerDescriptors(rateLimited); items[0].Health.Message != providerHealthMessage(codexbar.ProviderHealthRateLimited) ||
+		items[0].Health.NextAction != codexbar.RateLimitedNextAction {
+		t.Fatalf("a throttled stale row must explain the throttle: %#v", items[0].Health)
+	}
+	// Stale for any other reason keeps the generic stale wording.
+	unavailable := []codexbar.ProviderSetting{{
+		ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthUnavailable,
+	}}
+	if items := server.providerDescriptors(unavailable); items[0].Health.State != providerHealthStateStale ||
+		items[0].Health.Message != "Live usage is unavailable; the last successful reading is still saved." ||
+		items[0].Health.NextAction != "" {
+		t.Fatalf("an unavailable stale row changed: %#v", items[0].Health)
+	}
+
+	// A retained reading wins over every other state; a throttle still explains itself.
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
+			Provider: "codex", Frame: protocol.Frame{Provider: "codex", Session: 12}, CollectedAt: now.Add(-time.Minute), Retained: true,
+		}}}, true
+	}
+	if items := server.providerDescriptors(rateLimited); items[0].Health.State != providerHealthStateStale ||
+		items[0].Health.Message != providerHealthMessage(codexbar.ProviderHealthRateLimited) ||
+		items[0].Health.NextAction != codexbar.RateLimitedNextAction {
+		t.Fatalf("a retained throttled row must explain the throttle: %#v", items[0].Health)
+	}
 
 	// Without any reading the row still says what the scan found.
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
 	if items := server.providerDescriptors(rateLimited); len(items) != 1 || items[0].Health.State != "rate_limited" {
 		t.Fatalf("no reading: the row must stay rate_limited: %#v", items[0].Health)
+	}
+}
+
+// Review of #572: the exact check can report the throttle too. A saved
+// reading the device can still show must keep the row stale then, exactly as
+// for the background scan, or setup refuses to continue although the display
+// has something to render.
+func TestRateLimitedExactCheckKeepsSavedReadingStale(t *testing.T) {
+	now := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.now = func() time.Time { return now }
+	server.providerReadiness = map[string]providerReadinessRecord{
+		"claude": {
+			Status:    codexbar.ProviderRateLimited,
+			Detail:    "Claude received too many usage checks and is pausing them for a few minutes.",
+			CheckedAt: now.Add(-time.Minute),
+		},
+	}
+	setting := []codexbar.ProviderSetting{{
+		ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthHealthy,
+	}}
+
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		usage := freshProviderUsage("claude", "Claude", now.Add(-10*time.Minute))
+		usage.Providers[0].Stale = true
+		return usage, true
+	}
+	items := server.providerDescriptors(setting)
+	if len(items) != 1 || items[0].Health.State != providerHealthStateStale ||
+		items[0].Health.Message != providerHealthMessage(codexbar.ProviderHealthRateLimited) ||
+		items[0].Health.NextAction != codexbar.RateLimitedNextAction {
+		t.Fatalf("a saved reading must keep a throttled row stale and explained: %#v", items[0].Health)
+	}
+
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
+	if items := server.providerDescriptors(setting); items[0].Health.State != "rate_limited" ||
+		items[0].Health.NextAction != codexbar.RateLimitedNextAction {
+		t.Fatalf("without a reading the row must stay rate_limited: %#v", items[0].Health)
 	}
 }
 

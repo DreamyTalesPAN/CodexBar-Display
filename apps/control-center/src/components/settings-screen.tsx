@@ -317,7 +317,7 @@ export function SettingsScreen({
           usageMode={usageMode ?? undefined}
           automaticDescription={
             rotation && rotation.value !== "0"
-              ? "VibeTV switches between your providers on a timer."
+              ? "VibeTV follows your agents and switches providers on a timer while they are idle."
               : undefined
           }
           automaticPreview={automaticPreviews[previewIndex % automaticPreviews.length] ?? null}

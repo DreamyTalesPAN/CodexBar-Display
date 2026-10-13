@@ -252,10 +252,11 @@ rehearsal::open_run_dir() {
   : > "$REHEARSAL_RUN_DIR/facts.tsv"
   # Mirror everything into the log while keeping the terminal readable.
   exec > >(tee -a "$REHEARSAL_LOG") 2>&1
-  ln -sfn "$REHEARSAL_RUN_DIR" "$REHEARSAL_STATE_DIR/latest"
   # Pruning comes first on purpose: it only removes run folders the keep rule has
   # already given up, and that may be what gets the disk back over the limit.
+  # `latest` still names the previous run here, so pruning cannot take it.
   rehearsal::prune_runs
+  ln -sfn "$REHEARSAL_RUN_DIR" "$REHEARSAL_STATE_DIR/latest"
   rehearsal::require_free_disk
   rehearsal::record mode "$REHEARSAL_MODE"
   rehearsal::record startedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)"

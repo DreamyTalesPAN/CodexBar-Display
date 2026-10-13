@@ -28,11 +28,16 @@ var (
 	// the whole component goes: words joined by single spaces through the
 	// separator that ends them, otherwise everything up to closing
 	// punctuation. Words after an unterminated name go with it: a support
-	// report may lose some prose but never part of the account name. `/home`
+	// report may lose some prose but never part of the account name. A name
+	// that holds quotes or other punctuation still goes whole when a
+	// separator follows right after it (`/Users/Jane"Doe/`, #572 review);
+	// a colon cannot be part of it, which keeps a later `D:\` out. `/home`
 	// counts only where it starts a path, so a web address
 	// (`example.com/home/...`) stays whole.
 	reportedHomePath = regexp.MustCompile(`(?i)(?:\b[A-Z]:[\\/]+Users|/Users|(^|[^A-Za-z0-9.-])/home)[\\/]+` +
-		`(?:` + reportedHomeNameWord + `(?: ` + reportedHomeNameWord + `)*?([\\/])|[^\\/\r\n"<>|:*?)\]},;]+)`)
+		`(?:` + reportedHomeNameWord + `(?: ` + reportedHomeNameWord + `)*?([\\/])` +
+		`|[^\\/\r\n<>|:*?]*[^\\/\s<>|:*?]([\\/])` +
+		`|[^\\/\r\n"<>|:*?)\]},;]+)`)
 	// URL userinfo carries credentials before the host (`https://token@host` or
 	// `https://user:pass@host`).
 	// Redact it as one span so neither the username nor password reaches the UI.
@@ -99,7 +104,7 @@ func reportedProviderMessage(raw string) string {
 	message = reportedCodexBarAntigravity.ReplaceAllString(message, "Antigravity")
 	// Order matters: a redacted span must never be rescanned as a secret, and
 	// the pair rule must claim `Authorization: Bearer x` before the bare rule.
-	message = reportedHomePath.ReplaceAllString(message, "${1}~${2}")
+	message = reportedHomePath.ReplaceAllString(message, "${1}~${2}${3}")
 	message = reportedURLUserinfo.ReplaceAllString(message, "${1}"+reportedRedacted+"@")
 	message = reportedCookieHeader.ReplaceAllString(message, "${1}"+reportedRedacted)
 	message = reportedStructuredCredential.ReplaceAllString(message, "${1}\""+reportedRedacted+"\"")

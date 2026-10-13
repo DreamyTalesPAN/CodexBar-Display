@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -828,6 +829,47 @@ func TestNextProviderShortcutPinsTheNextProviderAndWrapsAround(t *testing.T) {
 	}
 	if *renders != 4 {
 		t.Fatalf("VibeTV was redrawn %d times for 4 presses", *renders)
+	}
+}
+
+// Codex review on #600: two quick presses of the shortcut arrive at the same
+// time. Each has to move one provider on, so nine presses at once show every
+// one of the three providers three times and none is lost.
+func TestNextProviderShortcutCountsPressesThatArriveTogether(t *testing.T) {
+	server, _ := nextProviderServer(t,
+		&runtimeconfig.ProviderDisplayConfig{Mode: providerDisplayModeAutomatic, ProviderIDs: []string{"codex", "claude", "gemini"}},
+		[]codexbar.ProviderSetting{
+			{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+			{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+			{ID: "gemini", Label: "Gemini", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+		},
+		"claude", "codex", "claude", "gemini")
+
+	const presses = 9
+	answers := make(chan string, presses)
+	var wg sync.WaitGroup
+	for range presses {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			recorder := httptest.NewRecorder()
+			server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/provider-display/next", nil))
+			var response providerDisplayResponse
+			if recorder.Code != http.StatusOK || json.Unmarshal(recorder.Body.Bytes(), &response) != nil || len(response.Selection.ProviderIDs) != 1 {
+				answers <- "status " + recorder.Body.String()
+				return
+			}
+			answers <- response.Selection.ProviderIDs[0]
+		}()
+	}
+	wg.Wait()
+	close(answers)
+	shown := map[string]int{}
+	for answer := range answers {
+		shown[answer]++
+	}
+	if shown["codex"] != 3 || shown["claude"] != 3 || shown["gemini"] != 3 {
+		t.Fatalf("9 presses at once showed %v, want each provider 3 times", shown)
 	}
 }
 

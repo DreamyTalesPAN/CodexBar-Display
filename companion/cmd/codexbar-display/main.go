@@ -636,8 +636,17 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 		}
 	})
 	var workerRunning atomic.Bool
+	var dashboard codexbar.DashboardServe
+	var restartUsageService func(context.Context) error
+	if !opts.Daemon.Once {
+		dashboard = codexbar.StartDashboardServe(ctx, logf)
+		if supervisor, ok := dashboard.(*codexbar.DashboardServeSupervisor); ok {
+			restartUsageService = supervisor.Restart
+		}
+	}
 	server, err := companionapi.New(companionapi.Options{
 		Logf:                 logf,
+		AIThemeSecrets:       companionapi.NewDurableAIThemeSecrets(""),
 		DisplayStreamRunning: workerRunning.Load,
 		AgentSnapshot:        engine.Snapshot,
 		ConfigureAgents:      engine.Configure,
@@ -647,8 +656,9 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 			wakeDisplayWorker()
 			return nil
 		},
-		PauseDisplayStream: deviceWrites.setPaused,
-		WakeDisplayStream:  wakeDisplayWorker,
+		PauseDisplayStream:  deviceWrites.setPaused,
+		WakeDisplayStream:   wakeDisplayWorker,
+		RestartUsageService: restartUsageService,
 		RenderDisplayStream: func() {
 			select {
 			case renderWake <- struct{}{}:
@@ -682,9 +692,7 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 	daemonOpts.RenderWake = renderWake
 	daemonOpts.PauseDeviceWrites = deviceWrites.isPaused
 	daemonOpts.BeginDeviceWrite = deviceWrites.beginWrite
-	if !daemonOpts.Once {
-		daemonOpts.Dashboard = codexbar.StartDashboardServe(ctx, logf)
-	}
+	daemonOpts.Dashboard = dashboard
 
 	errc := make(chan error, 1)
 	go func() {

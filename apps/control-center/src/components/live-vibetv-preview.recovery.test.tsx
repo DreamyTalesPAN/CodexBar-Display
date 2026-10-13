@@ -275,7 +275,9 @@ it.each([0, 400])("paces the live sprite by the authored rate or measured device
     displayFrame: renderableFrame, usage: null,
   }));
   await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-  const spriteColor = () => container.querySelector("svg rect:last-child")?.getAttribute("fill");
+  // The sprite is one image per frame; its colour is in the image itself.
+  const spriteColor = () => decodeURIComponent(container.querySelector("svg image")?.getAttribute("href") ?? "")
+    .match(/fill="(#[0-9a-f]{6})"/i)?.[1];
   expect(spriteColor()).toBe("#ff0000");
   const frameMs = duration || 100;
   act(() => vi.advanceTimersByTime(frameMs - 1));

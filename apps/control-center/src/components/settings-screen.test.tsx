@@ -361,8 +361,8 @@ describe("SettingsScreen standby controls", () => {
     );
   });
 
-  // Without the companion's sign-in action (the Mac app) every provider
-  // CodexBar reports stays on the page as it does today.
+  // Without the companion's sign-in action (an older Companion) every
+  // provider CodexBar reports stays on the page.
   it("keeps every provider in Settings on a companion without the sign-in action", () => {
     const html = render(standbyDevice, savedStandby, {
       ...providerPicker,
@@ -505,8 +505,8 @@ describe("SettingsScreen standby controls", () => {
       );
     };
     const byActivity =
-      "the current provider stays on screen.";
-    const onATimer = "VibeTV switches between your providers on a timer.";
+      "VibeTV follows your agents, based on what they&#x27;re doing.";
+    const onATimer = "VibeTV follows your agents and switches providers on a timer while they are idle.";
 
     const automatic = displayMode("automatic", [rotation]);
     expect(automatic).toMatch(

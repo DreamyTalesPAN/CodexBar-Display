@@ -4,8 +4,8 @@ import type {
   SupportDiagnostics,
   UsageSnapshot,
 } from "../control-center-types";
-import { Search, SearchX } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Search, SearchX, TriangleAlert } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -21,7 +21,8 @@ import { cn } from "@/lib/utils";
 import { SETUP_REVEAL } from "./setup-reveal";
 import type { ProviderItem } from "../provider-picker";
 import { SetupLog, type SetupLogLine } from "./setup-log";
-import { SetupProviderRow } from "./setup-provider-row";
+import { SetupProviderRow, setupProviderIssueMessage } from "./setup-provider-row";
+import { SetupDialog } from "./setup-dialog";
 import { displayPreviewFor } from "./setup-display-previews";
 import {
   SetupWizardScreen,
@@ -55,6 +56,12 @@ type SetupProvidersScreenProps = {
 /** How many provider rows are on screen before the customer asks for more. */
 const PROVIDER_PAGE_SIZE = 10;
 export const PROVIDER_LOADING_LOG_INTERVAL_MS = 20_000;
+/**
+ * How long after "Sign in to <Provider>" the app keeps re-checking that
+ * provider (control-center-app.tsx), and the provider list keeps its popup
+ * closed: the row recovers by itself while the customer signs in.
+ */
+export const PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS = 180_000;
 
 /**
  * The providers whose sign-in the Companion can start (provider_sign_in_launch.go).
@@ -69,6 +76,20 @@ export const SIGN_IN_PROVIDER_IDS = [
 ];
 
 /**
+ * The state the row acts on. A stale row keeps its saved reading, but when
+ * its live check only waits for a sign-in it offers the same sign-in
+ * as a signed-out row: a cookie that expires while a reading is
+ * still saved must not leave the customer with nothing to click.
+ */
+export function providerRowHealthState(
+  health: Pick<ProviderItem["health"], "state" | "signInState">,
+): string {
+  return health.state === "stale" && health.signInState
+    ? health.signInState
+    : health.state;
+}
+
+/**
  * Health states in which the row offers to start the provider's sign-in.
  *
  * Only the four in SIGN_IN_PROVIDER_IDS have a sign-in the Companion can
@@ -79,7 +100,8 @@ export const SIGN_IN_PROVIDER_IDS = [
 export function setupProviderOffersSignIn(
   provider: Pick<ProviderItem, "health" | "providerId">,
 ): boolean {
-  const { state, signInUrl } = provider.health;
+  const state = providerRowHealthState(provider.health);
+  const { signInUrl } = provider.health;
   // The account lost access to this provider: its own message carries the
   // migration path, and every sign-in here ends on the same refusal.
   if (state === "unsupported") {
@@ -105,17 +127,22 @@ export function setupProviderOffersSignIn(
 export function setupProviderNeedsOwnApp(
   provider: Pick<ProviderItem, "health" | "providerId">,
 ): boolean {
-  const { state } = provider.health;
+  const state = providerRowHealthState(provider.health);
   return (
     (state === "auth_required" || state === "setup_required") &&
     !SIGN_IN_PROVIDER_IDS.includes(provider.providerId.trim().toLowerCase())
   );
 }
 
+export function setupProviderOwnAppNotice(label: string): string {
+  return `VibeTV reads ${label} usage from ${label}'s own app on this computer. Make sure it is installed and signed in, then click Check again.`;
+}
+
 /**
  * How long ago a provider that is on delivered its last usage reading, or
  * that it has not delivered one yet (#368).
- * Beside the message, never part of it.
+ * Beside the message, never part of it: the message is what a customer
+ * acknowledges, and a time that moves would open the popup again.
  */
 export function setupProviderNoReadingLine(
   since: string | undefined,
@@ -129,11 +156,20 @@ export function setupProviderNoReadingLine(
     : `No usage reading for ${formatResetCountdown(seconds)}.`;
 }
 
+/**
+ * The message the customer acknowledged, per provider, while the window is
+ * open. Outside the list because the list unmounts when the customer leaves
+ * Settings: kept in its state alone, the same message opened again on every
+ * visit. Only an acknowledgement is kept here; a message the customer asked
+ * for (warning icon, Check again, the switch) stays in the list's state.
+ */
+export const acknowledgedProviderIssues = new Map<string, string>();
+
 type ProviderListProps = {
   className?: string;
   onCheckAgain: (provider: ProviderItem) => void;
   onOpenSignIn?: (provider: ProviderItem) => void;
-  /** Present where the provider notice may link the setup guide (Windows). */
+  /** Present where the provider notice may link the setup guide. */
   onOpenSetupGuide?: () => void;
   onToggle: (provider: ProviderItem, enabled: boolean) => void;
   /** Providers whose exact check is queued or running. */
@@ -162,6 +198,82 @@ export function ProviderList({
   providers,
   usage,
 }: ProviderListProps) {
+  // One acknowledged message per provider: polling must not reopen a dismissed
+  // popup, while a new message or an explicit retry may show it again.
+  const [dismissedIssues, setDismissedIssues] = useState<Record<string, string>>(
+    () => Object.fromEntries(acknowledgedProviderIssues),
+  );
+  // The provider whose warning icon the customer clicked. Its message opens
+  // whatever the rules below say about popups opening by themselves.
+  const [requestedIssueId, setRequestedIssueId] = useState<string | null>(null);
+  // Providers whose sign-in started less than PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS
+  // ago. Their row checks again by itself and passes through states such as
+  // "stale" while the usage service restarts; none of that is news.
+  const [signingIn, setSigningIn] = useState<Set<string>>(() => new Set());
+  const signInTimers = useRef(new Map<string, number>());
+  useEffect(() => {
+    const timers = signInTimers.current;
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, []);
+  const offersSignIn = (provider: ProviderItem) =>
+    Boolean(onOpenSignIn) && setupProviderOffersSignIn(provider);
+  const startSignIn = (provider: ProviderItem) => {
+    const id = provider.providerId;
+    const timers = signInTimers.current;
+    const running = timers.get(id);
+    if (running !== undefined) window.clearTimeout(running);
+    timers.set(id, window.setTimeout(() => {
+      timers.delete(id);
+      setSigningIn((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
+    }, PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS));
+    setSigningIn((current) => new Set(current).add(id));
+    setRequestedIssueId(null);
+    onOpenSignIn?.(provider);
+  };
+  type ProviderIssue = { provider: ProviderItem; message: string; requested: boolean };
+  const issues = providers.flatMap((provider): ProviderIssue[] => {
+    if (!provider.value || pendingCheckIds.has(provider.providerId) ||
+        pendingPreferenceIds.has(provider.id)) return [];
+    const message = setupProviderIssueMessage({
+      health: provider.health.state, label: provider.label,
+      detail: provider.health.message, nextAction: provider.health.nextAction,
+      reportedMessage: provider.health.reported,
+    });
+    if (!message) return [];
+    const requested = requestedIssueId === provider.id;
+    if (requested) return [{ provider, message, requested }];
+    // A row with "Sign in to <Provider>" already shows the one thing to do;
+    // a popup on top of it hid that button behind a provider message and a
+    // copy action (bench Mac, 09.10.). Sign-in rows need no duplicate warning.
+    if (offersSignIn(provider) || signingIn.has(provider.providerId)) return [];
+    // A stale row still shows its last reading and recovers by itself, e.g.
+    // while CodexBar starts after the runtime restarted. Nothing for the
+    // customer to do, so its message opens only from the row's warning icon.
+    if (provider.health.state === "stale" && dismissedIssues[provider.id] !== "") return [];
+    return dismissedIssues[provider.id] !== message
+      ? [{ provider, message, requested }] : [];
+  });
+  const issue = issues.find((candidate) => candidate.requested) ?? issues[0];
+  const dismissIssue = () => {
+    if (!issue) return;
+    setCopied("");
+    acknowledgedProviderIssues.set(issue.provider.id, issue.message);
+    setDismissedIssues((current) => ({ ...current, [issue.provider.id]: issue.message }));
+    setRequestedIssueId(null);
+  };
+  const resetIssue = (provider: ProviderItem) => {
+    acknowledgedProviderIssues.delete(provider.id);
+    setDismissedIssues((current) => ({ ...current, [provider.id]: "" }));
+  };
+  // The message whose copy reached the clipboard; the button then says so,
+  // like Copy on Support. Another provider, a new message or closing the
+  // message starts over.
+  const [copied, setCopied] = useState("");
+  const copyKey = issue ? `${issue.provider.id}\n${issue.provider.health.reported}` : "";
   const [query, setQuery] = useState("");
   const [shown, setShown] = useState(PROVIDER_PAGE_SIZE);
   const matching = setupProvidersEnabledFirst(
@@ -173,9 +285,60 @@ export function ProviderList({
   // everyone who does not know what to search for.
   const visible = matching.slice(0, shown);
   const remaining = matching.length - visible.length;
+  const noReadingLine =
+    issue && setupProviderNoReadingLine(issue.provider.health.noReadingSince);
+  const ownAppNotice =
+    issue && onOpenSetupGuide && setupProviderNeedsOwnApp(issue.provider);
+  const issueSignIn = issue && offersSignIn(issue.provider) ? issue.provider : null;
 
   return (
     <div className={cn("flex w-full flex-col", className)}>
+      {issue ? (
+        <SetupDialog
+          open
+          title={issue.provider.label}
+          description={
+            ownAppNotice
+              ? setupProviderOwnAppNotice(issue.provider.label)
+              : issue.message
+          }
+          icon={TriangleAlert}
+          onOpenChange={(open) => { if (!open) dismissIssue(); }}
+          primaryAction={issueSignIn ? {
+            label: `Sign in to ${issueSignIn.label}`,
+            onSelect: () => {
+              dismissIssue();
+              startSignIn(issueSignIn);
+            },
+          } : { label: "OK", onSelect: dismissIssue }}
+          secondaryAction={issue.provider.health.reported ? {
+            label: copied === copyKey
+              ? "Copied"
+              : `Copy provider message for ${issue.provider.label}`,
+            onSelect: () => {
+              void navigator.clipboard?.writeText(issue.provider.health.reported!)
+                .then(() => setCopied(copyKey), () => undefined);
+            },
+          } : undefined}
+        >
+          {ownAppNotice ? (
+            <div className="flex flex-col items-start gap-2">
+              <p className="text-sm text-muted-foreground">{issue.message}</p>
+              <Button
+                className="h-auto px-0"
+                onClick={onOpenSetupGuide}
+                type="button"
+                variant="link"
+              >
+                Open setup guide
+              </Button>
+            </div>
+          ) : null}
+          {noReadingLine ? (
+            <p className="text-sm text-muted-foreground">{noReadingLine}</p>
+          ) : null}
+        </SetupDialog>
+      ) : null}
       <div className="relative w-full">
         <Search
           aria-hidden
@@ -195,25 +358,40 @@ export function ProviderList({
       </div>
 
       <ItemGroup className="mt-3 gap-2">
-        {visible.map((provider) => {
-          return (
-            <SetupProviderRow
-              checking={pendingCheckIds.has(provider.providerId)}
-              enabled={provider.value}
-              health={provider.value && provider.health.state === "healthy" && !setupProviderCanDisplay(provider, usage) ? "checking" : provider.health.state}
-              key={provider.id}
-              label={provider.label}
-              detail={provider.health.message}
-              noReadingLine={setupProviderNoReadingLine(provider.health.noReadingSince)}
-              onOpenSignIn={onOpenSignIn && setupProviderOffersSignIn(provider) ? () => onOpenSignIn(provider) : undefined}
-              onCheckAgain={() => onCheckAgain(provider)}
-              onOpenSetupGuide={onOpenSetupGuide && setupProviderNeedsOwnApp(provider) ? onOpenSetupGuide : undefined}
-              onToggle={(enabled) => onToggle(provider, enabled)}
-              reportedMessage={provider.health.reported}
-              saving={pendingPreferenceIds.has(provider.id)}
-            />
-          );
-        })}
+        {visible.map((provider) => (
+          <SetupProviderRow
+            checking={pendingCheckIds.has(provider.providerId)}
+            enabled={provider.value}
+            health={
+              provider.value && provider.health.state === "healthy" &&
+              !setupProviderCanDisplay(provider, usage)
+                ? "checking"
+                : providerRowHealthState(provider.health)
+            }
+            key={provider.id}
+            label={provider.label}
+            onShowIssue={() => {
+              resetIssue(provider);
+              setRequestedIssueId(provider.id);
+            }}
+            onCheckAgain={() => {
+              resetIssue(provider);
+              setRequestedIssueId(null);
+              onCheckAgain(provider);
+            }}
+            onOpenSignIn={
+              onOpenSignIn && setupProviderOffersSignIn(provider)
+                ? () => startSignIn(provider)
+                : undefined
+            }
+            onToggle={(enabled) => {
+              resetIssue(provider);
+              setRequestedIssueId(null);
+              onToggle(provider, enabled);
+            }}
+            saving={pendingPreferenceIds.has(provider.id)}
+          />
+        ))}
       </ItemGroup>
       {/* After the list, not in it: a list may only hold list items. */}
       {matching.length === 0 ? (

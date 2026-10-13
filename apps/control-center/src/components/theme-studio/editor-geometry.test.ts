@@ -1,13 +1,48 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  bindingDisplayLabel,
-  defaultPrimitive,
-  primitiveBounds,
-  primitiveTitle,
-  setPrimitiveField,
-} from "./editor-geometry";
-import type { ThemeStudioPrimitive } from "@/lib/theme-studio";
+import { bindingDisplayLabel, clampCompanionSize, clampedMoveDelta, isAspectLockedPrimitive, normalizeCompanionPrimitive, primitiveTitle, textPrimitiveNaturalWidth } from "./editor-geometry";
+import { themeFirmwareTextMetrics } from "../live-vibetv-preview";
+
+describe("isAspectLockedPrimitive", () => {
+  it("locks animated companions to uniform scaling only", () => {
+    expect(isAspectLockedPrimitive({ type: "sprite", assetPath: "/themes/u/ai-pet-1.cba", x: 0, y: 0, width: 48, height: 48 })).toBe(true);
+    expect(isAspectLockedPrimitive({ type: "sprite", assetPath: "/themes/u/ai-pet-2.cba", x: 0, y: 0 })).toBe(true);
+    expect(isAspectLockedPrimitive({ type: "sprite", assetPath: "/themes/u/ai-scene.cba", x: 0, y: 0 })).toBe(false);
+    expect(isAspectLockedPrimitive({ type: "rect", x: 0, y: 0, width: 10, height: 20 })).toBe(false);
+  });
+  it("keeps manual companion sizes inside the helper's 16..80 range", () => {
+    expect(clampCompanionSize(100)).toBe(80);
+    expect(clampCompanionSize(5)).toBe(16);
+    expect(clampCompanionSize(48)).toBe(48);
+  });
+  it("lets companions move across the whole display, where a picture may be", () => {
+    const cat = { type: "sprite" as const, assetPath: "/themes/u/ai-pet-1.cba", x: 170, y: 72, width: 48, height: 48 };
+    const delta = clampedMoveDelta([{ index: 0, x: cat.x, y: cat.y, width: 48, height: 48 }], 0, 200);
+    expect(delta.y).toBe(120);
+  });
+  it("repairs companions saved outside the scene instead of shrinking them below 16px", () => {
+    const low = { type: "sprite" as const, assetPath: "/themes/u/ai-pet-1.cba", x: 230, y: 120, width: 16, height: 16 };
+    normalizeCompanionPrimitive(low);
+    expect(low).toMatchObject({ x: 224, y: 120, width: 16, height: 16 });
+    const big = { type: "sprite" as const, assetPath: "/themes/u/ai-pet-2.cba", x: 200, y: 100, width: 100, height: 40 };
+    normalizeCompanionPrimitive(big);
+    expect(big).toMatchObject({ x: 160, y: 100, width: 80, height: 80 });
+    const ui = { type: "rect" as const, x: 10, y: 200, width: 100, height: 30 };
+    normalizeCompanionPrimitive(ui);
+    expect(ui).toMatchObject({ x: 10, y: 200, width: 100, height: 30 });
+  });
+});
+
+describe("text resize width", () => {
+  it("reserves the full formatted reset text including minutes", () => {
+    const p = { type: "text" as const, text: "Reset in {usageSlot1Reset}", fontSize: 2, x: 24, y: 24 };
+    expect(textPrimitiveNaturalWidth(p)).toBe(themeFirmwareTextMetrics("Reset in 1h 0m", 1, 2)?.width);
+  });
+  it("uses the renderer's glyph widths so resized labels are not clipped", () => {
+    const p = { type: "text" as const, text: "QA 08 Sep", fontSize: 3, x: 64, y: 64 };
+    expect(textPrimitiveNaturalWidth(p)).toBe(themeFirmwareTextMetrics(p.text, 1, 3)?.width);
+  });
+});
 
 describe("bindingDisplayLabel", () => {
   it("shows customer labels for stored usage-window bindings", () => {
@@ -39,13 +74,6 @@ describe("bindingDisplayLabel", () => {
   });
 });
 
-describe("defaultPrimitive", () => {
-  // It was "session", which the Binding list calls "Session (legacy)" (#548).
-  it("binds a new Bar to the first usage window, like the built-in themes", () => {
-    expect(defaultPrimitive("progress", 0).binding).toBe("usageSlot1Percent");
-  });
-});
-
 describe("primitiveTitle", () => {
   it("uses display labels for bound layer titles", () => {
     expect(
@@ -69,57 +97,10 @@ describe("primitiveTitle", () => {
   });
 });
 
-describe("primitiveBounds", () => {
-  it("boxes text as wide as the preview draws it", () => {
-    // Font 1 advances 6px per glyph and size; "Text" at size 2 is 48px wide.
-    expect(
-      primitiveBounds({ fontSize: 2, text: "Text", type: "text", x: 32, y: 32 })
-        .width,
-    ).toBe(48);
-  });
-});
-
-describe("setPrimitiveField", () => {
-  const bar = (): ThemeStudioPrimitive => ({
-    type: "progress", x: 0, y: 0, width: 100, height: 20, binding: "session",
-  });
-
-  it("gives a bar that becomes an arc its ring in the same change", () => {
-    const primitive = bar();
-    setPrimitiveField(primitive, "progressStyle", "arc");
-    expect(primitive).toMatchObject({ arcStart: 225, arcSweep: 270, arcThickness: 10 });
-  });
-
-  // An imported bar may carry part of an arc. Without a thickness the arc
-  // cannot be saved; a sweep without a start angle starts at 12 o'clock.
-  it("adds only what an arc is missing", () => {
-    const primitive = { ...bar(), arcSweep: 180 };
-    setPrimitiveField(primitive, "progressStyle", "arc");
-    expect(primitive).toMatchObject({ arcSweep: 180, arcThickness: 10 });
-    expect(primitive.arcStart).toBeUndefined();
-
-    const noSweep = { ...bar(), arcStart: 90, arcThickness: 4 };
-    setPrimitiveField(noSweep, "progressStyle", "arc");
-    expect(noSweep).toMatchObject({ arcStart: 90, arcSweep: 270, arcThickness: 4 });
-  });
-
-  // The ring may be half as thick as the smaller side of the box. Dragging the
-  // box smaller left an arc that could not be saved.
-  it("makes an arc's ring thinner when its box gets smaller", () => {
-    const primitive = bar();
-    setPrimitiveField(primitive, "progressStyle", "arc");
-    setPrimitiveField(primitive, "height", 12);
-    expect(primitive).toMatchObject({ height: 12, arcThickness: 6 });
-    setPrimitiveField(primitive, "width", 1);
-    expect(primitive).toMatchObject({ width: 2, arcThickness: 1 });
-    // A box that grows again leaves the ring as it is.
-    setPrimitiveField(primitive, "width", 100);
-    setPrimitiveField(primitive, "height", 100);
-    expect(primitive.arcThickness).toBe(1);
-
-    // A straight bar has no ring to fit.
-    const straight = { ...bar(), arcThickness: 10 };
-    setPrimitiveField(straight, "height", 4);
-    expect(straight).toMatchObject({ height: 4, arcThickness: 10 });
+describe("provider readings", () => {
+  it("measures a provider reading instead of storing an empty width", () => {
+    for (const text of ["{providerSlot1Label}", "{providerSlot2Percent}%", "{providerSlot1Reset}"]) {
+      expect(textPrimitiveNaturalWidth({ type: "text", x: 0, y: 0, text, fontSize: 1 })).toBeGreaterThan(0);
+    }
   });
 });

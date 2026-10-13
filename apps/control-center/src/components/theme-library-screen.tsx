@@ -630,10 +630,20 @@ export function ThemeLibraryScreen({
       <ThemeStudioScreen
         deviceCapabilities={themeStudioCapabilitiesFromDevice(device)}
         initialTheme={editingTheme}
-        installBlockedReason={screensaverInstallBlockedReason}
-        onBackToLibrary={() => setEditingTheme(null)}
-        onInstallTheme={onInstallCustomTheme}
-        onRecoveryDiscarded={() => setRecovery(null)}
+        onBackToLibrary={() => {
+          const draft = loadThemeStudioRecovery();
+          if (draft.ok) setRecovery(draft.value);
+          setEditingTheme(null);
+        }}
+        onInstallTheme={async (payload) => {
+          // The studio's Send obeys the same screensaver switch as the list's
+          // Install; the studio shows the reason as its error.
+          if (payload.usage === "screensaver" && screensaverInstallBlockedReason) {
+            throw new Error(screensaverInstallBlockedReason);
+          }
+          return onInstallCustomTheme(payload);
+        }}
+        installStatus={installStatus}
         onSaveToLibrary={saveThemeFromEditor}
         saveBlockedReason={storageLocked ? storageWarning : undefined}
         windowsHost={windowsHost}

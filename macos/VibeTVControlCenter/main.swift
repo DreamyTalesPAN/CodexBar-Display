@@ -40,8 +40,12 @@ private let hostedControlCenterURLString = "https://app.vibetv.shop"
 private let runtimeInitialHealthTimeout: TimeInterval = 8
 private let runtimeHealthTimeout: TimeInterval = 35
 private let runtimeHealthRequestTimeout: TimeInterval = 5
+// /v1/status waits up to 12 seconds for a VibeTV on WiFi that does not answer.
+private let menuBarStatusRequestTimeout: TimeInterval = 20
 private let localNetworkPrivacyProbeURLString = "http://192.168.4.1/hello"
 private let localNetworkPrivacyProbeTimeout: TimeInterval = 15
+// Without an answer from the update feed the start goes on after this limit.
+private let launchUpdateCheckLimitSeconds = 5
 private let runtimeUnregistrationSettleDelay: Duration = .seconds(2)
 private let runtimeUnregistrationQuiesceTimeout: TimeInterval = 20
 private let runtimeUnregistrationQuiescePollDelay: Duration = .milliseconds(250)
@@ -1019,6 +1023,195 @@ private struct NativeSupportReportSnapshot: Sendable {
     let crashDirectoryPath: String
 }
 
+// Issue #220: the menu bar item. Its three lines are the Overview tiles
+// "Mac App", "VibeTV" and "Display", read from the same /v1/status.
+enum MenuBarIcon: Equatable {
+    case starting
+    case healthy
+    case actionRequired
+    case offline
+    case updating
+
+    // The state is a shape, never a colour: a struck-through TV, or a mark
+    // beside it.
+    var symbolName: String {
+        self == .offline ? "tv.slash" : "tv"
+    }
+
+    var mark: String {
+        switch self {
+        case .actionRequired: "!"
+        case .updating: "↑"
+        default: ""
+        }
+    }
+
+    var accessibilityLabel: String {
+        switch self {
+        case .starting: "VibeTV Control Center"
+        case .healthy: "VibeTV Control Center: VibeTV is connected"
+        case .actionRequired: "VibeTV Control Center: needs attention"
+        case .offline: "VibeTV Control Center: VibeTV is not connected"
+        case .updating: "VibeTV Control Center: VibeTV is updating"
+        }
+    }
+}
+
+// A new menu bar item gets the place furthest to the left. On a Mac whose
+// menu bar holds many items, hidden ones included (CodexBar keeps dozens),
+// that place is off the screen: the item exists and nothing is drawn. So the
+// first start names a place about 400 points from the right edge, which is
+// right of the notch on every MacBook. It is a registered default only: the
+// place macOS saves, or the customer chooses with a Command-drag, wins.
+let menuBarItemAutosaveName = "VibeTVMenuBarItem"
+let menuBarItemDefaults: [String: Int] = [
+    "NSStatusItem Preferred Position \(menuBarItemAutosaveName)": 400,
+]
+
+struct MenuBarStatus: Equatable {
+    let icon: MenuBarIcon
+    let lines: [String]
+
+    static let starting = MenuBarStatus(
+        icon: .starting,
+        lines: ["Mac App: Starting", "VibeTV: Not connected", "Display: Not available"]
+    )
+}
+
+private struct MenuBarStatusPayload: Decodable {
+    struct Companion: Decodable {
+        let version: String?
+    }
+
+    struct Device: Decodable {
+        struct Stream: Decodable {
+            let healthy: Bool?
+            let running: Bool?
+            let errorCode: String?
+        }
+
+        struct Standby: Decodable {
+            let active: Bool?
+        }
+
+        struct Capabilities: Decodable {
+            struct Transport: Decodable {
+                let active: String?
+                let mode: String?
+            }
+
+            let transport: Transport?
+        }
+
+        let target: String?
+        let deviceId: String?
+        let connected: Bool?
+        let paired: Bool?
+        let ready: Bool?
+        let active: Bool?
+        let connectionState: String?
+        let capabilities: Capabilities?
+        let stream: Stream?
+        let standby: Standby?
+    }
+
+    struct Setup: Decodable {
+        let providerSelectionRequired: Bool?
+    }
+
+    struct FirmwareUpdate: Decodable {
+        let phase: String?
+    }
+
+    let companion: Companion?
+    let device: Device?
+    let setup: Setup?
+    let firmwareUpdate: FirmwareUpdate?
+}
+
+/// What the menu bar item shows for one /v1/status answer; nil when the
+/// background service did not answer. The conditions are the ones Overview
+/// uses (control-center-types.ts, overview-screen.tsx).
+func menuBarStatus(statusJSON: Data?) -> MenuBarStatus {
+    guard let statusJSON,
+          let status = try? JSONDecoder().decode(MenuBarStatusPayload.self, from: statusJSON) else {
+        return MenuBarStatus(
+            icon: .offline,
+            lines: ["Mac App: Not reachable", "VibeTV: Not connected", "Display: Not available"]
+        )
+    }
+    let device = status.device
+    let selected = device?.active == true
+    let pairingRejected = device?.paired == false
+    let connected = selected && device?.connected == true && !pairingRejected
+    let updating = status.firmwareUpdate?.phase == "installing"
+    let transport = device?.capabilities?.transport
+    let cable = (transport?.active == "usb" && transport?.mode == "cable")
+        || device?.target?.lowercased().hasPrefix("cable:") == true
+    // connectionState is the background service's own reading of the link,
+    // and it comes first. For a short while it keeps a VibeTV that stopped
+    // answering "connected" in the state "reconnecting"; the stream error
+    // beside it is then an old one and says nothing about now.
+    let reconnecting = device?.connectionState == "reconnecting"
+    // What the Control Center answers with a step of its own: choosing
+    // providers, choosing a theme, signing in to a provider, pairing again.
+    // Any other stream error is a display that is still coming up.
+    let attention = status.setup?.providerSelectionRequired == true
+        || device?.connectionState == "setup_required"
+        || ["provider_setup_required", "device_pairing_required"]
+            .contains(device?.stream?.errorCode ?? "")
+
+    let version = status.companion?.version ?? ""
+    let deviceID = device?.deviceId ?? ""
+    let vibeTV: String
+    let display: String
+    var icon = MenuBarIcon.healthy
+    if connected, reconnecting, !updating {
+        vibeTV = "Reconnecting"
+        display = "Not available"
+        icon = .offline
+    } else if connected {
+        vibeTV = cable ? "Connected by Cable" : "Connected over WiFi"
+        if device?.connectionState == "display_render_failed" {
+            display = "Theme not shown"
+            icon = .actionRequired
+        } else if attention {
+            display = "Needs attention"
+            icon = .actionRequired
+        } else if device?.ready == true {
+            display = device?.standby?.active == true ? "Screensaver" : "Live"
+        } else if device?.stream?.running == true,
+                  device?.stream?.healthy != true,
+                  (device?.stream?.errorCode ?? "").isEmpty {
+            display = "Waiting for usage"
+        } else {
+            display = "Waiting for first image"
+        }
+    } else {
+        display = updating ? "Update running" : "Not available"
+        if updating {
+            vibeTV = "Restarting"
+        } else if !selected {
+            vibeTV = "Not set up"
+            icon = .actionRequired
+        } else if pairingRejected {
+            vibeTV = "Needs attention"
+            icon = .actionRequired
+        } else {
+            vibeTV = "Not connected"
+            icon = .offline
+        }
+    }
+    return MenuBarStatus(
+        icon: updating ? .updating : icon,
+        lines: [
+            version.isEmpty ? "Mac App: Online" : "Mac App: Online \(version)",
+            (deviceID.isEmpty ? "VibeTV: " : "VibeTV \(deviceID): ") + vibeTV,
+            "Display: " + display,
+        ]
+    )
+}
+
 struct PendingNativeUpdate: Codable, Equatable {
     let version: String
     let build: String
@@ -1169,6 +1362,7 @@ struct InstallationStatus {
     let failed: Bool
     let retryTitle: String
     let kind: InstallationStatusKind
+    var welcomeLine = "starting background service"
 }
 
 extension InstallationFailure {
@@ -1349,7 +1543,7 @@ private final class ShadcnSpinnerView: NSView {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
     private var window: NSWindow?
     private var webView: WKWebView?
     /// Suggested file names of downloads whose destination was chosen.
@@ -1378,12 +1572,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private var installationStatusFailed = false
     private var activeRuntimeOrigin = URL(string: defaultRuntimeOriginString)!
     private var providerShortcutRegistered = false
+    private var menuBarItem: NSStatusItem?
+    private var menuBarStatusRead: Task<Void, Never>?
 #if canImport(Sparkle)
     private lazy var updaterController = SPUStandardUpdaterController(
         startingUpdater: true,
         updaterDelegate: self,
         userDriverDelegate: nil
     )
+    // The Mac App installs its own update before it looks for a VibeTV
+    // (#561). `waiting` and `installing` hold the start back; `abandoned`
+    // means the feed did not answer in time and the start went on without it.
+    private enum LaunchUpdateCheck {
+        case waiting, installing, abandoned, done
+    }
+    private var launchUpdateCheck = LaunchUpdateCheck.done
+    private var launchUpdateTurnedDown = false
+    // Creating the controller starts Sparkle, which may show an overdue
+    // scheduled check at once. A launch check skipped for a running VibeTV
+    // update must not create it.
+    private var updaterStarted = false
 #endif
     private var installationRequired: Bool {
         requiresApplicationInstallation(Bundle.main.bundleURL)
@@ -1415,17 +1623,109 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return
         }
         providerShortcutRegistered = registerProviderShortcut()
+        configureMenuBarItem()
 #if canImport(Sparkle)
-        _ = updaterController
+        startLaunchUpdateCheck()
+#else
+        startRuntimePreparation()
 #endif
+    }
+
+#if canImport(Sparkle)
+    private func startLaunchUpdateCheck() {
+        launchUpdateCheck = .waiting
         presentInstallationStatus(
             title: "Starting Control Center",
-            detail: "Checking the Mac App and your last connected VibeTV.",
+            detail: "Checking for a Mac App update.",
             failed: false,
-            kind: .welcome
+            kind: .welcome,
+            welcomeLine: "checking for mac app update"
         )
-        startRuntimePreparation()
+        // One limit for the question to the runtime and the update feed.
+        Task { @MainActor [weak self] in
+            try? await Task<Never, Never>.sleep(
+                for: .seconds(launchUpdateCheckLimitSeconds)
+            )
+            self?.finishLaunchUpdateCheck(timedOut: true)
+        }
+        Task { @MainActor [weak self] in
+            guard let self else {
+                return
+            }
+            // The runtime of the last session may still be writing firmware
+            // or a theme, and installing the update stops it. Ask before the
+            // updater exists, so nothing is downloaded that has to wait.
+            switch await self.runtimeClaimUpdateHold() {
+            case .updateRunning, .answeredWithoutField:
+                NSLog(
+                    "VibeTV Control Center skipped its launch update check while a VibeTV update is running"
+                )
+                self.finishLaunchUpdateCheck(timedOut: false)
+                return
+            case .noUpdate:
+                await self.runtimeReleaseUpdateHold()
+            case .noAnswer:
+                break
+            }
+            // A hung runtime used up the limit and the start went on.
+            guard self.launchUpdateCheck == .waiting else {
+                self.finishLaunchUpdateCheck(timedOut: false)
+                return
+            }
+            // Sparkle installs without its dialog only while this default is
+            // set, and reads it when the updater is created.
+            UserDefaults.standard.set(true, forKey: "SUAutomaticallyUpdate")
+            // "Skip This Version" in Sparkle's dialog would otherwise keep
+            // that version away from the launch check as well.
+            UserDefaults.standard.removeObject(forKey: "SUSkippedVersion")
+            self.updaterStarted = true
+            _ = updaterController
+            let updater = self.updaterController.updater
+            // A rehearsal turns the automatic checks off to keep the
+            // baseline app.
+            guard updater.automaticallyChecksForUpdates else {
+                self.finishLaunchUpdateCheck(timedOut: false)
+                return
+            }
+            updater.checkForUpdatesInBackground()
+        }
     }
+
+    private func finishLaunchUpdateCheck(timedOut: Bool) {
+        let previous = launchUpdateCheck
+        if timedOut {
+            guard previous == .waiting else {
+                return
+            }
+            launchUpdateCheck = .abandoned
+        } else {
+            guard previous != .done else {
+                return
+            }
+            launchUpdateCheck = .done
+            // Later checks show Sparkle's dialog: a silent install would
+            // restart the app under a customer who is using it. The default
+            // is written here because Sparkle's setter below stores nothing
+            // while automatic checks are off, and a launch that ended before
+            // creating the updater has no setter to call. Sparkle watches
+            // this default and follows it.
+            UserDefaults.standard.set(false, forKey: "SUAutomaticallyUpdate")
+            if updaterStarted {
+                let updater = updaterController.updater
+                updater.automaticallyDownloadsUpdates = false
+                if launchUpdateTurnedDown {
+                    // The feed answered after the limit. Offer that update in
+                    // Sparkle's dialog now instead of dropping it for a day.
+                    launchUpdateTurnedDown = false
+                    updater.checkForUpdatesInBackground()
+                }
+            }
+        }
+        if previous != .abandoned {
+            startRuntimePreparation()
+        }
+    }
+#endif
 
     func application(_ application: NSApplication, open urls: [URL]) {
         guard !installationRequired else {
@@ -1467,7 +1767,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 detail: status.detail,
                 failed: status.failed,
                 retryTitle: status.retryTitle,
-                kind: status.kind
+                kind: status.kind,
+                welcomeLine: status.welcomeLine
             )
         } else {
             window?.makeKeyAndOrderFront(nil)
@@ -2172,12 +2473,99 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         NSApp.mainMenu = mainMenu
     }
 
+    // Issue #220: the menu bar item is there while the app runs. Nothing in
+    // the app watches the status, and the item starts no watch of its own: it
+    // asks once when the Control Center loads and each time its menu opens.
+    private func configureMenuBarItem() {
+        UserDefaults.standard.register(defaults: menuBarItemDefaults)
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        item.autosaveName = menuBarItemAutosaveName
+        item.button?.imagePosition = .imageLeading
+        let menu = NSMenu()
+        menu.delegate = self
+        for _ in MenuBarStatus.starting.lines {
+            // No action: a line to read, not to click.
+            menu.addItem(NSMenuItem(title: "", action: nil, keyEquivalent: ""))
+        }
+        menu.addItem(NSMenuItem.separator())
+        for (title, action) in [
+            ("Open VibeTV Control Center", #selector(openControlCenterFromMenuBar)),
+            ("Check for Updates…", #selector(checkForUpdates)),
+        ] {
+            let entry = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            entry.target = self
+            menu.addItem(entry)
+        }
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(
+            NSMenuItem(
+                title: "Quit VibeTV Control Center",
+                action: #selector(NSApplication.terminate(_:)),
+                keyEquivalent: ""
+            )
+        )
+        item.menu = menu
+        menuBarItem = item
+        showMenuBarStatus(.starting)
+    }
+
+    private func showMenuBarStatus(_ status: MenuBarStatus) {
+        guard let item = menuBarItem, let button = item.button else {
+            return
+        }
+        let image = NSImage(
+            systemSymbolName: status.icon.symbolName,
+            accessibilityDescription: nil
+        )
+        image?.isTemplate = true
+        button.image = image
+        button.title = status.icon.mark
+        button.toolTip = status.icon.accessibilityLabel
+        button.setAccessibilityLabel(status.icon.accessibilityLabel)
+        for (line, title) in zip(item.menu?.items ?? [], status.lines) {
+            line.title = title
+        }
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        refreshMenuBarStatus()
+    }
+
+    private func refreshMenuBarStatus() {
+        // While the app is still starting there is nothing to ask yet.
+        guard installationReady || installationStatusFailed else {
+            return
+        }
+        let request = URLRequest(
+            url: activeRuntimeOrigin.appendingPathComponent("v1/status"),
+            cachePolicy: .reloadIgnoringLocalCacheData,
+            timeoutInterval: menuBarStatusRequestTimeout
+        )
+        // Only the newest read is shown: an older one that is still under way
+        // when the menu opens again would otherwise answer last.
+        menuBarStatusRead?.cancel()
+        menuBarStatusRead = Task { [weak self] in
+            let answer = try? await URLSession.shared.data(for: request)
+            guard !Task.isCancelled else {
+                return
+            }
+            let answered = (answer?.1 as? HTTPURLResponse)?.statusCode == 200
+            self?.showMenuBarStatus(menuBarStatus(statusJSON: answered ? answer?.0 : nil))
+        }
+    }
+
+    // The same as a click on the app in the Dock.
+    @objc private func openControlCenterFromMenuBar() {
+        _ = applicationShouldHandleReopen(NSApp, hasVisibleWindows: false)
+    }
+
     @objc private func checkForUpdates() {
         guard !installationRequired else {
             presentInstallationRequiredAlert()
             return
         }
 #if canImport(Sparkle)
+        updaterStarted = true
         updaterController.checkForUpdates(nil)
 #else
         let alert = NSAlert()
@@ -2469,7 +2857,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     /// Only the first log line is native. Preparing the background service is
     /// the only work this side of the app is doing, and claiming the WiFi scan
     /// or the provider read had started would report work that has not begun.
-    private func installWelcomeContent(in container: NSView) {
+    private func installWelcomeContent(in container: NSView, line: String) {
         let eyebrow = NSTextField(
             labelWithAttributedString: NSAttributedString(
                 string: "WELCOME TO",
@@ -2502,7 +2890,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         let brand = NSTextField(labelWithAttributedString: brandText)
         brand.alignment = .center
 
-        let logLabel = NSTextField(labelWithString: "> starting background service")
+        let logLabel = NSTextField(labelWithString: "> \(line)")
         logLabel.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
         logLabel.textColor = .vibetvMutedForeground
 
@@ -2593,14 +2981,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         detail: String,
         failed: Bool,
         retryTitle: String = "Try again",
-        kind: InstallationStatusKind = .standard
+        kind: InstallationStatusKind = .standard,
+        welcomeLine: String = "starting background service"
     ) {
         installationStatus = InstallationStatus(
             title: title,
             detail: detail,
             failed: failed,
             retryTitle: retryTitle,
-            kind: kind
+            kind: kind,
+            welcomeLine: welcomeLine
         )
         installationStatusTitle = title
         installationStatusDetail = detail
@@ -2614,7 +3004,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         container.layer?.backgroundColor = NSColor.vibetvBackground.cgColor
 
         if kind == .welcome, !failed {
-            installWelcomeContent(in: container)
+            installWelcomeContent(in: container, line: welcomeLine)
             presentStatusContainer(container, in: window)
             return
         }
@@ -2875,6 +3265,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private func loadControlCenter(
         cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy
     ) {
+        refreshMenuBarStatus()
         let url = activeRuntimeOrigin.appendingPathComponent("control-center")
         activeNavigation = webView?.load(
             URLRequest(
@@ -2892,8 +3283,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         guard let result = runCodexBarCommand(
             executableURL: companionURL,
             arguments: arguments
-        ), result.exitCode == 0 else {
-            NSLog("VibeTV Control Center could not verify its pinned CodexBar through the Companion")
+        ) else {
+            NSLog("VibeTV Control Center could not launch its CodexBar preparation helper")
+            return nil
+        }
+        guard result.exitCode == 0 else {
+            NSLog("VibeTV Control Center CodexBar preparation failed (%d): %@", result.exitCode, result.output)
             return nil
         }
         let path = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -4315,6 +4710,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         untilInvokingBlock installHandler: @escaping () -> Void
     ) -> Bool {
         Task { @MainActor in
+            // A firmware update or theme install lives inside the runtime
+            // and dies with it. The Mac App update is the one that can wait:
+            // Sparkle holds the install until installHandler runs, so keep
+            // the handler and ask again until the runtime is free.
+            while await runtimeShouldDeferRepairForUpdate() {
+                NSLog(
+                    "VibeTV Control Center holds back its own update while a VibeTV update is running"
+                )
+                // A launch update must not keep the start screen up for the
+                // length of a firmware update.
+                finishLaunchUpdateCheck(timedOut: false)
+                try? await Task<Never, Never>.sleep(for: .seconds(10))
+            }
             // The replaced app must never leave its old runtime alive and
             // polling the device: that is the stale/duplicate-writer state
             // the whole update handoff exists to prevent. Retry the shutdown
@@ -4327,6 +4735,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 stopped = await unregisterBundledRuntimeService()
             }
             guard stopped else {
+                await runtimeReleaseUpdateHold()
                 NSLog(
                     "VibeTV Control Center refused to install the update: runtime shutdown failed"
                 )
@@ -4336,11 +4745,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                     "VibeTV Control Center could not stop its background runtime. Quit and reopen the app, then run the update again."
                 alert.addButton(withTitle: "OK")
                 alert.runModal()
+                finishLaunchUpdateCheck(timedOut: false)
                 return
             }
             installHandler()
         }
         return true
+    }
+
+    func updater(
+        _ updater: SPUUpdater,
+        shouldProceedWithUpdate item: SUAppcastItem,
+        updateCheck: SPUUpdateCheck
+    ) throws {
+        switch launchUpdateCheck {
+        case .waiting:
+            launchUpdateCheck = .installing
+            presentInstallationStatus(
+                title: "Updating the Mac App",
+                detail: "Installing version \(item.displayVersionString). VibeTV Control Center restarts by itself.",
+                failed: false,
+                kind: .welcome,
+                welcomeLine: "installing mac app \(item.displayVersionString)"
+            )
+        case .abandoned:
+            // The start already went on. Installing now would restart the
+            // app in the middle of setup; the dialog offers the update once
+            // this check has ended.
+            launchUpdateTurnedDown = true
+            throw CocoaError(.userCancelled)
+        case .installing, .done:
+            break
+        }
+    }
+
+    func updater(
+        _ updater: SPUUpdater,
+        willInstallUpdateOnQuit item: SUAppcastItem,
+        immediateInstallationBlock immediateInstallHandler: @escaping () -> Void
+    ) -> Bool {
+        guard launchUpdateCheck == .installing else {
+            return false
+        }
+        immediateInstallHandler()
+        return true
+    }
+
+    func updater(
+        _ updater: SPUUpdater,
+        didFinishUpdateCycleFor updateCheck: SPUUpdateCheck,
+        error: Error?
+    ) {
+        finishLaunchUpdateCheck(timedOut: false)
     }
 #endif
 

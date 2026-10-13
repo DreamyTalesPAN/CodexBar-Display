@@ -1,8 +1,7 @@
 "use client";
 
-import { Copy, ExternalLink, LogIn, RefreshCw } from "lucide-react";
+import { ChevronRight, RefreshCw, TriangleAlert } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -19,14 +18,14 @@ import { hideUsageEngineName } from "../customer-support-text";
 export type SetupProviderRowVariant =
   | "browser_sign_in"
   | "checking"
-  | "unsupported"
   | "no_usage"
   | "outage"
   | "permission"
   | "sign_in"
   | "stale"
   | "timed_out"
-  | "toggle";
+  | "toggle"
+  | "unsupported";
 
 /**
  * The health states the usage service reports, mapped onto the presentations
@@ -61,6 +60,9 @@ export function setupProviderRowVariant(
       return "browser_sign_in";
     case "permission_required":
       return "permission";
+    // The account lost access to this provider for good. It must not offer a
+    // sign-in: the stored credential is still valid, so signing in again
+    // changes nothing and only sends the customer around the same loop.
     case "unsupported":
       return "unsupported";
     case "no_usage_available":
@@ -87,10 +89,7 @@ type SetupProviderRowProps = {
   enabled: boolean;
   health: PreferenceHealthState;
   label: string;
-  detail?: string;
-  reportedMessage?: string;
-  /** How long this provider has had no usage reading (#368). */
-  noReadingLine?: string | null;
+  onShowIssue: () => void;
   onCheckAgain: () => void;
   /**
    * Starts the provider's sign-in through the companion: the browser page
@@ -99,12 +98,6 @@ type SetupProviderRowProps = {
    * has nothing to start.
    */
   onOpenSignIn?: () => void;
-  /**
-   * Present on Windows for a signed-out provider the app cannot sign in
-   * itself: its usage comes from the provider's own app, so the notice says so
-   * and links the setup guide.
-   */
-  onOpenSetupGuide?: () => void;
   onToggle: (enabled: boolean) => void;
   /**
    * This provider's own on/off write is in flight. The switch already shows
@@ -122,16 +115,16 @@ export function SetupProviderRow({
   health,
   label,
   onCheckAgain,
-  detail,
-  reportedMessage,
-  noReadingLine,
+  onShowIssue,
   onOpenSignIn,
-  onOpenSetupGuide,
   onToggle,
   saving = false,
 }: SetupProviderRowProps) {
   const variant = enabled ? setupProviderRowVariant(health) : "toggle";
-  const unusable = variant === "no_usage" || variant === "outage";
+  const signIn = onOpenSignIn &&
+    (variant === "sign_in" || variant === "browser_sign_in");
+  const unusable =
+    variant === "no_usage" || variant === "outage" || variant === "unsupported";
   const checkAgain = (
     <SetupProviderRowAction
       icon={RefreshCw}
@@ -139,22 +132,87 @@ export function SetupProviderRow({
       onClick={onCheckAgain}
     />
   );
-  // The message whose copy reached the clipboard; the button then says so,
-  // like Copy on Support. A new message starts over.
-  const [copied, setCopied] = useState("");
-  const copyReportedMessage = reportedMessage ? (
-    <SetupProviderRowAction
-      icon={Copy}
-      label={copied === reportedMessage ? "Copied" : `Copy provider message for ${label}`}
-      onClick={() => {
-        void navigator.clipboard?.writeText(reportedMessage)
-          .then(() => setCopied(reportedMessage), () => undefined);
-      }}
-    />
-  ) : null;
+
+  return (
+    <Item
+      className="rounded-[var(--radius-card)] p-4"
+      role="listitem"
+      variant="outline"
+    >
+      <ItemContent>
+        <ItemTitle className={cn(unusable && "opacity-50")}>{label}</ItemTitle>
+      </ItemContent>
+      <ItemActions>
+        {signIn ? (
+          <Button
+            className="h-9 gap-3 p-0 font-normal text-muted-foreground hover:bg-transparent dark:hover:bg-transparent"
+            onClick={onOpenSignIn}
+            type="button"
+            variant="ghost"
+          >
+            <span>{`Sign in to ${label}`}</span>
+            <span className="flex size-9 items-center justify-center rounded-full border border-border text-foreground group-hover/button:bg-muted">
+              <ChevronRight aria-hidden />
+            </span>
+          </Button>
+        ) : (
+          <>
+            {variant === "checking" ? (
+              <Spinner />
+            ) : variant === "toggle" ? null : (
+              <>
+                <SetupProviderRowAction
+                  icon={TriangleAlert}
+                  label={`Show provider message for ${label}`}
+                  onClick={onShowIssue}
+                />
+                {variant === "stale" || variant === "unsupported" ? null : checking ? (
+                  <>
+                    <span className="sr-only">Checking {label}…</span>
+                    <Spinner />
+                  </>
+                ) : (
+                  checkAgain
+                )}
+              </>
+            )}
+            <Switch
+              aria-label={label}
+              checked={enabled}
+              disabled={saving}
+              onCheckedChange={onToggle}
+            />
+          </>
+        )}
+      </ItemActions>
+    </Item>
+  );
+}
+
+/** Keep CodexBar's exact guidance in the shared popup, without provider rules. */
+export function setupProviderIssueMessage({
+  health, label, detail, nextAction, reportedMessage,
+}: {
+  health: PreferenceHealthState;
+  label: string;
+  detail?: string;
+  nextAction?: string;
+  reportedMessage?: string;
+}): string | null {
+  const variant = setupProviderRowVariant(health);
+  if (variant === "toggle" || variant === "checking") return null;
+  // A throttled check needs no repair, but CodexBar's sentence lists every
+  // source that failed beside the throttle and reads like a sign-in problem.
+  // The customer gets what happens next; the sentence stays one click away.
+  // A throttled provider with a saved reading is "stale" and carries the
+  // same guidance; a stale row without guidance keeps its generic text.
+  if (detail && (health === "rate_limited" || (health === "stale" && nextAction))) {
+    return [detail, nextAction].filter(Boolean).join(" ");
+  }
   // Its own text: a generic engine message hides that an update fixes it.
+  const tooOld = health === "engine_incompatible";
   const fallbackMessage =
-    health === "engine_incompatible"
+    tooOld
       ? "The usage engine is too old. Repair the usage engine, then check again."
       : variant === "sign_in"
       ? `Sign in to ${label}`
@@ -163,7 +221,7 @@ export function SetupProviderRow({
       : variant === "permission"
         ? "Allow access on this computer"
         : variant === "unsupported"
-          ? "This provider is no longer supported for this account"
+          ? "This provider no longer supports this account"
         : variant === "no_usage"
           ? "No usage data on this account"
           : variant === "outage"
@@ -174,85 +232,7 @@ export function SetupProviderRow({
   // A browser sign-in is said in the app's own sentence. What the engine
   // reported for it lists every source it tried and is only there to copy.
   const reported = variant === "browser_sign_in" ? "" : reportedMessage;
-  const guidance = hideUsageEngineName(reported || detail || fallbackMessage);
-
-  const hasNotice = variant !== "checking" && variant !== "toggle";
-  const actions = variant === "unsupported" ? copyReportedMessage : (
-    <>
-      {copyReportedMessage}
-      {variant === "stale" ? null : checking ? (
-        <>
-          <span className="sr-only">Checking {label}…</span>
-          <Spinner />
-        </>
-      ) : checkAgain}
-    </>
-  );
-
-  return (
-    <Item
-      className={cn(
-        "rounded-[var(--radius-card)] p-4",
-        hasNotice && "gap-3 border-0 bg-card px-4 pt-3 pb-4 ring-1 ring-foreground/10",
-      )}
-      role="listitem"
-      variant="outline"
-    >
-      <ItemContent>
-        <ItemTitle className={cn(unusable && "opacity-50")}>{label}</ItemTitle>
-      </ItemContent>
-      <ItemActions>
-        {variant === "checking" ? <Spinner /> : null}
-            {variant === "browser_sign_in" && onOpenSignIn ? (
-              <SetupProviderRowAction
-                icon={ExternalLink}
-                label={`Open ${label} sign-in in your browser`}
-                onClick={onOpenSignIn}
-              />
-            ) : null}
-            {variant === "sign_in" && onOpenSignIn ? (
-              <Button
-                className="rounded-full"
-                onClick={onOpenSignIn}
-                size="sm"
-                type="button"
-                variant="default"
-              >
-                <LogIn aria-hidden />
-                <span>{`Sign in to ${label}`}</span>
-              </Button>
-            ) : null}
-        <Switch
-          aria-label={label}
-          checked={enabled}
-          disabled={saving}
-          onCheckedChange={onToggle}
-        />
-      </ItemActions>
-      {hasNotice ? (
-        <div data-slot="provider-notice" className="-mx-4 flex basis-[calc(100%+2rem)] items-center gap-3 border-t border-border px-4 pt-3 text-left">
-          {onOpenSetupGuide ? (
-            <div className="flex min-w-0 flex-1 flex-col items-start gap-1 text-xs leading-normal text-muted-foreground">
-              <p>{`VibeTV reads ${label} usage from ${label}'s own app on this computer. Make sure it is installed and signed in, then click Check again.`}</p>
-              <p>{guidance}</p>
-              {noReadingLine ? <p>{noReadingLine}</p> : null}
-              <Button className="h-auto px-0 text-xs" onClick={onOpenSetupGuide} type="button" variant="link">
-                Open setup guide
-              </Button>
-            </div>
-          ) : (
-            <div className="flex min-w-0 flex-1 flex-col gap-1 text-xs leading-normal text-muted-foreground">
-              <p>{guidance}</p>
-              {noReadingLine ? <p>{noReadingLine}</p> : null}
-            </div>
-          )}
-          {((variant !== "unsupported" && variant !== "stale") || copyReportedMessage) ? (
-            <div className="flex shrink-0 items-center justify-end gap-2">{actions}</div>
-          ) : null}
-        </div>
-      ) : null}
-    </Item>
-  );
+  return hideUsageEngineName(reported || detail || fallbackMessage);
 }
 
 function SetupProviderRowAction({

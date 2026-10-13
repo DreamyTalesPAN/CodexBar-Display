@@ -7,8 +7,6 @@ import (
 	"io"
 	"math"
 	"net/http"
-	"net/url"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -21,8 +19,6 @@ const (
 	dashboardSnapshotPath = "/dashboard/v1/snapshot"
 	dashboardUsagePath    = "/usage"
 )
-
-var dashboardUsageByProvider = runtime.GOOS == "windows"
 
 // serveUsage is the usage answer the long-running serve gave the collector
 // last: one item per provider, in the form "usage --json" prints it. The
@@ -147,31 +143,20 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 	if err != nil {
 		return nil, fmt.Errorf("decode dashboard snapshot: %w", err)
 	}
-	// On macOS, omitting the override selects the configured enabled set,
-	// just like the dashboard. Win-CodexBar 0.60.3 instead defaults to Claude,
-	// and its explicit "all" fetches every provider it knows, switched on or
-	// not: on every collection it looked for browser cookies of providers the
-	// customer never chose and started the Antigravity CLI (#554). So ask it
-	// for exactly the providers the snapshot lists (see #415).
-	usageQueries := []string{""}
-	if dashboardUsageByProvider {
-		usageQueries = usageQueries[:0]
-		for _, provider := range snapshot.Providers {
-			usageQueries = append(usageQueries, "?provider="+url.QueryEscape(provider.ID))
-		}
+	providerIDs := make([]string, 0, len(snapshot.Providers))
+	for _, provider := range snapshot.Providers {
+		providerIDs = append(providerIDs, provider.ID)
 	}
-	var usageProviders []dashboardusage.UsageProvider
+	// The platform join lives in providers.go; a provider it leaves out
+	// shows as unavailable below.
+	usageProviders, usageAnswers, err := fetchDashboardUsage(ctx, providerIDs, func(ctx context.Context, query string) ([]byte, error) {
+		return fetchDashboardJSON(ctx, endpoint+dashboardUsagePath+query, strings.TrimSpace(info.Token))
+	})
+	if err != nil {
+		return nil, err
+	}
 	usageItems := make(map[string]map[string]any)
-	for _, query := range usageQueries {
-		usageRaw, err := fetchDashboardJSON(ctx, endpoint+dashboardUsagePath+query, strings.TrimSpace(info.Token))
-		if err != nil {
-			return nil, err
-		}
-		decoded, err := dashboardusage.DecodeUsage(usageRaw)
-		if err != nil {
-			return nil, fmt.Errorf("decode dashboard usage: %w", err)
-		}
-		usageProviders = append(usageProviders, decoded...)
+	for _, usageRaw := range usageAnswers {
 		items, _ := extractProvidersFromRawJSON(usageRaw)
 		for _, item := range items {
 			if payload, ok := item.(map[string]any); ok {

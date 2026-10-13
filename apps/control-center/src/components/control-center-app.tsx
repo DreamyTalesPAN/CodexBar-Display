@@ -18,11 +18,11 @@ import {
   resolveScreensaverUpgrade,
 } from "@/lib/active-theme-upgrade";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
+import { buildDeviceThemePack, pollThemeInstallJob } from "@/lib/theme-install";
 import {
   rememberSentOwnThemePath,
   sentOwnThemePaths,
 } from "@/lib/sent-own-theme-paths";
-import { buildThemePack } from "@/lib/theme-studio";
 import { loadUserThemes } from "@/lib/theme-studio-storage";
 import type { ThemeCatalogResponse, ThemeProduct } from "@/lib/themes";
 import {
@@ -121,6 +121,8 @@ import { buildAiFixPrompt } from "./setup/setup-ai-prompt";
 import type { SetupConnectSteps } from "./setup/setup-connect";
 import { displayPreviewsFor } from "./setup/setup-display-previews";
 import {
+  PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS,
+  providerRowHealthState,
   setupProviderCanDisplay,
 } from "./setup/setup-providers-screen";
 import {
@@ -184,7 +186,6 @@ const PROVIDER_POOL_RECONCILE_RETRY_MS = 5_000;
 // nobody signs in. The window is wall-clock, not a check count: probe
 // duration must not stretch it.
 const PROVIDER_SIGN_IN_FOLLOW_UP_INTERVAL_MS = 15_000;
-const PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS = 180_000;
 // launchd restarts the service itself: KeepAlive with a 10s ThrottleInterval
 // (main.swift:3759-3761), then the process start, then the 5s poll that sees it
 // -- about seventeen seconds before the app has learnt anything. Repairing at
@@ -613,6 +614,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [runtimeRecoveryHidden, setRuntimeRecoveryHidden] = useState(false);
   // Hiding the usage dialog hides the announcement; the repair itself runs on.
   const [usageFailureHidden, setUsageFailureHidden] = useState(false);
+  // A closed device notice stays closed until its cause is gone and returns.
+  const [themeNotShownHidden, setThemeNotShownHidden] = useState(false);
+  const [weakWiFiHidden, setWeakWiFiHidden] = useState(false);
   // "Run setup again" asks first, from Settings and from Support alike.
   const [setupAgainRequested, setSetupAgainRequested] = useState(false);
   // The "What's new" entries this customer has seen, null while nothing is
@@ -1181,8 +1185,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     standby === null && Boolean(device?.standby) && deviceIsReady(device);
   const screensaversOpen =
     activeTab === "theme-library" && appearanceSection === "screensavers";
+  const screensaversWereOpen = useRef(screensaversOpen);
   useEffect(() => {
-    if (!screensaverSettingMissing) {
+    // Leaving Screensavers is no reason to read them again.
+    const leftScreensavers = screensaversWereOpen.current && !screensaversOpen;
+    screensaversWereOpen.current = screensaversOpen;
+    if (!screensaverSettingMissing || leftScreensavers) {
       return;
     }
     const timer = window.setTimeout(() => {
@@ -1242,7 +1250,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       // As in installTheme: what this install installs (issue #558).
       const noun = job.slot === "screensaver" ? "Screensaver" : "Theme";
       try {
-        const finishedJob = await pollThemeInstallJob({
+        const finishedJob = await pollThemeInstallJob<ThemeInstallJob>({
           applyInstallJob: (nextJob) => applyThemeInstallJob(nextJob),
           jobId: job.id,
           noun,
@@ -2547,7 +2555,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           installJobId = payload.job.id;
           themeInstallPollJobRef.current = installJobId;
           applyInstallJob(payload.job);
-          const finishedJob = await pollThemeInstallJob({
+          const finishedJob = await pollThemeInstallJob<ThemeInstallJob>({
             applyInstallJob,
             jobId: payload.job.id,
             noun,
@@ -2661,7 +2669,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       spec,
       usage = "live",
     }: ThemeStudioInstallPayload): Promise<boolean> => {
-      const pack = buildThemePack(spec, packName, assets, usage);
+      const pack = buildDeviceThemePack({ spec, packName, assets, usage });
       // Noted when it is sent, not when the install is confirmed: an install
       // that fails late, or that VibeTV has not confirmed yet, may still have
       // put this file on VibeTV.
@@ -3666,13 +3674,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   // After the sign-in starts (browser page, CLI login or app), keep asking
-  // for this provider's exact check until the row leaves its sign-in state or
-  // the window runs out. The customer signs in in another window; without
-  // this the row only moves when they come back and press check again.
-  const providerSignInFollowUpRef = useRef<{
-    providerId: string;
-    stop: () => void;
-  } | null>(null);
+  // for this provider's exact check until it recovers or the window runs out.
+  // Each sign-in continues independently through transient check failures.
+  const providerSignInFollowUpsRef = useRef(new Map<string, () => void>());
   const openProviderSignIn = useCallback(
     async (item: PreferenceDescriptor) => {
       const providerId = item.providerId?.trim().toLowerCase();
@@ -3694,48 +3698,44 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         );
         return;
       }
-      providerSignInFollowUpRef.current?.stop();
-      let stopped = false;
+      const followUps = providerSignInFollowUpsRef.current;
+      followUps.get(providerId)?.();
       const deadline = Date.now() + PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS;
-      let timer: number | null = null;
-      const stillWaiting = () =>
-        providerPreferencesRef.current?.some(
-          (preference) =>
-            preference.providerId?.trim().toLowerCase() === providerId &&
-            (preference.health?.state === "browser_sign_in_required" ||
-              preference.health?.state === "auth_required" ||
-              preference.health?.state === "setup_required"),
-        ) ?? false;
-      const tick = async () => {
-        timer = null;
-        if (stopped || Date.now() >= deadline || !stillWaiting()) {
-          return;
-        }
-        await checkProvider(item);
-        if (!stopped && Date.now() < deadline && stillWaiting()) {
-          timer = window.setTimeout(
-            () => void tick(),
-            PROVIDER_SIGN_IN_FOLLOW_UP_INTERVAL_MS,
+      const stillWaiting = () => {
+        const preference = providerPreferencesRef.current?.find(
+          (value) => value.providerId?.trim().toLowerCase() === providerId,
+        );
+        return preference !== undefined && preference.value !== false &&
+          !["healthy", "disabled", "unsupported", "no_usage_available"].includes(
+            preference.health ? providerRowHealthState(preference.health) : "",
           );
-        }
       };
-      providerSignInFollowUpRef.current = {
-        providerId,
-        stop: () => {
-          stopped = true;
-          if (timer !== null) {
-            window.clearTimeout(timer);
+      const stopPolling = startProviderPreferencesPolling({
+        intervalMs: PROVIDER_SIGN_IN_FOLLOW_UP_INTERVAL_MS,
+        // The external sign-in page may cover the app while it is checked.
+        isVisible: () => true,
+        refresh: async () => {
+          if (Date.now() >= deadline || !stillWaiting()) {
+            stop();
+            return;
           }
+          await checkProvider(item);
+          if (Date.now() >= deadline || !stillWaiting()) stop();
         },
+      });
+      const stop = () => {
+        stopPolling();
+        // A cancelled check may finish after a newer sign-in for this provider.
+        if (followUps.get(providerId) === stop) followUps.delete(providerId);
       };
-      timer = window.setTimeout(
-        () => void tick(),
-        PROVIDER_SIGN_IN_FOLLOW_UP_INTERVAL_MS,
-      );
+      followUps.set(providerId, stop);
     },
     [checkProvider, runCompanion],
   );
-  useEffect(() => () => providerSignInFollowUpRef.current?.stop(), []);
+  useEffect(() => {
+    const followUps = providerSignInFollowUpsRef.current;
+    return () => followUps.forEach((stop) => stop());
+  }, []);
 
   // The setup guide opens in the customer's browser through the companion; the
   // app window itself must not navigate away.
@@ -4537,7 +4537,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // the app — most urgently in the mixed state where the device firmware is
   // already ahead of this app and renders degraded. Surface the native Sparkle
   // dialog once per offered version; the Updates tab stays the manual path if
-  // the dialog is dismissed.
+  // the dialog is dismissed. Setup is included: a customer whose VibeTV is not
+  // found never reaches the Updates tab, and an old app can be the reason
+  // (#561).
   const macAppUpdateOfferedVersion =
     companionRelease?.latestVersion || companionRelease?.release || "";
   const activeThemeUpdateAvailable = Boolean(
@@ -4628,7 +4630,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   useEffect(() => {
     if (
       hostedSetup ||
-      !hasEnteredControlCenter ||
       !macAppUpdateAvailable ||
       !macAppUpdateOfferedVersion ||
       firmwareUpdateInProgress ||
@@ -4641,7 +4642,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     window.location.href = "vibetv://check-for-updates";
   }, [
     firmwareUpdateInProgress,
-    hasEnteredControlCenter,
     hostedSetup,
     macAppUpdateAvailable,
     macAppUpdateOfferedVersion,
@@ -4781,9 +4781,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       : deviceSearchState;
   const recoveryPickerOpen = deviceRecoveryPickerReason !== null;
 
-  // Windows adds the sign-in button for the providers the Companion can sign
-  // in; the Mac app keeps its existing rows exactly as they are today. Both
-  // list every provider CodexBar reports.
+  // The sign-in button for the providers the Companion can sign in, on
+  // Windows and the Mac alike. Both list every provider CodexBar reports.
   const providerSignInEnabled =
     companionInfo?.features?.providerSignInEnabled === true;
   const providerPickerProps = {
@@ -5191,13 +5190,33 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // nothing else asks for the customer: not during setup or a firmware update,
   // and under no other dialog. It stays on the page it was opened on: other
   // pages have dialogs of their own.
+  // What is wrong with the VibeTV itself is said over the page, like every
+  // other failure (#498, #265). The theme library is where an unshowable
+  // theme is replaced, so it needs no notice there.
+  const deviceNoticePossible =
+    deviceIsCustomerConnected(device) &&
+    !setupOwnsScreen &&
+    !firmwareUpdateInProgress &&
+    !needsRuntimeRecovery &&
+    !lostDevicePickerOpen &&
+    !(usageFailure && !usageFailureHidden);
+  const themeNotShown = device?.connectionState === "display_render_failed";
+  const weakWiFi = device?.health?.wifi?.weak === true;
+  if (!themeNotShown && themeNotShownHidden) setThemeNotShownHidden(false);
+  if (!weakWiFi && weakWiFiHidden) setWeakWiFiHidden(false);
+  const themeNotShownOpen =
+    deviceNoticePossible && themeNotShown && !themeNotShownHidden && activeTab !== "theme-library";
+  const weakWiFiOpen =
+    deviceNoticePossible && weakWiFi && !weakWiFiHidden && !themeNotShownOpen;
   const somethingElseAsks =
     setupOwnsScreen ||
     firmwareUpdateInProgress ||
     needsRuntimeRecovery ||
     lostDevicePickerOpen ||
+    themeNotShownOpen ||
+    weakWiFiOpen ||
     (usageFailure && !usageFailureHidden);
-  const whatsNewEntries = somethingElseAsks
+  const whatsNewEntries = (somethingElseAsks
     ? []
     : whatsNewReopened && activeShellTab === "updates"
       ? newestWhatsNew()
@@ -5205,7 +5224,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         // is told after that update.
         activeShellTab === "overview" && !macAppUpdateAvailable
         ? newestWhatsNew(whatsNewSeen)
-        : [];
+        : []
+  ).filter(
+    // The system refused the keys (another app owns them): Settings says so,
+    // and the notice must not tell the customer to press them.
+    ({ id }) =>
+      id !== "provider-shortcut" ||
+      nativeProviderShortcut(navigator.userAgent) !== "unavailable",
+  );
   // Opened from Updates and taken away by something else, or by the window
   // moving to another page, the notice does not come back by itself: what
   // follows may be a dialog this condition does not know, as the one Updates
@@ -5898,6 +5924,33 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           windowsHost={windowsHost}
         />
       ) : null}
+      {themeNotShownOpen ? (
+        <SetupDialog
+          description="Choose another theme."
+          onOpenChange={(open) => setThemeNotShownHidden(!open)}
+          open
+          primaryAction={{
+            label: "Choose a theme",
+            onSelect: () => {
+              setThemeNotShownHidden(true);
+              setActiveTab("theme-library");
+            },
+          }}
+          title="VibeTV can't show this theme"
+        />
+      ) : null}
+      {weakWiFiOpen ? (
+        <SetupDialog
+          description="Move VibeTV closer to your router."
+          onOpenChange={(open) => setWeakWiFiHidden(!open)}
+          open
+          primaryAction={{
+            label: "OK",
+            onSelect: () => setWeakWiFiHidden(true),
+          }}
+          title="Weak WiFi signal"
+        />
+      ) : null}
       {setupAgainRequested ? (
         <SetupDialog
           description="You connect VibeTV and choose your AI providers and display mode again. VibeTV keeps its WiFi details, settings and themes."
@@ -6065,38 +6118,6 @@ function normalizeError(error: unknown, status: number): ApiError {
     message: "Request failed.",
     nextAction: "Try again.",
   };
-}
-
-async function pollThemeInstallJob({
-  applyInstallJob,
-  jobId,
-  noun,
-  runCompanion,
-}: {
-  applyInstallJob: (job: ThemeInstallJob) => void;
-  jobId: string;
-  noun: string;
-  runCompanion: RunCompanion;
-}): Promise<ThemeInstallJob> {
-  // The server may spend the full five-minute budget waiting for the first
-  // fresh display frame after it has already installed the theme.
-  for (let attempt = 0; attempt < 900; attempt += 1) {
-    await delay(500);
-    const payload = await runCompanion<{ job: ThemeInstallJob }>(
-      `/v1/themes/install/status?jobId=${encodeURIComponent(jobId)}`,
-      undefined,
-      { preserveLastError: true },
-    );
-    applyInstallJob(payload.job);
-    if (payload.job.phase === "complete" || payload.job.phase === "error") {
-      return payload.job;
-    }
-  }
-  throw {
-    code: "theme_install_timeout",
-    message: `${noun} install is taking longer than expected.`,
-    nextAction: `Keep VibeTV powered on, then check the ${noun.toLowerCase()} again.`,
-  } satisfies ApiError;
 }
 
 export async function pollFirmwareUpdateJob({

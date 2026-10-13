@@ -4,6 +4,7 @@ import {
   type ThemeStudioSpec,
 } from "@/lib/theme-studio";
 import { themeFirmwareTextMetrics } from "../live-vibetv-preview";
+import { isCompanionSprite } from "@/lib/ai-theme";
 
 export const DISPLAY_SIZE = 240;
 
@@ -24,10 +25,10 @@ const DEFAULT_FRAME = {
   ],
   usageSlot1Label: "Weekly",
   usageSlot1Percent: 62,
-  usageSlot1Reset: "1h",
+  usageSlot1Reset: "1h 0m",
   usageSlot2Label: "Codex Spark Weekly",
   usageSlot2Percent: 38,
-  usageSlot2Reset: "2h",
+  usageSlot2Reset: "2h 0m",
   usageMode: "remaining",
   activity: "preview",
   sessionTokens: 12000,
@@ -41,6 +42,32 @@ export type ResizeSize = {
   height: number;
   width: number;
 };
+
+export const COMPANION_MIN_SIZE = 16;
+export const COMPANION_MAX_SIZE = 80;
+/** Animated companions are square sprites; they only scale uniformly. */
+export function isAspectLockedPrimitive(primitive: ThemeStudioPrimitive): boolean {
+  return primitive.type === "sprite" && isCompanionSprite(primitive.assetPath);
+}
+
+/** Companions render through a fixed firmware buffer, so their display size is bounded. */
+export function clampCompanionSize(size: number): number {
+  return clampInt(size, COMPANION_MIN_SIZE, COMPANION_MAX_SIZE);
+}
+
+/**
+ * Repairs a companion in place so the AI helper accepts it again: square,
+ * 16..80 pixels, fully on the display. Size wins over position so a sprite
+ * saved too far out is moved in instead of shrunk below the minimum.
+ */
+export function normalizeCompanionPrimitive(primitive: ThemeStudioPrimitive): void {
+  if (!isAspectLockedPrimitive(primitive)) return;
+  const size = clampCompanionSize(primitive.width || primitive.height || COMPANION_MIN_SIZE);
+  primitive.width = size;
+  primitive.height = size;
+  primitive.x = clampInt(primitive.x, 0, DISPLAY_SIZE - size);
+  primitive.y = clampInt(primitive.y, 0, DISPLAY_SIZE - size);
+}
 
 export type DragMoveOrigin = {
   height: number;
@@ -91,7 +118,7 @@ export function defaultPrimitive(
       y: 118 + Math.min(40, offset),
       width: 190,
       height: 16,
-      binding: "usageSlot1Percent",
+      binding: "session",
       color: "#C7FF68",
       bgColor: "#111111",
       borderColor: "#3B4552",
@@ -114,39 +141,9 @@ export function setPrimitiveField(
 ) {
   if (value === "") {
     delete primitive[field];
-  } else {
-    (primitive as Record<FieldKey, unknown>)[field] = value;
-  }
-  if (primitive.progressStyle !== "arc") {
     return;
   }
-  // A bar that becomes an arc gets its ring in the same change, so one Undo
-  // takes all of it back: three quarters of a circle open at the bottom, up to
-  // 12 px thick. A bar that kept part of an arc, as an imported one may, gets
-  // only what is missing; a start angle that is left out means 12 o'clock.
-  if (field === "progressStyle") {
-    if (primitive.arcSweep === undefined) {
-      primitive.arcStart ??= 225;
-      primitive.arcSweep = 270;
-    }
-    primitive.arcThickness ??= 12;
-  }
-  // The ring is at most half as thick as the smaller side of its box, so that
-  // side is at least 2 px. A box made smaller takes the ring with it;
-  // otherwise the arc could not be saved until Thickness was lowered by hand.
-  if (field === "progressStyle" || field === "width" || field === "height") {
-    if (primitive.width !== undefined) {
-      primitive.width = Math.max(2, primitive.width);
-    }
-    if (primitive.height !== undefined) {
-      primitive.height = Math.max(2, primitive.height);
-    }
-    const { height, width } = primitiveBounds(primitive);
-    primitive.arcThickness = Math.max(
-      1,
-      Math.min(primitive.arcThickness ?? 1, Math.floor(Math.min(width, height) / 2)),
-    );
-  }
+  (primitive as Record<FieldKey, unknown>)[field] = value;
 }
 
 export function primitiveBounds(primitive: ThemeStudioPrimitive) {
@@ -230,7 +227,9 @@ export function clampedMoveDelta(
   );
   const minDeltaY = Math.max(...origins.map((origin) => -origin.y));
   const maxDeltaY = Math.min(
-    ...origins.map((origin) => DISPLAY_SIZE - origin.y - origin.height),
+    ...origins.map(
+      (origin) => DISPLAY_SIZE - origin.y - origin.height,
+    ),
   );
 
   return {
@@ -280,10 +279,9 @@ export function selectedPrimitiveIndices(
     };
     return selectionBoxesIntersect(selection, box) ? [index] : [];
   });
-  const foregroundHits = hits.filter(
-    (index) => !isFullCanvasRect(primitives[index]),
+  return hits.filter(
+    (index) => !isFullCanvasBackground(primitives[index]),
   );
-  return foregroundHits.length > 0 ? foregroundHits : hits;
 }
 
 function selectionBoxesIntersect(a: SelectionBox, b: SelectionBox): boolean {
@@ -295,12 +293,12 @@ function selectionBoxesIntersect(a: SelectionBox, b: SelectionBox): boolean {
   );
 }
 
-export function isFullCanvasRect(
+export function isFullCanvasBackground(
   primitive: ThemeStudioPrimitive | undefined,
 ): boolean {
   return Boolean(
     primitive &&
-      primitive.type === "rect" &&
+      ["rect", "sprite", "gif", "pixels"].includes(primitive.type) &&
       primitive.x === 0 &&
       primitive.y === 0 &&
       primitive.width === DISPLAY_SIZE &&
@@ -330,12 +328,13 @@ export function textPrimitiveNaturalWidth(
   const text = primitive.binding
     ? boundText(primitive.binding)
     : substituteText(primitive.text || "Text");
-  // The preview draws fonts 1 and 2 with the firmware's glyph widths; the box
-  // around the text has to be measured the same way or it ends short of it.
-  const width =
-    themeFirmwareTextMetrics(text, primitive.font || 1, fontSize)?.width ??
-    text.length * textPrimitiveRenderFontSize(primitive, fontSize) * 0.6;
-  return Math.min(Math.max(1, DISPLAY_SIZE - primitive.x), Math.ceil(width));
+  const renderFontSize = textPrimitiveRenderFontSize(primitive, fontSize);
+  const width = themeFirmwareTextMetrics(text, primitive.font || 1, fontSize)?.width
+    ?? Math.ceil(text.length * renderFontSize * 0.6);
+  return Math.min(
+    Math.max(1, DISPLAY_SIZE - primitive.x),
+    width,
+  );
 }
 
 function textPrimitiveRenderFontSize(
@@ -436,6 +435,11 @@ function boundText(binding: string): string {
       return window.reset;
     }
     return String(window.percent);
+  }
+  // A provider reading has the size of the matching usage reading.
+  const provider = /^providerSlot[12](Label|Percent|Reset|Available)$/.exec(binding);
+  if (provider) {
+    return provider[1] === "Label" ? DEFAULT_FRAME.label : boundText(`usageSlot1${provider[1]}`);
   }
   switch (binding) {
     case "label":

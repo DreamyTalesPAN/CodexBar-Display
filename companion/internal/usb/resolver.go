@@ -39,6 +39,29 @@ func ListPorts() ([]string, error) {
 	return defaultDiscoverer.Discover()
 }
 
+var nonUSBPorts = listNonUSBPorts
+
+// listCablePorts lists the ports a VibeTV can be on. Windows names every port
+// COMn, and probing a built-in COM1 waited out the whole hello window on every
+// search, so ports known not to be USB are left out.
+func listCablePorts() ([]string, error) {
+	ports, err := ListPorts()
+	if err != nil {
+		return nil, err
+	}
+	nonUSB := nonUSBPorts()
+	if len(nonUSB) == 0 {
+		return ports, nil
+	}
+	kept := make([]string, 0, len(ports))
+	for _, port := range ports {
+		if !nonUSB[strings.ToUpper(strings.TrimSpace(port))] {
+			kept = append(kept, port)
+		}
+	}
+	return kept, nil
+}
+
 func ResolvePort(explicit string) (string, error) {
 	explicit = strings.TrimSpace(explicit)
 	if explicit == "" {
@@ -123,7 +146,7 @@ type CableDevice struct {
 func DiscoverVibeTVs(ctx context.Context) ([]CableDevice, error) {
 	ctx, cancel := context.WithTimeout(ctx, helloReadWindow)
 	defer cancel()
-	ports, err := ListPorts()
+	ports, err := listCablePorts()
 	if err != nil {
 		return nil, err
 	}
@@ -254,7 +277,7 @@ func resolveVibeTVPortForControl(
 		}
 		candidates = []string{resolved}
 	} else {
-		ports, err := ListPorts()
+		ports, err := listCablePorts()
 		if err != nil {
 			return "", err
 		}
@@ -445,7 +468,7 @@ func (e *LegacyCableFirmwareError) remember(hello protocol.DeviceHello) *LegacyC
 // whose firmware predates the Cable identity contract. Only that device may
 // receive the Cable rescue update; anything else is refused.
 func FindLegacyCableVibeTV() (CableDevice, error) {
-	ports, err := ListPorts()
+	ports, err := listCablePorts()
 	if err != nil {
 		return CableDevice{}, err
 	}

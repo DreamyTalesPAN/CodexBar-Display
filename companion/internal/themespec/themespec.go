@@ -123,6 +123,9 @@ func (p *Primitive) UnmarshalJSON(data []byte) error {
 		Data          *string `json:"data"`
 		Valign        *string `json:"valign"`
 		ProgressStyle *string `json:"progressStyle"`
+		ArcStart      *int    `json:"arcStart"`
+		ArcSweep      *int    `json:"arcSweep"`
+		ArcThickness  *int    `json:"arcThickness"`
 	}
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		return err
@@ -140,6 +143,20 @@ func (p *Primitive) UnmarshalJSON(data []byte) error {
 		if field.value != nil {
 			*field.target = *field.value
 			*field.alias = ""
+		}
+	}
+	// Firmware reads a long arc number even when it is 0, so its compact alias
+	// must not fill it in later.
+	for _, field := range []struct {
+		value, target, alias *int
+	}{
+		{decoded.ArcStart, &p.ArcStart, &p.ShortArcStart},
+		{decoded.ArcSweep, &p.ArcSweep, &p.ShortArcSweep},
+		{decoded.ArcThickness, &p.ArcThickness, &p.ShortArcThickness},
+	} {
+		if field.value != nil {
+			*field.target = *field.value
+			*field.alias = 0
 		}
 	}
 	// Validators must not inspect containers that the wire format overrides.

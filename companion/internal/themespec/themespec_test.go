@@ -1138,6 +1138,8 @@ func TestValidateRejectsProgressArcOutsideTheFirmwareLimits(t *testing.T) {
 		"no thickness":              {`"as":0,"aw":270`, "arcThickness"},
 		"thicker than the radius":   {`"as":0,"aw":270,"at":51`, "arcThickness"},
 		"long keys out of range":    {`"arcStart":0,"arcSweep":400,"arcThickness":10`, "arcSweep"},
+		"long sweep of 0 wins":      {`"as":0,"arcSweep":0,"aw":270,"at":10`, "arcSweep"},
+		"long thickness of 0 wins":  {`"as":0,"aw":270,"arcThickness":0,"at":10`, "arcThickness"},
 		"thickness against height":  {`"h":60,"as":0,"aw":270,"at":31`, "arcThickness"},
 		"sweep of the wrong type":   {`"as":0,"aw":"270","at":10`, "parse theme spec"},
 		"thickness with a fraction": {`"as":0,"aw":270,"at":10.5`, "parse theme spec"},

@@ -55,6 +55,14 @@ const (
 	ProviderNotConfigured      = "not_configured"
 )
 
+// RateLimitedNextAction tells a customer whose provider is throttling usage
+// checks what happens next and what to do: nothing, unless it lasts. The
+// engine waits at least five minutes after a refusal and usually no more than
+// 30, so a message still showing after 30 minutes is worth a support report.
+const RateLimitedNextAction = "Nothing to fix: your sign-in works. Wait a few minutes: VibeTV checks again " +
+	"on its own and shows usage as soon as the provider answers. Checking again yourself won't make it faster. " +
+	"If this message is still here after 30 minutes, create a support report under Support and send it to us."
+
 type configPathContextKey struct{}
 
 type EngineReadiness struct {
@@ -115,9 +123,17 @@ func EnsureConfig(home string) (string, error) {
 		// %APPDATA%\CodexBar\settings.json (#415). Use its own location.
 		return ensureWindowsConfigDir()
 	}
-	if explicit := strings.TrimSpace(os.Getenv("CODEXBAR_CONFIG")); explicit != "" {
-		return ensureConfigFile(explicit)
+	path, err := macConfigPath(home)
+	if err != nil {
+		return "", err
 	}
+	return ensureConfigFile(path)
+}
+
+// macConfigPath follows CodexBar's explicit config and XDG overrides, then
+// existing default locations. New Companion-managed configs keep the legacy
+// location; every CLI invocation receives the resolved path.
+func macConfigPath(home string) (string, error) {
 	home = strings.TrimSpace(home)
 	if home == "" {
 		var err error
@@ -126,15 +142,21 @@ func EnsureConfig(home string) (string, error) {
 			return "", fmt.Errorf("resolve home directory: %w", err)
 		}
 	}
+	if explicit := strings.TrimSpace(os.Getenv("CODEXBAR_CONFIG")); explicit != "" {
+		return withHome(home, explicit), nil
+	}
+	if xdg := withHome(home, os.Getenv("XDG_CONFIG_HOME")); filepath.IsAbs(xdg) {
+		return filepath.Join(xdg, "codexbar", "config.json"), nil
+	}
 	for _, candidate := range []string{
 		filepath.Join(home, ".config", "codexbar", "config.json"),
 		filepath.Join(home, ".codexbar", "config.json"),
 	} {
 		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			return ensureConfigFile(candidate)
+			return candidate, nil
 		}
 	}
-	return ensureConfigFile(filepath.Join(home, ".codexbar", "config.json"))
+	return filepath.Join(home, ".codexbar", "config.json"), nil
 }
 
 // windowsSettingsPath is the one file Win-CodexBar keeps its settings in,
@@ -822,7 +844,9 @@ func classifyProviderError(detail string) string {
 		return ProviderAuthRequired
 	case strings.Contains(lower, "free tier"), strings.Contains(lower, "free plan"), strings.Contains(lower, "subscription required"), strings.Contains(lower, "account does not expose usage"), strings.Contains(lower, "usage") && (strings.Contains(lower, "unavailable") || strings.Contains(lower, "not available") || strings.Contains(lower, "unsupported")):
 		return ProviderNoUsageAvailable
-	case strings.Contains(lower, "no available fetch strategy"), strings.Contains(lower, "no providers"):
+	// "not detected": "Antigravity language server not detected. Launch
+	// Antigravity and retry." The app has to run, which its row can start.
+	case strings.Contains(lower, "no available fetch strategy"), strings.Contains(lower, "no providers"), strings.Contains(lower, "not detected"):
 		return ProviderNotConfigured
 	default:
 		return ProviderEngineError
@@ -913,8 +937,8 @@ func providerResultWithSignIn(id, status, signInURL string) ProviderReadiness {
 		result.Detail = "The provider check timed out."
 		result.NextAction = "Confirm the provider sign-in, then check again."
 	case ProviderRateLimited:
-		result.Detail = label + " is limiting usage checks right now."
-		result.NextAction = "Wait a few minutes, then check again. Nothing needs to be fixed."
+		result.Detail = label + " received too many usage checks and is pausing them for a few minutes."
+		result.NextAction = RateLimitedNextAction
 	case ProviderConfigError:
 		result.Detail = "The usage service could not save or read its provider settings."
 		result.NextAction = "Repair the usage service, then check again."

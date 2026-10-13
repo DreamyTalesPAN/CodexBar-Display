@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { createContext, useContext, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { agentThemeState, agentStatusText } from "@/lib/agent-theme-state";
 import Image from "next/image";
 import { staticGif } from "@/lib/static-gif";
@@ -237,7 +237,7 @@ export const THEME_CATALOG_PREVIEW_FRAME: FrameData = {
   provider: "vibetv",
   label: "VibeTV",
   session: 64,
-  weekly: 64,
+  weekly: 28,
   sessionUnavailable: false,
   weeklyUnavailable: false,
   resetSecs: 3600,
@@ -281,9 +281,14 @@ const DEVICE_THEME_ALIASES: Record<string, string> = {
   synthwave: "synthwave",
 };
 
+// How long the real VibeTV takes for one animation frame. Health polls change
+// this timing, not the artwork, so the decoded frames stay as they are.
+const DeviceFrameMs = createContext(0);
+
 type DecodedSprite = {
   width: number;
   height: number;
+  fps: number;
   /** Time one frame stays on the real VibeTV; 0 for a still image. */
   frameMs: number;
   frames: Array<Array<SpriteRect>>;
@@ -380,6 +385,9 @@ export function LiveVibeTVPreview({
     deviceIsCustomerConnected(device) ||
       (deviceIsActive(device) &&
         device?.paired !== false &&
+        // A missing USB device cannot be kept live by its last cached image.
+        !(deviceUsesCable(device) &&
+          device?.stream?.errorCode === "device_not_found") &&
         // Approved behavior (2026-08-03): temporary failures keep the last
         // verified preview visible while the device reconnects. But a cached
         // frame is not a live connection forever: once the companion reports
@@ -687,12 +695,6 @@ function ThemeSpecSVG({
   deviceFrameMs?: number;
 }) {
   const svgRef = useRef<SVGSVGElement>(null);
-  const decodedSprites = useMemo(() => decodeSpriteAssets(assets), [assets]);
-  // Health polls change timing, not artwork. Keep the decoded frames intact.
-  const sprites = useMemo(() => Object.fromEntries(Object.entries(decodedSprites).map(([path, sprite]) =>
-    [path, sprite.frameMs > 0 && Number.isFinite(deviceFrameMs)
-      ? { ...sprite, frameMs: Math.max(sprite.frameMs, deviceFrameMs) } : sprite],
-  )), [decodedSprites, deviceFrameMs]);
   const primitives = spec.primitives || spec.p || [];
   const state = agentThemeState(frame.activity);
   const reducedMotion = useSyncExternalStore(subscribeReducedMotion, reducedMotionSnapshot, serverReducedMotionSnapshot);
@@ -722,11 +724,6 @@ function ThemeSpecSVG({
     return () => { animation?.cancel(); window.clearInterval(timer); };
   }, [state, motionEnabled, hasAgentStatus, themeId, frame.agentAlertsMuted, frame.agentReminderSecs]);
   const renderedFrame = frame.agentName ? { ...frame, label: agentStatusText(frame.activity, frame.agentName) } : frame;
-  const animationFps = useMemo(
-    () => (motionEnabled ? maximumAnimatedSpriteFps(sprites) : 0),
-    [motionEnabled, sprites],
-  );
-  const animationTick = useAnimationTick(animationFps);
   const renderedAssets = useMemo(() => motionEnabled ? assets : Object.fromEntries(
     Object.entries(assets).map(([path, asset]) => [path,
       asset.contentType === "image/gif" && asset.encoding === "base64"
@@ -745,32 +742,31 @@ function ThemeSpecSVG({
         width="240"
         fill={colorFor(spec.bgColor || spec.bg, "#000000")}
       />
+      <DeviceFrameMs.Provider value={Number.isFinite(deviceFrameMs) ? deviceFrameMs : 0}>
       {primitives.map((primitive, index) => (
         <ThemePrimitiveNode
           assets={renderedAssets}
-          animationTick={animationTick}
+          animate={motionEnabled}
           frame={renderedFrame}
           key={index}
           primitive={primitive}
-          sprites={sprites}
         />
       ))}
+      </DeviceFrameMs.Provider>
     </svg>
   );
 }
 
 function ThemePrimitiveNode({
   assets,
-  animationTick,
+  animate,
   frame,
   primitive,
-  sprites,
 }: {
   assets: Record<string, ThemePackAsset>;
-  animationTick: number;
+  animate: boolean;
   frame: FrameData;
   primitive: ThemePrimitive;
-  sprites: Record<string, DecodedSprite>;
 }) {
   const type = primitive.type || primitive.t || "";
   const x = primitive.x || 0;
@@ -844,54 +840,16 @@ function ThemePrimitiveNode({
     type === "img"
   ) {
     const assetPath = activeAssetPath(primitive, frame);
-    const sprite = assetPath ? sprites[assetPath] : undefined;
-    const renderWidth = width || sprite?.width || 0;
-    const renderHeight = height || sprite?.height || 0;
-    if (!sprite) {
-      return primitive.bg || primitive.bgColor ? (
-        <rect
-          fill={colorFor(primitive.bg || primitive.bgColor, "#000000")}
-          height={renderHeight}
-          width={renderWidth}
-          x={x}
-          y={y}
-        />
-      ) : null;
-    }
-    const currentFrame =
-      sprite.frames[spriteFrameIndex(sprite, animationTick)] ||
-      sprite.frames[0] ||
-      [];
-    return (
-      <g>
-        {(primitive.bg || primitive.bgColor) && (
-          <rect
-            fill={colorFor(primitive.bg || primitive.bgColor, "#000000")}
-            height={renderHeight}
-            width={renderWidth}
-            x={x}
-            y={y}
-          />
-        )}
-        {scaleSpriteRects(
-          currentFrame,
-          sprite,
-          x,
-          y,
-          renderWidth,
-          renderHeight,
-        ).map((rect, index) => (
-          <rect
-            fill={rect.color}
-            height={rect.height}
-            key={index}
-            width={rect.width}
-            x={rect.x}
-            y={rect.y}
-          />
-        ))}
-      </g>
-    );
+    const asset = assetPath ? assets[assetPath] : undefined;
+    return <ThemeSpriteImage
+      raw={asset?.encoding === "text" ? asset.data : ""}
+      animate={animate}
+      x={x}
+      y={y}
+      width={width}
+      height={height}
+      background={primitive.bg || primitive.bgColor}
+    />;
   }
 
   if (type === "gif" || type === "g") {
@@ -2023,23 +1981,7 @@ function activeAssetPath(primitive: ThemePrimitive, frame: FrameData): string {
   return stateAssets.idle || primitive.assetPath || primitive.a || "";
 }
 
-function decodeSpriteAssets(
-  assets: Record<string, ThemePackAsset>,
-): Record<string, DecodedSprite> {
-  const decoded: Record<string, DecodedSprite> = {};
-  for (const [assetPath, asset] of Object.entries(assets)) {
-    if (asset.encoding !== "text") {
-      continue;
-    }
-    const sprite = decodeSprite(asset.data);
-    if (sprite) {
-      decoded[assetPath] = sprite;
-    }
-  }
-  return decoded;
-}
-
-function decodeSprite(raw: string): DecodedSprite | null {
+export function decodeSprite(raw: string): DecodedSprite | null {
   const lines = raw
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -2070,20 +2012,7 @@ function decodeSprite(raw: string): DecodedSprite | null {
     frames.push(decodeRleRows(rows, width, palette));
   }
   const frameMs = frameCount > 1 && fps > 0 ? 1000 / fps : 0;
-  return { width, height, frameMs, frames };
-}
-
-function maximumAnimatedSpriteFps(
-  sprites: Record<string, DecodedSprite>,
-): number {
-  const maximumFps = Object.values(sprites).reduce(
-    (currentMaximum, sprite) =>
-      sprite.frameMs > 0
-        ? Math.max(currentMaximum, 1000 / sprite.frameMs)
-        : currentMaximum,
-    0,
-  );
-  return Math.min(20, Math.max(0, maximumFps));
+  return { width, height, fps, frameMs, frames };
 }
 
 function useAnimationTick(framesPerSecond: number): number {
@@ -2157,6 +2086,64 @@ function spriteFrameIndex(
     return 0;
   }
   return Math.floor(animationTick / sprite.frameMs) % sprite.frames.length;
+}
+
+function ThemeSpriteImage({
+  raw,
+  animate,
+  x,
+  y,
+  width,
+  height,
+  background,
+}: {
+  raw: string;
+  animate: boolean;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  background?: string;
+}) {
+  // Editor geometry changes clone asset objects. Cache by their immutable text,
+  // so only changed image bytes are decoded again, not every pointer move.
+  const decoded = useMemo(() => decodeSprite(raw), [raw]);
+  const deviceFrameMs = useContext(DeviceFrameMs);
+  const sprite = useMemo(() => {
+    if (!decoded || decoded.frameMs <= 0 || deviceFrameMs <= decoded.frameMs) return decoded;
+    return { ...decoded, frameMs: deviceFrameMs, fps: 1000 / deviceFrameMs };
+  }, [decoded, deviceFrameMs]);
+  const renderWidth = width || sprite?.width || 0;
+  const renderHeight = height || sprite?.height || 0;
+  const animationTick = useAnimationTick(
+    animate && sprite && sprite.frames.length > 1 ? sprite.fps : 0,
+  );
+  // Animation updates only this image, leaving the static background alone.
+  const images = useMemo(
+    () => sprite?.frames.map((rects) => {
+      const pixels = scaleSpriteRects(rects, sprite, 0, 0, renderWidth, renderHeight)
+        .map((rect) => `<rect x="${rect.x}" y="${rect.y}" width="${rect.width}" height="${rect.height}" fill="${rect.color}"/>`)
+        .join("");
+      return `data:image/svg+xml,${encodeURIComponent(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${renderWidth}" height="${renderHeight}" viewBox="0 0 ${renderWidth} ${renderHeight}">${pixels}</svg>`,
+      )}`;
+    }) || [],
+    [sprite, renderWidth, renderHeight],
+  );
+  return (
+    <g>
+      {background && <rect fill={colorFor(background, "#000000")} x={x} y={y} width={renderWidth} height={renderHeight} />}
+      {sprite && <image
+        href={images[spriteFrameIndex(sprite, animationTick)] || images[0]}
+        x={x}
+        y={y}
+        width={renderWidth}
+        height={renderHeight}
+        imageRendering="pixelated"
+        preserveAspectRatio="none"
+      />}
+    </g>
+  );
 }
 
 function scaleSpriteRects(
