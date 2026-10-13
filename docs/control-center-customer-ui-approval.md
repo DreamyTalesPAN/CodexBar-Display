@@ -7164,3 +7164,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. No text or layout changes. `Help` opens with focus on the first entry; the arrow keys move between the entries and wrap around; Home and End jump to the first and the last entry; Escape closes the menu and returns focus to Help.
 - Scope: `apps/control-center/src/components/setup/setup-help-menu.tsx` and its test `setup-help-menu-log.test.tsx`, `docs/control-center-accessibility.md`, and this approval record. Night-shift branch only, not merge or release.
 - What's new: none — a correction, nothing new to announce
+
+## 2026-10-13 — Night shift: Setup: the choices move with the arrow keys (#214)
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-13/14; wording not yet seen by him. Issue #214: each choice in setup (the VibeTV, the theme) was its own Tab stop, and the arrow keys did not move between them.
+- Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. No text or layout changes. `Tab` reaches the group of choices once, on the selected one; the arrow keys move to the next or previous choice, wrap around and select it; Space and Enter select as before.
+- Scope: `apps/control-center/src/components/setup/setup-selectable-card.tsx`, `setup-device-card.tsx`, `setup-device-screen.tsx`, `setup-device-dialogs.tsx`, `setup-theme-screen.tsx`, the new test `setup-choice-keyboard.test.tsx`, `docs/control-center-accessibility.md`, and this approval record. Night-shift branch only, not merge or release.
+- What's new: none — a correction, nothing new to announce
