@@ -34,6 +34,8 @@ Before building anything, check once per chat whether the remote branch is ahead
 
 Every change to the VibeTV product is validated on the connected bench Mac with
 both rehearsal scripts before it is handed over, and the real screen is shown.
+A pull request is checked on Windows as well (see "Reviewing a pull request
+head" below).
 Green unit tests, green CI, and a healthy Companion API say nothing about what
 the customer sees. A message can point at an action that does not exist in the
 UI, and only the rendered screen shows that.
@@ -72,6 +74,92 @@ LaunchAgent instead of the Developer-ID-constrained bundled one. The rehearsal
 scripts themselves install candidate DMGs only, so a run that has to produce
 evidence for an exact pull request head still needs the signed merge-gate
 candidate (`CODEX Test VibeTV Merge`, `workflow_dispatch`, `pr_number`).
+
+### Reviewing a pull request head: Mac and Windows, without a signed candidate
+
+A pull request head is rehearsed on the Mac **and** on Windows, cold start and
+warm start each, before anyone talks about merging it. A new commit is a new
+head and needs the runs again, so wait for CI and the automated review of the
+head first. For this review no signed candidate is built; the signed merge-gate
+candidate above stays what the merge gate and a release need.
+
+- **Mac:** a local build of the head, with the head's SHA and the candidate
+  version stamped in, from the repository root:
+
+  ```bash
+  V=9999.0.<n>; OUT=tmp/quick; mkdir -p "$OUT/fw"
+  (cd apps/control-center && npm ci && npm run build:local)
+  rm -rf companion/internal/companionapi/controlcenter_static
+  mkdir -p companion/internal/companionapi/controlcenter_static
+  cp -R apps/control-center/out-local/. companion/internal/companionapi/controlcenter_static/
+  git checkout -- companion/internal/companionapi/controlcenter_static/.gitkeep
+  P=github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo
+  (cd companion && CGO_ENABLED=0 go build \
+    -ldflags "-s -w -X $P.Version=$V -X $P.Commit=$(git rev-parse HEAD)" \
+    -o "../$OUT/codexbar-display" ./cmd/codexbar-display)
+  scripts/build-macos-control-center-app.sh --version "$V" --build <n> --local-preview \
+    --companion-binary "$OUT/codexbar-display" --output "$OUT/VibeTV Control Center.app"
+  codesign --force --deep --sign - "$OUT/VibeTV Control Center.app"
+  scripts/build-macos-control-center-dmg.sh --app "$OUT/VibeTV Control Center.app" \
+    --output "$OUT/VibeTV-Control-Center-$V.dmg" --version "$V"
+  (cd firmware_esp8266 && CODEXBAR_DISPLAY_FW_VERSION="$V" pio run -e esp8266_smalltv_st7789)
+  cp firmware_esp8266/.pio/build/esp8266_smalltv_st7789/firmware.bin "$OUT/fw/"
+  ```
+
+  Without `Commit` the Companion reports `dev` and the head cannot be told
+  from `/v1/status`; without `--version` the app builder refuses the Companion.
+  The copy empties `controlcenter_static`, so commit with exact paths
+  afterwards, never `git add -A companion`. Serve `$OUT/fw` with a manifest
+  from a local port.
+- **Both redirections, before the first app start:**
+  `CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL` and
+  `CODEXBAR_DISPLAY_MAC_APP_RELEASE_API_URL` (a JSON file `{"tag_name":"v<app version>"}`).
+  With only the first one, setup stops at the app check. On the Mac set them
+  with `launchctl setenv`, on Windows as user variables.
+- **Windows:** the unsigned installer of the head's CI run (artifact
+  `vibetv-control-center-windows`, version `9999.0.<n>`), on a real Windows
+  machine with a VibeTV on the cable. CI builds a pull request from GitHub's
+  merge commit, the head merged into the base branch, so this installer is
+  what would land and its `companion.runtime.commit` is that merge commit, not
+  the head. Tie it to the head through the run instead:
+  `gh run list --branch <branch> --json databaseId,headSha` must name the
+  reviewed head for the run the artifact was downloaded from. Cold: app state cleared, VibeTV on the
+  delivery firmware (1.0.41, the firmware of v1.0.56), install, set up. Warm:
+  the public installer with the released firmware first, then the candidate
+  over it and the firmware update from Updates.
+- **What the Mac warm start of a review is, and is not:** the public app with
+  the released firmware is set up, the candidate is installed over it with all
+  customer state kept, and the firmware update runs from the app. Sparkle's
+  own step -- appcast, EdDSA signature, the native "Install Update" dialog --
+  is not exercised by a local build. That step needs the signed merge-gate
+  candidate and `scripts/vibetv-rehearse-warm-start.sh` and is checked there,
+  before a merge or a release. Write the result accordingly: "app replaced by
+  the candidate", not "updated through Sparkle".
+- **Delivery state of a VibeTV on the cable:** stop the app's service, then
+  `esptool.py erase_region 0x200000 0x200000` and `write_flash 0x0` with the
+  1.0.41 image. The erase takes the saved WiFi with it; read `0x3FA000`
+  (`0x6000` bytes) before and write it back for the warm start. That copy
+  holds the WiFi password: delete it after the last run.
+- **Passed** means paired, firmware equal to the candidate, theme active with
+  `renderOk: true`, a healthy stream, the theme kept across the warm start, and
+  the right build running: on the Mac `companion.runtime.commit` in
+  `/v1/status` equals the head, on Windows `companion.version` is the
+  `9999.0.<n>` of the head's CI run.
+- What the pull request changes is looked at in the running app on both
+  platforms, not only read from the API. The result goes into the pull request
+  description: per platform and start the times, the build, the device, and
+  what was not checked.
+- The purge leaves the app's web storage in place (`localStorage`, on the Mac
+  `~/Library/WebKit/shop.vibetv.control-center`, #571). Until the purge does it
+  itself: with the app closed, move that folder aside before the cold start
+  and again before the public app of the warm start is installed, and put the
+  first copy back after the last run (it can hold themes saved in Theme
+  Studio). The app creates a fresh one on its next start. Otherwise the cold
+  start reads what an earlier candidate stored, and the warm start reads what
+  the cold start stored.
+- Do not start the Mac's cold start and the Windows preparation in the same
+  minute: the Windows VibeTV is on WiFi for a moment, the Mac App then finds
+  two VibeTVs and waits for a choice.
 
 Before re-flashing for a newer head, check what actually changed:
 `git diff --name-only <candidate-sha>..<head-sha> -- macos/ firmware/`. When that
