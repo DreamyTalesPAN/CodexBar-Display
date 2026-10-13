@@ -723,8 +723,10 @@ export function buildThemePack(
     ...(usesTextValign ? ["text-valign-v1"] : []),
     ...(usesUsagePace ? ["usage-pace-v1"] : []),
   ];
-  const minFirmware =
-    usesProviderAssets || usesColorStops || usesTextValign
+  // Pace arrived last; its floor matches the Two Limits pack that ships it.
+  const minFirmware = usesUsagePace
+    ? "1.0.63"
+    : usesProviderAssets || usesColorStops || usesTextValign
       ? "1.0.42"
       : usesProviderSlots
         ? "1.0.41"

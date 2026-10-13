@@ -3629,7 +3629,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               disabledProviderIds,
             );
             if (next && current?.mode !== "automatic") {
-              const pinnedId = current?.providerIds[0] ?? "";
+              // Two at once names the member that was switched off.
+              const pinnedId =
+                current?.providerIds.find((id) =>
+                  disabledProviderIds.includes(id),
+                ) ??
+                current?.providerIds[0] ??
+                "";
               switched.providerId = pinnedId;
               switched.label =
                 (providerPreferencesRef.current || []).find(

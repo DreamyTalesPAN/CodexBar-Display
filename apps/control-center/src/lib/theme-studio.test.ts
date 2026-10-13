@@ -470,6 +470,7 @@ describe("buildThemePack capability declaration", () => {
       "usage-slots-v1",
       "usage-pace-v1",
     ]);
+    expect(pack.manifest.minFirmware).toBe("1.0.63");
     expect(
       buildThemePack(specWithBinding("usageSlot1Percent", { slot: 1 }), "Usage Pack")
         .manifest.requiredCapabilities,
