@@ -312,8 +312,8 @@ describe("SettingsScreen standby controls", () => {
     );
   });
 
-  // Without the companion's sign-in action (the Mac app) every provider
-  // CodexBar reports stays on the page as it does today.
+  // Without the companion's sign-in action (an older Companion) every
+  // provider CodexBar reports stays on the page.
   it("keeps every provider in Settings on a companion without the sign-in action", () => {
     const html = render(standbyDevice, savedStandby, {
       ...providerPicker,

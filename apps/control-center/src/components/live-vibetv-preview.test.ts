@@ -54,6 +54,17 @@ describe("latest display frame response", () => {
 });
 
 describe("dynamic usage slot preview", () => {
+  it("uses consistent example values for legacy and generic usage readings", () => {
+    expect(THEME_CATALOG_PREVIEW_FRAME.session).toBe(
+      THEME_CATALOG_PREVIEW_FRAME.usageSlot1Percent,
+    );
+    expect(THEME_CATALOG_PREVIEW_FRAME.weekly).toBe(
+      THEME_CATALOG_PREVIEW_FRAME.usageSlot2Percent,
+    );
+    const frame = buildFrameData("2026-09-08T12:00:00Z", THEME_CATALOG_PREVIEW_FRAME);
+    expect(renderTextPrimitive({ text: "{weekly}%" }, frame)).toBe("28%");
+    expect(progressPercent({ binding: "weekly" }, frame)).toBe(28);
+  });
   it("renders absent token totals as unavailable instead of zero", () => {
     const withoutTokens = buildFrameData("2026-08-11T09:00:00Z", {
       v: 2,

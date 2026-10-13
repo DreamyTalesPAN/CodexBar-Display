@@ -38,6 +38,8 @@ export type ThemeStudioBinding =
   | string;
 
 export type ThemeStudioPrimitive = {
+  // Editor-only position relative to a temporarily removed usage background.
+  usagePanelLayer?: "below" | "above";
   type: ThemeStudioPrimitiveType;
   x: number;
   y: number;
@@ -1103,7 +1105,9 @@ function validatePrimitive(
           `${prefix}: sprite frames must stay within ${maxFrameWidth}x${maxFrameHeight}.`,
         );
       }
-      if (width * height * frames > MAX_SPRITE_TOTAL_PIXELS) {
+      // The pixel budget is the animation frame buffer; a still picture is
+      // drawn row by row and may fill the display, as pixel-battery does.
+      if (sprite?.kind !== "CBI1" && width * height * frames > MAX_SPRITE_TOTAL_PIXELS) {
         errors.push(
           `${prefix}: sprite is too large (${width * height * frames}/${MAX_SPRITE_TOTAL_PIXELS} pixels across frames).`,
         );
@@ -1503,6 +1507,7 @@ function importPrimitive(value: unknown): ThemeStudioPrimitive {
   if (sheetColumns !== undefined) {
     primitive.sheetColumns = sheetColumns;
   }
+  if (value.usagePanelLayer === "below" || value.usagePanelLayer === "above") primitive.usagePanelLayer = value.usagePanelLayer;
   primitive.data = stringValue(value.data) ?? stringValue(value.d);
   const palette = stringArrayValue(value.p);
   if (palette) {
