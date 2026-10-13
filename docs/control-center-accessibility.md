@@ -23,6 +23,10 @@ What the Control Center does for them:
 - The Help menu in setup takes focus when it opens. The arrow keys move between
   its entries and wrap around, Home and End jump to the first and the last
   entry, and Escape closes the menu and gives focus back to Help.
+- A choice in setup (the VibeTV, the theme) is a radio group. Tab reaches the
+  group once, on the selected choice or on the first one when none is selected.
+  The arrow keys move to the next or previous choice, wrapping around, and
+  select it, as native radio buttons do. Enter and Space select too.
 - Opening a dialog moves focus into it. Closing it puts focus back on the
   control that had it before (`components/ui/dialog.tsx`). After a theme is
   deleted its Delete button is gone, so focus goes to the page title.
@@ -140,8 +144,3 @@ and use only the keyboard.
 - Contrast of the themes customers install or build.
 - An increased-contrast mode.
 - The Theme Studio canvas. It is driven with the pointer.
-
-Known gaps this slice found and left open:
-
-- The choices in setup (VibeTV, theme) are radio buttons that are reached one by
-  one with Tab. The arrow keys do not move between them.
