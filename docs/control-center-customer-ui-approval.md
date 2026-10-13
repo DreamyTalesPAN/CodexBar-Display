@@ -7122,3 +7122,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. No new text or layout. Clicking the sidebar entry of the screen you are on, or the VibeTV logo while on Overview, scrolls the page back to its top. Clicking another entry is unchanged.
 - Scope: `control-center-shell.tsx` and its test, and this approval record. Night-shift branch only, not merge or release.
 - What's new: none — a correction, nothing new to announce
+
+## 2026-10-13 — Night shift: Support: the Mac usage engine source reads the same as on Windows (#579)
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-13/14; wording not yet seen by him. Issue #579: the Source field read `Managed by VibeTV` on the Mac and `Included with the app` on Windows, for the same bundled engine.
+- Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. Support › Diagnostics, box `Usage engine`, field `Source`: `Included with the app` on the Mac as well (before: `Managed by VibeTV`). Windows unchanged; the other sources unchanged.
+- Scope: `diagnostics-panel.tsx` and its test, and this approval record. Night-shift branch only, not merge or release.
+- What's new: none — a correction, nothing new to announce
