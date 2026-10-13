@@ -7094,3 +7094,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No UI change. `test-customer-flows.mjs --release-screenshots` only runs the existing flows that already capture screenshots and captures them at 2x for the mail drafts; the app and the other test modes are unchanged.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs` (new mode), `apps/control-center/package.json` (`capture:release-screenshots`), and this approval record, after merging main.
 - What's new: none — test tooling only
+
+## 2026-10-13 — Night shift: the message for blocked access says what to do and checks again (#602)
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-13/14; wording not yet seen by him. It answers issue #602: the message for a provider whose access the computer blocked said only `macOS blocked access required by this provider.` with an `OK` button.
+- Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. The provider message for blocked access adds the next step the app already knows, in the same paragraph: on a Mac `macOS blocked access required by this provider. Allow the required macOS access, then check this provider.`, on Windows `Windows blocked access required by this provider. Allow the required access, then check this provider.` Its main button reads `Check again` instead of `OK`; it closes the message and checks that provider, and the message returns if the access is still blocked. The close button and `Copy provider message for <Provider>` are unchanged. No provider-specific rule is added: both sentences are the ones the service already sends.
+- Scope: `setup/setup-provider-row.tsx`, `setup/setup-providers-screen.tsx`, their tests, and this approval record. Night-shift branch only, not merge or release.
+- What's new: none — a correction, nothing new to announce

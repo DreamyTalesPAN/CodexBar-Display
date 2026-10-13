@@ -850,6 +850,35 @@ describe("SetupProvidersScreen", () => {
   });
 });
 
+describe("SetupProvidersScreen blocked access (#602)", () => {
+  it("says the next step in the message and checks again from there", () => {
+    const cursor = provider({
+      health: "permission_required", label: "Cursor", providerId: "cursor",
+      message: "macOS blocked access required by this provider.",
+    });
+    const blocked = { ...cursor, health: { ...cursor.health,
+      nextAction: "Allow the required macOS access, then check this provider." } };
+    const onCheckAgain = vi.fn();
+    renderDom(
+      <SetupProvidersScreen
+        onCheckAgain={onCheckAgain}
+        onContinue={vi.fn()}
+        onToggle={vi.fn()}
+        pendingCheckIds={new Set<string>()}
+        pendingPreferenceIds={new Set<string>()}
+        providers={[claude, blocked]}
+        usage={usage}
+      />,
+    );
+    expect(screen.getByRole("dialog").textContent).toContain(
+      "macOS blocked access required by this provider. Allow the required macOS access, then check this provider.",
+    );
+    expect(screen.queryByRole("button", { name: "OK" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+    expect(onCheckAgain).toHaveBeenCalledWith(blocked);
+  });
+});
+
 describe("SetupProvidersScreen accessibility", () => {
   it("has no violations with the list, without a match, while loading and with a provider message open", async () => {
     await expectNoAxeViolations(render());

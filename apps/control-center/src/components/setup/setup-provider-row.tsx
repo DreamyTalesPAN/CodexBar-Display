@@ -209,6 +209,10 @@ export function setupProviderIssueMessage({
   if (detail && (health === "rate_limited" || (health === "stale" && nextAction))) {
     return [detail, nextAction].filter(Boolean).join(" ");
   }
+  // Blocked access: "blocked" alone leaves the customer without a step (#602).
+  if (detail && nextAction && health === "permission_required") {
+    return `${detail} ${nextAction}`;
+  }
   // Its own text: a generic engine message hides that an update fixes it.
   const tooOld = health === "engine_incompatible";
   const fallbackMessage =

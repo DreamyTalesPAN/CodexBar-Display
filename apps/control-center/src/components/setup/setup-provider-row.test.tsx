@@ -108,6 +108,20 @@ describe("provider popup guidance", () => {
     })).toBe("Live usage is unavailable; the last successful reading is still saved. Sign-in expired.");
   });
 
+  it("tells a customer whose computer blocked the access what to do next (#602)", () => {
+    expect(setupProviderIssueMessage({
+      health: "permission_required", label: "Cursor",
+      detail: "macOS blocked access required by this provider.",
+      nextAction: "Allow the required macOS access, then check this provider.",
+    })).toBe(
+      "macOS blocked access required by this provider. Allow the required macOS access, then check this provider.",
+    );
+    expect(setupProviderIssueMessage({
+      health: "permission_required", label: "Cursor",
+      detail: "macOS blocked access required by this provider.",
+    })).toBe("macOS blocked access required by this provider.");
+  });
+
   it("preserves the exact reported message before generic detail", () => {
     const reportedMessage = "Codex connection failed: account authentication required to read rate limits";
     expect(setupProviderIssueMessage({ health: "auth_required", label: "Codex",

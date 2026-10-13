@@ -290,6 +290,11 @@ export function ProviderList({
   const ownAppNotice =
     issue && onOpenSetupGuide && setupProviderNeedsOwnApp(issue.provider);
   const issueSignIn = issue && offersSignIn(issue.provider) ? issue.provider : null;
+  // The message for blocked access ends in "then check this provider": the
+  // re-check belongs where the customer reads it, not on the row behind (#602).
+  const issueRecheck =
+    issue && !issueSignIn && issue.provider.health.state === "permission_required"
+      ? issue.provider : null;
 
   return (
     <div className={cn("flex w-full flex-col", className)}>
@@ -309,6 +314,14 @@ export function ProviderList({
             onSelect: () => {
               dismissIssue();
               startSignIn(issueSignIn);
+            },
+          } : issueRecheck ? {
+            label: "Check again",
+            onSelect: () => {
+              setCopied("");
+              resetIssue(issueRecheck);
+              setRequestedIssueId(null);
+              onCheckAgain(issueRecheck);
             },
           } : { label: "OK", onSelect: dismissIssue }}
           secondaryAction={issue.provider.health.reported ? {
