@@ -7202,20 +7202,18 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
   const panel = page
     .locator("section")
     .filter({ has: page.getByRole("heading", { name: "AI providers" }) });
-  const providerDialog = page.getByRole("dialog", { name: "Claude", exact: true });
   await panel.getByRole("button", { name: "Sign in to Claude" }).waitFor({ timeout: 10_000 });
   assert(
     (await page.getByRole("dialog", { name: "Claude", exact: true }).count()) === 0,
     "A signed-out row must lead to its sign-in button, not a popup over it",
   );
-  // The popup opener and the re-check stay beside the sign-in; the popup
-  // offers the same sign-in.
-  await panel.getByRole("button", { name: "Show provider message for Claude" }).click();
-  await providerDialog.getByText("Claude connection failed: authentication required to read usage.", { exact: true }).waitFor();
-  await providerDialog.getByRole("button", { name: "Copy provider message for Claude" }).waitFor();
-  await providerDialog.getByRole("button", { name: "Sign in to Claude" }).waitFor();
-  await providerDialog.getByRole("button", { name: "Close" }).click();
-  await panel.getByRole("button", { name: "Check Claude again" }).waitFor();
+  const signInRow = panel.getByRole("listitem").filter({
+    has: panel.getByRole("button", { name: "Sign in to Claude" }),
+  });
+  assert(await signInRow.getByRole("button").count() === 1,
+    "Windows must show only the sign-in action");
+  assert(await signInRow.getByRole("switch").count() === 0,
+    "Windows must replace the toggle while sign-in is required");
   await panel
     .getByText("Cursor", { exact: true })
     .waitFor({ timeout: 10_000 });
@@ -7337,27 +7335,11 @@ async function testMacAppShowsTheWindowsSignInButton(browser, appUrl) {
     (await page.getByRole("dialog", { name: "Claude", exact: true }).count()) === 0,
     "The Mac must lead signed-out Claude to its sign-in button, not a popup",
   );
-  // On the bench Mac (09.10.) the popup's two buttons did not fit side by
-  // side, and "Sign in to Claude" stuck out of the popup on the right.
-  await page.setViewportSize(desktopViewport);
-  await panel.getByRole("button", { name: "Show provider message for Claude" }).click();
-  const providerDialog = page.getByRole("dialog", { name: "Claude", exact: true });
-  await providerDialog.getByRole("button", { name: "Sign in to Claude" }).waitFor();
-  const dialogBox = await providerDialog.boundingBox();
-  for (const name of ["Copy provider message for Claude", "Sign in to Claude"]) {
-    const box = await providerDialog.getByRole("button", { name }).boundingBox();
-    assert(
-      dialogBox && box && box.x >= dialogBox.x &&
-        box.x + box.width <= dialogBox.x + dialogBox.width + 0.5,
-      `"${name}" must stay inside the provider popup`,
-    );
-  }
-  await providerDialog.getByRole("button", { name: "Close" }).click();
-  await page.setViewportSize(viewport);
-  await panel
-    .getByRole("button", { name: "Check Claude again" })
-    .first()
-    .waitFor({ timeout: 10_000 });
+  const row = panel.getByRole("listitem").filter({ has: signInClaude });
+  assert(await row.getByRole("button").count() === 1,
+    "signed-out Claude must have only the sign-in action");
+  assert(await row.getByRole("switch").count() === 0,
+    "the sign-in action replaces the toggle");
   await signInClaude.click();
   await waitForCondition(
     () =>
@@ -7518,9 +7500,9 @@ async function testProviderCheckWinsOverOlderPreferenceRead(browser, appUrl) {
   const codexPreference = {
     ...providerPreferenceFixture("codex", "Codex"),
     health: {
-      state: "auth_required",
+      state: "unavailable",
       service: "unknown",
-      message: "This provider needs an active sign-in.",
+      message: "The provider could not be checked.",
     },
   };
   await routeCompanionOnline(page, [], () => {}, {
@@ -7543,13 +7525,14 @@ async function testProviderCheckWinsOverOlderPreferenceRead(browser, appUrl) {
   await clickNavigation(page, "Settings");
   const checkAgain = page.getByRole("button", { name: "Check Codex again" });
   await checkAgain.waitFor({ timeout: 10_000 });
+  await page.getByRole("dialog", { name: "Codex", exact: true }).getByRole("button", { name: "OK" }).click();
   await waitForPreferenceReadsToSettle(requests, 2_000);
   const readsBeforeNavigation = requests.filter(
     (request) =>
       request.path === "/v1/preferences" && request.method === "GET",
   ).length;
   assert((await page.getByRole("dialog", { name: "Codex", exact: true }).count()) === 0,
-    "signed-out Codex must offer its sign-in button, not a popup");
+    "a dismissed provider message must stay closed");
   await clickNavigation(page, "Overview");
   await clickNavigation(page, "Settings");
   await waitForCondition(
@@ -7562,7 +7545,7 @@ async function testProviderCheckWinsOverOlderPreferenceRead(browser, appUrl) {
   );
 
   assert((await page.getByRole("dialog", { name: "Codex", exact: true }).count()) === 0,
-    "signed-out Codex must offer its sign-in button, not a popup");
+    "a dismissed provider message must stay closed");
   await checkAgain.click();
   await waitForCondition(
     () =>
@@ -7716,11 +7699,11 @@ async function testProviderOnboardingUsesSharedHealthyDescriptor(
     (await page.getByRole("dialog", { name: "Claude", exact: true }).count()) === 0,
     "setup must lead signed-out Claude to its sign-in button, not a popup",
   );
-  // Its message opens from the warning icon, with the same sign-in on it.
-  await providersScreen.getByRole("button", { name: "Show provider message for Claude" }).click();
-  await providerDialog.getByText("Claude connection failed: authentication required to read usage.", { exact: true }).waitFor();
-  await providerDialog.getByRole("button", { name: "Copy provider message for Claude" }).waitFor();
-  await providerDialog.getByRole("button", { name: "Close" }).click();
+  const signInRow = providersScreen.getByRole("listitem").filter({ has: signInClaude });
+  assert(await signInRow.getByRole("button").count() === 1,
+    "the sign-in row must not duplicate the action in a warning popup");
+  assert(await signInRow.getByRole("switch").count() === 0,
+    "the sign-in row must replace the toggle");
 
   // The shell that can start a sign-in offers that button on the row; pressing
   // it must reach the companion.
@@ -7740,11 +7723,6 @@ async function testProviderOnboardingUsesSharedHealthyDescriptor(
       .count()) === 0,
     "provider rows must not offer a dead external action",
   );
-  const recheckClaude = providersScreen.getByRole("button", {
-    name: "Check Claude again",
-  });
-  await recheckClaude.waitFor({ timeout: 10_000 });
-
   // The search box is the only way through a long provider list, so it has to
   // narrow it without hiding the state the customer is stuck on.
   const search = providersScreen.getByRole("searchbox", {
@@ -7766,26 +7744,18 @@ async function testProviderOnboardingUsesSharedHealthyDescriptor(
     "one healthy provider must open Continue even when another provider needs attention",
   );
 
-  await recheckClaude.click();
   await waitForCondition(
-    () =>
-      requests.filter((request) => request.path === "/v1/providers/retry")
-        .length === 1,
-    "Check again must remain the one explicit provider retry",
+    () => providerRetries >= 1,
+    "sign-in must re-check the provider automatically",
+    20_000,
   );
-  assert(
-    !(await providersContinue.isDisabled()),
-    "a manual check must not override a different healthy provider",
-  );
-  await recheckClaude.waitFor({ timeout: 10_000 });
-  assert(providerRetries === 1, `expected one manual retry, saw ${providerRetries}`);
+  assert(!(await providersContinue.isDisabled()),
+    "a sign-in follow-up must not override a different healthy provider");
+  assert((await providerDialog.count()) === 0,
+    "a background check must not open a popup over the sign-in action");
 
   // Switching the only healthy provider off closes the shared descriptor
   // gate, and switching it back on opens it again.
-  // "Check again" on a row that still needs its sign-in keeps the popup
-  // closed: the row's sign-in stays the one thing to click (09.10.).
-  assert((await providerDialog.count()) === 0,
-    "Check again must not open a popup over the sign-in button");
   const codexSwitch = providersScreen.getByRole("switch", { name: "Codex" });
   await codexSwitch.click();
   await waitForCondition(

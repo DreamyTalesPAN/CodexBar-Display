@@ -5621,3 +5621,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Marcus accepted the faster Theme Studio preview and authorized merging it ("geil klappt. jetzt bitte mergen in main"). These test-only adjustments cover that already approved result.
 - Approved customer-visible result: No additional UI change. Overview and Library tests inspect the pixel rectangles inside cached SVG images instead of requiring individual live DOM rectangles. Updated markup fingerprints reflect this representation; card sizes and the GIF fingerprint remain unchanged.
 - Validation: The focused browser preview suite passes with animation, reduced-motion, static thumbnails and card/dialog equivalence checks. The captured library screenshot was inspected; sprite unit tests additionally check exact color, transparency and scaled coordinates.
+
+
+## 2026-10-13 - One quiet provider sign-in action on Mac and Windows
+
+- User approval: Paul supplied a reference row and explicitly requested: "also der toggle muss dann verschwinden und stattdessen das so aussehen. ändere das mac und windows." His reference shows the provider name on the left and "Sign in to Claude" with a circular chevron on the right.
+- Approved customer-visible result: In the shared provider list in setup and Settings on both platforms, an available sign-in action replaces the toggle, warning triangle, retry and lime button. The only action is muted "Sign in to <Provider>" text and an outlined circular chevron. Existing automatic sign-in checks restore the normal toggle once the provider is ready. Other provider states retain their existing controls. This supersedes the earlier always-visible switch rule for these sign-in rows only.

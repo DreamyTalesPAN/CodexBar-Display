@@ -76,8 +76,8 @@ export const SIGN_IN_PROVIDER_IDS = [
 
 /**
  * The state the row acts on. A stale row keeps its saved reading, but when
- * its live check only waits for a sign-in it offers the same sign-in and
- * "Check again" as a signed-out row: a cookie that expires while a reading is
+ * its live check only waits for a sign-in it offers the same sign-in
+ * as a signed-out row: a cookie that expires while a reading is
  * still saved must not leave the customer with nothing to click.
  */
 export function providerRowHealthState(
@@ -218,7 +218,7 @@ export function ProviderList({
     if (requested) return [{ provider, message, requested }];
     // A row with "Sign in to <Provider>" already shows the one thing to do;
     // a popup on top of it hid that button behind a provider message and a
-    // copy action (bench Mac, 09.10.). Its message opens from the warning icon.
+    // copy action (bench Mac, 09.10.). Sign-in rows need no duplicate warning.
     if (offersSignIn(provider) || signingIn.has(provider.providerId)) return [];
     // A stale row still shows its last reading and recovers by itself, e.g.
     // while CodexBar starts after the runtime restarted. Nothing for the
