@@ -295,6 +295,22 @@ struct ControlCenterURLRouter {
     }
 }
 
+/// The page the Control Center window loads. A theme link is one-shot: once its
+/// page has loaded, a window that is closed and reopened starts at the Control
+/// Center again instead of at the same install page.
+struct ControlCenterRoute {
+    static let home = "control-center"
+    private(set) var path = home
+
+    mutating func open(_ path: String) {
+        self.path = path
+    }
+
+    mutating func didLoad() {
+        path = Self.home
+    }
+}
+
 func runtimeServiceNeedsRefresh(
     registeredVersion: String?,
     currentVersion: String
@@ -1396,7 +1412,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private var installationStatusDetail = "Preparing the Mac App."
     private var installationStatusFailed = false
     private var activeRuntimeOrigin = URL(string: defaultRuntimeOriginString)!
-    private var controlCenterPath = "control-center"
+    private var controlCenterRoute = ControlCenterRoute()
 #if canImport(Sparkle)
     private lazy var updaterController = SPUStandardUpdaterController(
         startingUpdater: true,
@@ -1466,7 +1482,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return
         }
         if let path = urlRouter.receive(urls) {
-            controlCenterPath = path
+            controlCenterRoute.open(path)
             if installationReady, webView != nil {
                 loadControlCenter()
             }
@@ -1544,7 +1560,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 self.installationReady = true
                 self.installationStatus = nil
                 if let path = self.urlRouter.markReady() {
-                    self.controlCenterPath = path
+                    self.controlCenterRoute.open(path)
                 }
                 self.presentControlCenter()
             case .codexBarRepairRequired:
@@ -2855,7 +2871,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private func loadControlCenter(
         cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy
     ) {
-        let url = activeRuntimeOrigin.appendingPathComponent(controlCenterPath)
+        let url = activeRuntimeOrigin.appendingPathComponent(controlCenterRoute.path)
         activeNavigation = webView?.load(
             URLRequest(
                 url: url,
@@ -4516,6 +4532,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         scheduledReload?.cancel()
         scheduledReload = nil
         reloadAttempts = 0
+        controlCenterRoute.didLoad()
     }
 
     private func scheduleReload() {

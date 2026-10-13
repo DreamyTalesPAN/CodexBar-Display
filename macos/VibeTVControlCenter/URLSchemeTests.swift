@@ -598,6 +598,18 @@ func runURLSchemeTests() {
         warmRouter.receive([themeLink]) == "control-center/install/claude-creature",
         "warm theme link must navigate immediately"
     )
+    var route = ControlCenterRoute()
+    require(route.path == "control-center", "the window must start at the Control Center")
+    route.open("control-center/install/claude-creature")
+    require(
+        route.path == "control-center/install/claude-creature",
+        "a theme link must stay the target until its page has loaded, so retries reach it"
+    )
+    route.didLoad()
+    require(
+        route.path == "control-center",
+        "a reopened window must not load the theme link's page a second time"
+    )
     var queuedRouter = ControlCenterURLRouter()
     _ = queuedRouter.receive([URL(string: "vibetv://open-control-center")!])
     _ = queuedRouter.receive([themeLink])
