@@ -6984,3 +6984,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the entry above; nothing else changes.
 - Scope: this approval record only. Bundle branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-13 — Review bundle: no shortcut announcement when its keys are refused
+
+- User approval: Marcus asked on 2026-10-13 to bundle and test the open review PRs together and fix what the review finds. The Codex review on #600 found that What's new announced the provider shortcut even when macOS or Windows had refused its keys. No new wording.
+- Approved customer-visible result: when the native app reports the shortcut as unavailable, What's new leaves out the "Switch providers with a shortcut" item; the other items and the Settings explanation stay as approved. With working keys nothing changes.
+- Scope: `control-center-app.tsx`, its What's new test, and this approval record. Bundle branch only, not merge or release.
+- What's new: none — the entry is only hidden, nothing new is announced

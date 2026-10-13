@@ -618,3 +618,15 @@ it("opens again from Updates with the keys of a Windows computer", async () => {
   vi.useRealTimers();
   await expectNoAxeViolations(page);
 }, 15_000);
+it("does not announce the shortcut when the system refused its keys", async () => {
+  vi.spyOn(navigator, "userAgent", "get").mockReturnValue(
+    "VibeTVControlCenter/1.0.63 ProviderShortcut/unavailable",
+  );
+  const app = startWindow();
+  await app.wait(10);
+  const text = notice()?.textContent ?? "";
+  expect(text).toContain("Choose how often VibeTV switches");
+  expect(text).not.toContain("Switch providers with a shortcut");
+  expect(keyCaps()).toEqual([]);
+  vi.restoreAllMocks();
+});

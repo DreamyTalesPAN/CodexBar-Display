@@ -5134,7 +5134,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     needsRuntimeRecovery ||
     lostDevicePickerOpen ||
     (usageFailure && !usageFailureHidden);
-  const whatsNewEntries = somethingElseAsks
+  const whatsNewEntries = (somethingElseAsks
     ? []
     : whatsNewReopened && activeShellTab === "updates"
       ? newestWhatsNew()
@@ -5142,7 +5142,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         // is told after that update.
         activeShellTab === "overview" && !macAppUpdateAvailable
         ? newestWhatsNew(whatsNewSeen)
-        : [];
+        : []
+  ).filter(
+    // The system refused the keys (another app owns them): Settings says so,
+    // and the notice must not tell the customer to press them.
+    ({ id }) =>
+      id !== "provider-shortcut" ||
+      nativeProviderShortcut(navigator.userAgent) !== "unavailable",
+  );
   // Opened from Updates and taken away by something else, or by the window
   // moving to another page, the notice does not come back by itself: what
   // follows may be a dialog this condition does not know, as the one Updates
