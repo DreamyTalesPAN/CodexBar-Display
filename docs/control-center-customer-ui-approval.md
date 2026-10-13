@@ -5639,3 +5639,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul's exact Mac/Windows provider-row design approval above includes verification of that result.
 - Approved customer-visible result: No further UI change. The browser checks locate each row by its own sign-in button, without referring to an ancestor section from inside the row.
+
+
+## 2026-10-13 - Complete the approved sign-in action automatically
+
+- User approval: Paul requested reviewing and fixing PR #590 on both systems, then approved a single sign-in action replacing the toggle and retry controls on the supplied design.
+- Approved customer-visible result: The same approved row remains unchanged. Starting a second provider sign-in no longer cancels the first provider's automatic checks, and a temporary unavailable/timeout result does not stop recovery. Existing checks continue for at most three minutes, stopping when the provider is ready, switched off, removed or cannot provide usage. This completes the existing automatic behavior required by the one-action row.

@@ -464,6 +464,7 @@ async function main() {
     }
     if (providerSettingsOnly) {
       await testSettingsStayCustomerOnly(browser, appContext.appUrl);
+      await testConcurrentProviderSignInsSurviveTransientChecks(browser, appContext.appUrl);
       await testUsageManagesProviderPreferences(browser, appContext.appUrl);
       await testMacAppShowsTheWindowsSignInButton(
         browser,
@@ -952,6 +953,7 @@ async function main() {
     );
     await testUsagePrioritizesProviderTokenHistory(browser, appContext.appUrl);
     await testUsageManagesProviderPreferences(browser, appContext.appUrl);
+    await testConcurrentProviderSignInsSurviveTransientChecks(browser, appContext.appUrl);
     await testMacAppShowsTheWindowsSignInButton(
       browser,
       appContext.appUrl,
@@ -7339,6 +7341,43 @@ async function testMacAppShowsTheWindowsSignInButton(browser, appUrl) {
   );
 
   assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+async function testConcurrentProviderSignInsSurviveTransientChecks(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const retries = { codex: 0, claude: 0 };
+  await routeCompanionOnline(page, [], () => {}, {
+    preferencesResponse: {
+      ok: true,
+      items: ["codex", "claude"].map((id) => ({
+        ...providerPreferenceFixture(id, id === "codex" ? "Codex" : "Claude"),
+        health: { state: "auth_required", service: "unknown", message: "Sign in required." },
+      })),
+    },
+    onProviderRetry: (_setup, id) => {
+      retries[id] += 1;
+      return exactProviderSetup(id, retries[id] === 1
+        ? (id === "codex" ? "unavailable" : "timeout") : "ready");
+    },
+  });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await clickNavigation(page, "Settings");
+  await page.getByRole("button", { name: "Sign in to Codex" }).click();
+  await page.getByRole("button", { name: "Sign in to Claude" }).click();
+  await waitForCondition(() => retries.codex >= 1 && retries.claude >= 1,
+    "starting another sign-in must not cancel the first provider's checks", 20_000);
+  await waitForCondition(() => retries.codex >= 2 && retries.claude >= 2,
+    "both sign-ins must continue after a transient unavailable/timeout result", 20_000);
+  for (const name of ["Codex", "Claude"]) {
+    await waitForCondition(async () =>
+      await page.getByRole("switch", { name, exact: true }).count() === 1,
+      `${name} must return to its normal toggle after automatic recovery`);
+    assert(await page.getByRole("switch", { name, exact: true }).isChecked(),
+      `${name} must remain enabled after recovery`);
+  }
+  assert(retries.codex === 2 && retries.claude === 2,
+    "each sign-in must keep one follow-up loop");
   await page.close();
 }
 
