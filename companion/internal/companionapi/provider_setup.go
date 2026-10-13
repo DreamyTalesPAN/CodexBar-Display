@@ -432,10 +432,56 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.recordProviderSetupEvents(setup, label)
-	if setup.Status == codexbar.ProviderReady && s.wakeDisplayStream != nil {
-		s.wakeDisplayStream()
+	if setup.Status == codexbar.ProviderReady {
+		// A reading the running usage service took before CodexBar's config
+		// changed can still look fresh, so it is no evidence that the service
+		// runs on the current config; the supervisor decides that.
+		if providerID != "" && s.restartUsageService != nil {
+			s.requestUsageServiceReplace(providerID)
+		} else if s.wakeDisplayStream != nil {
+			s.wakeDisplayStream()
+		}
 	}
 	writeJSON(w, http.StatusOK, providerSetupResponse{OK: true, ProviderSetup: setup})
+}
+
+// requestUsageServiceReplace asks the supervisor to check the usage service.
+// A request that arrives while a replacement runs is kept, not dropped: the
+// config may have changed after that replacement's child already read it,
+// so the running replacement asks the supervisor once more when it is done.
+func (s *Server) requestUsageServiceReplace(providerID string) {
+	s.usageServiceRestartPending.Store(true)
+	if s.usageServiceRestarting.CompareAndSwap(false, true) {
+		go s.replaceUsageService(providerID)
+	}
+}
+
+// replaceUsageService swaps the running usage service for a fresh one, then
+// collects again. "Check again" just read the provider with a fresh CodexBar,
+// so a running service started on older settings may be the stale part. The
+// supervisor replaces it only when CodexBar's config changed after it
+// started; one already running on the current config keeps collecting. It
+// repeats while checks keep arriving during a restart.
+func (s *Server) replaceUsageService(providerID string) {
+	for {
+		for s.usageServiceRestartPending.Swap(false) {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			err := s.restartUsageService(ctx)
+			cancel()
+			if err != nil && s.logf != nil {
+				s.logf("VibeTV usage service restart after checking %s failed: %v", providerID, err)
+			}
+		}
+		s.usageServiceRestarting.Store(false)
+		// A request stored just before the flag cleared saw a replacement
+		// still running and left; take it over unless another one did.
+		if !s.usageServiceRestartPending.Load() || !s.usageServiceRestarting.CompareAndSwap(false, true) {
+			break
+		}
+	}
+	if s.wakeDisplayStream != nil {
+		s.wakeDisplayStream()
+	}
 }
 
 // openProviderSignInFn opens a URL in the customer's default browser. Tests
@@ -468,9 +514,10 @@ func (s *Server) handleProviderSetupGuide(w http.ResponseWriter, r *http.Request
 // handleProviderSignIn starts the sign-in for one provider. When CodexBar
 // named a browser page for the provider's current browser_sign_in_required
 // state, only that page opens. Otherwise the provider's own tool signs in:
-// its CLI login in a visible terminal, its app, or -- when neither is
-// installed -- its official install page. The request carries a provider id,
-// never a URL or a path.
+// its browser sign-in page (Claude and Cursor on the Mac), its CLI login
+// without a terminal window, its app, or -- when neither is installed -- its
+// official install page. The request carries a provider id, never a URL or a
+// path.
 func (s *Server) handleProviderSignIn(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
@@ -479,6 +526,9 @@ func (s *Server) handleProviderSignIn(w http.ResponseWriter, r *http.Request) {
 	if url := s.providerSignInURL(providerID); url != "" {
 		if err := openProviderSignInFn(url); err != nil {
 			writeError(w, http.StatusInternalServerError, "provider_sign_in_failed", "The browser could not be opened.", "Open "+url+" in your browser, sign in, then check again.")
+			return
+		}
+		if !s.useBrowserCookies(w, providerID) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "action": providerSignInActionBrowser, "url": url})
@@ -498,7 +548,31 @@ func (s *Server) handleProviderSignIn(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "provider_sign_in_failed", "The sign-in could not be started.", nextAction)
 		return
 	}
+	if plan.Action == providerSignInActionBrowser && !s.useBrowserCookies(w, providerID) {
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "action": plan.Action, "url": plan.URL})
+}
+
+// useBrowserCookies runs once the browser sign-in page is open. A provider
+// pinned to a saved cookie would never see that sign-in, so it goes back to
+// CodexBar's browser import. CodexBar 0.63.0 has no command for this (its
+// config CLI only enables, disables and stores API keys), so the Companion
+// changes that one field. When it cannot, the sign-in reports the failure:
+// the provider would stay pinned, and checking again could never succeed.
+func (s *Server) useBrowserCookies(w http.ResponseWriter, providerID string) bool {
+	changed, err := codexbar.UseBrowserCookies(s.home, providerID)
+	if err != nil {
+		if s.logf != nil {
+			s.logf("VibeTV provider sign-in: could not switch %s to browser cookies: %v", providerID, err)
+		}
+		writeError(w, http.StatusInternalServerError, "provider_sign_in_failed", providerReadinessMessage(codexbar.ProviderConfigError), providerReadinessNextAction(codexbar.ProviderConfigError))
+		return false
+	}
+	if changed && s.logf != nil {
+		s.logf("VibeTV provider sign-in: %s now reads the browser sign-in instead of a saved cookie", providerID)
+	}
+	return true
 }
 
 // providerSignInURL is the page CodexBar named in this provider's latest

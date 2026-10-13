@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -144,6 +145,117 @@ func TestDashboardServeSupervisorRestartsCrashedChildWithBackoff(t *testing.T) {
 		if argValue(record.Args, "--port") == "8080" {
 			t.Fatalf("restart used forbidden port 8080: %v", record.Args)
 		}
+	}
+}
+
+// "Check again" replaces a serve that kept failing a provider a fresh CodexBar
+// reads fine (Mac, 2026-10-09) once CodexBar's config changed after the serve
+// started. A serve already running on the current config keeps running. The
+// replacement starts at once, not after the crash backoff, and Restart
+// returns only once it answers.
+func TestDashboardServeSupervisorRestartReplacesTheRunningChild(t *testing.T) {
+	configDir := t.TempDir()
+	t.Setenv("APPDATA", configDir)
+	configPath := filepath.Join(configDir, "CodexBar", "settings.json")
+	if runtime.GOOS != "windows" {
+		configPath = filepath.Join(configDir, "config.json")
+		t.Setenv("CODEXBAR_CONFIG", configPath)
+	}
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte("{\"enabled_providers\":[]}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	beforeStart := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(configPath, beforeStart, beforeStart); err != nil {
+		t.Fatal(err)
+	}
+	recordPath := t.TempDir() + "/dashboard-helper.jsonl"
+	supervisor := newTestDashboardServeSupervisor(t, "serve", recordPath, 60*time.Second)
+	supervisor.backoffBase = time.Hour
+	supervisor.backoffMax = time.Hour
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		supervisor.Run(ctx)
+		close(done)
+	}()
+	defer func() {
+		cancel()
+		waitForDashboardSupervisorDone(t, done)
+	}()
+
+	first := waitForDashboardServeHealthy(t, supervisor)
+	restartCtx, cancelRestart := context.WithTimeout(context.Background(), dashboardServeTestWait)
+	defer cancelRestart()
+	if err := supervisor.Restart(restartCtx); err != nil {
+		t.Fatalf("restart: %v", err)
+	}
+	if unchanged := supervisor.Info(); unchanged.PID != first.PID {
+		t.Fatalf("a serve running on the current config must keep running, first=%#v now=%#v", first, unchanged)
+	}
+
+	// A coarse or preserved timestamp can predate startup despite new
+	// settings. The content change must still replace the running child.
+	if err := os.WriteFile(configPath, []byte("{\"enabled_providers\":[\"claude\"]}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(configPath, beforeStart, beforeStart); err != nil {
+		t.Fatal(err)
+	}
+	if err := supervisor.Restart(restartCtx); err != nil {
+		t.Fatalf("restart: %v", err)
+	}
+	second := supervisor.Info()
+	if !second.Healthy || second.PID == 0 || second.PID == first.PID {
+		t.Fatalf("expected a new healthy child, first=%#v second=%#v", first, second)
+	}
+	if records := waitForDashboardServeRecords(t, recordPath, 2); records[1].PID != second.PID {
+		t.Fatalf("expected the second start to be the running child, got %#v", records)
+	}
+	if err := supervisor.Restart(restartCtx); err != nil {
+		t.Fatalf("recheck after replacement: %v", err)
+	}
+	if current := supervisor.Info(); current.PID != second.PID {
+		t.Fatal("the replacement already has the changed config; do not restart again")
+	}
+}
+
+// The same bytes stay current even when touched, while changed bytes with
+// an unchanged timestamp must trigger a replacement.
+func TestDashboardConfigTracksContentsInsteadOfModificationTime(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	t.Setenv("CODEXBAR_CONFIG", path)
+	if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	started, err := readDashboardConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	future := time.Now().Add(time.Hour)
+	if err := os.Chtimes(path, future, future); err != nil {
+		t.Fatal(err)
+	}
+	if dashboardConfigChanged(started) {
+		t.Fatal("touching unchanged settings must not restart the service")
+	}
+	if err := os.WriteFile(path, []byte(`{"providers":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if !dashboardConfigChanged(started) {
+		t.Fatal("changed contents must be detected regardless of mtime")
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if !dashboardConfigChanged(started) {
+		t.Fatal("unreadable settings must remain unknown")
 	}
 }
 
@@ -489,4 +601,71 @@ func argValue(args []string, name string) string {
 
 func errorsIsNotExist(err error) bool {
 	return err != nil && os.IsNotExist(err)
+}
+
+// A serve keeps reading the file it started with. When CodexBar would now
+// read another one, the serve is stale even though its own file is old: a
+// ~/.config/codexbar/config.json that appeared later takes priority, and a
+// repointed symlink names a file whose time can predate the start.
+func TestDashboardConfigChangedSeesAnotherFileThanTheRunningServe(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Win-CodexBar reads one fixed settings file")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEXBAR_CONFIG", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	legacy := filepath.Join(home, ".codexbar", "config.json")
+	if err := os.MkdirAll(filepath.Dir(legacy), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(legacy, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	started, err := readDashboardConfig(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dashboardConfigChanged(started) {
+		t.Fatal("the file the serve started with is still the selected one")
+	}
+	preferred := filepath.Join(home, ".config", "codexbar", "config.json")
+	if err := os.MkdirAll(filepath.Dir(preferred), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(preferred, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !dashboardConfigChanged(started) {
+		t.Fatal("a later ~/.config/codexbar/config.json must make the serve stale")
+	}
+
+	older := filepath.Join(home, "older.json")
+	newer := filepath.Join(home, "newer.json")
+	for _, path := range []string{older, newer} {
+		if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(home, "linked.json")
+	if err := os.Symlink(newer, link); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_CONFIG", link)
+	started, err = readDashboardConfig(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dashboardConfigChanged(started) {
+		t.Fatal("an unchanged symlink is still the selected file")
+	}
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(older, link); err != nil {
+		t.Fatal(err)
+	}
+	if !dashboardConfigChanged(started) {
+		t.Fatal("a repointed symlink must make the serve stale")
+	}
 }

@@ -83,7 +83,8 @@ func TestPreferencesMarksUnavailableProviderStaleFromPersistedUsage(t *testing.T
 	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
 	var response preferencesResponse
 	_ = json.Unmarshal(recorder.Body.Bytes(), &response)
-	if response.Items[0].Health.State != "stale" || response.Items[0].Health.LastSuccessAt != collectedAt.Format(time.RFC3339) {
+	if response.Items[0].Health.State != "stale" || response.Items[0].Health.LastSuccessAt != collectedAt.Format(time.RFC3339) ||
+		response.Items[0].Health.SignInState != "" {
 		t.Fatalf("unexpected stale health: %#v", response.Items[0].Health)
 	}
 }
@@ -118,7 +119,46 @@ func TestPreferencesKeepRetainedUsageStaleAcrossHealthRefresh(t *testing.T) {
 				response.Items[0].Health.Reported != "Live usage is unavailable; the last successful reading is still saved. Codex sign-in expired." {
 				t.Fatalf("retained reading lost eligibility after %s refresh: %#v", health, response.Items)
 			}
+			// The saved reading keeps the row stale, but the customer still
+			// needs the sign-in the live check is waiting for.
+			if got := response.Items[0].Health.SignInState; got != string(health) {
+				t.Fatalf("stale row lost its sign-in after %s refresh: signInState=%q", health, got)
+			}
 		})
+	}
+}
+
+// The 09.10. Mac incident: Claude's saved cookie expired while a reading from
+// before was still saved. The exact check said what to do, yet the stale row
+// offered no action at all. The row stays stale and names the sign-in, with
+// the page the check found.
+func TestPreferencesStaleRowCarriesExactSignIn(t *testing.T) {
+	now := time.Date(2026, 10, 9, 9, 0, 0, 0, time.UTC)
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.now = func() time.Time { return now }
+	server.providerReadiness = map[string]providerReadinessRecord{
+		"claude": {
+			Status:    codexbar.ProviderBrowserSignInRequired,
+			SignInURL: "https://claude.ai/login",
+			CheckedAt: now.Add(-time.Minute),
+		},
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
+			Provider: "claude", Frame: protocol.Frame{Provider: "claude", Session: 5}, CollectedAt: now.Add(-10 * time.Minute), Retained: true,
+		}}}, true
+	}
+
+	items := server.providerDescriptors([]codexbar.ProviderSetting{{
+		ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthUnavailable,
+	}})
+	if len(items) != 1 {
+		t.Fatalf("items=%#v", items)
+	}
+	health := items[0].Health
+	if health.State != providerHealthStateStale || health.SignInState != "browser_sign_in_required" ||
+		health.SignInURL != "https://claude.ai/login" || health.NextAction == "" {
+		t.Fatalf("stale row without its exact sign-in: %#v", health)
 	}
 }
 

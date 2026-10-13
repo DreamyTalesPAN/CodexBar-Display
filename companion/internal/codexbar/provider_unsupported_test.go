@@ -59,9 +59,10 @@ func TestUnsupportedClassificationStaysNarrow(t *testing.T) {
 		"Not logged in to Gemini. Run 'gemini' in Terminal to authenticate.": ProviderAuthRequired,
 		// A licensed account that merely lacks a project, or any unrelated
 		// 403, must not be told its provider ended.
-		"Gemini API error: HTTP 403":                                              ProviderEngineError,
-		"PERMISSION_DENIED: SUBSCRIPTION_REQUIRED":                                ProviderPermissionRequired,
-		"Antigravity language server not detected. Launch Antigravity and retry.": ProviderEngineError,
+		"Gemini API error: HTTP 403":               ProviderEngineError,
+		"PERMISSION_DENIED: SUBSCRIPTION_REQUIRED": ProviderPermissionRequired,
+		// Antigravity not running is fixed by opening the app (its row can).
+		"Antigravity language server not detected. Launch Antigravity and retry.": ProviderNotConfigured,
 		// A real expiry on another provider keeps its sign-in.
 		"OAuth token expired": ProviderAuthRequired,
 		// A recoverable message from any provider may still say that some

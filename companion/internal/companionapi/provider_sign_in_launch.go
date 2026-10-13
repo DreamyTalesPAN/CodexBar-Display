@@ -24,7 +24,9 @@ const (
 // its tool, not its usage endpoint, is signed out: start the tool's own login
 // (Codex and Claude Code open the browser themselves), open the app (Cursor
 // and Antigravity sign in inside the app), or, when nothing is installed yet,
-// open the official install page.
+// open the official install page. On macOS CodexBar reads Claude and Cursor
+// from the browser sign-in ("No Cursor session found ... log in to cursor.com
+// in Safari, Chrome, ..."), so there the button opens that sign-in page.
 type providerSignInLaunch struct {
 	// cliNames are looked up on PATH; cliWindows/cliDarwin are the known
 	// install locations relative to the home directory when PATH misses.
@@ -34,30 +36,33 @@ type providerSignInLaunch struct {
 	loginArgs  []string
 	// appWindows/appDarwin are the desktop app locations relative to the home
 	// directory (Windows) or absolute (macOS).
-	appWindows  []string
-	appDarwin   []string
-	downloadURL string
+	appWindows []string
+	appDarwin  []string
+	// browserDarwin is the sign-in page CodexBar reads on macOS.
+	browserDarwin string
+	downloadURL   string
 }
 
 var providerSignInLaunches = map[string]providerSignInLaunch{
 	"codex": {
-		cliNames:    []string{"codex"},
-		cliWindows:  []string{"AppData/Local/Programs/codex/codex.exe"},
-		cliDarwin:   []string{"/opt/homebrew/bin/codex", "/usr/local/bin/codex"},
+		cliNames:   []string{"codex"},
+		cliWindows: []string{"AppData/Local/Programs/codex/codex.exe"},
+		// The ChatGPT app ships the Codex CLI inside its bundle.
+		cliDarwin:   []string{"/opt/homebrew/bin/codex", "/usr/local/bin/codex", "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex"},
 		loginArgs:   []string{"login"},
 		downloadURL: "https://developers.openai.com/codex/cli/",
 	},
 	"claude": {
-		cliNames:    []string{"claude"},
-		cliWindows:  []string{".local/bin/claude.exe"},
-		cliDarwin:   []string{".local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude"},
-		loginArgs:   []string{"auth", "login"},
-		downloadURL: "https://docs.anthropic.com/en/docs/claude-code/setup",
+		cliNames:      []string{"claude"},
+		cliWindows:    []string{".local/bin/claude.exe"},
+		loginArgs:     []string{"auth", "login"},
+		browserDarwin: "https://claude.ai/login",
+		downloadURL:   "https://docs.anthropic.com/en/docs/claude-code/setup",
 	},
 	"cursor": {
-		appWindows:  []string{"AppData/Local/Programs/cursor/Cursor.exe"},
-		appDarwin:   []string{"/Applications/Cursor.app"},
-		downloadURL: "https://cursor.com/download",
+		appWindows:    []string{"AppData/Local/Programs/cursor/Cursor.exe"},
+		browserDarwin: "https://cursor.com/dashboard",
+		downloadURL:   "https://cursor.com/download",
 	},
 	"antigravity": {
 		appWindows:  []string{"AppData/Local/Programs/Antigravity/Antigravity.exe"},
@@ -81,6 +86,9 @@ func planProviderSignIn(providerID, goos, home string, lookPath func(string) (st
 	launch, ok := providerSignInLaunches[strings.ToLower(strings.TrimSpace(providerID))]
 	if !ok {
 		return providerSignInPlan{}, false
+	}
+	if goos == "darwin" && launch.browserDarwin != "" {
+		return providerSignInPlan{Action: providerSignInActionBrowser, URL: launch.browserDarwin}, true
 	}
 	if len(launch.loginArgs) > 0 {
 		for _, name := range launch.cliNames {
@@ -131,19 +139,17 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
-// providerSignInFeatureEnabledFor reports whether goos gets the shortened
-// provider list and the sign-in button. Both are Windows launch decisions:
-// the Mac app keeps CodexBar's full provider inventory and the rows it
-// already shows today.
+// providerSignInFeatureEnabledFor reports whether goos gets the sign-in
+// button. Windows and the Mac look and work the same.
 func providerSignInFeatureEnabledFor(goos string) bool {
-	return goos == "windows"
+	return goos == "windows" || goos == "darwin"
 }
 
 // launchProviderSignInFn carries out a plan. Tests replace it.
 var launchProviderSignInFn = func(plan providerSignInPlan) error {
 	switch plan.Action {
 	case providerSignInActionCLILogin:
-		return startCLILoginInTerminal(runtime.GOOS, plan.Path, plan.Args)
+		return startCLILogin(plan.Path, plan.Args)
 	case providerSignInActionApp:
 		return openApp(runtime.GOOS, plan.Path)
 	default:
@@ -152,41 +158,20 @@ var launchProviderSignInFn = func(plan providerSignInPlan) error {
 	}
 }
 
-// startCLILoginInTerminal starts the tool's login. On Windows it runs without
-// a console window: a black terminal box the customer cannot close looks
-// broken in a packaged app. The login prints its browser URL on stdout or
-// stderr and normally opens the browser itself; we watch the output and open
-// the URL ourselves if the browser did not come up on its own.
-func startCLILoginInTerminal(goos, path string, args []string) error {
-	switch goos {
-	case "windows":
-		cmd := childproc.Hide(exec.Command(path, args...))
-		// The login keeps printing while it waits for the browser, so its
-		// output must go somewhere; a full pipe buffer would stall it.
-		cmd.Stdout = io.Discard
-		cmd.Stderr = io.Discard
-		if err := cmd.Start(); err != nil {
-			return err
-		}
-		go func() { _ = cmd.Wait() }()
-		return nil
-	case "darwin":
-		script := shellQuote(path)
-		for _, arg := range args {
-			script += " " + shellQuote(arg)
-		}
-		escaped := strings.ReplaceAll(script, "\"", "\\\"")
-		return exec.Command("osascript",
-			"-e", "tell application \"Terminal\" to do script \""+escaped+"\"",
-			"-e", "tell application \"Terminal\" to activate").Run()
-	default:
-		cmd := exec.Command(path, args...)
-		if err := cmd.Start(); err != nil {
-			return err
-		}
-		go func() { _ = cmd.Wait() }()
-		return nil
+// startCLILogin starts the tool's login without a terminal window, on Windows
+// and on the Mac alike: a terminal box the customer cannot close looks broken
+// in a packaged app. The login opens the browser itself.
+func startCLILogin(path string, args []string) error {
+	cmd := childproc.Hide(exec.Command(path, args...))
+	// The login keeps printing while it waits for the browser, so its
+	// output must go somewhere; a full pipe buffer would stall it.
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
+	if err := cmd.Start(); err != nil {
+		return err
 	}
+	go func() { _ = cmd.Wait() }()
+	return nil
 }
 
 func openApp(goos, path string) error {
@@ -203,8 +188,4 @@ func openApp(goos, path string) error {
 		go func() { _ = cmd.Wait() }()
 		return nil
 	}
-}
-
-func shellQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }

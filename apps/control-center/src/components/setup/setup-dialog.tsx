@@ -102,7 +102,10 @@ export function SetupDialog({
         </DialogHeader>
         {children}
         {primaryAction || secondaryAction ? (
-          <DialogFooter>
+          // Two long labels, e.g. "Copy provider message for Claude" and
+          // "Sign in to Claude", are wider than the popup: the main action
+          // moves to its own line instead of sticking out on the right.
+          <DialogFooter className="sm:flex-wrap">
             {secondaryAction ? (
               <SetupDialogButton action={secondaryAction} variant="outline" />
             ) : null}
