@@ -14,7 +14,6 @@
 import {
   Keyboard,
   PanelsTopLeft,
-  Percent,
   Repeat,
   type LucideIcon,
 } from "lucide-react";
@@ -58,13 +57,6 @@ export const WHATS_NEW: WhatsNewEntry[] = [
     title: "Choose how often VibeTV switches",
     body: "In Automatic mode VibeTV can switch when your activity changes, or every 30 seconds, every minute or every 5 minutes.",
     inSettings: "settings-display-mode",
-  },
-  {
-    id: "usage-display",
-    icon: Percent,
-    title: "Show what is used or what is left",
-    body: "Choose whether VibeTV shows how much of your limit you have used or how much remains.",
-    inSettings: "settings-display",
   },
 ];
 

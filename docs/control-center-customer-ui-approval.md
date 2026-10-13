@@ -6998,3 +6998,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Settings > Display no longer shows the "Usage display" row or its "Default is the same as …" line. Used or Remaining on VibeTV and in the app follow CodexBar's setting, as on main today. "Switch providers" under Automatic is unchanged. This supersedes the #183 and #558 entries above for the Usage display row only; it never shipped.
 - Scope: `settings-screen.tsx` and its tests, the display preference adapter, runtime config, daemon and usage API in `companion`, `docs/preferences.md`, and this approval record. Bundle branch only, not merge or release.
 - What's new: none — the row never shipped, so nothing is announced or taken back
+
+## 2026-10-13 — Review bundle: What's new no longer announces Usage display
+
+- User approval: follows Paul's request in #600 above to drop `vibetv.usage.displayMode` from the bundle; the Codex review on #600 found that What's new still announced it.
+- Approved customer-visible result: the What's new notice no longer contains "Show what is used or what is left" and its "Show me in Settings" link. The remaining entries (Gauge, Token Counter, the provider shortcut and Switch providers) are unchanged. The entry never shipped, so no customer has seen it.
+- Scope: `lib/whats-new.ts`, its What's new test, and this approval record. Bundle branch only, not merge or release.
+- What's new: none — the change removes the `usage-display` entry and adds nothing
