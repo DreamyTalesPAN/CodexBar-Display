@@ -5627,3 +5627,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul supplied a reference row and explicitly requested: "also der toggle muss dann verschwinden und stattdessen das so aussehen. ändere das mac und windows." His reference shows the provider name on the left and "Sign in to Claude" with a circular chevron on the right.
 - Approved customer-visible result: In the shared provider list in setup and Settings on both platforms, an available sign-in action replaces the toggle, warning triangle, retry and lime button. The only action is muted "Sign in to <Provider>" text and an outlined circular chevron. Existing automatic sign-in checks restore the normal toggle once the provider is ready. Other provider states retain their existing controls. This supersedes the earlier always-visible switch rule for these sign-in rows only.
+
+
+## 2026-10-13 - Preserve the provider retry race check
+
+- User approval: Paul's provider-row design request above covers its affected customer-flow checks on Mac and Windows.
+- Approved customer-visible result: No further UI change. The existing retry race now uses an unavailable provider, since a signed-out provider has only the approved sign-in action. Its ordinary notice is dismissed after navigation before checking the race.

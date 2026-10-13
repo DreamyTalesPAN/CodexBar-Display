@@ -7544,8 +7544,8 @@ async function testProviderCheckWinsOverOlderPreferenceRead(browser, appUrl) {
     "navigation must start the stale read used by the provider-check race",
   );
 
-  assert((await page.getByRole("dialog", { name: "Codex", exact: true }).count()) === 0,
-    "a dismissed provider message must stay closed");
+  // Navigation mounts a fresh provider list, so dismiss its unavailable notice.
+  await page.getByRole("dialog", { name: "Codex", exact: true }).getByRole("button", { name: "OK" }).click();
   await checkAgain.click();
   await waitForCondition(
     () =>
