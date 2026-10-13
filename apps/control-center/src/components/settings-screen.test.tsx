@@ -505,7 +505,7 @@ describe("SettingsScreen standby controls", () => {
       );
     };
     const byActivity =
-      "VibeTV switches between your providers based on recent activity and usage.";
+      "the current provider stays on screen.";
     const onATimer = "VibeTV switches between your providers on a timer.";
 
     const automatic = displayMode("automatic", [rotation]);

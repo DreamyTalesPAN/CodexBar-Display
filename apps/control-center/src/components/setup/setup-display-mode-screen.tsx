@@ -173,7 +173,7 @@ export function DisplayModeChoice({
   simplePreview,
   previewTheme,
   usageMode,
-  automaticDescription = "VibeTV switches between your providers based on recent activity and usage.",
+  automaticDescription = "the current provider stays on screen.",
   automaticPreview,
   className,
   manualPreview,
