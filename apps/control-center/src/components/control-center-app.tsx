@@ -119,6 +119,8 @@ import { buildAiFixPrompt } from "./setup/setup-ai-prompt";
 import type { SetupConnectSteps } from "./setup/setup-connect";
 import { displayPreviewsFor } from "./setup/setup-display-previews";
 import {
+  PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS,
+  providerRowHealthState,
   setupProviderCanDisplay,
 } from "./setup/setup-providers-screen";
 import {
@@ -181,7 +183,6 @@ const PROVIDER_POOL_RECONCILE_RETRY_MS = 5_000;
 // nobody signs in. The window is wall-clock, not a check count: probe
 // duration must not stretch it.
 const PROVIDER_SIGN_IN_FOLLOW_UP_INTERVAL_MS = 15_000;
-const PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS = 180_000;
 // launchd restarts the service itself: KeepAlive with a 10s ThrottleInterval
 // (main.swift:3759-3761), then the process start, then the 5s poll that sees it
 // -- about seventeen seconds before the app has learnt anything. Repairing at
@@ -3652,13 +3653,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   // After the sign-in starts (browser page, CLI login or app), keep asking
-  // for this provider's exact check until the row leaves its sign-in state or
-  // the window runs out. The customer signs in in another window; without
-  // this the row only moves when they come back and press check again.
-  const providerSignInFollowUpRef = useRef<{
-    providerId: string;
-    stop: () => void;
-  } | null>(null);
+  // for this provider's exact check until it recovers or the window runs out.
+  // Each sign-in continues independently through transient check failures.
+  const providerSignInFollowUpsRef = useRef(new Map<string, () => void>());
   const openProviderSignIn = useCallback(
     async (item: PreferenceDescriptor) => {
       const providerId = item.providerId?.trim().toLowerCase();
@@ -3680,48 +3677,44 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         );
         return;
       }
-      providerSignInFollowUpRef.current?.stop();
-      let stopped = false;
+      const followUps = providerSignInFollowUpsRef.current;
+      followUps.get(providerId)?.();
       const deadline = Date.now() + PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS;
-      let timer: number | null = null;
-      const stillWaiting = () =>
-        providerPreferencesRef.current?.some(
-          (preference) =>
-            preference.providerId?.trim().toLowerCase() === providerId &&
-            (preference.health?.state === "browser_sign_in_required" ||
-              preference.health?.state === "auth_required" ||
-              preference.health?.state === "setup_required"),
-        ) ?? false;
-      const tick = async () => {
-        timer = null;
-        if (stopped || Date.now() >= deadline || !stillWaiting()) {
-          return;
-        }
-        await checkProvider(item);
-        if (!stopped && Date.now() < deadline && stillWaiting()) {
-          timer = window.setTimeout(
-            () => void tick(),
-            PROVIDER_SIGN_IN_FOLLOW_UP_INTERVAL_MS,
+      const stillWaiting = () => {
+        const preference = providerPreferencesRef.current?.find(
+          (value) => value.providerId?.trim().toLowerCase() === providerId,
+        );
+        return preference !== undefined && preference.value !== false &&
+          !["healthy", "disabled", "unsupported", "no_usage_available"].includes(
+            preference.health ? providerRowHealthState(preference.health) : "",
           );
-        }
       };
-      providerSignInFollowUpRef.current = {
-        providerId,
-        stop: () => {
-          stopped = true;
-          if (timer !== null) {
-            window.clearTimeout(timer);
+      const stopPolling = startProviderPreferencesPolling({
+        intervalMs: PROVIDER_SIGN_IN_FOLLOW_UP_INTERVAL_MS,
+        // The external sign-in page may cover the app while it is checked.
+        isVisible: () => true,
+        refresh: async () => {
+          if (Date.now() >= deadline || !stillWaiting()) {
+            stop();
+            return;
           }
+          await checkProvider(item);
+          if (Date.now() >= deadline || !stillWaiting()) stop();
         },
+      });
+      const stop = () => {
+        stopPolling();
+        // A cancelled check may finish after a newer sign-in for this provider.
+        if (followUps.get(providerId) === stop) followUps.delete(providerId);
       };
-      timer = window.setTimeout(
-        () => void tick(),
-        PROVIDER_SIGN_IN_FOLLOW_UP_INTERVAL_MS,
-      );
+      followUps.set(providerId, stop);
     },
     [checkProvider, runCompanion],
   );
-  useEffect(() => () => providerSignInFollowUpRef.current?.stop(), []);
+  useEffect(() => {
+    const followUps = providerSignInFollowUpsRef.current;
+    return () => followUps.forEach((stop) => stop());
+  }, []);
 
   // The setup guide opens in the customer's browser through the companion; the
   // app window itself must not navigate away.
@@ -4730,9 +4723,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       : deviceSearchState;
   const recoveryPickerOpen = deviceRecoveryPickerReason !== null;
 
-  // Windows adds the sign-in button for the providers the Companion can sign
-  // in; the Mac app keeps its existing rows exactly as they are today. Both
-  // list every provider CodexBar reports.
+  // The sign-in button for the providers the Companion can sign in, on
+  // Windows and the Mac alike. Both list every provider CodexBar reports.
   const providerSignInEnabled =
     companionInfo?.features?.providerSignInEnabled === true;
   const providerPickerProps = {

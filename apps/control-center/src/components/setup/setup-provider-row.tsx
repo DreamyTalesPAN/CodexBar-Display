@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, LogIn, RefreshCw, TriangleAlert } from "lucide-react";
+import { ChevronRight, RefreshCw, TriangleAlert } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -121,6 +121,8 @@ export function SetupProviderRow({
   saving = false,
 }: SetupProviderRowProps) {
   const variant = enabled ? setupProviderRowVariant(health) : "toggle";
+  const signIn = onOpenSignIn &&
+    (variant === "sign_in" || variant === "browser_sign_in");
   const unusable =
     variant === "no_usage" || variant === "outage" || variant === "unsupported";
   const checkAgain = (
@@ -141,56 +143,47 @@ export function SetupProviderRow({
         <ItemTitle className={cn(unusable && "opacity-50")}>{label}</ItemTitle>
       </ItemContent>
       <ItemActions>
-        {variant === "checking" ? (
-          <Spinner />
-        ) : variant === "toggle" ? null : (
+        {signIn ? (
+          <Button
+            className="h-9 gap-3 p-0 font-normal text-muted-foreground hover:bg-transparent dark:hover:bg-transparent"
+            onClick={onOpenSignIn}
+            type="button"
+            variant="ghost"
+          >
+            <span>{`Sign in to ${label}`}</span>
+            <span className="flex size-9 items-center justify-center rounded-full border border-border text-foreground group-hover/button:bg-muted">
+              <ChevronRight aria-hidden />
+            </span>
+          </Button>
+        ) : (
           <>
-            <SetupProviderRowAction
-              icon={TriangleAlert}
-              label={`Show provider message for ${label}`}
-              onClick={onShowIssue}
-            />
-            {variant === "browser_sign_in" && onOpenSignIn ? (
-              <SetupProviderRowAction
-                icon={ExternalLink}
-                label={`Open ${label} sign-in in your browser`}
-                onClick={onOpenSignIn}
-              />
-            ) : null}
-            {variant === "sign_in" && onOpenSignIn ? (
-              <Button
-                className="rounded-full"
-                onClick={onOpenSignIn}
-                size="sm"
-                type="button"
-                variant="default"
-              >
-                <LogIn aria-hidden />
-                <span>{`Sign in to ${label}`}</span>
-              </Button>
-            ) : null}
-            {variant === "stale" || variant === "unsupported" ? null : checking ? (
+            {variant === "checking" ? (
+              <Spinner />
+            ) : variant === "toggle" ? null : (
               <>
-                <span className="sr-only">Checking {label}…</span>
-                <Spinner />
+                <SetupProviderRowAction
+                  icon={TriangleAlert}
+                  label={`Show provider message for ${label}`}
+                  onClick={onShowIssue}
+                />
+                {variant === "stale" || variant === "unsupported" ? null : checking ? (
+                  <>
+                    <span className="sr-only">Checking {label}…</span>
+                    <Spinner />
+                  </>
+                ) : (
+                  checkAgain
+                )}
               </>
-            ) : (
-              checkAgain
             )}
+            <Switch
+              aria-label={label}
+              checked={enabled}
+              disabled={saving}
+              onCheckedChange={onToggle}
+            />
           </>
         )}
-        {/*
-          Outside the branches on purpose: the health decides what help to
-          offer, never whether the customer may switch the provider off.
-          Turning one off is always valid and always theirs, and a provider
-          they cannot switch off is one they cannot keep off the display.
-        */}
-        <Switch
-          aria-label={label}
-          checked={enabled}
-          disabled={saving}
-          onCheckedChange={onToggle}
-        />
       </ItemActions>
     </Item>
   );

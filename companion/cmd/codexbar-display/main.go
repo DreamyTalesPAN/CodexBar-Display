@@ -624,6 +624,16 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 	}
 
 	var workerRunning atomic.Bool
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var dashboard codexbar.DashboardServe
+	var restartUsageService func(context.Context) error
+	if !opts.Daemon.Once {
+		dashboard = codexbar.StartDashboardServe(ctx, logf)
+		if supervisor, ok := dashboard.(*codexbar.DashboardServeSupervisor); ok {
+			restartUsageService = supervisor.Restart
+		}
+	}
 	server, err := companionapi.New(companionapi.Options{
 		Logf:                 logf,
 		AIThemeSecrets:       companionapi.NewDurableAIThemeSecrets(""),
@@ -634,8 +644,9 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 			wakeDisplayWorker()
 			return nil
 		},
-		PauseDisplayStream: deviceWrites.setPaused,
-		WakeDisplayStream:  wakeDisplayWorker,
+		PauseDisplayStream:  deviceWrites.setPaused,
+		WakeDisplayStream:   wakeDisplayWorker,
+		RestartUsageService: restartUsageService,
 		RenderDisplayStream: func() {
 			select {
 			case renderWake <- struct{}{}:
@@ -647,9 +658,6 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 		listener.Close()
 		return err
 	}
-
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 
 	// Everything this run reports to the support timeline carries one ID, so
 	// a restart is visible as a new group of events.
@@ -671,9 +679,7 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 	daemonOpts.RenderWake = renderWake
 	daemonOpts.PauseDeviceWrites = deviceWrites.isPaused
 	daemonOpts.BeginDeviceWrite = deviceWrites.beginWrite
-	if !daemonOpts.Once {
-		daemonOpts.Dashboard = codexbar.StartDashboardServe(ctx, logf)
-	}
+	daemonOpts.Dashboard = dashboard
 
 	errc := make(chan error, 1)
 	go func() {
