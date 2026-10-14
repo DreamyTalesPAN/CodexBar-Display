@@ -823,11 +823,15 @@ func stateAsset(primitive map[string]any, state string) string {
 
 // jsonFor is the firmware's JsonStringFor, JsonArrayFor and JsonObjectFor: the
 // long key when it holds a T, otherwise the short key.
+// A string is read up to its first NUL, as the firmware reads it (cString).
 func jsonFor[T any](object map[string]any, long, short string) T {
-	if value, ok := object[long].(T); ok {
-		return value
+	value, ok := object[long].(T)
+	if !ok {
+		value, _ = object[short].(T)
 	}
-	value, _ := object[short].(T)
+	if text, isString := any(value).(string); isString {
+		return any(cString(text)).(T)
+	}
 	return value
 }
 
