@@ -655,6 +655,19 @@ const providerHealthStateStale = "stale"
 // row showed the warning icon meanwhile (#607, 2026-10-14).
 const usageServiceStartGrace = 3 * time.Minute
 
+// providerFailureUnexplained: neither the health scan nor an applying exact
+// check names why the provider has no live reading.
+func providerFailureUnexplained(setting codexbar.ProviderSetting, readiness providerReadinessRecord, readinessApplies bool) bool {
+	if readinessApplies && readiness.Status != codexbar.ProviderReady {
+		return false
+	}
+	switch setting.Health {
+	case "", codexbar.ProviderHealthHealthy, codexbar.ProviderHealthChecking, codexbar.ProviderHealthUnavailable:
+		return true
+	}
+	return false
+}
+
 // usageServiceStartedAfter reports whether the running usage service started
 // after this provider's last reading, within the grace period: the reading is
 // only old because the new service has not delivered it yet.
@@ -776,8 +789,12 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 		}
 		// A saved reading older than the usage service that runs now is not a
 		// failure yet: the service was just started and is still reading.
-		// The row shows that it is checking instead of the warning icon.
-		if state == providerHealthStateStale && setting.Health != codexbar.ProviderHealthRateLimited &&
+		// The row shows that it is checking instead of the warning icon -- but
+		// only while nothing current explains the stale reading. A health scan
+		// or exact check that already names a failure (sign-in, permission,
+		// throttle, ...) keeps its state and action.
+		if state == providerHealthStateStale && signInState == "" &&
+			providerFailureUnexplained(setting, readiness, readinessApplies) &&
 			s.usageServiceStartedAfter(now, lastCollectedAt[setting.ID]) {
 			state = string(codexbar.ProviderHealthChecking)
 			message = providerHealthMessage(codexbar.ProviderHealthChecking)

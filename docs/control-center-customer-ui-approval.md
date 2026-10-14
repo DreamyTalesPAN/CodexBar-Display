@@ -7115,3 +7115,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as approved in the #607 entries above; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-14 — #607: the restart spinner keeps known failures
+
+- User approval: follows Paul's request above ("lieber n spinner"); the Codex review on #607 found that the spinner also replaced rows whose provider check already named the failure. No new wording.
+- Approved customer-visible result: as in the spinner entry above, except that a provider whose current check already says why it has no live reading (sign in, permission, throttle and the like) keeps that row and its action during a restart instead of showing the spinner. Only a row with no current explanation shows the spinner.
+- Scope: `companion` provider row health, `macos/VibeTVControlCenter/main.swift` (the post-read check asks every runtime origin within the reading's deadline), and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a correction of the unreleased spinner, not announced to customers

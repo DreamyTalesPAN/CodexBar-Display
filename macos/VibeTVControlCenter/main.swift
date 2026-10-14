@@ -685,12 +685,16 @@ func browserSignInReadWorks(check data: Data, provider: String) -> Bool {
 // checks the provider with it at once and, when it works, starts its usage
 // service fresh: the running one keeps its failed reading for minutes, and the
 // app would read and ask again in the meantime (#607, 2026-10-14).
-func browserSignInCheckAfterRead(provider: String, runtimeOrigins: [URL]) async -> Bool {
-    let configuration = URLSessionConfiguration.ephemeral
-    configuration.timeoutIntervalForRequest = 90
-    let session = URLSession(configuration: configuration)
-    defer { session.invalidateAndCancel() }
+// The published endpoint can be stale and still answer, so one origin's "not
+// working" settles nothing; any origin that finds the read working does. Each
+// request ends by the reading's deadline, so a slow or stale origin cannot hold
+// the reading, and later sign-in clicks, past its window.
+func browserSignInCheckAfterRead(provider: String, runtimeOrigins: [URL], deadline: Date) async -> Bool {
     for origin in runtimeOrigins {
+        let remaining = min(90, deadline.timeIntervalSinceNow)
+        guard remaining > 1 else {
+            break
+        }
         guard var components = URLComponents(
             url: origin.appendingPathComponent("v1/providers/retry"),
             resolvingAgainstBaseURL: false
@@ -704,13 +708,20 @@ func browserSignInCheckAfterRead(provider: String, runtimeOrigins: [URL]) async 
         guard let url = components.url else {
             continue
         }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = remaining
+        configuration.timeoutIntervalForResource = remaining
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
         request.httpMethod = "POST"
         guard let (data, response) = try? await session.data(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200 else {
             continue
         }
-        return browserSignInReadWorks(check: data, provider: provider)
+        if browserSignInReadWorks(check: data, provider: provider) {
+            return true
+        }
     }
     return false
 }
@@ -3002,7 +3013,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                         lastReadAt = Date()
                         readWorks = await browserSignInCheckAfterRead(
                             provider: provider,
-                            runtimeOrigins: runtimeOrigins
+                            runtimeOrigins: runtimeOrigins,
+                            deadline: deadline
                         )
                     }
                 }

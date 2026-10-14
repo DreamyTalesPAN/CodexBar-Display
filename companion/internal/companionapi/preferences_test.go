@@ -95,17 +95,23 @@ func TestPreferencesMarksUnavailableProviderStaleFromPersistedUsage(t *testing.T
 // until the grace period ends or the new service delivers.
 func TestPreferencesShowCheckingWhileANewUsageServiceReads(t *testing.T) {
 	collectedAt := time.Date(2026, 10, 14, 13, 49, 0, 0, time.UTC)
+	justStarted := &codexbar.DashboardServeInfo{Running: true, StartedAt: collectedAt.Add(time.Minute)}
 	for _, tc := range []struct {
 		name      string
 		info      *codexbar.DashboardServeInfo
 		now       time.Time
+		health    codexbar.ProviderHealthState
 		wantState string
 	}{
-		{"service started after the reading", &codexbar.DashboardServeInfo{Running: true, StartedAt: collectedAt.Add(time.Minute)}, collectedAt.Add(2 * time.Minute), "checking"},
-		{"grace period over", &codexbar.DashboardServeInfo{Running: true, StartedAt: collectedAt.Add(time.Minute)}, collectedAt.Add(5 * time.Minute), "stale"},
-		{"reading from the running service", &codexbar.DashboardServeInfo{Running: true, StartedAt: collectedAt.Add(-time.Minute)}, collectedAt.Add(time.Minute), "stale"},
-		{"service not running", &codexbar.DashboardServeInfo{StartedAt: collectedAt.Add(time.Minute)}, collectedAt.Add(2 * time.Minute), "stale"},
-		{"no supervised service", nil, collectedAt.Add(2 * time.Minute), "stale"},
+		{"service started after the reading", justStarted, collectedAt.Add(2 * time.Minute), codexbar.ProviderHealthUnavailable, "checking"},
+		{"grace period over", justStarted, collectedAt.Add(5 * time.Minute), codexbar.ProviderHealthUnavailable, "stale"},
+		{"reading from the running service", &codexbar.DashboardServeInfo{Running: true, StartedAt: collectedAt.Add(-time.Minute)}, collectedAt.Add(time.Minute), codexbar.ProviderHealthUnavailable, "stale"},
+		{"service not running", &codexbar.DashboardServeInfo{StartedAt: collectedAt.Add(time.Minute)}, collectedAt.Add(2 * time.Minute), codexbar.ProviderHealthUnavailable, "stale"},
+		{"no supervised service", nil, collectedAt.Add(2 * time.Minute), codexbar.ProviderHealthUnavailable, "stale"},
+		// A scan that already names the failure keeps the row's state and
+		// action (Codex review on #607).
+		{"known sign-in failure", justStarted, collectedAt.Add(2 * time.Minute), codexbar.ProviderHealthAuthRequired, "stale"},
+		{"known throttle", justStarted, collectedAt.Add(2 * time.Minute), codexbar.ProviderHealthRateLimited, "stale"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			server := newTestServer(t, runtimeconfig.Config{})
@@ -115,7 +121,7 @@ func TestPreferencesShowCheckingWhileANewUsageServiceReads(t *testing.T) {
 				server.usageServiceInfo = func() codexbar.DashboardServeInfo { return info }
 			}
 			server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
-				return []codexbar.ProviderSetting{{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthUnavailable, Service: codexbar.ProviderServiceUnknown}}, nil
+				return []codexbar.ProviderSetting{{ID: "codex", Label: "Codex", Enabled: true, Health: tc.health, Service: codexbar.ProviderServiceUnknown}}, nil
 			}
 			server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
 				return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
