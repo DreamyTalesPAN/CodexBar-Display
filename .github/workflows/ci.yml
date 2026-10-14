@@ -416,6 +416,14 @@ jobs:
         working-directory: firmware_esp8266
         run: pio test -e native_device_settings
 
+      - name: Test standby settings
+        working-directory: firmware_esp8266
+        run: pio test -e native_standby_settings
+
+      - name: Test standby state
+        working-directory: firmware_esp8266
+        run: pio test -e native_standby_state
+
       - name: Test firmware-only provisioning contract
         run: ./scripts/test-vibetv-provision.sh
 
