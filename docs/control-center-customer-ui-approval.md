@@ -7343,3 +7343,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none. Test only: on a slow CI runner the existing picker for a lost VibeTV ("Choose your VibeTV — Your VibeTV is not reachable") opened before the flow reached "Run setup again" in Settings and covered the button. The flow now closes that picker first, as a customer would. The app is unchanged.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Not merge or release.
 - What's new: none — no customer-visible change
+
+## 2026-10-14 — Customer flow waits for the theme refresh after a firmware update (#465)
+
+- User approval: Paul asked in this chat on 2026-10-14 to push everything and fix CI ("push das alles, fix ci").
+- Approved customer-visible result: none. Test only: `testFirmwareUpdateShowsCustomerProgress` checked the theme refresh the instant "Update complete" appeared; on the CI runner the refresh starts a moment later. The flow now waits up to 10 s for it, still requires exactly one refresh of the active theme, and names what it saw when it fails. The app is unchanged.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Not merge or release.
+- What's new: none — no customer-visible change

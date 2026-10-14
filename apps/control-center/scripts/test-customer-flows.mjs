@@ -9056,10 +9056,14 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
     );
   }
 
+  // The refresh starts once the VibeTV is back; on a slow runner that is a
+  // moment after "Update complete". Wait for it, then check it ran once.
+  await waitForCondition(() => installRequests.length > 0, "Firmware update did not refresh the active slot theme");
+  await page.waitForTimeout(1_000);
   assert(
     installRequests.length === 1 &&
       JSON.parse(installRequests[0]).themeId === "synthwave",
-    "Firmware update must refresh the active slot theme exactly once",
+    `Firmware update must refresh the active slot theme exactly once, got ${installRequests.map((body) => JSON.parse(body).themeId).join(", ")}`,
   );
   await assertNoMobileOverflow(page);
   await page.close();
