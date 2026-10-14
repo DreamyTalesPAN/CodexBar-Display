@@ -544,6 +544,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const providerDisplayRevisionRef = useRef(0);
   const providerDisplayWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
   const providerPreferencesReadRef = useRef<Promise<void> | null>(null);
+  const quietUsageReadRef = useRef<Promise<void> | null>(null);
   const providerPreferencesRevisionRef = useRef(0);
   const providerPreferenceWritesRef = useRef<Promise<void>>(Promise.resolve());
   const displayPreferencesRevisionRef = useRef(0);
@@ -3344,56 +3345,72 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, [catalog.themes, device, firmwareUpdateStatus, installTheme]);
 
   const refreshUsage = useCallback(
-    async (options?: { quiet?: boolean }) => {
+    (options?: { quiet?: boolean }) => {
       const quiet = Boolean(options?.quiet);
-      if (!quiet) {
-        setBusyAction("usage");
+      // Background polls share one read; a refresh the customer asked for
+      // always runs.
+      if (quiet && quietUsageReadRef.current) {
+        return quietUsageReadRef.current;
       }
-      try {
-        const payload = await runCompanion<UsageSnapshot>(
-          quiet ? "/v1/usage" : "/v1/usage?refresh=1",
-          undefined,
-          { preserveLastError: quiet },
-        );
-        setUsage(payload);
-        setUsageError(null);
-        setCompanionStatus("online");
+      const read = (async () => {
         if (!quiet) {
-          const refreshEvent = usageRefreshEvent(payload);
-          addEvent({
-            label: refreshEvent.label,
-            detail: refreshEvent.detail,
-            tone: refreshEvent.tone,
-          });
+          setBusyAction("usage");
         }
-      } catch (error) {
-        const normalized = normalizeUsageError(
-          normalizeCaughtError(error, "Usage needs attention."),
-        );
-        if (normalized.code === "usage_unavailable") {
-          setUsage(null);
+        try {
+          const payload = await runCompanion<UsageSnapshot>(
+            quiet ? "/v1/usage" : "/v1/usage?refresh=1",
+            undefined,
+            { preserveLastError: quiet },
+          );
+          setUsage(payload);
           setUsageError(null);
-          return;
+          setCompanionStatus("online");
+          if (!quiet) {
+            const refreshEvent = usageRefreshEvent(payload);
+            addEvent({
+              label: refreshEvent.label,
+              detail: refreshEvent.detail,
+              tone: refreshEvent.tone,
+            });
+          }
+        } catch (error) {
+          const normalized = normalizeUsageError(
+            normalizeCaughtError(error, "Usage needs attention."),
+          );
+          if (normalized.code === "usage_unavailable") {
+            setUsage(null);
+            setUsageError(null);
+            return;
+          }
+          if (isLocalNetworkAccessError(normalized)) {
+            markCompanionAccessBlocked();
+          } else if (isCompanionMissingError(normalized)) {
+            markCompanionUnavailable();
+          }
+          setUsageError(normalized);
+          if (!quiet) {
+            setLastError(normalized);
+            addEvent({
+              label: "Usage refresh needs attention",
+              detail: normalized.nextAction,
+              tone: "attention",
+            });
+          }
+        } finally {
+          if (!quiet) {
+            setBusyAction(null);
+          }
         }
-        if (isLocalNetworkAccessError(normalized)) {
-          markCompanionAccessBlocked();
-        } else if (isCompanionMissingError(normalized)) {
-          markCompanionUnavailable();
-        }
-        setUsageError(normalized);
-        if (!quiet) {
-          setLastError(normalized);
-          addEvent({
-            label: "Usage refresh needs attention",
-            detail: normalized.nextAction,
-            tone: "attention",
-          });
-        }
-      } finally {
-        if (!quiet) {
-          setBusyAction(null);
-        }
+      })();
+      if (quiet) {
+        quietUsageReadRef.current = read;
+        void read.finally(() => {
+          if (quietUsageReadRef.current === read) {
+            quietUsageReadRef.current = null;
+          }
+        });
       }
+      return read;
     },
     [
       addEvent,
