@@ -56,7 +56,7 @@ export function PreferenceControl({
               : String(descriptor.value)
           }
         >
-          <SelectTrigger aria-label={descriptor.label}>
+          <SelectTrigger aria-label={descriptor.label} id={descriptor.id}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

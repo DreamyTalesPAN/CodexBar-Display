@@ -323,7 +323,7 @@ func TestFetchDashboardUsageFailsWhenBudgetSkipsTheRest(t *testing.T) {
 	}
 	var mu sync.Mutex
 	requests := 0
-	usage, err := fetchDashboardUsage(context.Background(), ids, func(ctx context.Context, query string) ([]byte, error) {
+	usage, _, err := fetchDashboardUsage(context.Background(), ids, func(ctx context.Context, query string) ([]byte, error) {
 		mu.Lock()
 		requests++
 		mu.Unlock()
@@ -346,7 +346,7 @@ func TestFetchDashboardUsageFailsWhenNoAnswerMatchesTheProvider(t *testing.T) {
 	providerProbePerProvider = true
 	t.Cleanup(func() { providerProbePerProvider = previous })
 
-	usage, err := fetchDashboardUsage(context.Background(), []string{"claude", "codex"}, func(ctx context.Context, query string) ([]byte, error) {
+	usage, _, err := fetchDashboardUsage(context.Background(), []string{"claude", "codex"}, func(ctx context.Context, query string) ([]byte, error) {
 		return []byte(`[]`), nil
 	})
 	if err == nil {

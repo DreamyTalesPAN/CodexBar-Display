@@ -227,6 +227,23 @@ describe("validateThemeAgainstCapabilities", () => {
     ).toHaveLength(3);
   });
 
+  it("blocks an arc when the device lacks progress-arc support", () => {
+    const spec = baseSpec();
+    spec.primitives.push({
+      type: "progress", x: 20, y: 20, width: 100, height: 100,
+      progressStyle: "arc", arcStart: 225, arcSweep: 270, arcThickness: 10,
+    });
+    const errorsFor = (supportsProgressArcV1?: boolean) =>
+      validateThemeAgainstCapabilities(spec, {}, { ...baseCapabilities, supportsProgressArcV1 }).errors;
+
+    expect(errorsFor()).toEqual(["This VibeTV needs a firmware update before it can use this theme."]);
+    expect(errorsFor(false)).toHaveLength(1);
+    expect(errorsFor(true)).toEqual([]);
+    // The same primitive as a bar needs nothing new.
+    spec.primitives[spec.primitives.length - 1].progressStyle = "segments";
+    expect(errorsFor(false)).toEqual([]);
+  });
+
   it("blocks compact slot templates when the device lacks usage slot support", () => {
     const spec = baseSpec();
     spec.primitives.push({

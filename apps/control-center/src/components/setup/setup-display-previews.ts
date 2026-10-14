@@ -1,4 +1,5 @@
 import type { UsageProviderInfo, UsageSnapshot } from "../control-center-types";
+import { remainingResetSecs } from "@/lib/reset-countdown";
 import { formatReset } from "../usage-screen";
 import type { SetupDisplayModePreview } from "./setup-display-mode-screen";
 
@@ -11,6 +12,7 @@ import type { SetupDisplayModePreview } from "./setup-display-mode-screen";
  */
 export function displayPreviewFor(
   provider: UsageProviderInfo | undefined,
+  now = new Date(),
 ): SetupDisplayModePreview | null {
   if (!provider) {
     return null;
@@ -18,7 +20,15 @@ export function displayPreviewFor(
   const unavailable = provider.stale === true || provider.usageUnavailable === true;
   return {
     providerLabel: provider.label,
-    resetLabel: unavailable ? null : formatReset(provider.windows?.[0]?.resetSecs ?? provider.resetSecs),
+    resetLabel: unavailable
+      ? null
+      : formatReset(
+          remainingResetSecs(
+            provider.windows?.[0]?.resetSecs ?? provider.resetSecs,
+            provider.collectedAt,
+            now,
+          ),
+        ),
     windows: provider.windows?.length
       ? provider.windows.map((window) => ({
           label: window.label,

@@ -288,6 +288,27 @@ func TestCapabilitiesFromHelloAdvertisesProviderAssetsColorStopsAndValign(t *tes
 	}
 }
 
+func TestCapabilitiesFromHelloAdvertisesProgressArc(t *testing.T) {
+	fromFeature := CapabilitiesFromHello(DeviceHello{
+		Kind:     "hello",
+		Features: []string{FeatureTheme, FeatureThemeSpecV1, FeatureProgressArcV1},
+	})
+	fromBlock := CapabilitiesFromHello(DeviceHello{
+		Kind:         "hello",
+		Capabilities: CapabilityBlock{Theme: ThemeCapabilities{SupportsProgressArcV1: true}},
+	})
+	if !fromFeature.SupportsProgressArcV1 || !fromBlock.SupportsProgressArcV1 {
+		t.Fatalf("expected progress-arc-v1 from the feature and from the theme block, got %+v and %+v", fromFeature, fromBlock)
+	}
+	older := CapabilitiesFromHello(DeviceHello{
+		Kind:     "hello",
+		Features: []string{FeatureTheme, FeatureThemeSpecV1, FeatureColorStopsV1, FeatureTextValignV1},
+	})
+	if older.SupportsProgressArcV1 {
+		t.Fatalf("firmware 1.0.42 capabilities must not imply progress-arc-v1: %+v", older)
+	}
+}
+
 // Issue #526: the answer firmware 1.0.45 gave to GET /hello over WiFi at low
 // heap, captured byte for byte from VibeTV 16198106 on 2026-10-06.
 func TestDecodeWiFiHelloNamesTheHelloWithoutCapabilities(t *testing.T) {

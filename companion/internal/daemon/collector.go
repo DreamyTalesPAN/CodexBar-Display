@@ -19,8 +19,12 @@ const (
 	// Cost history scans can take over a minute. Keep their post-completion
 	// cadence below the ten-minute last-good window without running continuously.
 	// This cadence applies only once a provider's history stopped growing;
-	// see tokenStatsHistorySettled.
+	// see tokenStatsSettled.
 	tokenStatsScanCooldown = 5 * time.Minute
+	// A failed scan is tried again sooner. After the full cadence the retry
+	// found the stored totals expired (ten minutes), took the new ones for a
+	// first reading and could show no work for one more scan period.
+	tokenStatsFailedScanCooldown = time.Minute
 )
 
 type providerSnapshot struct {
@@ -36,11 +40,27 @@ type providerSnapshot struct {
 	// Terminal survives a restart: a reload must not turn a known terminal
 	// error back into stale data that keeps an old last-good frame alive.
 	Terminal bool `json:"terminal,omitempty"`
+	// NoReading marks a snapshot that a failed reading created: Collected is
+	// then the time of that failure, not of a reading. The provider's first
+	// real reading replaces the snapshot and with it the mark (#368).
+	NoReading bool `json:"noReading,omitempty"`
 }
 
 type persistedProviderSnapshots struct {
 	SavedAt   time.Time          `json:"savedAt"`
 	Providers []providerSnapshot `json:"providers"`
+	LastCycle *CollectorCycle    `json:"lastCycle,omitempty"`
+}
+
+// CollectorCycle is the last completed usage collection, the numbers of the
+// "collector complete" log line: how many providers CodexBar answered for and
+// how many of them delivered usable usage. Diagnostics reads it from the
+// snapshot file, where an unchanged count is rewritten once per
+// persistInterval, so At can be that much older than the newest collection.
+type CollectorCycle struct {
+	At        time.Time `json:"at"`
+	Providers int       `json:"providers"`
+	Succeeded int       `json:"succeeded"`
 }
 
 type providerCollector struct {
@@ -87,6 +107,7 @@ type providerCollector struct {
 	// providerErrors holds each provider's last logged failure kind, so a
 	// failing provider is logged when its failure changes, not every cycle.
 	providerErrors          map[string]string
+	lastCycle               *CollectorCycle
 	tokenStatsMu            sync.Mutex
 	tokenStatsRunning       bool
 	tokenStatsCancel        context.CancelFunc
@@ -94,8 +115,12 @@ type providerCollector struct {
 	tokenStatsCooldown      time.Duration
 	tokenStatsLastCompleted time.Time
 	tokenStatsSettled       bool
+	tokenStatsRescan        bool
 	tokenStatsFailed        bool
 	tokenHistoryPrints      map[string]string
+	// tokenHistoryRead marks providers whose token history has settled once
+	// since this start: from then on a higher total is new work.
+	tokenHistoryRead map[string]bool
 }
 
 func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
@@ -256,16 +281,22 @@ func (c *providerCollector) requestTokenStatsScan(parent context.Context) bool {
 	// A still-growing history must be corrected by the next scan instead of
 	// waiting out the completed-scan cadence. Single-flight still prevents
 	// overlapping scans.
-	cooling := (c.tokenStatsSettled || c.tokenStatsFailed) &&
-		c.tokenStatsCooldown > 0 &&
+	cooldown := c.tokenStatsCooldown
+	if c.tokenStatsFailed {
+		cooldown = min(cooldown, tokenStatsFailedScanCooldown)
+	}
+	cooling := !c.tokenStatsRescan &&
+		(c.tokenStatsSettled || c.tokenStatsFailed) &&
+		cooldown > 0 &&
 		!c.tokenStatsLastCompleted.IsZero() &&
-		now.Before(c.tokenStatsLastCompleted.Add(c.tokenStatsCooldown))
+		now.Before(c.tokenStatsLastCompleted.Add(cooldown))
 	if c.tokenStatsRunning || cooling {
 		c.tokenStatsMu.Unlock()
 		cancel()
 		return false
 	}
 	c.tokenStatsRunning = true
+	c.tokenStatsRescan = false
 	c.tokenStatsCancel = cancel
 	c.tokenStatsWG.Add(1)
 	c.tokenStatsMu.Unlock()
@@ -380,7 +411,6 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		return
 	}
 
-	updated := false
 	successes := 0
 	var authoritativeEnabled map[string]struct{}
 
@@ -389,7 +419,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 	c.lastFetchErr = nil
 	c.noteInventoryReadLocked(inventoryAuthoritative)
 	if inventoryAuthoritative {
-		updated = c.applyProviderInventoryLocked(inventory)
+		c.applyProviderInventoryLocked(inventory)
 		_, authoritativeEnabled = enabledProviderInventory(inventory)
 	} else {
 		c.order = mergeProviderOrder(providerOrderFromFrames(allProviders), c.order)
@@ -403,7 +433,6 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		}
 		snapshot.Retained = true
 		c.providers[key] = snapshot
-		updated = true
 	}
 	var providerErrorLog []string
 	for _, parsed := range allProviders {
@@ -445,7 +474,6 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 				if !parsed.Terminal && !lastGood.Frame.UsageUnavailable && isLastGoodFreshAt(lastGood.Collected, collectedAt, c.snapshotMaxAge) {
 					lastGood.Retained = true
 					c.providers[key] = lastGood
-					updated = true
 					continue
 				}
 				lastGood.Frame.UsageUnavailable = true
@@ -461,9 +489,9 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 					Source:    strings.TrimSpace(parsed.Source),
 					Collected: parsedCollectedAt,
 					Terminal:  parsed.Terminal,
+					NoReading: true,
 				}
 			}
-			updated = true
 			continue
 		}
 		snapshot := providerSnapshot{
@@ -483,13 +511,11 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		}
 		c.providers[key] = snapshot
 		successes++
-		updated = true
 	}
+	c.lastCycle = &CollectorCycle{At: collectedAt, Providers: len(allProviders), Succeeded: successes}
 	c.mu.Unlock()
 
-	if updated {
-		c.persistIfNeeded(collectedAt)
-	}
+	c.persistIfNeeded(collectedAt)
 	for _, change := range providerErrorLog {
 		c.logf("collector provider-error %s\n", change)
 	}
@@ -525,6 +551,19 @@ func (c *providerCollector) fetchProvidersForCollect(ctx context.Context, now ti
 
 func (c *providerCollector) applyProviderInventoryLocked(settings []codexbar.ProviderSetting) bool {
 	enabledOrder, enabled := enabledProviderInventory(settings)
+	if c.inventoryKnown {
+		for key := range enabled {
+			if _, had := c.inventoryEnabled[key]; !had {
+				// A provider that was just switched on has no token totals
+				// yet. The last scan could not know about it, so it must not
+				// wait out that scan's cooldown.
+				c.tokenStatsMu.Lock()
+				c.tokenStatsRescan = true
+				c.tokenStatsMu.Unlock()
+				break
+			}
+		}
+	}
 	c.inventoryKnown = true
 	c.inventoryEnabled = enabled
 	c.inventoryDisabled = make(map[string]struct{}, len(settings))
@@ -540,6 +579,8 @@ func (c *providerCollector) applyProviderInventoryLocked(settings []codexbar.Pro
 			continue
 		}
 		delete(c.providers, key)
+		// Switched on again, its history is read in from the start.
+		delete(c.tokenHistoryRead, key)
 		updated = true
 	}
 	return updated
@@ -829,6 +870,12 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 		// a provider must not keep the collector scanning.
 		providerSettled := stats.Cost == nil || (hadPrevious && previousPrint == print)
 		settled = settled && providerSettled
+		if providerSettled {
+			if c.tokenHistoryRead == nil {
+				c.tokenHistoryRead = make(map[string]bool)
+			}
+			c.tokenHistoryRead[key] = true
+		}
 
 		c.providers[key] = providerSnapshot{
 			Provider:  key,
@@ -837,6 +884,7 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 			Meta:      meta,
 			Collected: snapshot.Collected,
 			Retained:  snapshot.Retained,
+			NoReading: snapshot.NoReading,
 			// A successful scan makes these totals current even when CodexBar
 			// reports that no new activity occurred. UpdatedAt remains the
 			// activity timestamp above, not the token-stat freshness timestamp.
@@ -858,6 +906,7 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 		}
 		if hadTokenStats {
 			clearSnapshotTokenStats(&snapshot)
+			delete(c.tokenHistoryRead, key)
 		}
 		// TokenStatsCollected is also the completion marker for a successful
 		// empty result. A failed provider remains in seen and keeps its
@@ -1073,14 +1122,16 @@ func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame
 			frame.Provider = key
 		}
 		frames = append(frames, codexbar.ParsedFrame{
-			Frame:              frame,
-			Provider:           key,
-			Source:             snapshot.Source,
-			Meta:               snapshot.Meta,
-			CollectedAt:        snapshot.Collected,
-			ActivityObservedAt: snapshot.ActivityObservedAt,
-			Stale:              snapshot.Retained || frame.UsageUnavailable || !c.snapshotIsFresh(snapshot, now),
-			Terminal:           snapshot.Terminal,
+			Frame:                 frame,
+			Provider:              key,
+			Source:                snapshot.Source,
+			Meta:                  snapshot.Meta,
+			CollectedAt:           snapshot.Collected,
+			ActivityObservedAt:    snapshot.ActivityObservedAt,
+			TokenStatsCollectedAt: snapshot.TokenStatsCollected,
+			TokenHistoryGrowing:   snapshotHasTokenStats(snapshot) && !c.tokenHistoryRead[key],
+			Stale:                 snapshot.Retained || frame.UsageUnavailable || !c.snapshotIsFresh(snapshot, now),
+			Terminal:              snapshot.Terminal,
 		})
 	}
 	return frames
@@ -1126,11 +1177,14 @@ func (c *providerCollector) persistIfNeeded(now time.Time) {
 	defer c.mu.Unlock()
 
 	encoded := encodeProviderSnapshotsForCompare(c.providers)
+	if c.lastCycle != nil {
+		encoded += " cycle=" + strconv.Itoa(c.lastCycle.Succeeded) + "/" + strconv.Itoa(c.lastCycle.Providers)
+	}
 	if c.lastPersistedRaw == encoded && !c.lastPersistedAt.IsZero() && now.Sub(c.lastPersistedAt) < c.persistInterval {
 		return
 	}
 
-	if err := persistProviderSnapshots(c.providers, now); err != nil {
+	if err := persistProviderSnapshots(c.providers, c.lastCycle, now); err != nil {
 		c.logf("runtime event=provider-snapshot-persist-failed err=%v\n", err)
 		return
 	}
