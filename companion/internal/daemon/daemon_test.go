@@ -4509,15 +4509,17 @@ func TestProviderCollectorRetriesInitialCollectionWhenDashboardBecomesHealthyWit
 	defer cancel()
 	go collector.run(ctx)
 
+	// The collector's own deadline is 1 s, so the first failure can arrive
+	// just after 1 s on a slow runner; wait longer than that.
 	select {
 	case <-initialFailure:
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for initial dashboard startup race")
 	}
 	dashboardInfo.Store(testDashboardServeInfo(1001))
 	select {
 	case <-completed:
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("collector did not retry after the dashboard became healthy")
 	}
 
