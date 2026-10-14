@@ -2480,10 +2480,8 @@ void handleSerialInput() {
     emitSerialError("transfer-active");
     return;
   }
-  if (!codexbar_display::esp8266::device_settings::SupportsCable(
-          deviceSettings.connectionMode) ||
-      deviceSettings.connectionMode !=
-          codexbar_display::esp8266::device_settings::ConnectionMode::kCable) {
+  if (deviceSettings.connectionMode !=
+      codexbar_display::esp8266::device_settings::ConnectionMode::kCable) {
     return;
   }
 
