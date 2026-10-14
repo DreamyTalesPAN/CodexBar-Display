@@ -11,10 +11,10 @@
     "agent-theme-states-v1"
   ],
   "themeSpec": {
-    "path": "/themes/u/synthwa-6-18aba9.json",
+    "path": "/themes/u/synthwa-6-80a3bb.json",
     "file": "theme.json",
-    "bytes": 912,
-    "sha256": "18aba9bfbad22d743009f4d867a830cf8a8a5411a6e2e71ba6566d87f4491ff3",
+    "bytes": 910,
+    "sha256": "80a3bb2f955cb8ef419e1353055aafe15279cafdf00329baf1740ec43993884b",
     "contentType": "application/json"
   },
   "assets": [

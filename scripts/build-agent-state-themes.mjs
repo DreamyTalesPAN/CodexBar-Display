@@ -259,8 +259,12 @@ async function finish(id, spec, version, generated) {
     `${id}: ${Buffer.byteLength(raw)} bytes, ${spec.p.length} primitives, ${assets.length} assets`,
   );
 }
-// Tile the entire scene into 80x54 draw boxes. Static tiles stay CBI; motion
-// tiles share one RGB565 buffer. Original baseline pixels and cadence survive.
+// Tile the scene into 80x46 draw boxes. Static tiles stay CBI; motion tiles
+// share one RGB565 buffer. Original baseline pixels and cadence survive.
+// The status line needs a 32 px strip on top (Paul, 2026-10-14), so the scene
+// starts at y 36 and loses its top 8 source rows (wall above the shelves).
+const officeTop = 8,
+  officeTileRows = 23;
 const officeDir = path.join(root, "theme-packs/tiny-office");
 const office = JSON.parse(await readFile(path.join(officeDir, "theme.json")));
 const scenes = {};
@@ -298,12 +302,12 @@ for (let row = 0; row < 2; row++)
     const sa = {};
     for (const key of keys) {
       let frames = scenes[key].frames.map((f) =>
-        crop(f, 120, col * 40, row * 27, 40, 27),
+        crop(f, 120, col * 40, officeTop + row * officeTileRows, 40, officeTileRows),
       );
       if (frames.every((f) => f.every((c, i) => c === frames[0][i])))
         frames = frames.slice(0, 1);
       const name = `to-${key === "needs_you" ? "n" : key[0]}${row * 3 + col}.${frames.length > 1 ? "cba" : "cbi"}`;
-      generated[name] = encode(40, 27, frames, scenes[key].fps);
+      generated[name] = encode(40, officeTileRows, frames, scenes[key].fps);
       sa[key] = `/themes/u/${name}`;
       // Conversion of approved baseline art must be lossless.
       if (key === "idle" || key === "coding")
@@ -312,9 +316,9 @@ for (let row = 0; row < 2; row++)
     tiles.push({
       t: "sp",
       x: col * 80,
-      y: 20 + row * 54,
+      y: 36 + row * 46,
       w: 80,
-      h: 54,
+      h: 46,
       bg: "#0E0C1E",
       sa,
     });
@@ -323,6 +327,18 @@ office.p = office.p.filter(
   (p) => p.t !== "sp" || p.a === "/themes/u/to-bg.cbi",
 );
 office.p.splice(3, 0, ...tiles);
+// The status line takes the whole top strip in the theme's large text;
+// "used"/"remaining" moves from the strip's right corner to
+// the two usage labels.
+Object.assign(office.p.find((p) => p.b === "l"), { x: 4, y: 0, w: 232, h: 32, f: 2, s: 2, al: "center", va: "middle" });
+// The background still draws the old 16 px strip and its divider; cover it
+// and draw the divider under the new strip.
+office.p = office.p.filter((p) => p.t !== "r");
+office.p.splice(1, 0, { t: "r", x: 0, y: 0, w: 240, h: 32, c: "#0E0C1E" }, { t: "r", x: 0, y: 32, w: 240, h: 4, c: "#3A2F5C" });
+office.p = office.p.filter((p) => !(p.v === "{usageMode}" && p.y < 20));
+for (const p of office.p) {
+  if (p.v === "{usageSlot1Label}" || p.v === "{usageSlot2Label}") p.v = `${p.v} {usageMode}`;
+}
 office.rev = 8;
 await finish("tiny-office", office, "0.7.0", generated);
 // Mini Classic has no state artwork: the status line names the agent state,
@@ -382,6 +398,9 @@ for (const [source, file, count, fps] of [
   const { frames, palette } = await clippyFrames(source, count);
   clippyAssets[file] = encode(74, 74, frames, fps, palette);
 }
+// The title bar is 26 px high (y 6-31) and its window buttons start at x 176:
+// the status line stays left of them, centred in the bar.
+Object.assign(clippy.p.find((p) => p.v === "{label}"), { x: 8, y: 6, w: 164, h: 26, s: 1, f: 2, va: "middle" });
 await finish("clippy", clippy, "1.2.0", clippyAssets);
 
 // The existing synthwave heading uses font 4 at its minimum size. Use font 2
@@ -389,9 +408,11 @@ await finish("clippy", clippy, "1.2.0", clippyAssets);
 const synthwave = JSON.parse(
   await readFile(path.join(root, "theme-packs/synthwave/theme.json")),
 );
+// The status line is a sentence ("Claude is working"). Give it the full
+// width above the USAGE heading at the theme's large size (216 px wide).
 Object.assign(
   synthwave.p.find((p) => p.b === "l"),
-  { f: 2, s: 1, h: 23, va: "middle" },
+  { x: 4, y: 6, w: 232, f: 2, s: 2, h: 32, va: "middle" },
 );
 synthwave.rev = 6;
 await finish("synthwave", synthwave, "1.2.0", {});
