@@ -412,7 +412,7 @@ func runWithDeps(ctx context.Context, opts Options, d deps) (resultErr error) {
 			if !replacementRuntimeCommitted {
 				_ = runtimeconfig.Save(home, previousRuntimeConfig)
 				_ = writeFileAtomic(previousLaunchAgentPath, previousLaunchAgent, 0o644)
-				_ = reloadLaunchAgent(ctx, d, previousLaunchAgentPath)
+				_ = reloadLaunchAgent(ctx, d)
 			}
 		}()
 	}
@@ -643,7 +643,7 @@ func runWithDeps(ctx context.Context, opts Options, d deps) (resultErr error) {
 		fmt.Fprintln(d.stdout, "Launch agent serial mode: identity-resolved")
 	}
 
-	plistPath, err := writeServiceConfig(home, installPath, daemonTransport, daemonTarget, daemonPort, d.goos)
+	_, err = writeServiceConfig(home, installPath, daemonTransport, daemonTarget, daemonPort, d.goos)
 	if err != nil {
 		return &StepError{
 			Step: "write-launchagent",
@@ -654,7 +654,7 @@ func runWithDeps(ctx context.Context, opts Options, d deps) (resultErr error) {
 
 	fmt.Fprintln(d.stdout, "Starting background service ...")
 	registrationAttempted = true
-	if err := reloadLaunchAgent(ctx, d, plistPath); err != nil {
+	if err := reloadLaunchAgent(ctx, d); err != nil {
 		return err
 	}
 	replacementRuntimeCommitted = true
@@ -1075,7 +1075,7 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 	return os.Chmod(path, mode)
 }
 
-func reloadLaunchAgent(ctx context.Context, d deps, plistPath string) error {
+func reloadLaunchAgent(ctx context.Context, d deps) error {
 	home, err := d.homeDir()
 	if err != nil {
 		return err
