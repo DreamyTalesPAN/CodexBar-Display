@@ -865,14 +865,14 @@ func flashFirmware(ctx context.Context, d deps, executablePath, port, firmwareEn
 		return &StepError{
 			Step:   "flash-firmware",
 			Err:    err,
-			Hint:   flashRecoveryHint(output, port, d.uid()),
+			Hint:   flashRecoveryHint(output, port),
 			Output: tailLines(output, 30),
 		}
 	}
 	return nil
 }
 
-func flashRecoveryHint(output, port string, uid int) string {
+func flashRecoveryHint(output, port string) string {
 	lower := strings.ToLower(output)
 	if strings.Contains(lower, "failed to connect") || strings.Contains(lower, "could not open") || strings.Contains(lower, "resource busy") {
 		return fmt.Sprintf("ensure no process holds %s, run `codexbar-display service stop`, then rerun setup", port)
