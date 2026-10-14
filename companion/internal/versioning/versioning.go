@@ -219,8 +219,3 @@ func IsCompatible(companionVersion, firmwareVersion string, protocolVersion int)
 func inRange(v, min, max SemVer) bool {
 	return v.Compare(min) >= 0 && v.Compare(max) < 0
 }
-
-var firmwareVersionByEnvironment = map[string]string{
-	"lilygo_t_display_s3":    "1.0.0",
-	"esp8266_smalltv_st7789": "1.0.0",
-}
