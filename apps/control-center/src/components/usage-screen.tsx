@@ -35,6 +35,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { copyForHost } from "@/lib/customer-platform";
@@ -180,15 +181,7 @@ export function UsageScreen({
             updating={tokenUsageUpdating}
           />
         ) : tokenUsagePending ? (
-          <Card
-            aria-live="polite"
-            className="mb-6 min-h-[294px] items-center justify-center"
-            data-testid="token-history-loading"
-            role="status"
-          >
-            <Spinner className="size-6" />
-            <span className="sr-only">Token history is loading</span>
-          </Card>
+          <TokenUsageSkeleton providerCount={providers.length} />
         ) : null}
 
         {hasProviders ? (
@@ -419,6 +412,64 @@ function TokenUsageOverTimePanel({
         </CardContent>
       </Card>
     </>
+  );
+}
+
+/**
+ * Stands in for TokenUsageOverTimePanel while its token history loads (issue
+ * #598). It repeats the panel's blocks at the panel's heights, so nothing jumps
+ * when the graph arrives. No value is drawn: the flat block only says that a
+ * chart is coming, and the legend chips are one per provider, as the chart's.
+ */
+function TokenUsageSkeleton({ providerCount }: { providerCount: number }) {
+  return (
+    <div aria-live="polite" data-testid="token-history-loading" role="status">
+      {/* A heading keeps the provider tiles below in order for assistive tech. */}
+      <h2 className="sr-only">Token history is loading</h2>
+      <div aria-hidden>
+        <div className="mb-6 flex flex-col items-center px-4">
+          <div className="flex h-5 items-center">
+            <Skeleton className="h-3.5 w-48 motion-reduce:animate-none" />
+          </div>
+          <div className="mt-2 flex h-9 items-center sm:h-12">
+            <Skeleton className="h-7 w-56 max-w-full motion-reduce:animate-none sm:h-9" />
+          </div>
+          <div className="mt-2 flex h-[22.75px] items-center">
+            <Skeleton className="h-4 w-44 max-w-full motion-reduce:animate-none" />
+          </div>
+        </div>
+
+        <Card className="mb-6">
+          <CardHeader>
+            <div className="flex h-[22px] items-center">
+              <Skeleton className="h-3.5 w-44 motion-reduce:animate-none" />
+            </div>
+            <CardAction>
+              <Skeleton className="h-9 w-24 motion-reduce:animate-none" />
+            </CardAction>
+          </CardHeader>
+
+          <CardContent>
+            <div className="relative h-52 overflow-hidden px-2 pt-3">
+              <Skeleton className="absolute inset-x-2 top-3 bottom-14 motion-reduce:animate-none" />
+              <div className="absolute inset-x-2 top-3 bottom-14 flex flex-col justify-between">
+                {Array.from({ length: 4 }, (_, index) => (
+                  <div className="h-px bg-border" key={index} />
+                ))}
+              </div>
+              <div className="absolute inset-x-0 bottom-2 flex flex-wrap justify-center gap-x-4 gap-y-2">
+                {Array.from({ length: providerCount }, (_, index) => (
+                  <Skeleton
+                    className="h-3.5 w-16 motion-reduce:animate-none"
+                    key={index}
+                  />
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   );
 }
 

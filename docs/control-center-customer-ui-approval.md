@@ -7213,3 +7213,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. No new wording. In that case the chart now shows every reported day as before tonight, without filling in days; within 400 days nothing changes (days without tokens on the zero line).
 - Scope: `usage-screen.tsx`, its test, and this approval record. Night-shift branch only, not merge or release.
 - What's new: none — a correction, nothing new to announce
+
+## 2026-10-13 — Night shift: Usage shows the outline of the token graph while it loads (#598)
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-13/14; wording not yet seen by him. Paul asked for this in issue #598 and has not seen the result. The loading state showed a tall empty card with one small spinner; it now shows the outline of the finished graph. It replaces the spinner that the 2026-07-27 and 2026-09-04 entries describe for this placeholder.
+- Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. `No new wording.` `While token history loads, the Usage tab shows the outline of the finished graph in place of the spinner.` `The outline has the total-tokens heading and value, the chart card with its title and Refresh button, faint grid lines, one flat grey block, and one legend chip per provider.` `The grey shapes pulse gently and stand still when reduced motion is on.` `They show no values, and screen readers still hear Token history is loading.` `The space keeps the same size when the graph replaces the outline.`
+- Scope: `apps/control-center/src/components/usage-screen.tsx` and its test, the loading assertions in `apps/control-center/scripts/test-customer-flows.mjs`, and this approval record. Checked with unit tests only; the outline was not seen on a screen. Night-shift branch only, not merge or release.
+- What's new: none — a loading state, nothing new to announce
