@@ -128,6 +128,11 @@ jobs:
       - name: Check that no binary needs the Visual C++ Redistributable
         shell: pwsh
         run: ./scripts/check-windows-crt.ps1
+      - name: Run the shell's Rust unit tests
+        # main.rs carries deep-link and theme-queue tests that no job ran;
+        # the build above has put the sidecars they need in place.
+        working-directory: windows/src-tauri
+        run: cargo test --locked
 
   codexbar-release-contract:
     strategy:
