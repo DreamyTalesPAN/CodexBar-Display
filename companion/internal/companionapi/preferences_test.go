@@ -89,6 +89,53 @@ func TestPreferencesMarksUnavailableProviderStaleFromPersistedUsage(t *testing.T
 	}
 }
 
+// #607: right after the usage service was started (a settings change or a
+// browser sign-in read), a saved reading from the service before it is not a
+// failure: the row shows that it is checking instead of the warning icon,
+// until the grace period ends or the new service delivers.
+func TestPreferencesShowCheckingWhileANewUsageServiceReads(t *testing.T) {
+	collectedAt := time.Date(2026, 10, 14, 13, 49, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name      string
+		info      *codexbar.DashboardServeInfo
+		now       time.Time
+		wantState string
+	}{
+		{"service started after the reading", &codexbar.DashboardServeInfo{Running: true, StartedAt: collectedAt.Add(time.Minute)}, collectedAt.Add(2 * time.Minute), "checking"},
+		{"grace period over", &codexbar.DashboardServeInfo{Running: true, StartedAt: collectedAt.Add(time.Minute)}, collectedAt.Add(5 * time.Minute), "stale"},
+		{"reading from the running service", &codexbar.DashboardServeInfo{Running: true, StartedAt: collectedAt.Add(-time.Minute)}, collectedAt.Add(time.Minute), "stale"},
+		{"service not running", &codexbar.DashboardServeInfo{StartedAt: collectedAt.Add(time.Minute)}, collectedAt.Add(2 * time.Minute), "stale"},
+		{"no supervised service", nil, collectedAt.Add(2 * time.Minute), "stale"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := newTestServer(t, runtimeconfig.Config{})
+			server.now = func() time.Time { return tc.now }
+			if tc.info != nil {
+				info := *tc.info
+				server.usageServiceInfo = func() codexbar.DashboardServeInfo { return info }
+			}
+			server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+				return []codexbar.ProviderSetting{{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthUnavailable, Service: codexbar.ProviderServiceUnknown}}, nil
+			}
+			server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+				return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
+					Provider: "codex", Frame: protocol.Frame{Provider: "codex", Session: 12}, CollectedAt: collectedAt, Retained: true,
+				}}}, true
+			}
+
+			recorder := httptest.NewRecorder()
+			server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+			var response preferencesResponse
+			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if got := response.Items[0].Health.State; got != tc.wantState {
+				t.Fatalf("state=%q want %q: %#v", got, tc.wantState, response.Items[0].Health)
+			}
+		})
+	}
+}
+
 // Issue #368: a provider that stopped delivering says since when, also once
 // its saved reading is too old to show and lastSuccessAt is gone. A provider
 // the collector never stored says nothing.

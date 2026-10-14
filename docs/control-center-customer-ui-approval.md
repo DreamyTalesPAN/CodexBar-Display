@@ -7026,3 +7026,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as approved in the entry above, with one correction: after a read the app asks VibeTV to check the provider with it, and when that check works, VibeTV starts its usage service fresh and the app does not read, or ask, again. On Paul's Mac this gave one prompt and Claude values 104 seconds after the click. During that restart the provider rows show their warning icon for about a minute, as after any settings change. No new text, button or dialog.
 - Scope: `macos/VibeTVControlCenter/main.swift`, `macos/VibeTVControlCenter/URLSchemeTests.swift`, `companion` (provider retry, usage service restart), the merge of main, and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — a fix for the existing "Sign in to Claude/Cursor" action, not announced to customers
+
+## 2026-10-14 — #607: a spinner while a new usage service reads
+
+- User approval: After the #607 test Paul saw every provider row (Codex and Claude) show the warning icon for about a minute while the usage service was started fresh, and asked on 2026-10-14: "lass doch da dann lieber n spinner oder so anzeigen".
+- Approved customer-visible result: For up to three minutes after the usage service was started (after a settings change, a browser sign-in read or a crash), a provider whose saved reading is older than that service shows the existing "checking" spinner instead of the warning icon. Once the new service delivers, the row is healthy as before; if it has not delivered after three minutes, the row shows the warning icon as before. A throttled provider keeps its warning. No new text, button or dialog.
+- Scope: `companion` (usage service start time, provider row health), this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a row that already had a checking state uses it during a restart, not announced to customers

@@ -230,6 +230,11 @@ func TestDashboardServeSupervisorRestartReplacesTheRunningChild(t *testing.T) {
 	if !third.Healthy || third.PID == 0 || third.PID == second.PID {
 		t.Fatalf("expected Replace to start a new healthy child, second=%#v third=%#v", second, third)
 	}
+	// The rows read StartedAt to tell a service that is still reading from
+	// one that failed; each replacement of an answering child moves it.
+	if first.StartedAt.IsZero() || !third.StartedAt.After(second.StartedAt) || !second.StartedAt.After(first.StartedAt) {
+		t.Fatalf("StartedAt must follow each replacement: %v %v %v", first.StartedAt, second.StartedAt, third.StartedAt)
+	}
 }
 
 // The same bytes stay current even when touched, while changed bytes with

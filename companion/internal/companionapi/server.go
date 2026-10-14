@@ -202,6 +202,9 @@ type Options struct {
 	// config is unchanged, and waits until the new one answers. Nil when no
 	// serve is supervised.
 	ReplaceUsageService func(context.Context) error
+	// UsageServiceInfo reports the supervised CodexBar serve. Nil when no
+	// serve is supervised.
+	UsageServiceInfo func() codexbar.DashboardServeInfo
 	// Supplied only by the process supervising the actual worker. Running alone
 	// never establishes frame freshness or device readiness.
 	DisplayStreamRunning func() bool
@@ -259,6 +262,7 @@ type Server struct {
 	renderDisplayStream    func()
 	restartUsageService    func(context.Context) error
 	freshUsageService      func(context.Context) error
+	usageServiceInfo       func() codexbar.DashboardServeInfo
 	usageServiceRestarting atomic.Bool
 	// A successful check that arrived while a replacement was running.
 	usageServiceRestartPending atomic.Bool
@@ -1126,6 +1130,7 @@ func New(opts Options) (*Server, error) {
 		renderDisplayStream:   opts.RenderDisplayStream,
 		restartUsageService:   opts.RestartUsageService,
 		freshUsageService:     opts.ReplaceUsageService,
+		usageServiceInfo:      opts.UsageServiceInfo,
 		displayStreamRunning:  opts.DisplayStreamRunning,
 		pairAttempts:          defaultPairAttempts,
 		pairAttemptTimeout:    defaultPairAttemptTimeout,

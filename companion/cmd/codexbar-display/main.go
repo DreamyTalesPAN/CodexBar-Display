@@ -628,11 +628,13 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 	defer cancel()
 	var dashboard codexbar.DashboardServe
 	var restartUsageService, replaceUsageService func(context.Context) error
+	var usageServiceInfo func() codexbar.DashboardServeInfo
 	if !opts.Daemon.Once {
 		dashboard = codexbar.StartDashboardServe(ctx, logf)
 		if supervisor, ok := dashboard.(*codexbar.DashboardServeSupervisor); ok {
 			restartUsageService = supervisor.Restart
 			replaceUsageService = supervisor.Replace
+			usageServiceInfo = supervisor.Info
 		}
 	}
 	server, err := companionapi.New(companionapi.Options{
@@ -649,6 +651,7 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 		WakeDisplayStream:   wakeDisplayWorker,
 		RestartUsageService: restartUsageService,
 		ReplaceUsageService: replaceUsageService,
+		UsageServiceInfo:    usageServiceInfo,
 		RenderDisplayStream: func() {
 			select {
 			case renderWake <- struct{}{}:

@@ -648,9 +648,30 @@ func enabledProviderIDs(settings []codexbar.ProviderSetting) map[string]struct{}
 // setup-completion gate -- so it is spelled once.
 const providerHealthStateStale = "stale"
 
+// usageServiceStartGrace is how long a provider whose saved reading predates
+// the running usage service counts as still being read rather than failing. A
+// service started after a settings change or a browser sign-in read needed
+// about 70 seconds for its first full reading on a loaded bench Mac, and every
+// row showed the warning icon meanwhile (#607, 2026-10-14).
+const usageServiceStartGrace = 3 * time.Minute
+
+// usageServiceStartedAfter reports whether the running usage service started
+// after this provider's last reading, within the grace period: the reading is
+// only old because the new service has not delivered it yet.
+func (s *Server) usageServiceStartedAfter(now, collectedAt time.Time) bool {
+	if s.usageServiceInfo == nil || collectedAt.IsZero() {
+		return false
+	}
+	info := s.usageServiceInfo()
+	return info.Running && !info.StartedAt.IsZero() &&
+		collectedAt.Before(info.StartedAt) &&
+		now.Sub(info.StartedAt) < usageServiceStartGrace
+}
+
 func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []preferenceDescriptor {
 	now := s.currentTime().UTC()
 	lastSuccess := make(map[string]string)
+	lastCollectedAt := make(map[string]time.Time)
 	retainedSuccess := make(map[string]struct{})
 	freshSuccess := make(map[string]codexbar.ProviderReadiness)
 	var noReadingSince map[string]string
@@ -671,6 +692,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 				if id != "" && !provider.CollectedAt.IsZero() &&
 					!frame.UsageUnavailable && snapshotHasUsableUsage(frame, provider.Meta) {
 					lastSuccess[id] = provider.CollectedAt.UTC().Format(time.RFC3339)
+					lastCollectedAt[id] = provider.CollectedAt.UTC()
 					if provider.Retained {
 						retainedSuccess[id] = struct{}{}
 					}
@@ -751,6 +773,17 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			setting.Health == codexbar.ProviderHealthRateLimited) && lastSuccess[setting.ID] != "" {
 			state = providerHealthStateStale
 			message = "Live usage is unavailable; the last successful reading is still saved."
+		}
+		// A saved reading older than the usage service that runs now is not a
+		// failure yet: the service was just started and is still reading.
+		// The row shows that it is checking instead of the warning icon.
+		if state == providerHealthStateStale && setting.Health != codexbar.ProviderHealthRateLimited &&
+			s.usageServiceStartedAfter(now, lastCollectedAt[setting.ID]) {
+			state = string(codexbar.ProviderHealthChecking)
+			message = providerHealthMessage(codexbar.ProviderHealthChecking)
+			reported = ""
+			nextAction = ""
+			signInState = ""
 		}
 		// The exact check reports a throttle as well. A saved reading the
 		// device can still show keeps such a row stale, exactly like a

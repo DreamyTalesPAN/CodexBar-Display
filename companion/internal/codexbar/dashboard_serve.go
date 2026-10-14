@@ -53,6 +53,10 @@ type DashboardServeInfo struct {
 	LastHealthAt    time.Time     `json:"lastHealthAt,omitempty"`
 	LastError       string        `json:"lastError,omitempty"`
 	RefreshInterval time.Duration `json:"refreshInterval"`
+	// StartedAt is when the serve that delivers usage now was started. A
+	// child that crashes before it ever answered keeps the time of the one
+	// it replaces, so a crash loop does not look like a service just started.
+	StartedAt time.Time `json:"startedAt,omitempty"`
 }
 
 type DashboardServeConfig struct {
@@ -89,6 +93,8 @@ type DashboardServeSupervisor struct {
 	// restart marks the next child exit as one Restart asked for, so the
 	// replacement starts at once instead of after the crash backoff.
 	restart bool
+	// answered: the running child passed a health check.
+	answered bool
 }
 
 func StartDashboardServe(ctx context.Context, logf func(string, ...any)) DashboardServe {
@@ -468,6 +474,10 @@ func (s *DashboardServeSupervisor) setStarted(endpoint string, process *os.Proce
 	s.config = config
 	s.info.PID = process.Pid
 	s.info.Running = true
+	if s.info.StartedAt.IsZero() || s.answered {
+		s.info.StartedAt = time.Now().UTC()
+	}
+	s.answered = false
 	s.info.Healthy = false
 	s.info.LastError = ""
 	s.info.RefreshInterval = s.refreshInterval
@@ -496,6 +506,9 @@ func (s *DashboardServeSupervisor) setHealth(healthy bool, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.info.Healthy = healthy
+	if healthy && s.process != nil {
+		s.answered = true
+	}
 	s.info.LastHealthAt = time.Now().UTC()
 	if err != nil {
 		s.info.LastError = err.Error()
