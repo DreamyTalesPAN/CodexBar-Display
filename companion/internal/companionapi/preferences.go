@@ -862,10 +862,6 @@ func staleProviderSignIn(
 	return "", "", ""
 }
 
-func providerReadinessAppliesToSetting(readiness providerReadinessRecord, setting codexbar.ProviderSetting, freshSuccess codexbar.ProviderReadiness, now time.Time) bool {
-	return providerReadinessAppliesToSettingImpl(readiness, setting, freshSuccess, now)
-}
-
 // A discontinued provider is not a freshness problem: no later reading can
 // arrive, so the retained snapshot never becomes live again. Reporting it as
 // stale would let the setup step keep offering the old percentage for the
@@ -885,7 +881,7 @@ func providerIsDiscontinued(
 	return readinessApplies && readiness.Status == codexbar.ProviderUnsupported
 }
 
-func providerReadinessAppliesToSettingImpl(readiness providerReadinessRecord, setting codexbar.ProviderSetting, freshSuccess codexbar.ProviderReadiness, now time.Time) bool {
+func providerReadinessAppliesToSetting(readiness providerReadinessRecord, setting codexbar.ProviderSetting, freshSuccess codexbar.ProviderReadiness, now time.Time) bool {
 	age := now.Sub(readiness.CheckedAt)
 	if readiness.CheckedAt.IsZero() || age < 0 || age > providerReadinessFreshness {
 		return false
