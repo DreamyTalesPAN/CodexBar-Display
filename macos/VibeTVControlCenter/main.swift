@@ -5092,8 +5092,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         controlCenterRoute.didLoad()
     }
 
+    // WebKit ends the page's process under memory pressure or when it
+    // crashes. The window then stays blank and the page stops polling, so a
+    // setup in progress looks frozen (#616). Load the Control Center again.
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        NSLog("VibeTV Control Center web content process ended; loading the Control Center again")
+        activeNavigation = nil
+        scheduledReload?.cancel()
+        scheduledReload = nil
+        reloadAttempts = 0
+        loadControlCenter(cachePolicy: .reloadIgnoringLocalCacheData)
+    }
+
     private func scheduleReload() {
         guard reloadAttempts < 20, scheduledReload == nil else {
+            if scheduledReload == nil {
+                NSLog("VibeTV Control Center stopped retrying the Control Center page after %d attempts", reloadAttempts)
+            }
             return
         }
         reloadAttempts += 1
