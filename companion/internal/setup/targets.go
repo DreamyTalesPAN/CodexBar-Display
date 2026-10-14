@@ -4,7 +4,6 @@ import "strings"
 
 type firmwareTarget struct {
 	Env         string
-	ProjectDir  string
 	ExpectedIDs []string
 }
 
@@ -13,12 +12,10 @@ const firmwareEnvironment = "esp8266_smalltv_st7789"
 var firmwareTargets = map[string]firmwareTarget{
 	"lilygo_t_display_s3": {
 		Env:         "lilygo_t_display_s3",
-		ProjectDir:  "firmware_esp32",
 		ExpectedIDs: []string{"esp32-lilygo-t-display-s3"},
 	},
 	"esp8266_smalltv_st7789": {
 		Env:         "esp8266_smalltv_st7789",
-		ProjectDir:  "firmware_esp8266",
 		ExpectedIDs: []string{"esp8266-smalltv-st7789"},
 	},
 }
