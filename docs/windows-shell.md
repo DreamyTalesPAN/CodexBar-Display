@@ -70,10 +70,14 @@ Companion for everything it needs.
   Sparkle's dialog. On Windows the same link installs without a question, so
   the WebView never opens it unasked. Instead the shell asks the update source
   every 6 hours and installs a newer version only while its window is closed
-  (hidden in the tray, not minimized) and no VibeTV update or theme install
-  runs, with the same limits and the same once-in-24-hours file as at launch
-  and without any message. The window is checked again right before the
-  installer starts, after the update hold is claimed.
+  (hidden in the tray; a minimized window counts as open) and no VibeTV
+  update or theme install runs, with the same limits and the same
+  once-in-24-hours file as at launch and without any message. The window is
+  checked again right before the installer starts, after the update hold is
+  claimed. A click on Update or the tray item during that check is not
+  dropped: the check installs at once and the app comes back with its window,
+  or, when it ends without installing, the click gets its own run with its
+  messages.
   The installer relaunches the shell with `--after-idle-update`, and right
   before it starts the shell writes the time to
   `%LOCALAPPDATA%\shop.vibetv.control-center\idle-update-relaunch.txt`; a start

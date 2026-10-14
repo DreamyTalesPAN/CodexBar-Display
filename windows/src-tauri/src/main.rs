@@ -70,6 +70,10 @@ struct Shell {
     // vibetv://check-for-updates must not launch two NSIS installers over
     // the same files.
     updating: AtomicBool,
+    // The update check with the window closed holds `updating`; a click on
+    // Update or the tray item meanwhile is noted here and answered by it.
+    idle_updating: AtomicBool,
+    asked_during_idle: AtomicBool,
 }
 
 fn main() {
@@ -90,6 +94,8 @@ fn main() {
             preparing: Mutex::new(true),
             presentations: AtomicU64::new(0),
             updating: AtomicBool::new(false),
+            idle_updating: AtomicBool::new(false),
+            asked_during_idle: AtomicBool::new(false),
         })
         .setup(|app| {
             let handle = app.handle().clone();
@@ -723,12 +729,16 @@ fn runtime_origin_candidates() -> Vec<Url> {
 // has no console, so every outcome the customer waits for is shown in a
 // native message box; stderr alone would leave the click unanswered.
 fn check_for_updates(app: AppHandle) {
-    if app
-        .state::<Shell>()
-        .updating
-        .swap(true, Ordering::SeqCst)
-    {
-        log("update check already running; ignoring repeated request");
+    let shell = app.state::<Shell>();
+    if shell.updating.swap(true, Ordering::SeqCst) {
+        if shell.idle_updating.load(Ordering::SeqCst) {
+            // The check with the window closed installs right away now, or
+            // hands over to this request when it ends without installing.
+            shell.asked_during_idle.store(true, Ordering::SeqCst);
+            log("update requested during the check with the window closed; it takes the request over");
+        } else {
+            log("update check already running; ignoring repeated request");
+        }
         return;
     }
     tauri::async_runtime::spawn(async move {
@@ -801,15 +811,20 @@ fn idle_update_check(app: &AppHandle) {
     if *app.state::<Shell>().preparing.lock().unwrap() {
         return;
     }
-    if app
-        .state::<Shell>()
-        .updating
-        .swap(true, Ordering::SeqCst)
-    {
+    let shell = app.state::<Shell>();
+    if shell.updating.swap(true, Ordering::SeqCst) {
         return;
     }
+    shell.asked_during_idle.store(false, Ordering::SeqCst);
+    shell.idle_updating.store(true, Ordering::SeqCst);
     let result = tauri::async_runtime::block_on(run_update(app, UpdateRun::Idle));
-    app.state::<Shell>().updating.store(false, Ordering::SeqCst);
+    shell.updating.store(false, Ordering::SeqCst);
+    shell.idle_updating.store(false, Ordering::SeqCst);
+    // A click that came during the check and was not used by an install:
+    // it gets its own run, with its messages.
+    if shell.asked_during_idle.swap(false, Ordering::SeqCst) {
+        check_for_updates(app.clone());
+    }
     match result {
         Ok(UpdateOutcome::Installed) => {}
         Ok(UpdateOutcome::UpToDate) => log("update check: no newer version"),
@@ -824,13 +839,13 @@ fn idle_update_check(app: &AppHandle) {
     }
 }
 
-// Open, or minimized to the taskbar: the customer may be in the middle of
-// something there.
+// Shown, also minimized to the taskbar (a minimized window stays visible):
+// the customer may be in the middle of something there. Only the hidden
+// window in the tray is free; a window closed while minimized is hidden and
+// still minimized, so the minimized state alone says nothing.
 fn window_in_use(app: &AppHandle) -> bool {
     app.get_webview_window(WINDOW_LABEL)
-        .map(|window| {
-            window.is_visible().unwrap_or(true) || window.is_minimized().unwrap_or(true)
-        })
+        .map(|window| window.is_visible().unwrap_or(true))
         .unwrap_or(false)
 }
 
@@ -926,8 +941,14 @@ async fn run_update(app: &AppHandle, run: UpdateRun) -> Result<UpdateOutcome, St
         return Ok(UpdateOutcome::Busy);
     }
     // Asked only now: the window may have been opened during the download or
-    // while the hold was claimed, which can take a few runtime requests.
-    if run == UpdateRun::Idle && window_in_use(app) {
+    // while the hold was claimed, which can take a few runtime requests. A
+    // click on Update meanwhile makes this the customer's install: it goes
+    // on, and the app comes back with its window.
+    let asked = run == UpdateRun::Idle
+        && app.state::<Shell>().asked_during_idle.swap(false, Ordering::SeqCst);
+    if asked {
+        relaunch_note = None;
+    } else if run == UpdateRun::Idle && window_in_use(app) {
         let _ = tauri::async_runtime::spawn_blocking(release_update_hold).await;
         // Nothing was tried; the next check may install this version.
         if let Some(marker) = &marker {
@@ -942,6 +963,10 @@ async fn run_update(app: &AppHandle, run: UpdateRun) -> Result<UpdateOutcome, St
     if let Err(error) = update.install(bytes) {
         if let Some(note) = &relaunch_note {
             launch_update::release(note);
+        }
+        if asked {
+            // The click still gets its answer, from its own run.
+            app.state::<Shell>().asked_during_idle.store(true, Ordering::SeqCst);
         }
         // Nothing was replaced; give the runtime back to device jobs.
         let _ = tauri::async_runtime::spawn_blocking(release_update_hold).await;
