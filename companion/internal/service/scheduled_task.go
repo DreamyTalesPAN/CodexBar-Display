@@ -107,6 +107,11 @@ $name = ` + psLiteral(s.label+"-") + ` + $sid
 	return out, nil
 }
 
+// The task runs at normal priority (4). Task Scheduler's default of 7 starts
+// the daemon and the usage engine as BelowNormal, and with every core busy
+// they then get no CPU time for minutes: VibeTV stops updating during a large
+// build (issue #557; measured on the test laptop, no answer within three
+// minutes against usage back after about ten seconds).
 func (s *scheduledTask) Install(ctx context.Context) error {
 	config, err := ReadTaskConfig(s.home, s.label)
 	if err != nil {
@@ -132,6 +137,7 @@ $task.Settings.StartWhenAvailable = $true
 $task.Settings.DisallowStartIfOnBatteries = $false
 $task.Settings.StopIfGoingOnBatteries = $false
 $task.Settings.ExecutionTimeLimit = 'PT0S'
+$task.Settings.Priority = 4
 $task.Settings.MultipleInstances = 2
 $task.Settings.RestartInterval = 'PT1M'
 $task.Settings.RestartCount = 999

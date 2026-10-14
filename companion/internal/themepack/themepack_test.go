@@ -495,6 +495,40 @@ func TestLoadRejectsMalformedUnreferencedSpriteAsset(t *testing.T) {
 	}
 }
 
+// Found on 2026-10-08: Theme Studio stored one imported picture as a CBI1
+// payload under a .cba name, and every such theme was refused with
+// invalid_theme_pack. The theme file is the one Theme Studio writes for a
+// single 32x32 picture; apps/control-center/src/lib/theme-studio-assets.test.ts
+// pins the same text.
+func TestLoadAcceptsThemeStudioSinglePictureSprite(t *testing.T) {
+	picture := "CBI1\n32 32\n1\n#FF00FF\n" + strings.Repeat("32a\n", 32)
+	for _, tc := range []struct {
+		ext  string
+		want string
+	}{
+		{ext: ".cbi"},
+		// What Theme Studio wrote before: the firmware skips a CBI1 on its
+		// animated path, so this pack must stay refused.
+		{ext: ".cba", want: "is .cba but contains a CBI1 payload"},
+	} {
+		t.Run(tc.ext, func(t *testing.T) {
+			path := "/themes/u/face-on-magenta" + tc.ext
+			spec := `{"v":1,"id":"my-theme","rev":1,"p":[{"t":"sp","x":176,"y":26,"w":32,"h":32,"a":"` + path + `","fc":1,"fps":0,"sc":1}],"bg":"#000000"}` + "\n"
+			dir := writeThemePackWithSpec(t, spec, []themePackTestAsset{
+				{path: path, file: "assets/face-on-magenta" + tc.ext, data: picture},
+			})
+
+			_, err := Load(dir)
+			if tc.want == "" && err != nil {
+				t.Fatalf("Theme Studio single-picture pack rejected: %v", err)
+			}
+			if tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)) {
+				t.Fatalf("expected rejection containing %q, got %v", tc.want, err)
+			}
+		})
+	}
+}
+
 // A CBA is composed in a full-frame buffer, so its rendered size is capped at
 // 80x80 even though a source sprite may be up to 480px. A pack that renders
 // larger must be rejected before installation starts writing to the device.

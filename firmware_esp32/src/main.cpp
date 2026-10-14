@@ -118,6 +118,11 @@ void loop() {
     }
   }
 
+  codexbar_display::core::SerialConsumeEvent expiry;
+  if (codexbar_display::core::ExpireActivity(runtimeCtx.runtime, millis(), expiry)) {
+    renderer.OnFrameAccepted(runtimeCtx, expiry);
+  }
+
   if (codexbar_display::app::HasFrame(runtimeCtx) &&
       !codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&
       !runtimeCtx.screenDirty) {

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { expectNoAxeViolations } from "@/test/axe";
 import { SettingsScreen, type SettingsScreenProps } from "./settings-screen";
 
 beforeEach(() => {
@@ -41,27 +42,25 @@ function props(overrides: Partial<SettingsScreenProps> = {}): SettingsScreenProp
   };
 }
 
-describe("Settings connection cards", () => {
-  it("asks before starting setup again and keeps the current setup after cancel", () => {
-    const settings = props();
+// Issue #548: the refusal of a provider change is the runtime's sentence, and
+// the Windows app showed it as it came.
+describe("Settings: a refused provider change", () => {
+  it.each([
+    [false, "Provider settings need a newer Mac App.", "Update the Mac App, then try again."],
+    [true, "Provider settings need a newer app.", "Update the app, then try again."],
+  ])("is worded for the host (Windows: %s)", (windowsHost, title, description) => {
+    const settings = props({ windowsHost });
+    settings.providerPicker.preferencesError = {
+      code: "provider_preferences_update_required",
+      message: "Provider settings need a newer Mac App.",
+      nextAction: "Update the Mac App, then try again.",
+    };
     render(<SettingsScreen {...settings} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Run setup again" }));
-    expect(screen.getByRole("dialog", { name: "Run setup again?" }).textContent).toContain(
-      "Nothing on VibeTV is erased.",
-    );
-    expect(settings.onResetSetup).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(settings.onResetSetup).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole("button", { name: "Run setup again" }));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Run setup again" }));
-    expect(settings.onResetSetup).toHaveBeenCalledOnce();
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("dialog", { name: title }).textContent).toContain(description);
   });
+});
 
+describe("Settings connection cards", () => {
   it.each([
     ["cable", "USB-C", "WiFi", "Switch to WiFi", "wifi"],
     ["wifi", "WiFi", "USB-C", "Switch to USB-C", "cable"],
@@ -158,5 +157,28 @@ describe("Settings connection cards", () => {
     view.rerender(<SettingsScreen {...settings} busyAction="firmware-update" />);
     fireEvent.click(screen.getByRole("button", { name: "Switch to WiFi" }));
     expect(settings.onConnectionModeChange).not.toHaveBeenCalled();
+  });
+});
+
+describe("Settings confirmations", () => {
+  it("has no accessibility violations in the factory reset and connection questions", async () => {
+    render(<SettingsScreen {...props({ onEraseDevice: vi.fn() })} />);
+    fireEvent.click(screen.getByRole("button", { name: "Reset to factory settings" }));
+    expect(screen.getByRole("dialog", { name: "Reset VibeTV to factory settings?" })).toBeTruthy();
+    await expectNoAxeViolations(document.body.innerHTML);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "WiFi" }));
+    expect(screen.getByRole("dialog", { name: "Switch to WiFi?" })).toBeTruthy();
+    await expectNoAxeViolations(document.body.innerHTML);
+  });
+
+  it("moves focus into the factory reset question and back to its button", async () => {
+    render(<SettingsScreen {...props({ onEraseDevice: vi.fn() })} />);
+    const opener = screen.getByRole("button", { name: "Reset to factory settings" });
+    opener.focus();
+    fireEvent.click(opener);
+    expect(screen.getByRole("dialog").contains(document.activeElement)).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(document.activeElement).toBe(opener));
   });
 });

@@ -196,6 +196,18 @@ async function assertRenderPack(theme, generation) {
     `${generation} render pack fingerprint mismatch for ${theme.id}`,
   );
   if (generation === "current") {
+    // A VibeTV that still holds an earlier revision gets its update only when
+    // the catalog names that file (#559).
+    for (const file of await readdir(revisionDir)) {
+      const shipped = JSON.parse(
+        await readFile(path.join(revisionDir, file), "utf8"),
+      ).specPath;
+      assert(
+        shipped === theme.themeSpecPath ||
+          theme.earlierThemeSpecPaths?.includes(shipped),
+        `current catalog does not name the earlier revision ${shipped} of ${theme.id}`,
+      );
+    }
     const alias = JSON.parse(
       await readFile(path.join(distRoot, "render", `${theme.id}.json`), "utf8"),
     );

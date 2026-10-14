@@ -1162,9 +1162,50 @@ func TestRunInstallUpdateCableRescueWritesNothingWithoutAPreIdentityVibeTV(t *te
 		return nil
 	}
 
-	err := runInstallUpdate([]string{"--target", "cable-rescue://vibetv", "--manifest-url", manifestURL, "--skip-launchagent-pause"})
-	if err == nil || !strings.Contains(err.Error(), "pre-Cable firmware") || probes != 2 {
-		t.Fatalf("expected rescue refusal after one fresh probe, got %v after %d probes", err, probes)
+	output, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{"--target", "cable-rescue://vibetv", "--manifest-url", manifestURL, "--skip-launchagent-pause"})
+	})
+	if err == nil || !strings.Contains(err.Error(), "pre-Cable firmware") || probes != 3 {
+		t.Fatalf("expected rescue refusal after three probes, got %v after %d probes", err, probes)
+	}
+	// Issue #536: the update log keeps this output, and it must name every probe.
+	for _, want := range []string{"probe 1/3 failed", "probe 2/3 failed", "probe 3/3 failed: no VibeTV with pre-Cable firmware"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("missing %q in the updater output:\n%s", want, output)
+		}
+	}
+}
+
+// Issue #536: the first probes can miss the boot hello. A later one that finds
+// the VibeTV still rescues it.
+func TestRunInstallUpdateCableRescueFindsTheVibeTVOnALaterProbe(t *testing.T) {
+	_, manifestURL, firmwareVersion := prepareCableFirmwareUpdateTest(t)
+	pinCableRescue(t)
+	readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{DeviceID: "device-cable", Board: "esp8266-smalltv-st7789", Firmware: *firmwareVersion}, nil
+	}
+	probes := 0
+	findLegacyCableVibeTVFn = func() (usb.CableDevice, error) {
+		if probes++; probes < 3 {
+			return usb.CableDevice{}, errors.New("no VibeTV with pre-Cable firmware answered hello")
+		}
+		return usb.CableDevice{Port: "/dev/mock-legacy", Hello: protocol.DeviceHello{Board: "esp8266-smalltv-st7789", Firmware: "1.0.0"}}, nil
+	}
+	flashedPort := ""
+	flashCableRescueFn = func(_ context.Context, port string, _ []byte, _ func(int)) error {
+		flashedPort = port
+		*firmwareVersion = "1.0.1"
+		return nil
+	}
+
+	output, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{"--target", "cable-rescue://vibetv", "--manifest-url", manifestURL, "--skip-launchagent-pause"})
+	})
+	if err != nil || probes != 3 || flashedPort != "/dev/mock-legacy" {
+		t.Fatalf("rescue after two missed probes: err=%v probes=%d flashed=%q\n%s", err, probes, flashedPort, output)
+	}
+	if strings.Count(output, "failed: no VibeTV with pre-Cable firmware") != 2 {
+		t.Fatalf("the two missed probes are not both in the updater output:\n%s", output)
 	}
 }
 

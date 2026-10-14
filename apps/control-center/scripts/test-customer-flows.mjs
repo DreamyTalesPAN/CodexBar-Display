@@ -1289,10 +1289,31 @@ async function startTestApp({
 
 async function newCustomerPage(browser, appUrl, options) {
   const page = await browser.newPage(options);
+  await markWhatsNewRead(page);
   await page.context().grantPermissions(["local-network-access"], {
     origin: appUrl,
   });
   return page;
+}
+
+// The "What's new" notice lies over Overview until the customer closes it, and
+// these flows are about everything else: each page opens for a customer who
+// has read every entry. The unit tests cover the notice itself.
+async function markWhatsNewRead(pageOrContext) {
+  const entries = await readFile(join(root, "src", "lib", "whats-new.ts"), "utf8");
+  await pageOrContext.addInitScript(
+    (ids) => {
+      try {
+        window.localStorage.setItem(
+          "vibetv.controlCenter.seenWhatsNew",
+          JSON.stringify(ids),
+        );
+      } catch {
+        // A page without storage shows no Control Center either.
+      }
+    },
+    [...entries.matchAll(/\bid: "([^"]+)"/g)].map((match) => match[1]),
+  );
 }
 
 async function testStartupStateMachine(browser, appUrl) {
@@ -1307,6 +1328,7 @@ async function testStartupStateMachine(browser, appUrl) {
 
 async function testSetupDoesNotRequestBrowserPermission(browser, appUrl) {
   const page = await browser.newPage({ viewport });
+  await markWhatsNewRead(page);
   const installRequests = [];
   await routeCompanionMissing(page, installRequests);
 
@@ -2899,7 +2921,7 @@ async function testLocalWifiSearchOffersImmediateManualEntry(browser, appUrl) {
     "A search that has not answered must not report a count",
   );
   await createSetupSupportReport(page);
-  await page.getByText(/^Report saved/).waitFor({ timeout: 15_000 });
+  await page.getByText(/^Report (saved|created)/).waitFor({ timeout: 15_000 });
   await page.keyboard.press("Escape");
   // An empty scan keeps Welcome and offers recovery in the existing dialog.
   await setupNotFoundDialog(page).waitFor({ timeout: 10_000 });
@@ -3140,14 +3162,6 @@ async function testFreshDiscoveredPairedDeviceShowsRecoveryWithoutWifi(
   await page.close();
 }
 
-async function confirmRunSetupAgain(page) {
-  await page.getByRole("button", { name: "Run setup again" }).click();
-  await page
-    .getByRole("dialog", { name: "Run setup again?" })
-    .getByRole("button", { name: "Run setup again" })
-    .click();
-}
-
 async function testOfflineActiveDeviceOffersReadOnlyPickerAfterSetupReset(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
@@ -3184,7 +3198,7 @@ async function testOfflineActiveDeviceOffersReadOnlyPickerAfterSetupReset(browse
   assert(deviceWriteRequests.length === 0,
     "An admitted session must not adopt another VibeTV after disconnecting");
   await clickNavigation(page, "Settings");
-  await confirmRunSetupAgain(page);
+  await runSetupAgain(page);
   await waitForSetupDeviceStep(page);
   await page.getByRole("radio", { name: "VibeTV device-82" }).waitFor({
     timeout: 10_000,
@@ -3430,6 +3444,7 @@ async function testKnownDeviceCompanionOutageSurvivesReloadAndSecondWindow(
   appUrl,
 ) {
   const context = await browser.newContext({ viewport: desktopViewport });
+  await markWhatsNewRead(context);
   await context.grantPermissions(["local-network-access"], { origin: appUrl });
   const firstPage = await context.newPage();
   const installRequests = [];
@@ -3859,7 +3874,7 @@ async function testEnteredControlCenterOpensPairingRecovery(browser, appUrl) {
   await pairingError.waitFor({ timeout: 10_000 });
   await pairingError.getByRole("button", { name: "OK", exact: true }).click();
   await pairingError.waitFor({ state: "detached", timeout: 5_000 });
-  await confirmRunSetupAgain(page);
+  await runSetupAgain(page);
   await waitForSetupDeviceStep(page, 20_000);
   await setupDeviceCards(page).first().waitFor({ timeout: 10_000 });
   await setupConnectButton(page).click();
@@ -3955,6 +3970,7 @@ async function testHostedEntryShowsMacAppDownload(
   { expectDmg, path = "/" },
 ) {
   const page = await browser.newPage({ viewport });
+  await markWhatsNewRead(page);
   const installRequests = [];
   const companionRequests = [];
   // These checks are about the Mac customer's page. CI runs on Linux, where
@@ -4024,7 +4040,7 @@ async function testHostedEntryShowsMacAppDownload(
   // The download page is the only thing a customer without the app can reach,
   // so the way to ask for help has to be on it.
   await createSetupSupportReport(page);
-  await page.getByText(/^Report saved|^Report could not be created/).waitFor({
+  await page.getByText(/^Report saved|^Report created|^Report could not be created/).waitFor({
     timeout: 15_000,
   });
   assert(
@@ -4087,6 +4103,7 @@ async function pretendCustomerIsOnWindows(page) {
  */
 async function testHostedEntryOnWindowsOffersTheWindowsApp(browser, appUrl) {
   const page = await browser.newPage({ viewport });
+  await markWhatsNewRead(page);
   const installRequests = [];
   await pretendCustomerIsOnWindows(page);
   await routeHostedAppThroughLocalNext(page, appUrl);
@@ -4135,6 +4152,7 @@ async function testHostedPriorVisitStillShowsMacAppDownload(
   { expectDmg },
 ) {
   const page = await browser.newPage({ viewport });
+  await markWhatsNewRead(page);
   const installRequests = [];
   const companionRequests = [];
   await page.addInitScript(() => {
@@ -5064,6 +5082,7 @@ async function testPostFlashMissingCapabilitiesKeepThemeAttention(browser, appUr
     "supportsProviderAssetsV1",
     "supportsColorStopsV1",
     "supportsTextValignV1",
+    "supportsProgressArcV1",
   ]) {
     await testPostFlashMissingCapabilityKeepsThemeAttention(
       browser,
@@ -5114,6 +5133,7 @@ async function testPostFlashMissingCapabilityKeepsThemeAttention(
         supportsProviderAssetsV1: true,
         supportsColorStopsV1: true,
         supportsTextValignV1: true,
+        supportsProgressArcV1: true,
         [missingCapability]: false,
       },
     },
@@ -5196,6 +5216,7 @@ async function testFirmwareUpdateRechecksThemeCatalogAfterCapabilityUpgrade(
         supportsProviderAssetsV1: true,
         supportsColorStopsV1: true,
         supportsTextValignV1: true,
+        supportsProgressArcV1: true,
       },
     },
   };
@@ -7595,8 +7616,10 @@ async function testProviderCheckWinsOverOlderPreferenceRead(browser, appUrl) {
     "navigation must start the stale read used by the provider-check race",
   );
 
-  // Navigation mounts a fresh provider list, so dismiss its unavailable notice.
-  await page.getByRole("dialog", { name: "Codex", exact: true }).getByRole("button", { name: "OK" }).click();
+  assert(
+    (await page.getByRole("dialog", { name: "Codex", exact: true }).count()) === 0,
+    "a provider message acknowledged before leaving Settings must not open again",
+  );
   await checkAgain.click();
   await waitForCondition(
     () =>
@@ -7970,9 +7993,7 @@ async function testRunSetupAgainReturnsToWifiOnboarding(browser, appUrl) {
   );
 
   await clickNavigation(page, "Settings");
-  const runSetupAgain = page.getByRole("button", { name: "Run setup again" });
-  await runSetupAgain.waitFor({ timeout: 10_000 });
-  await confirmRunSetupAgain(page);
+  await runSetupAgain(page);
   await page
     .getByRole("main", { name: "Welcome" })
     .waitFor({ timeout: 10_000 });
@@ -8024,7 +8045,7 @@ async function testRunSetupAgainWaitsForAPendingDisplaySave(browser, appUrl) {
     () => timeline.some((entry) => entry.pathname === "/v1/provider-display"),
     "choosing a display mode in Settings must save it",
   );
-  await confirmRunSetupAgain(page);
+  await runSetupAgain(page);
   await waitForCondition(
     () => timeline.some((entry) => entry.pathname === "/v1/setup/reset"),
     "Run setup again must reset once the save has landed",
@@ -8073,7 +8094,7 @@ async function testRunSetupAgainWaitsForAPendingProviderToggle(browser, appUrl) 
     () => timeline.some((entry) => entry.pathname.startsWith("/v1/preferences/")),
     "switching a provider in Settings must save it",
   );
-  await confirmRunSetupAgain(page);
+  await runSetupAgain(page);
   await waitForCondition(
     () => timeline.some((entry) => entry.pathname === "/v1/setup/reset"),
     "Run setup again must reset once the provider toggle has settled",
@@ -8148,7 +8169,7 @@ async function testFailedSetupResetReconcilesPendingProviderToggle(
       ),
     "enabling Claude must start its provider preference save",
   );
-  await confirmRunSetupAgain(page);
+  await runSetupAgain(page);
   await waitForCondition(
     () =>
       requests.some((request) => request.pathname === "/v1/setup/reset"),
@@ -8204,7 +8225,7 @@ async function testRunSetupAgainBlocksLaterProviderWrites(browser, appUrl) {
     timeout: 10_000,
   });
   await clickNavigation(page, "Settings");
-  await confirmRunSetupAgain(page);
+  await runSetupAgain(page);
   await waitForCondition(
     () => requests.includes("/v1/setup/reset"),
     "Run setup again did not start its reset",
@@ -8741,6 +8762,9 @@ async function testReloadRestoresRunningThemeInstall(browser, appUrl) {
         installStatusRequests += 1;
       }
     },
+    // A screensaver is installed only while Show screensaver is on; with it
+    // off the finished row says only that the screensaver is installed.
+    standbySettings: { enabled: true, timeoutMinutes: 10, brightnessPercent: 20 },
     statusThemeInstallJob: {
       id: "theme-job-from-closed-window",
       themeId: "night-clock",
@@ -8939,7 +8963,7 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await clickNavigation(page, "Updates");
   const firmwareSection = page.locator('[data-slot="card"]').filter({
-    has: page.getByRole("heading", { name: "VibeTV update" }),
+    has: page.getByRole("heading", { name: "VibeTV", exact: true }),
   });
   await page.getByRole("button", { name: "Update", exact: true }).waitFor({
     timeout: 10_000,
@@ -9269,6 +9293,7 @@ async function testAutomaticThemeRefreshRespectsUpdateGates(browser, appUrl) {
 
 async function testFailedAutomaticThemeRefreshStaysPaused(browser, appUrl) {
   const context = await browser.newContext({ viewport });
+  await markWhatsNewRead(context);
   await context.grantPermissions(["local-network-access"], { origin: appUrl });
   const page = await context.newPage();
   const installRequests = [];
@@ -10398,6 +10423,8 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
   await routeCompanionOnline(page, [], () => {}, {
     companionVersion: "1.0.33",
     device: { ...companionDevice, firmware: "1.0.40", display: { themeSpec: { active: true, renderOk: true, path: activeRenderPack.specPath } } },
+    // A screensaver is sent only while Show screensaver is on.
+    standbySettings: { enabled: true, timeoutMinutes: 10, brightnessPercent: 20, screensaverPath: "" },
     installStatusSequence: [{ phase: "complete", message: "Theme installed.", progress: 100, logs: [], result: {
       themeId: screensaver ? "my-screensaver" : "my-theme", name: "New Theme", activePath: "/themes/u/test.json", themeRev: 1,
     } }],
@@ -10847,7 +10874,7 @@ async function testBoardIncompatibleThemeStaysLocked(browser, appUrl) {
   const lockedButton = page
     .getByRole("listitem")
     .filter({ hasText: "Fixture ESP32 Only Theme" })
-    .getByRole("button", { name: "Not Supported" });
+    .getByRole("button", { name: "Not supported" });
   await lockedButton.waitFor({ timeout: 10_000 });
   assert(
     await lockedButton.isDisabled(),
@@ -10879,7 +10906,7 @@ async function testFirmwareIncompatibleThemeStaysLocked(browser, appUrl) {
   const lockedButton = page
     .getByRole("listitem")
     .filter({ hasText: "Fixture Future Firmware Theme" })
-    .getByRole("button", { name: "Update Needed" });
+    .getByRole("button", { name: "Update needed" });
   await lockedButton.waitFor({ timeout: 10_000 });
   assert(
     await lockedButton.isDisabled(),
@@ -10944,7 +10971,7 @@ async function testCapabilityIncompatibleThemeStaysLocked(browser, appUrl) {
   const lockedButton = page
     .getByRole("listitem")
     .filter({ hasText: "Fixture Synthwave Theme" })
-    .getByRole("button", { name: "Update Needed" });
+    .getByRole("button", { name: "Update needed" });
   await lockedButton.waitFor({ timeout: 10_000 });
   assert(
     await lockedButton.isDisabled(),
@@ -10956,6 +10983,7 @@ async function testCapabilityIncompatibleThemeStaysLocked(browser, appUrl) {
 
 async function testDisabledDmgFlagHidesSetupAndUpdateLinks(browser, appUrl) {
   let page = await browser.newPage({ viewport });
+  await markWhatsNewRead(page);
   const setupInstallRequests = [];
   await pretendCustomerIsOnAMac(page);
   await routeHostedAppThroughLocalNext(page, appUrl);
@@ -13250,6 +13278,17 @@ async function clickNavigation(page, name) {
   }
   await page.waitForTimeout(350);
   await (await getNavigationButton(page, name)).click({ timeout: 10_000 });
+}
+
+// "Run setup again" asks first (#546); these flows are about what follows.
+async function runSetupAgain(page) {
+  const button = page.getByRole("button", { name: "Run setup again" });
+  await button.waitFor({ timeout: 10_000 });
+  await button.click();
+  await page
+    .getByRole("dialog", { name: "Run setup again?" })
+    .getByRole("button", { name: "Run setup again" })
+    .click();
 }
 
 async function waitForCondition(predicate, message, timeoutMs = 10_000) {

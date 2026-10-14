@@ -624,8 +624,10 @@ export function SetupWizard(props: SetupWizardProps) {
           }
           const failure = error as ApiError;
           return (
-            [failure?.message, failure?.nextAction].filter(Boolean).join(" ") ||
-            null
+            copyForHost(
+              [failure?.message, failure?.nextAction].filter(Boolean).join(" "),
+              Boolean(props.windowsHost),
+            ) || null
           );
         } finally {
           if (!abandoned()) {
@@ -782,7 +784,7 @@ export function SetupWizard(props: SetupWizardProps) {
         {wifiError ? (
           <SetupDialog
             title="WiFi setup failed"
-            description={wifiError}
+            description={copyForHost(wifiError, Boolean(props.windowsHost))}
             open
             onOpenChange={(open) => !open && setWiFiError(null)}
             primaryAction={{ label: "OK", onSelect: () => setWiFiError(null) }}

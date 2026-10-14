@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
@@ -479,7 +480,14 @@ type ParsedFrame struct {
 	Meta               ProviderUsageMeta
 	CollectedAt        time.Time
 	ActivityObservedAt time.Time
-	Stale              bool
+	// TokenStatsCollectedAt is when the last token scan for this provider
+	// completed, with or without new tokens.
+	TokenStatsCollectedAt time.Time
+	// TokenHistoryGrowing is set until the token history has settled once
+	// since the start: while it is first read in, the totals rise from scan
+	// to scan without anyone working.
+	TokenHistoryGrowing bool
+	Stale               bool
 	// Terminal marks a provider error CodexBar states as permanent (see
 	// providerErrorIsTerminal): retained quota for that provider is void.
 	Terminal bool
@@ -606,28 +614,100 @@ func (v looseVersion) Compare(other looseVersion) int {
 
 var looseVersionPattern = regexp.MustCompile(`\bv?([0-9]+)\.([0-9]+)(?:\.([0-9]+))?\b`)
 
+// reuseEngineAnswers is true on Windows. There every poll started a new CLI
+// process only to hear the CLI's version and the provider inventory again
+// (#555). Neither answer can change unless a file does, so each is kept for
+// as long as engineStamp of its files stays the same. The Mac is left as it
+// is: its app-managed CLI is not run for its version at all
+// (installedVersion), and which files its inventory is built from has only
+// been checked for Win-CodexBar (readProviderInventory). A variable so the
+// Windows path is testable on the Mac.
+var reuseEngineAnswers = runtime.GOOS == "windows"
+
+// engineStampSettle is how long a file must have been left alone before an
+// answer read from it is kept. A second write inside one step of the file
+// system's clock (2 s on FAT) leaves size and modification time as they were.
+const engineStampSettle = 3 * time.Second
+
+// engineStamp names the state of the files an answer depends on: path, size
+// and modification time of each. It is empty, and nothing is kept, where
+// answers are not reused, when a file cannot be read, and while a file is
+// younger than engineStampSettle. Take it before asking the CLI: a file that
+// changes during the call then no longer matches the answer.
+func engineStamp(paths ...string) string {
+	if !reuseEngineAnswers {
+		return ""
+	}
+	var stamp strings.Builder
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil || time.Since(info.ModTime()) < engineStampSettle {
+			return ""
+		}
+		fmt.Fprintf(&stamp, "%s\x00%d\x00%d\x00", path, info.Size(), info.ModTime().UnixNano())
+	}
+	return stamp.String()
+}
+
+// engineAnswer is the CLI's last answer to one question, the engineStamp it
+// was read under and when.
+type engineAnswer[T any] struct {
+	mu    sync.Mutex
+	stamp string
+	at    time.Time
+	value T
+}
+
+// load returns the answer kept for stamp unless it is older than maxAge.
+// Zero accepts any age.
+func (a *engineAnswer[T]) load(stamp string, maxAge time.Duration) (T, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.value, stamp != "" && stamp == a.stamp && (maxAge == 0 || time.Since(a.at) < maxAge)
+}
+
+// store keeps value for stamp. An empty stamp forgets the answer.
+func (a *engineAnswer[T]) store(stamp string, value T) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.stamp, a.at, a.value = stamp, time.Now(), value
+}
+
+var engineVersion engineAnswer[looseVersion]
+
 // installedVersion is the CLI's version. The app-managed copy is not run for
 // it: its path is keyed by the pinned version, and that version was checked
 // against the binary itself when the copy was installed. Running it again on
 // every probe and settings read hit the 2 s deadline on a fresh Mac, which
 // reported a broken engine and sent the app to reinstall it (#508).
+//
+// Windows has no pinned copy: its CLI sits next to the Companion. It is run
+// once per state of that file (reuseEngineAnswers).
 func installedVersion(ctx context.Context, bin string) (looseVersion, error) {
 	if pinned := strings.TrimSpace(os.Getenv(appManagedCodexBarVersionEnvVar)); pinned != "" {
 		if managed, err := findAppManagedBinary(pinned); err == nil && managed == strings.TrimSpace(bin) {
 			return parseLooseVersion(pinned)
 		}
 	}
-	return reportedVersion(ctx, bin)
+	stamp := engineStamp(strings.TrimSpace(bin))
+	if version, ok := engineVersion.load(stamp, 0); ok {
+		return version, nil
+	}
+	version, err := reportedVersion(ctx, bin, versionCheckTimeout)
+	if err == nil {
+		engineVersion.store(stamp, version)
+	}
+	return version, err
 }
 
 // reportedVersion runs the CLI and reads the version it reports.
-func reportedVersion(ctx context.Context, bin string) (looseVersion, error) {
+func reportedVersion(ctx context.Context, bin string, timeout time.Duration) (looseVersion, error) {
 	bin = strings.TrimSpace(bin)
 	if bin == "" {
 		return looseVersion{}, errors.New("CodexBar binary path is empty")
 	}
 
-	if out, err := runVersionCommandFn(ctx, versionCheckTimeout, bin, "--version"); err == nil {
+	if out, err := runVersionCommandFn(ctx, timeout, bin, "--version"); err == nil {
 		if version, ok := extractLooseVersion(string(out)); ok {
 			return version, nil
 		}
@@ -1531,6 +1611,9 @@ type providerSnapshot struct {
 	sessionTokens int64
 	weekTokens    int64
 	totalTokens   int64
+	// usageUnavailable marks a reading without percentages. They read as
+	// zero, so the first real reading after it is not a rise.
+	usageUnavailable bool
 }
 
 type activityScore struct {
@@ -1827,11 +1910,12 @@ func (s *ProviderSelector) SelectWithDecision(all []ParsedFrame) (SelectionDecis
 	next := make(map[string]providerSnapshot, len(all))
 	for _, p := range all {
 		next[providerKey(p)] = providerSnapshot{
-			session:       p.Frame.Session,
-			weekly:        p.Frame.Weekly,
-			sessionTokens: p.Frame.SessionTokens,
-			weekTokens:    p.Frame.WeekTokens,
-			totalTokens:   p.Frame.TotalTokens,
+			session:          p.Frame.Session,
+			weekly:           p.Frame.Weekly,
+			sessionTokens:    p.Frame.SessionTokens,
+			weekTokens:       p.Frame.WeekTokens,
+			totalTokens:      p.Frame.TotalTokens,
+			usageUnavailable: p.Frame.UsageUnavailable,
 		}
 	}
 	s.snapshots = next
@@ -1940,7 +2024,7 @@ func (s *ProviderSelector) activityScoreForSelected(selected ParsedFrame) (activ
 	if !ok {
 		return activityScore{}, false
 	}
-	score := computeActivityScore(prev, selected.Frame)
+	score := providerActivityScore(prev, selected)
 	if !score.hasSignal() {
 		return activityScore{}, false
 	}
@@ -1956,7 +2040,7 @@ func (s *ProviderSelector) selectBestDeltaFromCandidates(all []ParsedFrame, conf
 		if !ok {
 			continue
 		}
-		score := computeActivityScore(prev, all[candidate.idx].Frame)
+		score := providerActivityScore(prev, all[candidate.idx])
 		if !score.hasSignal() {
 			continue
 		}
@@ -1983,7 +2067,7 @@ func (s *ProviderSelector) selectByUsageDelta(all []ParsedFrame) (ParsedFrame, a
 			continue
 		}
 
-		score := computeActivityScore(prev, p.Frame)
+		score := providerActivityScore(prev, p)
 		if !score.hasSignal() {
 			continue
 		}
@@ -2519,6 +2603,17 @@ func plausibleTokenDelta(delta int64) int64 {
 	return delta
 }
 
+// providerActivityScore leaves token totals out while the history is still
+// being read in; percentages still count.
+func providerActivityScore(prev providerSnapshot, provider ParsedFrame) activityScore {
+	cur := provider.Frame
+	if provider.TokenHistoryGrowing {
+		prev.sessionTokens, prev.weekTokens, prev.totalTokens = 0, 0, 0
+		cur.SessionTokens, cur.WeekTokens, cur.TotalTokens = 0, 0, 0
+	}
+	return computeActivityScore(prev, cur)
+}
+
 func computeActivityScore(prev providerSnapshot, cur protocol.Frame) activityScore {
 	score := activityScore{}
 	tokenScore := activityScore{
@@ -2530,7 +2625,7 @@ func computeActivityScore(prev providerSnapshot, cur protocol.Frame) activitySco
 		return tokenScore
 	}
 
-	if comparableTokenStats(prev, cur) {
+	if comparableTokenStats(prev, cur) || prev.usageUnavailable {
 		return score
 	}
 

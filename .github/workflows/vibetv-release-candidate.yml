@@ -35,7 +35,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
@@ -43,15 +43,15 @@ jobs:
         with:
           go-version-file: companion/go.mod
           cache-dependency-path: companion/go.sum
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: apps/control-center/package-lock.json
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.11'
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: CODEX-vibetv-rc-baselines-${{ github.run_id }}
           path: tmp/vibetv-baselines
@@ -142,7 +142,7 @@ jobs:
           cp tmp/vibetv-rc/publish/firmware/firmware-manifest.json "tmp/vibetv-rc/publish/firmware/firmware-manifest-v${version}.json"
           printf '%s\n' "$version" > tmp/vibetv-rc/version.txt
           printf '%s\n' "$GITHUB_SHA" > tmp/vibetv-rc/source-sha.txt
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: CODEX-vibetv-rc-inputs-${{ github.run_id }}
           path: tmp/vibetv-rc
@@ -166,7 +166,7 @@ jobs:
       CGO_ENABLED: '0'
     steps:
       - run: git config --global core.autocrlf false
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
@@ -176,7 +176,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
           toolchain: 1.99.0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
           cache: npm
@@ -392,7 +392,7 @@ jobs:
             }
           }
           Set-Content -Path tmp/vibetv-rc-windows/latest-windows.json -Encoding utf8 -Value ($manifest | ConvertTo-Json -Depth 5)
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: CODEX-vibetv-rc-windows-${{ github.run_id }}
           path: tmp/vibetv-rc-windows
@@ -405,15 +405,15 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 70
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: CODEX-vibetv-rc-inputs-${{ github.run_id }}
           path: tmp/vibetv-rc
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: CODEX-vibetv-rc-windows-${{ github.run_id }}
           path: tmp/vibetv-rc-windows
@@ -494,7 +494,7 @@ jobs:
               }, destination, indent=2)
               destination.write("\n")
           PY
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: vibetv-release-candidate
           path: |
@@ -511,7 +511,7 @@ jobs:
       (github.actor == github.repository_owner || github.actor == 'marcus7989')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
@@ -572,7 +572,7 @@ jobs:
             --release-version "$VERSION" \
             --firmware-mode "$FIRMWARE_MODE" \
             --output effective-firmware-versions.json
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: CODEX-vibetv-rc-baselines-${{ github.run_id }}
           path: |
@@ -590,15 +590,15 @@ jobs:
       matrix:
         state: [clean_os, current_public, previous_public]
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: vibetv-release-candidate
           path: candidate
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: CODEX-vibetv-rc-baselines-${{ github.run_id }}
           path: baselines
@@ -630,7 +630,7 @@ jobs:
           fi
           firmware_asset="$(python3 -c 'import json; print(next(a["asset"] for a in json.load(open("candidate/publish/firmware/firmware-manifest.json"))["artifacts"] if a["firmwareEnv"] == "esp8266_smalltv_st7789"))')"
           ./scripts/test-vibetv-hosted-guest.sh --dmg candidate/publish/macos/VibeTV-Control-Center.dmg --appcast candidate/publish/macos/appcast.xml --virtual-vibetv candidate/test/virtual-vibetv --companion candidate/test/codexbar-display --firmware "candidate/publish/firmware/$firmware_asset" --firmware-manifest candidate/publish/firmware/firmware-manifest.json --current-firmware "$current_firmware" --version "$version" --state '${{ matrix.state }}' --output 'results/${{ matrix.state }}' "${baseline_args[@]+"${baseline_args[@]}"}"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: CODEX-vibetv-rc-results-${{ matrix.state }}-${{ github.run_id }}
@@ -642,7 +642,7 @@ jobs:
     needs: [sign-and-package, guest-test]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: vibetv-release-candidate
           path: candidate
@@ -669,7 +669,7 @@ jobs:
           if result != "success":
               raise SystemExit("candidate matrix did not pass; result artifact is intentionally non-publishable")
           PY
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: vibetv-release-candidate-result
