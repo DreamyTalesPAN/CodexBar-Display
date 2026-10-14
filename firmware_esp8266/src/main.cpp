@@ -3300,19 +3300,8 @@ bool readStoredThemeSpec(const String& path, String& raw, String& error) {
   return true;
 }
 
-bool themeSpecMetadata(const String& raw, String& themeId, int& themeRev, String& error) {
-  JsonDocument filter;
-  filter["themeId"] = true;
-  filter["id"] = true;
-  filter["themeRev"] = true;
-  filter["rev"] = true;
-
-  JsonDocument doc;
-  const DeserializationError err = deserializeJson(doc, raw.c_str(), DeserializationOption::Filter(filter));
-  if (err) {
-    error = String("bad theme json: ") + err.c_str();
-    return false;
-  }
+bool themeSpecMetadataFromDocument(
+    const JsonDocument& doc, String& themeId, int& themeRev, String& error) {
   JsonObjectConst spec = doc.as<JsonObjectConst>();
   if (spec.isNull()) {
     error = "theme json must be an object";
@@ -3336,6 +3325,23 @@ bool themeSpecMetadata(const String& raw, String& themeId, int& themeRev, String
   }
 
   return true;
+}
+
+// Parses the whole spec. A filtered parse would link a second copy of the
+// JSON parser (~1.6 KB flash) for this one read.
+bool parseThemeSpecDocument(const String& raw, JsonDocument& doc, String& error) {
+  const DeserializationError err = deserializeJson(doc, raw.c_str());
+  if (err) {
+    error = String("bad theme json: ") + err.c_str();
+    return false;
+  }
+  return true;
+}
+
+bool themeSpecMetadata(const String& raw, String& themeId, int& themeRev, String& error) {
+  JsonDocument doc;
+  return parseThemeSpecDocument(raw, doc, error) &&
+         themeSpecMetadataFromDocument(doc, themeId, themeRev, error);
 }
 
 bool prepareStoredThemeSpec(
@@ -3370,12 +3376,15 @@ bool readValidatedStoredThemeSpec(
   if (!readStoredThemeSpec(path, raw, error)) {
     return false;
   }
-  if (!themeSpecMetadata(raw, themeId, themeRev, error)) {
+  // One parse serves the metadata and the renderability check.
+  JsonDocument doc;
+  if (!parseThemeSpecDocument(raw, doc, error) ||
+      !themeSpecMetadataFromDocument(doc, themeId, themeRev, error)) {
     return false;
   }
-  JsonDocument doc;
   codexbar_display::themespec::CompiledThemeSpec scene;
-  const bool renderable = codexbar_display::themespec::CompileThemeSpec(raw.c_str(), doc, scene);
+  const bool renderable = codexbar_display::themespec::CompileThemeSpecObject(
+      doc.as<JsonObjectConst>(), scene);
   codexbar_display::themespec::ReleaseCompiledThemeSpec(scene);
   if (!renderable) {
     error = "theme spec has no renderable content";
