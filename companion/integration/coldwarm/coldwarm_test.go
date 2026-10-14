@@ -200,7 +200,7 @@ func runColdWarm(t *testing.T, signedOut bool) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := io.WriteString(part, "{}"); err != nil {
+		if _, err := io.WriteString(part, `{"id":"cold-warm","rev":1,"p":[{"t":"tx"}]}`); err != nil {
 			t.Fatal(err)
 		}
 		if err := form.Close(); err != nil {

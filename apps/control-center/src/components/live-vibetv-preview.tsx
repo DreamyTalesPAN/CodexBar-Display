@@ -18,6 +18,11 @@ import {
   themeRenderPackUrl,
 } from "./control-center-runtime";
 import { loadLocalThemeRenderPack } from "@/lib/local-theme-render-pack";
+import {
+  formatResetCountdown,
+  remainingResetSecs,
+  secondsSince,
+} from "@/lib/reset-countdown";
 
 type LiveVibeTVPreviewProps = {
   device: DeviceInfo | null;
@@ -150,6 +155,12 @@ export type ThemePrimitive = {
   sg?: number;
   segmentGap?: number;
   gg?: number;
+  arcStart?: number;
+  as?: number;
+  arcSweep?: number;
+  aw?: number;
+  arcThickness?: number;
+  at?: number;
   colorStops?: Array<{ gte?: number; color?: string; c?: string }>;
   cs?: Array<{ gte?: number; color?: string; c?: string }>;
   assetPath?: string;
@@ -508,6 +519,8 @@ export function LiveVibeTVPreview({
           <ThemeSpecSVG
             assets={pack.assets || {}}
             frame={frame}
+            // In standby VibeTV reports its screensaver as the active theme.
+            screensaver={device?.standby?.active ? pack.name || "" : undefined}
             spec={pack.spec}
             themeId={pack.themeId || themeId}
           />
@@ -635,19 +648,21 @@ function ThemeSpecSVG({
   animate = true,
   assets,
   frame,
+  screensaver,
   spec,
   themeId,
 }: {
   animate?: boolean;
   assets: Record<string, ThemePackAsset>;
   frame: FrameData;
+  screensaver?: string;
   spec: ThemeSpec;
   themeId: string;
 }) {
   const primitives = spec.primitives || spec.p || [];
   return (
     <svg
-      aria-label={themeSpecAriaLabel(themeId, frame)}
+      aria-label={themeSpecAriaLabel(themeId, frame, screensaver)}
       className="size-full bg-black [image-rendering:pixelated]"
       role="img"
       viewBox="0 0 240 240"
@@ -954,7 +969,33 @@ function ThemeProgress({
   );
   const innerWidth = Math.max(0, width - 2);
   const innerHeight = Math.max(0, height - 2);
-  const style = primitive.progressStyle || primitive.ps || "";
+  // A long-form key that is present decides, also when it is empty, as on
+  // VibeTV: `"progressStyle":""` beside `"ps":"arc"` is a straight bar.
+  const style = primitive.progressStyle ?? primitive.ps ?? "";
+  if (style === "arc") {
+    const arc = themeProgressArc(primitive, percent);
+    // Each stroke runs clockwise along the middle of the ring. A circle's
+    // outline starts at 3 o'clock, a quarter turn after 12 o'clock.
+    const stroke = (degrees: number, color: string) =>
+      arc && degrees > 0 ? (
+        <circle
+          cx={arc.cx}
+          cy={arc.cy}
+          fill="none"
+          r={arc.radius}
+          stroke={color}
+          strokeDasharray={`${(arc.radius * degrees * Math.PI) / 180} ${arc.radius * 2 * Math.PI}`}
+          strokeWidth={arc.thickness}
+          transform={`rotate(${arc.start - 90} ${arc.cx} ${arc.cy})`}
+        />
+      ) : null;
+    return (
+      <g>
+        {stroke(arc?.sweep ?? 0, bgColor)}
+        {stroke(arc?.filled ?? 0, fillColor)}
+      </g>
+    );
+  }
   const segmented = style === "segments" || style === "segmented";
   const radius = clampRadius(
     primitive.borderRadius ?? primitive.br ?? 0,
@@ -1213,14 +1254,9 @@ export function buildFrameData(
   displayFrame: DisplayFrame,
   currentTime = new Date(),
 ): FrameData {
-  const savedAt = generatedAt ? new Date(generatedAt) : currentTime;
-  const usableSavedAt = Number.isNaN(savedAt.getTime()) ? currentTime : savedAt;
-  const elapsedSeconds = Math.max(
-    0,
-    Math.floor((currentTime.getTime() - usableSavedAt.getTime()) / 1000),
-  );
+  const elapsedSeconds = secondsSince(generatedAt, currentTime);
   const remainingResetSeconds = (seconds: number | undefined) =>
-    Math.max(0, (seconds ?? 0) - elapsedSeconds);
+    remainingResetSecs(seconds, generatedAt, currentTime);
   const sourceUsageMode = frameUsageMode(displayFrame);
   const slots = (
     (displayFrame.usageWindows?.length
@@ -1341,11 +1377,21 @@ export function primitiveUsageSlotVisible(
   return true;
 }
 
-export function themeSpecAriaLabel(themeId: string, frame: FrameData): string {
+export function themeSpecAriaLabel(
+  themeId: string,
+  frame: FrameData,
+  // The title of the screensaver when that is what the picture shows; it may
+  // be empty.
+  screensaver?: string,
+): string {
   const usage = frame.usageWindows
     .filter((window) => window.available)
     .map((window) => `${window.label} ${window.percent}% ${frame.usageMode}`);
-  return `Rendered VibeTV theme ${themeId} showing ${frame.label}, ${usage.length > 0 ? usage.join(", ") : "no usage windows available"}`;
+  const shown =
+    screensaver === undefined
+      ? `theme ${themeId}`
+      : `screensaver ${screensaver}`.trim();
+  return `Rendered VibeTV ${shown} showing ${frame.label}, ${usage.length > 0 ? usage.join(", ") : "no usage windows available"}`;
 }
 
 function frameUsageMode(displayFrame: DisplayFrame | undefined): string {
@@ -1456,6 +1502,19 @@ const RESET_IDLE = "No active session";
 function rootResetIsIdle(frame: FrameData): boolean {
   const windows = frame.usageWindows.filter((window) => window.available);
   return windows.length > 0 && windows.every((window) => window.idle);
+}
+
+// Whether a theme draws a value that boundValue shows as "--" on a computer
+// without token history.
+export function themeShowsTokenTotals(spec?: ThemeSpec | null): boolean {
+  return (spec?.primitives || spec?.p || []).some((primitive) => {
+    const binding = primitive.binding || primitive.b;
+    return binding
+      ? /^(sessionTokens|weekTokens|totalTokens|st|wt|tt)$/.test(binding)
+      : /\{(sessionTokens|weekTokens|totalTokens|st|wt|tt)\}/.test(
+          primitive.text || primitive.v || "",
+        );
+  });
 }
 
 export function renderTextPrimitive(
@@ -1755,6 +1814,40 @@ export function progressPercent(
     return frame.weeklyUnavailable ? 0 : frame.weekly;
   }
   return frame.sessionUnavailable ? 0 : frame.session;
+}
+
+// The ring an arc-style progress draws, as CompilePrimitive and
+// DrawProgressArc in theme_spec_renderer_core.h work it out: inside the box,
+// angles in whole degrees clockwise from 12 o'clock, and the filled share of
+// the sweep cut to whole degrees. The device skips an arc outside its limits,
+// so there is none here either.
+export function themeProgressArc(primitive: ThemePrimitive, percent: number) {
+  const width = primitive.width || primitive.w || 0;
+  const height = primitive.height || primitive.h || 0;
+  const diameter = Math.min(width, height);
+  const start = primitive.arcStart ?? primitive.as ?? 0;
+  const sweep = primitive.arcSweep ?? primitive.aw ?? 0;
+  const thickness = primitive.arcThickness ?? primitive.at ?? 0;
+  if (
+    ![start, sweep, thickness].every(Number.isInteger) ||
+    start < 0 ||
+    start > 359 ||
+    sweep < 1 ||
+    sweep > 360 ||
+    thickness < 1 ||
+    thickness * 2 > diameter
+  ) {
+    return null;
+  }
+  return {
+    cx: (primitive.x || 0) + width / 2,
+    cy: (primitive.y || 0) + height / 2,
+    radius: (diameter - thickness) / 2,
+    thickness,
+    start,
+    sweep,
+    filled: Math.floor((sweep * Math.max(0, Math.min(100, percent))) / 100),
+  };
 }
 
 function resolveProgressFillColor(
@@ -2298,15 +2391,5 @@ function formatReset(seconds?: number, idle = false): string {
   if (!seconds || seconds <= 0) {
     return idle ? RESET_IDLE : RESET_UNAVAILABLE;
   }
-  const totalMinutes = Math.floor(seconds / 60);
-  const days = Math.floor(totalMinutes / (24 * 60));
-  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
-  const minutes = totalMinutes % 60;
-  if (days > 0) {
-    return `${days}d ${hours}h`;
-  }
-  if (hours > 0) {
-    return `${hours}h ${minutes}m`;
-  }
-  return `${minutes}m`;
+  return formatResetCountdown(seconds);
 }

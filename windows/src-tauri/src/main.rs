@@ -16,10 +16,13 @@ use std::time::{Duration, Instant};
 use serde::Deserialize;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
+use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_updater::UpdaterExt;
 use url::Url;
+
+mod launch_update;
 
 const WINDOW_LABEL: &str = "main";
 const DEFAULT_RUNTIME_ORIGIN: &str = "http://127.0.0.1:47832";
@@ -30,6 +33,14 @@ const RUNTIME_HEALTH_TIMEOUT: Duration = Duration::from_secs(35);
 const RUNTIME_HEALTH_POLL: Duration = Duration::from_millis(500);
 const RUNTIME_HEALTH_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 const WINDOW_CLOSE_FLUSH_DELAY: Duration = Duration::from_secs(1);
+// Without an answer from the update source the start goes on after this limit.
+const LAUNCH_UPDATE_CHECK_LIMIT: Duration = Duration::from_secs(5);
+// The start waits for the download of a found update, so that has limits
+// too: this long in all (the installer is about 14 MB), and this long
+// without a single byte. After either the start goes on without the update.
+const LAUNCH_UPDATE_DOWNLOAD_LIMIT: Duration = Duration::from_secs(180);
+const LAUNCH_UPDATE_STALL_LIMIT: Duration = Duration::from_secs(20);
+const LAUNCH_UPDATE_MARKER: &str = "launch-update-attempt.txt";
 
 const MENU_OPEN: &str = "open";
 const MENU_RELOAD: &str = "reload";
@@ -45,12 +56,14 @@ const BUILD: &str = match option_env!("VIBETV_BUILD") {
 
 struct Shell {
     runtime_origin: Mutex<Url>,
+    pending_theme: Mutex<Option<String>>,
     preparing: Mutex<bool>,
     // Bumped on every present; a delayed hide only applies if nothing
     // presented the window again while it waited.
     presentations: AtomicU64,
-    // One updater at a time: the tray item and vibetv://check-for-updates
-    // must not launch two NSIS installers over the same files.
+    // One updater at a time: the check at launch, the tray item and
+    // vibetv://check-for-updates must not launch two NSIS installers over
+    // the same files.
     updating: AtomicBool,
 }
 
@@ -59,7 +72,18 @@ fn main() {
         // A second launch (autostart plus Start menu, or the updater's
         // relaunch) brings the existing window forward instead of starting a
         // second shell that would fight over the same Companion.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| present_window(app)))
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            present_window(app);
+            if args.len() == 2 && queue_install_link(app, args.get(1).map(String::as_str)) {
+                let handle = app.clone();
+                std::thread::spawn(move || {
+                    if !navigate_to_pending_theme(&handle, true) {
+                        prepare_and_load(handle);
+                    }
+                });
+            }
+        }))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_autostart::Builder::new()
@@ -68,7 +92,9 @@ fn main() {
         )
         .manage(Shell {
             runtime_origin: Mutex::new(Url::parse(DEFAULT_RUNTIME_ORIGIN).expect("static origin")),
-            preparing: Mutex::new(false),
+            pending_theme: Mutex::new(None),
+            // The update at launch owns the start until it has ended.
+            preparing: Mutex::new(true),
             presentations: AtomicU64::new(0),
             updating: AtomicBool::new(false),
         })
@@ -78,8 +104,16 @@ fn main() {
             if let Err(error) = handle.autolaunch().enable() {
                 log(&format!("could not enable autostart: {error}"));
             }
-            create_window(&handle)?;
-            std::thread::spawn(move || prepare_and_load(handle));
+            create_window(&handle, register_provider_shortcut(handle.clone()))?;
+            let args: Vec<_> = std::env::args_os().collect();
+            if args.len() == 2 {
+                queue_install_link(&handle, args[1].to_str());
+            }
+            std::thread::spawn(move || {
+                launch_update_check(&handle);
+                *handle.state::<Shell>().preparing.lock().unwrap() = false;
+                prepare_and_load(handle);
+            });
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -103,8 +137,10 @@ fn version(app: &AppHandle) -> String {
     app.package_info().version.to_string()
 }
 
-fn user_agent(app: &AppHandle) -> String {
-    format!("VibeTVControlCenter/{}+{}", version(app), BUILD)
+// The suffix tells Settings that Ctrl+Alt+Shift+P is not available.
+fn user_agent(app: &AppHandle, provider_shortcut: bool) -> String {
+    let suffix = if provider_shortcut { "" } else { " ProviderShortcut/unavailable" };
+    format!("VibeTVControlCenter/{}+{}{suffix}", version(app), BUILD)
 }
 
 fn companion_path(app: &AppHandle) -> PathBuf {
@@ -199,13 +235,19 @@ fn configure_tray(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-fn create_window(app: &AppHandle) -> tauri::Result<()> {
+fn create_window(app: &AppHandle, provider_shortcut: bool) -> tauri::Result<()> {
     let actions = app.clone();
     let window = WebviewWindowBuilder::new(app, WINDOW_LABEL, WebviewUrl::App("index.html".into()))
         .title("VibeTV Control Center")
         .inner_size(1280.0, 900.0)
         .min_inner_size(960.0, 640.0)
-        .user_agent(&user_agent(app))
+        // Issue #548: 1280x900 plus the title bar is taller than the space
+        // above the taskbar on a 1080p screen scaled to 125 % or more, and
+        // Windows chose the position. Tauri shrinks the window to the
+        // primary monitor's work area and centres it there.
+        .prevent_overflow()
+        .center()
+        .user_agent(&user_agent(app, provider_shortcut))
         // vibetv:// links are the UI's way of asking the shell for something;
         // handled here, so WebView2 never looks for a protocol handler.
         .on_navigation(move |url| {
@@ -216,6 +258,13 @@ fn create_window(app: &AppHandle) -> tauri::Result<()> {
             let url = url.clone();
             std::thread::spawn(move || handle_native_action(&app, &url));
             false
+        })
+        .on_page_load(|window, payload| {
+            if payload.event() == PageLoadEvent::Finished {
+                let app = window.app_handle().clone();
+                let url = payload.url().clone();
+                std::thread::spawn(move || acknowledge_loaded_theme(app, url));
+            }
         })
         .build()?;
     let handle = app.clone();
@@ -239,6 +288,99 @@ fn present_window(app: &AppHandle) {
     }
 }
 
+fn theme_id_from_deep_link(raw: &str) -> Option<&str> {
+    // Check the original argument; URL parsing would erase dot segments first.
+    let theme_id = raw.strip_prefix("vibetv://install-theme/")?;
+    if !(3..=64).contains(&theme_id.len())
+        || !theme_id.split('-').all(|part| {
+            !part.is_empty()
+                && part
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+        })
+    {
+        return None;
+    }
+    Some(theme_id)
+}
+
+fn queue_install_link(app: &AppHandle, raw: Option<&str>) -> bool {
+    let Some(theme_id) = raw.and_then(theme_id_from_deep_link) else {
+        return false;
+    };
+    *app.state::<Shell>().pending_theme.lock().unwrap() = Some(theme_id.to_string());
+    present_window(app);
+    true
+}
+
+// `link_just_opened`: the customer opened the link while the app was running.
+// After `prepare_and_load` the same page is still loading and the page-load
+// event clears the queue once the runtime is healthy.
+fn navigate_to_pending_theme(app: &AppHandle, link_just_opened: bool) -> bool {
+    let shell = app.state::<Shell>();
+    if *shell.preparing.lock().unwrap() {
+        return false;
+    }
+    let origin = shell.runtime_origin.lock().unwrap().clone();
+    if !runtime_ready(app, &origin) {
+        return false;
+    }
+    let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
+        return false;
+    };
+    if !window
+        .url()
+        .map(|url| url.origin() == origin.origin())
+        .unwrap_or(false)
+    {
+        return false;
+    }
+    let mut pending = shell.pending_theme.lock().unwrap();
+    let Some(theme_id) = pending.as_ref() else {
+        return false;
+    };
+    let target = origin.join(&format!("/control-center/install/{theme_id}")).expect("validated theme ID");
+    if window.url().map(|url| url == target).unwrap_or(false) {
+        // Already on that theme's page: nothing loads, so no page-load event
+        // would clear the queue, and a later runtime repair would send the
+        // customer back to this theme.
+        if link_just_opened {
+            clear_loaded_theme(&mut pending, &target, &origin, true);
+        }
+        return true;
+    }
+    window.navigate(target).is_ok()
+}
+
+fn clear_loaded_theme(pending: &mut Option<String>, loaded: &Url, origin: &Url, healthy: bool) -> bool {
+    let Some(theme_id) = pending.as_ref() else {
+        return false;
+    };
+    if !healthy || loaded != &origin.join(&format!("/control-center/install/{theme_id}")).expect("validated theme ID") {
+        return false;
+    }
+    pending.take();
+    true
+}
+
+fn acknowledge_loaded_theme(app: AppHandle, loaded: Url) {
+    let shell = app.state::<Shell>();
+    let origin = shell.runtime_origin.lock().unwrap().clone();
+    let pending = shell.pending_theme.lock().unwrap().clone();
+    let Some(theme_id) = pending else {
+        return;
+    };
+    if loaded != origin.join(&format!("/control-center/install/{theme_id}")).expect("validated theme ID") {
+        return;
+    }
+    if !runtime_ready(&app, &origin) {
+        prepare_and_load(app);
+        return;
+    }
+    let mut pending = shell.pending_theme.lock().unwrap();
+    clear_loaded_theme(&mut pending, &loaded, &origin, true);
+}
+
 // Theme Studio saves unsaved work on this event; give it a moment, then hide.
 fn hide_after_flush(app: &AppHandle) {
     let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
@@ -254,6 +396,76 @@ fn hide_after_flush(app: &AppHandle) {
             let _ = window.hide();
         }
     });
+}
+
+// Issue #424: Ctrl+Alt+Shift+P shows the next provider on VibeTV from any app.
+// Windows delivers WM_HOTKEY to the thread that registered the hot key, so
+// that thread keeps a message loop of its own. Returns false when Windows
+// refused the keys, which it does while another app holds them.
+fn register_provider_shortcut(app: AppHandle) -> bool {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+            MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, RegisterHotKey,
+        };
+        use windows_sys::Win32::UI::WindowsAndMessaging::{GetMessageW, MSG, WM_HOTKEY};
+        let (report, registered) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            // SAFETY: no window handle and no pointer is passed; 0x50 is the P key.
+            let ok = unsafe {
+                RegisterHotKey(
+                    std::ptr::null_mut(),
+                    1,
+                    MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT,
+                    0x50,
+                )
+            } != 0;
+            let _ = report.send(ok);
+            if !ok {
+                return;
+            }
+            // SAFETY: MSG is plain data and GetMessageW fills it in.
+            let mut message: MSG = unsafe { std::mem::zeroed() };
+            while unsafe { GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) } > 0 {
+                if message.message == WM_HOTKEY {
+                    show_next_provider(&app);
+                }
+            }
+        });
+        registered.recv().unwrap_or(false)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = app;
+        false
+    }
+}
+
+// Which provider comes next is the Companion's decision; the shell only asks
+// for it, and only its own runtime.
+#[cfg(windows)]
+fn show_next_provider(app: &AppHandle) {
+    let origin = app.state::<Shell>().runtime_origin.lock().unwrap().clone();
+    let http = runtime_http();
+    if !runtime_identity_matches(&http, &origin) {
+        log("next provider skipped: the runtime did not answer at its known address");
+        return;
+    }
+    let url = origin.join("/v1/provider-display/next").expect("static path");
+    match http
+        .post(url.as_str())
+        .header("Content-Type", "application/json")
+        .send("{}")
+    {
+        Ok(response) if response.status() == 200 => {
+            // An open Settings page shows the display choice; it reads it again.
+            if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
+                let _ = window.eval("window.dispatchEvent(new Event('vibetv:provider-display-changed'))");
+            }
+        }
+        Ok(response) => log(&format!("next provider refused: HTTP {}", response.status())),
+        Err(error) => log(&format!("next provider request failed: {error}")),
+    }
 }
 
 fn handle_native_action(app: &AppHandle, url: &Url) {
@@ -377,6 +589,12 @@ fn runtime_identity_matches(http: &ureq::Agent, origin: &Url) -> bool {
         .unwrap_or(false)
 }
 
+fn runtime_ready(app: &AppHandle, origin: &Url) -> bool {
+    run_companion(app, &["version", "--short"])
+        .and_then(|expected| check_runtime_health(app, &runtime_http(), origin, &expected))
+        .is_ok()
+}
+
 fn release_update_hold() {
     let http = runtime_http();
     for origin in runtime_origin_candidates() {
@@ -409,8 +627,16 @@ fn dispatch_result(app: &AppHandle, event: &str, success: bool) {
 }
 
 fn show_status(app: &AppHandle, error: Option<&str>) {
+    dispatch_status(app, serde_json::json!({ "error": error }));
+}
+
+// The start screen names the version while the check at launch installs it.
+fn show_updating(app: &AppHandle, version: &str) {
+    dispatch_status(app, serde_json::json!({ "update": version }));
+}
+
+fn dispatch_status(app: &AppHandle, detail: serde_json::Value) {
     if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
-        let detail = serde_json::json!({ "error": error });
         let _ = window.eval(format!(
             "window.dispatchEvent(new CustomEvent('vibetv:shell-status', {{ detail: {detail} }}))"
         ));
@@ -425,6 +651,10 @@ fn prepare_and_load(app: AppHandle) -> bool {
     {
         let mut preparing = shell.preparing.lock().unwrap();
         if *preparing {
+            // Also while the update at launch downloads: loading the app
+            // now would put it under an installer that ends this process.
+            // Reload then only brings the start screen forward.
+            present_window(&app);
             return false;
         }
         *preparing = true;
@@ -436,7 +666,12 @@ fn prepare_and_load(app: AppHandle) -> bool {
         Ok(origin) => {
             *shell.runtime_origin.lock().unwrap() = origin.clone();
             if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
-                let _ = window.navigate(origin.join("/control-center").expect("static path"));
+                let pending = shell.pending_theme.lock().unwrap();
+                let path = pending
+                    .as_ref()
+                    .map(|theme_id| format!("/control-center/install/{theme_id}"))
+                    .unwrap_or_else(|| "/control-center".to_string());
+                let _ = window.navigate(origin.join(&path).expect("validated local path"));
             }
         }
         Err(error) => {
@@ -445,6 +680,10 @@ fn prepare_and_load(app: AppHandle) -> bool {
         }
     }
     *shell.preparing.lock().unwrap() = false;
+    if result.is_ok() {
+        // A second link may have arrived while the first navigation held the queue.
+        navigate_to_pending_theme(&app, false);
+    }
     result.is_ok()
 }
 
@@ -605,42 +844,12 @@ fn check_for_updates(app: AppHandle) {
         return;
     }
     tauri::async_runtime::spawn(async move {
-        let result = async {
-            let updater = app.updater().map_err(|error| format!("updater unavailable: {error}"))?;
-            let update = updater.check().await.map_err(|error| format!("update check failed: {error}"))?;
-            let Some(update) = update else {
-                return Ok(UpdateOutcome::UpToDate);
-            };
-            log(&format!("downloading update {}", update.version));
-            let bytes = update
-                .download(|_, _| {}, || {})
-                .await
-                .map_err(|error| format!("update download failed: {error}"))?;
-            // Installing replaces the Companion binary and restarts its task
-            // while a firmware update or theme install may be writing to the
-            // device. The hold lasts one minute, so it is claimed only now,
-            // after the download, right before the installer takes over --
-            // exactly like repair-codexbar.
-            let hold = tauri::async_runtime::spawn_blocking(claim_update_hold)
-                .await
-                .map_err(|error| format!("update hold check failed: {error}"))?;
-            if let UpdateHold::UpdateRunning = hold {
-                return Ok(UpdateOutcome::Busy);
-            }
-            log(&format!("installing update {}", update.version));
-            if let Err(error) = update.install(bytes) {
-                // Nothing was replaced; give the runtime back to device jobs.
-                let _ = tauri::async_runtime::spawn_blocking(release_update_hold).await;
-                return Err(format!("update install failed: {error}"));
-            }
-            Ok::<UpdateOutcome, String>(UpdateOutcome::Installed)
-        }
-        .await;
+        let result = run_update(&app, false).await;
         // The installer relaunches this process on success; every other
         // outcome frees the guard for the next request.
         app.state::<Shell>().updating.store(false, Ordering::SeqCst);
         match result {
-            Ok(UpdateOutcome::Installed) => {}
+            Ok(UpdateOutcome::Installed) | Ok(UpdateOutcome::AlreadyTried) => {}
             Ok(UpdateOutcome::UpToDate) => show_message("VibeTV Control Center is up to date."),
             Ok(UpdateOutcome::Busy) => {
                 log("update deferred: a firmware update or theme install owns the runtime");
@@ -658,10 +867,104 @@ fn check_for_updates(app: AppHandle) {
     });
 }
 
+// Issue #565: the app installs its own update before it looks for a VibeTV,
+// like the Mac App (#561). Nobody asked for this check, so it answers with
+// nothing but the start screen's update line: no newer version, no answer
+// within the limit, a running VibeTV update, or a download that fails, stalls
+// or takes too long all let the start go on without a message.
+fn launch_update_check(app: &AppHandle) {
+    if app
+        .state::<Shell>()
+        .updating
+        .swap(true, Ordering::SeqCst)
+    {
+        return;
+    }
+    let result = tauri::async_runtime::block_on(run_update(app, true));
+    app.state::<Shell>().updating.store(false, Ordering::SeqCst);
+    match result {
+        Ok(UpdateOutcome::Installed) => {}
+        Ok(UpdateOutcome::UpToDate) => log("launch update check: no newer version"),
+        Ok(UpdateOutcome::AlreadyTried) => {
+            log("launch update skipped: this version was tried at a start in the last 24 hours, or the attempt could not be noted")
+        }
+        Ok(UpdateOutcome::Busy) => {
+            log("launch update skipped: a firmware update or theme install owns the runtime")
+        }
+        Err(error) => log(&format!("launch update skipped: {error}")),
+    }
+}
+
+// Check, download and install. On Windows a successful install ends this
+// process inside `update.install`.
+async fn run_update(app: &AppHandle, at_launch: bool) -> Result<UpdateOutcome, String> {
+    let mut builder = app.updater_builder();
+    // The marker keeps the check at launch to one attempt per version in
+    // 24 hours.
+    let mut marker: Option<PathBuf> = None;
+    if at_launch {
+        // This limit covers the check only: the plugin hands the update
+        // back without one, so the download gets its own below.
+        builder = builder
+            .timeout(LAUNCH_UPDATE_CHECK_LIMIT)
+            .configure_client(|client| client.read_timeout(LAUNCH_UPDATE_STALL_LIMIT));
+        let folder = app
+            .path()
+            .app_local_data_dir()
+            .map_err(|error| format!("no folder for the launch update marker: {error}"))?;
+        marker = Some(folder.join(LAUNCH_UPDATE_MARKER));
+    }
+    let updater = builder.build().map_err(|error| format!("updater unavailable: {error}"))?;
+    let update = updater.check().await.map_err(|error| format!("update check failed: {error}"))?;
+    let Some(mut update) = update else {
+        return Ok(UpdateOutcome::UpToDate);
+    };
+    if let Some(marker) = &marker {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|since| since.as_secs())
+            .unwrap_or(0);
+        if !launch_update::claim(marker, &update.version, now) {
+            return Ok(UpdateOutcome::AlreadyTried);
+        }
+        update.timeout = Some(LAUNCH_UPDATE_DOWNLOAD_LIMIT);
+        show_updating(app, &update.version);
+    }
+    log(&format!("downloading update {}", update.version));
+    let bytes = update
+        .download(|_, _| {}, || {})
+        .await
+        .map_err(|error| format!("update download failed: {error}"))?;
+    // Installing replaces the Companion binary and restarts its task
+    // while a firmware update or theme install may be writing to the
+    // device. The hold lasts one minute, so it is claimed only now,
+    // after the download, right before the installer takes over --
+    // exactly like repair-codexbar.
+    let hold = tauri::async_runtime::spawn_blocking(claim_update_hold)
+        .await
+        .map_err(|error| format!("update hold check failed: {error}"))?;
+    if let UpdateHold::UpdateRunning = hold {
+        // Nothing was tried; the next start may install this version.
+        if let Some(marker) = &marker {
+            launch_update::release(marker);
+        }
+        return Ok(UpdateOutcome::Busy);
+    }
+    log(&format!("installing update {}", update.version));
+    if let Err(error) = update.install(bytes) {
+        // Nothing was replaced; give the runtime back to device jobs.
+        let _ = tauri::async_runtime::spawn_blocking(release_update_hold).await;
+        return Err(format!("update install failed: {error}"));
+    }
+    Ok(UpdateOutcome::Installed)
+}
+
 enum UpdateOutcome {
     Installed,
     UpToDate,
     Busy,
+    // Only the check at launch: it tries a version once in 24 hours.
+    AlreadyTried,
 }
 
 // Native message box: works while the webview is hidden or still loading.
@@ -687,4 +990,60 @@ fn show_message(message: &str) {
     }
     #[cfg(not(windows))]
     log(message);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{clear_loaded_theme, theme_id_from_deep_link};
+    use url::Url;
+
+    #[test]
+    fn theme_link_accepts_only_one_safe_catalog_id() {
+        for (input, expected) in [
+            ("vibetv://install-theme/clippy", Some("clippy")),
+            ("vibetv://install-theme/claude-creature", Some("claude-creature")),
+            ("vibetv://install-theme/ab", None),
+            ("vibetv://install-theme/Clippy", None),
+            ("vibetv://install-theme/a_b", None),
+            ("vibetv://install-theme/a--b", None),
+            ("vibetv://install-theme/-abc", None),
+            ("vibetv://install-theme/abc-", None),
+            ("vibetv://install-theme/abc/other", None),
+            ("vibetv://install-theme/abc/", None),
+            ("vibetv://install-theme/../clippy", None),
+            ("vibetv://install-theme/abc/../clippy", None),
+            ("vibetv://install-theme/%61bc", None),
+            ("vibetv://install-theme/abc?next=other", None),
+            ("vibetv://install-theme/abc#other", None),
+            ("vibetv://user@install-theme/abc", None),
+            ("vibetv://install-theme:123/abc", None),
+            ("vibetv://open-control-center/abc", None),
+            ("https://install-theme/abc", None),
+        ] {
+            assert_eq!(theme_id_from_deep_link(input), expected, "{input}");
+        }
+        let longest = format!("vibetv://install-theme/{}", "a".repeat(64));
+        assert!(theme_id_from_deep_link(&longest).is_some());
+        let long = format!("vibetv://install-theme/{}", "a".repeat(65));
+        assert_eq!(theme_id_from_deep_link(&long), None);
+    }
+
+    #[test]
+    fn theme_link_stays_queued_until_its_local_page_loads_with_a_healthy_runtime() {
+        let origin = Url::parse("http://127.0.0.1:47832").unwrap();
+        let theme_page = origin.join("/control-center/install/clippy").unwrap();
+        let mut pending = Some("clippy".to_string());
+        assert!(!clear_loaded_theme(&mut pending, &theme_page, &origin, false));
+        assert_eq!(pending.as_deref(), Some("clippy"));
+        assert!(!clear_loaded_theme(&mut pending, &origin.join("/control-center").unwrap(), &origin, true));
+        assert_eq!(pending.as_deref(), Some("clippy"));
+        assert!(!clear_loaded_theme(&mut pending, &Url::parse("http://127.0.0.1:47833/control-center/install/clippy").unwrap(), &origin, true));
+        assert_eq!(pending.as_deref(), Some("clippy"));
+        pending = Some("synthwave".to_string());
+        assert!(!clear_loaded_theme(&mut pending, &theme_page, &origin, true));
+        assert_eq!(pending.as_deref(), Some("synthwave"));
+        pending = Some("clippy".to_string());
+        assert!(clear_loaded_theme(&mut pending, &theme_page, &origin, true));
+        assert_eq!(pending, None);
+    }
 }

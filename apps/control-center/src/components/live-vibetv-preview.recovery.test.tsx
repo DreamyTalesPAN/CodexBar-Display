@@ -74,6 +74,30 @@ describe("Cable preview identity", () => {
   });
 });
 
+// In standby VibeTV reports its screensaver as the active theme, and the
+// picture was named "theme night-clock".
+it.each([
+  ["by its title", "Night Clock", "Rendered VibeTV screensaver Night Clock showing Codex, Weekly 29% used"],
+  ["without a title", undefined, "Rendered VibeTV screensaver showing Codex, Weekly 29% used"],
+])("names the screensaver on screen as a screensaver, %s", async (_, title, name) => {
+  vi.useFakeTimers();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => jsonResponse({ ...matchingPack, themeId: "night-clock", name: title })),
+  );
+  render(
+    createElement(LiveVibeTVPreview, {
+      device: { ...connectedDevice, activeTheme: "night-clock", standby: { active: true } },
+      displayFrame: renderableFrame,
+      usage: null,
+    }),
+  );
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  expect(screen.getByRole("img", { name })).toBeTruthy();
+});
+
 describe("connected preview must self-heal (customer bug 2026-08-06)", () => {
   it.each(["disconnect", "not-ready", "update"])(
     "cancels setup handover on %s even while a cached preview remains visible",

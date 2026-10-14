@@ -1,7 +1,7 @@
 "use client";
 
 import type { SupportDiagnostics } from "../control-center-types";
-import { Download } from "lucide-react";
+import { Download, ExternalLink } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,6 +10,8 @@ import {
   type CompanionReleaseInfo,
 } from "@/lib/companion-release";
 import type { CustomerPlatform } from "@/lib/customer-platform";
+import type { ThemeProduct } from "@/lib/themes";
+import { isRemoteThemePackUrl } from "@/lib/theme-pack-url";
 import { ControlCenterBrand } from "../control-center-brand";
 import { SetupWizardScreen, SetupWizardSubtitle } from "./setup-wizard-screen";
 
@@ -33,34 +35,54 @@ type MacAppDownloadScreenProps = {
    */
   platform?: CustomerPlatform;
   release: CompanionReleaseInfo | null;
+  theme?: ThemeProduct;
 };
 
 /**
  * What app.vibetv.shop serves. The device prints that address on its own screen
- * once it joins WiFi, so this page only has one job: hand over the app for the
- * system the customer is actually on. Everything after the install happens
- * inside the app itself. The other system stays reachable through a quiet link,
- * so a wrong guess costs one click instead of the whole setup.
+ * once it joins WiFi. The plain entry offers the app download; a valid shop
+ * theme entry first opens an installed app at that theme, with the download as
+ * fallback. Everything after the handoff happens inside the app.
  */
 export function MacAppDownloadScreen({
   onCreateSupportReport,
   platform = "unknown",
   release,
+  theme,
 }: MacAppDownloadScreenProps) {
   const downloadUrl = availableMacAppDmgDownloadUrl(release);
   const windowsDownloadUrl = availableWindowsAppSetupDownloadUrl(release);
+  const openThemeUrl =
+    theme?.source === "shopify" &&
+    theme.isFree &&
+    theme.themeId.length >= 3 &&
+    theme.themeId.length <= 64 &&
+    /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(theme.themeId) &&
+    isRemoteThemePackUrl(theme.packUrl) &&
+    /^[a-f0-9]{64}$/i.test(theme.packSha256 || "") &&
+    Number.isSafeInteger(theme.packSizeBytes) &&
+    (theme.packSizeBytes || 0) > 0
+      ? `vibetv://install-theme/${theme.themeId}`
+      : undefined;
 
   if (platform === "windows") {
     return (
       <DownloadScreenFrame
         onCreateSupportReport={onCreateSupportReport}
-        subtitle="Get the app, then it takes you through the rest."
+        subtitle={
+          openThemeUrl
+            ? "Open this theme in Control Center."
+            : "Get the app, then it takes you through the rest."
+        }
       >
+        <OpenControlCenter href={openThemeUrl} />
         <PrimaryDownload
           href={windowsDownloadUrl}
           label="Download for Windows"
+          secondary={Boolean(openThemeUrl)}
         />
         <InstallSteps steps={WINDOWS_INSTALL_STEPS} />
+        <ReturnForThemeAfterInstall show={Boolean(openThemeUrl)} />
         <QuietAlternative
           href={downloadUrl}
           label="Using a Mac? Download for macOS"
@@ -76,15 +98,26 @@ export function MacAppDownloadScreen({
     return (
       <DownloadScreenFrame
         onCreateSupportReport={onCreateSupportReport}
-        subtitle="Get the app for your computer, then it takes you through the rest."
+        subtitle={
+          openThemeUrl
+            ? "Open this theme in Control Center."
+            : "Get the app for your computer, then it takes you through the rest."
+        }
       >
-        <PrimaryDownload href={downloadUrl} label="Download for macOS" />
+        <OpenControlCenter href={openThemeUrl} />
+        <PrimaryDownload
+          href={downloadUrl}
+          label="Download for macOS"
+          secondary={Boolean(openThemeUrl)}
+        />
         {windowsDownloadUrl ? (
           <PrimaryDownload
             href={windowsDownloadUrl}
             label="Download for Windows"
+            secondary={Boolean(openThemeUrl)}
           />
         ) : null}
+        <ReturnForThemeAfterInstall show={Boolean(openThemeUrl)} />
       </DownloadScreenFrame>
     );
   }
@@ -99,11 +132,19 @@ export function MacAppDownloadScreen({
       </p>
       <ControlCenterBrand variant="hero" />
       <SetupWizardSubtitle>
-        Get the Mac App, then it takes you through the rest.
+        {openThemeUrl
+          ? "Open this theme in the Mac App."
+          : "Get the Mac App, then it takes you through the rest."}
       </SetupWizardSubtitle>
 
+      <OpenControlCenter href={openThemeUrl} />
       {downloadUrl ? (
-        <Button asChild className="mt-4 w-full" size="lg">
+        <Button
+          asChild
+          className="mt-4 w-full"
+          size="lg"
+          variant={openThemeUrl ? "outline" : "default"}
+        >
           <a href={downloadUrl}>
             <Download data-icon="inline-start" aria-hidden />
             <span>Download</span>
@@ -111,7 +152,13 @@ export function MacAppDownloadScreen({
         </Button>
       ) : (
         <>
-          <Button className="mt-4 w-full" disabled size="lg" type="button">
+          <Button
+            className="mt-4 w-full"
+            disabled
+            size="lg"
+            type="button"
+            variant={openThemeUrl ? "outline" : "default"}
+          >
             <Download data-icon="inline-start" aria-hidden />
             <span>Download</span>
           </Button>
@@ -126,6 +173,7 @@ export function MacAppDownloadScreen({
           <li key={step}>{step}</li>
         ))}
       </ol>
+      <ReturnForThemeAfterInstall show={Boolean(openThemeUrl)} />
     </SetupWizardScreen>
   );
 }
@@ -157,13 +205,20 @@ function DownloadScreenFrame({
 function PrimaryDownload({
   href,
   label,
+  secondary = false,
 }: {
   href: string | undefined;
   label: string;
+  secondary?: boolean;
 }) {
   if (href) {
     return (
-      <Button asChild className="mt-4 w-full" size="lg">
+      <Button
+        asChild
+        className="mt-4 w-full"
+        size="lg"
+        variant={secondary ? "outline" : "default"}
+      >
         <a href={href}>
           <Download data-icon="inline-start" aria-hidden />
           <span>{label}</span>
@@ -173,7 +228,13 @@ function PrimaryDownload({
   }
   return (
     <>
-      <Button className="mt-4 w-full" disabled size="lg" type="button">
+      <Button
+        className="mt-4 w-full"
+        disabled
+        size="lg"
+        type="button"
+        variant={secondary ? "outline" : "default"}
+      >
         <Download data-icon="inline-start" aria-hidden />
         <span>{label}</span>
       </Button>
@@ -181,6 +242,32 @@ function PrimaryDownload({
         The signed download is not ready yet. Please try again later.
       </SetupWizardSubtitle>
     </>
+  );
+}
+
+function OpenControlCenter({ href }: { href: string | undefined }) {
+  if (!href) {
+    return null;
+  }
+  return (
+    <Button asChild className="mt-4 w-full" size="lg">
+      <a href={href}>
+        <ExternalLink data-icon="inline-start" aria-hidden />
+        <span>Open Control Center</span>
+      </a>
+    </Button>
+  );
+}
+
+function ReturnForThemeAfterInstall({ show }: { show: boolean }) {
+  if (!show) {
+    return null;
+  }
+  return (
+    <p className="mt-4 text-sm text-muted-foreground">
+      After installing, return to this page and click Open Control Center to
+      choose this theme.
+    </p>
   );
 }
 

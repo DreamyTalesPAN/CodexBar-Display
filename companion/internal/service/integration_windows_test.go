@@ -72,18 +72,18 @@ func TestWindowsTaskIntegration(t *testing.T) {
 	}
 	t.Log("register: succeeded without elevation")
 	config, err := m.(*scheduledTask).command(ctx, findTask+`function Resolve-Sid([string]$value) { if ($value -match '^S-1-') { return ([System.Security.Principal.SecurityIdentifier]::new($value)).Value }; return ([System.Security.Principal.NTAccount]::new($value)).Translate([System.Security.Principal.SecurityIdentifier]).Value }
-$d=$task.Definition; @{LogonType=[int]$d.Principal.LogonType; RunLevel=[int]$d.Principal.RunLevel; User=(Resolve-Sid $d.Principal.UserId); TriggerType=[int]$d.Triggers.Item(1).Type; TriggerUser=(Resolve-Sid $d.Triggers.Item(1).UserId); RestartInterval=$d.Settings.RestartInterval; RestartCount=[int]$d.Settings.RestartCount; ExecutionTimeLimit=$d.Settings.ExecutionTimeLimit; Executable=$d.Actions.Item(1).Path; Arguments=$d.Actions.Item(1).Arguments} | ConvertTo-Json -Compress`)
+$d=$task.Definition; @{LogonType=[int]$d.Principal.LogonType; RunLevel=[int]$d.Principal.RunLevel; User=(Resolve-Sid $d.Principal.UserId); TriggerType=[int]$d.Triggers.Item(1).Type; TriggerUser=(Resolve-Sid $d.Triggers.Item(1).UserId); RestartInterval=$d.Settings.RestartInterval; RestartCount=[int]$d.Settings.RestartCount; ExecutionTimeLimit=$d.Settings.ExecutionTimeLimit; Priority=[int]$d.Settings.Priority; Executable=$d.Actions.Item(1).Path; Arguments=$d.Actions.Item(1).Arguments} | ConvertTo-Json -Compress`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var definition struct {
-		LogonType, RunLevel, TriggerType, RestartCount                                int
+		LogonType, RunLevel, TriggerType, RestartCount, Priority                      int
 		User, TriggerUser, RestartInterval, ExecutionTimeLimit, Executable, Arguments string
 	}
 	if err := json.Unmarshal([]byte(strings.TrimSpace(config)), &definition); err != nil {
 		t.Fatal(err)
 	}
-	if definition.LogonType != 3 || definition.RunLevel != 0 || definition.TriggerType != 9 || definition.RestartCount != 999 || definition.RestartInterval != "PT1M" || definition.ExecutionTimeLimit != "PT0S" || !strings.EqualFold(definition.Executable, exe) || definition.Arguments != windowsCommandLine([]string{"daemon", "--issue416-test-helper"}) {
+	if definition.LogonType != 3 || definition.RunLevel != 0 || definition.TriggerType != 9 || definition.RestartCount != 999 || definition.RestartInterval != "PT1M" || definition.ExecutionTimeLimit != "PT0S" || definition.Priority != 4 || !strings.EqualFold(definition.Executable, exe) || definition.Arguments != windowsCommandLine([]string{"daemon", "--issue416-test-helper"}) {
 		t.Fatalf("incorrect registered definition: %+v", definition)
 	}
 	for _, user := range []string{definition.User, definition.TriggerUser} {

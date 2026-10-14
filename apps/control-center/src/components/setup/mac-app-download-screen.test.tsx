@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { CompanionReleaseInfo } from "@/lib/companion-release";
+import type { ThemeProduct } from "@/lib/themes";
 import { MacAppDownloadScreen } from "./mac-app-download-screen";
 
 const available = {
@@ -16,6 +17,18 @@ const bothAvailable = {
   windowsSetupDownloadStatus: "available",
   windowsSetupDownloadUrl: "https://app.vibetv.shop/VibeTV-Setup.exe",
 } as CompanionReleaseInfo;
+
+const shopTheme: ThemeProduct = {
+  id: "gid://shopify/Product/1",
+  title: "Clippy",
+  themeId: "clippy",
+  priceLabel: "Kostenlos",
+  isFree: true,
+  packUrl: "https://cdn.example.test/clippy.zip",
+  packSha256: "a".repeat(64),
+  packSizeBytes: 1234,
+  source: "shopify",
+};
 
 describe("MacAppDownloadScreen", () => {
   it("links the signed download when the release has one", () => {
@@ -47,6 +60,38 @@ describe("MacAppDownloadScreen", () => {
 });
 
 describe("MacAppDownloadScreen on a recognised system", () => {
+  it("opens an available shop theme in the installed app and keeps the download fallback", () => {
+    for (const platform of ["macos", "windows"] as const) {
+      const html = renderToStaticMarkup(
+        <MacAppDownloadScreen platform={platform} release={bothAvailable} theme={shopTheme} />,
+      );
+      expect(html).toContain('href="vibetv://install-theme/clippy"');
+      expect(html).toContain("Open Control Center");
+      expect(html).toContain(
+        "After installing, return to this page and click Open Control Center to choose this theme.",
+      );
+      expect(html).toContain(platform === "macos" ? "VibeTV.dmg" : "VibeTV-Setup.exe");
+    }
+  });
+
+  it("does not offer a deep link for unavailable or untrusted themes", () => {
+    for (const theme of [
+      { ...shopTheme, isFree: false },
+      { ...shopTheme, source: "github-catalog" as const },
+      { ...shopTheme, themeId: "clippy/extra" },
+      { ...shopTheme, themeId: "ab" },
+      { ...shopTheme, themeId: "a".repeat(65) },
+      { ...shopTheme, packSha256: undefined },
+    ]) {
+      const html = renderToStaticMarkup(
+        <MacAppDownloadScreen platform="macos" release={bothAvailable} theme={theme} />,
+      );
+      expect(html).not.toContain("vibetv://install-theme/");
+      expect(html).not.toContain("After installing, return to this page");
+      expect(html).toContain('href="https://app.vibetv.shop/VibeTV.dmg"');
+    }
+  });
+
   it("keeps the Mac screen exactly as it is when macOS is recognised", () => {
     const html = renderToStaticMarkup(
       <MacAppDownloadScreen platform="macos" release={bothAvailable} />,
@@ -89,6 +134,14 @@ describe("MacAppDownloadScreen on a recognised system", () => {
 
     expect(html).toContain('href="https://app.vibetv.shop/VibeTV.dmg"');
     expect(html).toContain('href="https://app.vibetv.shop/VibeTV-Setup.exe"');
+  });
+
+  it("keeps the theme return step when the browser cannot identify the computer", () => {
+    const html = renderToStaticMarkup(
+      <MacAppDownloadScreen platform="unknown" release={bothAvailable} theme={shopTheme} />,
+    );
+    expect(html).toContain("After installing, return to this page");
+    expect(html).toContain('href="vibetv://install-theme/clippy"');
   });
 
   it("gives the Windows screen exactly one primary action", () => {

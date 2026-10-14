@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SupportDiagnostics } from "./control-center-types";
 import {
@@ -99,7 +99,7 @@ describe("DiagnosticsPanel", () => {
   });
 
   it.each([
-    ["bundled", "Built into VibeTV"],
+    ["bundled", "Included with the app"],
     ["override", "Custom location"],
     ["system", "Installed app"],
     ["path", "Command line install"],
@@ -176,6 +176,32 @@ describe("customer support text", () => {
 
   it("hides the engine name in text from the Mac App", () => {
     expect(formatCustomerSupportText("CodexBarCLI failed")).toBe("Usage engine failed");
+  });
+
+  // Issue #558: the healthy check read "Display stream is sending usage frames."
+  it("says in plain words that VibeTV gets the usage", () => {
+    const text = show({
+      checks: [{ name: "display_stream", status: "pass", detail: "Display stream is sending usage frames." }],
+    });
+    expect(text).toContain("Display updates");
+    expect(text).toContain("VibeTV is receiving your usage.");
+    expect(text).not.toMatch(/stream|frames/i);
+  });
+
+  // Seen on the Windows app: the row "VibeTV address" read "cable://vibetv"
+  // under a Connected VibeTV box that already said "USB-C cable".
+  it("shows the cable as the connection and an address only for a VibeTV on WiFi", () => {
+    const row = (detail: string) => {
+      const view = render(
+        <DiagnosticsPanel diagnostics={{ checks: [{ name: "device_target", status: "pass", detail }] }} />,
+      );
+      const text = within(view.container).getByRole("listitem").textContent ?? "";
+      view.unmount();
+      return text;
+    };
+
+    expect(row("cable://vibetv")).toBe("ConnectionPassUSB-C cable");
+    expect(row("192.168.1.42")).toBe("VibeTV addressPass192.168.1.42");
   });
 
   it("says App instead of Mac App in the Windows app", () => {

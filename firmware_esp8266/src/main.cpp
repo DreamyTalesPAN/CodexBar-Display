@@ -38,7 +38,7 @@
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
 const char kThemeFeatureJSON[] =
-    "[\"theme-spec-v1\",\"provider-slots-v1\",\"provider-assets-v1\",\"color-stops-v1\",\"text-valign-v1\",\"cable-transfer-v1\",\"cable-transfer-v2\",\"cable-health-v1\"]";
+    "[\"theme-spec-v1\",\"provider-slots-v1\",\"provider-assets-v1\",\"color-stops-v1\",\"text-valign-v1\",\"progress-arc-v1\",\"cable-transfer-v1\",\"cable-transfer-v2\",\"cable-health-v1\"]";
 #else
 const char kThemeFeatureJSON[] = "[]";
 #endif
@@ -132,11 +132,11 @@ constexpr unsigned long kFirmwareUpdateSurfaceRecheckMs = 1000UL;
 
 String themeCapabilitiesJSON(bool enabled, bool compact = false) {
   String out;
-  out.reserve(compact ? 320 : 400);
+  out.reserve(compact ? 352 : 432);
   if (!enabled) {
-    return "{\"supportsThemeSpecV1\":false,\"supportsUsageSlotsV1\":false,\"supportsUsageWindowsV1\":false,\"supportsProviderSlotsV1\":false,\"supportsProviderAssetsV1\":false,\"supportsColorStopsV1\":false,\"supportsTextValignV1\":false,\"maxUsageWindows\":0,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0}";
+    return "{\"supportsThemeSpecV1\":false,\"supportsUsageSlotsV1\":false,\"supportsUsageWindowsV1\":false,\"supportsProviderSlotsV1\":false,\"supportsProviderAssetsV1\":false,\"supportsColorStopsV1\":false,\"supportsTextValignV1\":false,\"supportsProgressArcV1\":false,\"maxUsageWindows\":0,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0}";
   }
-  out += "{\"supportsThemeSpecV1\":true,\"supportsUsageSlotsV1\":true,\"supportsUsageWindowsV1\":true,\"supportsProviderSlotsV1\":true,\"supportsProviderAssetsV1\":true,\"supportsColorStopsV1\":true,\"supportsTextValignV1\":true,\"maxUsageWindows\":";
+  out += "{\"supportsThemeSpecV1\":true,\"supportsUsageSlotsV1\":true,\"supportsUsageWindowsV1\":true,\"supportsProviderSlotsV1\":true,\"supportsProviderAssetsV1\":true,\"supportsColorStopsV1\":true,\"supportsTextValignV1\":true,\"supportsProgressArcV1\":true,\"maxUsageWindows\":";
   out += String(codexbar_display::core::kAdvertisedMaxUsageWindows);
   out += ",\"maxThemeSpecBytes\":2048,\"maxThemePrimitives\":";
   out += codexbar_display::themespec::kMaxCompiledThemeSpecPrimitives;
@@ -1294,6 +1294,23 @@ void renderAcceptedFrame(const codexbar_display::core::SerialConsumeEvent& event
     if (snapshot.themeSpecPartialSuccesses > partialSuccessesBefore && !runtimeCtx.screenDirty) {
       recordRenderPartial("theme_spec_frame");
     }
+  }
+}
+
+// The device's own activity expiry (#369): once the last frame's bound has
+// passed without a fresh frame, the screen stops showing the customer as
+// working. Standby needs nothing from this: its clock already counts from the
+// last frame that reported working, so a device left without a writer goes
+// idle here and reaches the screensaver on the same countdown as any idle one.
+void maintainActivityExpiry() {
+  codexbar_display::core::SerialConsumeEvent event;
+  if (!codexbar_display::core::ExpireActivity(runtimeCtx.runtime, millis(), event)) {
+    return;
+  }
+  Serial.println("activity_expired");
+  // A status screen owns the display; the frame that ends it repaints in full.
+  if (!statusScreenLocked() && !setupMode && !waitStatusRendered && !frameStaleStatusRendered) {
+    renderAcceptedFrame(event);
   }
 }
 
@@ -2595,7 +2612,7 @@ String healthJSON() {
   // Sized for the full payload: #280 added the clock block, #279 the reset
   // trust block, #284 the standby state and #221 the failing sprite asset
   // path, and growing this String mid-build fragments a tight heap.
-  out.reserve(1472);
+  out.reserve(1520);
   out += "{\"ok\":true,\"firmware\":\"";
   out += jsonEscape(CODEXBAR_DISPLAY_FW_VERSION);
   out += "\",\"system\":{\"freeHeap\":";
@@ -2679,6 +2696,13 @@ String healthJSON() {
   out += "\"},";
   appendClockJSON(out);
   appendResetTrustJSON(out);
+  // What the screen shows as activity right now, and how long that still
+  // holds without a fresh frame (0: no bound, or already expired).
+  out += F("\"activity\":{\"state\":");
+  appendJSONNullableString(out, codexbar_display::app::CurrentFrame(runtimeCtx).activity);
+  out += F(",\"ttlSecs\":");
+  out += codexbar_display::core::ActivityTtlRemainingSecs(runtimeCtx.runtime, millis());
+  out += F("},");
   appendStandbyStateJSON(out);
   out += ",";
   appendSettingsJSON(out);
@@ -4740,11 +4764,19 @@ void loop() {
       millis() - themeInstallStatusActivityMs >= kCableTransferTimeoutMs) {
     finishThemeInstallStatus();
   }
-  if (otaUploadInProgress || assetUploadInProgress || themeInstallStatusVisible) {
+  const bool installing = otaUploadInProgress || assetUploadInProgress || themeInstallStatusVisible;
+  if (installing || cableTransfer.flow.active) {
+    // No frame is accepted now, so the activity bound waits: otherwise a
+    // customer coding through a long install would see idle between its end
+    // and the next frame.
+    codexbar_display::core::HoldActivityTtl(runtimeCtx.runtime, millis());
+  }
+  if (installing) {
     delay(1);
     return;
   }
 
+  maintainActivityExpiry();
   maintainStandby();
   maintainScreensaverPreview();
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER

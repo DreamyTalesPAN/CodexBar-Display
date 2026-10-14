@@ -7,6 +7,8 @@ export const REPAIR_CODEXBAR_URL = "vibetv://repair-codexbar";
 export const FINISH_CODEXBAR_RECOVERY_URL =
   "vibetv://finish-codexbar-recovery";
 const NATIVE_CONTROL_CENTER_USER_AGENT_PREFIX = "VibeTVControlCenter/";
+const PROVIDER_SHORTCUT_UNAVAILABLE_USER_AGENT_SUFFIX =
+  " ProviderShortcut/unavailable";
 
 export function restartLocalControlCenterApp(): void {
   launchNativeControlCenterAction(RESTART_CONTROL_CENTER_URL);
@@ -29,9 +31,49 @@ export function nativeControlCenterAppBuild(userAgent: string): {
   }
   const [version, build] = userAgent
     .slice(NATIVE_CONTROL_CENTER_USER_AGENT_PREFIX.length)
+    .replace(PROVIDER_SHORTCUT_UNAVAILABLE_USER_AGENT_SUFFIX, "")
     .trim()
     .split("+");
   return { version: version || undefined, build: build || undefined };
+}
+
+/**
+ * The global shortcut that shows the next provider on VibeTV (issue #424).
+ * Only the Mac App and the Windows App have one. Each adds a suffix to its
+ * user agent when the system refused the keys, so Settings can say so.
+ */
+export function nativeProviderShortcut(
+  userAgent: string,
+): "available" | "unavailable" | null {
+  if (!isNativeControlCenterUserAgent(userAgent)) {
+    return null;
+  }
+  return userAgent.endsWith(PROVIDER_SHORTCUT_UNAVAILABLE_USER_AGENT_SUFFIX)
+    ? "unavailable"
+    : "available";
+}
+
+/**
+ * The Mac App says how its save dialog for a download ended (issue #582):
+ * `saved` is false after Cancel. Only the outcome for `fileName` is passed
+ * on. An older Mac App says nothing. Returns the function that stops listening.
+ */
+export function onNativeDownloadFinished(
+  fileName: string,
+  listener: (saved: boolean) => void,
+): () => void {
+  const handle = (event: Event) => {
+    const detail: unknown = (event as CustomEvent).detail;
+    if (typeof detail !== "object" || detail === null) {
+      return;
+    }
+    const { fileName: finished, saved } = detail as Record<string, unknown>;
+    if (finished === fileName && typeof saved === "boolean") {
+      listener(saved);
+    }
+  };
+  window.addEventListener("vibetv:download-finished", handle);
+  return () => window.removeEventListener("vibetv:download-finished", handle);
 }
 
 export function isNativeControlCenterApp(): boolean {

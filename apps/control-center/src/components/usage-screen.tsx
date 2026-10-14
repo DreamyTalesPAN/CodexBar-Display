@@ -38,6 +38,10 @@ import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { copyForHost } from "@/lib/customer-platform";
+import {
+  formatResetCountdown,
+  remainingResetSecs,
+} from "@/lib/reset-countdown";
 import type {
   ApiError,
   CompanionStatus,
@@ -75,8 +79,7 @@ export function UsageScreen({
     usage?.tokenUsageReady === true || usageProvidersHaveTokenResult(providers);
   // The Mac App owns this decision; the browser does not re-derive freshness.
   const tokenUsageUpdating = usage?.tokenUsageUpdating === true;
-  const tokenHistoryUnavailable =
-    tokenUsageReady && hasProviders && providers.some((provider) => provider.cost == null);
+  const tokenHistoryUnavailable = usageTokenHistoryUnavailable(usage);
   const hasUsableVisibleUsageContent =
     hasProviders || usageProvidersHaveTokenResult(providers);
   const usageLoading =
@@ -86,6 +89,9 @@ export function UsageScreen({
     !usageError &&
     hasProviders &&
     !tokenUsageReady;
+  // A requested refresh that still waits for its reading: a small spinner by
+  // the token total, not a notice above the page (Paul, 2026-10-09).
+  const refreshPending = usage?.refresh?.state === "refreshing";
   const refreshNotice = usageRefreshNotice(usage?.refresh, {
     companionStatus,
     hasUsableVisibleUsageContent,
@@ -137,21 +143,30 @@ export function UsageScreen({
             <AlertTitle>Token history is unavailable</AlertTitle>
             <AlertDescription className="grid justify-items-start gap-3">
               <span>
-                Complete local token history is not available for every selected provider.
-                Available usage limits are shown below.
+                {/* With one provider on there is no "every" (issue #558). */}
+                {providers.length === 1
+                  ? copyForHost(
+                      `No token history was found for ${providers[0].label || providers[0].id} on this Mac. Your usage limits are shown below.`,
+                      windowsHost,
+                    )
+                  : "Complete local token history is not available for every selected provider. Available usage limits are shown below."}
               </span>
               {onRefresh ? (
                 <Button
                   aria-label="Refresh token usage"
-                  aria-busy={refreshing}
-                  disabled={refreshing}
+                  aria-busy={refreshing || refreshPending}
+                  disabled={refreshing || refreshPending}
                   onClick={onRefresh}
                   size="sm"
                   type="button"
                   variant="outline"
                 >
-                  {refreshing ? <Spinner /> : <RefreshCw aria-hidden />}
-                  {refreshing ? "Refreshing" : "Refresh"}
+                  {refreshing || refreshPending ? (
+                    <Spinner />
+                  ) : (
+                    <RefreshCw aria-hidden />
+                  )}
+                  {refreshing || refreshPending ? "Refreshing" : "Refresh"}
                 </Button>
               ) : null}
             </AlertDescription>
@@ -160,7 +175,8 @@ export function UsageScreen({
           <TokenUsageOverTimePanel
             onRefresh={onRefresh}
             providers={providers}
-            refreshing={refreshing}
+            refreshPending={refreshPending}
+            refreshing={refreshing || refreshPending}
             updating={tokenUsageUpdating}
           />
         ) : tokenUsagePending ? (
@@ -208,13 +224,6 @@ function usageRefreshNotice(
   },
 ) {
   switch (refresh?.state) {
-    case "refreshing":
-      return {
-        tone: "info" as const,
-        title: "Refreshing usage",
-        description:
-          "Current values stay visible while VibeTV waits for a new usage snapshot.",
-      };
     case "unavailable":
       if (
         companionStatus !== "online" ||
@@ -237,11 +246,13 @@ function usageRefreshNotice(
 function TokenUsageOverTimePanel({
   onRefresh,
   providers,
+  refreshPending,
   refreshing,
   updating,
 }: {
   onRefresh?: () => void;
   providers: UsageProviderInfo[];
+  refreshPending: boolean;
   refreshing: boolean;
   updating: boolean;
 }) {
@@ -273,6 +284,16 @@ function TokenUsageOverTimePanel({
           >
             <Spinner className="size-3" data-icon="inline-start" />
             Still counting
+          </Badge>
+        ) : refreshPending ? (
+          <Badge
+            aria-live="polite"
+            className="mb-3"
+            data-testid="usage-refresh-pending"
+            variant="secondary"
+          >
+            <Spinner className="size-3" data-icon="inline-start" />
+            Refreshing
           </Badge>
         ) : null}
         <h2
@@ -441,6 +462,11 @@ function UsageProviderTile({
 
 function ProviderUsageBars({ provider }: { provider: UsageProviderInfo }) {
   const unavailableDetail = quotaUnavailableDetail(provider);
+  // Read at render, as the preview does: the app renders again on every
+  // display-frame and status poll, so the time left moves between usage polls.
+  const now = new Date();
+  const resetSecsLeft = (resetSecs?: number) =>
+    remainingResetSecs(resetSecs, provider.collectedAt, now);
   if (provider.windows?.length) {
     return (
       <div className="grid gap-4">
@@ -448,6 +474,7 @@ function ProviderUsageBars({ provider }: { provider: UsageProviderInfo }) {
           <UsageWindowBar
             key={window.id}
             mode={provider.usageMode}
+            resetSecs={resetSecsLeft(window.resetSecs)}
             unavailable={provider.usageUnavailable}
             unavailableDetail={unavailableDetail}
             window={window}
@@ -462,7 +489,7 @@ function ProviderUsageBars({ provider }: { provider: UsageProviderInfo }) {
       <UsageBar
         label="Session"
         mode={provider.usageMode}
-        resetSecs={provider.resetSecs}
+        resetSecs={resetSecsLeft(provider.resetSecs)}
         unavailable={
           provider.usageUnavailable || provider.sessionUnavailable
         }
@@ -472,7 +499,7 @@ function ProviderUsageBars({ provider }: { provider: UsageProviderInfo }) {
       <UsageBar
         label="Weekly"
         mode={provider.usageMode}
-        resetSecs={provider.resetSecs}
+        resetSecs={resetSecsLeft(provider.resetSecs)}
         unavailable={provider.usageUnavailable || provider.weeklyUnavailable}
         unavailableDetail={unavailableDetail}
         value={provider.weekly}
@@ -517,7 +544,7 @@ function UsageBar({
             : `${label}: ${percent}% ${usageModeShortLabel(mode)}`
         }
         className="h-2"
-        value={unavailable ? 0 : percent}
+        value={unavailable ? null : percent}
       />
       {unavailable ? (
         <p className="mt-1 text-xs font-semibold text-[#6A5B00]">{detail}</p>
@@ -586,11 +613,13 @@ function UsageMetaGrid({ provider }: { provider: UsageProviderInfo }) {
 
 function UsageWindowBar({
   mode,
+  resetSecs,
   unavailable,
   unavailableDetail,
   window,
 }: {
   mode?: string;
+  resetSecs: number;
   unavailable?: boolean;
   unavailableDetail?: string;
   window: UsageWindowInfo;
@@ -603,9 +632,9 @@ function UsageWindowBar({
         <span className="font-bold text-[#1B1B1B]">
           {window.label}: {unavailable ? "??" : `${percent}% ${usageModeShortLabel(mode)}`}
         </span>
-        {!unavailable && window.resetSecs ? (
+        {!unavailable && resetSecs ? (
           <span className="ml-auto shrink-0 text-right font-semibold text-[#444933]">
-            {formatReset(window.resetSecs)}
+            {formatReset(resetSecs)}
           </span>
         ) : null}
       </div>
@@ -616,7 +645,7 @@ function UsageWindowBar({
             : `${window.label}: ${percent}% ${usageModeShortLabel(mode)}`
         }
         className="h-2"
-        value={unavailable ? 0 : percent}
+        value={unavailable ? null : percent}
       />
       {unavailable ? (
         <p className="mt-1 text-xs font-semibold text-[#6A5B00]">{detail}</p>
@@ -666,6 +695,27 @@ function UsageEmptyState({
       </EmptyHeader>
     </Empty>
   );
+}
+
+// Token history was read and at least one shown provider has none.
+export function usageTokenHistoryUnavailable(usage: UsageSnapshot | null): boolean {
+  const providers = filterVisibleProviders(
+    usage?.providers || [],
+    usage?.currentProvider,
+  );
+  return (
+    (usage?.tokenUsageReady === true || usageProvidersHaveTokenResult(providers)) &&
+    providers.some((provider) => provider.cost == null)
+  );
+}
+
+// Themes asks for a theme that draws token numbers. VibeTV draws those of one
+// provider, so only that one counts; without one, all shown must have none.
+export function usageTokenHistoryUnavailableOnVibeTV(usage: UsageSnapshot | null): boolean {
+  if (!usage || !usageTokenHistoryUnavailable(usage)) return false;
+  const providers = filterVisibleProviders(usage.providers || [], usage.currentProvider);
+  const current = providers.find((provider) => provider.id === usage.currentProvider);
+  return current ? current.cost == null : !usageProvidersHaveTokenResult(providers);
 }
 
 function filterVisibleProviders(
@@ -862,21 +912,10 @@ function usageModeShortLabel(mode?: string): string {
 }
 
 /** Customer-facing reset wording, shared with the setup display-mode step. */
-export function formatReset(seconds?: number): string {
-  if (!seconds || seconds <= 0) {
-    return "Reset unknown";
-  }
-  const totalMinutes = Math.ceil(seconds / 60);
-  const days = Math.floor(totalMinutes / 1440);
-  const hours = Math.floor((totalMinutes % 1440) / 60);
-  const minutes = totalMinutes % 60;
-  if (days > 0) {
-    return `Reset in ${days}d ${hours}h`;
-  }
-  if (hours > 0) {
-    return `Reset in ${hours}h ${minutes}m`;
-  }
-  return `Reset in ${minutes}m`;
+export function formatReset(secondsLeft: number): string {
+  return secondsLeft > 0
+    ? `Reset in ${formatResetCountdown(secondsLeft)}`
+    : "Reset unknown";
 }
 
 function formatTokenCount(value: number): string {

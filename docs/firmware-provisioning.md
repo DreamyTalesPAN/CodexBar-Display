@@ -155,6 +155,51 @@ If only filesystem needs to be refreshed after the initial factory OTA:
 - `SHA256SUMS` is checked before every `flash`.
 - Use `--skip-health` only while firmware `/health` is still being integrated.
 
+## Factory Leftovers In Flash (#310)
+
+The WiFi flow above writes only the sketch and our filesystem. The flash
+between them still holds the GeekMagic firmware's own filesystem. Whether
+devices get a full USB erase before provisioning (option A) or a one-time wipe
+by the firmware (option B) is an open decision in
+[#310](https://github.com/DreamyTalesPAN/CodexBar-Display/issues/310). Until
+then the default flow is unchanged; both commands below are opt-in.
+
+Check a device over the USB cable. This only reads. Quit the VibeTV app and
+its background service first so that the port is free:
+
+```bash
+./scripts/vibetv-flash-leftovers.sh --port /dev/cu.usbserial-10
+```
+
+It reads the region between the end of the sketch region and `_FS_start`
+(`0x100000`-`0x200000` with `eagle.flash.4m2m.ld`; the offsets come from the
+linker script named in `platformio.ini`) at 115200 baud in 256 KB chunks, which
+takes about two minutes, and prints the share of erased bytes and a verdict:
+
+- `CLEAN`, exit 0: every byte is erased.
+- `LEFTOVERS`, exit 1: a LittleFS superblock or a factory file name is there.
+- `NOT ERASED`, exit 3: other data, for example a firmware image that an
+  earlier update staged just below `_FS_start`.
+
+Two more exit codes mean that there is no verdict: 2 is a usage or setup error
+(bad arguments, missing tool, bad package), 4 is a serial error (port busy,
+esptool failed, or the read came back short). Only exit 1 says that factory
+leftovers were found.
+
+Full USB erase (option A), for a device that may lose everything it stores:
+
+```bash
+./scripts/vibetv-provision.sh build --package-dir dist/vibetv-ota/release
+./scripts/vibetv-flash-leftovers.sh --usb-erase \
+  --port /dev/cu.usbserial-10 --package-dir dist/vibetv-ota/release --yes
+```
+
+This erases the whole flash, writes `firmware.bin` and `littlefs.bin` over the
+cable, runs the check and fails unless the verdict is `CLEAN`. `SHA256SUMS`
+must list and match both images before anything is erased. The device loses
+its saved WiFi, pairing, themes and settings and has to be set up again over
+the cable. Without `--yes` the command prints what it would erase and stops.
+
 ## Recovery Limitation
 
 Devices must expose the GeekMagic factory update page before this script can update them over WiFi. A device that already runs current VibeTV firmware has no WiFi update route; update it over the USB cable with the Mac App or `codexbar-display install-update --target cable://vibetv`.

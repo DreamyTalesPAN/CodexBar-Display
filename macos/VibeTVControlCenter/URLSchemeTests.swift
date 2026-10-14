@@ -9,6 +9,22 @@ private func require(_ condition: @autoclosure () -> Bool, _ message: String) {
 }
 
 func runURLSchemeTests() {
+    // Issue #582: the page learns how the save dialog ended.
+    require(
+        downloadFinishedEventScript(fileName: "vibetv-theme-new-theme.zip", saved: true)
+            == "window.dispatchEvent(new CustomEvent('vibetv:download-finished', { detail: {\"fileName\":\"vibetv-theme-new-theme.zip\",\"saved\":true} })); true",
+        "a saved download must be reported to the page with its file name"
+    )
+    require(
+        downloadFinishedEventScript(fileName: "a.zip", saved: false)?
+            .contains("{\"fileName\":\"a.zip\",\"saved\":false}") == true,
+        "a cancelled save dialog must be reported as not saved"
+    )
+    require(
+        downloadFinishedEventScript(fileName: "a\"}));alert('x')//\n\\.zip", saved: true)?
+            .contains("{\"fileName\":\"a\\\"}));alert('x')\\/\\/\\n\\\\.zip\",\"saved\":true}") == true,
+        "a file name must reach the page as JSON text and never end the script's string"
+    )
     let fallbackEndpoint = RuntimeEndpoint(
         origin: "http://127.0.0.1:54321",
         pid: 83979
@@ -188,6 +204,74 @@ func runURLSchemeTests() {
         appManagedCodexBarCLIURL(applicationSupportURL: appSupportURL).path
             == "/Users/customer/Library/Application Support/codexbar-display/CodexBar/0.63.0/CodexBar.app/Contents/Helpers/CodexBarCLI",
         "the Companion must use the exact private CodexBarCLI path"
+    )
+    let managedApp = appManagedCodexBarAppURL(applicationSupportURL: appSupportURL)
+    let managedCLI = appManagedCodexBarCLIURL(applicationSupportURL: appSupportURL)
+    require(
+        managedCodexBarRecoveryURL(
+            applicationSupportURL: appSupportURL,
+            validatedCLIURL: managedCLI
+        ) == managedApp,
+        "recovery must choose the validated private CodexBar app"
+    )
+    for unrelatedCLI in [
+        URL(fileURLWithPath: "/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI"),
+        appManagedCodexBarCLIURL(applicationSupportURL: appSupportURL, version: "0.62.0"),
+    ] {
+        require(
+            managedCodexBarRecoveryURL(
+                applicationSupportURL: appSupportURL,
+                validatedCLIURL: unrelatedCLI
+            ) == nil,
+            "recovery must reject a different CodexBar bundle"
+        )
+    }
+    require(
+        managedCodexBarRecoveryURL(
+            applicationSupportURL: appSupportURL,
+            validatedCLIURL: nil
+        ) == nil,
+        "recovery must reject an unverified private app"
+    )
+    let symlinkTestRoot = FileManager.default.temporaryDirectory
+        .resolvingSymlinksInPath()
+        .appendingPathComponent("vibetv-recovery-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: symlinkTestRoot) }
+    let symlinkSupportURL = symlinkTestRoot.appendingPathComponent("support")
+    let symlinkAppURL = appManagedCodexBarAppURL(applicationSupportURL: symlinkSupportURL)
+    let unrelatedAppURL = symlinkTestRoot.appendingPathComponent("other/CodexBar.app")
+    try! FileManager.default.createDirectory(
+        at: symlinkAppURL.deletingLastPathComponent(), withIntermediateDirectories: true
+    )
+    try! FileManager.default.createDirectory(
+        at: unrelatedAppURL, withIntermediateDirectories: true
+    )
+    try! FileManager.default.createSymbolicLink(
+        at: symlinkAppURL, withDestinationURL: unrelatedAppURL
+    )
+    require(
+        managedCodexBarRecoveryURL(
+            applicationSupportURL: symlinkSupportURL,
+            validatedCLIURL: appManagedCodexBarCLIURL(applicationSupportURL: symlinkSupportURL)
+        ) == nil,
+        "recovery must reject a private path redirected to another app"
+    )
+    try! FileManager.default.removeItem(at: symlinkAppURL)
+    let symlinkCLIURL = appManagedCodexBarCLIURL(applicationSupportURL: symlinkSupportURL)
+    try! FileManager.default.createDirectory(
+        at: symlinkCLIURL.deletingLastPathComponent(), withIntermediateDirectories: true
+    )
+    try! Data().write(to: unrelatedAppURL.appendingPathComponent("CodexBarCLI"))
+    try! FileManager.default.createSymbolicLink(
+        at: symlinkCLIURL,
+        withDestinationURL: unrelatedAppURL.appendingPathComponent("CodexBarCLI")
+    )
+    require(
+        managedCodexBarRecoveryURL(
+            applicationSupportURL: symlinkSupportURL,
+            validatedCLIURL: symlinkCLIURL
+        ) == nil,
+        "recovery must reject a private CLI redirected outside the app"
     )
 
     let commandFixtureDirectory = FileManager.default.temporaryDirectory
@@ -499,23 +583,90 @@ func runURLSchemeTests() {
 
     var coldRouter = ControlCenterURLRouter()
     require(
-        !coldRouter.receive([URL(string: "vibetv://open-control-center")!]),
+        coldRouter.receive([URL(string: "vibetv://open-control-center")!]) == nil,
         "cold launch must queue the request until AppKit finishes launching"
     )
     require(coldRouter.hasPendingOpen, "cold launch request was not queued")
-    require(coldRouter.markReady(), "queued cold launch request was not delivered")
+    require(coldRouter.markReady() == "control-center", "queued cold launch request was not delivered")
     require(!coldRouter.hasPendingOpen, "delivered cold launch request was not cleared")
 
     var warmRouter = ControlCenterURLRouter()
-    require(!warmRouter.markReady(), "warm router should start without a queued request")
+    require(warmRouter.markReady() == nil, "warm router should start without a queued request")
     require(
-        warmRouter.receive([URL(string: "vibetv://open-control-center")!]),
+        warmRouter.receive([URL(string: "vibetv://open-control-center")!]) == "control-center",
         "warm launch request must open immediately"
     )
 
+    let themeLink = URL(string: "vibetv://install-theme/claude-creature")!
+    require(installThemeID(from: themeLink) == "claude-creature", "valid catalog theme link must be accepted")
+    require(
+        controlCenterPath(for: themeLink) == "control-center/install/claude-creature",
+        "theme link must target the local install route"
+    )
+    var coldThemeRouter = ControlCenterURLRouter()
+    require(coldThemeRouter.receive([themeLink]) == nil, "cold theme link must wait for the runtime")
+    require(
+        coldThemeRouter.markReady() == "control-center/install/claude-creature",
+        "cold theme link must keep its selected theme"
+    )
+    require(!coldThemeRouter.hasPendingOpen, "delivered theme link must be cleared")
+    require(
+        warmRouter.receive([themeLink]) == "control-center/install/claude-creature",
+        "warm theme link must navigate immediately"
+    )
+    var route = ControlCenterRoute()
+    require(route.path == "control-center", "the window must start at the Control Center")
+    route.open("control-center/install/claude-creature")
+    require(
+        route.path == "control-center/install/claude-creature",
+        "a theme link must stay the target until its page has loaded, so retries reach it"
+    )
+    route.didLoad()
+    require(
+        route.path == "control-center",
+        "a reopened window must not load the theme link's page a second time"
+    )
+    var queuedRouter = ControlCenterURLRouter()
+    _ = queuedRouter.receive([URL(string: "vibetv://open-control-center")!])
+    _ = queuedRouter.receive([themeLink])
+    require(
+        queuedRouter.markReady() == "control-center/install/claude-creature",
+        "the latest cold link must keep its selected theme"
+    )
+    require(
+        installThemeID(from: URL(string: "vibetv://install-theme/\(String(repeating: "a", count: 64))")!) != nil,
+        "the maximum valid theme ID must be accepted"
+    )
+    for rejectedThemeLink in [
+        "vibetv://install-theme",
+        "vibetv://install-theme/",
+        "vibetv://install-theme/clippy/",
+        "vibetv://install-theme/clippy/extra",
+        "vibetv://install-theme/Clippy",
+        "vibetv://install-theme/a",
+        "vibetv://install-theme/\(String(repeating: "a", count: 65))",
+        "vibetv://install-theme/claude_creature",
+        "vibetv://install-theme/-clippy",
+        "vibetv://install-theme/clippy-",
+        "vibetv://install-theme/clippy--dark",
+        "vibetv://install-theme/%63lippy",
+        "vibetv://install-theme/clippy%2Fextra",
+        "vibetv://install-theme/clippy?source=shop",
+        "vibetv://install-theme/clippy#install",
+        "vibetv://user@install-theme/clippy",
+        "vibetv://install-theme:42/clippy",
+        "vibetv://install-theme/clippy/../synthwave",
+        "https://install-theme/clippy",
+    ] {
+        require(
+            installThemeID(from: URL(string: rejectedThemeLink)!) == nil,
+            "malformed theme link must not enter the local app: \(rejectedThemeLink)"
+        )
+    }
+
     var invalidRouter = ControlCenterURLRouter()
     require(
-        !invalidRouter.receive([URL(string: "vibetv://install-theme")!]),
+        invalidRouter.receive([URL(string: "vibetv://install-theme")!]) == nil,
         "invalid URL must not open the Control Center"
     )
     require(!invalidRouter.hasPendingOpen, "invalid URL must not be queued")
@@ -856,6 +1007,12 @@ func runURLSchemeTests() {
         "an app opened from a mounted DMG must not migrate persistent services"
     )
     require(
+        !isInstalledApplicationsBundle(
+            URL(fileURLWithPath: "/Users/customer/CodexBackups/Applications/VibeTV Control Center.app")
+        ),
+        "a historical backup app must not become the URL handler"
+    )
+    require(
         !requiresApplicationInstallation(
             URL(fileURLWithPath: "/Applications/VibeTV Control Center.app")
         ),
@@ -1054,6 +1211,189 @@ private func testLegacyTerminalAppDetection() {
             expectedBundleIdentifier: "shop.vibetv.control-center"
         ),
         "the currently running app must never migrate itself"
+    )
+
+    // Issue #220: what the menu bar item shows for one /v1/status answer.
+    func menuBar(_ json: String?) -> MenuBarStatus {
+        menuBarStatus(statusJSON: json.map { Data($0.utf8) })
+    }
+    let notReachable = MenuBarStatus(
+        icon: .offline,
+        lines: ["Mac App: Not reachable", "VibeTV: Not connected", "Display: Not available"]
+    )
+    require(
+        menuBar(nil) == notReachable,
+        "a background service that does not answer must read as not reachable"
+    )
+    require(
+        menuBar("<html>") == notReachable,
+        "an answer that is not a status must read as not reachable"
+    )
+    require(
+        menuBar(
+            #"{"ok":true,"companion":{"version":"1.9.0"},"device":{"connected":false,"paired":false,"ready":false,"active":false,"connectionState":"setup_required"},"setup":{"providerSelectionRequired":true}}"#
+        ) == MenuBarStatus(
+            icon: .actionRequired,
+            lines: ["Mac App: Online 1.9.0", "VibeTV: Not set up", "Display: Not available"]
+        ),
+        "a Mac without a chosen VibeTV must ask for setup"
+    )
+    require(
+        menuBar(
+            #"{"ok":true,"companion":{"version":"1.9.0"},"device":{"target":"cable://vibetv","deviceId":"16199235","connected":true,"paired":true,"ready":true,"active":true,"connectionState":"ready","capabilities":{"transport":{"active":"usb","mode":"cable"}},"stream":{"healthy":true,"running":true},"standby":{"active":false}},"setup":{"providerSelectionRequired":false}}"#
+        ) == MenuBarStatus(
+            icon: .healthy,
+            lines: ["Mac App: Online 1.9.0", "VibeTV 16199235: Connected by Cable", "Display: Live"]
+        ),
+        "a ready VibeTV on the cable must read as connected by Cable"
+    )
+    let wifiReady =
+        #"{"ok":true,"companion":{"version":"1.9.0"},"device":{"target":"http://192.168.178.163","deviceId":"vibetv-8caab5","connected":true,"paired":true,"ready":true,"active":true,"connectionState":"ready","capabilities":{"transport":{"active":"wifi","mode":"wifi","supported":["wifi","usb"]}},"stream":{"healthy":true,"running":true}STANDBY},"setup":{"providerSelectionRequired":SETUP}FIRMWARE}"#
+    func wifi(
+        standby: String = "",
+        setup: String = "false",
+        firmware: String = ""
+    ) -> MenuBarStatus {
+        menuBar(
+            wifiReady
+                .replacingOccurrences(of: "STANDBY", with: standby)
+                .replacingOccurrences(of: "SETUP", with: setup)
+                .replacingOccurrences(of: "FIRMWARE", with: firmware)
+        )
+    }
+    require(
+        wifi() == MenuBarStatus(
+            icon: .healthy,
+            lines: ["Mac App: Online 1.9.0", "VibeTV vibetv-8caab5: Connected over WiFi", "Display: Live"]
+        ),
+        "a ready VibeTV on WiFi must read as connected over WiFi"
+    )
+    // Several VibeTVs: the status names the one this Mac controls, and the
+    // menu names that one by its ID, as the picker in setup does.
+    require(
+        wifi().lines[1].hasPrefix("VibeTV vibetv-8caab5: "),
+        "the menu must name the selected VibeTV"
+    )
+    require(
+        wifi(standby: #","standby":{"active":true}"#).lines[2] == "Display: Screensaver",
+        "a VibeTV in standby must read as showing its screensaver"
+    )
+    require(
+        wifi(setup: "true") == MenuBarStatus(
+            icon: .actionRequired,
+            lines: ["Mac App: Online 1.9.0", "VibeTV vibetv-8caab5: Connected over WiFi", "Display: Needs attention"]
+        ),
+        "an open provider choice must read as needing attention"
+    )
+    require(
+        wifi(firmware: #","firmwareUpdate":{"phase":"installing"}"#).icon == .updating,
+        "a firmware update must show while VibeTV still answers"
+    )
+    require(
+        wifi(firmware: #","firmwareUpdate":{"phase":"completed"}"#).icon == .healthy,
+        "a finished firmware update must not read as updating"
+    )
+    require(
+        menuBar(
+            #"{"ok":true,"companion":{"version":"1.9.0"},"device":{"target":"http://192.168.178.163","deviceId":"vibetv-8caab5","connected":false,"paired":true,"ready":false,"active":true,"connectionState":"reconnecting"},"firmwareUpdate":{"phase":"installing"}}"#
+        ) == MenuBarStatus(
+            icon: .updating,
+            lines: ["Mac App: Online 1.9.0", "VibeTV vibetv-8caab5: Restarting", "Display: Update running"]
+        ),
+        "a VibeTV that restarts during its update must not read as lost"
+    )
+    func notReady(_ device: String) -> MenuBarStatus {
+        menuBar(
+            #"{"ok":true,"companion":{"version":"1.9.0"},"device":{"target":"http://192.168.178.163","deviceId":"vibetv-8caab5","active":true,"ready":false,"#
+                + device + "}}"
+        )
+    }
+    require(
+        notReady(#""connected":false,"paired":true,"connectionState":"reconnecting""#)
+            == MenuBarStatus(
+                icon: .offline,
+                lines: ["Mac App: Online 1.9.0", "VibeTV vibetv-8caab5: Not connected", "Display: Not available"]
+            ),
+        "a VibeTV that does not answer must read as not connected"
+    )
+    require(
+        notReady(#""connected":true,"paired":false,"stream":{"healthy":false,"running":true,"errorCode":"pairing_token_rejected"}"#)
+            == MenuBarStatus(
+                icon: .actionRequired,
+                lines: ["Mac App: Online 1.9.0", "VibeTV vibetv-8caab5: Needs attention", "Display: Not available"]
+            ),
+        "a rejected pairing must read as needing attention"
+    )
+    require(
+        notReady(#""connected":true,"paired":true,"connectionState":"provider_setup_required","stream":{"healthy":false,"running":true,"errorCode":"display_send_failed"}"#)
+            == MenuBarStatus(
+                icon: .healthy,
+                lines: ["Mac App: Online 1.9.0", "VibeTV vibetv-8caab5: Connected over WiFi", "Display: Waiting for first image"]
+            ),
+        "a stream that fails to send must read as waiting for the first image"
+    )
+    require(
+        notReady(#""connected":true,"paired":true,"connectionState":"provider_setup_required","stream":{"healthy":false,"running":true}"#)
+            .lines[2] == "Display: Waiting for usage",
+        "a running stream without usage yet must read as waiting for usage"
+    )
+    require(
+        notReady(#""connected":true,"paired":true,"connectionState":"provider_setup_required","stream":{"healthy":false,"running":true,"errorCode":"provider_setup_required"}"#)
+            == MenuBarStatus(
+                icon: .actionRequired,
+                lines: ["Mac App: Online 1.9.0", "VibeTV vibetv-8caab5: Connected over WiFi", "Display: Needs attention"]
+            ),
+        "a VibeTV without usage from any provider must read as needing attention"
+    )
+    require(
+        notReady(#""connected":true,"paired":true,"connectionState":"display_render_failed","stream":{"healthy":false,"running":true}"#)
+            == MenuBarStatus(
+                icon: .actionRequired,
+                lines: ["Mac App: Online 1.9.0", "VibeTV vibetv-8caab5: Connected over WiFi", "Display: Theme not shown"]
+            ),
+        "a theme VibeTV cannot draw must be named"
+    )
+    // Without a place of its own the item lands off the screen on a full
+    // menu bar; macOS reads the place under this key, for this name.
+    require(
+        menuBarItemDefaults["NSStatusItem Preferred Position VibeTVMenuBarItem"] == 400,
+        "the menu bar item must start at a place right of the notch"
+    )
+    // A VibeTV that stopped answering stays "connected" for a short while,
+    // in the state "reconnecting", with the stream error it had before.
+    for staleStream in [
+        #","stream":{"healthy":false,"running":true,"errorCode":"provider_setup_required"}"#,
+        #","stream":{"healthy":false,"running":true}"#,
+        "",
+    ] {
+        require(
+            notReady(#""connected":true,"paired":true,"connectionState":"reconnecting""# + staleStream)
+                == MenuBarStatus(
+                    icon: .offline,
+                    lines: ["Mac App: Online 1.9.0", "VibeTV vibetv-8caab5: Reconnecting", "Display: Not available"]
+                ),
+            "a VibeTV that is reconnecting must not send the customer to the providers"
+        )
+    }
+    require(
+        menuBar(
+            #"{"ok":true,"companion":{"version":"1.9.0"},"device":{"deviceId":"vibetv-8caab5","connected":true,"paired":true,"ready":false,"active":true,"connectionState":"reconnecting"},"firmwareUpdate":{"phase":"installing"}}"#
+        ).icon == .updating,
+        "a VibeTV that reconnects during its update must read as updating"
+    )
+    // The state is told without colour: by the symbol, a mark, and in words.
+    require(
+        [MenuBarIcon.starting, .healthy, .actionRequired, .offline, .updating]
+            .map { "\($0.symbolName)\($0.mark)" }
+            == ["tv", "tv", "tv!", "tv.slash", "tv↑"],
+        "each state must have a shape of its own"
+    )
+    require(
+        Set(
+            [MenuBarIcon.starting, .healthy, .actionRequired, .offline, .updating]
+                .map(\.accessibilityLabel)
+        ).count == 5,
+        "each state must be said in words of its own"
     )
 }
 

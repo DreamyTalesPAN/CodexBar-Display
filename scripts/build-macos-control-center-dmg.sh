@@ -8,6 +8,7 @@ VERSION="${VERSION:-0.0.0}"
 APP_DIR="${ROOT}/dist/macos/${APP_NAME}.app"
 DMG_PATH="${ROOT}/dist/macos/VibeTV-Control-Center-v${VERSION#v}.dmg"
 STAGING_DIR=""
+STAGING_IS_TEMP=0
 VOLUME_NAME="VibeTV Control Center"
 DRY_RUN=0
 
@@ -99,6 +100,7 @@ validate_app_bundle() {
 prepare_staging_dir() {
   if [[ -z "$STAGING_DIR" ]]; then
     STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-dmg.XXXXXX")"
+    STAGING_IS_TEMP=1
   fi
 
   rm -rf "$STAGING_DIR"
@@ -127,6 +129,12 @@ main() {
     -ov \
     -format UDZO \
     "$DMG_PATH"
+
+  # The staging folder holds a full copy of the app. Left behind by every
+  # build, the copies filled a developer's disk (5 GB after 63 builds).
+  if [[ "$STAGING_IS_TEMP" == "1" ]]; then
+    rm -rf "$STAGING_DIR"
+  fi
 
   printf 'built DMG: %s\n' "$DMG_PATH"
 }

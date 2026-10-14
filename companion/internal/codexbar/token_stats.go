@@ -30,8 +30,8 @@ var tokenStatsCostArgs = []string{"cost", "--json", "--refresh", "--days", token
 
 func tokenStatsArgs(platform string) []string {
 	if platform == "windows" {
-		// Pinned Win-CodexBar 0.56.8 scans on invocation, rejects --refresh,
-		// and defaults to Claude. Ask its cost command for all providers.
+		// The pinned Win-CodexBar (scripts/fetch-win-codexbar.ps1) scans on
+		// invocation, rejects --refresh, and defaults to Claude. Ask its cost command for all providers.
 		return []string{"cost", "--json", "--days", tokenStatsHistoryDays, "--provider", "all"}
 	}
 	return tokenStatsCostArgs

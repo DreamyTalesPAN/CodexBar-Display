@@ -34,6 +34,8 @@ Before building anything, check once per chat whether the remote branch is ahead
 
 Every change to the VibeTV product is validated on the connected bench Mac with
 both rehearsal scripts before it is handed over, and the real screen is shown.
+A pull request is checked on Windows as well (see "Reviewing a pull request
+head" below).
 Green unit tests, green CI, and a healthy Companion API say nothing about what
 the customer sees. A message can point at an action that does not exist in the
 UI, and only the rendered screen shows that.
@@ -73,6 +75,84 @@ scripts themselves install candidate DMGs only, so a run that has to produce
 evidence for an exact pull request head still needs the signed merge-gate
 candidate (`CODEX Test VibeTV Merge`, `workflow_dispatch`, `pr_number`).
 
+### Reviewing a pull request head: Mac and Windows, without a signed candidate
+
+A pull request head is rehearsed on the Mac **and** on Windows, cold start and
+warm start each, before anyone talks about merging it. A new commit is a new
+head and needs the runs again, so wait for CI and the automated review of the
+head first. For this review no signed candidate is built; the signed merge-gate
+candidate above stays what the merge gate and a release need.
+
+- **Mac:** a local build of the head, with the head's SHA and the candidate
+  version stamped in, from the repository root:
+
+  ```bash
+  V=9999.0.<n>; OUT=tmp/quick; mkdir -p "$OUT/fw"
+  (cd apps/control-center && npm ci && npm run build:local)
+  rm -rf companion/internal/companionapi/controlcenter_static
+  mkdir -p companion/internal/companionapi/controlcenter_static
+  cp -R apps/control-center/out-local/. companion/internal/companionapi/controlcenter_static/
+  git checkout -- companion/internal/companionapi/controlcenter_static/.gitkeep
+  P=github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo
+  (cd companion && CGO_ENABLED=0 go build \
+    -ldflags "-s -w -X $P.Version=$V -X $P.Commit=$(git rev-parse HEAD)" \
+    -o "../$OUT/codexbar-display" ./cmd/codexbar-display)
+  scripts/build-macos-control-center-app.sh --version "$V" --build <n> --local-preview \
+    --companion-binary "$OUT/codexbar-display" --output "$OUT/VibeTV Control Center.app"
+  codesign --force --deep --sign - "$OUT/VibeTV Control Center.app"
+  scripts/build-macos-control-center-dmg.sh --app "$OUT/VibeTV Control Center.app" \
+    --output "$OUT/VibeTV-Control-Center-$V.dmg" --version "$V"
+  (cd firmware_esp8266 && CODEXBAR_DISPLAY_FW_VERSION="$V" pio run -e esp8266_smalltv_st7789)
+  cp firmware_esp8266/.pio/build/esp8266_smalltv_st7789/firmware.bin "$OUT/fw/"
+  ```
+
+  Without `Commit` the Companion reports `dev` and the head cannot be told
+  from `/v1/status`; without `--version` the app builder refuses the Companion.
+  The copy empties `controlcenter_static`, so commit with exact paths
+  afterwards, never `git add -A companion`. Serve `$OUT/fw` with a manifest
+  from a local port.
+- **Both redirections, before the first app start:**
+  `CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL` and
+  `CODEXBAR_DISPLAY_MAC_APP_RELEASE_API_URL` (a JSON file `{"tag_name":"v<app version>"}`).
+  With only the first one, setup stops at the app check. On the Mac set them
+  with `launchctl setenv`, on Windows as user variables.
+- **Windows:** the unsigned installer of the head's CI run (artifact
+  `vibetv-control-center-windows`, version `9999.0.<n>`), on a real Windows
+  machine with a VibeTV on the cable. CI builds a pull request from GitHub's
+  merge commit, the head merged into the base branch, so this installer is
+  what would land and its `companion.runtime.commit` is that merge commit, not
+  the head. Tie it to the head through the run instead:
+  `gh run list --branch <branch> --json databaseId,headSha` must name the
+  reviewed head for the run the artifact was downloaded from. Cold: app state cleared, VibeTV on the
+  delivery firmware (1.0.41, the firmware of v1.0.56), install, set up. Warm:
+  the public installer with the released firmware first, then the candidate
+  over it and the firmware update from Updates.
+- **What the Mac warm start of a review is, and is not:** the public app with
+  the released firmware is set up, the candidate is installed over it with all
+  customer state kept, and the firmware update runs from the app. Sparkle's
+  own step -- appcast, EdDSA signature, the native "Install Update" dialog --
+  is not exercised by a local build. That step needs the signed merge-gate
+  candidate and `scripts/vibetv-rehearse-warm-start.sh` and is checked there,
+  before a merge or a release. Write the result accordingly: "app replaced by
+  the candidate", not "updated through Sparkle".
+- **Delivery state of a VibeTV on the cable:** stop the app's service, then
+  `esptool.py erase_region 0x200000 0x200000` and `write_flash 0x0` with the
+  1.0.41 image. The erase takes the saved WiFi with it; read `0x3FA000`
+  (`0x6000` bytes) before and write it back for the warm start. That copy
+  holds the WiFi password: delete it after the last run.
+- **Passed** means paired, firmware equal to the candidate, theme active with
+  `renderOk: true`, a healthy stream, the theme kept across the warm start, and
+  the right build running: on the Mac `companion.runtime.commit` in
+  `/v1/status` equals the head, on Windows `companion.version` is the
+  `9999.0.<n>` of the head's CI run.
+- What the pull request changes is looked at in the running app on both
+  platforms, not only read from the API. The result goes into the pull request
+  description: per platform and start the times, the build, the device, and
+  what was not checked.
+- Do not start the Mac's cold start and the Windows preparation in the same
+  minute: the Windows VibeTV is on WiFi for a moment, the Mac App then finds
+  two VibeTVs and waits for a choice.
+
 Before re-flashing for a newer head, check what actually changed:
 `git diff --name-only <candidate-sha>..<head-sha> -- macos/ firmware/`. When that
 is empty, the installed app shell and the flashed firmware already match the
@@ -83,9 +163,11 @@ Known traps, all paid for on the bench:
 - `--restore` does not return the original state. It walks back to the newest run with a non-empty `backup/manifest.txt`, so after cold+warm the original sits one level deeper, and a second `--restore` points at the same emptied warm run while still reporting "restore complete". Recover the original by hand with `ditto` from `<cold-run>/backup/`.
 - Every flash rotates the device token, and no code plays a captured token back. After cold+warm both saved tokens are dead and the stream reports `pairing_token_rejected`. Recover with `POST /v1/device/repair {"forcePair":true,"target":...}`; it takes about a minute and still answers `paired:false` -- only the next `/v1/status` shows `paired:true`. Do not write again too early.
 - `--keep-codexbar` is a decision, not a default. Without it `~/.codexbar` is gone and the stream reports `provider_setup_required` -- exactly what you want when reproducing a no-provider bug, and a trap otherwise. To force that state without purging, use the regular toggle: `PATCH /v1/preferences/codexbar.providers.<id>.enabled {"value":false}`.
+- Runs are restore points and each keeps about 283 MB; the purge moves files, so a run's backup is the only copy. A run prunes at its start and removes a `cold-*`/`warm-*` folder under `~/.vibetv-rehearsal/runs/` only when it is both beyond the newest 6 runs that still hold a backup (`REHEARSAL_KEEP_RUNS=<n>`) and older than 14 days (`REHEARSAL_KEEP_DAYS=<n>`), one line each. Everything from the last two weeks stays whatever the count, as do the oldest run that still holds a backup and the run `latest` pointed to. A run already emptied by `--restore` does not count as a backup. `manual-*`, `candidates` and anything else are never touched (the size line names `candidates/`); park a state you need for longer under a `manual-*` name. With less than 3 GB free (`REHEARSAL_MIN_FREE_GB`, whole numbers) the run refuses to start, before anything is purged or flashed.
 - Firmware is not restored; the restore chain only rebuilds the Mac. If the device was on another pull request's candidate, it stays on the last flashed version.
 - If the device already runs the candidate version the script reports "already on X, nothing to flash" and the device keeps its pairing. That is not a real cold start and the new-customer pairing screen will not appear.
 - `PREVIEW UNAVAILABLE` for an active custom theme is not a product bug. A Theme Studio theme lives in `/themes/u/` and its spec exists only in the local app, so after a purge the app cannot reload it from the catalog.
+- The purge also takes the Mac App's web storage (`~/Library/WebKit/shop.vibetv.control-center`, `~/Library/HTTPStorages/shop.vibetv.control-center*`): chosen device target, themes saved in Theme Studio, seen "What's new" entries. The candidate starts with an empty `localStorage`; `--restore` brings the stashed one back. A local-preview build uses the same bundle id, so the same folders.
 - A merge-gate run reports `main` as its head branch and main's tip as its head SHA, because the workflow is dispatched from `main` -- but it builds the **pull request head** it was given. Only `candidate-manifest.json`'s `sourceSha` says what a candidate actually contains. Passing `--main` or `--pr` makes the scripts check that themselves; `--run-id` alone rehearses whatever that run happened to build.
 - Only `CODEX Prepare and Release VibeTV` builds an exact `main` SHA. The merge gate cannot: it takes a `pr_number` and resolves an open pull request head.
 - Quit the app and detach all images before a run; `hdiutil attach` fails transiently while a volume of the same name is still mounted. Check for foreign listeners with `lsof -nP -iTCP:47832 -sTCP:LISTEN`.

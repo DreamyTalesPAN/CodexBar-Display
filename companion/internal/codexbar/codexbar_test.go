@@ -656,6 +656,110 @@ func TestProviderSelectorSwitchesOnUsageDelta(t *testing.T) {
 	}
 }
 
+func TestProviderSelectorFirstReadingAfterUnavailableUsageIsNotActivity(t *testing.T) {
+	selector := newSelectorWithoutLocalActivity()
+
+	// App start: the provider is known but its limits have not been read yet.
+	selector.Select([]ParsedFrame{{
+		Provider: "claude",
+		Stale:    true,
+		Frame:    protocol.Frame{Provider: "claude", UsageUnavailable: true},
+	}})
+
+	decision, ok := selector.SelectWithDecision([]ParsedFrame{testParsedFrame("claude", 27, 27, 15000)})
+	if !ok {
+		t.Fatal("expected a selected provider")
+	}
+	if decision.ActivitySignalReason == SelectionReasonUsageDelta {
+		t.Fatalf("the first real reading after unavailable usage counted as activity: %#v", decision)
+	}
+
+	decision, _ = selector.SelectWithDecision([]ParsedFrame{testParsedFrame("claude", 28, 27, 14940)})
+	if decision.ActivitySignalReason != SelectionReasonUsageDelta {
+		t.Fatalf("a real rise after that must still count as activity: %#v", decision)
+	}
+}
+
+func TestProviderSelectorCountsARiseAfterAStaleReadingThatKeptItsPercentages(t *testing.T) {
+	selector := newSelectorWithoutLocalActivity()
+	selector.Select([]ParsedFrame{testParsedFrame("codex", 40, 10, 12000)})
+
+	// One collection fails: the reading is kept, marked stale.
+	stale := testParsedFrame("codex", 40, 10, 11970)
+	stale.Stale = true
+	selector.Select([]ParsedFrame{stale})
+
+	decision, _ := selector.SelectWithDecision([]ParsedFrame{testParsedFrame("codex", 43, 10, 11940)})
+	if decision.ActivitySignalReason != SelectionReasonUsageDelta {
+		t.Fatalf("a rise after a stale reading was not counted as activity: %#v", decision)
+	}
+}
+
+func TestProviderSelectorIgnoresTokenGrowthWhileTheHistoryIsStillReadIn(t *testing.T) {
+	selector := newSelectorWithoutLocalActivity()
+	frame := func(weekTokens int64, growing bool, session int) ParsedFrame {
+		p := testParsedFrame("claude", session, 20, 15000)
+		p.Frame.SessionTokens = 1_000_000
+		p.Frame.WeekTokens = weekTokens
+		p.Frame.TotalTokens = weekTokens
+		p.TokenHistoryGrowing = growing
+		return p
+	}
+	selector.Select([]ParsedFrame{frame(10_000_000, true, 20)})
+
+	// The second scan read in an older day: more tokens, nobody working.
+	decision, _ := selector.SelectWithDecision([]ParsedFrame{frame(17_000_000, true, 20)})
+	if decision.ActivitySignalReason == SelectionReasonUsageDelta {
+		t.Fatalf("history that was still being read in counted as activity: %#v", decision)
+	}
+	// A percentage that ticks over during that time is still activity.
+	decision, _ = selector.SelectWithDecision([]ParsedFrame{frame(24_000_000, true, 21)})
+	if decision.ActivitySignalReason != SelectionReasonUsageDelta {
+		t.Fatalf("a percentage rise while the history was read in was not counted: %#v", decision)
+	}
+	// History settled: new tokens are work again.
+	decision, _ = selector.SelectWithDecision([]ParsedFrame{frame(24_050_000, false, 21)})
+	if decision.ActivitySignalReason != SelectionReasonUsageDelta {
+		t.Fatalf("new tokens on a settled history were not counted: %#v", decision)
+	}
+}
+
+// A provider that was just switched on, or switched on again, shows its quota
+// before its token totals arrive. Totals that appear where none were known are
+// a first reading, not work done since the last cycle.
+func TestProviderSelectorDoesNotCountImportedTokenTotalsAsActivity(t *testing.T) {
+	selector := newSelectorWithoutLocalActivity()
+	codex := testParsedFrame("codex", 2, 2, 12000)
+	claude := func(sessionTokens, weekTokens int64) ParsedFrame {
+		p := testParsedFrame("claude", 20, 20, 15000)
+		p.Frame.SessionTokens = sessionTokens
+		p.Frame.WeekTokens = weekTokens
+		p.Frame.TotalTokens = weekTokens
+		return p
+	}
+	imported := func(step string, frames ...ParsedFrame) {
+		t.Helper()
+		decision, _ := selector.SelectWithDecision(frames)
+		if decision.ActivitySignalReason == SelectionReasonUsageDelta || decision.Selected.Provider != "codex" {
+			t.Fatalf("%s: imported token totals counted as activity: %#v", step, decision)
+		}
+	}
+
+	selector.Select([]ParsedFrame{codex})
+	imported("switched on, quota only", codex, claude(0, 0))
+	imported("first token scan", codex, claude(1_500_000, 30_000_000))
+
+	selector.Select([]ParsedFrame{codex})
+	imported("switched on again, quota only", codex, claude(0, 0))
+	imported("token scan after the pause", codex, claude(2_500_000, 45_000_000))
+
+	// From here on new tokens are work again.
+	decision, _ := selector.SelectWithDecision([]ParsedFrame{codex, claude(2_550_000, 45_050_000)})
+	if decision.ActivitySignalReason != SelectionReasonUsageDelta || decision.Selected.Provider != "claude" {
+		t.Fatalf("new tokens after the first reading were not counted: %#v", decision)
+	}
+}
+
 func TestProviderSelectorSticksWithoutNewActivity(t *testing.T) {
 	selector := newSelectorWithoutLocalActivity()
 

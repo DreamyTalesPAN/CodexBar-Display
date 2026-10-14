@@ -87,6 +87,8 @@ export type UpdatesScreenProps = {
   onCreateReport?: () => void;
   onInstallUpdate?: () => Promise<boolean> | boolean | void;
   onRetryThemeUpdate?: () => Promise<boolean> | boolean | void;
+  /** Opens the "What's new" notice again. */
+  onShowWhatsNew?: () => void;
   requiresMacAppMigration?: boolean;
   busyAction?: string | null;
   updateStatus?: FirmwareUpdateStatus | null;
@@ -107,6 +109,7 @@ export function UpdatesScreen({
   onCreateReport,
   onInstallUpdate,
   onRetryThemeUpdate,
+  onShowWhatsNew,
   requiresMacAppMigration = false,
   busyAction,
   updateStatus,
@@ -244,9 +247,27 @@ export function UpdatesScreen({
 
   return (
     <div className="mx-auto flex max-w-[1040px] flex-col gap-4 py-4">
-      <h2 className="text-2xl font-black">{pageStatusHeading}</h2>
+      <div className="flex flex-wrap items-center justify-between gap-x-4">
+        <h2 className="text-2xl font-black">{pageStatusHeading}</h2>
+        {onShowWhatsNew ? (
+          <Button
+            className="px-0"
+            onClick={onShowWhatsNew}
+            size="sm"
+            type="button"
+            variant="link"
+          >
+            What&apos;s new
+          </Button>
+        ) : null}
+      </div>
       <div className="grid gap-4 lg:grid-cols-2">
         <UpdateCard
+          checkedAt={
+            companionRelease?.status === "available"
+              ? companionRelease.checkedAt
+              : undefined
+          }
           description={
             windowsHost
               ? "Software running on this computer."
@@ -261,12 +282,15 @@ export function UpdatesScreen({
         />
 
         <UpdateCard
+          checkedAt={
+            firmwareUpdate?.latestFirmware ? firmwareUpdate.checkedAt : undefined
+          }
           description="Software running on your VibeTV."
           installedLabel="Installed firmware"
           installedValue={installedFirmware}
           latestLabel="Available firmware"
           latestValue={latestFirmware}
-          title="VibeTV update"
+          title="VibeTV"
           updateAvailable={vibetvUpdateAvailable}
         >
           {firmwareUpdateBlocked ? (
@@ -329,6 +353,7 @@ export function UpdatesScreen({
         macAppMigrationReady={macAppMigrationReady}
         macAppUpdateAvailable={macAppUpdateAvailable}
         onClick={runPrimaryUpdate}
+        refreshing={refreshing}
         updateReady={Boolean(
           macAppCheckFailed
             ? onCheckUpdates
@@ -355,6 +380,7 @@ function PrimaryUpdateAction({
   macAppMigrationReady,
   macAppUpdateAvailable,
   onClick,
+  refreshing,
   updateReady,
 }: {
   checking: boolean;
@@ -368,6 +394,8 @@ function PrimaryUpdateAction({
   macAppMigrationReady: boolean;
   macAppUpdateAvailable: boolean;
   onClick: () => void | Promise<void>;
+  /** The check the customer started with this button is running. */
+  refreshing: boolean;
   updateReady: boolean;
 }) {
   if (
@@ -429,10 +457,14 @@ function PrimaryUpdateAction({
 
   return (
     <Button
-      className="h-14 w-full text-base font-bold"
+      // During the customer's own check the button looks closed and ignores a
+      // second press, but is not disabled: that drops keyboard focus to the
+      // page (issue #558).
+      aria-disabled={refreshing || undefined}
+      className="h-14 w-full text-base font-bold aria-disabled:pointer-events-none aria-disabled:opacity-50"
       disabled={
         disabled ||
-        checking ||
+        (checking && !refreshing) ||
         !updateReady ||
         (!firmwareUpdateAvailable &&
           macAppMigrationRequired &&
@@ -441,7 +473,7 @@ function PrimaryUpdateAction({
           macAppUpdateAvailable &&
           !macAppCheckFailed)
       }
-      onClick={onClick}
+      onClick={refreshing ? undefined : onClick}
       size="lg"
       type="button"
     >
@@ -514,7 +546,7 @@ function InlineUpdateProgress({
         "Preparing VibeTV update.";
   return (
     <div className="flex flex-col gap-3" role="status" aria-live="polite">
-      <Progress value={progress} />
+      <Progress aria-label={title} value={progress} />
       <Alert>
         {complete || attention ? (
           <ShieldCheck aria-hidden />
@@ -553,6 +585,7 @@ function InlineUpdateProgress({
 }
 
 function UpdateCard({
+  checkedAt,
   children,
   description,
   installedLabel,
@@ -562,6 +595,8 @@ function UpdateCard({
   title,
   updateAvailable = false,
 }: {
+  /** When the check that produced latestValue answered; absent if none did. */
+  checkedAt?: string;
   children?: ReactNode;
   description: string;
   installedLabel: string;
@@ -571,6 +606,7 @@ function UpdateCard({
   title: string;
   updateAvailable?: boolean;
 }) {
+  const checked = formatCheckTime(checkedAt);
   return (
     <Card className="border-0">
       <CardHeader>
@@ -596,6 +632,9 @@ function UpdateCard({
             value={latestValue}
           />
         </ItemGroup>
+        {checked ? (
+          <p className="text-sm text-muted-foreground">Last checked {checked}</p>
+        ) : null}
         {children}
       </CardContent>
     </Card>
@@ -624,6 +663,18 @@ function VersionItem({
       </ItemActions>
     </Item>
   );
+}
+
+// With seconds: a check answers within a second, and only a time that moves
+// shows the customer that "Check for updates" did something.
+function formatCheckTime(value: string | undefined): string {
+  const date = new Date(value || "");
+  return Number.isNaN(date.getTime())
+    ? ""
+    : new Intl.DateTimeFormat(undefined, {
+        dateStyle: "medium",
+        timeStyle: "medium",
+      }).format(date);
 }
 
 function clampUpdateProgress(value: number | undefined): number {

@@ -36,6 +36,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themepack"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/timeline"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 )
 
@@ -2787,6 +2788,40 @@ func TestStatusReportsCachedMacAppUpdateState(t *testing.T) {
 	}
 }
 
+// Observed on the Windows app on 2026-10-07: "Check for updates" left the app
+// card's "Last checked" where it was, because the click read the same status
+// as the background reads and got the answer of up to six hours ago.
+func TestStatusAsksForTheAppReleaseAgainWhenTheCustomerChecks(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	calls := 0
+	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
+		calls++
+		return githubRelease{TagName: "v1.0.99"}, nil
+	}
+	read := func(path string) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected status 200 for %s, got %d body=%s", path, rec.Code, rec.Body.String())
+		}
+	}
+
+	read("/v1/status")
+	read("/v1/status")
+	if calls != 1 {
+		t.Fatalf("background status reads must share one release check, got %d", calls)
+	}
+	read("/v1/status?checkAppUpdate=1")
+	if calls != 2 {
+		t.Fatalf("a check the customer asked for must ask the release source again, got %d calls", calls)
+	}
+	read("/v1/status")
+	if calls != 2 {
+		t.Fatalf("the status read after it must reuse that answer, got %d calls", calls)
+	}
+}
+
 func TestStatusSeparatesMacAppAndRuntimeVersions(t *testing.T) {
 	t.Setenv(macAppVersionEnv, "1.0.98")
 	t.Setenv(macAppBuildEnv, "198")
@@ -3279,6 +3314,65 @@ func TestUsageManualRefreshReportsFreshForNewCollectorSnapshot(t *testing.T) {
 	}
 	if rec.Code != http.StatusOK || got.Refresh.State != "fresh" || got.Providers[0].Weekly != 42 {
 		t.Fatalf("expected fresh manual refresh response, status=%d got %+v", rec.Code, got)
+	}
+}
+
+// A second click on Refresh while the first is still waiting must not move the
+// request: the reading that answers the first click would otherwise count as
+// too old, and the wait would start again (#579).
+func TestUsageManualRefreshSecondClickKeepsTheFirstRequest(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	firstClick := time.Date(2026, 10, 8, 14, 0, 0, 0, time.UTC)
+	now := firstClick
+	collectedAt := firstClick.Add(-time.Minute)
+	server.now = func() time.Time { return now }
+	var wakeCount int
+	server.wakeDisplayStream = func() { wakeCount++ }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt: collectedAt,
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:    "claude",
+				Frame:       protocol.Frame{Provider: "claude", Label: "Claude", Weekly: 24, UsageMode: "used"},
+				CollectedAt: collectedAt,
+			}},
+		}, true
+	}
+	read := func(path string) usageRefreshInfo {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		var got usageResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode %s: %v", path, err)
+		}
+		return got.Refresh
+	}
+
+	if got := read("/v1/usage?refresh=1"); got.State != "refreshing" {
+		t.Fatalf("first click must start a refresh, got %+v", got)
+	}
+	// The reading made for the first click is on its way when the customer
+	// clicks again.
+	collectedAt = firstClick.Add(5 * time.Second)
+	now = firstClick.Add(8 * time.Second)
+	if got := read("/v1/usage?refresh=1"); got.State != "fresh" {
+		t.Fatalf("second click restarted the wait although a reading newer than the first click is there: %+v", got)
+	}
+	if wakeCount != 2 {
+		t.Fatalf("each click must wake the collector, got %d", wakeCount)
+	}
+
+	// With no request pending, the next click starts a new one.
+	now = firstClick.Add(20 * time.Second)
+	if got := read("/v1/usage?refresh=1"); got.State != "refreshing" || got.RequestedAt != now.Format(time.RFC3339) {
+		t.Fatalf("a click after a finished refresh must start a new one, got %+v", got)
+	}
+
+	// A request that ran out is not kept either.
+	now = now.Add(usageRefreshRequestMaxAge)
+	if got := read("/v1/usage?refresh=1"); got.State != "refreshing" || got.RequestedAt != now.Format(time.RFC3339) {
+		t.Fatalf("a click after an expired refresh must start a new one, got %+v", got)
 	}
 }
 
@@ -5055,6 +5149,10 @@ func TestCustomThemeRenderPackPersistsWhenDisplayRefreshFails(t *testing.T) {
 }
 
 func TestDMGControlCenterRetiresExternalBrowserUI(t *testing.T) {
+	// The page names the host; this test checks the Mac wording on every runner.
+	original := providerCopyGOOS
+	t.Cleanup(func() { providerCopyGOOS = original })
+	providerCopyGOOS = "darwin"
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.installationMode = "dmg"
 	server.controlCenterFS = fstest.MapFS{
@@ -5112,6 +5210,51 @@ func TestControlCenterStaticUnavailableWithoutIndex(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "Run setup again") {
 		t.Fatalf("expected customer recovery copy, got %q", rec.Body.String())
+	}
+}
+
+// The two pages the server words itself never pass through the app's screens,
+// so they name the host themselves (#548). The Mac text stays as it was.
+func TestServerWordedPagesNameTheHost(t *testing.T) {
+	original := providerCopyGOOS
+	t.Cleanup(func() { providerCopyGOOS = original })
+
+	body := func(installationMode string, files fstest.MapFS) string {
+		server := newTestServer(t, runtimeconfig.Config{})
+		server.installationMode = installationMode
+		server.controlCenterFS = files
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/control-center", nil)
+		req.Header.Set("User-Agent", "Mozilla/5.0")
+		server.Handler().ServeHTTP(rec, req)
+		return rec.Body.String()
+	}
+	const (
+		macMoved   = `<h1>VibeTV Control Center moved to the Mac App.</h1><p>Open VibeTV Control Center from Applications.</p>`
+		macMissing = `<p>VibeTV Control Center is not bundled with this Mac App. Run setup again.</p>`
+		winMoved   = `<h1>VibeTV Control Center moved to the app.</h1><p>Open VibeTV Control Center from the Start menu.</p>`
+		winMissing = `<p>VibeTV Control Center is not bundled with this app. Run setup again.</p>`
+	)
+
+	providerCopyGOOS = "darwin"
+	if got := body("dmg", fstest.MapFS{}); !strings.Contains(got, macMoved) {
+		t.Fatalf("Mac moved page = %q", got)
+	}
+	if got := body("legacy", fstest.MapFS{}); !strings.Contains(got, macMissing) {
+		t.Fatalf("Mac missing page = %q", got)
+	}
+
+	providerCopyGOOS = "windows"
+	for _, got := range []string{body("dmg", fstest.MapFS{}), body("legacy", fstest.MapFS{})} {
+		if strings.Contains(got, "Mac") || strings.Contains(got, "Applications") {
+			t.Fatalf("Windows page names the Mac: %q", got)
+		}
+	}
+	if got := body("dmg", fstest.MapFS{}); !strings.Contains(got, winMoved) {
+		t.Fatalf("Windows moved page = %q", got)
+	}
+	if got := body("legacy", fstest.MapFS{}); !strings.Contains(got, winMissing) {
+		t.Fatalf("Windows missing page = %q", got)
 	}
 }
 
@@ -5946,7 +6089,7 @@ func TestStatusNamesRenderFailureInsteadOfProviderSetup(t *testing.T) {
 func TestThemeInstallRenderHealthErrorIsPlainText(t *testing.T) {
 	const hint = "keep VibeTV powered and retry theme install; if this repeats, contact support with `codexbar-display health` output"
 	payload := func(cause error) apiError {
-		_, got := themeInstallErrorPayload(&themeinstall.InstallError{
+		_, got := themeInstallErrorPayload("live", &themeinstall.InstallError{
 			Op:   "theme-pack/render-health",
 			Code: errcode.UpgradeFlashFirmware,
 			Err:  cause,
@@ -5972,6 +6115,39 @@ func TestThemeInstallRenderHealthErrorIsPlainText(t *testing.T) {
 		if got.Code == "display_render_failed" || got.NextAction != hint {
 			t.Fatalf("%v: must keep the retry advice, got %+v", cause, got)
 		}
+	}
+}
+
+// Issue #558: a screensaver that could not be installed was called a theme in
+// the failure the customer reads. The engine's own detail is not reworded.
+func TestScreensaverInstallFailureSaysScreensaver(t *testing.T) {
+	transfer := &themeinstall.InstallError{
+		Op:   "theme-pack/upload",
+		Err:  errors.New("write /themes/u/a.json: timeout"),
+		Hint: "keep VibeTV powered and on the same WiFi, then retry theme install",
+	}
+	pairing := &statusAPIError{status: http.StatusForbidden, api: apiError{
+		Code:       "pairing_required",
+		Message:    "VibeTV pairing is required before installing a theme.",
+		NextAction: "Finish VibeTV setup, then retry the theme install.",
+	}}
+
+	_, got := themeInstallErrorPayload("screensaver", transfer)
+	if !strings.HasPrefix(got.Message, "Screensaver install failed: ") || !strings.Contains(got.Message, "/themes/u/a.json") ||
+		got.NextAction != "keep VibeTV powered and on the same WiFi, then retry screensaver install" {
+		t.Fatalf("screensaver transfer failure reads %+v", got)
+	}
+	_, got = themeInstallErrorPayload("screensaver", pairing)
+	if got.Message != "VibeTV pairing is required before installing a screensaver." || got.NextAction != "Finish VibeTV setup, then retry the screensaver install." {
+		t.Fatalf("screensaver pairing failure reads %+v", got)
+	}
+	// A theme keeps its words.
+	_, got = themeInstallErrorPayload("live", transfer)
+	if !strings.HasPrefix(got.Message, "Theme install failed: ") || !strings.HasSuffix(got.NextAction, "retry theme install") {
+		t.Fatalf("theme transfer failure reads %+v", got)
+	}
+	if _, got = themeInstallErrorPayload("live", pairing); got != pairing.api {
+		t.Fatalf("theme pairing failure reads %+v", got)
 	}
 }
 
@@ -6875,6 +7051,200 @@ func TestDeviceHealthReportsResetReason(t *testing.T) {
 	}
 }
 
+// Issue #265: the signal strength the firmware already reports reaches the
+// status and the support report, which is /v1/diagnostics. Diagnostics only.
+func TestStatusCarriesDeviceWiFiHealth(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.56","deviceId":"vibetv-wifi","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true,"wifi":{"rssi":-67,"channel":6,"phyMode":"11n","sleepMode":"none"}}`))
+		default:
+			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token", DeviceID: "vibetv-wifi"})
+	server.subnetTargets = func() []string { return nil }
+	for _, endpoint := range []string{"/v1/status", "/v1/diagnostics"} {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, endpoint, nil))
+		var got struct {
+			Device deviceInfo `json:"device"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("%s: %v", endpoint, err)
+		}
+		want := deviceWiFiHealth{RSSI: -67, Channel: 6, PhyMode: "11n", SleepMode: "none"}
+		if got.Device.Health == nil || got.Device.Health.WiFi == nil || *got.Device.Health.WiFi != want {
+			t.Fatalf("%s: device.health.wifi missing or wrong: %s", endpoint, rec.Body.String())
+		}
+	}
+}
+
+// A VibeTV on the Cable has no signal: the ESP8266 reports 31 instead of a
+// negative dBm value, and that must not look like a reading.
+func TestStatusOmitsWiFiHealthForCableDevice(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: "pair-token"})
+	hello := cableHelloForTest("cable-a")
+	hello.Features = []string{protocol.FeatureCableHealthV1}
+	server.currentCableHello = func() (protocol.DeviceHello, bool) { return hello, true }
+	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
+	server.readCableHealth = func(string, string) (deviceHealth, error) {
+		health := deviceHealth{OK: true}
+		health.WiFi = deviceWiFiHealth{RSSI: 31, PhyMode: "11n", SleepMode: "modem"}
+		return health, nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Device.Health == nil || !got.Device.Health.OK || got.Device.Health.WiFi != nil {
+		t.Fatalf("Cable device health must carry no WiFi reading: %s", rec.Body.String())
+	}
+}
+
+// Issue #265: a VibeTV on WiFi whose signal is at or below wifiSignalWeakDBm
+// on two readings in a row is named weak, and one better reading ends it.
+func TestStatusNamesAWeakWiFiSignalOnTheSecondReading(t *testing.T) {
+	wifi := `,"wifi":{"rssi":-80,"channel":11,"phyMode":"11g","sleepMode":"none"}`
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.56","deviceId":"vibetv-wifi","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true` + wifi + `}`))
+		default:
+			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token", DeviceID: "vibetv-wifi"})
+	server.subnetTargets = func() []string { return nil }
+	now := time.Date(2026, 10, 8, 2, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	weak := func(endpoint string) bool {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, endpoint, nil))
+		var got struct {
+			Device deviceInfo `json:"device"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("%s: %v body=%s", endpoint, err, rec.Body.String())
+		}
+		return got.Device.Health != nil && got.Device.Health.WiFi != nil && got.Device.Health.WiFi.Weak
+	}
+	// The app's next status poll, 5 s later.
+	nextPoll := func() bool {
+		t.Helper()
+		now = now.Add(5 * time.Second)
+		return weak("/v1/status")
+	}
+
+	if weak("/v1/status") {
+		t.Fatal("one low reading must not name a weak signal")
+	}
+	now = now.Add(themeNotDrawnConfirmTime - time.Millisecond)
+	if weak("/v1/status") {
+		t.Fatal("a second look inside the same poll window is not a second reading")
+	}
+	if !nextPoll() {
+		t.Fatal("a signal at the threshold on the next poll is weak")
+	}
+	// The page takes its VibeTV from these too and must not see another answer.
+	for _, endpoint := range []string{"/v1/device", "/v1/diagnostics"} {
+		if !weak(endpoint) {
+			t.Fatalf("%s must name the same weak signal as /v1/status", endpoint)
+		}
+	}
+
+	// Around the threshold the name must not flip with every reading, and
+	// polls that get no answer are what a weak signal looks like.
+	wifi = `,"wifi":{"rssi":-78}`
+	if !nextPoll() {
+		t.Fatal("a named weak signal must not end one or two dB above the threshold")
+	}
+	now = now.Add(time.Minute)
+	wifi = `,"wifi":{"rssi":-80}`
+	if !nextPoll() {
+		t.Fatal("a minute without a reading must not end a weak signal")
+	}
+	wifi = `,"wifi":{"rssi":-76}`
+	if nextPoll() {
+		t.Fatal("a reading clearly above the threshold ends the weak signal")
+	}
+	wifi = `,"wifi":{"rssi":-79}`
+	if nextPoll() {
+		t.Fatal("above the threshold a signal that is not named weak stays unnamed")
+	}
+	wifi = `,"wifi":{"rssi":-80}`
+	if nextPoll() {
+		t.Fatal("the first low reading after a better one must not name a weak signal")
+	}
+	if !nextPoll() {
+		t.Fatal("two low readings in a row are a weak signal again")
+	}
+	// A low reading long ago does not confirm one now.
+	wifi = `,"wifi":{"rssi":-76}`
+	nextPoll()
+	wifi = `,"wifi":{"rssi":-80}`
+	nextPoll()
+	now = now.Add(wifiSignalRunForget + time.Second)
+	if nextPoll() {
+		t.Fatal("a low reading from before a long gap must not confirm the next one")
+	}
+
+	// Firmware that reports no signal strength never gets the flag.
+	wifi = ""
+	first, second := nextPoll(), nextPoll()
+	if first || second {
+		t.Fatal("a VibeTV that reports no signal strength must not be named weak")
+	}
+
+	// The bench VibeTV sits next to its router; the override reaches it there.
+	t.Setenv(wifiSignalWeakEnvVar, "-40")
+	wifi = `,"wifi":{"rssi":-48}`
+	if nextPoll() || !nextPoll() {
+		t.Fatal("the bench override must replace the threshold and keep the two readings")
+	}
+}
+
+// The Cable never gets the flag, whatever its health reading carries.
+func TestStatusNeverNamesAWeakWiFiSignalOnTheCable(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: "pair-token"})
+	hello := cableHelloForTest("cable-a")
+	hello.Features = []string{protocol.FeatureCableHealthV1}
+	server.currentCableHello = func() (protocol.DeviceHello, bool) { return hello, true }
+	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
+	server.readCableHealth = func(string, string) (deviceHealth, error) {
+		health := deviceHealth{OK: true}
+		health.WiFi = deviceWiFiHealth{RSSI: -90}
+		return health, nil
+	}
+	now := time.Date(2026, 10, 8, 2, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+
+	for range 3 {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		var got statusResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.Device.Health == nil || got.Device.Health.WiFi == nil || got.Device.Health.WiFi.Weak {
+			t.Fatalf("a VibeTV on the Cable must not be named weak: %s", rec.Body.String())
+		}
+		now = now.Add(5 * time.Second)
+	}
+}
+
 func TestDeviceReloadDisplayWaitsForRenderHealth(t *testing.T) {
 	var healthCalls int
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -6968,6 +7338,66 @@ func TestDiagnosticsWorksWithoutDeviceTarget(t *testing.T) {
 	}
 	if !hasDiagnosticCheck(got.Checks, "device_target", "attention") {
 		t.Fatalf("expected missing target diagnostic, got %+v", got.Checks)
+	}
+	// The Control Center shows this sentence as "Mac App is running."
+	if got.Checks[0].Detail != "Companion API is running." {
+		t.Fatalf("expected the plain app check sentence, got %+v", got.Checks[0])
+	}
+}
+
+func TestDiagnosticsReportsLastCollectionCounts(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	at := time.Date(2026, 10, 9, 1, 2, 3, 0, time.UTC)
+	server.loadCollectorCycle = func() (daemon.CollectorCycle, bool) {
+		return daemon.CollectorCycle{At: at, Providers: 2, Succeeded: 1}, true
+	}
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/diagnostics", nil))
+
+	var got struct {
+		LastCollection map[string]any `json:"lastCollection"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	want := map[string]any{"at": "2026-10-09T01:02:03Z", "providers": float64(2), "succeeded": float64(1)}
+	if !reflect.DeepEqual(got.LastCollection, want) {
+		t.Fatalf("lastCollection = %#v, want %#v", got.LastCollection, want)
+	}
+
+	server.loadCollectorCycle = func() (daemon.CollectorCycle, bool) { return daemon.CollectorCycle{}, false }
+	rec = httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/diagnostics", nil))
+	if strings.Contains(rec.Body.String(), "lastCollection") {
+		t.Fatalf("expected no lastCollection before a collection completed, got %s", rec.Body.String())
+	}
+}
+
+// Issue #368: the support report says since when a provider has no newer
+// usage reading, so "enabled but silent for 16 days" is one line of JSON.
+func TestDiagnosticsReportsNoReadingSincePerProvider(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		at := time.Date(2026, 7, 28, 8, 29, 0, 0, time.UTC)
+		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{
+			{Provider: "claude", CollectedAt: at, Stale: true},
+			// A working provider is not in the list, nor is one that never
+			// delivered: its time is a failed reading.
+			{Provider: "codex", CollectedAt: at.Add(16 * 24 * time.Hour)},
+			{Provider: "cursor", CollectedAt: at, Stale: true, NoReading: true},
+		}}, true
+	}
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/diagnostics", nil))
+
+	var got struct {
+		NoReadingSince map[string]string `json:"noReadingSince"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if want := map[string]string{"claude": "2026-07-28T08:29:00Z"}; !reflect.DeepEqual(got.NoReadingSince, want) {
+		t.Fatalf("noReadingSince = %#v, want %#v", got.NoReadingSince, want)
 	}
 }
 
@@ -11316,6 +11746,71 @@ func TestThemeInstallAsyncReportsCustomerProgress(t *testing.T) {
 	}
 }
 
+// Issue #558: the progress of a screensaver install read "Uploading theme
+// files." The lines are written for a theme; a screensaver job says what it
+// installs.
+func TestScreensaverInstallProgressSaysScreensaver(t *testing.T) {
+	device := newThemeInstallReadyDeviceServer(t)
+	defer device.Close()
+
+	install := func(installErr error) themeInstallJob {
+		t.Helper()
+		server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+		server.installTheme = func(_ context.Context, opts themeinstall.Options) (themeinstall.Result, error) {
+			_, _ = io.WriteString(opts.Out, "Preparing theme: Retro 3D\n")
+			_, _ = io.WriteString(opts.Out, "Uploading theme files...\n")
+			_, _ = io.WriteString(opts.Out, "Uploaded asset: /themes/s/r3.cbi bytes=123\n")
+			_, _ = io.WriteString(opts.Out, "Uploaded theme spec: /themes/s/r3-2.json bytes=456\n")
+			if installErr != nil {
+				return themeinstall.Result{}, installErr
+			}
+			_, _ = io.WriteString(opts.Out, "Done: screensaver retro-3d installed on VibeTV\n")
+			return themeinstall.Result{ThemeID: opts.ThemeID, Slot: opts.Slot}, nil
+		}
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/v1/themes/install", strings.NewReader(`{"themeId":"retro-3d","packUrl":"https://example.com/r3.zip","slot":"screensaver","async":true}`))
+		req.Header.Set("Content-Type", "application/json")
+		server.Handler().ServeHTTP(rec, req)
+		var started themeInstallJobResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil || rec.Code != http.StatusAccepted {
+			t.Fatalf("start screensaver install: status=%d err=%v body=%s", rec.Code, err, rec.Body.String())
+		}
+		if started.Job.Message != "Preparing screensaver install." {
+			t.Fatalf("expected the first line to name the screensaver, got %q", started.Job.Message)
+		}
+		for attempt := 0; attempt < 100; attempt++ {
+			if job, ok := server.themeInstallJobSnapshot(started.Job.ID); ok && job.Phase != "installing" {
+				return job
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatal("screensaver install job did not finish")
+		return themeInstallJob{}
+	}
+
+	done := install(nil)
+	want := []string{
+		"Preparing screensaver install.",
+		"Preparing screensaver files.",
+		"Uploading screensaver files.",
+		"Uploaded screensaver file 1.",
+		"Uploaded screensaver layout.",
+		"Screensaver installed.",
+		"Screensaver is ready on VibeTV.",
+	}
+	if done.Phase != "complete" || !slices.Equal(done.Logs, want) || done.Message != want[len(want)-1] {
+		t.Fatalf("unexpected screensaver progress: phase=%q message=%q logs=%q", done.Phase, done.Message, done.Logs)
+	}
+
+	failed := install(errors.New("upload failed"))
+	if failed.Phase != "error" || failed.Message != "Screensaver install failed." || failed.Logs[len(failed.Logs)-1] != failed.Message {
+		t.Fatalf("unexpected failed screensaver job: phase=%q message=%q logs=%q", failed.Phase, failed.Message, failed.Logs)
+	}
+	if text := strings.ToLower(strings.Join(failed.Logs, "\n")); strings.Contains(text, "theme") {
+		t.Fatalf("a screensaver install still says theme: %q", text)
+	}
+}
+
 func TestFirmwareUpdateAsyncReportsCustomerProgress(t *testing.T) {
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -11927,6 +12422,10 @@ func TestFirmwareUpdateInstallRefusesWhileThemeInstallIsActive(t *testing.T) {
 	}
 	if response.Error.Code != "theme_install_in_progress" {
 		t.Fatalf("error code=%q want theme_install_in_progress", response.Error.Code)
+	}
+	// The running install can be a screensaver (issue #558).
+	if response.Error.Message != "A theme or screensaver is still being installed." {
+		t.Fatalf("refusal reads %q", response.Error.Message)
 	}
 	if _, active := server.activeFirmwareUpdateJob(); active {
 		t.Fatal("rejected firmware update created a job")
@@ -13260,6 +13759,8 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 	// log saved from there lands in the temp directory while the test removes
 	// it; saving has its own tests in setup_events_test.go.
 	server.setupEvents.path = ""
+	server.setupEvents.readOnly = false
+	server.timeline = timeline.Open("")
 	current := cfg
 	server.loadConfig = func(string) (runtimeconfig.Config, error) {
 		return current, nil
