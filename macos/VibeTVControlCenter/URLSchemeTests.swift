@@ -9,14 +9,18 @@ private func require(_ condition: @autoclosure () -> Bool, _ message: String) {
 }
 
 func runURLSchemeTests() {
-    // Issue #556: a start retries the CodexBar preparation once; a repair does not.
+    // Issue #556: the start screen retries the CodexBar preparation once; a repair does not.
     require(
-        retriesCodexBarBootstrap(repairRequested: false),
-        "an ordinary start must retry the CodexBar preparation before asking for a repair"
+        retriesCodexBarBootstrap(fromStartScreen: true, repairRequested: false),
+        "the start screen must retry the CodexBar preparation before asking for a repair"
     )
     require(
-        !retriesCodexBarBootstrap(repairRequested: true),
-        "a requested repair must answer after one preparation"
+        !retriesCodexBarBootstrap(fromStartScreen: true, repairRequested: true),
+        "a requested CodexBar repair must answer after one preparation"
+    )
+    require(
+        !retriesCodexBarBootstrap(fromStartScreen: false, repairRequested: false),
+        "a runtime repair must answer within the page's wait, after one preparation"
     )
     // Issue #582: the page learns how the save dialog ended.
     require(
