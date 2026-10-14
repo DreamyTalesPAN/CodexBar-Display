@@ -456,7 +456,7 @@ prepare_control_center_service() {
 wait_for_control_center_service() {
   log "vibetv: waiting for Control Center Mac App service at http://${COMPANION_API_ADDR}/v1/status"
   for _ in $(seq 1 20); do
-    if curl -fsS --max-time 5 "http://${COMPANION_API_ADDR}/v1/status" >/dev/null 2>&1; then
+    if curl -fsS --max-time 30 "http://${COMPANION_API_ADDR}/v1/status" >/dev/null 2>&1; then
       log "vibetv: Control Center Mac App service is running"
       log "vibetv: open https://app.vibetv.shop"
       return 0

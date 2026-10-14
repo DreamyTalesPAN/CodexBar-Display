@@ -614,7 +614,7 @@ verify_launchagent_loaded() {
 wait_for_api() {
   log "vibetv: waiting for Mac setup service at http://${ADDR}/v1/status"
   for _ in $(seq 1 20); do
-    if curl -fsS --max-time 5 "http://${ADDR}/v1/status" >/dev/null 2>&1; then
+    if curl -fsS --max-time 30 "http://${ADDR}/v1/status" >/dev/null 2>&1; then
       log "vibetv: Mac setup service is running"
       log "vibetv: service=${DISPLAY_DAEMON_SERVICE}"
       log "vibetv: logs=${DISPLAY_DAEMON_LOG_OUT} / ${DISPLAY_DAEMON_LOG_ERR}"
@@ -645,7 +645,7 @@ verify_local_service_stable() {
   url="$(control_center_url)"
   log "vibetv: verifying local Control Center stays available"
   for attempt in 1 2 3; do
-    curl -fsS --max-time 5 "$status_url" >/dev/null 2>&1 \
+    curl -fsS --max-time 30 "$status_url" >/dev/null 2>&1 \
       || die "Mac setup service stopped responding during verification. Inspect ${DISPLAY_DAEMON_LOG_ERR}."
     status="$(curl -sS --connect-timeout 10 --max-time 30 -o /dev/null -w "%{http_code}" "$url" 2>/dev/null || true)"
     [[ "$status" =~ ^2[0-9][0-9]$ ]] \
