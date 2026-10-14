@@ -498,6 +498,25 @@ func runURLSchemeTests() {
     }
     let firstRead = Date(timeIntervalSince1970: 1_000)
     require(
+        browserSignInProviderHealthy(
+            preferences: Data(#"{"items":[{"id":"codexbar.providers.codex.enabled","health":{"state":"auth_required"}},{"id":"codexbar.providers.claude.enabled","health":{"state":"healthy"}}]}"#.utf8),
+            provider: "claude"
+        ),
+        "a healthy Claude row means the browser sign-in worked"
+    )
+    for notHealthyPreferences in [
+        #"{"items":[{"id":"codexbar.providers.claude.enabled","health":{"state":"browser_sign_in_required"}}]}"#,
+        #"{"items":[{"id":"codexbar.providers.claude.enabled","health":{"state":"stale","signInState":"browser_sign_in_required"}}]}"#,
+        #"{"items":[{"id":"codexbar.providers.claude.enabled"}]}"#,
+        #"{"items":[]}"#,
+        "not json",
+    ] {
+        require(
+            !browserSignInProviderHealthy(preferences: Data(notHealthyPreferences.utf8), provider: "claude"),
+            "a row still asking to sign in keeps reading the browser sign-in: \(notHealthyPreferences)"
+        )
+    }
+    require(
         browserSignInShouldRead(lastReadAt: nil, now: firstRead),
         "the first check after Sign in reads the browser sign-in"
     )

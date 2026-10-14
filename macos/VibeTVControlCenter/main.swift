@@ -501,6 +501,22 @@ func browserSignInProviderReady(usage data: Data, provider: String) -> Bool {
     return entry["stale"] as? Bool != true && entry["usageUnavailable"] as? Bool != true
 }
 
+// Does the provider's row show it working. Fresh usage alone is not enough: a
+// reading from the last minutes stays current while the latest exact check
+// already asks the customer to sign in again, and the row then shows
+// "Sign in to <Provider>".
+func browserSignInProviderHealthy(preferences data: Data, provider: String) -> Bool {
+    guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let items = object["items"] as? [[String: Any]],
+          let item = items.first(where: {
+              $0["id"] as? String == "codexbar.providers.\(provider).enabled"
+          }),
+          let health = item["health"] as? [String: Any] else {
+        return false
+    }
+    return health["state"] as? String == "healthy"
+}
+
 // The published endpoint can be stale and point at another listener, so one
 // origin answering "not ready" does not settle it; any ready origin does.
 func browserSignInProviderIsReady(provider: String, runtimeOrigins: [URL]) async -> Bool {
@@ -514,7 +530,13 @@ func browserSignInProviderIsReady(provider: String, runtimeOrigins: [URL]) async
         ), (response as? HTTPURLResponse)?.statusCode == 200 else {
             continue
         }
-        if browserSignInProviderReady(usage: data, provider: provider) {
+        guard browserSignInProviderReady(usage: data, provider: provider),
+              let (preferences, preferencesResponse) = try? await session.data(
+                  from: origin.appendingPathComponent("v1/preferences")
+              ), (preferencesResponse as? HTTPURLResponse)?.statusCode == 200 else {
+            continue
+        }
+        if browserSignInProviderHealthy(preferences: preferences, provider: provider) {
             return true
         }
     }
