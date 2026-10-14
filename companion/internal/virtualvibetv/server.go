@@ -771,8 +771,9 @@ func colorStopsCompile(primitive map[string]any) bool {
 			return false
 		}
 		color, _ := stop["color"].(string)
-		if color == "" {
+		if color = cString(color); color == "" {
 			color, _ = stop["c"].(string)
+			color = cString(color)
 		}
 		if gte := jsonInt(stop, "gte", "gte", -1); gte < 0 || gte > 100 || color == "" {
 			return false
