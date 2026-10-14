@@ -10,7 +10,7 @@
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
@@ -69,11 +69,63 @@ struct Shell {
     // One updater at a time: the check at launch, the tray item and
     // vibetv://check-for-updates must not launch two NSIS installers over
     // the same files.
-    updating: AtomicBool,
-    // The update check with the window closed holds `updating`; a click on
-    // Update or the tray item meanwhile is noted here and answered by it.
-    idle_updating: AtomicBool,
-    asked_during_idle: AtomicBool,
+    updater: Mutex<Updater>,
+}
+
+// Who holds the updater, in one lock so a click can never fall between two
+// pieces of it.
+#[derive(Clone, Copy, PartialEq)]
+enum Updater {
+    Free,
+    // At launch, or the customer's own run.
+    Busy,
+    // The check with the window closed. A click on Update or the tray item
+    // meanwhile is noted here and answered by it.
+    Idle { asked: bool },
+}
+
+// Takes the updater for `run`; false while it is held. A click while the
+// check with the window closed holds it is noted for that check.
+fn take_updater(app: &AppHandle, run: UpdateRun) -> bool {
+    let shell = app.state::<Shell>();
+    let mut updater = shell.updater.lock().unwrap();
+    match *updater {
+        Updater::Free => {
+            *updater = if run == UpdateRun::Idle {
+                Updater::Idle { asked: false }
+            } else {
+                Updater::Busy
+            };
+            true
+        }
+        Updater::Idle { .. } if run == UpdateRun::Asked => {
+            *updater = Updater::Idle { asked: true };
+            log("update requested during the check with the window closed; it takes the request over");
+            false
+        }
+        _ => false,
+    }
+}
+
+// Frees the updater; true when a click came during the check with the window
+// closed and was not used by an install.
+fn free_updater(app: &AppHandle) -> bool {
+    let shell = app.state::<Shell>();
+    let mut updater = shell.updater.lock().unwrap();
+    let asked = *updater == Updater::Idle { asked: true };
+    *updater = Updater::Free;
+    asked
+}
+
+// The check with the window closed uses a click that came meanwhile.
+fn take_click_during_idle(app: &AppHandle) -> bool {
+    let shell = app.state::<Shell>();
+    let mut updater = shell.updater.lock().unwrap();
+    if *updater == (Updater::Idle { asked: true }) {
+        *updater = Updater::Idle { asked: false };
+        return true;
+    }
+    false
 }
 
 fn main() {
@@ -93,9 +145,7 @@ fn main() {
             // The update at launch owns the start until it has ended.
             preparing: Mutex::new(true),
             presentations: AtomicU64::new(0),
-            updating: AtomicBool::new(false),
-            idle_updating: AtomicBool::new(false),
-            asked_during_idle: AtomicBool::new(false),
+            updater: Mutex::new(Updater::Free),
         })
         .setup(|app| {
             let handle = app.handle().clone();
@@ -729,23 +779,18 @@ fn runtime_origin_candidates() -> Vec<Url> {
 // has no console, so every outcome the customer waits for is shown in a
 // native message box; stderr alone would leave the click unanswered.
 fn check_for_updates(app: AppHandle) {
-    let shell = app.state::<Shell>();
-    if shell.updating.swap(true, Ordering::SeqCst) {
-        if shell.idle_updating.load(Ordering::SeqCst) {
-            // The check with the window closed installs right away now, or
-            // hands over to this request when it ends without installing.
-            shell.asked_during_idle.store(true, Ordering::SeqCst);
-            log("update requested during the check with the window closed; it takes the request over");
-        } else {
-            log("update check already running; ignoring repeated request");
-        }
+    // During the check with the window closed the click is noted: that
+    // check installs right away, or hands over to a new request when it ends
+    // without installing.
+    if !take_updater(&app, UpdateRun::Asked) {
+        log("update check already running; this request is not started");
         return;
     }
     tauri::async_runtime::spawn(async move {
         let result = run_update(&app, UpdateRun::Asked).await;
         // The installer relaunches this process on success; every other
         // outcome frees the guard for the next request.
-        app.state::<Shell>().updating.store(false, Ordering::SeqCst);
+        free_updater(&app);
         match result {
             Ok(UpdateOutcome::Installed)
             | Ok(UpdateOutcome::AlreadyTried)
@@ -773,15 +818,11 @@ fn check_for_updates(app: AppHandle) {
 // within the limit, a running VibeTV update, or a download that fails, stalls
 // or takes too long all let the start go on without a message.
 fn launch_update_check(app: &AppHandle) {
-    if app
-        .state::<Shell>()
-        .updating
-        .swap(true, Ordering::SeqCst)
-    {
+    if !take_updater(app, UpdateRun::Launch) {
         return;
     }
     let result = tauri::async_runtime::block_on(run_update(app, UpdateRun::Launch));
-    app.state::<Shell>().updating.store(false, Ordering::SeqCst);
+    free_updater(app);
     match result {
         Ok(UpdateOutcome::Installed) => {}
         Ok(UpdateOutcome::UpToDate) => log("launch update check: no newer version"),
@@ -811,18 +852,13 @@ fn idle_update_check(app: &AppHandle) {
     if *app.state::<Shell>().preparing.lock().unwrap() {
         return;
     }
-    let shell = app.state::<Shell>();
-    if shell.updating.swap(true, Ordering::SeqCst) {
+    if !take_updater(app, UpdateRun::Idle) {
         return;
     }
-    shell.asked_during_idle.store(false, Ordering::SeqCst);
-    shell.idle_updating.store(true, Ordering::SeqCst);
     let result = tauri::async_runtime::block_on(run_update(app, UpdateRun::Idle));
-    shell.updating.store(false, Ordering::SeqCst);
-    shell.idle_updating.store(false, Ordering::SeqCst);
     // A click that came during the check and was not used by an install:
     // it gets its own run, with its messages.
-    if shell.asked_during_idle.swap(false, Ordering::SeqCst) {
+    if free_updater(app) {
         check_for_updates(app.clone());
     }
     match result {
@@ -944,8 +980,7 @@ async fn run_update(app: &AppHandle, run: UpdateRun) -> Result<UpdateOutcome, St
     // while the hold was claimed, which can take a few runtime requests. A
     // click on Update meanwhile makes this the customer's install: it goes
     // on, and the app comes back with its window.
-    let asked = run == UpdateRun::Idle
-        && app.state::<Shell>().asked_during_idle.swap(false, Ordering::SeqCst);
+    let asked = run == UpdateRun::Idle && take_click_during_idle(app);
     if asked {
         relaunch_note = None;
     } else if run == UpdateRun::Idle && window_in_use(app) {
@@ -966,7 +1001,7 @@ async fn run_update(app: &AppHandle, run: UpdateRun) -> Result<UpdateOutcome, St
         }
         if asked {
             // The click still gets its answer, from its own run.
-            app.state::<Shell>().asked_during_idle.store(true, Ordering::SeqCst);
+            *app.state::<Shell>().updater.lock().unwrap() = Updater::Idle { asked: true };
         }
         // Nothing was replaced; give the runtime back to device jobs.
         let _ = tauri::async_runtime::spawn_blocking(release_update_hold).await;
