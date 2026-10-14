@@ -31,6 +31,9 @@ const themeStudioViewport = { width: 1180, height: 820 };
 const smokeOnly = process.argv.includes("--smoke");
 const providerSettingsOnly = process.argv.includes("--provider-settings");
 const startupTimeoutOnly = process.argv.includes("--startup-timeout");
+// --release-screenshots runs only the flows that capture screenshots, so the
+// release mail can show customer screens with fixture data.
+const releaseScreenshotsOnly = process.argv.includes("--release-screenshots");
 const migrationScreenshotDir =
   process.env.CONTROL_CENTER_CAPTURE_MIGRATION_SCREENSHOTS?.trim() || "";
 const themeStudioSafetyOnly = process.argv.includes("--theme-studio-safety");
@@ -460,6 +463,30 @@ async function main() {
         appContext.appUrl,
       );
       console.log("control-center theme setup firmware flow tests passed");
+      return;
+    }
+    if (releaseScreenshotsOnly) {
+      assert(
+        migrationScreenshotDir,
+        "--release-screenshots needs CONTROL_CENTER_CAPTURE_MIGRATION_SCREENSHOTS",
+      );
+      // Mail clients show these on retina screens, so capture at 2x.
+      const retinaBrowser = {
+        newContext: (options = {}) =>
+          browser.newContext({ deviceScaleFactor: 2, ...options }),
+        newPage: (options = {}) =>
+          browser.newPage({ deviceScaleFactor: 2, ...options }),
+      };
+      const appUrl = appContext.appUrl;
+      await testMissingVibeTVOffersRetry(retinaBrowser, appUrl);
+      await testMixedTransportDeviceSelection(retinaBrowser, appUrl);
+      await testSettingsStayCustomerOnly(retinaBrowser, appUrl);
+      await testUsagePrioritizesProviderTokenHistory(retinaBrowser, appUrl);
+      await testLegacyInstallMigratesToDmgAtSameVersion(retinaBrowser, appUrl);
+      await testSupportReportExportsAppearAfterReportLoads(retinaBrowser, appUrl);
+      await testThemeLibraryRendersThemeSpecPreviews(retinaBrowser, appUrl);
+      await testThemeInstallStatusStaysCustomerOnly(retinaBrowser, appUrl);
+      console.log(`release screenshots written to ${migrationScreenshotDir}`);
       return;
     }
     if (providerSettingsOnly) {

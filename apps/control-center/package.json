@@ -14,7 +14,8 @@
     "test:customer-smoke": "node scripts/test-customer-flows.mjs --smoke",
     "test:theme-studio": "node scripts/test-theme-studio-flows.mjs",
     "test:theme-studio-safety": "npm run test:theme-studio",
-    "test:customer-flows": "node scripts/test-customer-flows.mjs"
+    "test:customer-flows": "node scripts/test-customer-flows.mjs",
+    "capture:release-screenshots": "node scripts/test-customer-flows.mjs --release-screenshots"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
