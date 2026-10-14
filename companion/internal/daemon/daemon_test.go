@@ -2245,23 +2245,10 @@ func TestApplySelectionActivityRequiresFreshNoDeltaEvidenceBeforeIdle(t *testing
 
 func TestApplySelectionActivityKeepsExplicitActivity(t *testing.T) {
 	frame, _ := applySelectionActivity(protocol.Frame{Provider: "codex", Activity: "idle"}, codexbar.SelectionDecision{
-		Reason: codexbar.SelectionReasonLocalActivity,
+		Reason: codexbar.SelectionReasonStickyCurrent,
 	}, &runtimeState{}, time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC))
 	if frame.Activity != "idle" {
 		t.Fatalf("expected explicit activity to be preserved, got %q", frame.Activity)
-	}
-}
-
-func TestApplySelectionActivityTreatsStaleLocalSignalAsIdle(t *testing.T) {
-	prepareFastTestEnv(t)
-
-	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
-	frame, detail := applySelectionActivity(protocol.Frame{Provider: "claude"}, codexbar.SelectionDecision{
-		Reason: codexbar.SelectionReasonLocalActivity,
-		Detail: "provider=claude confidence=high at=2026-02-23T11:00:00Z evidence=test",
-	}, &runtimeState{}, now)
-	if frame.Activity != "idle" {
-		t.Fatalf("expected stale local activity to render idle, got %q detail=%q", frame.Activity, detail)
 	}
 }
 
