@@ -407,3 +407,25 @@ func dashboardFetchTestInfo(server *httptest.Server) DashboardServeInfo {
 		PID:      1234,
 	}
 }
+
+// On 2026-10-14 CodexBar's serve stopped answering /dashboard/v1/snapshot.
+// The request waited for the collection's 10-minute deadline, and VibeTV
+// showed no usage the whole time.
+func TestDashboardRequestGivesUpOnASilentServe(t *testing.T) {
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release
+	}))
+	defer server.Close()
+	defer close(release)
+	original := dashboardRequestTimeout
+	dashboardRequestTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { dashboardRequestTimeout = original })
+	start := time.Now()
+	if _, err := fetchDashboardJSON(context.Background(), server.URL+dashboardSnapshotPath, "token"); err == nil {
+		t.Fatal("a serve that does not answer must be an error")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("the request waited %s for a silent serve", elapsed)
+	}
+}
