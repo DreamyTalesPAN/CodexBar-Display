@@ -685,6 +685,77 @@ func TestProviderRetryAfterBrowserSignInReadReplacesUsageService(t *testing.T) {
 	}
 }
 
+// A probe that was already running when CodexBar read the browser sign-in
+// answers for the state before the read. The check the Mac app asks for after
+// the read must not take that answer: it waits the old probe out and probes
+// again, so a working read still replaces the usage service (#607 Codex review).
+func TestProviderRetryAfterBrowserSignInReadDoesNotJoinAnOlderProbe(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	base := time.Date(2026, 10, 14, 16, 0, 0, 0, time.UTC)
+	var tick atomic.Int64
+	server.now = func() time.Time { return base.Add(time.Duration(tick.Add(1)) * time.Millisecond) }
+	var probes atomic.Int32
+	started := make(chan struct{})
+	release := make(chan struct{})
+	server.probeExactProvider = func(_ context.Context, _ string, providerID string) codexbar.ProviderSetup {
+		status := codexbar.ProviderReady
+		setupStatus := codexbar.ProviderReady
+		if probes.Add(1) == 1 {
+			close(started)
+			<-release
+			status = codexbar.ProviderBrowserSignInRequired
+			setupStatus = "setup_required"
+		}
+		return codexbar.ProviderSetup{
+			Status: setupStatus,
+			Engine: codexbar.EngineReadiness{Status: codexbar.ProviderReady},
+			Providers: []codexbar.ProviderReadiness{{
+				ID: providerID, Label: "Claude", Enabled: providerEnabled(true), Status: status,
+			}},
+		}
+	}
+	var replaces atomic.Int32
+	server.restartUsageService = func(context.Context) error { return nil }
+	server.freshUsageService = func(context.Context) error { replaces.Add(1); return nil }
+	woke := make(chan struct{}, 4)
+	server.wakeDisplayStream = func() { woke <- struct{}{} }
+
+	go server.Handler().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/v1/providers/retry?provider=claude", nil))
+	<-started
+	result := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/providers/retry?provider=claude&after=browser-sign-in-read", nil))
+		result <- rec
+	}()
+	time.Sleep(50 * time.Millisecond)
+	close(release)
+	var rec *httptest.ResponseRecorder
+	select {
+	case rec = <-result:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the post-read check never answered")
+	}
+	var got providerSetupResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if provider := providerByID(got.ProviderSetup.Providers, "claude"); provider == nil || provider.Status != codexbar.ProviderReady {
+		t.Fatalf("the post-read check took the older probe's answer: %+v", got.ProviderSetup)
+	}
+	if probes.Load() != 2 {
+		t.Fatalf("expected a second probe after the read, got %d", probes.Load())
+	}
+	select {
+	case <-woke:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the usage service swap never finished")
+	}
+	if replaces.Load() != 1 {
+		t.Fatalf("a working read must replace the usage service once, got %d", replaces.Load())
+	}
+}
+
 func TestExactProviderRetryPreservesFreshFailureOverLastGoodUsage(t *testing.T) {
 	for _, status := range []string{
 		codexbar.ProviderAuthRequired,

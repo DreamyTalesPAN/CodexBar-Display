@@ -27,8 +27,9 @@ type providerSetupResponse struct {
 }
 
 type exactProviderProbeFlight struct {
-	done  chan struct{}
-	setup codexbar.ProviderSetup
+	done      chan struct{}
+	setup     codexbar.ProviderSetup
+	startedAt time.Time
 }
 
 type providerReadinessRecord struct {
@@ -351,20 +352,31 @@ func checkingProviderSetup(now time.Time) codexbar.ProviderSetup {
 }
 
 func (s *Server) currentExactProviderSetup(ctx context.Context, providerID string) codexbar.ProviderSetup {
+	return s.exactProviderSetupStartedAfter(ctx, providerID, time.Time{})
+}
+
+// exactProviderSetupStartedAfter joins a running probe of the provider only
+// when it started at or after notBefore. A browser sign-in read changes what
+// CodexBar can read, so a probe already running from before it answers for
+// the old state: wait it out, then probe again (#607 Codex review).
+func (s *Server) exactProviderSetupStartedAfter(ctx context.Context, providerID string, notBefore time.Time) codexbar.ProviderSetup {
 	s.exactProviderProbeMu.Lock()
 	if s.exactProviderProbes == nil {
 		s.exactProviderProbes = make(map[string]*exactProviderProbeFlight)
 	}
-	if current := s.exactProviderProbes[providerID]; current != nil {
+	for current := s.exactProviderProbes[providerID]; current != nil; current = s.exactProviderProbes[providerID] {
 		s.exactProviderProbeMu.Unlock()
 		select {
 		case <-current.done:
-			return current.setup
+			if !current.startedAt.Before(notBefore) {
+				return current.setup
+			}
 		case <-ctx.Done():
 			return timedOutExactProviderSetup(providerID, s.currentTime())
 		}
+		s.exactProviderProbeMu.Lock()
 	}
-	flight := &exactProviderProbeFlight{done: make(chan struct{})}
+	flight := &exactProviderProbeFlight{done: make(chan struct{}), startedAt: s.currentTime()}
 	s.exactProviderProbes[providerID] = flight
 	s.exactProviderProbeMu.Unlock()
 
@@ -430,7 +442,11 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 		setup = s.currentProviderSetup(ctx, true)
 	} else {
 		providerRevision := s.currentProviderRevision(providerID)
-		setup = s.currentExactProviderSetup(ctx, providerID)
+		if afterBrowserSignInRead {
+			setup = s.exactProviderSetupStartedAfter(ctx, providerID, s.currentTime())
+		} else {
+			setup = s.currentExactProviderSetup(ctx, providerID)
+		}
 		s.recordExactProviderSetup(providerID, providerRevision, setup)
 		// A too-old engine puts its own row first; name the provider asked for.
 		for _, provider := range setup.Providers {
