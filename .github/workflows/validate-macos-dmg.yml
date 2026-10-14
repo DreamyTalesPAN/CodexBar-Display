@@ -28,7 +28,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout requested source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.source_ref }}
           persist-credentials: false
@@ -40,7 +40,7 @@ jobs:
           cache-dependency-path: companion/go.sum
 
       - name: Setup Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
           cache: npm
@@ -94,7 +94,7 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Pass app to signing job
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: CODEX-vibetv-preview-app-${{ github.run_id }}
           path: tmp/macos-preview/app.tar.gz
@@ -108,14 +108,14 @@ jobs:
       # The requested source never receives the Apple credentials. Only these
       # already-reviewed signing tools run in this job.
       - name: Checkout signing tools
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Reviewed main commit that signs Sparkle's nested code inside-out.
           ref: 24c3855468991f28ef1af2df905b95944d90985c
           persist-credentials: false
 
       - name: Download Mac app
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: CODEX-vibetv-preview-app-${{ github.run_id }}
           path: tmp/macos-preview
@@ -151,7 +151,7 @@ jobs:
             --dmg dist/macos/VibeTV-Control-Center.dmg
 
       - name: Upload signed DMG
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: CODEX-vibetv-preview-dmg-${{ github.run_id }}
           path: dist/macos/VibeTV-Control-Center.dmg

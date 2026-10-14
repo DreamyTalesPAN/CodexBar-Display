@@ -117,7 +117,8 @@ const ()
 // provider inventory remain owned by CodexBar.
 func EnsureConfig(home string) (string, error) {
 	if runtime.GOOS == "windows" {
-		// Win-CodexBar 0.56.8 ignores CODEXBAR_CONFIG and has no
+		// The pinned Win-CodexBar (scripts/fetch-win-codexbar.ps1) ignores
+		// CODEXBAR_CONFIG and has no
 		// "config validate --format json"; it only reads
 		// %APPDATA%\CodexBar\settings.json (#415). Use its own location.
 		return ensureWindowsConfigDir()
@@ -158,20 +159,29 @@ func macConfigPath(home string) (string, error) {
 	return filepath.Join(home, ".codexbar", "config.json"), nil
 }
 
+// windowsSettingsPath is the one file Win-CodexBar keeps its settings in,
+// the provider switches among them (#415). Empty without APPDATA.
+func windowsSettingsPath() string {
+	appData := strings.TrimSpace(os.Getenv("APPDATA"))
+	if appData == "" {
+		return ""
+	}
+	return filepath.Join(appData, "CodexBar", "settings.json")
+}
+
 // ensureWindowsConfigDir preserves existing settings verbatim. Only a missing
-// file receives an empty provider selection; Win-CodexBar 0.56.8 fills omitted
+// file receives an empty provider selection; the pinned Win-CodexBar fills omitted
 // settings with its own defaults. Publish the complete seed without replacing
 // a config another process may have created during startup.
 func ensureWindowsConfigDir() (string, error) {
-	appData := strings.TrimSpace(os.Getenv("APPDATA"))
-	if appData == "" {
+	path := windowsSettingsPath()
+	if path == "" {
 		return "", errors.New("APPDATA is not set")
 	}
-	dir := filepath.Join(appData, "CodexBar")
+	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("create CodexBar config directory: %w", err)
 	}
-	path := filepath.Join(dir, "settings.json")
 	probe, err := os.CreateTemp(dir, ".vibetv-write-check-*")
 	if err != nil {
 		return path, fmt.Errorf("CodexBar config directory is not writable: %w", err)
@@ -371,7 +381,8 @@ func configPathFromContext(ctx context.Context) string {
 	return strings.TrimSpace(path)
 }
 
-// ProbeProviderSetup performs one bounded, read-only CodexBar usage probe. Raw
+// ProbeProviderSetup performs one bounded, read-only CodexBar usage probe, or
+// under WithServeReading reads serve's last answer in its place. Raw
 // provider text stays in the internal json:"-" field so status and retry JSON
 // expose only the generic Detail until the preferences adapter redacts it.
 func ProbeProviderSetup(ctx context.Context, home string) ProviderSetup {
@@ -589,7 +600,7 @@ func providersWithSwitchState(ctx context.Context, bin string, providers []Provi
 			return providers
 		}
 	}
-	raw, runErr := runUsageCommandFn(ctx, 5*time.Second, bin, providerInventoryArgs()...)
+	raw, runErr := readProviderInventory(ctx, 5*time.Second, bin, runUsageCommandFn)
 	inventory, parseErr := parseProviderSettings(raw)
 	if runErr != nil || parseErr != nil || len(inventory) == 0 {
 		return providers
@@ -931,6 +942,13 @@ func providerResultWithSignIn(id, status, signInURL string) ProviderReadiness {
 		result.NextAction = "Check this provider, then try again."
 	}
 	return result
+}
+
+// BrowserSignInGuidance is the customer sentence for a provider that needs a
+// signed-in browser session on signInURL.
+func BrowserSignInGuidance(id, signInURL string) string {
+	result := providerResultWithSignIn(id, ProviderBrowserSignInRequired, signInURL)
+	return result.Detail + " " + result.NextAction
 }
 
 func signInHost(url string) string {

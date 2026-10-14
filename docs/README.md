@@ -16,6 +16,7 @@ Center on the customer's Mac.
 - [Control Center readiness](control-center-customer-readiness.md): launch-readiness checks and support flow.
 - [Control Center UI principles](control-center-ui-principles.md): customer-facing UI rules.
 - [Control Center UI approvals](control-center-customer-ui-approval.md): append-only approval log for visible UI changes.
+- [Control Center accessibility](control-center-accessibility.md): supported screen readers, the automated check, and the VoiceOver release checklist.
 
 ## Device And Release Docs
 

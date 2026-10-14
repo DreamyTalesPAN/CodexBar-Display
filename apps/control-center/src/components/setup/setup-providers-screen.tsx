@@ -16,6 +16,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Item, ItemGroup } from "@/components/ui/item";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatResetCountdown, secondsSince } from "@/lib/reset-countdown";
 import { cn } from "@/lib/utils";
 import { SETUP_REVEAL } from "./setup-reveal";
 import type { ProviderItem } from "../provider-picker";
@@ -137,6 +138,33 @@ export function setupProviderOwnAppNotice(label: string): string {
   return `VibeTV reads ${label} usage from ${label}'s own app on this computer. Make sure it is installed and signed in, then click Check again.`;
 }
 
+/**
+ * How long ago a provider that is on delivered its last usage reading, or
+ * that it has not delivered one yet (#368).
+ * Beside the message, never part of it: the message is what a customer
+ * acknowledges, and a time that moves would open the popup again.
+ */
+export function setupProviderNoReadingLine(
+  since: string | undefined,
+  now = new Date(),
+): string | null {
+  if (!since) return "No usage reading yet.";
+  const seconds = secondsSince(since, now);
+  // Below a minute the provider only just stopped: nothing to say.
+  return seconds < 60
+    ? null
+    : `No usage reading for ${formatResetCountdown(seconds)}.`;
+}
+
+/**
+ * The message the customer acknowledged, per provider, while the window is
+ * open. Outside the list because the list unmounts when the customer leaves
+ * Settings: kept in its state alone, the same message opened again on every
+ * visit. Only an acknowledgement is kept here; a message the customer asked
+ * for (warning icon, Check again, the switch) stays in the list's state.
+ */
+export const acknowledgedProviderIssues = new Map<string, string>();
+
 type ProviderListProps = {
   className?: string;
   onCheckAgain: (provider: ProviderItem) => void;
@@ -172,7 +200,9 @@ export function ProviderList({
 }: ProviderListProps) {
   // One acknowledged message per provider: polling must not reopen a dismissed
   // popup, while a new message or an explicit retry may show it again.
-  const [dismissedIssues, setDismissedIssues] = useState<Record<string, string>>({});
+  const [dismissedIssues, setDismissedIssues] = useState<Record<string, string>>(
+    () => Object.fromEntries(acknowledgedProviderIssues),
+  );
   // The provider whose warning icon the customer clicked. Its message opens
   // whatever the rules below say about popups opening by themselves.
   const [requestedIssueId, setRequestedIssueId] = useState<string | null>(null);
@@ -230,12 +260,20 @@ export function ProviderList({
   const issue = issues.find((candidate) => candidate.requested) ?? issues[0];
   const dismissIssue = () => {
     if (!issue) return;
+    setCopied("");
+    acknowledgedProviderIssues.set(issue.provider.id, issue.message);
     setDismissedIssues((current) => ({ ...current, [issue.provider.id]: issue.message }));
     setRequestedIssueId(null);
   };
   const resetIssue = (provider: ProviderItem) => {
+    acknowledgedProviderIssues.delete(provider.id);
     setDismissedIssues((current) => ({ ...current, [provider.id]: "" }));
   };
+  // The message whose copy reached the clipboard; the button then says so,
+  // like Copy on Support. Another provider, a new message or closing the
+  // message starts over.
+  const [copied, setCopied] = useState("");
+  const copyKey = issue ? `${issue.provider.id}\n${issue.provider.health.reported}` : "";
   const [query, setQuery] = useState("");
   const [shown, setShown] = useState(PROVIDER_PAGE_SIZE);
   const matching = setupProvidersEnabledFirst(
@@ -247,6 +285,8 @@ export function ProviderList({
   // everyone who does not know what to search for.
   const visible = matching.slice(0, shown);
   const remaining = matching.length - visible.length;
+  const noReadingLine =
+    issue && setupProviderNoReadingLine(issue.provider.health.noReadingSince);
   const ownAppNotice =
     issue && onOpenSetupGuide && setupProviderNeedsOwnApp(issue.provider);
   const issueSignIn = issue && offersSignIn(issue.provider) ? issue.provider : null;
@@ -272,8 +312,13 @@ export function ProviderList({
             },
           } : { label: "OK", onSelect: dismissIssue }}
           secondaryAction={issue.provider.health.reported ? {
-            label: `Copy provider message for ${issue.provider.label}`,
-            onSelect: () => { void navigator.clipboard?.writeText(issue.provider.health.reported!); },
+            label: copied === copyKey
+              ? "Copied"
+              : `Copy provider message for ${issue.provider.label}`,
+            onSelect: () => {
+              void navigator.clipboard?.writeText(issue.provider.health.reported!)
+                .then(() => setCopied(copyKey), () => undefined);
+            },
           } : undefined}
         >
           {ownAppNotice ? (
@@ -288,6 +333,9 @@ export function ProviderList({
                 Open setup guide
               </Button>
             </div>
+          ) : null}
+          {noReadingLine ? (
+            <p className="text-sm text-muted-foreground">{noReadingLine}</p>
           ) : null}
         </SetupDialog>
       ) : null}
@@ -344,22 +392,23 @@ export function ProviderList({
             saving={pendingPreferenceIds.has(provider.id)}
           />
         ))}
-        {matching.length === 0 ? (
-          <Empty
-            className={cn(
-              "bg-muted/50 py-8 ring-1 ring-foreground/10",
-              SETUP_REVEAL,
-            )}
-          >
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <SearchX size={17} aria-hidden />
-              </EmptyMedia>
-              <EmptyTitle>No AI providers match your search.</EmptyTitle>
-            </EmptyHeader>
-          </Empty>
-        ) : null}
       </ItemGroup>
+      {/* After the list, not in it: a list may only hold list items. */}
+      {matching.length === 0 ? (
+        <Empty
+          className={cn(
+            "bg-muted/50 py-8 ring-1 ring-foreground/10",
+            SETUP_REVEAL,
+          )}
+        >
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <SearchX size={17} aria-hidden />
+            </EmptyMedia>
+            <EmptyTitle>No AI providers match your search.</EmptyTitle>
+          </EmptyHeader>
+        </Empty>
+      ) : null}
 
       {remaining > 0 ? (
         <Button

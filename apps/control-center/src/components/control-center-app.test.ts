@@ -3,6 +3,8 @@ import {
   connectionModeChoiceStatus,
   statusConfirmsSubmittedWiFiChoice,
   mergeDeviceInfo,
+  displayModeChange,
+  recentEventsWith,
   setupThemeCatalogError,
 } from "./control-center-app";
 import { deviceAwaitsProviderSetup } from "./control-center-types";
@@ -201,5 +203,51 @@ describe("setup theme catalog", () => {
         nextAction: "Themes are not available right now.",
       });
     expect(setupThemeCatalogError(undefined, 1)).toBeNull();
+  });
+});
+
+// Seen on the Support page: "Settings loaded – Brightness is set to 20%."
+// several times in a row (#548).
+describe("recent activity", () => {
+  const loaded = { id: "1", label: "Settings loaded", detail: "Brightness is set to 20%." };
+
+  it("does not repeat the newest entry, and gives it the time of the repeat", () => {
+    const events = [{ ...loaded, at: "2026-10-07T17:00:00Z" }];
+
+    expect(
+      recentEventsWith(events, { ...loaded, id: "2", at: "2026-10-07T17:05:00Z" }),
+    ).toEqual([{ ...loaded, id: "2", at: "2026-10-07T17:05:00Z" }]);
+  });
+
+  // Issue #558: "Settings loaded" came back after every install.
+  it("puts a different entry first, and lists an entry that comes back once", () => {
+    const installed = { id: "2", label: "Screensaver installed", detail: "Night Clock" };
+    const events = recentEventsWith([loaded], installed);
+
+    expect(events).toEqual([installed, loaded]);
+    expect(recentEventsWith(events, { ...loaded, id: "3" }).map((event) => event.id)).toEqual([
+      "3",
+      "2",
+    ]);
+    // The same title with another text is another entry.
+    expect(
+      recentEventsWith(events, { ...loaded, id: "4", detail: "Brightness is set to 30%." }),
+    ).toHaveLength(3);
+  });
+});
+
+// Found in review of #579: the setup wizard's Continue entered "Display mode
+// saved" for the default nobody had changed, because nothing was read yet.
+describe("display mode entry under Recent activity", () => {
+  const automatic = { mode: "automatic" as const, providerIds: ["claude", "codex"] };
+  const claude = { mode: "fixed" as const, providerIds: ["claude"] };
+
+  it("is written for a changed mode or provider only", () => {
+    expect(displayModeChange(null, automatic)).toBeNull();
+    expect(displayModeChange(automatic, { ...automatic, providerIds: ["claude"] })).toBeNull();
+    expect(displayModeChange(claude, claude)).toBeNull();
+    expect(displayModeChange(null, claude)).toBe("claude");
+    expect(displayModeChange(claude, { ...claude, providerIds: ["codex"] })).toBe("codex");
+    expect(displayModeChange(claude, automatic)).toBe("");
   });
 });

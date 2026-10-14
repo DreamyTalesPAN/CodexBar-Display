@@ -28,7 +28,7 @@ type settingsCodec struct {
 }
 
 // allowClaudeCredentials returns settings with the consent flag switched on.
-// It accepts both shapes Win-CodexBar 0.56.8 writes: the plain JSON the VibeTV
+// It accepts both shapes the pinned Win-CodexBar writes: the plain JSON the VibeTV
 // bootstrap seeds and the "codexbar.secure-file" envelope Win-CodexBar
 // rewrites on its first save. A UTF-8 BOM makes Win-CodexBar ignore the file
 // silently, so one is stripped on read and never written.

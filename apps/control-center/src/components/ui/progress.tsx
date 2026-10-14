@@ -17,6 +17,8 @@ function Progress({
         "relative flex h-1 w-full items-center overflow-x-hidden rounded-full bg-muted",
         className
       )}
+      // Without the value the bar is announced as busy, never as a percentage.
+      value={value}
       {...props}
     >
       <ProgressPrimitive.Indicator

@@ -15,6 +15,10 @@ const APPROVAL_PREFIXES = [
   "- User approval:",
   "- Approved customer-visible result:",
 ];
+// What the change adds to the "What's new" notice: ids from WHATS_NEW_FILE in
+// backticks, or "none — <reason>".
+const WHATS_NEW_PREFIX = "- What's new:";
+const WHATS_NEW_FILE = "apps/control-center/src/lib/whats-new.ts";
 
 const uiFilePatterns = [
   /^apps\/control-center\/src\/components\//,
@@ -63,7 +67,7 @@ printSummary({
 
 if (due) {
   const reason = invalidApprovalMarker
-    ? `The newest approval marker does not add both required approval lines.`
+    ? `The newest approval marker does not add the required lines: "${APPROVAL_PREFIXES.join('", "')}", and "${WHATS_NEW_PREFIX}" with "none — <reason>" or ids from ${WHATS_NEW_FILE} in backticks.`
     : `Customer-facing UI changed in ${unapprovedUiFiles.length} file(s) without a matching approval entry.`;
   const message = [
     reason,
@@ -138,9 +142,52 @@ function diffAddsApprovalEvidence(diff) {
   const addedLines = lines(diff)
     .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
     .map((line) => line.slice(1).trim());
-  return APPROVAL_PREFIXES.every((prefix) =>
-    addedLines.some((line) => line.startsWith(prefix)),
+  // One block per added entry: its "## " heading starts it. Each one holds its
+  // own approval lines and answers for itself, also when one change adds
+  // several.
+  const added = addedLines.join("\n");
+  const entries = added.split(/^(?=## )/m).filter((entry) => entry.startsWith("## "));
+  return [added, ...entries].every((text) => {
+    const textLines = text.split("\n");
+    const whatsNewLines = textLines.filter((line) => line.startsWith(WHATS_NEW_PREFIX));
+    return (
+      APPROVAL_PREFIXES.every((prefix) =>
+        textLines.some((line) => line.startsWith(prefix)),
+      ) &&
+      whatsNewLines.length > 0 &&
+      whatsNewLines.every(namesWhatsNew)
+    );
+  });
+}
+
+function namesWhatsNew(line) {
+  const value = line.slice(WHATS_NEW_PREFIX.length).trim();
+  if (/^none\s*[—–-]\s*\S/.test(value)) {
+    return true;
+  }
+  const ids = [...value.matchAll(/`([^`]*)`/g)].map((match) => match[1]);
+  return (
+    ids.length > 0 &&
+    ids.every((id) => whatsNewIds().includes(id) && timesNamed(id) === 1)
   );
+}
+
+// An entry is added to the list once, so one approval entry names it. A later
+// change cannot pass by naming an entry that is already there.
+function timesNamed(id) {
+  return lines(readFileSync(APPROVAL_FILE, "utf8")).filter(
+    (line) => line.trim().startsWith(WHATS_NEW_PREFIX) && line.includes(`\`${id}\``),
+  ).length;
+}
+
+function whatsNewIds() {
+  try {
+    return [...readFileSync(WHATS_NEW_FILE, "utf8").matchAll(/\bid: "([^"]+)"/g)].map(
+      (match) => match[1],
+    );
+  } catch {
+    return [];
+  }
 }
 
 function isUiFile(file) {

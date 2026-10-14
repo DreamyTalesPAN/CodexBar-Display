@@ -9,19 +9,23 @@
   main { min-height: 100%; display: grid; place-items: center; text-align: center; padding: 32px; box-sizing: border-box; }
   h1 { font-size: 20px; font-weight: 600; margin: 0 0 8px; }
   p { margin: 0; color: #b6b6c4; max-width: 44em; }
-  #error { display: none; }
+  #error, #updating { display: none; }
   #error p { white-space: pre-wrap; }
 </style>
 </head>
 <body>
 <main>
   <div id="starting"><h1>Starting the VibeTV Companion…</h1><p>This takes a few seconds after installation.</p></div>
+  <div id="updating"><h1>Updating VibeTV Control Center…</h1><p>Installing version <span id="version"></span>. The app restarts by itself.</p></div>
   <div id="error"><h1>VibeTV Control Center could not start its Companion.</h1><p id="detail"></p></div>
 </main>
 <script>
   window.addEventListener("vibetv:shell-status", function (event) {
     var detail = (event.detail && event.detail.error) || "";
-    document.getElementById("starting").style.display = detail ? "none" : "";
+    var update = (event.detail && event.detail.update) || "";
+    document.getElementById("starting").style.display = detail || update ? "none" : "";
+    document.getElementById("updating").style.display = update ? "" : "none";
+    document.getElementById("version").textContent = update;
     document.getElementById("error").style.display = detail ? "" : "none";
     document.getElementById("detail").textContent = detail;
   });

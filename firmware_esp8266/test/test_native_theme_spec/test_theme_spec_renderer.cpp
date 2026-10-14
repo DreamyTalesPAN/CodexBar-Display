@@ -3,6 +3,7 @@
 #include "../../../firmware_shared/update_notice_policy.h"
 #include "../../src/theme_spec_runtime_policy.h"
 
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -42,7 +43,10 @@ using codexbar_display::themespec::kThemeSpecFieldSession;
 using codexbar_display::themespec::kThemeSpecFieldUsageMode;
 using codexbar_display::themespec::kThemeSpecFieldUsageWindows;
 using codexbar_display::themespec::kThemeSpecFieldWeekly;
+using codexbar_display::core::ActivityTtlRemainingSecs;
 using codexbar_display::core::ConsumeFrameLine;
+using codexbar_display::core::ExpireActivity;
+using codexbar_display::core::HoldActivityTtl;
 using codexbar_display::core::CurrentRemainingSecs;
 using codexbar_display::core::CurrentResetTrust;
 using codexbar_display::core::DecodeResetTrustRecord;
@@ -1302,7 +1306,7 @@ void testConsumeFrameLineComparesCurrentBeforeAssignment() {
   RuntimeState state;
   SerialConsumeEvent event;
   const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":100,"usageWindows":[{"id":"weekly","label":"Weekly","percent":42,"resetSecs":100}],"themeSpec":{"v":1,"id":"clippy","rev":1,"p":[{"t":"sp","x":83,"y":54,"w":74,"h":74,"a":"/themes/u/cp-i.cba","sa":{"idle":"/themes/u/cp-i.cba","coding":"/themes/u/cp-c.cba"}},{"t":"p","x":0,"y":0,"w":100,"h":8,"sl":1,"b":"us1p"}]}})JSON";
-  const char* nextFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":100,"usageWindows":[{"id":"weekly","label":"Weekly","percent":43,"resetSecs":99}]})JSON";
+  const char* nextFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":100,"activity":"coding","usageWindows":[{"id":"weekly","label":"Weekly","percent":43,"resetSecs":99}]})JSON";
 
   TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
   TEST_ASSERT_FALSE(event.hadFrame);
@@ -1319,47 +1323,6 @@ void testConsumeFrameLineComparesCurrentBeforeAssignment() {
   TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldUsageWindows) != 0);
 }
 
-void testQuotaReplenishmentDoesNotCountAsUsageProgress() {
-  RuntimeState state;
-  SerialConsumeEvent event;
-  const char* usedBeforeReset = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":80,"weekly":90,"usageWindows":[{"id":"weekly","label":"Weekly","percent":90}]})JSON";
-  const char* usedAfterReset = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":0,"weekly":0,"usageWindows":[{"id":"weekly","label":"Weekly","percent":0}]})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, usedBeforeReset, 1000, event));
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, usedAfterReset, 2000, event));
-  TEST_ASSERT_FALSE(event.usageProgressed);
-
-  const char* remainingBeforeReset = R"JSON({"v":2,"provider":"codex","usageMode":"remaining","session":20,"weekly":10,"usageWindows":[{"id":"weekly","label":"Weekly","percent":10}]})JSON";
-  const char* remainingAfterReset = R"JSON({"v":2,"provider":"codex","usageMode":"remaining","session":100,"weekly":100,"usageWindows":[{"id":"weekly","label":"Weekly","percent":100}]})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, remainingBeforeReset, 3000, event));
-  TEST_ASSERT_FALSE(event.usageProgressed);
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, remainingAfterReset, 4000, event));
-  TEST_ASSERT_FALSE(event.usageProgressed);
-
-  const char* remainingAfterUsage = R"JSON({"v":2,"provider":"codex","usageMode":"remaining","session":99,"weekly":100,"usageWindows":[{"id":"weekly","label":"Weekly","percent":99}]})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, remainingAfterUsage, 5000, event));
-  TEST_ASSERT_TRUE(event.usageProgressed);
-}
-
-void testUsageProgressRequiresStableProviderAndWindowIdentity() {
-  RuntimeState state;
-  SerialConsumeEvent event;
-  const char* codexFrame = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":10,"weekly":20,"usageWindows":[{"id":"gone","label":"Gone","percent":10},{"id":"stable","label":"Stable","percent":20}]})JSON";
-  const char* claudeFrame = R"JSON({"v":2,"provider":"claude","usageMode":"used","session":30,"weekly":40,"usageWindows":[{"id":"stable","label":"Stable","percent":40}]})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, codexFrame, 1000, event));
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, claudeFrame, 2000, event));
-  TEST_ASSERT_FALSE(event.usageProgressed);
-
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, codexFrame, 3000, event));
-  TEST_ASSERT_FALSE(event.usageProgressed);
-  const char* compactedFrame = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":20,"weekly":0,"usageWindows":[{"id":"stable","label":"Stable","percent":20}]})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, compactedFrame, 4000, event));
-  TEST_ASSERT_FALSE(event.usageProgressed);
-
-  const char* progressedFrame = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":21,"weekly":0,"usageWindows":[{"id":"stable","label":"Stable","percent":21}]})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, progressedFrame, 5000, event));
-  TEST_ASSERT_TRUE(event.usageProgressed);
-}
-
 // Standby's activity clock. Usage percentages are whole numbers, so a customer
 // coding against a weekly quota can work for a long time before the value
 // ticks over. The frame's own activity verdict must wake the device in that
@@ -1371,11 +1334,10 @@ void testReportsWorkingFollowsTheFrameActivityVerdict() {
   TEST_ASSERT_TRUE(ConsumeFrameLine(state, idleFrame, 1000, event));
   TEST_ASSERT_FALSE(event.reportsWorking);
 
-  // The percentages stand completely still, and the old usage-delta inference
-  // reports nothing. This is the case that kept a coding customer asleep.
+  // The percentages stand completely still. This is the case that kept a
+  // coding customer asleep while the device still inferred activity itself.
   const char* workingFrame = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":7,"weekly":7,"activity":"coding","usageWindows":[{"id":"weekly","label":"Weekly","percent":7}]})JSON";
   TEST_ASSERT_TRUE(ConsumeFrameLine(state, workingFrame, 2000, event));
-  TEST_ASSERT_FALSE(event.usageProgressed);
   TEST_ASSERT_TRUE(event.reportsWorking);
 
   // The verdict is read every frame, so the customer stopping is seen at once.
@@ -1383,25 +1345,226 @@ void testReportsWorkingFollowsTheFrameActivityVerdict() {
   TEST_ASSERT_FALSE(event.reportsWorking);
 }
 
-// A frame without `activity` still resolves, because ConsumeFrameLine fills the
-// inferred value in first. Older Companions keep the behaviour they had.
-void testReportsWorkingFallsBackToUsageProgressWithoutActivity() {
+// Issue #369: the device never infers activity. A frame without `activity`
+// reports not working, however far its usage numbers moved. The old fallback
+// read forward usage progress as coding, which is the quota refresh that
+// passes for activity.
+void testFrameWithoutActivityReportsNotWorking() {
   RuntimeState state;
   SerialConsumeEvent event;
   const char* first = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":10,"weekly":10,"usageWindows":[{"id":"weekly","label":"Weekly","percent":10}]})JSON";
   const char* progressed = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":11,"weekly":11,"usageWindows":[{"id":"weekly","label":"Weekly","percent":11}]})JSON";
-  const char* standingStill = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":11,"weekly":11,"usageWindows":[{"id":"weekly","label":"Weekly","percent":11}]})JSON";
 
   TEST_ASSERT_TRUE(ConsumeFrameLine(state, first, 1000, event));
   TEST_ASSERT_FALSE(event.reportsWorking);
+  TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
 
   TEST_ASSERT_TRUE(ConsumeFrameLine(state, progressed, 2000, event));
-  TEST_ASSERT_TRUE(event.usageProgressed);
-  TEST_ASSERT_TRUE(event.reportsWorking);
-
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, standingStill, 3000, event));
-  TEST_ASSERT_FALSE(event.usageProgressed);
   TEST_ASSERT_FALSE(event.reportsWorking);
+  TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
+}
+
+// Issue #369, frame expiry: a frame says how long its activity is valid, and
+// the device counts that down from receipt on its own clock.
+void testActivityExpiresWhenTheFrameTtlPasses() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* working = R"JSON({"v":2,"provider":"codex","session":7,"weekly":7,"activity":"coding","activityTtlSecs":10})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, working, 1000, event));
+  TEST_ASSERT_TRUE(event.reportsWorking);
+  TEST_ASSERT_EQUAL_UINT32(10, ActivityTtlRemainingSecs(state, 1000));
+  TEST_ASSERT_EQUAL_UINT32(1, ActivityTtlRemainingSecs(state, 10999));
+
+  TEST_ASSERT_FALSE(ExpireActivity(state, 10999, event));
+  TEST_ASSERT_EQUAL_STRING("coding", state.current.activity.c_str());
+
+  TEST_ASSERT_TRUE(ExpireActivity(state, 11000, event));
+  TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
+  TEST_ASSERT_TRUE(event.visualChanged);
+  // Standby's clock is only moved by a frame that reports working, so the
+  // expiry leaves it counting from the last such frame.
+  TEST_ASSERT_FALSE(event.reportsWorking);
+  TEST_ASSERT_EQUAL_UINT32(0, ActivityTtlRemainingSecs(state, 11000));
+
+  // It fires once.
+  TEST_ASSERT_FALSE(ExpireActivity(state, 12000, event));
+  TEST_ASSERT_FALSE(event.visualChanged);
+}
+
+// While frames keep coming inside the bound, nothing expires: every frame
+// starts the countdown again from its own receipt.
+void testFreshFrameRestartsTheActivityTtl() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* working = R"JSON({"v":2,"provider":"codex","session":7,"weekly":7,"activity":"coding","activityTtlSecs":10})JSON";
+  for (unsigned long now = 1000; now <= 61000; now += 2000) {
+    TEST_ASSERT_TRUE(ConsumeFrameLine(state, working, now, event));
+    TEST_ASSERT_FALSE(ExpireActivity(state, now + 1999, event));
+  }
+  TEST_ASSERT_EQUAL_STRING("coding", state.current.activity.c_str());
+  TEST_ASSERT_FALSE(ExpireActivity(state, 61000 + 9999, event));
+  TEST_ASSERT_TRUE(ExpireActivity(state, 61000 + 10000, event));
+}
+
+// Issue #369, writer loss after a working frame: this is the canary of #88,
+// where the last frame said coding and the device animated it for ever. The
+// repaint is the same partial one an idle frame would have caused.
+void testWriterLossAfterAWorkingFrameFallsToIdle() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* themed = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"activity":"idle","activityTtlSecs":90,"themeSpec":{"v":1,"id":"creature","rev":1,"p":[{"t":"sp","x":83,"y":54,"w":74,"h":74,"a":"/themes/u/cp-i.cba","sa":{"idle":"/themes/u/cp-i.cba","coding":"/themes/u/cp-c.cba"}}]}})JSON";
+  const char* working = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"activity":"coding","activityTtlSecs":90})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, themed, 1000, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, working, 31000, event));
+  TEST_ASSERT_EQUAL_STRING("coding", state.current.activity.c_str());
+
+  TEST_ASSERT_FALSE(ExpireActivity(state, 120999, event));
+  TEST_ASSERT_TRUE(ExpireActivity(state, 121000, event));
+  TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
+  TEST_ASSERT_TRUE(event.hadFrame);
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+  TEST_ASSERT_EQUAL_UINT32(kThemeSpecFieldActivity, event.themeSpecChangedFields);
+  // Nothing else about the last frame is lost.
+  TEST_ASSERT_TRUE(state.current.hasThemeSpec);
+  TEST_ASSERT_EQUAL_INT(10, state.current.session);
+
+  // A theme that does not draw activity has nothing to repaint.
+  RuntimeState plain;
+  const char* plainTheme = R"JSON({"v":2,"provider":"codex","session":10,"weekly":20,"activity":"coding","activityTtlSecs":90,"themeSpec":{"v":1,"id":"plain","rev":1,"p":[{"t":"tx","x":0,"y":0,"v":"{session}%","s":1}]}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(plain, plainTheme, 1000, event));
+  TEST_ASSERT_TRUE(ExpireActivity(plain, 91000, event));
+  TEST_ASSERT_EQUAL_STRING("idle", plain.current.activity.c_str());
+  TEST_ASSERT_FALSE(event.visualChanged);
+}
+
+// A frame without the bound keeps its activity for good: that is what a
+// Companion from before #369 sends, and the device never picks a bound itself.
+// An error frame and an idle frame have nothing to expire.
+void testActivityWithoutATtlNeverExpires() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* bounded = R"JSON({"v":2,"provider":"codex","session":7,"weekly":7,"activity":"coding","activityTtlSecs":10})JSON";
+  const char* unbounded = R"JSON({"v":2,"provider":"codex","session":7,"weekly":7,"activity":"coding"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, bounded, 1000, event));
+  // The newest frame decides; the older frame's bound does not outlive it.
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, unbounded, 2000, event));
+  TEST_ASSERT_FALSE(ExpireActivity(state, 2000 + 86400000UL, event));
+  TEST_ASSERT_EQUAL_STRING("coding", state.current.activity.c_str());
+
+  const char* idle = R"JSON({"v":2,"provider":"codex","session":7,"weekly":7,"activity":"idle","activityTtlSecs":10})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, idle, 3000, event));
+  TEST_ASSERT_FALSE(ExpireActivity(state, 20000, event));
+
+  const char* errorFrame = R"JSON({"v":2,"error":"runtime/cycle-timeout","activity":"coding","activityTtlSecs":10})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, errorFrame, 21000, event));
+  TEST_ASSERT_FALSE(ExpireActivity(state, 40000, event));
+  TEST_ASSERT_TRUE(state.current.hasError);
+}
+
+// Issue #369, reconnect without state replay: after the writer was gone, the
+// device shows what the first new frame says and nothing of the state from
+// before. The old bound is over, and the new one counts from the new receipt.
+void testReconnectAfterExpiryTakesTheNewFrameAtItsWord() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* working = R"JSON({"v":2,"provider":"codex","session":7,"weekly":7,"activity":"coding","activityTtlSecs":10})JSON";
+  const char* idle = R"JSON({"v":2,"provider":"codex","session":7,"weekly":7,"activity":"idle","activityTtlSecs":10})JSON";
+  const char* silent = R"JSON({"v":2,"provider":"codex","session":9,"weekly":9,"activityTtlSecs":10})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, working, 1000, event));
+  TEST_ASSERT_TRUE(ExpireActivity(state, 11000, event));
+
+  // The writer returns after an hour and reports idle: no working state comes back.
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, idle, 3600000, event));
+  TEST_ASSERT_FALSE(event.reportsWorking);
+  TEST_ASSERT_FALSE(event.visualChanged);
+  TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
+
+  // A frame that says nothing about activity does not bring it back either.
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, silent, 3602000, event));
+  TEST_ASSERT_FALSE(event.reportsWorking);
+  TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
+
+  // It reports working: shown at once, valid for its own ten seconds.
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, working, 3604000, event));
+  TEST_ASSERT_TRUE(event.reportsWorking);
+  TEST_ASSERT_EQUAL_STRING("coding", state.current.activity.c_str());
+  TEST_ASSERT_FALSE(ExpireActivity(state, 3613999, event));
+  TEST_ASSERT_TRUE(ExpireActivity(state, 3614000, event));
+}
+
+// millis() wraps after 49.7 days. The bound is an elapsed time, so a frame
+// received just before the wrap expires on time just after it.
+void testActivityExpirySurvivesMillisWrapAround() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* working = R"JSON({"v":2,"provider":"codex","session":7,"weekly":7,"activity":"coding","activityTtlSecs":10})JSON";
+  const unsigned long received = 0xFFFFFFFFUL - 2999UL;  // 3s before the wrap
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, working, received, event));
+  TEST_ASSERT_FALSE(ExpireActivity(state, 0xFFFFFFFFUL, event));
+  TEST_ASSERT_FALSE(ExpireActivity(state, 0UL, event));
+  TEST_ASSERT_EQUAL_UINT32(7, ActivityTtlRemainingSecs(state, 0UL));
+  TEST_ASSERT_FALSE(ExpireActivity(state, 6999UL, event));
+  TEST_ASSERT_EQUAL_STRING("coding", state.current.activity.c_str());
+  TEST_ASSERT_TRUE(ExpireActivity(state, 7000UL, event));
+  TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
+}
+
+// Frames from one-shot senders (theme install, `theme-apply`) carry neither
+// `activity` nor a bound. They cancel the running bound, and that is safe
+// because the same frame ends the working state: what remains is idle, which
+// has nothing to expire. No frame can leave "coding" on screen without a bound
+// unless it says "coding" itself.
+void testOneShotFrameWithoutActivityLeavesNoUnboundedWorkingState() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* working = R"JSON({"v":2,"provider":"codex","session":7,"weekly":7,"activity":"coding","activityTtlSecs":10})JSON";
+  const char* installing = R"JSON({"v":2,"provider":"vibetv","label":"Installing","session":45,"weekly":45,"usageMode":"remaining"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, working, 1000, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, installing, 2000, event));
+  TEST_ASSERT_FALSE(event.reportsWorking);
+  TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
+  TEST_ASSERT_EQUAL_UINT32(0, ActivityTtlRemainingSecs(state, 2000));
+  TEST_ASSERT_FALSE(ExpireActivity(state, 600000, event));
+  TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
+}
+
+// While the device takes a theme or an update it accepts no frames, so it
+// cannot tell whether the writer is still there. That time does not count
+// against the bound: a customer who codes through a long install must not see
+// idle between the end of the install and the next frame.
+void testActivityTtlDoesNotRunWhileTheDeviceAcceptsNoFrames() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* working = R"JSON({"v":2,"provider":"codex","session":7,"weekly":7,"activity":"coding","activityTtlSecs":10})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, working, 1000, event));
+  for (unsigned long now = 2000; now <= 45000; now += 1000) {
+    HoldActivityTtl(state, now);  // the install runs for 45 s
+  }
+  TEST_ASSERT_FALSE(ExpireActivity(state, 45001, event));
+  TEST_ASSERT_EQUAL_STRING("coding", state.current.activity.c_str());
+  TEST_ASSERT_EQUAL_UINT32(10, ActivityTtlRemainingSecs(state, 45001));
+  // From the end of the install the frame's own bound applies again.
+  TEST_ASSERT_FALSE(ExpireActivity(state, 54999, event));
+  TEST_ASSERT_TRUE(ExpireActivity(state, 55000, event));
+
+  // Holding does not invent a bound for a frame that carried none.
+  RuntimeState unbounded;
+  const char* legacy = R"JSON({"v":2,"provider":"codex","session":7,"weekly":7,"activity":"coding"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(unbounded, legacy, 1000, event));
+  HoldActivityTtl(unbounded, 5000);
+  TEST_ASSERT_EQUAL_UINT32(0, ActivityTtlRemainingSecs(unbounded, 5000));
+  TEST_ASSERT_FALSE(ExpireActivity(unbounded, 900000, event));
+}
+
+// The bound is capped at a day, so its millisecond count cannot overflow.
+void testActivityTtlIsCappedAtOneDay() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* working = R"JSON({"v":2,"provider":"codex","session":7,"weekly":7,"activity":"coding","activityTtlSecs":99999999})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, working, 0, event));
+  TEST_ASSERT_FALSE(ExpireActivity(state, 86399999UL, event));
+  TEST_ASSERT_TRUE(ExpireActivity(state, 86400000UL, event));
 }
 
 // An error frame states nothing about the customer, so it must not hold the
@@ -2889,6 +3052,174 @@ void testProgressColorStopsCompileRejectsTooManyEntries() {
   ReleaseCompiledThemeSpec(scene);
 }
 
+// The picture one render leaves behind, built from its FillRect runs. -1 is a
+// pixel no run touched.
+struct ArcPicture {
+  std::vector<int> pixels = std::vector<int>(240 * 240, -1);
+  bool insideBox = true;
+
+  ArcPicture(const RecordingSink& sink, int boxX, int boxY, int boxSize) {
+    for (const RecordedCommand& cmd : sink.commands) {
+      if (cmd.type != CommandType::FillRect) {
+        continue;
+      }
+      insideBox = insideBox && cmd.height == 1 && cmd.width > 0 &&
+                  cmd.x >= boxX && cmd.x + cmd.width <= boxX + boxSize &&
+                  cmd.y >= boxY && cmd.y < boxY + boxSize;
+      for (int x = cmd.x; x < cmd.x + cmd.width; ++x) {
+        pixels[cmd.y * 240 + x] = cmd.color;
+      }
+    }
+  }
+
+  int Count(int color) const {
+    int count = 0;
+    for (int pixel : pixels) {
+      count += pixel == color ? 1 : 0;
+    }
+    return count;
+  }
+};
+
+// The arc under test: a 100 px box at 20,30, so its centre is 70,80, with a
+// 10 px ring from 7:30 clockwise over three quarters of a turn to 4:30.
+const char* const kArcSpec = R"JSON({"v":1,"id":"arc","rev":1,"p":[
+  {"t":"p","x":20,"y":30,"w":100,"h":100,"b":"us1p","ps":"arc","as":225,"aw":270,"at":10,
+   "c":"#00FF00","bg":"#333333","cs":[{"gte":0,"c":"#FF0000"},{"gte":40,"c":"#00FF00"}]}
+]})JSON";
+
+ArcPicture renderArc(int percent, const char* usageMode = "remaining") {
+  FrameData frame = testFrame();
+  frame.usageMode = usageMode;
+  frame.usageSlot1Available = true;
+  frame.usageSlot1Percent = percent;
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(kArcSpec, frame, sink));
+  return ArcPicture(sink, 20, 30, 100);
+}
+
+// The pixel in the middle of the ring at an angle clockwise from 12 o'clock.
+int arcPixelAt(const ArcPicture& picture, int degrees) {
+  const double radians = degrees * 3.14159265358979323846 / 180.0;
+  const int x = static_cast<int>(std::floor(70 + 45 * std::sin(radians)));
+  const int y = static_cast<int>(std::floor(80 - 45 * std::cos(radians)));
+  return picture.pixels[y * 240 + x];
+}
+
+void testProgressArcFillsItsSweepClockwiseByPercent() {
+  const int fill = ParseColor("#00FF00", 0);
+  const int track = ParseColor("#333333", 0);
+
+  const ArcPicture empty = renderArc(0, "used");
+  TEST_ASSERT_TRUE(empty.insideBox);
+  TEST_ASSERT_EQUAL_INT(0, empty.Count(fill));
+  for (int degrees : {227, 300, 0, 90, 133}) {
+    TEST_ASSERT_EQUAL_INT(track, arcPixelAt(empty, degrees));
+  }
+  // The open quarter at the bottom is never drawn, and neither is the hole.
+  for (int degrees : {137, 180, 223}) {
+    TEST_ASSERT_EQUAL_INT(-1, arcPixelAt(empty, degrees));
+  }
+  TEST_ASSERT_EQUAL_INT(-1, empty.pixels[80 * 240 + 70]);
+  // Three quarters of a ring between radius 40 and 50.
+  const int ring = empty.Count(track);
+  TEST_ASSERT_INT_WITHIN(40, 2121, ring);
+
+  const ArcPicture half = renderArc(50);
+  TEST_ASSERT_TRUE(half.insideBox);
+  for (int degrees : {227, 300, 358}) {
+    TEST_ASSERT_EQUAL_INT(fill, arcPixelAt(half, degrees));
+  }
+  for (int degrees : {2, 90, 133}) {
+    TEST_ASSERT_EQUAL_INT(track, arcPixelAt(half, degrees));
+  }
+  TEST_ASSERT_EQUAL_INT(-1, arcPixelAt(half, 180));
+  TEST_ASSERT_EQUAL_INT(ring, half.Count(fill) + half.Count(track));
+  TEST_ASSERT_INT_WITHIN(20, ring / 2, half.Count(fill));
+
+  const ArcPicture full = renderArc(100);
+  TEST_ASSERT_TRUE(full.insideBox);
+  TEST_ASSERT_EQUAL_INT(0, full.Count(track));
+  TEST_ASSERT_EQUAL_INT(ring, full.Count(fill));
+  TEST_ASSERT_EQUAL_INT(-1, arcPixelAt(full, 180));
+
+  // Out-of-range values draw what 0 and 100 draw.
+  TEST_ASSERT_TRUE(renderArc(140).pixels == full.pixels);
+  TEST_ASSERT_TRUE(renderArc(-20, "used").pixels == empty.pixels);
+
+  // Every share in between grows the fill and never leaves the sweep.
+  int previous = 0;
+  for (int percent = 0; percent <= 100; ++percent) {
+    const ArcPicture step = renderArc(percent);
+    const int filled = step.Count(fill) + step.Count(ParseColor("#FF0000", 0));
+    TEST_ASSERT_TRUE(step.insideBox);
+    TEST_ASSERT_TRUE(filled >= previous);
+    TEST_ASSERT_EQUAL_INT(ring, filled + step.Count(track));
+    previous = filled;
+  }
+}
+
+void testProgressArcUsesColorStopsLikeTheBar() {
+  // 30 % remaining is below the 40 % stop, and so is 70 % used.
+  TEST_ASSERT_TRUE(renderArc(30).Count(ParseColor("#FF0000", 0)) > 0);
+  TEST_ASSERT_EQUAL_INT(0, renderArc(30).Count(ParseColor("#00FF00", 0)));
+  TEST_ASSERT_TRUE(renderArc(70, "used").Count(ParseColor("#FF0000", 0)) > 0);
+  TEST_ASSERT_TRUE(renderArc(70).Count(ParseColor("#00FF00", 0)) > 0);
+}
+
+void testProgressArcIsNotDrawnForAMissingWindowLikeTheBar() {
+  FrameData frame = testFrame();
+  frame.usageSlot1Available = false;
+  frame.usageSlot1Percent = 50;
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(kArcSpec, frame, sink));
+  TEST_ASSERT_EQUAL_UINT32(1, sink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillScreen), static_cast<int>(sink.commands[0].type));
+}
+
+void testProgressArcDrawsAFullRingAndAFullDisc() {
+  FrameData frame = testFrame();
+  frame.session = 100;
+  RecordingSink ringSink;
+  TEST_ASSERT_TRUE(renderSpec(
+      R"JSON({"v":1,"id":"ring","rev":1,"p":[{"t":"p","x":0,"y":0,"w":61,"h":40,"ps":"arc","aw":360,"at":20,"c":"#FFFFFF"}]})JSON",
+      frame, ringSink));
+  // A disc of 40 px across in the middle of the wider box: 10.5 px each side.
+  const ArcPicture disc(ringSink, 10, 0, 41);
+  TEST_ASSERT_TRUE(disc.insideBox);
+  TEST_ASSERT_INT_WITHIN(20, 1257, disc.Count(0xFFFF));
+  TEST_ASSERT_EQUAL_INT(0xFFFF, disc.pixels[20 * 240 + 30]);
+}
+
+void testProgressArcOutsideItsLimitsIsSkipped() {
+  for (const char* fields : {
+           R"("as":0,"aw":270)",            // no thickness
+           R"("as":0,"aw":270,"at":0)",
+           R"("as":0,"aw":270,"at":51)",    // thicker than the radius
+           R"("as":0,"at":10)",             // no sweep
+           R"("as":0,"aw":361,"at":10)",
+           R"("as":-1,"aw":270,"at":10)",
+           R"("as":360,"aw":270,"at":10)",
+       }) {
+    const std::string spec = std::string(R"JSON({"v":1,"id":"arc","rev":1,"p":[{"t":"p","x":0,"y":0,"w":100,"h":100,"ps":"arc",)JSON") +
+                             fields + R"JSON(},{"t":"tx","x":0,"y":0,"s":1,"v":"ok"}]})JSON";
+    RecordingSink sink;
+    TEST_ASSERT_TRUE_MESSAGE(renderSpec(spec.c_str(), testFrame(), sink), fields);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(2, sink.commands.size(), fields);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[1].type));
+  }
+  // The long names and the edge of every limit are accepted.
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(
+      R"JSON({"themeSpecVersion":1,"themeId":"arc","themeRev":1,"primitives":[
+        {"type":"progress","x":0,"y":0,"width":100,"height":100,"progressStyle":"arc","arcStart":359,"arcSweep":1,"arcThickness":50,"bgColor":"#111111"},
+        {"type":"progress","x":0,"y":0,"width":100,"height":100,"progressStyle":"arc","arcStart":0,"arcSweep":360,"arcThickness":1,"bgColor":"#222222"}
+      ]})JSON",
+      testFrame(), sink));
+  const ArcPicture picture(sink, 0, 0, 100);
+  TEST_ASSERT_TRUE(picture.Count(ParseColor("#111111", 0)) + picture.Count(ParseColor("#222222", 0)) > 0);
+}
+
 void testStateAssetsUseActivityWithIdleFallback() {
   const char* spec = R"JSON({
     "themeSpecVersion": 1,
@@ -2952,95 +3283,6 @@ void testStateAnimatedSpriteActivityChangeRedrawsAnimatedPass() {
   TEST_ASSERT_TRUE(renderAnimatedSpec(spec, codingFrame, codingAnimatedSink));
   TEST_ASSERT_EQUAL_UINT32(1, codingAnimatedSink.commands.size());
   TEST_ASSERT_EQUAL_STRING("/themes/demo/coding.cba", codingAnimatedSink.commands[0].assetPath.c_str());
-}
-
-void testFrameActivityDefaultsToCodingWhenUsageChanges() {
-  RuntimeState state;
-  SerialConsumeEvent event;
-
-  const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
-  TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
-  TEST_ASSERT_FALSE(event.usageProgressed);
-
-  const char* idleFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, idleFrame, 2000, event));
-  TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
-  TEST_ASSERT_FALSE(event.usageProgressed);
-
-  const char* codingFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":11,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, codingFrame, 3000, event));
-  TEST_ASSERT_EQUAL_STRING("coding", state.current.activity.c_str());
-  TEST_ASSERT_TRUE(event.usageProgressed);
-}
-
-void testUsageProgressIgnoresTokenHistoryExpiryAndRestore() {
-  RuntimeState state;
-  SerialConsumeEvent event;
-
-  const char* firstFrame =
-      R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
-
-  const char* expiredFrame =
-      R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":0,"weekTokens":0,"totalTokens":0})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, expiredFrame, 2000, event));
-  TEST_ASSERT_FALSE(event.usageProgressed);
-
-  const char* restoredFrame =
-      R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, restoredFrame, 3000, event));
-  TEST_ASSERT_FALSE(event.usageProgressed);
-
-  const char* usageMoved =
-      R"JSON({"v":2,"provider":"codex","label":"Codex","session":11,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, usageMoved, 4000, event));
-  TEST_ASSERT_TRUE(event.usageProgressed);
-}
-
-// Standby's activity clock hangs on this event, so a frame that only claims to
-// be coding, or an error frame, must not count as activity.
-void testUsageProgressEventIgnoresDeclaredActivityAndErrors() {
-  RuntimeState state;
-  SerialConsumeEvent event;
-
-  const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
-
-  const char* declaredCoding = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"activity":"coding"})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, declaredCoding, 2000, event));
-  TEST_ASSERT_EQUAL_STRING("coding", state.current.activity.c_str());
-  TEST_ASSERT_FALSE(event.usageProgressed);
-
-  const char* errorFrame = R"JSON({"v":2,"error":"runtime/cycle-timeout","session":80,"weekly":90})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, errorFrame, 3000, event));
-  TEST_ASSERT_TRUE(state.current.hasError);
-  TEST_ASSERT_FALSE(event.usageProgressed);
-}
-
-void testUsageProgressEventIgnoresDisplayOnlyUsageChanges() {
-  RuntimeState state;
-  SerialConsumeEvent event;
-
-  const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":7200,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"usageWindows":[{"id":"five-hour","label":"5-hour","percent":25,"resetSecs":7200}]})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
-
-  const char* displayOnlyChange = R"JSON({"v":2,"provider":"codex","label":"Codex refreshed","session":10,"weekly":20,"resetSecs":7199,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"usageWindows":[{"id":"five-hour","label":"5-hour refreshed","percent":25,"resetSecs":7199}]})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, displayOnlyChange, 2000, event));
-  TEST_ASSERT_FALSE(event.usageProgressed);
-  TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
-
-  const char* unavailable = R"JSON({"v":2,"provider":"codex","label":"Usage unavailable","session":0,"weekly":0,"resetSecs":7198,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"usageUnavailable":true,"sessionUnavailable":true,"weeklyUnavailable":true})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, unavailable, 3000, event));
-  TEST_ASSERT_FALSE(event.usageProgressed);
-
-  const char* restored = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":7197,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"usageWindows":[{"id":"five-hour","label":"5-hour","percent":25,"resetSecs":7197}]})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, restored, 4000, event));
-  TEST_ASSERT_FALSE(event.usageProgressed);
-
-  const char* usageMoved = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":7196,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"usageWindows":[{"id":"five-hour","label":"5-hour","percent":26,"resetSecs":7196}]})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, usageMoved, 5000, event));
-  TEST_ASSERT_TRUE(event.usageProgressed);
 }
 
 void testThemeSpecActivityChangeUsesPartialRenderEvent() {
@@ -4244,10 +4486,17 @@ int main() {
   RUN_TEST(testCountdownOnlyFramesDoNotRedrawUsageThemesWithoutCountdowns);
   RUN_TEST(testCountdownOnlyFramesRedrawThemesThatShowCountdowns);
   RUN_TEST(testConsumeFrameLineComparesCurrentBeforeAssignment);
-  RUN_TEST(testQuotaReplenishmentDoesNotCountAsUsageProgress);
-  RUN_TEST(testUsageProgressRequiresStableProviderAndWindowIdentity);
   RUN_TEST(testReportsWorkingFollowsTheFrameActivityVerdict);
-  RUN_TEST(testReportsWorkingFallsBackToUsageProgressWithoutActivity);
+  RUN_TEST(testFrameWithoutActivityReportsNotWorking);
+  RUN_TEST(testActivityExpiresWhenTheFrameTtlPasses);
+  RUN_TEST(testFreshFrameRestartsTheActivityTtl);
+  RUN_TEST(testWriterLossAfterAWorkingFrameFallsToIdle);
+  RUN_TEST(testActivityWithoutATtlNeverExpires);
+  RUN_TEST(testReconnectAfterExpiryTakesTheNewFrameAtItsWord);
+  RUN_TEST(testActivityExpirySurvivesMillisWrapAround);
+  RUN_TEST(testOneShotFrameWithoutActivityLeavesNoUnboundedWorkingState);
+  RUN_TEST(testActivityTtlDoesNotRunWhileTheDeviceAcceptsNoFrames);
+  RUN_TEST(testActivityTtlIsCappedAtOneDay);
   RUN_TEST(testReportsWorkingIgnoresErrorFramesAndReplenishment);
   RUN_TEST(testUsageWindowOwnershipAndCompactTemplateTriggerLiveRedraw);
   RUN_TEST(testWhitespaceUsageWindowOwnersTriggerLiveRedraw);
@@ -4302,14 +4551,15 @@ int main() {
   RUN_TEST(testProgressColorStopsFallbackToSolidColor);
   RUN_TEST(testProgressColorStopsPreferLongColorAlias);
   RUN_TEST(testProgressColorStopsCompileRejectsTooManyEntries);
+  RUN_TEST(testProgressArcFillsItsSweepClockwiseByPercent);
+  RUN_TEST(testProgressArcUsesColorStopsLikeTheBar);
+  RUN_TEST(testProgressArcIsNotDrawnForAMissingWindowLikeTheBar);
+  RUN_TEST(testProgressArcDrawsAFullRingAndAFullDisc);
+  RUN_TEST(testProgressArcOutsideItsLimitsIsSkipped);
   RUN_TEST(testValignDirtyBoundsCoverGlyphsWhenHeightSmallerThanFont);
   RUN_TEST(testValignBottomDirtyBoundsCoverGlyphsWhenHeightSmallerThanFont);
   RUN_TEST(testStateAssetsUseActivityWithIdleFallback);
   RUN_TEST(testStateAnimatedSpriteActivityChangeRedrawsAnimatedPass);
-  RUN_TEST(testFrameActivityDefaultsToCodingWhenUsageChanges);
-  RUN_TEST(testUsageProgressIgnoresTokenHistoryExpiryAndRestore);
-  RUN_TEST(testUsageProgressEventIgnoresDeclaredActivityAndErrors);
-  RUN_TEST(testUsageProgressEventIgnoresDisplayOnlyUsageChanges);
   RUN_TEST(testThemeSpecActivityChangeUsesPartialRenderEvent);
   RUN_TEST(testThemeSpecProviderChangeUsesPartialRenderEvent);
   RUN_TEST(testThemeSpecColorStopsUsageModeChangeUsesPartialRenderEvent);

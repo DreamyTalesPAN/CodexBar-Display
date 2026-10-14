@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { expectNoAxeViolations } from "@/test/axe";
 import type { DeviceCandidate } from "../control-center-types";
 import { SetupDeviceScreen } from "./setup-device-screen";
 
@@ -186,5 +187,18 @@ describe("SetupDeviceScreen while the scan is still running", () => {
     const html = render({ candidates: [], searching: false });
 
     expect(html).toContain("0 VibeTVs found on your WiFi.");
+  });
+});
+
+describe("SetupDeviceScreen accessibility", () => {
+  it("has no violations with found devices, the connection choice, the WiFi form and while connecting", async () => {
+    await expectNoAxeViolations(render());
+    await expectNoAxeViolations(render({ showModeChoice: true, showCandidates: false }));
+    await expectNoAxeViolations(
+      render({ showCandidates: false, wifiSetupPhase: "credentials", wifiNetworks: [{ ssid: "Home", rssi: -50, encrypted: true }] }),
+    );
+    await expectNoAxeViolations(
+      render({ connecting: true, connectPhase: "connecting", logLines: [{ id: "1", text: "Connecting to VibeTV." }] }),
+    );
   });
 });

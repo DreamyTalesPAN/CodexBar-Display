@@ -14,10 +14,12 @@ export function buildDeviceThemePack(document: ThemeStudioDocument) {
 export async function pollThemeInstallJob<Job extends { phase: string }>({
   applyInstallJob,
   jobId,
+  noun = "Theme",
   runCompanion,
 }: {
   applyInstallJob: (job: Job) => void;
   jobId: string;
+  noun?: string;
   runCompanion: <T>(path: string, init?: RequestInit, options?: { preserveLastError?: boolean }) => Promise<T>;
 }): Promise<Job> {
   // The server may spend the full five-minute budget waiting for the first
@@ -36,8 +38,8 @@ export async function pollThemeInstallJob<Job extends { phase: string }>({
   }
   throw {
     code: "theme_install_timeout",
-    message: "Theme install is taking longer than expected.",
-    nextAction: "Keep VibeTV powered on, then check the theme again.",
+    message: `${noun} install is taking longer than expected.`,
+    nextAction: `Keep VibeTV powered on, then check the ${noun.toLowerCase()} again.`,
   } satisfies ApiError;
 }
 

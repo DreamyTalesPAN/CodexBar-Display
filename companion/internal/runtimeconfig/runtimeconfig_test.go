@@ -297,6 +297,26 @@ func TestProviderDisplayNormalizeAndSetupMigration(t *testing.T) {
 	}
 }
 
+func TestDisplayRotateSecondsSurvivesRestartAndKeepsOnlyOfferedIntervals(t *testing.T) {
+	home := t.TempDir()
+	if err := Save(home, Config{DisplayRotateSeconds: 30}); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(home)
+	if err != nil || loaded.DisplayRotateSeconds != 30 {
+		t.Fatalf("rotation interval did not persist: %+v err=%v", loaded, err)
+	}
+
+	// Settings offers 30, 60 and 300 seconds; anything else is no timer.
+	for _, other := range []int{-5, 45} {
+		cfg := Config{DisplayRotateSeconds: other}
+		cfg.Normalize()
+		if cfg.DisplayRotateSeconds != 0 {
+			t.Fatalf("rotation interval %d was kept as %d", other, cfg.DisplayRotateSeconds)
+		}
+	}
+}
+
 func TestResetDeviceBindingPreservesAuthenticationProfiles(t *testing.T) {
 	cfg := Config{
 		DeviceID:         "device-a",

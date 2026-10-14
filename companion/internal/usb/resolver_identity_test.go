@@ -245,6 +245,31 @@ func TestFindLegacyCableVibeTVAcceptsOnlyOnePreIdentityESP8266(t *testing.T) {
 	}
 }
 
+// Issue #536: a port another program holds was never asked, and the VibeTV
+// that needs the rescue may be on it, so the finder says so instead of "no
+// VibeTV answered". A VibeTV that answered on another port is still found.
+func TestFindLegacyCableVibeTVReportsABusyPort(t *testing.T) {
+	legacy := cableHello("")
+	legacy.Capabilities.Transport.Mode = ""
+	busy := wrapTransportError(errcode.TransportSerialOpen, "open-port", "/dev/cu.usbserial-busy", "", errors.New("resource busy"))
+	read := func(port string) (protocol.DeviceHello, error) {
+		if strings.Contains(port, "busy") {
+			return protocol.DeviceHello{}, busy
+		}
+		if strings.Contains(port, "legacy") {
+			return legacy, nil
+		}
+		return protocol.DeviceHello{}, ErrDeviceHelloUnavailable
+	}
+
+	if _, err := findLegacyCableVibeTV([]string{"/dev/cu.usbserial-busy", "/dev/cu.usbserial-silent"}, read); !errors.Is(err, busy) {
+		t.Fatalf("a busy port next to a silent one: got %v, want %v", err, busy)
+	}
+	if got, err := findLegacyCableVibeTV([]string{"/dev/cu.usbserial-busy", "/dev/cu.usbserial-legacy"}, read); err != nil || got.Port != "/dev/cu.usbserial-legacy" {
+		t.Fatalf("a busy port next to the VibeTV must not hide it: got=%+v err=%v", got, err)
+	}
+}
+
 func TestDiscoverVibeTVsReportsTheLegacyVibeTVItFound(t *testing.T) {
 	legacy := cableHello("")
 	legacy.Capabilities.Transport.Mode = ""
