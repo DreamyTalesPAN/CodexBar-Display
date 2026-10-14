@@ -5645,3 +5645,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul requested reviewing and fixing PR #590 on both systems, then approved a single sign-in action replacing the toggle and retry controls on the supplied design.
 - Approved customer-visible result: The same approved row remains unchanged. Starting a second provider sign-in no longer cancels the first provider's automatic checks, and a temporary unavailable/timeout result does not stop recovery. Existing checks continue for at most three minutes, stopping when the provider is ready, switched off, removed or cannot provide usage. This completes the existing automatic behavior required by the one-action row.
+
+
+## 2026-10-14 - Release screenshot mode for customer update mails
+
+- User approval: Paul asked for an automation that emails VibeTV customers what is new after each release and explicitly wanted app screenshots in it: "am liebsten auch mit screenshots usw".
+- Approved customer-visible result: No UI change. `test-customer-flows.mjs --release-screenshots` only runs the existing flows that already capture screenshots and captures them at 2x for the mail drafts; the app and the other test modes are unchanged.
