@@ -979,7 +979,7 @@ if (
     )
 repair_restart = prepare_method.find("if codexBarRepairRestartRequired")
 repair_stop = prepare_method.find("await unregisterBundledRuntimeService()", repair_restart)
-codexbar_publish = prepare_method.find("guard bootstrapCodexBar()")
+codexbar_publish = prepare_method.find("var codexBarPrepared = bootstrapCodexBar()")
 if not (0 <= repair_restart < repair_stop < codexbar_publish):
     raise SystemExit(
         "native CodexBar repair must stop the managed runtime before replacing its private payload"

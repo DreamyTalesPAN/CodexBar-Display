@@ -9,6 +9,15 @@ private func require(_ condition: @autoclosure () -> Bool, _ message: String) {
 }
 
 func runURLSchemeTests() {
+    // Issue #556: a start retries the CodexBar preparation once; a repair does not.
+    require(
+        retriesCodexBarBootstrap(repairRequested: false),
+        "an ordinary start must retry the CodexBar preparation before asking for a repair"
+    )
+    require(
+        !retriesCodexBarBootstrap(repairRequested: true),
+        "a requested repair must answer after one preparation"
+    )
     // Issue #582: the page learns how the save dialog ended.
     require(
         downloadFinishedEventScript(fileName: "vibetv-theme-new-theme.zip", saved: true)

@@ -445,6 +445,16 @@ struct CodexBarCommandResult {
     let output: String
 }
 
+// Issue #556: on a busy Mac the first preparation of the bundled CodexBar can
+// fail where the same command passes moments later, and a new customer's first
+// screen was "Usage service needs repair". An ordinary start tries once more,
+// with the command's full time budget, before it asks for that. A repair the
+// customer or the page asked for answers after one try: the page's own wait is
+// sized for one.
+func retriesCodexBarBootstrap(repairRequested: Bool) -> Bool {
+    !repairRequested
+}
+
 func runCodexBarCommand(
     executableURL: URL,
     arguments: [String],
@@ -3524,7 +3534,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             }
         }
 
-        guard bootstrapCodexBar() else {
+        var codexBarPrepared = bootstrapCodexBar()
+        if !codexBarPrepared,
+           retriesCodexBarBootstrap(repairRequested: codexBarRepairRequired) {
+            NSLog("VibeTV Control Center retries its CodexBar preparation once before asking for a repair")
+            try? await Task.sleep(for: .seconds(5))
+            codexBarPrepared = bootstrapCodexBar()
+        }
+        guard codexBarPrepared else {
             return .codexBarRepairRequired
         }
 
