@@ -521,10 +521,6 @@ func (s *Server) currentTime() time.Time {
 }
 
 func (s *Server) config() (runtimeconfig.Config, error) {
-	return s.configForMaintenance()
-}
-
-func (s *Server) configForMaintenance() (runtimeconfig.Config, error) {
 	s.configMu.Lock()
 	defer s.configMu.Unlock()
 	return s.loadConfigNormalized()

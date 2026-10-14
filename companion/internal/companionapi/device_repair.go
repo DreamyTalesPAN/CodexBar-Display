@@ -255,7 +255,7 @@ func (s *Server) repairDeviceOnceLocked(
 	pauseStream()
 	defer resumeStream()
 
-	cfg, err := s.configForMaintenance()
+	cfg, err := s.config()
 	if err != nil {
 		return deviceInfo{}, &repairStageError{stage: "config", err: err}
 	}
@@ -293,7 +293,7 @@ func (s *Server) repairDeviceOnceLocked(
 		target, hello, err = s.discoverRepairTarget(ctx, discoveryCfg, requestedTarget)
 	}
 	if pendingTransitionWithoutToken && provenToken == "" && err == nil {
-		if refreshed, refreshErr := s.configForMaintenance(); refreshErr == nil &&
+		if refreshed, refreshErr := s.config(); refreshErr == nil &&
 			strings.EqualFold(refreshed.DeviceID, hello.DeviceID) &&
 			strings.TrimSpace(refreshed.DeviceToken) != "" {
 			cfg = refreshed

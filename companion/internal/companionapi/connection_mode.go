@@ -102,7 +102,7 @@ func (s *Server) handleDeviceFactoryReset(w http.ResponseWriter, r *http.Request
 		s.pauseDisplayStream(true)
 		defer s.pauseDisplayStream(false)
 	}
-	cfg, err := s.configForMaintenance()
+	cfg, err := s.config()
 	if err != nil {
 		writeInternalError(w, err)
 		return
@@ -195,7 +195,7 @@ func (s *Server) selectConnectionMode(w http.ResponseWriter, r *http.Request, mo
 		s.pauseDisplayStream(true)
 		defer s.pauseDisplayStream(false)
 	}
-	cfg, err := s.configForMaintenance()
+	cfg, err := s.config()
 	if err != nil {
 		writeInternalError(w, err)
 		return
@@ -598,7 +598,7 @@ func (s *Server) handleSetupWiFi(w http.ResponseWriter, r *http.Request) {
 		s.pauseDisplayStream(true)
 		defer s.pauseDisplayStream(false)
 	}
-	cfg, err := s.configForMaintenance()
+	cfg, err := s.config()
 	if err != nil {
 		writeInternalError(w, err)
 		return
@@ -703,7 +703,7 @@ func (s *Server) handleSetupWiFiNetworks(w http.ResponseWriter, r *http.Request)
 		s.pauseDisplayStream(true)
 		defer s.pauseDisplayStream(false)
 	}
-	cfg, err := s.configForMaintenance()
+	cfg, err := s.config()
 	if err != nil {
 		writeInternalError(w, err)
 		return
@@ -798,7 +798,7 @@ func (s *Server) confirmPendingWiFiTransition(
 		return errors.New("pending WiFi transition did not rediscover the expected VibeTV identity")
 	}
 	if strings.TrimSpace(token) == "" {
-		cfg, err := s.configForMaintenance()
+		cfg, err := s.config()
 		if err != nil {
 			return err
 		}
