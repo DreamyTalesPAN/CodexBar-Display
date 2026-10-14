@@ -8095,6 +8095,37 @@ func TestAutomaticDisplayFollowsObservedAgents(t *testing.T) {
 	check("codex") // An agent cannot resurrect a disabled provider.
 }
 
+// Paul's VibeTV lost its percentages and reset line whenever a reading went
+// stale while an agent was working: the agent frame went out with empty usage
+// instead of the last good reading.
+func TestAgentFrameKeepsTheLastGoodUsageWhileTheReadingIsStale(t *testing.T) {
+	prepareFastTestEnv(t)
+	now := time.Date(2026, 10, 14, 9, 11, 0, 0, time.UTC)
+	state := &runtimeState{
+		agentSnapshot: func() agentstatus.Snapshot { return agentstatus.Snapshot{Health: "ready", Phase: "working"} },
+		lastGood:      protocol.Frame{Provider: "claude", Label: "Claude", Session: 15, Weekly: 13, ResetSec: 3600},
+		lastGoodAt:    now.Add(-time.Minute),
+		hasLastGood:   true,
+	}
+	var sent protocol.Frame
+	deps := runtimeDeps{
+		now: func() time.Time { return now },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{AgentActivity: &runtimeconfig.AgentActivitySettings{Enabled: true}}, nil
+		},
+		sendLine: func(_ string, line []byte) error { return json.Unmarshal(line, &sent) },
+		logf:     func(string, ...any) {},
+	}.withDefaults()
+	result := cycleResult{frame: protocol.Frame{Provider: "claude", Label: "Claude"}, usageFresh: false, resetBasisAt: now.Add(-time.Hour)}
+	caps := protocol.DeviceCapabilities{SupportsAgentActivityV1: true, SupportsAgentThemeStatesV1: true}
+	if err := sendCycleResult(context.Background(), "/test", caps, 2048, state, deps, result); err != nil {
+		t.Fatal(err)
+	}
+	if sent.UsageUnavailable || sent.Session != 15 || sent.Weekly != 13 || sent.Activity != "working" {
+		t.Fatalf("agent frame must restate the last good usage: %+v", sent)
+	}
+}
+
 func TestDeviceGetsOneWorkingStateForEveryWorkingPhase(t *testing.T) {
 	caps := protocol.DeviceCapabilities{SupportsAgentActivityV1: true, SupportsAgentThemeStatesV1: true}
 	for phase, want := range map[string]string{

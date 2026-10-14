@@ -1669,7 +1669,9 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 		frame.UsageUnavailable = true
 	}
 	frame = applyUsageBarsPreference(frame, deps.usageBarsShowUsed())
-	if !result.usageFresh && result.failureErr == nil && !renderAgent {
+	// An agent on screen does not change this: its status goes out with the
+	// last good usage, not with empty usage, while that reading is current.
+	if !result.usageFresh && result.failureErr == nil {
 		expiredLastGood := state != nil && state.hasLastGood && !isLastGoodFreshAt(state.lastGoodAt, deps.now(), providerSnapshotMaxAge())
 		// The reading is only retained, so there is nothing new to show.
 		// Falling silent would look like a lost writer to the device, which
