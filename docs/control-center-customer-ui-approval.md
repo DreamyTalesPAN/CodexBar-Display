@@ -7115,3 +7115,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: None. Props nothing read (`ThemeLibraryScreen.installEntry`, `ControlCenterShell.device`) are gone; `globals.css` loses the unused `.vibetv-status-icon*` rules and tokens and theme aliases nothing references (compiled CSS differs only by those); one progress clamp and one theme-spec hash normalizer replace identical copies; Recent activity rows get ids from a counter, so two events in the same millisecond no longer share a React key. Text and layout are unchanged.
 - Scope: `apps/control-center/src/app/globals.css`, `src/components/{control-center-app,control-center-shell,theme-library-screen,updates-screen,update-jobs,live-vibetv-preview,control-center-runtime,theme-studio-preview}.tsx/.ts`, `theme-studio/ai-theme-studio-screen.tsx`, the shell tests, and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no customer-visible change
+
+## 2026-10-14 — Overnight audit (#614): the kept preview frame belongs to one VibeTV
+
+- User approval: Paul asked on 2026-10-14 for the unattended overnight audit (epic #614) with nothing customer-visible changing. This follows the automated review of the scoped preview poll; he has not seen it.
+- Approved customer-visible result: The frame kept across a tab switch is reused only for the VibeTV it came from. After switching to another VibeTV, Overview and setup start with an empty preview until that VibeTV's first frame arrives, instead of briefly showing the previous one. No text or control changes.
+- Scope: `apps/control-center/src/components/live-vibetv-preview.tsx`, `control-center-app.tsx`, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change

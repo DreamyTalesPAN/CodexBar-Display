@@ -5357,7 +5357,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
     if (setupOwnsScreen) {
       return (
-        <WithLatestDisplayFrame active={displaySessionActive}>
+        <WithLatestDisplayFrame
+          active={displaySessionActive}
+          device={device?.deviceId || deviceTarget}
+        >
           {(displayFrame) => (
             <SetupWizard
               initialWiFiSetup={settingsWiFiSetup}
@@ -5508,7 +5511,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         }}
       >
         {activeShellTab === "overview" ? (
-          <WithLatestDisplayFrame active={displaySessionActive}>
+          <WithLatestDisplayFrame
+            active={displaySessionActive}
+            device={device?.deviceId || deviceTarget}
+          >
             {(displayFrame) => (
               <OverviewScreen
                 companionVersion={companionInfo?.version}

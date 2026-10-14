@@ -285,9 +285,11 @@ type SpriteRect = {
   color: string;
 };
 
-// The last frame seen, so a screen that mounts again (tab switch) starts with
-// it instead of an empty preview until the next poll answers.
-let lastDisplayFrame: DisplayFrameSnapshot | null = null;
+// The last frame seen and the VibeTV it came from, so a screen that mounts
+// again (tab switch) starts with it instead of an empty preview. It is only
+// reused for the same VibeTV: another one must never show the old screen.
+let lastDisplayFrame: { device: string; frame: DisplayFrameSnapshot | null } | null =
+  null;
 
 const DISPLAY_FRAME_POLL_MS = 1000;
 const DISPLAY_FRAME_TIMEOUT_MS = 5000;
@@ -297,16 +299,19 @@ const DISPLAY_FRAME_TIMEOUT_MS = 5000;
  * the screens that draw the preview: every answer re-renders the caller.
  * One request at a time, each bounded; paused while the window is hidden.
  */
-export function useLatestDisplayFrame(connected: boolean) {
+export function useLatestDisplayFrame(connected: boolean, device = "") {
   const [displayFrame, setDisplayFrame] = useState<DisplayFrameSnapshot | null>(
-    () => (connected ? lastDisplayFrame : null),
+    () => (connected && lastDisplayFrame?.device === device ? lastDisplayFrame.frame : null),
   );
 
   useEffect(() => {
-    if (!connected) {
+    let resetTimer = 0;
+    if (!connected || lastDisplayFrame?.device !== device) {
       lastDisplayFrame = null;
-      const timer = window.setTimeout(() => setDisplayFrame(null), 0);
-      return () => window.clearTimeout(timer);
+      resetTimer = window.setTimeout(() => setDisplayFrame(null), 0);
+      if (!connected) {
+        return () => window.clearTimeout(resetTimer);
+      }
     }
 
     let stopped = false;
@@ -334,7 +339,7 @@ export function useLatestDisplayFrame(connected: boolean) {
         const response = await fetch(url, requestInit);
         const nextFrame = await parseLatestDisplayFrameResponse(response);
         if (!stopped) {
-          lastDisplayFrame = nextFrame;
+          lastDisplayFrame = { device, frame: nextFrame };
           setDisplayFrame(nextFrame);
         }
       } catch {
@@ -357,11 +362,12 @@ export function useLatestDisplayFrame(connected: boolean) {
 
     return () => {
       stopped = true;
+      window.clearTimeout(resetTimer);
       request?.abort();
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
-  }, [connected]);
+  }, [connected, device]);
 
   return displayFrame;
 }
@@ -369,12 +375,15 @@ export function useLatestDisplayFrame(connected: boolean) {
 /** Renders `children` with the latest frame; only this subtree re-renders per poll. */
 export function WithLatestDisplayFrame({
   active,
+  device,
   children,
 }: {
   active: boolean;
+  /** Identity of the selected VibeTV; a cached frame is only reused for it. */
+  device: string;
   children: (displayFrame: DisplayFrameSnapshot | null) => ReactNode;
 }) {
-  return children(useLatestDisplayFrame(active));
+  return children(useLatestDisplayFrame(active, device));
 }
 
 export async function parseLatestDisplayFrameResponse(
