@@ -1,4 +1,4 @@
-import type { ThemeStudioPrimitive } from "@/lib/theme-studio";
+import { expandBinding, type ThemeStudioPrimitive } from "@/lib/theme-studio";
 import { AI_THEME_SCREENMASTER_ASSET_PATH, isAttachedSceneAnimation } from "@/lib/ai-theme";
 import { defaultPrimitive, primitiveBounds } from "./editor-geometry";
 
@@ -73,14 +73,15 @@ export function usageSectionIndices(all: ThemeStudioPrimitive[]): number[][] {
   const groups: number[][] = [[], []];
   all.forEach((p, i) => {
     if (p.type !== "text" && p.type !== "progress") return;
-    const key = readingKey(p);
+    // Imported specs may keep compact template keys such as {pv1l}.
+    const key = expandBinding(readingKey(p));
     const slot = key === "session" || key.startsWith("usageSlot1") || key.startsWith("providerSlot1") ? 1 : key === "weekly" || key.startsWith("usageSlot2") || key.startsWith("providerSlot2") ? 2 : p.slot;
     if (slot) groups[slot - 1].push(i);
   });
   all.forEach((p, i) => {
     if (groups.some((group) => group.includes(i)) || p.type !== "text") return;
     const text = p.text?.trim().toUpperCase();
-    const key = readingKey(p);
+    const key = expandBinding(readingKey(p));
     const candidates = groups.map((group, slot) => ({ slot, distance: Math.min(...group.map((n) => {
       const anchor = all[n];
       return Math.max(anchor.y - p.y, p.y - anchor.y - primitiveBounds(anchor).height, 0);

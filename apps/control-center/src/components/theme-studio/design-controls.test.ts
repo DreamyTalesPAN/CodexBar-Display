@@ -44,6 +44,10 @@ describe("position and layer ordering", () => {
     }
     expect(usageSectionIndices(all)).toEqual([[1, 2], [3, 4]]);
   });
+  it("counts compact provider-slot templates of imported specs as usage (#594)", () => {
+    const all = [text("TITLE", 10), text("{pv1l}", 60), text("{pv1p}%", 76), text("{pv2r}", 156)];
+    expect(usageSectionIndices(all)).toEqual([[1, 2], [3]]);
+  });
   it("rejects off-display swaps without partially moving a group", () => {
     const all = [text("a", 10), text("b", 30), text("c", 230)];
     const before = structuredClone(all);
