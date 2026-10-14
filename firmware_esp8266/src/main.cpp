@@ -886,9 +886,10 @@ void appendBrightnessCapabilityJSON(String& out) {
   out += "}";
 }
 
-// Standby needs a second ThemeSpec slot, so a build without the ThemeSpec
-// renderer cannot support it. Hosts must read this instead of assuming that a
-// given firmware version implies standby support.
+// Standby reloads its ThemeSpec from LittleFS on each switch (there is no
+// second resident slot), so a build without the ThemeSpec renderer cannot
+// support it. Hosts must read this instead of assuming that a given firmware
+// version implies standby support.
 void appendStandbyCapabilityJSON(String& out) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   out += "{\"supported\":true,\"minTimeoutMinutes\":";
@@ -2718,9 +2719,6 @@ void handleHealth() {
   webServer.send(200, "application/json", out);
 }
 
-// Records which stored ThemeSpec the screensaver slot points at. Loading it
-// into the second render slot is the standby state machine's job; this only
-// validates and stores the reference. An empty path clears the selection.
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
 bool readValidatedStoredThemeSpec(
     const String& path,
@@ -2730,6 +2728,9 @@ bool readValidatedStoredThemeSpec(
     String& error);
 #endif
 
+// Records which stored ThemeSpec the screensaver slot points at. Loading it
+// into the second render slot is the standby state machine's job; this only
+// validates and stores the reference. An empty path clears the selection.
 bool setStandbyScreensaverPath(standby::Settings& target, const String& rawPath, String& error) {
   String path = rawPath;
   path.trim();
@@ -4042,9 +4043,9 @@ bool parseChunkChecksum(const char* encoded, uint32_t& checksum) {
 
 void emitCableTransferReply(const char* status) {
   String out = "{\"kind\":\"transfer\",\"status\":\"";
-	out += status;
-	out += "\",\"next\":";
-	out += String(cableTransfer.flow.nextSequence);
+  out += status;
+  out += "\",\"next\":";
+  out += String(cableTransfer.flow.nextSequence);
   out += "}";
   Serial.println(out);
 }
@@ -4059,7 +4060,7 @@ void restoreSerialBaudRate() {
 }
 
 void resetCableTransfer(bool discard) {
-	if (!cableTransfer.flow.active) {
+  if (!cableTransfer.flow.active) {
     return;
   }
   // An aborted, rejected, or idle transfer always falls back to the rate the
@@ -4092,13 +4093,13 @@ bool startCableTransfer(JsonDocument& doc) {
   const char* activation = doc["activate"] | "";
   const char* expectedHash = doc["hash"] | "";
   const unsigned long baudRate = doc["baud"] | 0UL;
-	const int expectedBytesValue = doc["bytes"] | 0;
-	const size_t expectedBytes = expectedBytesValue > 0
-	    ? static_cast<size_t>(expectedBytesValue)
-	    : 0;
+  const int expectedBytesValue = doc["bytes"] | 0;
+  const size_t expectedBytes = expectedBytesValue > 0
+      ? static_cast<size_t>(expectedBytesValue)
+      : 0;
   String destination = String(doc["path"] | "");
   destination.trim();
-	if (serialRequestBusy() || strcmp(expectedDeviceID, deviceID.c_str()) != 0 ||
+  if (serialRequestBusy() || strcmp(expectedDeviceID, deviceID.c_str()) != 0 ||
       !deviceAuthConfigured() || strcmp(token, deviceAuthToken.c_str()) != 0 ||
       (expectedBytes == 0 && strcmp(sink, "prepare-theme") != 0)) {
     emitSerialError("transfer-rejected");

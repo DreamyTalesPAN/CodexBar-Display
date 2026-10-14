@@ -123,10 +123,6 @@ void setSpriteRenderError(const char* code, const char* assetPath) {
   // it must not bury a decode failure that is still selected: with two
   // animated sprites sharing one frame buffer, B running out of heap would
   // otherwise hide A's corrupt data behind ordinary memory pressure.
-  // A transient condition never proves anything about a different asset, so
-  // it must not bury a decode failure that is still selected: with two
-  // animated sprites sharing one frame buffer, B running out of heap would
-  // otherwise hide A's corrupt data behind ordinary memory pressure.
   if (lastSpriteErrorIsDecodeFailure && lastAnimatedSpriteError[0] != '\0') {
     return;
   }
