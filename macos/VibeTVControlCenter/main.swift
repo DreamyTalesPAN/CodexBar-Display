@@ -598,12 +598,19 @@ func browserSignInProviderHealthy(preferences data: Data, provider: String) -> B
 
 // The published endpoint can be stale and point at another listener, so one
 // origin answering "not ready" does not settle it; any ready origin does.
-func browserSignInProviderIsReady(provider: String, runtimeOrigins: [URL]) async -> Bool {
-    let configuration = URLSessionConfiguration.ephemeral
-    configuration.timeoutIntervalForRequest = runtimeHealthRequestTimeout
-    let session = URLSession(configuration: configuration)
-    defer { session.invalidateAndCancel() }
+// Every request ends by the reading's deadline, so stale origins cannot keep
+// the reading, and later sign-in clicks, past its window.
+func browserSignInProviderIsReady(provider: String, runtimeOrigins: [URL], deadline: Date) async -> Bool {
     for origin in runtimeOrigins {
+        let remaining = min(runtimeHealthRequestTimeout, deadline.timeIntervalSinceNow)
+        guard remaining > 1 else {
+            break
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = remaining
+        configuration.timeoutIntervalForResource = remaining
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
         guard let (data, response) = try? await session.data(
             from: origin.appendingPathComponent("v1/usage")
         ), (response as? HTTPURLResponse)?.statusCode == 200 else {
@@ -3025,7 +3032,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 try? await Task.sleep(nanoseconds: UInt64(browserSignInReadInterval * 1_000_000_000))
                 ready = await browserSignInProviderIsReady(
                     provider: provider,
-                    runtimeOrigins: runtimeOrigins
+                    runtimeOrigins: runtimeOrigins,
+                    deadline: deadline
                 )
                 if ready {
                     break
