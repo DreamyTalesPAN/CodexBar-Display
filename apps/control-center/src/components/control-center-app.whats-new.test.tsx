@@ -254,14 +254,12 @@ it("tells a set-up customer what is new once, on Overview, until they close it",
     "Press ⌃⌥⌘P in any app to show the next provider on VibeTV.",
     "Choose how often VibeTV switches",
     "In Automatic mode VibeTV can switch when your activity changes, or every 30 seconds, every minute or every 5 minutes.",
-    "Show what is used or what is left",
-    "Choose whether VibeTV shows how much of your limit you have used or how much remains.",
     "You can read this again under Updates.",
   ]) {
     expect(text).toContain(sentence);
   }
   expect(keyCaps()).toEqual(["⌃", "⌥", "⌘", "P"]);
-  expect(within(notice()!).getAllByRole("button", { name: "Show me in Settings" })).toHaveLength(2);
+  expect(within(notice()!).getAllByRole("button", { name: "Show me in Settings" })).toHaveLength(1);
   // New themes stand first.
   expect(
     within(notice()!).getAllByRole("heading", { level: 3 }).map((title) => title.textContent),
@@ -270,7 +268,6 @@ it("tells a set-up customer what is new once, on Overview, until they close it",
     "New theme: Token Counter",
     "Switch providers with a shortcut",
     "Choose how often VibeTV switches",
-    "Show what is used or what is left",
   ]);
   // Enter closes the notice instead of opening Settings.
   expect(document.activeElement?.textContent).toBe("Got it");
@@ -425,7 +422,6 @@ it("waits while a newer app is on offer", async () => {
 // what the customer is shown.
 it.each([
   ["Choose how often VibeTV switches", "Display mode"],
-  ["Show what is used or what is left", "Display"],
 ])("opens Settings from the entry %s at the group %s and counts the notice as read", async (title, group) => {
   const shown = watchScrolling();
   const window = startWindow();

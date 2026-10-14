@@ -7,10 +7,12 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 )
 
+// Used or Remaining is CodexBar's own choice (usageBarsShowUsed); VibeTV keeps
+// no second copy of it (AGENTS.md, CodexBar Integration Boundary).
 const displayRotatePreferenceID = "vibetv.display.rotateSeconds"
 
-// displayPreferenceAdapter serves the VibeTV-owned display preferences. They
-// live in the runtime config, where the display worker reads them every cycle.
+// displayPreferenceAdapter serves the VibeTV-owned display preference. It
+// lives in the runtime config, where the display worker reads it every cycle.
 type displayPreferenceAdapter struct {
 	server *Server
 }

@@ -1,12 +1,20 @@
 // @vitest-environment jsdom
 //
-// Issue #183: Settings reads the display preferences from the registry and
-// enters a change under Recent activity.
+// Issue #183: Settings reads the app's own display preferences from the
+// registry, saves a change at once, and keeps the stored value when the write
+// is refused.
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { THEME_STUDIO_DRAFT_STORAGE_KEY } from "@/lib/theme-studio";
+import {
+  loadThemeStudioRecovery,
+  USER_THEMES_STORAGE_KEY,
+  writeThemeStudioRecovery,
+  writeUserThemes,
+} from "@/lib/theme-studio-storage";
 import { markWhatsNewSeen } from "@/lib/whats-new";
 import { expectNoAxeViolations } from "@/test/axe";
 import { expectKeepsFocus } from "@/test/focus";
@@ -27,6 +35,25 @@ const device = {
   display: { themeSpec },
   health: { ok: true },
   capabilities: { standby: { supported: true } },
+};
+const rotation = {
+  id: "vibetv.display.rotateSeconds",
+  section: "display",
+  owner: "vibetv",
+  type: "enum",
+  label: "Switch providers",
+  value: "0" as string,
+  effectiveValue: "0",
+  allowsDefault: false,
+  options: [
+    { value: "0", label: "When activity changes" },
+    { value: "30", label: "Every 30 seconds" },
+    { value: "60", label: "Every minute" },
+    { value: "300", label: "Every 5 minutes" },
+  ],
+  availability: { state: "available" },
+  writeStrategy: "vibetv_override",
+  writable: true,
 };
 const refused = {
   code: "preference_write_failed",
@@ -58,10 +85,11 @@ const claude = {
   writable: true,
 };
 
-// The Mac App as this window sees it: what VibeTV holds for brightness,
-// screensaver and display mode.
+// The Mac App as this window sees it: one stored display preference, and what
+// VibeTV holds for brightness, screensaver and display mode.
 function startWindow(themes: unknown[] = []) {
   const companion = {
+    stored: rotation,
     // What VibeTV reports about its screensaver slot, if it reports it.
     slot: undefined as { screensaverPath?: string } | undefined,
     settings: {
@@ -73,6 +101,9 @@ function startWindow(themes: unknown[] = []) {
     refuseWrites: false as boolean | "once",
     refuseDisplayWrites: false,
     requests: [] as string[],
+    // While set, a read of the display preferences answers late, with the
+    // value it found when it started.
+    holdRead: null as Promise<void> | null,
     // While set, the next write is stored late.
     holdWrite: null as Promise<void> | null,
     // While set, a read of VibeTV's settings answers late, with what it found
@@ -138,8 +169,10 @@ function startWindow(themes: unknown[] = []) {
         });
       }
       if (url.endsWith("/v1/preferences?section=display")) {
-        // The usage engine's own setting "Show usage as" reads.
-        return jsonResponse({ ok: true, items: [{
+        const found = companion.stored;
+        await companion.holdRead;
+        // The usage engine's own setting "Show usage as" reads beside it.
+        return jsonResponse({ ok: true, items: [found, {
           id: "codexbar.usageBarsShowUsed", section: "display", owner: "codexbar",
           type: "boolean", label: "Show usage as used", value: true, effectiveValue: true,
         }] });
@@ -150,6 +183,18 @@ function startWindow(themes: unknown[] = []) {
       }
       if (url.endsWith("/v1/preferences?section=providers")) {
         return jsonResponse({ ok: true, items: companion.providers });
+      }
+      if (url.endsWith(`/v1/preferences/${rotation.id}`) && method === "PATCH") {
+        const { value } = JSON.parse(String(init?.body));
+        await takeHeldWrite();
+        if (companion.refuseWrites) {
+          if (companion.refuseWrites === "once") {
+            companion.refuseWrites = false;
+          }
+          return jsonResponse({ ok: false, error: refused }, 502);
+        }
+        companion.stored = { ...rotation, value, effectiveValue: value };
+        return jsonResponse({ ok: true, item: companion.stored });
       }
       if (url.endsWith(`/v1/preferences/${claude.id}`) && method === "PATCH") {
         const { value } = JSON.parse(String(init?.body));
@@ -239,6 +284,12 @@ function startWindow(themes: unknown[] = []) {
       event();
       await act(async () => {});
     },
+    rotation: () => screen.getByRole("combobox", { name: "Switch providers" }),
+    choose: async (option: string) => {
+      fireEvent.keyDown(screen.getByRole("combobox", { name: "Switch providers" }), { key: "Enter" });
+      fireEvent.keyDown(screen.getByRole("option", { name: option }), { key: "Enter" });
+      await wait(1);
+    },
   };
 }
 
@@ -246,6 +297,83 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   vi.useRealTimers();
+});
+
+it("reads the provider switching in Settings and saves a change at once", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+
+  expect(window.rotation().textContent).toBe("When activity changes");
+
+  await window.choose("Every 30 seconds");
+  expect(window.companion.requests).toContain(
+    'PATCH /api/local-companion/v1/preferences/vibetv.display.rotateSeconds {"value":"30"}',
+  );
+  expect(window.rotation().textContent).toBe("Every 30 seconds");
+
+  await window.choose("When activity changes");
+  expect(window.companion.requests).toContain(
+    'PATCH /api/local-companion/v1/preferences/vibetv.display.rotateSeconds {"value":"0"}',
+  );
+  expect(window.rotation().textContent).toBe("When activity changes");
+});
+
+// Issue #183, acceptance: "Global settings never modify theme drafts, theme
+// exports, or dirty state." Theme Studio keeps a theme with unsaved changes as
+// a recovery copy beside the saved themes; it exists only while there are
+// such changes.
+it("leaves the saved themes and a theme with unsaved changes as they are when a preference is saved", async () => {
+  const themeDocument = {
+    assets: {},
+    packName: "My Theme",
+    spec: {
+      bgColor: "#000000",
+      primitives: [{ color: "#FFFFFF", text: "Hi", type: "text" as const, x: 1, y: 2 }],
+      themeId: "my-theme",
+      themeRev: 1,
+      themeSpecVersion: 1 as const,
+    },
+  };
+  const savedAt = "2026-07-15T08:00:00.000Z";
+  expect(writeUserThemes([{ document: themeDocument, id: "my-theme", updatedAt: savedAt }]).ok).toBe(true);
+  expect(
+    writeThemeStudioRecovery({
+      baseUpdatedAt: savedAt,
+      document: { ...themeDocument, packName: "My Theme, changed" },
+      libraryId: "my-theme",
+      source: "custom",
+      updatedAt: "2026-07-15T08:30:00.000Z",
+    }).ok,
+  ).toBe(true);
+  const stored = () => [
+    localStorage.getItem(USER_THEMES_STORAGE_KEY),
+    localStorage.getItem(THEME_STUDIO_DRAFT_STORAGE_KEY),
+  ];
+  try {
+    const window = startWindow();
+    await window.wait(10);
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await window.wait(1);
+    const before = stored();
+    expect(before.every(Boolean)).toBe(true);
+
+    await window.choose("Every 30 seconds");
+    expect(window.companion.requests).toContain(
+      'PATCH /api/local-companion/v1/preferences/vibetv.display.rotateSeconds {"value":"30"}',
+    );
+    await window.choose("When activity changes");
+
+    expect(stored()).toEqual(before);
+    expect(loadThemeStudioRecovery()).toMatchObject({
+      ok: true,
+      value: { document: { packName: "My Theme, changed" }, libraryId: "my-theme" },
+    });
+  } finally {
+    localStorage.removeItem(USER_THEMES_STORAGE_KEY);
+    localStorage.removeItem(THEME_STUDIO_DRAFT_STORAGE_KEY);
+  }
 });
 
 // Issue #368: Settings reads the providers again every few seconds while it
@@ -261,12 +389,12 @@ it("changes a provider's row in Settings with the next read, without drawing the
 
   const row = screen.getByRole("switch", { name: "Claude" }).closest('[role="listitem"]');
   expect(row).not.toBeNull();
-  expect(screen.queryByText("Sign in to Claude.")).not.toBeNull();
+  expect(screen.queryByRole("button", { name: "Show provider message for Claude" })).not.toBeNull();
 
   window.companion.providers = [claude];
   await window.wait(5);
 
-  expect(screen.queryByText("Sign in to Claude.")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Show provider message for Claude" })).toBeNull();
   expect(screen.getByRole("switch", { name: "Claude" }).closest('[role="listitem"]')).toBe(row);
   expect(window.companion.requests.some((request) => request.includes("/v1/providers/retry"))).toBe(false);
 
@@ -274,6 +402,118 @@ it("changes a provider's row in Settings with the next read, without drawing the
   await window.wait(5);
   expect(row?.querySelector('[role="status"], svg.animate-spin')).not.toBeNull();
   expect(screen.getByRole("switch", { name: "Claude" }).closest('[role="listitem"]')).toBe(row);
+});
+
+it("keeps the stored provider switching and says so when the write is refused", async () => {
+  const window = startWindow();
+  window.companion.refuseWrites = true;
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+
+  await window.choose("Every 30 seconds");
+
+  expect(window.text()).toContain(refused.message);
+  expect(
+    screen.getByRole("combobox", { name: "Switch providers", hidden: true }).textContent,
+  ).toBe("When activity changes");
+});
+
+// A read that started before a change must not put the old value back.
+it("keeps a saved provider switching when an older read answers afterwards", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+
+  let answerRead = () => {};
+  window.companion.holdRead = new Promise<void>((resolve) => {
+    answerRead = resolve;
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+  await window.wait(1);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+
+  await window.choose("Every 30 seconds");
+  expect(window.rotation().textContent).toBe("Every 30 seconds");
+
+  window.companion.holdRead = null;
+  answerRead();
+  await window.wait(1);
+  expect(window.rotation().textContent).toBe("Every 30 seconds");
+});
+
+// A read that starts while a change is still on its way to the Mac App finds
+// the value from before it. Answered after the change, it must not put that
+// value back.
+it("keeps a saved provider switching when a read beside the write answers afterwards", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+
+  const store = window.holdNextWrite();
+  await window.choose("Every 30 seconds");
+  let answerRead = () => {};
+  window.companion.holdRead = new Promise<void>((resolve) => {
+    answerRead = resolve;
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+  await window.wait(1);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+
+  store();
+  await window.wait(1);
+  window.companion.holdRead = null;
+  answerRead();
+  await window.wait(1);
+
+  expect(window.companion.stored.value).toBe("30");
+  expect(window.rotation().textContent).toBe("Every 30 seconds");
+});
+
+// Two changes in a row: the Mac App must end up with the second one, also when
+// it is slow to store the first.
+it("stores two quick changes of the provider switching in the order they were made", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+
+  let storeFirst = () => {};
+  window.companion.holdWrite = new Promise<void>((resolve) => {
+    storeFirst = resolve;
+  });
+  await window.choose("Every 30 seconds");
+  await window.choose("Every minute");
+  storeFirst();
+  await window.wait(1);
+
+  expect(window.companion.stored.value).toBe("60");
+  expect(window.rotation().textContent).toBe("Every minute");
+});
+
+// The first of two quick changes is refused, the second is stored. The control
+// shows what is stored, and the refusal of the first is gone: every call to the
+// Mac App takes the shown error away when it starts.
+it("drops the refusal of a provider switching change once a later change is stored", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+
+  const answerFirst = window.holdNextWrite();
+  window.companion.refuseWrites = "once";
+  await window.choose("Every 30 seconds");
+  await window.choose("Every minute");
+  answerFirst();
+  await window.wait(1);
+
+  expect(window.companion.stored.value).toBe("60");
+  expect(window.rotation().textContent).toBe("Every minute");
+  expect(window.text()).not.toContain(refused.message);
 });
 
 // The activity entry counts minutes the way the "Show after" list does.
@@ -615,7 +855,7 @@ it("leaves no Recent activity entry for reading the settings", async () => {
 
 // Issue #579: Recent activity named a saved brightness, and nothing else the
 // customer changes in Settings.
-it("enters a changed display mode and provider under Recent activity", async () => {
+it("enters a changed display mode, provider switching and provider under Recent activity", async () => {
   const window = startWindow();
   window.companion.providers = [claude];
   window.companion.selection.providerIds = ["claude"];
@@ -623,6 +863,8 @@ it("enters a changed display mode and provider under Recent activity", async () 
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   await window.wait(1);
 
+  // Switch providers is offered under Automatic only.
+  await window.choose("Every 30 seconds");
   fireEvent.click(screen.getByRole("button", { name: /Manual/ }));
   await window.wait(1);
   fireEvent.click(screen.getByRole("switch", { name: "Claude" }));
@@ -638,8 +880,24 @@ it("enters a changed display mode and provider under Recent activity", async () 
   expect(entries).toEqual([
     "AI provider savedClaude turned off.",
     "Display mode savedAlways show Claude.",
+    "Switch providers savedSwitch providers is set to Every 30 seconds.",
     "Control Center openedThis session started.Session",
   ]);
+});
+
+// The refusal stands on the page; the list keeps it for the support report.
+it("enters a refused change of the provider switching under Recent activity", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  window.companion.refuseWrites = true;
+  await window.choose("Every 30 seconds");
+
+  fireEvent.click(screen.getByRole("button", { name: "Support" }));
+  await window.wait(1);
+  expect(window.text()).toContain("Switch providers save needs attentionTry again in a moment.");
+  expect(window.text()).not.toContain("Switch providers saved");
 });
 
 // Found in review of #579: with a provider switched on, the app itself writes

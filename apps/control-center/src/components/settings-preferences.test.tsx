@@ -104,7 +104,6 @@ describe("SettingsScreen display preferences", () => {
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenLastCalledWith(rotation, "30");
   });
-
 });
 
 // Issue #558: "Show after 10 minutes" did not say minutes of what.

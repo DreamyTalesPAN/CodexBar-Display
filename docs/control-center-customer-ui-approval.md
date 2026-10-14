@@ -7252,6 +7252,20 @@ issue scope, or release permission never implies UI permission.
 - Scope: `control-center-app.tsx`, its What's new test, and this approval record. Bundle branch only, not merge or release.
 - What's new: none — the entry is only hidden, nothing new is announced
 
+## 2026-10-13 — Review bundle: Settings drops its own Usage display row
+
+- User approval: Paul (repository owner) asked in #600 on 2026-10-13 to drop `vibetv.usage.displayMode` from the bundle before it reaches main, because it keeps a second copy of CodexBar's own Used/Remaining choice against the CodexBar Integration Boundary in `AGENTS.md`; #465 replaces it with Settings writing CodexBar's value. Marcus passed the request on for the bundle.
+- Approved customer-visible result: Settings > Display no longer shows the "Usage display" row or its "Default is the same as …" line. Used or Remaining on VibeTV and in the app follow CodexBar's setting, as on main today. "Switch providers" under Automatic is unchanged. This supersedes the #183 and #558 entries above for the Usage display row only; it never shipped.
+- Scope: `settings-screen.tsx` and its tests, the display preference adapter, runtime config, daemon and usage API in `companion`, `docs/preferences.md`, and this approval record. Bundle branch only, not merge or release.
+- What's new: none — the row never shipped, so nothing is announced or taken back
+
+## 2026-10-13 — Review bundle: What's new no longer announces Usage display
+
+- User approval: follows Paul's request in #600 above to drop `vibetv.usage.displayMode` from the bundle; the Codex review on #600 found that What's new still announced it.
+- Approved customer-visible result: the What's new notice no longer contains "Show what is used or what is left" and its "Show me in Settings" link. The remaining entries (Gauge, Token Counter, the provider shortcut and Switch providers) are unchanged. The entry never shipped, so no customer has seen it.
+- Scope: `lib/whats-new.ts`, its What's new test, and this approval record. Bundle branch only, not merge or release.
+- What's new: none — the change removes the `usage-display` entry and adds nothing
+
 ## 2026-10-09 — A cleaner What's new dialog
 
 - User approval: Paul shared a screenshot of the built dialog and asked for a cleaner design on 2026-10-09.
