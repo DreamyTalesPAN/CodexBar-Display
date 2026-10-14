@@ -7094,3 +7094,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No UI change. `test-customer-flows.mjs --release-screenshots` only runs the existing flows that already capture screenshots and captures them at 2x for the mail drafts; the app and the other test modes are unchanged.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs` (new mode), `apps/control-center/package.json` (`capture:release-screenshots`), and this approval record, after merging main.
 - What's new: none — test tooling only
+
+## 2026-10-14 — The automatic Mac App update prompt never ends in "You're up to date" (#570)
+
+- User approval: Paul asked on 2026-10-14 that the overnight session, once its audit was done, continue open issues that had no branch or pull request yet. This one changes no text; he has not seen it.
+- Approved customer-visible result: When the background service reports a newer Mac App, the Mac App now runs Sparkle's background check for that prompt: Sparkle shows its update dialog only when it finds the update itself, and otherwise nothing appears — no "Checking for updates…" and no "You're up to date" alert in the middle of setup. While the launch update check is still running, the prompt does nothing (that check owns updates). "Check for Updates…" in the menu and the Update button still run the visible check. Windows is unchanged.
+- Scope: `macos/VibeTVControlCenter/main.swift` (new action `vibetv://check-for-updates-in-background`), `URLSchemeTests.swift`, `apps/control-center/src/components/control-center-app.tsx`, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no new feature, the prompt only stops showing a pointless alert

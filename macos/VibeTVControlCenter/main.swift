@@ -22,6 +22,10 @@ private let installThemeURLHost = "install-theme"
 private let restartControlCenterURLHost = "restart-control-center"
 private let repairRuntimeURLHost = "repair-runtime"
 private let checkForUpdatesURLHost = "check-for-updates"
+// The window's own prompt when the background service reports a newer Mac
+// App (#570): a background Sparkle check, which shows a dialog only when
+// Sparkle finds that update itself, never "You're up to date".
+private let checkForUpdatesInBackgroundURLHost = "check-for-updates-in-background"
 private let repairCodexBarURLHost = "repair-codexbar"
 private let finishCodexBarRecoveryURLHost = "finish-codexbar-recovery"
 private let openCodexBarURLHost = "open-codexbar"
@@ -109,6 +113,21 @@ func controlCenterPath(for url: URL) -> String? {
         return "control-center/install/\(themeID)"
     }
     return isOpenControlCenterURL(url) ? "control-center" : nil
+}
+
+func isCheckForUpdatesInBackgroundURL(_ url: URL) -> Bool {
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          components.scheme?.lowercased() == controlCenterURLScheme,
+          components.host?.lowercased() == checkForUpdatesInBackgroundURLHost,
+          components.user == nil,
+          components.password == nil,
+          components.port == nil,
+          components.query == nil,
+          components.fragment == nil,
+          components.path.isEmpty || components.path == "/" else {
+        return false
+    }
+    return true
 }
 
 func isCheckForUpdatesURL(_ url: URL) -> Bool {
@@ -205,6 +224,7 @@ enum NativeControlCenterAction: Equatable {
     case restartControlCenter
     case repairRuntime
     case checkForUpdates
+    case checkForUpdatesInBackground
     case repairCodexBar
     case finishCodexBarRecovery
     case openCodexBar
@@ -219,6 +239,9 @@ func nativeControlCenterAction(for url: URL) -> NativeControlCenterAction? {
     }
     if isCheckForUpdatesURL(url) {
         return .checkForUpdates
+    }
+    if isCheckForUpdatesInBackgroundURL(url) {
+        return .checkForUpdatesInBackground
     }
     if isRepairCodexBarURL(url) {
         return .repairCodexBar
@@ -2630,6 +2653,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         _ = applicationShouldHandleReopen(NSApp, hasVisibleWindows: false)
     }
 
+    private func checkForUpdatesInBackground() {
+        guard !installationRequired else {
+            return
+        }
+#if canImport(Sparkle)
+        // While the launch check runs it owns updates (and installs without a
+        // dialog); a background check now could restart the app mid-setup.
+        guard launchUpdateCheck == .done else {
+            return
+        }
+        updaterStarted = true
+        updaterController.updater.checkForUpdatesInBackground()
+#endif
+    }
+
     @objc private func checkForUpdates() {
         guard !installationRequired else {
             presentInstallationRequiredAlert()
@@ -4906,6 +4944,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 beginRuntimeRepair()
             case .checkForUpdates:
                 checkForUpdates()
+            case .checkForUpdatesInBackground:
+                checkForUpdatesInBackground()
             case .repairCodexBar:
                 beginCodexBarRepair(hasJavaScriptOwner: true)
             case .finishCodexBarRecovery:

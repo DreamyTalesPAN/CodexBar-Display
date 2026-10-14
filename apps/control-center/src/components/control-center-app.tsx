@@ -4581,12 +4581,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       return;
     }
     macAppUpdatePromptedFor.current = macAppUpdateOfferedVersion;
-    window.location.href = "vibetv://check-for-updates";
+    // The Mac App runs a background Sparkle check for this prompt: it shows a
+    // dialog only when Sparkle finds the update, never "You're up to date"
+    // in the middle of setup (#570). Windows keeps its own check.
+    window.location.href = windowsHost
+      ? "vibetv://check-for-updates"
+      : "vibetv://check-for-updates-in-background";
   }, [
     firmwareUpdateInProgress,
     hostedSetup,
     macAppUpdateAvailable,
     macAppUpdateOfferedVersion,
+    windowsHost,
   ]);
   const displaySessionActive = Boolean(
     deviceConnected ||
