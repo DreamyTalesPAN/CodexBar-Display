@@ -74,7 +74,7 @@ export function usageSectionIndices(all: ThemeStudioPrimitive[]): number[][] {
   all.forEach((p, i) => {
     if (p.type !== "text" && p.type !== "progress") return;
     const key = readingKey(p);
-    const slot = key === "session" || key.startsWith("usageSlot1") ? 1 : key === "weekly" || key.startsWith("usageSlot2") ? 2 : p.slot;
+    const slot = key === "session" || key.startsWith("usageSlot1") || key.startsWith("providerSlot1") ? 1 : key === "weekly" || key.startsWith("usageSlot2") || key.startsWith("providerSlot2") ? 2 : p.slot;
     if (slot) groups[slot - 1].push(i);
   });
   all.forEach((p, i) => {

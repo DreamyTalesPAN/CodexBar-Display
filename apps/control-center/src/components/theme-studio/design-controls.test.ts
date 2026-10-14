@@ -35,6 +35,15 @@ describe("position and layer ordering", () => {
     expect(swapRowPositions(all, groups[0], groups[1])).toBe(true);
     expect(all[1].y).toBe(134);
   });
+  it("counts provider-slot readings as usage sections (#594)", () => {
+    const all: ThemeStudioPrimitive[] = [text("TITLE", 10)];
+    for (const [key, y] of [["providerSlot1Label", 60], ["providerSlot1Percent", 76], ["providerSlot2Label", 140], ["providerSlot2Reset", 156]] as const) {
+      const p = text("", y);
+      setReading(p, key);
+      all.push(p);
+    }
+    expect(usageSectionIndices(all)).toEqual([[1, 2], [3, 4]]);
+  });
   it("rejects off-display swaps without partially moving a group", () => {
     const all = [text("a", 10), text("b", 30), text("c", 230)];
     const before = structuredClone(all);
