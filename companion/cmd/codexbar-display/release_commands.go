@@ -551,7 +551,7 @@ func runInstallUpdate(args []string) (retErr error) {
 	target := fs.String("target", setup.DefaultWiFiTarget(), "VibeTV URL, for example http://192.168.1.42")
 	manifestURL := fs.String("manifest-url", vibeTVFirmwareManifestURL, "firmware manifest URL")
 	force := fs.Bool("force", false, "install even when the device already reports the latest firmware")
-	confirmLiveUpdate := fs.Bool("confirm-live-update", false, "allow installing from the default live Shopify firmware manifest")
+	confirmLiveUpdate := fs.Bool("confirm-live-update", false, "allow installing from the default live firmware manifest (GitHub release)")
 	skipLaunchAgentPause := fs.Bool("skip-launchagent-pause", false, "internal: keep the Mac App running while updating firmware")
 	stoppedAllWriters := fs.Bool("i-stopped-all-writers", false, "update even though another VibeTV runtime is running (you stopped every device writer yourself)")
 	verbose := fs.Bool("verbose", false, "show manifest, asset, and local firmware file details")

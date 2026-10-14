@@ -1911,7 +1911,7 @@ func runThemeApply(args []string) error {
 
 func runThemePack(args []string) error {
 	if len(args) == 0 {
-		return errors.New("theme-pack subcommand required: validate or install")
+		return errors.New("theme-pack subcommand required: catalog, validate or install")
 	}
 	switch args[0] {
 	case "catalog":
