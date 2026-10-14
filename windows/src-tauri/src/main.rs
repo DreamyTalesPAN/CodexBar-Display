@@ -216,8 +216,11 @@ fn main() {
             handle.state::<Shell>().provider_shortcut.store(provider_shortcut, Ordering::SeqCst);
             // Back from an update installed with the window closed: stay in
             // the tray without a WebView2; opening the app creates the window.
+            // Through ensure_window: a second launch that arrives during
+            // startup goes the same check-and-create way, so only one window
+            // is built.
             if visible {
-                create_window(&handle, provider_shortcut, visible)?;
+                ensure_window(&handle);
             }
             let args: Vec<_> = std::env::args_os().collect();
             if args.len() == 2 {
@@ -461,7 +464,8 @@ fn ensure_window(app: &AppHandle) -> bool {
     // One check-and-create at a time: two presents (a theme link reaches a
     // tray-only app as a second launch and as a queued link) would otherwise
     // both see no window and build two "main" windows.
-    let _creating = app.state::<Shell>().window_creation.lock().unwrap();
+    let shell = app.state::<Shell>();
+    let _creating = shell.window_creation.lock().unwrap();
     if app.get_webview_window(WINDOW_LABEL).is_some() {
         return true;
     }
