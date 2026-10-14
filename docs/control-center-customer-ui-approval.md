@@ -7129,3 +7129,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the spinner entry above, except that a provider whose current check already says why it has no live reading (sign in, permission, throttle and the like) keeps that row and its action during a restart instead of showing the spinner. Only a row with no current explanation shows the spinner.
 - Scope: `companion` provider row health, `macos/VibeTVControlCenter/main.swift` (the post-read check asks every runtime origin within the reading's deadline), and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — a correction of the unreleased spinner, not announced to customers
+
+## 2026-10-14 — #607: approval marker after merging main with #608
+
+- User approval: Paul asked on 2026-10-14 to test, investigate and fix #607. Main moved on with #608 while the branch was in review, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #607 entries above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
