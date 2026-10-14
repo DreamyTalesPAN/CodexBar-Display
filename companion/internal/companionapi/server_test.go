@@ -10722,7 +10722,10 @@ func TestPairAttemptTimeoutBoundsHungResponses(t *testing.T) {
 
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.pairAttempts = 3
-	server.pairAttemptTimeout = 25 * time.Millisecond
+	// 25 ms let an attempt time out before its request reached the test
+	// server on a busy CI runner (2 of 3 attempts arrived); 100 ms keeps all
+	// three well inside the 1 s bound checked below.
+	server.pairAttemptTimeout = 100 * time.Millisecond
 	server.pairRetryGap = 0
 	startedAt := time.Now()
 	token, err := server.pair(context.Background(), device.URL, "")
