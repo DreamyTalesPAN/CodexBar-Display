@@ -5,6 +5,18 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-10-09 — Return to the shop theme page after first install (#63)
+
+- User approval: Paul delegated customer UI decisions for the autonomous overnight issue work on 2026-10-09. He has not personally previewed this exact wording or layout.
+- Approved customer-visible result: On a valid shop theme handoff page, the app download now explains that after installing Control Center, the customer should return to this page and click `Open Control Center` to choose the theme. The plain download page has no extra instruction.
+- Scope: `mac-app-download-screen.tsx`, its focused test, and this approval record. No deployment, device write, or automatic theme installation is implied.
+
+## 2026-10-09 — Hosted theme handoff to the installed app (#63)
+
+- User approval: On 2026-10-09 Paul granted all approvals for autonomous overnight VibeTV issue work and delegated the choice of issues and implementation decisions. Under that delegation, this task selected the #63 hosted-to-app handoff. Paul has not personally previewed this exact copy or layout.
+- Approved customer-visible result: For an available, free Shopify theme with a verified pack, `/install/<id>` offers `Open Control Center` as the primary action. It opens `vibetv://install-theme/<id>` and keeps the platform-specific app download as a secondary fallback. The plain hosted entry remains a download page. The local app opens the requested theme in its existing library after the usual setup gates; opening the link never installs a theme on a VibeTV by itself.
+- Scope: `apps/control-center/src/lib/themes.ts`, `apps/control-center/src/components/control-center-app.tsx`, `apps/control-center/src/components/setup/mac-app-download-screen.tsx`, their focused and customer-flow tests, `docs/control-center-ui-principles.md`, and this approval record. This documents the delegated branch implementation, not personal visual acceptance, deployment, merge, release, or hardware testing.
+
 ## 2026-09-01 — Configured WiFi device continues automatically
 
 - User approval: The user explicitly instructed Codex to fix every sensible
@@ -7013,3 +7025,58 @@ issue scope, or release permission never implies UI permission.
 - Scope: this approval record only.
 - What's new: none — no customer-visible change of its own
 
+## 2026-10-09 — CodexBar explanation in provider setup and settings (#333)
+
+- User approval: Paul authorized the autonomous VibeTV issue nightshift on 2026-10-09, gave permission for all necessary work, and expressly delegated implementation decisions ("DU ENTSCHEIDEST ALLES" and "du darfst alles machen, nutzen, usw usw"). He did not personally review this exact sentence; Codex selected it under that delegation for draft PR #597.
+- Approved customer-visible result: The shared provider list on Setup and Settings displays exactly "VibeTV includes CodexBar to read your AI usage. Follow each provider's sign-in or permission instructions below." above the provider search. The existing provider sign-in and permission instructions remain in their rows. No new button, dialog, or provider behavior.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its Setup and Settings tests, the provider-recovery customer-flow assertion in `apps/control-center/scripts/test-customer-flows.mjs`, and this approval record. This records the delegated decision for the pull-request branch only, not merge or release.
+
+## 2026-10-09 — Provider recovery test follows the approved explanation (#333)
+
+- User approval: Paul authorized the autonomous VibeTV issue nightshift on 2026-10-09 and expressly delegated implementation decisions ("DU ENTSCHEIDEST ALLES" and "du darfst alles machen, nutzen, usw usw"). He did not review this exact test assertion; Codex aligned it with the customer-visible sentence recorded above under that delegation.
+- Approved customer-visible result: The provider-recovery screen contains the same sentence recorded above: "VibeTV includes CodexBar to read your AI usage. Follow each provider's sign-in or permission instructions below." No additional customer text or control changes in this follow-up.
+- Scope: Replace the old customer-flow assertion forbidding the word CodexBar in `apps/control-center/scripts/test-customer-flows.mjs`; this record applies to the pull-request branch only, not merge or release.
+
+## 2026-10-09 — Confirm before running setup again (#546)
+
+- User approval: Paul delegated customer-visible decisions for the 2026-10-09 night shift to the team. He has not reviewed this exact dialog wording.
+- Approved customer-visible result: In Settings, clicking `Run setup again` opens a confirmation dialog titled `Run setup again?` with `You’ll choose a VibeTV and display mode again. Nothing on VibeTV is erased.` `Cancel` closes it without resetting setup. The dialog’s `Run setup again` button starts the existing setup reset. The factory-reset dialog and other setup entry points are unchanged.
+- Scope: `apps/control-center/src/components/settings-screen.tsx`, the interaction test in `settings-connection.test.tsx`, and this approval record. This is approval to prepare the branch, not to merge, release, or write to a VibeTV.
+
+## 2026-10-09 — Windows shop theme link opens the local install page (#63)
+
+- User approval: Paul delegated VibeTV issue selection, implementation, and testing for the unattended nightshift on 2026-10-09. He has not personally reviewed this exact behavior or wording.
+- Approved customer-visible result: Opening `vibetv://install-theme/<id>` on Windows brings VibeTV Control Center forward and opens its existing local `/control-center/install/<id>` page, including when the app was not running. It does not start a theme installation or write to the VibeTV. Invalid links leave the current page unchanged.
+- Scope: Windows Tauri deep-link registration, link parsing and navigation, their tests, and this approval record. This records the delegated nightshift decision for the pull request; it does not approve merging, releasing, installation on customer machines, or a hardware write.
+
+## 2026-10-09 — Theme link accepts the actual free shop products (#63)
+
+- User approval: Paul delegated VibeTV issue selection, implementation, and testing for the unattended nightshift on 2026-10-09. He has not personally reviewed this exact refinement. The live shop readback showed the three free digital theme products are deliberately not purchasable, so the earlier entry's "available" condition would hide the action from all of them.
+- Approved customer-visible result: The hosted install page offers `Open Control Center` for a free Shopify catalog theme with a safe 3–64 character ID and complete pack URL, checksum, and size metadata. It keeps the app download as a secondary action. A missing, paid, or untrusted theme retains the download page without the deep link. The action opens the local theme page; it does not install a theme by itself.
+- Scope: `apps/control-center/src/components/setup/mac-app-download-screen.tsx`, its focused test, and this approval record. This records the delegated branch decision only, not deployment, merge, or release.
+
+## 2026-10-09 — Customer flows confirm setup reset (#546)
+
+- User approval: Paul delegated the overnight VibeTV issue work and the customer-visible decision for the `Run setup again?` confirmation recorded above. He has not reviewed this test-only follow-up.
+- Approved customer-visible result: The existing Settings button opens the confirmation dialog. Only its `Run setup again` action resets setup; the customer flow keeps the same device discovery and recovery behavior after confirmation. This entry adds no new customer text or control.
+- Scope: Update the browser customer-flow tests in `apps/control-center/scripts/test-customer-flows.mjs` to confirm the dialog before expecting setup reset, and this approval record. This is a branch test update, not merge or release approval.
+
+## 2026-10-13 — CodexBar explanation reworded (#333)
+
+- User approval: Paul read the sentence chosen in the night shift ("VibeTV includes CodexBar to read your AI usage. Follow each provider's sign-in or permission instructions below."), said "das muss anders formuliert sein", and gave the new wording as "VibeTV reads your AI usage with CodexBar, a helper app installed with VibeTV. Sign in to a provider by toggling it below oder so". The first sentence is his. The second follows his "oder so": the switch turns a provider on and the sign-in is the button in its row, so the sentence says that instead of "by toggling". He has not yet seen the final second sentence.
+- Approved customer-visible result: The shared provider list on Setup and Settings displays exactly "VibeTV reads your AI usage with CodexBar, a helper app installed with VibeTV. Turn on the providers you use below. If one needs a sign-in, its row shows a Sign in button." above the provider search. This replaces the sentence of the entry "CodexBar explanation in provider setup and settings (#333)" of 2026-10-09. No new button, dialog, or provider behavior.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its Setup and Settings tests, the customer-copy guard, the provider-recovery assertion in `apps/control-center/scripts/test-customer-flows.mjs`, and this approval record. This approves the pull-request branch only, not merge or release.
+
+## 2026-10-14 — #597 joins main after the review bundle #600
+
+- User approval: Marcus asked on 2026-10-14 to review #597 for merge. Main already asks before `Run setup again` since the review bundle #600 (dialog `Run setup again?` in `control-center-app.tsx`), so the second dialog this branch added in `settings-screen.tsx` for #546 is dropped; a customer is asked once.
+- Approved customer-visible result: In Settings, `Run setup again` opens main's single `Run setup again?` dialog, unchanged from main. The theme link (#63), the CodexBar explanation (#333) and the Mac recovery action (#338) stay as approved above. Nothing else changes.
+- Scope: merge of main into `codex/nightshift-1009-issues`; `settings-screen.tsx`, `settings-connection.test.tsx`, `scripts/test-customer-flows.mjs` (main's `runSetupAgain` helper), the Mac and Windows shell merge resolutions, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the merge adds no feature of its own
+
+## 2026-10-14 — #597 brought up to date with main after #609
+
+- User approval: Marcus tested #597 on head b5c6f1a0 on Windows and on the Mac on 2026-10-14 and reported every step working. This update only brings in main's approval record from #609, so the customer-visible result approved in the entries above stays the same.
+- Approved customer-visible result: as recorded in "#597 joins main after the review bundle #600" above; nothing else changes.
+- Scope: merge of main (#609, approval record only) into `codex/nightshift-1009-issues`, and this approval record.
+- What's new: none — no customer-visible change of its own
