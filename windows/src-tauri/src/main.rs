@@ -819,7 +819,7 @@ fn idle_update_check(app: &AppHandle) {
         Ok(UpdateOutcome::Busy) => {
             log("update skipped: a firmware update or theme install owns the runtime")
         }
-        Ok(UpdateOutcome::InUse) => log("update skipped: the window was opened during the download"),
+        Ok(UpdateOutcome::InUse) => log("update skipped: the window was opened before the install"),
         Err(error) => log(&format!("update skipped: {error}")),
     }
 }
@@ -910,13 +910,6 @@ async fn run_update(app: &AppHandle, run: UpdateRun) -> Result<UpdateOutcome, St
         .download(|_, _| {}, || {})
         .await
         .map_err(|error| format!("update download failed: {error}"))?;
-    if run == UpdateRun::Idle && window_in_use(app) {
-        // Nothing was tried; the next check may install this version.
-        if let Some(marker) = &marker {
-            launch_update::release(marker);
-        }
-        return Ok(UpdateOutcome::InUse);
-    }
     // Installing replaces the Companion binary and restarts its task
     // while a firmware update or theme install may be writing to the
     // device. The hold lasts one minute, so it is claimed only now,
@@ -931,6 +924,16 @@ async fn run_update(app: &AppHandle, run: UpdateRun) -> Result<UpdateOutcome, St
             launch_update::release(marker);
         }
         return Ok(UpdateOutcome::Busy);
+    }
+    // Asked only now: the window may have been opened during the download or
+    // while the hold was claimed, which can take a few runtime requests.
+    if run == UpdateRun::Idle && window_in_use(app) {
+        let _ = tauri::async_runtime::spawn_blocking(release_update_hold).await;
+        // Nothing was tried; the next check may install this version.
+        if let Some(marker) = &marker {
+            launch_update::release(marker);
+        }
+        return Ok(UpdateOutcome::InUse);
     }
     if let Some(note) = &relaunch_note {
         launch_update::note_relaunch(note, unix_now());
@@ -953,7 +956,7 @@ enum UpdateOutcome {
     Busy,
     // Only the updates nobody asked for: they try a version once in 24 hours.
     AlreadyTried,
-    // Only with the window closed: it was opened during the download.
+    // Only with the window closed: it was opened before the install.
     InUse,
 }
 

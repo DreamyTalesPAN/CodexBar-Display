@@ -72,7 +72,8 @@ Companion for everything it needs.
   every 6 hours and installs a newer version only while its window is closed
   (hidden in the tray, not minimized) and no VibeTV update or theme install
   runs, with the same limits and the same once-in-24-hours file as at launch
-  and without any message. The window is checked again after the download.
+  and without any message. The window is checked again right before the
+  installer starts, after the update hold is claimed.
   The installer relaunches the shell with `--after-idle-update`, and right
   before it starts the shell writes the time to
   `%LOCALAPPDATA%\shop.vibetv.control-center\idle-update-relaunch.txt`; a start
