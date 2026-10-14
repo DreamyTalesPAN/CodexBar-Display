@@ -1666,6 +1666,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         case waiting, installing, abandoned, done
     }
     private var launchUpdateCheck = LaunchUpdateCheck.done
+    // The window's own update prompt came while the launch check still ran;
+    // it runs as soon as that check is done (#570).
+    private var backgroundUpdateCheckPending = false
     private var launchUpdateTurnedDown = false
     // Creating the controller starts Sparkle, which may show an overdue
     // scheduled check at once. A launch check skipped for a running VibeTV
@@ -1796,8 +1799,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                     // The feed answered after the limit. Offer that update in
                     // Sparkle's dialog now instead of dropping it for a day.
                     launchUpdateTurnedDown = false
+                    backgroundUpdateCheckPending = false
                     updater.checkForUpdatesInBackground()
                 }
+            }
+            if backgroundUpdateCheckPending {
+                backgroundUpdateCheckPending = false
+                checkForUpdatesInBackground()
             }
         }
         if previous != .abandoned {
@@ -2662,6 +2670,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         // While the launch check runs it owns updates (and installs without a
         // dialog); a background check now could restart the app mid-setup.
         guard launchUpdateCheck == .done else {
+            backgroundUpdateCheckPending = true
             return
         }
         updaterStarted = true
