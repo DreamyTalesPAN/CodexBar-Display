@@ -88,8 +88,6 @@ type firmwareUpdateJob struct {
 	Warnings    []string              `json:"warnings,omitempty"`
 	Error       *apiError             `json:"error,omitempty"`
 
-	target                         string
-	firmware                       string
 	themeSetupRequiredBeforeUpdate bool
 	themePathBeforeUpdate          string
 	themeActiveBeforeUpdate        bool
@@ -358,7 +356,7 @@ func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Requ
 		)
 		return
 	}
-	job := s.createFirmwareUpdateJob(cfg)
+	job := s.createFirmwareUpdateJob()
 	s.startFirmwareUpdateJob(r.Context(), job.ID, cfg, req)
 	writeJSON(w, http.StatusAccepted, firmwareUpdateJobResponse{OK: true, Job: job})
 }
@@ -409,7 +407,7 @@ func (s *Server) latestFirmwareUpdateJob() (firmwareUpdateJob, bool) {
 	return cloneFirmwareUpdateJob(latest), true
 }
 
-func (s *Server) createFirmwareUpdateJob(cfg runtimeconfig.Config) firmwareUpdateJob {
+func (s *Server) createFirmwareUpdateJob() firmwareUpdateJob {
 	s.updateJobsMu.Lock()
 	defer s.updateJobsMu.Unlock()
 	if s.updateJobs == nil {
@@ -425,7 +423,6 @@ func (s *Server) createFirmwareUpdateJob(cfg runtimeconfig.Config) firmwareUpdat
 		Progress:  5,
 		StartedAt: time.Now().UTC(),
 		Logs:      []string{"Preparing VibeTV update."},
-		target:    publicTarget(cfg.DeviceTarget),
 	}
 	s.updateJobs[id] = job
 	return cloneFirmwareUpdateJob(job)
@@ -1081,7 +1078,7 @@ func (w *firmwareUpdateProgressWriter) noteLine(line string) {
 		return
 	}
 	w.server.updateFirmwareUpdateJob(w.jobID, func(job *firmwareUpdateJob) {
-		message, progress, ok := customerFirmwareUpdateProgress(line, job)
+		message, progress, ok := customerFirmwareUpdateProgress(line)
 		if !ok {
 			return
 		}
@@ -1121,14 +1118,12 @@ func (s *Server) applyFirmwareUpdateEvent(jobID string, event firmwareUpdateEven
 			job.Result = &firmwareUpdateResult{}
 		}
 		if value := strings.TrimSpace(event.Firmware); value != "" {
-			job.firmware = value
 			job.Result.Firmware = value
 		}
 		if value := strings.TrimSpace(event.ObservedFirmware); value != "" {
 			job.Result.ObservedFirmware = value
 		}
 		if value := strings.TrimSpace(event.Target); value != "" {
-			job.target = value
 			job.Result.Target = value
 		}
 		if value := strings.TrimSpace(event.DeviceID); value != "" {
@@ -1172,7 +1167,7 @@ func firmwareUpdateStageProgress(stage string) (string, int) {
 	}
 }
 
-func customerFirmwareUpdateProgress(line string, job *firmwareUpdateJob) (string, int, bool) {
+func customerFirmwareUpdateProgress(line string) (string, int, bool) {
 	switch {
 	case strings.HasPrefix(line, "Checking device"):
 		return "Checking VibeTV.", 10, true
@@ -1183,7 +1178,6 @@ func customerFirmwareUpdateProgress(line string, job *firmwareUpdateJob) (string
 	case strings.HasPrefix(line, "Firmware: already current"):
 		return "VibeTV is already up to date.", 95, true
 	case strings.HasPrefix(line, "Updating firmware:"):
-		job.firmware = firmwareVersionFromUpdateLine(line)
 		return "Preparing update.", 35, true
 	case strings.HasPrefix(line, "Firmware downloaded:"):
 		return "Update downloaded.", 45, true
@@ -1201,25 +1195,10 @@ func customerFirmwareUpdateProgress(line string, job *firmwareUpdateJob) (string
 	case strings.HasPrefix(line, "Restarting VibeTV"):
 		return "Restarting VibeTV.", 82, true
 	case strings.HasPrefix(line, "Done: firmware"):
-		job.firmware = firmwareVersionFromDoneLine(line)
 		return "Checking result.", 96, true
 	default:
 		return "", 0, false
 	}
-}
-
-func firmwareVersionFromUpdateLine(line string) string {
-	line = strings.TrimSpace(line)
-	if idx := strings.LastIndex(line, "->"); idx >= 0 {
-		return strings.TrimSpace(line[idx+2:])
-	}
-	return ""
-}
-
-func firmwareVersionFromDoneLine(line string) string {
-	line = strings.TrimSpace(strings.TrimPrefix(line, "Done: firmware"))
-	line = strings.TrimSuffix(line, "installed")
-	return strings.TrimSpace(line)
 }
 
 func appendFirmwareUpdateJobLog(job *firmwareUpdateJob, message string) {

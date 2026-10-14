@@ -1023,7 +1023,7 @@ func TestDeviceSearchSerializesCableDiscoveryWithFirmwareUpdateStart(t *testing.
 		}
 		return []usb.CableDevice{{Hello: cableHelloForTest("cable-a")}}, nil
 	}
-	job := server.createFirmwareUpdateJob(runtimeconfig.Config{ConnectionMode: "cable"})
+	job := server.createFirmwareUpdateJob()
 	search := func() *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
 		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`)))
@@ -5623,7 +5623,7 @@ func TestCableReadRoutesSerializeProbesWithFirmwareUpdateStart(t *testing.T) {
 				server.readCableHello = func(string) (protocol.DeviceHello, error) { checkProbe(); return hello, nil }
 				server.readCableHealth = func(string, string) (deviceHealth, error) { checkProbe(); return deviceHealth{OK: true}, nil }
 				if active == "firmware" {
-					server.createFirmwareUpdateJob(cfg)
+					server.createFirmwareUpdateJob()
 				}
 				if active == "theme" {
 					server.themeInstallActive = true
@@ -9287,7 +9287,7 @@ func TestCableControlRequestsStayOffSerialDuringFirmwareUpdate(t *testing.T) {
 	}
 
 	server.firmwareUpdateActive.Store(false)
-	server.createFirmwareUpdateJob(cfg)
+	server.createFirmwareUpdateJob()
 	settings = httptest.NewRecorder()
 	server.Handler().ServeHTTP(settings, httptest.NewRequest(http.MethodGet, "/v1/settings", nil))
 	if settings.Code != http.StatusConflict || !strings.Contains(settings.Body.String(), "firmware_update_in_progress") {
@@ -12085,7 +12085,7 @@ func TestFirmwareUpdateInstallReturnsAcceptedJobWithoutCableIO(t *testing.T) {
 		t.Run(fmt.Sprint(workerActive), func(t *testing.T) {
 			cfg := runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "updating-device", DeviceToken: "pair-token"}
 			server := newTestServer(t, cfg)
-			job := server.createFirmwareUpdateJob(cfg)
+			job := server.createFirmwareUpdateJob()
 			server.firmwareUpdateActive.Store(workerActive)
 			server.resolveCablePort = func(string, string) (string, error) {
 				t.Error("accepted update must not reopen the parent serial sender")
@@ -14269,7 +14269,7 @@ func TestFirmwareUpdatePausesDisplayStreamWhileReactivatingTheme(t *testing.T) {
 // earlier setup lines out of the twelve-line log.
 func TestFirmwareUpdateRescueProgressReplacesTheUpdateLine(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
-	job := server.createFirmwareUpdateJob(runtimeconfig.Config{})
+	job := server.createFirmwareUpdateJob()
 	writer := &firmwareUpdateProgressWriter{server: server, jobID: job.ID}
 	for _, line := range []string{"Checking device...", "Uploading firmware...", "Writing firmware: 10%", "Writing firmware: 60%"} {
 		writer.noteLine(line)
