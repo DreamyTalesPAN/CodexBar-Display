@@ -66,18 +66,6 @@ type PortOpener interface {
 	Open(path string, mode *serial.Mode) (SerialPort, error)
 }
 
-type LineSender interface {
-	Send(path string, line []byte) error
-}
-
-type HelloReader interface {
-	ReadHello(path string) (protocol.DeviceHello, error)
-}
-
-type CapabilitiesReader interface {
-	ReadCapabilities(path string) (protocol.DeviceCapabilities, error)
-}
-
 func SendLine(port string, line []byte) error {
 	if len(line) == 0 || line[len(line)-1] != '\n' {
 		line = append(line, '\n')
