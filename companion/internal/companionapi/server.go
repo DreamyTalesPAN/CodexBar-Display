@@ -2457,10 +2457,10 @@ func (s *Server) handleDisplayFrameLatest(w http.ResponseWriter, r *http.Request
 		return
 	}
 	cableMode := runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable"
-	logPath := displayStreamOutLogPath()
-	boundary, boundaryOK := displayStreamLogBoundary(logPath)
+	streamLog := readDisplayStreamLog(displayStreamOutLogPath())
+	boundary, boundaryOK := streamLog.boundary()
 	if boundaryOK {
-		sentAt, _, line, found := lastDisplayStreamFrameLineAfter(logPath, boundary)
+		sentAt, _, line, found := streamLog.lastFrameAfter(boundary)
 		frame, valid := frameFromDisplayStreamLogLine(line)
 		deviceID := displayStreamLogValue(line, "deviceId")
 		if found && valid && (!cableMode || (strings.EqualFold(displayStreamLogValue(line, "transport"), "usb") &&
@@ -9703,12 +9703,12 @@ func inspectDisplayStreamAfterRunning(ctx context.Context, target string, notBef
 		return stream
 	}
 
-	logPath := displayStreamOutLogPath()
-	boundary, boundaryOK := displayStreamLogBoundary(logPath)
+	streamLog := readDisplayStreamLog(displayStreamOutLogPath())
+	boundary, boundaryOK := streamLog.boundary()
 	if running != nil {
 		// The in-process worker always writes a session marker, including with
 		// the legacy label. Frames from a previous daemon are not liveness proof.
-		boundary, boundaryOK = latestDisplayStreamStartMarker(logPath, displayStreamLaunchAgentLabel())
+		boundary, boundaryOK = streamLog.startMarker(displayStreamLaunchAgentLabel())
 	}
 	if !boundaryOK {
 		stream.Detail = "Display stream is starting."
@@ -9717,8 +9717,8 @@ func inspectDisplayStreamAfterRunning(ctx context.Context, target string, notBef
 	if !notBefore.IsZero() && notBefore.After(boundary) {
 		boundary = notBefore
 	}
-	lastSentAt, lastTarget, frameLine, frameOK := lastDisplayStreamFrameLineAfter(logPath, boundary)
-	errorAt, errorDetail, errorCode, errorOK := lastDisplayStreamErrorRecordAfter(logPath, boundary)
+	lastSentAt, lastTarget, frameLine, frameOK := streamLog.lastFrameAfter(boundary)
+	errorAt, errorDetail, errorCode, errorOK := streamLog.lastErrorAfter(boundary)
 	if !frameOK || lastSentAt.IsZero() {
 		if errorOK && time.Since(errorAt) <= displayStreamReadyAge {
 			stream.Detail = errorDetail
@@ -9891,20 +9891,16 @@ func lastDisplayStreamFrame(path string) (time.Time, string) {
 }
 
 func lastDisplayStreamFrameLine(path string) (time.Time, string, string, bool) {
-	boundary, ok := displayStreamLogBoundary(path)
+	streamLog := readDisplayStreamLog(path)
+	boundary, ok := streamLog.boundary()
 	if !ok {
 		return time.Time{}, "", "", false
 	}
-	return lastDisplayStreamFrameLineAfter(path, boundary)
+	return streamLog.lastFrameAfter(boundary)
 }
 
-func lastDisplayStreamFrameLineAfter(path string, boundary time.Time) (time.Time, string, string, bool) {
-	for _, candidate := range displayStreamLogCandidates(path) {
-		data, err := readDisplayStreamLogTail(candidate)
-		if err != nil {
-			continue
-		}
-		lines := strings.Split(string(data), "\n")
+func (l displayStreamLog) lastFrameAfter(boundary time.Time) (time.Time, string, string, bool) {
+	for _, lines := range l {
 		for i := len(lines) - 1; i >= 0; i-- {
 			line := strings.TrimSpace(lines[i])
 			if !strings.Contains(line, "sent frame -> ") {
@@ -9932,13 +9928,8 @@ func lastDisplayStreamFrameLineAfter(path string, boundary time.Time) (time.Time
 	return time.Time{}, "", "", false
 }
 
-func lastDisplayStreamErrorRecordAfter(path string, boundary time.Time) (time.Time, string, string, bool) {
-	for _, candidate := range displayStreamLogCandidates(path) {
-		data, err := readDisplayStreamLogTail(candidate)
-		if err != nil {
-			continue
-		}
-		lines := strings.Split(string(data), "\n")
+func (l displayStreamLog) lastErrorAfter(boundary time.Time) (time.Time, string, string, bool) {
+	for _, lines := range l {
 		for i := len(lines) - 1; i >= 0; i-- {
 			line := strings.TrimSpace(lines[i])
 			if !strings.Contains(line, "cycle error:") && !strings.Contains(line, "cycle timeout:") {
@@ -9988,25 +9979,21 @@ func lastDisplayStreamErrorRecordAfter(path string, boundary time.Time) (time.Ti
 	return time.Time{}, "", "", false
 }
 
-func displayStreamLogBoundary(path string) (time.Time, bool) {
+func (l displayStreamLog) boundary() (time.Time, bool) {
 	if !runtimepaths.DisplayStreamRequiresStartMarker() {
 		return time.Time{}, true
 	}
-	return latestDisplayStreamStartMarker(path, displayStreamLaunchAgentLabel())
+	return l.startMarker(displayStreamLaunchAgentLabel())
 }
 
-func latestDisplayStreamStartMarker(path, expectedLabel string) (time.Time, bool) {
+func (l displayStreamLog) startMarker(expectedLabel string) (time.Time, bool) {
 	expectedLabel = strings.TrimSpace(expectedLabel)
 	if expectedLabel == "" {
 		return time.Time{}, false
 	}
 	var latest time.Time
-	for _, candidate := range displayStreamLogCandidates(path) {
-		data, err := readDisplayStreamLogTail(candidate)
-		if err != nil {
-			continue
-		}
-		for _, rawLine := range strings.Split(string(data), "\n") {
+	for _, lines := range l {
+		for _, rawLine := range lines {
 			line := strings.TrimSpace(rawLine)
 			if !strings.Contains(line, "runtime event=stream-start") || displayStreamLogValue(line, "label") != expectedLabel {
 				continue
@@ -10022,6 +10009,23 @@ func latestDisplayStreamStartMarker(path, expectedLabel string) (time.Time, bool
 		}
 	}
 	return latest, !latest.IsZero()
+}
+
+// displayStreamLog holds the lines of the display-stream log tail and of its
+// archive, current file first. One request reads and splits them once and
+// searches them as often as it needs (status, the 1 s preview poll).
+type displayStreamLog [][]string
+
+func readDisplayStreamLog(path string) displayStreamLog {
+	var l displayStreamLog
+	for _, candidate := range displayStreamLogCandidates(path) {
+		data, err := readDisplayStreamLogTail(candidate)
+		if err != nil {
+			continue
+		}
+		l = append(l, strings.Split(string(data), "\n"))
+	}
+	return l
 }
 
 func displayStreamLogCandidates(path string) []string {

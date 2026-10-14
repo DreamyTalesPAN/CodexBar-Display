@@ -3,6 +3,8 @@ package companionapi
 import (
 	"context"
 	"time"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 )
 
 // Short forms of production functions that only the tests call.
@@ -30,4 +32,15 @@ func lastDisplayStreamError(path string) (time.Time, string, bool) {
 func lastDisplayStreamErrorAfter(path string, boundary time.Time) (time.Time, string, bool) {
 	when, detail, _, ok := lastDisplayStreamErrorRecordAfter(path, boundary)
 	return when, detail, ok
+}
+
+func lastDisplayStreamErrorRecordAfter(path string, boundary time.Time) (time.Time, string, string, bool) {
+	return readDisplayStreamLog(path).lastErrorAfter(boundary)
+}
+
+func displayStreamLogBoundary(path string) (time.Time, bool) {
+	if !runtimepaths.DisplayStreamRequiresStartMarker() {
+		return time.Time{}, true
+	}
+	return readDisplayStreamLog(path).boundary()
 }
