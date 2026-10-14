@@ -1628,6 +1628,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private let runtimeService = SMAppService.agent(plistName: runtimeLaunchAgentPlistName)
     private var urlRouter = ControlCenterURLRouter()
     private var reloadAttempts = 0
+    private var webContentTerminations: [Date] = []
     private var scheduledReload: Task<Void, Never>?
     private var preparationTask: Task<Void, Never>?
     private var closePreparationInFlight = false
@@ -5135,13 +5136,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     // WebKit ends the page's process under memory pressure or when it
     // crashes. The window then stays blank and the page stops polling, so a
     // setup in progress looks frozen (#616). Load the Control Center again.
+    // A page that crashes again right after every load would otherwise be
+    // respawned forever: at most five in five minutes, through the bounded
+    // and delayed scheduleReload.
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        let now = Date()
+        webContentTerminations = webContentTerminations.filter {
+            now.timeIntervalSince($0) < 300
+        } + [now]
+        guard webContentTerminations.count <= 5 else {
+            NSLog("VibeTV Control Center web content process ended %d times in 5 minutes; not loading the page again", webContentTerminations.count)
+            return
+        }
         NSLog("VibeTV Control Center web content process ended; loading the Control Center again")
         activeNavigation = nil
-        scheduledReload?.cancel()
-        scheduledReload = nil
-        reloadAttempts = 0
-        loadControlCenter(cachePolicy: .reloadIgnoringLocalCacheData)
+        scheduleReload()
     }
 
     private func scheduleReload() {
