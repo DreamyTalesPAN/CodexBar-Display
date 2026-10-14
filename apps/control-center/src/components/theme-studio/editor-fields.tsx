@@ -8,41 +8,8 @@ import {
   InputGroupAddon,
   InputGroupInput,
 } from "@/components/ui/input-group";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 const COLOR_FALLBACK = "#000000";
-
-export function TextField({
-  label,
-  onChange,
-  type = "text",
-  value,
-}: {
-  label: string;
-  onChange: (value: string) => void;
-  type?: "password" | "text";
-  value: string;
-}) {
-  const id = useId();
-  return (
-    <Field>
-      <FieldLabel htmlFor={id}>{label}</FieldLabel>
-      <Input
-        id={id}
-        onChange={(event) => onChange(event.target.value)}
-        type={type}
-        value={value}
-      />
-    </Field>
-  );
-}
 
 export function NumberField({
   label,
@@ -140,39 +107,6 @@ export function ColorField({
           />
         </InputGroupAddon>
       </InputGroup>
-    </Field>
-  );
-}
-
-export function SelectField({
-  label,
-  onChange,
-  options,
-  value,
-}: {
-  label: string;
-  onChange: (value: string) => void;
-  options: Array<[string, string]>;
-  value: string;
-}) {
-  const id = useId();
-  return (
-    <Field>
-      <FieldLabel htmlFor={id}>{label}</FieldLabel>
-      <Select onValueChange={onChange} value={value}>
-        <SelectTrigger className="h-11 w-full rounded-[var(--radius-control)]" id={id}>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectGroup>
-            {options.map(([optionValue, optionLabel]) => (
-              <SelectItem key={optionValue} value={optionValue}>
-                {optionLabel}
-              </SelectItem>
-            ))}
-          </SelectGroup>
-        </SelectContent>
-      </Select>
     </Field>
   );
 }

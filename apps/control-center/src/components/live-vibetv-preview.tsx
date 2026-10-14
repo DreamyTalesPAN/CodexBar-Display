@@ -556,7 +556,7 @@ const RECONNECT_FRAME_GRACE_MS = 120_000;
 // match the device's active revision yet.
 const THEME_PACK_RETRY_MS = 5_000;
 
-export function frameFreshForReconnect(
+function frameFreshForReconnect(
   displayFrame: DisplayFrameSnapshot | null | undefined,
 ): boolean {
   const savedAt = displayFrame?.savedAt;
@@ -1631,7 +1631,7 @@ function slotCountdownFor(
 
 // Mirrors the firmware's FormatTokenCount digit for digit (truncated
 // hundredths, never rounded) so catalog previews and the device agree.
-export function formatTokenCount(value: number): string {
+function formatTokenCount(value: number): string {
   if (!Number.isFinite(value) || value < 0) {
     value = 0;
   }

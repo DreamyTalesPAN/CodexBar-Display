@@ -1,4 +1,4 @@
-export const COMPANION_URL = "http://127.0.0.1:47832";
+const COMPANION_URL = "http://127.0.0.1:47832";
 export const RESTART_CONTROL_CENTER_URL =
   "vibetv://restart-control-center";
 export const REPAIR_CONTROL_CENTER_RUNTIME_URL =
@@ -107,7 +107,7 @@ export function isLoopbackHostname(hostname: string): boolean {
   return ["127.0.0.1", "localhost", "::1"].includes(hostname);
 }
 
-export function companionOrigin(): string {
+function companionOrigin(): string {
   if (
     typeof window !== "undefined" &&
     isLoopbackHostname(window.location.hostname) &&
@@ -130,7 +130,7 @@ export function isLocalCompanionOrigin(): boolean {
   );
 }
 
-export function shouldUseNextLocalCompanionProxy(): boolean {
+function shouldUseNextLocalCompanionProxy(): boolean {
   if (typeof window === "undefined") {
     return false;
   }

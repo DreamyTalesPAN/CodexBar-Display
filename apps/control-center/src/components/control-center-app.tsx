@@ -6636,7 +6636,7 @@ function normalizeDeviceTarget(target: string): string {
   return `http://${trimmed}`;
 }
 
-export function deviceMatchesExpectedConnection(
+function deviceMatchesExpectedConnection(
   device: DeviceInfo | null | undefined,
   expectedTarget?: string,
   expectedDeviceId?: string,
