@@ -1483,20 +1483,5 @@ inline bool ConsumeLineByte(
   return complete;
 }
 
-inline bool ConsumeSerialByte(
-    LineReaderState& lineState,
-    RuntimeState& runtimeState,
-    char c,
-    unsigned long nowMillis,
-    SerialConsumeEvent& outEvent) {
-  outEvent = {};
-  const char* line = nullptr;
-  if (!ConsumeLineByte(lineState, c, line)) {
-    return false;
-  }
-  return ConsumeFrameLine(runtimeState, line, nowMillis, outEvent) &&
-         outEvent.frameAccepted;
-}
-
 }  // namespace core
 }  // namespace codexbar_display
