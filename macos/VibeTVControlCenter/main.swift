@@ -27,6 +27,10 @@ private let browserSignInReadProviders: Set<String> = ["claude", "cursor"]
 // As long as the app's own checks after "Sign in to <Provider>" run.
 private let browserSignInReadWindow: TimeInterval = 3 * 60
 private let browserSignInReadInterval: TimeInterval = 15
+// How long after a successful read the app only waits for VibeTV to show the
+// provider before reading again. The background usage service refreshes every
+// 60 seconds, so this covers one refresh plus its fetch.
+private let browserSignInReadSettle: TimeInterval = 90
 private let controlCenterBundleIdentifier = "shop.vibetv.control-center"
 private let runtimeLaunchAgentLabel = "shop.vibetv.control-center.runtime"
 private let previewRuntimeLaunchAgentLabel =
@@ -548,6 +552,17 @@ func readBrowserSignInWithCodexBar(
         return .notYet
     }
     return browserSignInReadOutcome(result.output)
+}
+
+// Each read can show the macOS Keychain prompt again (after a one-time
+// "Allow"), so after a successful read the app waits for the background usage
+// service to use it before reading again. Reading again only makes sense when
+// that read was an old sign-in the provider refused.
+func browserSignInShouldRead(lastReadAt: Date?, now: Date) -> Bool {
+    guard let lastReadAt else {
+        return true
+    }
+    return now.timeIntervalSince(lastReadAt) >= browserSignInReadSettle
 }
 
 
@@ -2392,6 +2407,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     // instead, until VibeTV shows the provider's usage, the read is refused,
     // or the follow-up window ends. A read alone does not end it: the cookie
     // read before the customer signs in can be an old one the provider refuses.
+    // After a read it only waits for VibeTV to show the provider, so the
+    // customer is asked once unless that read turns out to be an old one.
     private func readBrowserSignIn(provider: String) {
         if browserSignInReadsRunning.contains(provider) {
             return
@@ -2412,16 +2429,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             let deadline = Date().addingTimeInterval(browserSignInReadWindow)
             var outcome = BrowserSignInReadOutcome.notYet
             var ready = false
+            var lastReadAt: Date?
             while true {
-                let remaining = deadline.timeIntervalSinceNow
-                outcome = await Task.detached {
-                    readBrowserSignInWithCodexBar(
-                        provider: provider,
-                        companionURL: companionURL,
-                        codexBarAppURL: codexBarAppURL,
-                        timeout: remaining
-                    )
-                }.value
+                if browserSignInShouldRead(lastReadAt: lastReadAt, now: Date()) {
+                    let remaining = deadline.timeIntervalSinceNow
+                    outcome = await Task.detached {
+                        readBrowserSignInWithCodexBar(
+                            provider: provider,
+                            companionURL: companionURL,
+                            codexBarAppURL: codexBarAppURL,
+                            timeout: remaining
+                        )
+                    }.value
+                    if outcome == .read {
+                        lastReadAt = Date()
+                    }
+                }
                 if outcome == .declined
                     || Date().addingTimeInterval(browserSignInReadInterval) >= deadline {
                     break

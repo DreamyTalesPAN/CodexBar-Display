@@ -496,6 +496,19 @@ func runURLSchemeTests() {
             "missing, stale or unavailable usage keeps reading the browser sign-in: \(notReadyUsage)"
         )
     }
+    let firstRead = Date(timeIntervalSince1970: 1_000)
+    require(
+        browserSignInShouldRead(lastReadAt: nil, now: firstRead),
+        "the first check after Sign in reads the browser sign-in"
+    )
+    require(
+        !browserSignInShouldRead(lastReadAt: firstRead, now: firstRead.addingTimeInterval(75)),
+        "after a read the app waits for the usage service instead of asking again"
+    )
+    require(
+        browserSignInShouldRead(lastReadAt: firstRead, now: firstRead.addingTimeInterval(90)),
+        "a read the usage service still does not show is read again"
+    )
     require(
         shouldHandleWebViewDownload(
             url: URL(string: "blob:http://127.0.0.1/report")!,
