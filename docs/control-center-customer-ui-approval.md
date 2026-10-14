@@ -7088,6 +7088,13 @@ issue scope, or release permission never implies UI permission.
 - Scope: this approval record only.
 - What's new: none — no customer-visible change of its own
 
+## 2026-10-14 — Release screenshot mode for customer update mails (#608)
+
+- User approval: Paul asked for an automation that emails VibeTV customers what is new after each release and explicitly wanted app screenshots in it: "am liebsten auch mit screenshots usw". On 2026-10-14 he asked to bring #608 up to date with main and make CI green.
+- Approved customer-visible result: No UI change. `test-customer-flows.mjs --release-screenshots` only runs the existing flows that already capture screenshots and captures them at 2x for the mail drafts; the app and the other test modes are unchanged.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` (new mode), `apps/control-center/package.json` (`capture:release-screenshots`), and this approval record, after merging main.
+- What's new: none — test tooling only
+
 ## 2026-10-14 — Windows: an app update found while the app runs installs only with the window closed
 
 - User approval: Paul on 2026-10-14, after he was told that the Windows app installed a newer version without a question while it was open, restarting under a customer in setup or in a provider sign-in: "ja das ist natürlich kacke", then "ok klingt gut" to this proposal: no automatic install with the window open, a quiet install with the window closed, launch install, Update and the tray item unchanged, the Mac App unchanged.
@@ -7099,5 +7106,12 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul's approval of 2026-10-14 recorded in "Windows: an app update found while the app runs installs only with the window closed" above. This update only merges main (#597, #612) into the branch; the one conflict in `windows/src-tauri/src/main.rs` keeps both the hidden start after an update with the window closed and #597's theme link at launch.
 - Approved customer-visible result: as recorded in that entry above and in #597's entries; nothing else changes.
+- Scope: merge of main into `claude/win-no-silent-app-update`, and this approval record.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-14 — #610 brought up to date with main after #608
+
+- User approval: Paul's approval of 2026-10-14 recorded in "Windows: an app update found while the app runs installs only with the window closed" above. This update only merges main (#608) into the branch, without a conflict outside this record.
+- Approved customer-visible result: as recorded in that entry above and in #608's entries; nothing else changes.
 - Scope: merge of main into `claude/win-no-silent-app-update`, and this approval record.
 - What's new: none — no customer-visible change of its own
