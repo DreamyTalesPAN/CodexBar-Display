@@ -15,6 +15,7 @@ import {
 import {
   companionRequestUrl,
   needsLoopbackTargetAddressSpace,
+  normalizeThemeSpecHash,
   themeRenderPackUrl,
 } from "./control-center-runtime";
 import { loadLocalThemeRenderPack } from "@/lib/local-theme-render-pack";
@@ -1471,11 +1472,6 @@ function normalizeThemeAlias(theme: string | undefined): string {
     return "";
   }
   return DEVICE_THEME_ALIASES[normalized] || normalized;
-}
-
-function normalizeThemeSpecHash(value: string | undefined): string {
-  const hash = (value || "").trim().toLowerCase();
-  return /^[a-f0-9]{8}$/.test(hash) ? hash : "";
 }
 
 function renderPackSpecHash(pack: ThemeRenderPack): string {

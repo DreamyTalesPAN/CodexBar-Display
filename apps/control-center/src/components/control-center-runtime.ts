@@ -239,7 +239,7 @@ function themeSpecFileName(themeSpecPath: string | undefined): string {
   return /^[a-zA-Z0-9._-]+\.json$/.test(file) ? file : "";
 }
 
-function normalizeThemeSpecHash(value: string | undefined): string {
+export function normalizeThemeSpecHash(value: string | undefined): string {
   const hash = (value || "").trim().toLowerCase();
   return /^[a-f0-9]{8}$/.test(hash) ? hash : "";
 }
