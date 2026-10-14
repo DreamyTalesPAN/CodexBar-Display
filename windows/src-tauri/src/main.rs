@@ -208,7 +208,11 @@ fn main() {
             let visible = !relaunched_after_idle_update(&handle);
             let provider_shortcut = register_provider_shortcut(handle.clone());
             handle.state::<Shell>().provider_shortcut.store(provider_shortcut, Ordering::SeqCst);
-            create_window(&handle, provider_shortcut, visible)?;
+            // Back from an update installed with the window closed: stay in
+            // the tray without a WebView2; opening the app creates the window.
+            if visible {
+                create_window(&handle, provider_shortcut, visible)?;
+            }
             let args: Vec<_> = std::env::args_os().collect();
             if args.len() == 2 {
                 queue_install_link(&handle, args[1].to_str());
