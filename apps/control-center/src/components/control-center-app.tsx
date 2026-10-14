@@ -5493,7 +5493,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         activeTab={activeShellTab}
         activeAppearanceSection={appearanceSection}
         disabledTabs={disabledTabs}
-        device={device}
         updateAvailable={anyUpdateAvailable}
         onAppearanceSectionChange={setAppearanceSection}
         onTabChange={(tab) => {
@@ -5596,9 +5595,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               appearanceSection === "screensavers"
                 ? setSelectedScreensaverId
                 : setSelectedThemeId
-            }
-            installEntry={
-              appearanceSection === "themes" && Boolean(initialThemeId)
             }
             requestedThemeId={
               appearanceSection === "themes" ? initialThemeId : undefined

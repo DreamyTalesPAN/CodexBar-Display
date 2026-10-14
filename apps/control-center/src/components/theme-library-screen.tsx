@@ -194,7 +194,6 @@ export type ThemeLibraryScreenProps = {
   tokenHistoryUnavailable?: boolean;
   busyAction: string | null;
   installStatus?: ThemeInstallStatus | null;
-  installEntry?: boolean;
   lastInstall?: ThemeInstallResult;
   requestedThemeId?: string;
   storefrontConfigured: boolean;
