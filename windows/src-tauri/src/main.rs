@@ -10,7 +10,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
@@ -72,6 +72,9 @@ struct Shell {
     // vibetv://check-for-updates must not launch two NSIS installers over
     // the same files.
     updater: Mutex<Updater>,
+    // Whether Windows gave us Ctrl+Alt+Shift+P; a window created again after
+    // a close needs it for its user agent.
+    provider_shortcut: AtomicBool,
 }
 
 // Who holds the updater, in one lock so a click or an opened window can
@@ -194,6 +197,7 @@ fn main() {
             preparing: Mutex::new(true),
             presentations: AtomicU64::new(0),
             updater: Mutex::new(Updater::Free),
+            provider_shortcut: AtomicBool::new(false),
         })
         .setup(|app| {
             let handle = app.handle().clone();
@@ -202,7 +206,9 @@ fn main() {
                 log(&format!("could not enable autostart: {error}"));
             }
             let visible = !relaunched_after_idle_update(&handle);
-            create_window(&handle, register_provider_shortcut(handle.clone()), visible)?;
+            let provider_shortcut = register_provider_shortcut(handle.clone());
+            handle.state::<Shell>().provider_shortcut.store(provider_shortcut, Ordering::SeqCst);
+            create_window(&handle, provider_shortcut, visible)?;
             let args: Vec<_> = std::env::args_os().collect();
             if args.len() == 2 {
                 queue_install_link(&handle, args[1].to_str());
@@ -398,10 +404,33 @@ fn present_window(app: &AppHandle) {
             _ => {}
         }
     }
-    if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
-        let _ = window.show();
-        let _ = window.unminimize();
-        let _ = window.set_focus();
+    match app.get_webview_window(WINDOW_LABEL) {
+        Some(window) => {
+            let _ = window.show();
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+        }
+        // Closed earlier and released (hide_after_flush). Building a WebView2
+        // window from an event handler can deadlock, so a thread builds it and
+        // loads the Control Center as a start does.
+        None => {
+            let handle = app.clone();
+            std::thread::spawn(move || {
+                prepare_and_load(handle);
+            });
+        }
+    }
+}
+
+// Creates the window again when a close released it. Never call this on the
+// event-loop thread (see present_window).
+fn ensure_window(app: &AppHandle) {
+    if app.get_webview_window(WINDOW_LABEL).is_some() {
+        return;
+    }
+    let provider_shortcut = app.state::<Shell>().provider_shortcut.load(Ordering::SeqCst);
+    if let Err(error) = create_window(app, provider_shortcut, true) {
+        log(&format!("could not create the window again: {error}"));
     }
 }
 
@@ -498,7 +527,10 @@ fn acknowledge_loaded_theme(app: AppHandle, loaded: Url) {
     clear_loaded_theme(&mut pending, &loaded, &origin, true);
 }
 
-// Theme Studio saves unsaved work on this event; give it a moment, then hide.
+// Theme Studio saves unsaved work on this event; give it a moment, then
+// release the window. Like the Mac App, a closed Control Center keeps no
+// WebView2 (its processes hold 100+ MB and the page would keep polling);
+// opening it from the tray creates the window again.
 fn hide_after_flush(app: &AppHandle) {
     let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
         return;
@@ -510,7 +542,7 @@ fn hide_after_flush(app: &AppHandle) {
         std::thread::sleep(WINDOW_CLOSE_FLUSH_DELAY);
         // Reopened from the tray or a second launch meanwhile: keep it open.
         if handle.state::<Shell>().presentations.load(Ordering::SeqCst) == presented {
-            let _ = window.hide();
+            let _ = window.destroy();
         }
     });
 }
@@ -770,6 +802,11 @@ fn prepare_and_load(app: AppHandle) -> bool {
 // `present` is false only after an update installed with the window closed:
 // the app then loads in the tray, where the customer left it.
 fn load(app: AppHandle, present: bool) -> bool {
+    // Before the preparing check: present_window below must find a window,
+    // or it would hand the load to yet another thread.
+    if present {
+        ensure_window(&app);
+    }
     let shell = app.state::<Shell>();
     {
         let mut preparing = shell.preparing.lock().unwrap();
