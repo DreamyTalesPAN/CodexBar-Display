@@ -771,24 +771,24 @@ func customerInstallProgress(line string, job *themeInstallJob) (string, int, bo
 	case strings.HasPrefix(line, "Install screen: showing"):
 		return "Showing install screen on VibeTV.", 30, true
 	case strings.HasPrefix(line, "Upload interrupted"):
-		return "Upload interrupted. Retrying.", maxInt(job.Progress, 40), true
+		return "Upload interrupted. Retrying.", max(job.Progress, 40), true
 	case strings.HasPrefix(line, "Retrying upload:"):
-		return "Retrying theme file upload.", maxInt(job.Progress, 40), true
+		return "Retrying theme file upload.", max(job.Progress, 40), true
 	case strings.HasPrefix(line, "Uploading theme files"):
 		return "Uploading theme files.", 40, true
 	case strings.HasPrefix(line, "Uploaded asset:"):
 		job.uploads++
-		return fmt.Sprintf("Uploaded theme file %d.", job.uploads), minInt(70, 40+job.uploads*6), true
+		return fmt.Sprintf("Uploaded theme file %d.", job.uploads), min(70, 40+job.uploads*6), true
 	case strings.HasPrefix(line, "Uploaded theme spec:"):
 		return "Uploaded theme layout.", 76, true
 	case strings.HasPrefix(line, "Activating theme"):
 		return "Activating theme.", 84, true
 	case strings.HasPrefix(line, "Theme activation interrupted"):
-		return "Theme activation interrupted. Retrying.", maxInt(job.Progress, 84), true
+		return "Theme activation interrupted. Retrying.", max(job.Progress, 84), true
 	case strings.HasPrefix(line, "Theme activation retry"):
-		return "Retrying theme activation.", maxInt(job.Progress, 84), true
+		return "Retrying theme activation.", max(job.Progress, 84), true
 	case strings.HasPrefix(line, "Theme activation did not settle"):
-		return "Waiting for VibeTV to apply theme.", maxInt(job.Progress, 86), true
+		return "Waiting for VibeTV to apply theme.", max(job.Progress, 86), true
 	case strings.HasPrefix(line, "Live usage frame: refreshed"):
 		return "Refreshing live usage.", 90, true
 	case strings.HasPrefix(line, "Live usage frame: skipped"):

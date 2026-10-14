@@ -114,20 +114,6 @@ func sanitizeErrorDetail(err error) string {
 	return detail
 }
 
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 func writeError(w http.ResponseWriter, status int, code, message, nextAction string) {
 	writeJSON(w, status, errorResponse{
 		OK: false,
