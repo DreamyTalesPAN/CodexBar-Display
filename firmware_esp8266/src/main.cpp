@@ -4395,7 +4395,7 @@ void handleFrame() {
   if (!requireWriteAuth()) {
     return;
   }
-  String rawBody = webServer.arg("plain");
+  const String& rawBody = webServer.arg("plain");
   if (rawBody.length() == 0) {
     addCorsHeaders();
     webServer.send(400, "text/plain; charset=utf-8", "empty frame body");
