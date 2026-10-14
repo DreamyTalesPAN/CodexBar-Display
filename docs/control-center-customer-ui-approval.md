@@ -7088,6 +7088,13 @@ issue scope, or release permission never implies UI permission.
 - Scope: this approval record only.
 - What's new: none — no customer-visible change of its own
 
+## 2026-10-14 — Release screenshot mode for customer update mails (#608)
+
+- User approval: Paul asked for an automation that emails VibeTV customers what is new after each release and explicitly wanted app screenshots in it: "am liebsten auch mit screenshots usw". On 2026-10-14 he asked to bring #608 up to date with main and make CI green.
+- Approved customer-visible result: No UI change. `test-customer-flows.mjs --release-screenshots` only runs the existing flows that already capture screenshots and captures them at 2x for the mail drafts; the app and the other test modes are unchanged.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` (new mode), `apps/control-center/package.json` (`capture:release-screenshots`), and this approval record, after merging main.
+- What's new: none — test tooling only
+
 ## 2026-10-14 — Overnight audit (#614): dead UI code removed, preview poll scoped
 
 - User approval: Paul asked on 2026-10-14 for an unattended overnight audit of the whole repository (epic #614), with the rule that nothing the product does today is lost and nothing customer-visible changes unless needed. He has not seen this entry or the branch.
