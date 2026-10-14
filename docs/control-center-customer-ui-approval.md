@@ -7108,3 +7108,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: For up to three minutes after the usage service was started (after a settings change, a browser sign-in read or a crash), a provider whose saved reading is older than that service shows the existing "checking" spinner instead of the warning icon. Once the new service delivers, the row is healthy as before; if it has not delivered after three minutes, the row shows the warning icon as before. A throttled provider keeps its warning. No new text, button or dialog.
 - Scope: `companion` (usage service start time, provider row health), this approval record. Pull-request branch only, not merge or release.
 - What's new: none — a row that already had a checking state uses it during a restart, not announced to customers
+
+## 2026-10-14 — #607: approval marker after merging main with #597
+
+- User approval: Paul asked on 2026-10-14 to test, investigate and fix #607. Main moved on with #597 while the branch was under test, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #607 entries above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
