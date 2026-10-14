@@ -1599,12 +1599,15 @@ func applyAgentActivity(frame protocol.Frame, state *runtimeState, display *runt
 		if snapshot.Health == "ready" && agentstatus.ValidPhase(snapshot.Phase) {
 			frame.Activity = snapshot.Phase
 			frame.AgentName = snapshot.DisplayName()
-			// The status line is one line of large text. When the agent
-			// belongs to the provider on screen, that provider's short label
-			// names it ("Claude is working"); the agent's own name stays for
-			// an agent of another provider or of none.
-			if active := snapshot.ActiveProviders(); len(active) > 0 && active[0] == normalizeProviderKey(frame.Provider) && strings.TrimSpace(frame.Label) != "" {
-				frame.AgentName = strings.TrimSpace(frame.Label)
+			// The status line is one line of large text. An agent that belongs
+			// to a provider is named by that provider's short label ("Claude
+			// is working"), also while another provider's usage is on screen;
+			// an agent of no provider keeps its own name.
+			if active := snapshot.ActiveProviders(); len(active) > 0 {
+				frame.AgentName = codexbar.ProviderLabel(active[0])
+				if active[0] == normalizeProviderKey(frame.Provider) && strings.TrimSpace(frame.Label) != "" {
+					frame.AgentName = strings.TrimSpace(frame.Label)
+				}
 			}
 		}
 	}

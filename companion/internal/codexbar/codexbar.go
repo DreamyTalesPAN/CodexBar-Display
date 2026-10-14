@@ -1825,6 +1825,9 @@ func decodeProvidersFromRaw(raw []byte) ([]any, error) {
 	return providers, nil
 }
 
+// ProviderLabel is the display name of a provider id ("claude" -> "Claude").
+func ProviderLabel(provider string) string { return humanLabel(provider) }
+
 func humanLabel(provider string) string {
 	p := strings.TrimSpace(strings.ToLower(provider))
 	switch p {

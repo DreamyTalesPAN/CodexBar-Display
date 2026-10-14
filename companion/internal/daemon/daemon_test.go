@@ -8147,9 +8147,10 @@ func TestAgentStatusNamesTheShownProviderByItsShortLabel(t *testing.T) {
 	state := &runtimeState{agentSnapshot: func() agentstatus.Snapshot { return snapshot }}
 	for _, tc := range []struct{ provider, label, want string }{
 		{"claude", "Claude", "Claude"},
-		// Another provider is on screen: its label would name the wrong agent.
-		{"codex", "Codex", "Claude Code"},
-		{"claude", "", "Claude Code"},
+		// Another provider is on screen: the agent keeps its own provider's
+		// name, never the one on screen.
+		{"codex", "Codex", "Claude"},
+		{"claude", "", "Claude"},
 	} {
 		frame, _ := applyAgentActivity(protocol.Frame{Provider: tc.provider, Label: tc.label}, state, nil)
 		if frame.Activity != "working" || frame.AgentName != tc.want {
@@ -8238,7 +8239,7 @@ func TestManualDisplayScopesAgentActivityToPinnedProvider(t *testing.T) {
 			t.Fatalf("mismatched manual frame: %+v", sent)
 		}
 	}
-	check("working", "Codex CLI")
+	check("working", "Codex")
 	snapshot.ProviderPhases["codex"] = "idle"
 	snapshot.Sessions[1].Phase = "idle"
 	check("idle", "Codex CLI")
@@ -8248,7 +8249,8 @@ func TestManualDisplayScopesAgentActivityToPinnedProvider(t *testing.T) {
 	check("unavailable", "Agent")
 	snapshot.Health = "ready"
 	cfg.ProviderDisplay.Mode = "automatic"
-	check("waiting_for_answer", "Claude Code")
+	// Claude needs you while Codex is on screen: named by its own provider.
+	check("waiting_for_answer", "Claude")
 }
 
 func TestTokenHistoryRetainsBothProvidersThroughIncompleteScans(t *testing.T) {
