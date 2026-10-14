@@ -7,7 +7,7 @@
 // shell needs to know it asks the Companion.
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -74,16 +74,19 @@ struct Shell {
     updater: Mutex<Updater>,
 }
 
-// Who holds the updater, in one lock so a click can never fall between two
-// pieces of it.
+// Who holds the updater, in one lock so a click or an opened window can
+// never fall between two pieces of it.
 #[derive(Clone, Copy, PartialEq)]
 enum Updater {
     Free,
     // At launch, or the customer's own run.
     Busy,
     // The check with the window closed. A click on Update or the tray item
-    // meanwhile is noted here and answered by it.
-    Idle { asked: bool },
+    // meanwhile is noted in `asked`, an opened window in `presented`.
+    Idle { asked: bool, presented: bool },
+    // That check has decided to install with the window closed; the
+    // installer starts now and the app is to come back in the tray.
+    IdleInstalling,
 }
 
 // Takes the updater for `run`; false while it is held. A click while the
@@ -94,14 +97,14 @@ fn take_updater(app: &AppHandle, run: UpdateRun) -> bool {
     match *updater {
         Updater::Free => {
             *updater = if run == UpdateRun::Idle {
-                Updater::Idle { asked: false }
+                Updater::Idle { asked: false, presented: false }
             } else {
                 Updater::Busy
             };
             true
         }
-        Updater::Idle { .. } if run == UpdateRun::Asked => {
-            *updater = Updater::Idle { asked: true };
+        Updater::Idle { presented, .. } if run == UpdateRun::Asked => {
+            *updater = Updater::Idle { asked: true, presented };
             log("update requested during the check with the window closed; it takes the request over");
             false
         }
@@ -114,20 +117,45 @@ fn take_updater(app: &AppHandle, run: UpdateRun) -> bool {
 fn free_updater(app: &AppHandle) -> bool {
     let shell = app.state::<Shell>();
     let mut updater = shell.updater.lock().unwrap();
-    let asked = *updater == Updater::Idle { asked: true };
+    let asked = matches!(*updater, Updater::Idle { asked: true, .. });
     *updater = Updater::Free;
     asked
 }
 
-// The check with the window closed uses a click that came meanwhile.
-fn take_click_during_idle(app: &AppHandle) -> bool {
+enum IdleDecision {
+    // A click came meanwhile: the customer's install, the window comes back.
+    Asked,
+    // The window was opened: nothing is installed.
+    InUse,
+    // Install with the window closed; the relaunch note is on file.
+    Hidden,
+}
+
+// The last word of the check with the window closed, under the same lock as
+// `present_window`: a window opened before it stops the install, one opened
+// after it removes the relaunch note so the app comes back with its window.
+// Visibility is read before the lock: Tauri asks the main thread, where a
+// tray click may be waiting for this lock in `present_window`. A window opened
+// after that read is caught by `presented`.
+fn decide_idle_install(app: &AppHandle, note: Option<&Path>) -> IdleDecision {
+    let visible = window_in_use(app);
     let shell = app.state::<Shell>();
     let mut updater = shell.updater.lock().unwrap();
-    if *updater == (Updater::Idle { asked: true }) {
-        *updater = Updater::Idle { asked: false };
-        return true;
+    match *updater {
+        Updater::Idle { asked: true, .. } => {
+            *updater = Updater::Busy;
+            IdleDecision::Asked
+        }
+        Updater::Idle { presented: true, .. } => IdleDecision::InUse,
+        _ if visible => IdleDecision::InUse,
+        _ => {
+            if let Some(note) = note {
+                launch_update::note_relaunch(note, unix_now());
+            }
+            *updater = Updater::IdleInstalling;
+            IdleDecision::Hidden
+        }
     }
-    false
 }
 
 fn main() {
@@ -347,9 +375,24 @@ fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tau
 }
 
 fn present_window(app: &AppHandle) {
-    app.state::<Shell>()
-        .presentations
-        .fetch_add(1, Ordering::SeqCst);
+    let shell = app.state::<Shell>();
+    shell.presentations.fetch_add(1, Ordering::SeqCst);
+    {
+        // The update check with the window closed must hear of it.
+        let mut updater = shell.updater.lock().unwrap();
+        match *updater {
+            Updater::Idle { asked, .. } => *updater = Updater::Idle { asked, presented: true },
+            Updater::IdleInstalling => {
+                // Too late to stop the installer: the app comes back with
+                // its window instead.
+                if let Ok(folder) = app.path().app_local_data_dir() {
+                    launch_update::release(&folder.join(IDLE_UPDATE_RELAUNCH_MARKER));
+                }
+                *updater = Updater::Busy;
+            }
+            _ => {}
+        }
+    }
     if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
         let _ = window.show();
         let _ = window.unminimize();
@@ -1109,32 +1152,38 @@ async fn run_update(app: &AppHandle, run: UpdateRun) -> Result<UpdateOutcome, St
         }
         return Ok(UpdateOutcome::Busy);
     }
-    // Asked only now: the window may have been opened during the download or
-    // while the hold was claimed, which can take a few runtime requests. A
+    // Decided only now: the window may have been opened during the download
+    // or while the hold was claimed, which can take a few runtime requests. A
     // click on Update meanwhile makes this the customer's install: it goes
     // on, and the app comes back with its window.
-    let asked = run == UpdateRun::Idle && take_click_during_idle(app);
-    if asked {
-        relaunch_note = None;
-    } else if run == UpdateRun::Idle && window_in_use(app) {
-        let _ = tauri::async_runtime::spawn_blocking(release_update_hold).await;
-        // Nothing was tried; the next check may install this version.
-        if let Some(marker) = &marker {
-            launch_update::release(marker);
+    let mut asked = false;
+    if run == UpdateRun::Idle {
+        match decide_idle_install(app, relaunch_note.as_deref()) {
+            IdleDecision::Asked => {
+                asked = true;
+                relaunch_note = None;
+            }
+            IdleDecision::InUse => {
+                let _ = tauri::async_runtime::spawn_blocking(release_update_hold).await;
+                // Nothing was tried; the next check may install this version.
+                if let Some(marker) = &marker {
+                    launch_update::release(marker);
+                }
+                return Ok(UpdateOutcome::InUse);
+            }
+            IdleDecision::Hidden => {}
         }
-        return Ok(UpdateOutcome::InUse);
-    }
-    if let Some(note) = &relaunch_note {
-        launch_update::note_relaunch(note, unix_now());
     }
     log(&format!("installing update {}", update.version));
     if let Err(error) = update.install(bytes) {
         if let Some(note) = &relaunch_note {
             launch_update::release(note);
         }
-        if asked {
-            // The click still gets its answer, from its own run.
-            *app.state::<Shell>().updater.lock().unwrap() = Updater::Idle { asked: true };
+        if run == UpdateRun::Idle {
+            // Back to the check, so freeing the updater works as before; the
+            // click still gets its answer, from its own run.
+            *app.state::<Shell>().updater.lock().unwrap() =
+                Updater::Idle { asked, presented: false };
         }
         // Nothing was replaced; give the runtime back to device jobs.
         let _ = tauri::async_runtime::spawn_blocking(release_update_hold).await;

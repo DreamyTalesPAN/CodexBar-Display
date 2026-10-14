@@ -74,7 +74,9 @@ Companion for everything it needs.
   update or theme install runs, with the same limits and the same
   once-in-24-hours file as at launch and without any message. The window is
   checked again right before the installer starts, after the update hold is
-  claimed. A click on Update or the tray item during that check is not
+  claimed, under the same lock `present_window` takes: a window opened before
+  that point stops the install, one opened after it removes the relaunch note
+  so the app comes back with its window. A click on Update or the tray item during that check is not
   dropped: the check installs at once and the app comes back with its window,
   or, when it ends without installing, the click gets its own run with its
   messages.
