@@ -20,17 +20,7 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 	}
 	s.firmwareUpdateStartMu.Lock()
 	defer s.firmwareUpdateStartMu.Unlock()
-	if _, ok := s.activeFirmwareUpdateJob(); ok {
-		writeError(
-			w,
-			http.StatusConflict,
-			"firmware_update_in_progress",
-			"VibeTV update is still running.",
-			"Wait for the update to finish before setting up another VibeTV.",
-		)
-		return
-	}
-	if s.rejectActiveThemeInstall(w) {
+	if s.rejectBusyDevice(w, "Wait for the update to finish before setting up another VibeTV.") {
 		return
 	}
 	s.repairMu.Lock()
@@ -87,11 +77,7 @@ func (s *Server) handleDeviceFactoryReset(w http.ResponseWriter, r *http.Request
 	}
 	s.firmwareUpdateStartMu.Lock()
 	defer s.firmwareUpdateStartMu.Unlock()
-	if _, ok := s.activeFirmwareUpdateJob(); ok {
-		writeError(w, http.StatusConflict, "firmware_update_in_progress", "VibeTV update is still running.", "Wait for the update to finish, then try again.")
-		return
-	}
-	if s.rejectActiveThemeInstall(w) {
+	if s.rejectBusyDevice(w, "Wait for the update to finish, then try again.") {
 		return
 	}
 	s.deviceMaintenanceMu.Lock()
@@ -166,11 +152,7 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 	}
 	s.firmwareUpdateStartMu.Lock()
 	defer s.firmwareUpdateStartMu.Unlock()
-	if _, ok := s.activeFirmwareUpdateJob(); ok {
-		writeError(w, http.StatusConflict, "firmware_update_in_progress", "VibeTV update is still running.", "Wait for the update to finish, then choose the connection again.")
-		return
-	}
-	if s.rejectActiveThemeInstall(w) {
+	if s.rejectBusyDevice(w, "Wait for the update to finish, then choose the connection again.") {
 		return
 	}
 	if device := s.selectConnectionMode(w, r, mode, requestedDeviceID); device != nil {
@@ -582,11 +564,7 @@ func (s *Server) handleSetupWiFi(w http.ResponseWriter, r *http.Request) {
 	}
 	s.firmwareUpdateStartMu.Lock()
 	defer s.firmwareUpdateStartMu.Unlock()
-	if _, ok := s.activeFirmwareUpdateJob(); ok {
-		writeError(w, http.StatusConflict, "firmware_update_in_progress", "VibeTV update is still running.", "Wait for the update to finish, then try again.")
-		return
-	}
-	if s.rejectActiveThemeInstall(w) {
+	if s.rejectBusyDevice(w, "Wait for the update to finish, then try again.") {
 		return
 	}
 
@@ -688,11 +666,7 @@ func (s *Server) handleSetupWiFiNetworks(w http.ResponseWriter, r *http.Request)
 	}
 	s.firmwareUpdateStartMu.Lock()
 	defer s.firmwareUpdateStartMu.Unlock()
-	if _, ok := s.activeFirmwareUpdateJob(); ok {
-		writeError(w, http.StatusConflict, "firmware_update_in_progress", "VibeTV update is still running.", "Wait for the update to finish, then scan again.")
-		return
-	}
-	if s.rejectActiveThemeInstall(w) {
+	if s.rejectBusyDevice(w, "Wait for the update to finish, then scan again.") {
 		return
 	}
 	s.deviceMaintenanceMu.Lock()

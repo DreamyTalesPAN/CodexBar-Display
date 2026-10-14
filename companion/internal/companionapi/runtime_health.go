@@ -88,6 +88,16 @@ func (s *Server) themeInstallInFlight() bool {
 
 // Callers hold firmwareUpdateStartMu so checking the accepted theme job and
 // starting another device operation are one serialized decision.
+// rejectBusyDevice answers 409 while a firmware update or a theme install owns
+// VibeTV. nextStep tells the customer what to do once the update is done.
+func (s *Server) rejectBusyDevice(w http.ResponseWriter, nextStep string) bool {
+	if _, running := s.activeFirmwareUpdateJob(); running {
+		writeError(w, http.StatusConflict, "firmware_update_in_progress", "VibeTV update is still running.", nextStep)
+		return true
+	}
+	return s.rejectActiveThemeInstall(w)
+}
+
 func (s *Server) rejectActiveThemeInstall(w http.ResponseWriter) bool {
 	if !s.themeInstallInFlight() {
 		return false

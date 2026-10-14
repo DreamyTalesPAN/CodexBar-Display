@@ -48,11 +48,7 @@ func (s *Server) handleDevice(w http.ResponseWriter, r *http.Request) {
 	} else if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" {
 		s.firmwareUpdateStartMu.Lock()
 		defer s.firmwareUpdateStartMu.Unlock()
-		if _, running := s.activeFirmwareUpdateJob(); running {
-			writeError(w, http.StatusConflict, "firmware_update_in_progress", "VibeTV update is still running.", "Wait for the update to finish, then try again.")
-			return
-		}
-		if s.rejectActiveThemeInstall(w) {
+		if s.rejectBusyDevice(w, "Wait for the update to finish, then try again.") {
 			return
 		}
 		port, hello, ok := s.requireCableControlDevice(w, cfg)
@@ -151,11 +147,7 @@ func settingsPatchForRequest(
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	s.firmwareUpdateStartMu.Lock()
 	defer s.firmwareUpdateStartMu.Unlock()
-	if _, ok := s.activeFirmwareUpdateJob(); ok {
-		writeError(w, http.StatusConflict, "firmware_update_in_progress", "VibeTV update is still running.", "Wait for the update to finish, then try again.")
-		return
-	}
-	if s.rejectActiveThemeInstall(w) {
+	if s.rejectBusyDevice(w, "Wait for the update to finish, then try again.") {
 		return
 	}
 	switch r.Method {
