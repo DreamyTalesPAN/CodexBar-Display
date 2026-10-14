@@ -3361,12 +3361,14 @@ bool prepareStoredThemeSpec(
       nextRuntime, themeId, themeRev, raw, millis(), event);
 }
 
+// Moves the staged state in: a copy would briefly hold a third RuntimeState
+// (theme spec up to 4 KB plus every frame string) beside the live and staged one.
 void commitStoredThemeSpec(
     const String& path,
     const String& raw,
-    const codexbar_display::core::RuntimeState& nextRuntime,
+    codexbar_display::core::RuntimeState&& nextRuntime,
     const codexbar_display::core::SerialConsumeEvent& event) {
-  runtimeCtx.runtime = nextRuntime;
+  runtimeCtx.runtime = std::move(nextRuntime);
   renderer.ResetGifStateForAssetUpdate();
   activeThemeSpecPath = path;
   activeThemeSpecHash = hashHex8(raw);
@@ -3434,7 +3436,7 @@ bool activateStoredThemePath(
     error = "save active theme failed";
     return false;
   }
-  commitStoredThemeSpec(path, raw, nextRuntime, event);
+  commitStoredThemeSpec(path, raw, std::move(nextRuntime), event);
   return true;
 }
 
