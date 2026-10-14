@@ -793,7 +793,7 @@ func gifCompiles(primitive map[string]any) bool {
 	idle, coding := stateAsset(primitive, "idle"), stateAsset(primitive, "coding")
 	initial := idle
 	if initial == "" {
-		initial = jsonFor[string](primitive, "assetPath", "a")
+		initial = cString(jsonFor[string](primitive, "assetPath", "a"))
 	}
 	return strings.HasSuffix(initial, ".gif") &&
 		(idle == "" || strings.HasSuffix(idle, ".gif")) &&
@@ -804,11 +804,11 @@ func gifCompiles(primitive map[string]any) bool {
 // an assetPath, an idle or coding state asset, or a provider asset with a key
 // and a path. Dimensions are not checked for sprites.
 func spriteCompiles(primitive map[string]any) bool {
-	if jsonFor[string](primitive, "assetPath", "a") != "" || stateAsset(primitive, "idle") != "" || stateAsset(primitive, "coding") != "" {
+	if cString(jsonFor[string](primitive, "assetPath", "a")) != "" || stateAsset(primitive, "idle") != "" || stateAsset(primitive, "coding") != "" {
 		return true
 	}
 	for key, value := range jsonFor[map[string]any](primitive, "providerAssets", "pa") {
-		if path, _ := value.(string); key != "" && path != "" {
+		if path, _ := value.(string); cString(key) != "" && cString(path) != "" {
 			return true
 		}
 	}
@@ -818,7 +818,7 @@ func spriteCompiles(primitive map[string]any) bool {
 // stateAsset is the idle or coding path under stateAssets (or "sa"), or "".
 func stateAsset(primitive map[string]any, state string) string {
 	path, _ := jsonFor[map[string]any](primitive, "stateAssets", "sa")[state].(string)
-	return path
+	return cString(path)
 }
 
 // jsonFor is the firmware's JsonStringFor, JsonArrayFor and JsonObjectFor: the

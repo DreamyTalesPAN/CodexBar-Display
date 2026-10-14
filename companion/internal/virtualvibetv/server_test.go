@@ -411,6 +411,9 @@ func TestThemeActivationRefusesPrimitivesThatDoNotCompile(t *testing.T) {
 		{"slot 4 is past the last slot", `{"t":"r","w":1,"h":1,"sl":4}`, true},
 		{"provider slot 2 is the last slot", `{"t":"r","w":1,"h":1,"pl":2}`, false},
 		{"provider slot 3 is past the last slot", `{"t":"r","w":1,"h":1,"pl":3}`, true},
+		// The firmware reads a JSON string up to its first NUL.
+		{"sprite whose asset path starts with NUL", `{"t":"sp","a":"\u0000/themes/u/a.png"}`, true},
+		{"gif whose asset path ends in .gif before a NUL", `{"t":"g","w":8,"h":8,"a":"/themes/u/a.gif\u0000x"}`, false},
 		// CompilePrimitive, rect: width and height above zero.
 		{"rect without width and height", `{"t":"r"}`, true},
 		{"rect with height 0", `{"t":"r","w":1,"h":0}`, true},
