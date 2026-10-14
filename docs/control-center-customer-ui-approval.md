@@ -7087,3 +7087,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as merged with #597 and recorded in its entries above; nothing else changes.
 - Scope: this approval record only.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-14 — Overnight audit (#614): dead UI code removed, preview poll scoped
+
+- User approval: Paul asked on 2026-10-14 for an unattended overnight audit of the whole repository (epic #614), with the rule that nothing the product does today is lost and nothing customer-visible changes unless needed. He has not seen this entry or the branch.
+- Approved customer-visible result: No text, control or layout changes. Deleted files and exports were never rendered: the panels of the native Theme Studio replaced by the AI editor (#422), the Overview `ReconnectNotice`, an unused shell status component and an unused device image. The 1 s display-frame poll now re-renders only Overview and the setup wizard instead of the whole app, runs one request at a time with a 5 s limit and pauses while the window is hidden; the Usage reset countdown keeps moving on its own 15 s tick (it shows whole minutes); background usage polls share one request. The installer served from app.vibetv.shop gives each status check at most 30 s instead of waiting without limit.
+- Scope: `apps/control-center/src/components/{live-vibetv-preview,control-center-app,usage-screen,overview-screen,mac-app-install-command,control-center-types,diagnostics-panel,control-center-runtime,setup-event-log}.ts(x)`, the deleted Theme Studio files, `src/lib/{theme-studio,theme-studio-assets,active-theme-upgrade}.ts`, `public/install-control-center-companion.sh`, `public/images/vibetv-device-overview.png`, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change
