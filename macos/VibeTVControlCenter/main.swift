@@ -692,11 +692,14 @@ func browserSignInReadWorks(check data: Data, provider: String) -> Bool {
 // checks the provider with it at once and, when it works, starts its usage
 // service fresh: the running one keeps its failed reading for minutes, and the
 // app would read and ask again in the meantime (#607, 2026-10-14).
-// The published endpoint can be stale and still answer, so one origin's "not
-// working" settles nothing; any origin that finds the read working does. Each
-// request ends by the reading's deadline, so a slow or stale origin cannot hold
-// the reading, and later sign-in clicks, past its window.
+// The published endpoint can be stale and still answer, so the request goes
+// to every candidate: a stale runtime's answer, either way, must not keep it
+// from the runtime that serves the device. Any origin that finds the read
+// working counts. Each request ends by the reading's deadline, so a slow or
+// stale origin cannot hold the reading, and later sign-in clicks, past its
+// window.
 func browserSignInCheckAfterRead(provider: String, runtimeOrigins: [URL], deadline: Date) async -> Bool {
+    var works = false
     for origin in runtimeOrigins {
         let remaining = min(90, deadline.timeIntervalSinceNow)
         guard remaining > 1 else {
@@ -727,10 +730,10 @@ func browserSignInCheckAfterRead(provider: String, runtimeOrigins: [URL], deadli
             continue
         }
         if browserSignInReadWorks(check: data, provider: provider) {
-            return true
+            works = true
         }
     }
-    return false
+    return works
 }
 
 
