@@ -7206,3 +7206,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. No visible change. Only the unit test waits for the focus as it already waited for the entry to go.
 - Scope: `setup/setup-help-menu-log.test.tsx` and this approval record. Night-shift branch only, not merge or release.
 - What's new: none — a correction, nothing new to announce
+
+## 2026-10-13 — Night shift: correction: the token chart keeps every reported day when they lie far apart (#579)
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-13/14; wording not yet seen by him. Correction to tonight's entry on the token chart, from the automated review of #603: when a provider's first and last day with tokens were more than 400 days apart, the chart kept only those two days and dropped every day in between.
+- Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. No new wording. In that case the chart now shows every reported day as before tonight, without filling in days; within 400 days nothing changes (days without tokens on the zero line).
+- Scope: `usage-screen.tsx`, its test, and this approval record. Night-shift branch only, not merge or release.
+- What's new: none — a correction, nothing new to announce

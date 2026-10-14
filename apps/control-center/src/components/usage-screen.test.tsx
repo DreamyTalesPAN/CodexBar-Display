@@ -564,6 +564,17 @@ describe("token chart days (#579)", () => {
     ]);
   });
 
+  it("keeps every reported day when they lie too far apart to fill in", () => {
+    const { chartData } = buildProviderTokenChart([
+      { provider: provider("codex"), days: [
+        { day: "2024-01-01", totalTokens: 1 },
+        { day: "2024-06-01", totalTokens: 2 },
+        { day: "2026-01-01", totalTokens: 3 },
+      ] },
+    ] as Parameters<typeof buildProviderTokenChart>[0]);
+    expect(chartData.map((row) => row.day)).toEqual(["2024-01-01", "2024-06-01", "2026-01-01"]);
+  });
+
   it("keeps a single day and an empty history as they are", () => {
     expect(buildProviderTokenChart([
       { provider: provider("codex"), days: [{ day: "2026-09-16", totalTokens: 5 }] },
