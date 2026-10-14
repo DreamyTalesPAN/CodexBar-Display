@@ -7088,6 +7088,13 @@ issue scope, or release permission never implies UI permission.
 - Scope: this approval record only.
 - What's new: none — no customer-visible change of its own
 
+## 2026-10-14 — Release screenshot mode for customer update mails (#608)
+
+- User approval: Paul asked for an automation that emails VibeTV customers what is new after each release and explicitly wanted app screenshots in it: "am liebsten auch mit screenshots usw". On 2026-10-14 he asked to bring #608 up to date with main and make CI green.
+- Approved customer-visible result: No UI change. `test-customer-flows.mjs --release-screenshots` only runs the existing flows that already capture screenshots and captures them at 2x for the mail drafts; the app and the other test modes are unchanged.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` (new mode), `apps/control-center/package.json` (`capture:release-screenshots`), and this approval record, after merging main.
+- What's new: none — test tooling only
+
 ## 2026-10-14 - On the Mac, "Sign in to Claude/Cursor" also reads the browser sign-in from the app
 
 - User approval: A Mac customer (VibeTV order #1175) was signed in to claude.ai, but VibeTV kept showing "No Claude session key found in browser cookies." The background usage service gets no macOS Keychain prompt and, on the bench Mac (macOS 26), may not list the Chrome profile folder, so it never reads a browser sign-in by itself; one read from the foreground fills CodexBar's cookie cache and the background service then shows Claude usage (bench Mac, preview 99.0.1106, 2026-10-14). Asked whether this should become its own pull request, with the note that customers will see a new macOS Keychain prompt, Marcus answered "Okay, dann mach das bitte und danach testest du das."
