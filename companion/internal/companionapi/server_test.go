@@ -13628,6 +13628,18 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
+	// A firmware job keeps writing its diagnostics after it reports
+	// complete; it holds deviceMaintenanceMu until it has finished. Wait for
+	// it (bounded) before t.TempDir is removed, or the removal races the
+	// job's last write ("directory not empty").
+	t.Cleanup(func() {
+		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+			if server.deviceMaintenanceMu.TryLock() {
+				server.deviceMaintenanceMu.Unlock()
+				return
+			}
+		}
+	})
 	server.probeCacheTime = 0
 	// Tests model a Companion that already knows the VibeTV's port from
 	// pairing or a frame. The restart case sets this to "" itself.
