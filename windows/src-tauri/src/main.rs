@@ -78,6 +78,7 @@ struct Shell {
     // The presentation count + 1 at which hide_after_flush released the
     // window; 0 when no release is under way.
     released_at: AtomicU64,
+    window_creation: Mutex<()>,
 }
 
 // Who holds the updater, in one lock so a click or an opened window can
@@ -202,6 +203,7 @@ fn main() {
             updater: Mutex::new(Updater::Free),
             provider_shortcut: AtomicBool::new(false),
             released_at: AtomicU64::new(0),
+            window_creation: Mutex::new(()),
         })
         .setup(|app| {
             let handle = app.handle().clone();
@@ -456,6 +458,10 @@ fn present_window(app: &AppHandle) {
 // Creates the window again when a close released it. Never call this on the
 // event-loop thread (see present_window).
 fn ensure_window(app: &AppHandle) -> bool {
+    // One check-and-create at a time: two presents (a theme link reaches a
+    // tray-only app as a second launch and as a queued link) would otherwise
+    // both see no window and build two "main" windows.
+    let _creating = app.state::<Shell>().window_creation.lock().unwrap();
     if app.get_webview_window(WINDOW_LABEL).is_some() {
         return true;
     }
