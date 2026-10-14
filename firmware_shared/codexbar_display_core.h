@@ -20,6 +20,8 @@
 namespace codexbar_display {
 namespace core {
 
+using usage_window_contract::ClampPct;
+
 constexpr size_t kFrameLineBufferBytes = 2048;
 // One day. Keeps the bound's millisecond count inside 32 bits.
 constexpr int64_t kMaxActivityTtlSecs = 86400;
@@ -270,16 +272,6 @@ struct SerialConsumeEvent {
 // usageMode is normalized away by ParseFrameLine and reads as "used".
 inline const char* UsageModeText(const Frame& frame) {
   return frame.hasUsageMode && frame.usageMode == "remaining" ? "remaining" : "used";
-}
-
-inline int ClampPct(int value) {
-  if (value < 0) {
-    return 0;
-  }
-  if (value > 100) {
-    return 100;
-  }
-  return value;
 }
 
 inline int64_t ClampNonNegativeInt64(int64_t value) {
