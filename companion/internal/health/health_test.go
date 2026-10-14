@@ -215,9 +215,9 @@ func TestFindLastMatchingEvent(t *testing.T) {
 		"",
 	}, "\n")
 
-	event := findLastSentFrameEvent("/tmp/out.log", func(string) ([]byte, error) {
+	event := findLastSentFrameEvent(readLogLines("/tmp/out.log", func(string) ([]byte, error) {
 		return []byte(logBody), nil
-	})
+	}))
 	if !strings.Contains(event.Line, "sent frame ->") {
 		t.Fatalf("expected sent frame line, got %q", event.Line)
 	}
