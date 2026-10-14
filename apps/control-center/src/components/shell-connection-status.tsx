@@ -1,10 +1,37 @@
 import { cn } from "@/lib/utils";
+import {
+  deviceIsCustomerConnected,
+  type CompanionStatus,
+  type DeviceInfo,
+} from "./control-center-types";
 
 type Props = {
   compactLabel?: string;
   label: string;
   ready: boolean;
 };
+
+export function overviewConnectionStatus(
+  companionStatus: CompanionStatus,
+  device: DeviceInfo | null,
+  firmwareUpdatePhase?: string,
+  appVersion?: string,
+  windowsHost = false,
+): Props {
+  if (companionStatus === "missing") {
+    return { label: windowsHost ? "App offline" : "Mac App offline", compactLabel: "Offline", ready: false };
+  }
+  if (companionStatus !== "online") {
+    return { label: windowsHost ? "Connecting to app" : "Connecting to Mac App", compactLabel: "Connecting", ready: false };
+  }
+  if (deviceIsCustomerConnected(device)) {
+    return { label: appVersion ? `Online · v${appVersion}` : "Online", compactLabel: "Online", ready: true };
+  }
+  if (firmwareUpdatePhase === "installing") {
+    return { label: "VibeTV restarting", compactLabel: "Restarting", ready: false };
+  }
+  return { label: "VibeTV not connected", compactLabel: "Not connected", ready: false };
+}
 
 export function ShellConnectionStatus({
   compactLabel,

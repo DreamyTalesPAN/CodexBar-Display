@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/agentstatus"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
@@ -654,8 +655,10 @@ func TestRunCycleWithDepsSendsARetainedReadingWhenThereIsNoLastGoodFrame(t *test
 	if first.Provider != "claude" || first.Session != 40 || first.UsageUnavailable || first.Error != "" {
 		t.Fatalf("expected the retained Claude reading, got %+v", first)
 	}
-	if first.Activity != "coding" || first.ActivityTTLSec != 10 {
-		t.Fatalf("expected the activity verdict with its bound, got activity=%q ttl=%d", first.Activity, first.ActivityTTLSec)
+	// Activity comes from the agent observer alone; none runs here, so a
+	// provider frame that says coding does not make the device show work.
+	if first.Activity != "idle" || first.ActivityTTLSec != 10 {
+		t.Fatalf("expected the agent activity with its bound, got activity=%q ttl=%d", first.Activity, first.ActivityTTLSec)
 	}
 	if first.ResetTrust != protocol.ResetTrustOffline || first.ResetSec != 3600-60 {
 		t.Fatalf("expected a reading that is not live, counted from when it was taken, got trust=%q reset=%d", first.ResetTrust, first.ResetSec)
@@ -1892,506 +1895,58 @@ func TestRunWithDepsBootstrapsStickyProviderFromPersistedLastGood(t *testing.T) 
 	}
 }
 
-func TestApplySelectionActivityHoldsCodingUntilNextUsageFrame(t *testing.T) {
-	prepareFastTestEnv(t)
-
-	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
-	state := &runtimeState{}
-	frame, detail := applySelectionActivity(protocol.Frame{Provider: "codex"}, codexbar.SelectionDecision{
-		Selected:             codexbar.ParsedFrame{CollectedAt: now},
-		Reason:               codexbar.SelectionReasonUsageDelta,
-		ActivitySignalReason: codexbar.SelectionReasonUsageDelta,
-		ActivityDetail:       "source=usage-delta",
-	}, state, now)
-	if frame.Activity != "coding" {
-		t.Fatalf("expected first usage delta to show coding activity, got %q detail=%q", frame.Activity, detail)
+func TestActivityUsesOnlyEngineEvenWhenQuotaChanges(t *testing.T) {
+	for _, phase := range []string{"working", "thinking", "tool_use", "compacting", "waiting_for_permission", "waiting_for_answer", "waiting_for_review", "done", "error", "stale", "idle", "unavailable"} {
+		state := &runtimeState{agentSnapshot: func() agentstatus.Snapshot { return agentstatus.Snapshot{Health: "ready", Phase: phase} }}
+		frame, _ := applyAgentActivity(protocol.Frame{Activity: "coding"}, state, nil)
+		if frame.Activity != phase {
+			t.Fatalf("got %s want %s", frame.Activity, phase)
+		}
 	}
-
-	frame, detail = applySelectionActivity(protocol.Frame{Provider: "codex"}, codexbar.SelectionDecision{
-		Selected: codexbar.ParsedFrame{CollectedAt: now},
-		Reason:   codexbar.SelectionReasonStickyCurrent,
-	}, state, now.Add(10*time.Second))
-	if frame.Activity != "coding" {
-		t.Fatalf("expected coding to hold until next usage frame, got %q detail=%q", frame.Activity, detail)
-	}
-
-	frame, detail = applySelectionActivity(protocol.Frame{Provider: "codex"}, codexbar.SelectionDecision{
-		Selected: codexbar.ParsedFrame{CollectedAt: now.Add(10 * time.Second)},
-		Reason:   codexbar.SelectionReasonStickyCurrent,
-	}, state, now.Add(10*time.Second))
-	if frame.Activity != "coding" {
-		t.Fatalf("expected coding hold for unchanged fast cost frame, got %q detail=%q", frame.Activity, detail)
-	}
-
-	frame, detail = applySelectionActivity(protocol.Frame{Provider: "codex"}, codexbar.SelectionDecision{
-		Selected: codexbar.ParsedFrame{CollectedAt: now.Add(time.Minute)},
-		Reason:   codexbar.SelectionReasonStickyCurrent,
-	}, state, now.Add(time.Minute))
-	if frame.Activity != "coding" {
-		t.Fatalf("expected coding until explicit idle evidence arrives, got %q detail=%q", frame.Activity, detail)
+	frame, _ := applyAgentActivity(protocol.Frame{Activity: "coding"}, &runtimeState{}, nil)
+	if frame.Activity != "unavailable" {
+		t.Fatal("quota inferred activity")
 	}
 }
 
-func TestApplySelectionActivityShowsCodingForTokenDeltaOnUnchangedUsageSnapshot(t *testing.T) {
-	prepareFastTestEnv(t)
-
-	now := time.Date(2026, 10, 7, 14, 52, 0, 0, time.UTC)
-	observedAt := now.Add(-30 * time.Second)
-	selected := codexbar.ParsedFrame{CollectedAt: now, ActivityObservedAt: observedAt}
-	state := &runtimeState{}
-
-	frame, detail := applySelectionActivity(protocol.Frame{Provider: "claude"}, codexbar.SelectionDecision{
-		Selected: selected,
-		Reason:   codexbar.SelectionReasonStickyCurrent,
-	}, state, now)
-	if frame.Activity != "idle" {
-		t.Fatalf("expected idle without a usage delta, got %q detail=%q", frame.Activity, detail)
-	}
-
-	// The token scan finishes between two usage collections: same snapshot
-	// times, higher token totals.
-	frame, detail = applySelectionActivity(protocol.Frame{Provider: "claude"}, codexbar.SelectionDecision{
-		Selected:             selected,
-		Reason:               codexbar.SelectionReasonUsageDelta,
-		ActivitySignalReason: codexbar.SelectionReasonUsageDelta,
-		ActivityDetail:       "source=usage-delta score=session+0 weekly+0 sessionTokens+65294",
-	}, state, now.Add(2*time.Second))
-	if frame.Activity != "coding" {
-		t.Fatalf("expected a token delta on an unchanged usage snapshot to show coding, got %q detail=%q", frame.Activity, detail)
-	}
-
-	frame, detail = applySelectionActivity(protocol.Frame{Provider: "claude"}, codexbar.SelectionDecision{
-		Selected: selected,
-		Reason:   codexbar.SelectionReasonStickyCurrent,
-	}, state, now.Add(4*time.Second))
-	if frame.Activity != "coding" {
-		t.Fatalf("expected coding to hold on the next unchanged frame, got %q detail=%q", frame.Activity, detail)
-	}
-}
-
-func TestApplySelectionActivityHoldsCodingUntilTheNextTokenScanFindsNothing(t *testing.T) {
-	prepareFastTestEnv(t)
-	t.Setenv(activityHoldEnvVar, "180")
-	t.Setenv(activityIdleEvidenceEnvVar, "2")
-
-	scan := time.Date(2026, 10, 7, 15, 40, 43, 0, time.UTC)
-	nextScan := scan.Add(5*time.Minute + 30*time.Second)
-	// CodexBar 0.63 stamps its cost answer with the scan time and its usage
-	// answer with the collection time (seen on the bench Mac); an engine may
-	// also keep the time of the last activity. In every case one scan without
-	// new tokens ends coding, and usage collections without a delta do not.
-	for name, observedAt := range map[string]func(tokenScanAt, collectedAt time.Time) time.Time{
-		"activity time follows the scan":       func(tokenScanAt, _ time.Time) time.Time { return tokenScanAt },
-		"activity time stays":                  func(time.Time, time.Time) time.Time { return scan },
-		"activity time follows the collection": func(_, collectedAt time.Time) time.Time { return collectedAt },
+func TestAgentStateRendersBeforeFirstUsageWithoutInventingUsage(t *testing.T) {
+	for _, test := range []struct {
+		phase   string
+		modern  bool
+		carrier bool
+	}{
+		{"working", true, true}, {"waiting_for_answer", true, true},
+		{"idle", true, true}, {"error", true, true},
+		{"stale", true, false}, {"unavailable", true, false},
+		{"working", false, false},
 	} {
-		t.Run(name, func(t *testing.T) {
-			state := &runtimeState{}
-			step := func(after time.Duration, tokenScanAt time.Time, delta bool) string {
-				t.Helper()
-				now := scan.Add(after)
-				decision := codexbar.SelectionDecision{
-					Selected: codexbar.ParsedFrame{
-						Frame: protocol.Frame{Provider: "claude", TokenTotalsKnown: true},
-						// Usage is collected every 30 seconds.
-						CollectedAt:           now.Truncate(30 * time.Second),
-						ActivityObservedAt:    observedAt(tokenScanAt, now.Truncate(30*time.Second)),
-						TokenStatsCollectedAt: tokenScanAt,
-					},
-					Reason: codexbar.SelectionReasonStickyCurrent,
-				}
-				if delta {
-					decision.Reason = codexbar.SelectionReasonUsageDelta
-					decision.ActivitySignalReason = codexbar.SelectionReasonUsageDelta
-					decision.ActivityDetail = "source=usage-delta"
-				}
-				frame, _ := applySelectionActivity(protocol.Frame{Provider: "claude"}, decision, state, now)
-				return frame.Activity
+		t.Run(fmt.Sprintf("%s/modern=%t", test.phase, test.modern), func(t *testing.T) {
+			prepareFastTestEnv(t)
+			state := &runtimeState{agentSnapshot: func() agentstatus.Snapshot {
+				return agentstatus.Snapshot{Health: "ready", Phase: test.phase}
+			}}
+			usageErr := errors.New("first usage collection failed")
+			result := finalizeCycleResult(state, cycleResult{failureErr: usageErr}, time.Now())
+			var sent protocol.Frame
+			deps := runtimeDeps{
+				loadConfig: func(string) (runtimeconfig.Config, error) {
+					return runtimeconfig.Config{AgentActivity: &runtimeconfig.AgentActivitySettings{Enabled: true, Blink: true, Reminder: "5", Quiet: "off"}}, nil
+				},
+				sendLine: func(_ string, line []byte) error { return json.Unmarshal(line, &sent) },
+				logf:     func(string, ...any) {},
+			}.withDefaults()
+			caps := protocol.DeviceCapabilities{SupportsAgentActivityV1: true, SupportsAgentThemeStatesV1: test.modern}
+			err := sendCycleResult(context.Background(), "/test-device", caps, 2048, state, deps, result)
+			if !errors.Is(err, usageErr) {
+				t.Fatalf("usage failure lost: %v", err)
 			}
-
-			if got := step(0, scan, true); got != "coding" {
-				t.Fatalf("expected the token delta to show coding, got %q", got)
+			if sent.UsageUnavailable != test.carrier || (sent.Error == "") != test.carrier || sent.Activity != test.phase {
+				t.Fatalf("incorrect lifecycle carrier: %+v", sent)
 			}
-			// Hold over and usage refreshes without a delta, but no newer
-			// token scan yet: the customer may well still be working.
-			for _, after := range []time.Duration{2 * time.Second, 2 * time.Minute, 4 * time.Minute, 5 * time.Minute} {
-				if got := step(after, scan, false); got != "coding" {
-					t.Fatalf("expected coding %s after the delta while the next token scan is pending, got %q", after, got)
-				}
-			}
-			if got := step(5*time.Minute+31*time.Second, nextScan, false); got != "idle" {
-				t.Fatalf("expected idle once a newer token scan found no new tokens, got %q", got)
-			}
-			if got := step(5*time.Minute+33*time.Second, nextScan, false); got != "idle" {
-				t.Fatalf("expected idle to stay, got %q", got)
+			if sent.Session != 0 || sent.Weekly != 0 || sent.ResetSec != 0 || len(sent.UsageWindows) != 0 || state.hasLastGood {
+				t.Fatalf("invented or retained usage: %+v", sent)
 			}
 		})
-	}
-}
-
-// Automatic may move to another provider while the first one's work is still
-// waiting for its token scan. A provider without token totals has no scan of
-// its own; its percent tick must not cut the wait short.
-func TestApplySelectionActivityKeepsWaitingForTheTokenScanAcrossAProviderSwitch(t *testing.T) {
-	prepareFastTestEnv(t)
-	t.Setenv(activityHoldEnvVar, "180")
-	t.Setenv(activityIdleEvidenceEnvVar, "2")
-
-	scan := time.Date(2026, 10, 7, 23, 0, 0, 0, time.UTC)
-	state := &runtimeState{}
-	step := func(after time.Duration, provider string, tokens bool, tokenScanAt time.Time, delta bool) string {
-		t.Helper()
-		now := scan.Add(after)
-		decision := codexbar.SelectionDecision{
-			Selected: codexbar.ParsedFrame{
-				Frame:                 protocol.Frame{Provider: provider, TokenTotalsKnown: tokens},
-				CollectedAt:           now.Truncate(30 * time.Second),
-				ActivityObservedAt:    now.Truncate(30 * time.Second),
-				TokenStatsCollectedAt: tokenScanAt,
-			},
-			Reason: codexbar.SelectionReasonStickyCurrent,
-		}
-		if delta {
-			decision.Reason = codexbar.SelectionReasonUsageDelta
-			decision.ActivitySignalReason = codexbar.SelectionReasonUsageDelta
-		}
-		frame, _ := applySelectionActivity(protocol.Frame{Provider: provider}, decision, state, now)
-		return frame.Activity
-	}
-
-	if got := step(0, "claude", true, scan, true); got != "coding" {
-		t.Fatalf("expected Claude's token delta to show coding, got %q", got)
-	}
-	// One minute later Cursor, which has no token totals, ticks up a percent
-	// and Automatic shows it. A completed scan stamps every provider.
-	if got := step(time.Minute, "cursor", false, scan, true); got != "coding" {
-		t.Fatalf("expected the percent rise to show coding, got %q", got)
-	}
-	for _, after := range []time.Duration{90 * time.Second, 3 * time.Minute, 4*time.Minute + 30*time.Second, 5 * time.Minute} {
-		if got := step(after, "cursor", false, scan, false); got != "coding" {
-			t.Fatalf("%s after the first delta the token scan is still pending, got %q", after, got)
-		}
-	}
-	nextScan := scan.Add(5*time.Minute + 30*time.Second)
-	if got := step(5*time.Minute+31*time.Second, "cursor", false, nextScan, false); got != "idle" {
-		t.Fatalf("expected idle once the pending token scan found nothing, got %q", got)
-	}
-	// With nothing pending, a provider without token totals follows the
-	// older rule again: hold, then two readings without a delta.
-	if got := step(10*time.Minute, "cursor", false, nextScan, true); got != "coding" {
-		t.Fatalf("expected a later percent rise to show coding, got %q", got)
-	}
-	if got := step(13*time.Minute+30*time.Second, "cursor", false, nextScan, false); got != "coding" {
-		t.Fatalf("one reading without a delta is not enough yet, got %q", got)
-	}
-	if got := step(14*time.Minute, "cursor", false, nextScan, false); got != "idle" {
-		t.Fatalf("expected idle after hold and two readings without a delta, got %q", got)
-	}
-}
-
-func TestApplySelectionActivityExpiresCodingWhenNoTokenScanCompletes(t *testing.T) {
-	prepareFastTestEnv(t)
-
-	scan := time.Date(2026, 10, 7, 15, 40, 43, 0, time.UTC)
-	state := &runtimeState{}
-	selected := func(now time.Time) codexbar.ParsedFrame {
-		return codexbar.ParsedFrame{
-			Frame:                 protocol.Frame{Provider: "claude", TokenTotalsKnown: true},
-			CollectedAt:           now,
-			ActivityObservedAt:    now,
-			TokenStatsCollectedAt: scan,
-		}
-	}
-	applySelectionActivity(protocol.Frame{Provider: "claude"}, codexbar.SelectionDecision{
-		Selected:             selected(scan),
-		ActivitySignalReason: codexbar.SelectionReasonUsageDelta,
-	}, state, scan)
-
-	// Past the plain maximum the next scan is still awaited ...
-	now := scan.Add(activityCodingMaxAge() + time.Second)
-	if frame, detail := applySelectionActivity(protocol.Frame{Provider: "claude"}, codexbar.SelectionDecision{Selected: selected(now)}, state, now); frame.Activity != "coding" {
-		t.Fatalf("expected coding to wait for the next token scan, got %q detail=%q", frame.Activity, detail)
-	}
-	// ... but not longer than one scan period.
-	now = scan.Add(tokenStatsScanCooldown + tokenStatsCollectorTimeout + time.Minute + time.Second)
-	frame, detail := applySelectionActivity(protocol.Frame{Provider: "claude"}, codexbar.SelectionDecision{Selected: selected(now)}, state, now)
-	if frame.Activity != "idle" || !strings.Contains(detail, "coding-max-age-expired") {
-		t.Fatalf("expected coding to expire when token scans stop completing, got %q detail=%q", frame.Activity, detail)
-	}
-}
-
-func TestApplySelectionActivityTreatsCachedCodexBarSnapshotAsNotFreshIdleEvidence(t *testing.T) {
-	prepareFastTestEnv(t)
-	t.Setenv(activityHoldEnvVar, "20")
-
-	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
-	observedAt := now.Add(-5 * time.Second)
-	state := &runtimeState{}
-
-	frame, detail := applySelectionActivity(protocol.Frame{Provider: "codex"}, codexbar.SelectionDecision{
-		Selected: codexbar.ParsedFrame{
-			CollectedAt:        now,
-			ActivityObservedAt: observedAt,
-		},
-		ActivitySignalReason: codexbar.SelectionReasonUsageDelta,
-		ActivityDetail:       "source=usage-delta",
-	}, state, now)
-	if frame.Activity != "coding" {
-		t.Fatalf("expected token delta to show coding, got %q detail=%q", frame.Activity, detail)
-	}
-
-	frame, detail = applySelectionActivity(protocol.Frame{Provider: "codex"}, codexbar.SelectionDecision{
-		Selected: codexbar.ParsedFrame{
-			CollectedAt:        now.Add(30 * time.Second),
-			ActivityObservedAt: observedAt,
-		},
-		Reason: codexbar.SelectionReasonStickyCurrent,
-	}, state, now.Add(30*time.Second))
-	if frame.Activity != "coding" {
-		t.Fatalf("expected cached CodexBar snapshot to keep short coding hold, got %q detail=%q", frame.Activity, detail)
-	}
-
-	frame, detail = applySelectionActivity(protocol.Frame{Provider: "codex"}, codexbar.SelectionDecision{
-		Selected: codexbar.ParsedFrame{
-			CollectedAt:        now.Add(50 * time.Second),
-			ActivityObservedAt: observedAt,
-		},
-		Reason: codexbar.SelectionReasonStickyCurrent,
-	}, state, now.Add(50*time.Second))
-	if frame.Activity != "coding" {
-		t.Fatalf("expected cached CodexBar snapshot not to count as idle evidence, got %q detail=%q", frame.Activity, detail)
-	}
-}
-
-func TestApplySelectionActivityExpiresCodingAfterMaxAgeWithoutIdleEvidence(t *testing.T) {
-	prepareFastTestEnv(t)
-	t.Setenv(activityHoldEnvVar, "600")
-	t.Setenv(activityCodingMaxAgeEnvVar, "45")
-	t.Setenv(activityIdleEvidenceEnvVar, "10")
-
-	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
-	observedAt := now.Add(-5 * time.Second)
-	state := &runtimeState{}
-
-	frame, detail := applySelectionActivity(protocol.Frame{Provider: "codex"}, codexbar.SelectionDecision{
-		Selected: codexbar.ParsedFrame{
-			CollectedAt:        now,
-			ActivityObservedAt: observedAt,
-		},
-		ActivitySignalReason: codexbar.SelectionReasonUsageDelta,
-		ActivityDetail:       "source=usage-delta",
-	}, state, now)
-	if frame.Activity != "coding" {
-		t.Fatalf("expected token delta to show coding, got %q detail=%q", frame.Activity, detail)
-	}
-
-	frame, detail = applySelectionActivity(protocol.Frame{Provider: "codex"}, codexbar.SelectionDecision{
-		Selected: codexbar.ParsedFrame{
-			CollectedAt:        now.Add(46 * time.Second),
-			ActivityObservedAt: observedAt,
-		},
-		Reason: codexbar.SelectionReasonStickyCurrent,
-	}, state, now.Add(46*time.Second))
-	if frame.Activity != "idle" {
-		t.Fatalf("expected stale coding to expire without fresh idle evidence, got %q detail=%q", frame.Activity, detail)
-	}
-	if !strings.Contains(detail, "coding-max-age-expired") {
-		t.Fatalf("expected max-age detail, got %q", detail)
-	}
-}
-
-func TestApplySelectionActivityRequiresFreshNoDeltaEvidenceBeforeIdle(t *testing.T) {
-	prepareFastTestEnv(t)
-	t.Setenv(activityHoldEnvVar, "20")
-	t.Setenv(activityIdleEvidenceEnvVar, "2")
-
-	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
-	state := &runtimeState{}
-
-	frame, detail := applySelectionActivity(protocol.Frame{Provider: "codex"}, codexbar.SelectionDecision{
-		Selected: codexbar.ParsedFrame{
-			CollectedAt:        now,
-			ActivityObservedAt: now,
-		},
-		ActivitySignalReason: codexbar.SelectionReasonUsageDelta,
-		ActivityDetail:       "source=usage-delta",
-	}, state, now)
-	if frame.Activity != "coding" {
-		t.Fatalf("expected token delta to show coding, got %q detail=%q", frame.Activity, detail)
-	}
-
-	frame, detail = applySelectionActivity(protocol.Frame{Provider: "codex"}, codexbar.SelectionDecision{
-		Selected: codexbar.ParsedFrame{
-			CollectedAt:        now.Add(30 * time.Second),
-			ActivityObservedAt: now.Add(30 * time.Second),
-		},
-		Reason: codexbar.SelectionReasonStickyCurrent,
-	}, state, now.Add(30*time.Second))
-	if frame.Activity != "coding" {
-		t.Fatalf("expected first fresh no-delta CodexBar snapshot to keep coding, got %q detail=%q", frame.Activity, detail)
-	}
-
-	frame, detail = applySelectionActivity(protocol.Frame{Provider: "codex"}, codexbar.SelectionDecision{
-		Selected: codexbar.ParsedFrame{
-			CollectedAt:        now.Add(60 * time.Second),
-			ActivityObservedAt: now.Add(60 * time.Second),
-		},
-		Reason: codexbar.SelectionReasonStickyCurrent,
-	}, state, now.Add(60*time.Second))
-	if frame.Activity != "idle" {
-		t.Fatalf("expected second fresh no-delta CodexBar snapshot to confirm idle, got %q detail=%q", frame.Activity, detail)
-	}
-}
-
-func TestApplySelectionActivityKeepsExplicitActivity(t *testing.T) {
-	frame, _ := applySelectionActivity(protocol.Frame{Provider: "codex", Activity: "idle"}, codexbar.SelectionDecision{
-		Reason: codexbar.SelectionReasonLocalActivity,
-	}, &runtimeState{}, time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC))
-	if frame.Activity != "idle" {
-		t.Fatalf("expected explicit activity to be preserved, got %q", frame.Activity)
-	}
-}
-
-func TestApplySelectionActivityTreatsStaleLocalSignalAsIdle(t *testing.T) {
-	prepareFastTestEnv(t)
-
-	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
-	frame, detail := applySelectionActivity(protocol.Frame{Provider: "claude"}, codexbar.SelectionDecision{
-		Reason: codexbar.SelectionReasonLocalActivity,
-		Detail: "provider=claude confidence=high at=2026-02-23T11:00:00Z evidence=test",
-	}, &runtimeState{}, now)
-	if frame.Activity != "idle" {
-		t.Fatalf("expected stale local activity to render idle, got %q detail=%q", frame.Activity, detail)
-	}
-}
-
-func TestRunCycleActivityFollowsEachUsageSnapshot(t *testing.T) {
-	prepareFastTestEnv(t)
-	t.Setenv(activityHoldEnvVar, "60")
-
-	base := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
-	now := base
-	state := &runtimeState{
-		selector: codexbar.NewProviderSelector(),
-	}
-	session := 10
-	collectedAt := base
-	var frames []protocol.Frame
-
-	run := func(t *testing.T) {
-		t.Helper()
-		err := runCycleWithDeps(context.Background(), "", state, runtimeDeps{
-			now:         func() time.Time { return now },
-			resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
-			fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
-				frame := testParsedFrame("codex", session, 20, 3600)
-				frame.CollectedAt = collectedAt
-				return []codexbar.ParsedFrame{frame}, nil
-			},
-			logf: func(string, ...any) {},
-			sendLine: func(_ string, line []byte) error {
-				frames = append(frames, decodeFrameLine(t, line))
-				return nil
-			},
-		})
-		if err != nil {
-			t.Fatalf("expected cycle success, got %v", err)
-		}
-	}
-
-	run(t)
-	if frames[len(frames)-1].Activity != "idle" {
-		t.Fatalf("expected initial frame idle, got %q", frames[len(frames)-1].Activity)
-	}
-
-	now = base.Add(2 * time.Second)
-	collectedAt = now
-	session = 11
-	run(t)
-	if frames[len(frames)-1].Activity != "coding" {
-		t.Fatalf("expected first usage delta to mark coding, got %q", frames[len(frames)-1].Activity)
-	}
-
-	now = base.Add(10 * time.Second)
-	collectedAt = now
-	run(t)
-	if frames[len(frames)-1].Activity != "coding" {
-		t.Fatalf("expected coding to hold for unchanged fast cost snapshot, got %q", frames[len(frames)-1].Activity)
-	}
-
-	now = base.Add(time.Minute)
-	collectedAt = now
-	run(t)
-	if frames[len(frames)-1].Activity != "coding" {
-		t.Fatalf("expected first no-delta snapshot to keep coding, got %q", frames[len(frames)-1].Activity)
-	}
-
-	now = base.Add(2 * time.Minute)
-	collectedAt = now
-	run(t)
-	if frames[len(frames)-1].Activity != "idle" {
-		t.Fatalf("expected second no-delta snapshot to confirm idle, got %q", frames[len(frames)-1].Activity)
-	}
-}
-
-func TestRunCycleSendsIdleAfterFailedCodingSendWhenUsageStopsChanging(t *testing.T) {
-	prepareFastTestEnv(t)
-	t.Setenv(activityHoldEnvVar, "60")
-
-	base := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
-	now := base
-	state := &runtimeState{
-		selector: codexbar.NewProviderSelector(),
-	}
-	session := 10
-	sendShouldFail := false
-	var sent []protocol.Frame
-
-	run := func(t *testing.T) error {
-		t.Helper()
-		return runCycleWithDeps(context.Background(), "", state, runtimeDeps{
-			now:         func() time.Time { return now },
-			resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
-			fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
-				return []codexbar.ParsedFrame{testParsedFrame("codex", session, 20, 3600)}, nil
-			},
-			logf: func(string, ...any) {},
-			sendLine: func(_ string, line []byte) error {
-				if sendShouldFail {
-					return errors.New("write failed")
-				}
-				sent = append(sent, decodeFrameLine(t, line))
-				return nil
-			},
-		})
-	}
-
-	if err := run(t); err != nil {
-		t.Fatalf("expected baseline cycle success, got %v", err)
-	}
-
-	now = base.Add(2 * time.Second)
-	session = 11
-	sendShouldFail = true
-	if err := run(t); err == nil {
-		t.Fatalf("expected coding send failure")
-	}
-
-	now = base.Add(time.Minute)
-	sendShouldFail = false
-	if err := run(t); err != nil {
-		t.Fatalf("expected recovery cycle success, got %v", err)
-	}
-	if got := sent[len(sent)-1].Activity; got != "coding" {
-		t.Fatalf("expected first recovery no-delta frame to keep coding, got %q", got)
-	}
-
-	now = base.Add(2 * time.Minute)
-	if err := run(t); err != nil {
-		t.Fatalf("expected second recovery cycle success, got %v", err)
-	}
-	if got := sent[len(sent)-1].Activity; got != "idle" {
-		t.Fatalf("expected second recovery frame to confirm idle, got %q", got)
 	}
 }
 
@@ -5321,10 +4876,11 @@ func TestProviderCollectorTokenStatsStartAndWakeTriggers(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go collector.run(ctx)
-	waitForCondition(t, time.Second, func() bool {
+	// Generous bounds: a loaded Windows runner can take over a second to start.
+	waitForCondition(t, 5*time.Second, func() bool {
 		return tokenFetches.Load() == 1
 	})
-	waitForCondition(t, time.Second, func() bool {
+	waitForCondition(t, 5*time.Second, func() bool {
 		collector.tokenStatsMu.Lock()
 		defer collector.tokenStatsMu.Unlock()
 		return !collector.tokenStatsRunning
@@ -5332,10 +4888,10 @@ func TestProviderCollectorTokenStatsStartAndWakeTriggers(t *testing.T) {
 	clockNanos.Add(int64(time.Minute))
 	wake <- struct{}{}
 	<-afterWake
-	waitForCondition(t, time.Second, func() bool {
+	waitForCondition(t, 5*time.Second, func() bool {
 		return tokenFetches.Load() == 2
 	})
-	waitForCondition(t, time.Second, func() bool {
+	waitForCondition(t, 5*time.Second, func() bool {
 		collector.tokenStatsMu.Lock()
 		defer collector.tokenStatsMu.Unlock()
 		return !collector.tokenStatsRunning
@@ -5366,7 +4922,7 @@ func TestProviderCollectorTokenStatsStartAndWakeTriggers(t *testing.T) {
 	clockNanos.Add(int64(tokenStatsScanCooldown - time.Minute))
 	wake <- struct{}{}
 	<-afterWake
-	waitForCondition(t, time.Second, func() bool {
+	waitForCondition(t, 5*time.Second, func() bool {
 		return tokenFetches.Load() == 3
 	})
 	cancel()
@@ -7276,12 +6832,9 @@ func TestSelectCycleFrameRotatesAutomaticProvidersOnTheInterval(t *testing.T) {
 		}
 	}
 
-	// Usage on Claude does not cut Codex's turn short, but the frame still
-	// reports coding: that verdict covers every provider.
+	// Usage on Claude does not cut Codex's turn short.
 	claude.Frame.Session = 35
-	if result := expectShown(70*time.Second, "codex"); result.frame.Activity != "coding" {
-		t.Fatalf("usage on another provider was not reported as coding: %s", result.activityDetail)
-	}
+	expectShown(70*time.Second, "codex")
 
 	// The provider on screen loses its reading: the rotation restarts with the
 	// provider Automatic would show now and moves on from there.
@@ -7316,10 +6869,11 @@ func TestSelectCycleFrameRotatesOnlyInAutomaticWithAnInterval(t *testing.T) {
 		deps runtimeDeps
 		want []string
 	}{
-		// No interval: today's Automatic, where usage on Claude takes over.
+		// No interval: Automatic follows observed agent activity. Usage on
+		// Claude alone does not move the display.
 		"when activity changes": {
 			deps: rotationTestDeps(0, &runtimeconfig.ProviderDisplayConfig{Mode: "automatic", ProviderIDs: []string{"codex", "claude"}}),
-			want: []string{"codex", "codex", "claude"},
+			want: []string{"codex", "codex", "codex"},
 		},
 		"manual ignores the interval": {
 			deps: rotationTestDeps(30, &runtimeconfig.ProviderDisplayConfig{Mode: "fixed", ProviderIDs: []string{"codex"}}),
@@ -8300,38 +7854,511 @@ func TestFirstCollectionWakesDisplayWithoutWaitingForInterval(t *testing.T) {
 }
 
 func TestDisplaySelectionWakeDoesNotWaitForCollectionOrInterval(t *testing.T) {
-	prepareFastTestEnv(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	renderWake := make(chan struct{}, 1)
-	cycles := 0
-	done := make(chan error, 1)
-	go func() {
-		done <- runDaemonLoop(ctx, Options{
-			Interval:               time.Hour,
-			DisableStartupFastPoll: true,
-			Wake:                   make(chan struct{}), // Collection has not completed.
-			RenderWake:             renderWake,
-		}, runtimeDeps{
-			now:   time.Now,
-			after: func(time.Duration) <-chan time.Time { return make(chan time.Time) },
-			logf:  func(string, ...any) {},
-		}, func(context.Context) error {
-			cycles++
-			if cycles == 1 {
-				renderWake <- struct{}{}
-			} else {
-				cancel()
+	for _, transport := range []string{"usb", "wifi"} {
+		t.Run(transport, func(t *testing.T) {
+			prepareFastTestEnv(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			renderWake := make(chan struct{}, 1)
+			cycles := 0
+			done := make(chan error, 1)
+			go func() {
+				done <- runDaemonLoop(ctx, Options{
+					Interval:               time.Hour,
+					DisableStartupFastPoll: true,
+					Wake:                   make(chan struct{}), // Collection has not completed.
+					RenderWake:             renderWake,
+				}, runtimeDeps{
+					transportName: transport,
+					homeDir:       func() (string, error) { return "", nil },
+					now:           time.Now,
+					after:         func(time.Duration) <-chan time.Time { return make(chan time.Time) },
+					logf:          func(string, ...any) {},
+				}, func(context.Context) error {
+					cycles++
+					if cycles == 1 {
+						renderWake <- struct{}{}
+					} else {
+						cancel()
+					}
+					return nil
+				})
+			}()
+			select {
+			case err := <-done:
+				if !errors.Is(err, context.Canceled) || cycles != 2 {
+					t.Fatalf("expected immediate second render, cycles=%d error=%v", cycles, err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("provider selection waited for collection or the periodic interval")
 			}
-			return nil
 		})
-	}()
-	select {
-	case err := <-done:
-		if !errors.Is(err, context.Canceled) || cycles != 2 {
-			t.Fatalf("expected immediate second render, cycles=%d error=%v", cycles, err)
+	}
+}
+
+func TestDeviceActivityNegotiatesOldFirmwareWithoutChangingSource(t *testing.T) {
+	for _, phase := range []string{"working", "thinking", "tool_use", "compacting", "waiting_for_permission", "waiting_for_answer", "waiting_for_review", "done", "error", "stale", "idle", "unavailable"} {
+		original := protocol.Frame{Activity: phase}
+		modern := protocol.CapabilitiesFromHello(protocol.DeviceHello{Features: []string{protocol.FeatureAgentActivityV1}})
+		// The working phases reach the device as one state; every other
+		// phase is kept.
+		wire := phase
+		switch phase {
+		case "thinking", "tool_use", "compacting":
+			wire = "working"
 		}
-	case <-time.After(time.Second):
-		t.Fatal("provider selection waited for collection or the periodic interval")
+		if got := applyDeviceActivity(original, modern); got.Activity != wire {
+			t.Fatalf("lost full state: %+v", got)
+		}
+		want := "idle"
+		switch phase {
+		case "working", "thinking", "tool_use", "compacting":
+			want = "coding"
+		}
+		if got := applyDeviceActivity(original, protocol.DeviceCapabilities{}); got.Activity != want {
+			t.Fatalf("legacy state %s: got %s want %s", phase, got.Activity, want)
+		}
+		if original.Activity != phase {
+			t.Fatal("wire conversion mutated snapshot")
+		}
+	}
+}
+
+func TestAgentPresentationNegotiatesIndependentlyOfActivity(t *testing.T) {
+	frame := protocol.Frame{Activity: "waiting_for_answer", AgentName: "Codex", AnimationsDisabled: true}
+	activityOnly := protocol.DeviceCapabilities{SupportsAgentActivityV1: true}
+	if got := applyDeviceActivity(frame, activityOnly); got.Activity != frame.Activity || got.AgentName != "" || got.AnimationsDisabled {
+		t.Fatalf("old firmware: %+v", got)
+	}
+	activityOnly.SupportsAgentThemeStatesV1 = true
+	if got := applyDeviceActivity(frame, activityOnly); got.AgentName != "Codex" || !got.AnimationsDisabled {
+		t.Fatalf("modern firmware: %+v", got)
+	}
+}
+
+func TestOutgoingFramesFollowHostMotionPreference(t *testing.T) {
+	prepareFastTestEnv(t)
+	disabled := false
+	var sent protocol.Frame
+	var logLine string
+	state := &runtimeState{}
+	deps := runtimeDeps{
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{AgentActivity: &runtimeconfig.AgentActivitySettings{Enabled: true, Blink: true, Reminder: "5", Quiet: "off"}}, nil
+		},
+		reducedMotion: func(context.Context) bool { return disabled },
+		sendLine:      func(_ string, data []byte) error { return json.Unmarshal(data, &sent) },
+		logf:          func(format string, args ...any) { logLine = fmt.Sprintf(format, args...) },
+	}.withDefaults()
+	caps := protocol.DeviceCapabilities{SupportsAgentActivityV1: true, SupportsAgentThemeStatesV1: true}
+	result := cycleResult{frame: protocol.Frame{Provider: "codex", Label: "Codex", Session: 10}, usageFresh: true}
+	for _, want := range []bool{false, true, false} {
+		disabled = want
+		sent = protocol.Frame{}
+		if err := sendCycleResult(context.Background(), "/test-device", caps, 2048, state, deps, result); err != nil {
+			t.Fatal(err)
+		}
+		if sent.AnimationsDisabled != want || !strings.Contains(logLine, fmt.Sprintf("animationsDisabled=%t", want)) || !strings.Contains(logLine, `agentName="Agent"`) {
+			t.Fatalf("preference not delivered to device and preview: %+v, %s", sent, logLine)
+		}
+	}
+	disabled = true
+	caps.SupportsAgentThemeStatesV1 = false
+	sent = protocol.Frame{}
+	if err := sendCycleResult(context.Background(), "/test-device", caps, 2048, state, deps, result); err != nil {
+		t.Fatal(err)
+	}
+	if sent.AnimationsDisabled {
+		t.Fatal("legacy firmware received unsupported motion flag")
+	}
+}
+
+func TestAgentPreferencesReachDeviceWithoutChangingUsage(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		settings runtimeconfig.AgentActivitySettings
+		phase    string
+		muted    bool
+		reminder int
+		activity string
+	}{
+		{"off", runtimeconfig.AgentActivitySettings{}, "working", true, 0, "idle"},
+		{"quiet", runtimeconfig.AgentActivitySettings{Enabled: true, Blink: true, Reminder: "5", Quiet: "22"}, "waiting_for_answer", true, 0, "waiting_for_answer"},
+		{"waiting", runtimeconfig.AgentActivitySettings{Enabled: true, Blink: true, Reminder: "15", Quiet: "off"}, "waiting_for_answer", false, 900, "waiting_for_answer"},
+		{"working", runtimeconfig.AgentActivitySettings{Enabled: true, Blink: true, Reminder: "5", Quiet: "off"}, "working", false, 0, "working"},
+		{"tool approval", runtimeconfig.AgentActivitySettings{Enabled: true, Blink: true, Reminder: "5", Quiet: "off"}, "waiting_for_permission", false, 0, "waiting_for_permission"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			prepareFastTestEnv(t)
+			state := &runtimeState{agentSnapshot: func() agentstatus.Snapshot { return agentstatus.Snapshot{Health: "ready", Phase: tc.phase} }}
+			var sent protocol.Frame
+			deps := runtimeDeps{now: func() time.Time { return time.Date(2026, 9, 21, 23, 0, 0, 0, time.Local) }, loadConfig: func(string) (runtimeconfig.Config, error) {
+				return runtimeconfig.Config{AgentActivity: &tc.settings}, nil
+			}, sendLine: func(_ string, line []byte) error { return json.Unmarshal(line, &sent) }, logf: func(string, ...any) {}}.withDefaults()
+			result := cycleResult{frame: protocol.Frame{Session: 12, Weekly: 34, ResetSec: 600}, usageFresh: true}
+			if err := sendCycleResult(context.Background(), "/test", protocol.DeviceCapabilities{SupportsAgentThemeStatesV1: true, SupportsAgentActivityV1: true}, 2048, state, deps, result); err != nil {
+				t.Fatal(err)
+			}
+			if sent.Activity != tc.activity || sent.AgentAlertsMuted != tc.muted || sent.AgentReminderSecs != tc.reminder || sent.Session != 12 || sent.Weekly != 34 {
+				t.Fatalf("%+v", sent)
+			}
+			if !tc.settings.Enabled && sent.AgentName != "" {
+				t.Fatalf("agent label survived off: %+v", sent)
+			}
+		})
+	}
+}
+
+func TestAgentTransitionsStayOutOfUsageRecoveryCache(t *testing.T) {
+	prepareFastTestEnv(t)
+	now := time.Now()
+	phase := "working"
+	state := &runtimeState{selector: codexbar.NewProviderSelector(), agentSnapshot: func() agentstatus.Snapshot {
+		return agentstatus.Snapshot{Health: "ready", Phase: phase}
+	}}
+	var sent protocol.Frame
+	deps := runtimeDeps{
+		now: func() time.Time { return now },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{AgentActivity: &runtimeconfig.AgentActivitySettings{Enabled: true}}, nil
+		},
+		sendLine: func(_ string, line []byte) error { return json.Unmarshal(line, &sent) },
+		logf:     func(string, ...any) {},
+	}.withDefaults()
+	provider := testParsedFrame("codex", 20, 40, 3600)
+	provider.CollectedAt = now
+	var original protocol.Frame
+	for i, next := range []string{"working", "tool_use", "waiting_for_answer", "done"} {
+		phase = next
+		result := selectCycleFrameFromProviders(state, []codexbar.ParsedFrame{provider}, now, deps, nil, "", "", "", "")
+		if err := sendCycleResult(context.Background(), "/test", protocol.DeviceCapabilities{SupportsAgentActivityV1: true, SupportsAgentThemeStatesV1: true}, 2048, state, deps, result); err != nil {
+			t.Fatal(err)
+		}
+		if want := map[string]string{"tool_use": "working"}[phase]; sent.Activity != phase && sent.Activity != want {
+			t.Fatalf("device lost transition: %+v", sent)
+		}
+		cached, _, ok := loadPersistedLastGood(now)
+		if !ok || cached.AgentName != "" || cached.Activity != provider.Frame.Normalize().Activity {
+			t.Fatalf("lifecycle leaked into usage recovery: %+v", cached)
+		}
+		if i == 0 {
+			original = cached
+		} else if !framesEqual(original, cached) {
+			t.Fatal("agent transition changed saved usage")
+		}
+	}
+}
+
+func TestAutomaticDisplayFollowsObservedAgents(t *testing.T) {
+	prepareFastTestEnv(t)
+	now := time.Now()
+	snapshot := agentstatus.Snapshot{Health: "ready", Phase: "working", Sources: []agentstatus.Source{
+		{ID: "codex", UsageProvider: "codex"}, {ID: "claude-code", UsageProvider: "claude"},
+	}, Sessions: []agentstatus.Session{{ID: "a", Source: "claude-code", Phase: "working", ObservedAt: 10}}}
+	cfg := runtimeconfig.Config{AgentActivity: &runtimeconfig.AgentActivitySettings{Enabled: true}, ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{Mode: "automatic", ProviderIDs: []string{"codex", "claude"}}}
+	deps := runtimeDeps{loadConfig: func(string) (runtimeconfig.Config, error) { return cfg, nil }}.withDefaults()
+	state := &runtimeState{selector: codexbar.NewProviderSelector(), agentSnapshot: func() agentstatus.Snapshot { return snapshot }}
+	providers := []codexbar.ParsedFrame{testParsedFrame("codex", 10, 20, 3600), testParsedFrame("claude", 30, 40, 7200)}
+	state.selector.SetCurrentProvider("codex")
+	check := func(want string) {
+		t.Helper()
+		got := selectCycleFrameFromProviders(state, providers, now, deps, nil, "", "", "", "")
+		if got.frame.Provider != want {
+			t.Fatalf("selected %s, want %s (%s)", got.frame.Provider, want, got.selectionReason)
+		}
+		if got.frame.AgentName != "" {
+			t.Fatal("selection polluted usage with lifecycle")
+		}
+	}
+	check("claude") // Switch without any quota or token change.
+	snapshot.Phase = "waiting_for_answer"
+	snapshot.Sessions = append(snapshot.Sessions, agentstatus.Session{ID: "b", Source: "codex", Phase: "waiting_for_answer", ObservedAt: 5})
+	check("codex") // Needs-you wins over a more recent working session.
+	snapshot.Phase = "idle"
+	providers[1].Frame.Session = 99
+	providers[1].Frame.TotalTokens = 2_700_000_000
+	check("codex") // No token fallback after the agent stops.
+	snapshot.Phase = "working"
+	snapshot.Health = "stale"
+	check("codex")
+	snapshot.Health = "ready"
+	cfg.AgentActivity.Enabled = false
+	check("codex")
+	cfg.AgentActivity.Enabled = true
+	cfg.ProviderDisplay.Mode = "fixed"
+	cfg.ProviderDisplay.ProviderIDs = []string{"codex"}
+	check("codex") // Manual remains pinned despite Claude activity.
+	cfg.ProviderDisplay.Mode = "automatic"
+	providers[1].Frame.UsageUnavailable = true
+	check("codex") // Observations cannot manufacture usable quota.
+	providers = providers[:1]
+	check("codex") // An agent cannot resurrect a disabled provider.
+}
+
+// Paul's VibeTV lost its percentages and reset line whenever a reading went
+// stale while an agent was working: the agent frame went out with empty usage
+// instead of the last good reading.
+func TestAgentFrameKeepsTheLastGoodUsageWhileTheReadingIsStale(t *testing.T) {
+	prepareFastTestEnv(t)
+	now := time.Date(2026, 10, 14, 9, 11, 0, 0, time.UTC)
+	state := &runtimeState{
+		agentSnapshot: func() agentstatus.Snapshot { return agentstatus.Snapshot{Health: "ready", Phase: "working"} },
+		lastGood:      protocol.Frame{Provider: "claude", Label: "Claude", Session: 15, Weekly: 13, ResetSec: 3600},
+		lastGoodAt:    now.Add(-time.Minute),
+		hasLastGood:   true,
+	}
+	var sent protocol.Frame
+	deps := runtimeDeps{
+		now: func() time.Time { return now },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{AgentActivity: &runtimeconfig.AgentActivitySettings{Enabled: true}}, nil
+		},
+		sendLine: func(_ string, line []byte) error { return json.Unmarshal(line, &sent) },
+		logf:     func(string, ...any) {},
+	}.withDefaults()
+	result := cycleResult{frame: protocol.Frame{Provider: "claude", Label: "Claude"}, usageFresh: false, resetBasisAt: now.Add(-time.Hour)}
+	caps := protocol.DeviceCapabilities{SupportsAgentActivityV1: true, SupportsAgentThemeStatesV1: true}
+	if err := sendCycleResult(context.Background(), "/test", caps, 2048, state, deps, result); err != nil {
+		t.Fatal(err)
+	}
+	if sent.UsageUnavailable || sent.Session != 15 || sent.Weekly != 13 || sent.Activity != "working" {
+		t.Fatalf("agent frame must restate the last good usage: %+v", sent)
+	}
+}
+
+func TestDeviceGetsOneWorkingStateForEveryWorkingPhase(t *testing.T) {
+	caps := protocol.DeviceCapabilities{SupportsAgentActivityV1: true, SupportsAgentThemeStatesV1: true}
+	for phase, want := range map[string]string{
+		"working": "working", "thinking": "working", "tool_use": "working", "compacting": "working",
+		"waiting_for_permission": "waiting_for_permission", "waiting_for_answer": "waiting_for_answer",
+		"done": "done", "error": "error", "idle": "idle", "unavailable": "unavailable",
+	} {
+		if got := applyDeviceActivity(protocol.Frame{Activity: phase, AgentName: "Claude"}, caps).Activity; got != want {
+			t.Fatalf("phase %s reached the device as %q, want %q", phase, got, want)
+		}
+	}
+}
+
+func TestAgentStatusNamesTheShownProviderByItsShortLabel(t *testing.T) {
+	snapshot := agentstatus.Snapshot{Health: "ready", Phase: "working",
+		Sessions: []agentstatus.Session{{ID: "a", Source: "claude-code", Phase: "working"}},
+		Sources:  []agentstatus.Source{{ID: "claude-code", Name: "Claude Code", UsageProvider: "claude"}},
+	}
+	state := &runtimeState{agentSnapshot: func() agentstatus.Snapshot { return snapshot }}
+	for _, tc := range []struct{ provider, label, want string }{
+		{"claude", "Claude", "Claude"},
+		// Another provider is on screen: the agent keeps its own provider's
+		// name, never the one on screen.
+		{"codex", "Codex", "Claude"},
+		{"claude", "", "Claude"},
+	} {
+		frame, _ := applyAgentActivity(protocol.Frame{Provider: tc.provider, Label: tc.label}, state, nil)
+		if frame.Activity != "working" || frame.AgentName != tc.want {
+			t.Fatalf("provider=%s label=%q: activity=%s agentName=%q, want %q", tc.provider, tc.label, frame.Activity, frame.AgentName, tc.want)
+		}
+	}
+}
+
+func TestStaleUsageRequiresValidEnabledAgentPresentation(t *testing.T) {
+	for _, tc := range []struct {
+		name               string
+		enabled, supported bool
+		health, phase      string
+		wantAgent          bool
+	}{
+		{"master off", false, true, "ready", "working", false},
+		{"observer unavailable", true, true, "unavailable", "working", false},
+		{"phase unavailable", true, true, "ready", "unavailable", false},
+		{"phase stale", true, true, "ready", "stale", false},
+		{"invalid phase", true, true, "ready", "invented", false},
+		{"legacy firmware", true, false, "ready", "working", false},
+		{"working without fresh quota", true, true, "ready", "working", true},
+		{"idle without fresh quota", true, true, "ready", "idle", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			prepareFastTestEnv(t)
+			state := &runtimeState{agentSnapshot: func() agentstatus.Snapshot {
+				return agentstatus.Snapshot{Health: tc.health, Phase: tc.phase}
+			}}
+			var sent protocol.Frame
+			sends := 0
+			deps := runtimeDeps{
+				loadConfig: func(string) (runtimeconfig.Config, error) {
+					return runtimeconfig.Config{AgentActivity: &runtimeconfig.AgentActivitySettings{Enabled: tc.enabled}}, nil
+				},
+				sendLine: func(_ string, line []byte) error { sends++; return json.Unmarshal(line, &sent) },
+				logf:     func(string, ...any) {},
+			}.withDefaults()
+			result := cycleResult{frame: protocol.Frame{Provider: "codex", Session: 20, Weekly: 40}, usageFresh: false}
+			caps := protocol.DeviceCapabilities{SupportsAgentActivityV1: true, SupportsAgentThemeStatesV1: tc.supported}
+			if err := sendCycleResult(context.Background(), "/test", caps, 2048, state, deps, result); err != nil {
+				t.Fatal(err)
+			}
+			// A frame goes out every cycle so the device does not end a
+			// state on its own (#369). Only a valid, enabled observation
+			// turns the stale quota into an agent frame without usage.
+			if sends != 1 {
+				t.Fatalf("sent %d frames, want 1", sends)
+			}
+			if tc.wantAgent && (!sent.UsageUnavailable || sent.Activity != tc.phase) {
+				t.Fatalf("stale quota must be unavailable while retaining lifecycle: %+v", sent)
+			}
+			if !tc.wantAgent && sent.UsageUnavailable {
+				t.Fatalf("the retained reading was hidden without an agent to show: %+v", sent)
+			}
+			if state.hasLastGood {
+				t.Fatal("stale quota entered recovery cache")
+			}
+		})
+	}
+}
+
+func TestManualDisplayScopesAgentActivityToPinnedProvider(t *testing.T) {
+	prepareFastTestEnv(t)
+	snapshot := agentstatus.Snapshot{Health: "ready", Phase: "waiting_for_answer",
+		ProviderPhases: map[string]string{"claude": "waiting_for_answer", "codex": "working"},
+		Sources:        []agentstatus.Source{{ID: "claude-code", Name: "Claude Code", UsageProvider: "claude"}, {ID: "codex", Name: "Codex CLI", UsageProvider: "codex"}},
+		Sessions:       []agentstatus.Session{{ID: "a", Source: "claude-code", Phase: "waiting_for_answer"}, {ID: "b", Source: "codex", Phase: "working"}},
+	}
+	state := &runtimeState{agentSnapshot: func() agentstatus.Snapshot { return snapshot }}
+	cfg := runtimeconfig.Config{AgentActivity: &runtimeconfig.AgentActivitySettings{Enabled: true}, ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{Mode: "fixed", ProviderIDs: []string{"codex"}}}
+	var sent protocol.Frame
+	deps := runtimeDeps{
+		loadConfig: func(string) (runtimeconfig.Config, error) { return cfg, nil },
+		sendLine:   func(_ string, line []byte) error { return json.Unmarshal(line, &sent) },
+		logf:       func(string, ...any) {},
+	}.withDefaults()
+	check := func(phase, name string) {
+		t.Helper()
+		result := cycleResult{frame: protocol.Frame{Provider: "codex", Session: 20, Weekly: 40}, usageFresh: true}
+		caps := protocol.DeviceCapabilities{SupportsAgentActivityV1: true, SupportsAgentThemeStatesV1: true}
+		if err := sendCycleResult(context.Background(), "/test", caps, 2048, state, deps, result); err != nil {
+			t.Fatal(err)
+		}
+		if sent.Provider != "codex" || sent.Activity != phase || sent.AgentName != name {
+			t.Fatalf("mismatched manual frame: %+v", sent)
+		}
+	}
+	check("working", "Codex")
+	snapshot.ProviderPhases["codex"] = "idle"
+	snapshot.Sessions[1].Phase = "idle"
+	check("idle", "Codex CLI")
+	delete(snapshot.ProviderPhases, "codex")
+	check("unavailable", "Agent")
+	snapshot.Health = "stale"
+	check("unavailable", "Agent")
+	snapshot.Health = "ready"
+	cfg.ProviderDisplay.Mode = "automatic"
+	// Claude needs you while Codex is on screen: named by its own provider.
+	check("waiting_for_answer", "Claude")
+}
+
+func TestTokenHistoryRetainsBothProvidersThroughIncompleteScans(t *testing.T) {
+	prepareFastTestEnv(t)
+	current := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
+	complete := true
+	total := int64(100)
+	collector := &providerCollector{
+		now: func() time.Time { return current }, logf: func(string, ...any) {},
+		snapshotMaxAge: 10 * time.Minute, providers: map[string]providerSnapshot{},
+		fetchTokenStats: func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+			done := true
+			return map[string]codexbar.ProviderTokenStats{
+				"codex": {HistoryCoverageEstablished: &complete, TotalTokens: total,
+					Cost: &codexbar.ProviderCostUsage{Last30DaysTokens: total, Daily: []codexbar.ProviderCostDay{{Day: "2026-09-27", TotalTokens: total}}}},
+				"claude": {HistoryCoverageEstablished: &done, TotalTokens: 50,
+					Cost: &codexbar.ProviderCostUsage{Last30DaysTokens: 50, Daily: []codexbar.ProviderCostDay{{Day: "2026-09-27", TotalTokens: 50}}}},
+			}, true
+		},
+	}
+	collector.collectTokenStatsOnce(context.Background())
+	original := collector.providers["codex"].TokenStatsCollected
+	complete = false
+	for _, partial := range []int64{0, 0, 0} {
+		total = partial
+		current = current.Add(time.Minute)
+		collector.collectTokenStatsOnce(context.Background())
+		got := collector.providers["codex"]
+		if got.Frame.TotalTokens != 100 || got.Meta.Cost.Last30DaysTokens != 100 || !got.TokenStatsCollected.Equal(original) {
+			t.Fatalf("partial scan replaced or renewed last-good Codex history: %#v", got)
+		}
+		if collector.tokenStatsSettled || got.TokenHistorySettled {
+			t.Fatal("identical incomplete scans must keep catch-up active")
+		}
+		if collector.providers["claude"].Frame.TotalTokens != 50 {
+			t.Fatal("Codex catch-up must not remove Claude history")
+		}
+	}
+	// Retention is bounded; incomplete results must not keep old totals fresh.
+	if snapshotWithFreshTokenStats(collector.providers["codex"], original.Add(11*time.Minute), 10*time.Minute).Meta.Cost != nil {
+		t.Fatal("incomplete scans extended the last-good lifetime")
+	}
+	// A large history may take longer than retention to scan. Publish the
+	// source's real progress as provisional instead of hiding both providers.
+	current = original.Add(11 * time.Minute)
+	total = 20
+	collector.collectTokenStatsOnce(context.Background())
+	if got := collector.providers["codex"]; got.Frame.TotalTokens != 20 || got.TokenHistorySettled || collector.tokenStatsSettled || !got.TokenStatsCollected.Equal(current) {
+		t.Fatalf("non-empty source progress must remain visible as unsettled: %#v", got)
+	}
+	collector.collectTokenStatsOnce(context.Background())
+	if collector.tokenStatsSettled {
+		t.Fatal("equal partial scans must not be treated as completed")
+	}
+	complete, total = true, 200
+	collector.collectTokenStatsOnce(context.Background())
+	if got := collector.providers["codex"]; got.Frame.TotalTokens != 200 || !got.TokenHistorySettled || !collector.tokenStatsSettled {
+		t.Fatalf("completed scan did not restore current history: %#v", got)
+	}
+	// A completed empty history is authoritative, unlike an empty partial scan.
+	total = 0
+	collector.collectTokenStatsOnce(context.Background())
+	if collector.providers["codex"].Frame.TotalTokens != 0 {
+		t.Fatal("completed zero result was incorrectly retained as old usage")
+	}
+}
+
+func TestAgentKeepsRecentUsageVisibleThroughTransientFetchFailure(t *testing.T) {
+	prepareFastTestEnv(t)
+	now := time.Date(2026, 9, 27, 14, 0, 0, 0, time.UTC)
+	state := &runtimeState{agentSnapshot: func() agentstatus.Snapshot {
+		return agentstatus.Snapshot{Health: "ready", Phase: "working"}
+	}}
+	var sent protocol.Frame
+	var logged string
+	deps := runtimeDeps{
+		now: func() time.Time { return now },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{AgentActivity: &runtimeconfig.AgentActivitySettings{Enabled: true}}, nil
+		},
+		sendLine: func(_ string, line []byte) error { return json.Unmarshal(line, &sent) },
+		logf:     func(format string, args ...any) { logged += fmt.Sprintf(format, args...) },
+	}.withDefaults()
+	caps := protocol.DeviceCapabilities{SupportsAgentActivityV1: true, SupportsAgentThemeStatesV1: true, SupportsUsageWindowsV1: true}
+	for _, tc := range []struct {
+		name            string
+		age             time.Duration
+		unavailable     bool
+		wantUnavailable bool
+	}{
+		{"recent retained usage", time.Minute, false, false},
+		{"expired usage", providerSnapshotMaxAge() + time.Second, false, true},
+		{"authoritative unavailable", time.Minute, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			logged = ""
+			result := cycleResult{frame: protocol.Frame{Provider: "claude", Session: 20, Weekly: 40,
+				UsageUnavailable: tc.unavailable, UsageWindows: []protocol.UsageWindow{{ID: "session", Label: "Session", Percent: 20}}},
+				usageFresh: false, resetBasisAt: now.Add(-tc.age)}
+			if err := sendCycleResult(context.Background(), "/test", caps, 2048, state, deps, result); err != nil {
+				t.Fatal(err)
+			}
+			if sent.UsageUnavailable != tc.wantUnavailable || sent.Activity != "working" {
+				t.Fatalf("wrong retained usage visibility: %+v", sent)
+			}
+			if !strings.Contains(logged, fmt.Sprintf("usageUnavailable=%t", tc.wantUnavailable)) {
+				t.Fatal("preview log does not match actual device frame")
+			}
+		})
 	}
 }

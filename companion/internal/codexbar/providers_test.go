@@ -550,14 +550,18 @@ func TestFetchProviderSettingsRequiresFeatureVersion(t *testing.T) {
 	}
 }
 
-func TestFetchProviderSettingsTreatsUnreadableVersionAsUnavailable(t *testing.T) {
-	withProviderCommandTestBinary(t, "0.63.0")
-	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
-		return nil, context.DeadlineExceeded
-	}
-	_, err := FetchProviderSettings(context.Background())
-	if ProviderSettingsErrorKindOf(err) != ProviderSettingsErrorUnavailable {
-		t.Fatalf("expected unavailable error, got %v", err)
+func TestProviderSettingsVersionProbeFailureIsUnavailable(t *testing.T) {
+	for _, probeErr := range []error{context.DeadlineExceeded, nil} {
+		t.Run(fmt.Sprint(probeErr), func(t *testing.T) {
+			withProviderCommandTestBinary(t, "0.63.0")
+			runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+				return []byte("unreadable version"), probeErr
+			}
+			_, err := FetchProviderInventory(context.Background())
+			if err == nil || ProviderSettingsErrorKindOf(err) != ProviderSettingsErrorUnavailable {
+				t.Fatalf("probe failure must not tell customers to update: %v", err)
+			}
+		})
 	}
 }
 

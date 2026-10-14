@@ -11,7 +11,7 @@ func TestTokenStatsArgsMatchPlatformContract(t *testing.T) {
 		platform string
 		want     []string
 	}{
-		{"darwin", []string{"cost", "--json", "--refresh", "--days", "30"}},
+		{"darwin", []string{"cost", "--json", "--days", "30"}},
 		{"windows", []string{"cost", "--json", "--days", "30", "--provider", "all"}},
 	} {
 		if got := tokenStatsArgs(tc.platform); !slices.Equal(got, tc.want) {

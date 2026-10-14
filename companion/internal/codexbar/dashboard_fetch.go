@@ -213,7 +213,15 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 	return out, nil
 }
 
+// dashboardRequestTimeout bounds one request to CodexBar's serve. The serve
+// answers from its own cache; a request it does not answer within this time
+// must not hold the whole collection (10 min) and leave VibeTV without usage.
+// The next cycle asks again.
+var dashboardRequestTimeout = 30 * time.Second
+
 func fetchDashboardJSON(ctx context.Context, url string, token string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, dashboardRequestTimeout)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err

@@ -246,8 +246,8 @@ for (const asset of assets) {
 const specBytes = await readFile(path.join(packDir, "theme.json"));
 const spec = JSON.parse(specBytes);
 assert.equal(spec.id, "tiny-office");
-assert(specBytes.length < 2048);
-assert(spec.p.length < 16);
+assert(specBytes.length <= 4096);
+assert(spec.p.length <= 32);
 const manifest = {
   kind: "vibetv-theme-pack", schemaVersion: 1, id: "tiny-office", name: "Tiny Office",
   version: "0.6.0", minFirmware: "1.0.42", usage: "live", requiredCapabilities: ["usage-slots-v1", "text-valign-v1"],
@@ -263,3 +263,6 @@ const manifest = {
 assert(manifest.themeSpec.path.length <= 31);
 await writeFile(path.join(packDir, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
 console.log(`Tiny Office: ${specBytes.length} ThemeSpec bytes, ${spec.p.length} primitives, ${assets.length} assets (2 animated)`);
+
+// Reapply the approved lifecycle assets and authoritative manifest.
+await import("./build-agent-state-themes.mjs");

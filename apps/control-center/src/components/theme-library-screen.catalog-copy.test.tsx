@@ -77,6 +77,10 @@ afterEach(() => {
 });
 
 it("keeps the customer's own theme when a catalog theme with its id is edited and saved", async () => {
+  // jsdom has no matchMedia; the preview asks it about reduced motion.
+  vi.stubGlobal("matchMedia", () => ({
+    matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+  }));
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => ({

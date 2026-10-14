@@ -7,7 +7,7 @@
 
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "@/test/axe";
 import {
   buildThemePack,
@@ -97,8 +97,17 @@ async function renderLibrary(
   return { html: host.innerHTML, cleanup: () => root.unmount() };
 }
 
+beforeEach(() => {
+  vi.stubGlobal("matchMedia", vi.fn(() => ({
+    matches: false,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  })));
+});
+
 afterEach(() => {
   document.body.innerHTML = "";
+  vi.unstubAllGlobals();
 });
 
 describe("ThemeLibraryScreen custom themes", () => {

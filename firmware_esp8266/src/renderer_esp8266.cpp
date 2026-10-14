@@ -199,6 +199,7 @@ void RendererESP8266::DrawStatus(
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
   display::GifCore().ReleaseMemory();
+  display::ResetThemeSpecAnnouncement();
 
   TFT_eSPI& tft = display::Tft();
   display::DisplayTransaction transaction;
@@ -236,7 +237,6 @@ void RendererESP8266::DrawStatus(
   tft.print(line2);
 
   ctx.lastRenderedSecs = -1;
-  ctx.lastRenderedMinuteBucket = -1;
   ctx.screenDirty = false;
 #else
   (void)ctx;
@@ -249,6 +249,7 @@ void RendererESP8266::DrawConnectedSetupInstructions(
     const String& fallbackIp) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
+  display::ResetThemeSpecAnnouncement();
 
   TFT_eSPI& tft = display::Tft();
   display::DisplayTransaction transaction;
@@ -294,7 +295,6 @@ void RendererESP8266::DrawConnectedSetupInstructions(
   tft.print(ipLine);
 
   ctx.lastRenderedSecs = -1;
-  ctx.lastRenderedMinuteBucket = -1;
   ctx.screenDirty = false;
 #else
   (void)ctx;
@@ -423,6 +423,7 @@ bool RendererESP8266::ClearFirmwareUpdateNoticeSurface(app::RuntimeContext& ctx)
 void RendererESP8266::TickActive(app::RuntimeContext& ctx) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
+  display::TickThemeSpecAnnouncement();
   if (display::CurrentFrame().hasThemeSpec) {
     (void)display::TickThemeSpecGifs();
     return;
@@ -480,26 +481,47 @@ bool RendererESP8266::DrawClock(app::RuntimeContext& ctx) {
 #endif
 }
 
-void RendererESP8266::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
+bool RendererESP8266::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
   if (display::CurrentFrame().hasThemeSpec) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-    const uint32_t countdownFields = core::ThemeSpecCountdownFields(
-        core::ThemeSpecLiveUseForFrame(display::RuntimeState(), display::CurrentFrame()));
+    // Only a countdown the theme draws and whose text moved is repainted.
+    const core::ThemeSpecLiveUse& use =
+        core::ThemeSpecLiveUseForFrame(display::RuntimeState(), display::CurrentFrame());
+    const unsigned long now = millis();
+    uint32_t countdownFields = 0;
+    if (core::ResetTextChanged(remainSecs, ctx.lastRenderedSecs)) {
+      countdownFields |= codexbar_display::themespec::kThemeSpecFieldReset;
+    }
+    for (size_t i = 0; i < core::kMaxUsageWindows; ++i) {
+      if (use.UsesUsageWindowReset(i) &&
+          core::ResetTextChanged(core::CurrentUsageWindowRemainingSecs(ctx.runtime, i, now), ctx.lastRenderedUsageWindowSecs[i])) {
+        countdownFields |= codexbar_display::themespec::kThemeSpecFieldUsageWindowReset;
+      }
+    }
+    for (size_t i = 0; i < core::kMaxProviderSlots; ++i) {
+      if (use.UsesProviderSlotReset(i) &&
+          core::ResetTextChanged(core::CurrentProviderSlotRemainingSecs(ctx.runtime, i, now), ctx.lastRenderedProviderSlotSecs[i])) {
+        countdownFields |= codexbar_display::themespec::kThemeSpecFieldProviderSlots;
+      }
+    }
+    countdownFields &= core::ThemeSpecCountdownFields(use);
     if (display::CurrentThemeSpecRenderedSuccessfully() &&
         countdownFields != 0 &&
         display::RenderThemeSpecPartial(countdownFields)) {
-      return;
+      return true;
     }
 #endif
     display::MarkThemeSpecCountdownsRendered();
-    return;
+    return false;
   }
   (void)remainSecs;
+  return false;
 #else
   (void)remainSecs;
   probe::DrawReset(ctx);
+  return true;
 #endif
 }
 

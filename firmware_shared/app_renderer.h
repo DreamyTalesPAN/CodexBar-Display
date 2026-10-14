@@ -19,7 +19,7 @@ class Renderer {
   virtual void TickActive(RuntimeContext& ctx) { (void)ctx; }
   virtual void DrawError(RuntimeContext& ctx, const String& message) = 0;
   virtual void DrawUsage(RuntimeContext& ctx) = 0;
-  virtual void DrawReset(RuntimeContext& ctx, int64_t remainSecs) = 0;
+  virtual bool DrawReset(RuntimeContext& ctx, int64_t remainSecs) = 0;
 };
 
 }  // namespace app

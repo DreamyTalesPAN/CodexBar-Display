@@ -34,8 +34,8 @@ describe("Tiny Office theme pack", () => {
     const parsed = importThemeSpec(JSON.parse(rawSpec));
     const validation = validateThemeSpec(parsed, pack.assets || {}, "live");
     expect(validation.errors).toEqual([]);
-    expect(primitives).toHaveLength(13);
-    expect(Buffer.byteLength(rawSpec)).toBeLessThan(2048);
+    expect(primitives).toHaveLength(18);
+    expect(Buffer.byteLength(rawSpec)).toBeLessThan(4096);
     let animated = 0;
     for (const asset of Object.values(pack.assets || {})) {
       const lines = asset.data.trim().split("\n");
@@ -55,7 +55,14 @@ describe("Tiny Office theme pack", () => {
       }
       expect(Number(lines[2])).toBeLessThanOrEqual(26);
     }
-    expect(animated).toBe(2);
+    expect(animated).toBeGreaterThan(2);
+    // Six tiled sprites share one 80x46 buffer, with at most six active cursors.
+    // The scene is 240x92 below the 32 px status strip (2026-10-14).
+    for (const state of ["idle", "coding", "needs_you", "done", "error"]) {
+      const tiles = primitives.filter(p => p.sa?.[state]);
+      expect(tiles).toHaveLength(6);
+      expect(tiles.reduce((area, p) => area + (p.w ?? 0) * (p.h ?? 0), 0)).toBe(240 * 92);
+    }
   });
 
   it("uses the provider display/update-notice binding exactly once", () => {
@@ -69,25 +76,24 @@ describe("Tiny Office theme pack", () => {
   it("keeps percentages and actual slot names live", () => {
     const texts = primitives.filter((p) => p.t === "tx" || p.type === "text");
     const values = texts.map((p) => text(p));
-    expect(values).toContain("Session");
-    expect(values).toContain("Weekly");
-    expect(values).toContain("used");
+    // "used"/"remaining" follows the names (Paul, 2026-10-14).
+    expect(values).toContain("Session used");
+    expect(values).toContain("Weekly used");
     expect(values).toContain("76%");
     expect(values).toContain("42%");
     const changed = frame("coding", [{ id: "weekly", label: "Codex Spark Weekly", percent: 100, resetSecs: 60 }], "remaining");
     const visible = texts.filter((p) => primitiveUsageSlotVisible(p, changed)).map((p) => text(p, changed));
-    expect(visible).toContain("Codex Spark Weekly");
+    expect(visible).toContain("Codex Spark Weekly remaining");
     expect(visible).toContain("100%");
-    expect(visible).toContain("remaining");
-    expect(visible).not.toContain("used");
-    expect(visible).not.toContain("Weekly");
+    expect(visible.join(" ")).not.toContain("used");
+    expect(visible).not.toContain("Weekly used");
     const unavailable = frame("idle", []);
-    expect(primitives.filter((p) => primitiveUsageSlotVisible(p, unavailable))).toHaveLength(5);
+    expect(texts.filter((p) => primitiveUsageSlotVisible(p, unavailable)).map(p => text(p, unavailable))).toEqual(["Claude"]);
   });
 
   it("centers the shrunken Spark label alongside the full-size percentage", () => {
     const data = frame("coding", [slots[0], { id: "codex-spark", label: "Codex Spark 5-hour", percent: 0, resetSecs: 60 }]);
-    const label = primitives.find((p) => p.v === "{usageSlot2Label}")!;
+    const label = primitives.find((p) => p.v === "{usageSlot2Label} {usageMode}")!;
     const percent = primitives.find((p) => p.v === "{usageSlot2Percent}%")!;
     const centers = [label, percent].map((p) => {
       const size = themeTextFittedSize(text(p, data), p.f!, p.s!, p.w!, true);
@@ -128,12 +134,17 @@ describe("Tiny Office theme pack", () => {
         if (!primitiveUsageSlotVisible(p, data)) continue;
         const width = p.w ?? p.width ?? 0;
         const font = p.f ?? p.font ?? 1;
-        const size = themeTextFittedSize(text(p, data), font, p.s ?? p.fontSize ?? 1, width, true);
-        const measured = themeFirmwareTextMetrics(text(p, data), font, size)?.width;
-        expect(measured, `${text(p, data)} in lane ${width}`).toBeLessThanOrEqual(width);
+        // A usage label carries "used"/"remaining" after the name. For a very
+        // long name the device cuts that word at the lane edge; the name
+        // itself must always fit.
+        const shown = text(p, data);
+        const essential = String(p.v ?? "").endsWith(" {usageMode}") ? shown.replace(/ (used|remaining)$/, "") : shown;
+        const size = themeTextFittedSize(shown, font, p.s ?? p.fontSize ?? 1, width, true);
+        const measured = themeFirmwareTextMetrics(essential, font, size)?.width;
+        expect(measured, `${essential} in lane ${width}`).toBeLessThanOrEqual(width);
       }
     }
-    expect(primitives.filter((p) => p.t === "tx").map((p) => text(p, spark))).toContain("Codex Spark Weekly");
+    expect(primitives.filter((p) => p.t === "tx").map((p) => text(p, spark))).toContain("Codex Spark Weekly remaining");
     expect(primitives.filter((p) => p.t === "tx").map((p) => text(p, unavailable))).toContain("Reset unavailable");
   });
 

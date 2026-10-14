@@ -38,7 +38,7 @@ export function WhatsNewDialog({
         aria-describedby={undefined}
         // In a short window only the list scrolls: the title stays on top and
         // `Got it`, which has the focus, stays in view below it.
-        className="flex max-h-[calc(100dvh-2rem)] flex-col sm:max-w-lg"
+        className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-xl"
         onOpenAutoFocus={(event) => {
           // Enter closes the notice. The first control would open Settings.
           event.preventDefault();
@@ -46,49 +46,40 @@ export function WhatsNewDialog({
         }}
         showCloseButton={false}
       >
-        <DialogHeader className="gap-1">
-          {appVersion ? (
-            <p className="text-xs font-semibold tracking-wide text-[var(--vibetv-support)] uppercase">
-              Version {appVersion}
-            </p>
-          ) : null}
-          <DialogTitle className="text-xl font-bold">What&apos;s new</DialogTitle>
+        <DialogHeader className="px-5 pt-5 pb-4">
+          <DialogTitle className="text-lg font-semibold">
+            What&apos;s new{appVersion ? ` in version ${appVersion}` : ""}
+          </DialogTitle>
         </DialogHeader>
-        <ul className="-mr-2 flex min-h-0 flex-col gap-4 overflow-y-auto pr-2">
+        <ul className="min-h-0 overflow-y-auto overscroll-contain px-5">
           {entries.map((entry) => (
-            <li className="flex items-start gap-3" key={entry.id}>
-              <div
-                aria-hidden
-                className="grid size-9 shrink-0 place-items-center rounded-[var(--radius-badge)] bg-success text-success-foreground"
-              >
-                <entry.icon className="size-[18px]" />
-              </div>
-              <div className="flex flex-col items-start gap-0.5">
-                <h3 className="text-[15px] leading-5 font-semibold">{entry.title}</h3>
-                <p className="text-sm text-muted-foreground">
+            <li className="flex items-start justify-between gap-4 border-t py-3.5 first:border-t-0" key={entry.id}>
+              <div className="min-w-0">
+                <h3 className="text-sm leading-5 font-semibold">{entry.title}</h3>
+                <p className="mt-0.5 text-[13px] leading-5 text-muted-foreground">
                   <EntryBody body={entry.body} windowsHost={windowsHost} />
                 </p>
-                {entry.theme || entry.inSettings ? (
-                  <Button
-                    className="h-auto px-0"
-                    onClick={() =>
-                      entry.theme
-                        ? onShow("themes", catalogThemeRowId(entry.theme))
-                        : onShow("settings", entry.inSettings!)
-                    }
-                    size="sm"
-                    type="button"
-                    variant="link"
-                  >
-                    {entry.theme ? "Show me in Themes" : "Show me in Settings"}
-                  </Button>
-                ) : null}
               </div>
+              {entry.theme || entry.inSettings ? (
+                <Button
+                  className="h-11 shrink-0 px-0 text-xs text-[var(--vibetv-support)] no-underline hover:underline"
+                  onClick={() =>
+                    entry.theme
+                      ? onShow("themes", catalogThemeRowId(entry.theme))
+                      : onShow("settings", entry.inSettings!)
+                  }
+                  size="sm"
+                  type="button"
+                  variant="link"
+                >
+                  {entry.theme ? "Show me in Themes" : "Show me in Settings"}
+                </Button>
+              ) : null}
             </li>
           ))}
         </ul>
-        <DialogFooter className="flex-col sm:items-center sm:justify-between">
-          <p className="text-sm text-muted-foreground">
+        <DialogFooter className="m-0 flex-row items-center justify-between rounded-none bg-popover px-5 py-3.5">
+          <p className="text-xs text-muted-foreground">
             You can read this again under Updates.
           </p>
           <Button onClick={onClose} ref={gotIt} type="button">

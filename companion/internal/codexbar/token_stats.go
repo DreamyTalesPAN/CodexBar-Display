@@ -22,11 +22,9 @@ const tokenStatsCommandTimeout = 120 * time.Second
 // last scan used.
 const tokenStatsHistoryDays = "30"
 
-// tokenStatsCostArgs asks CodexBar for a complete scan of that window.
-// `codexbar cost --json` returns cached scan results unless `--refresh` is
-// given, so without it a warming or shorter-window cache entry would be
-// presented as the finished history.
-var tokenStatsCostArgs = []string{"cost", "--json", "--refresh", "--days", tokenStatsHistoryDays}
+// Let CodexBar resume its bounded history scan. Forcing every background pass
+// resets scan discovery for some sources instead of letting catch-up finish.
+var tokenStatsCostArgs = []string{"cost", "--json", "--days", tokenStatsHistoryDays}
 
 func tokenStatsArgs(platform string) []string {
 	if platform == "windows" {
@@ -38,6 +36,8 @@ func tokenStatsArgs(platform string) []string {
 }
 
 type ProviderTokenStats struct {
+	// Nil is the older CLI contract; newer versions explicitly report coverage.
+	HistoryCoverageEstablished *bool
 	// Unavailable is a completed scan without known history, not zero usage.
 	Unavailable   bool
 	SessionTokens int64
@@ -60,7 +60,7 @@ type ProviderTokenStatsReport struct {
 }
 
 func (s ProviderTokenStats) HasAny() bool {
-	return s.Unavailable || s.SessionTokens > 0 || s.WeekTokens > 0 || s.TotalTokens > 0 || s.Cost != nil
+	return s.HistoryCoverageEstablished != nil || s.Unavailable || s.SessionTokens > 0 || s.WeekTokens > 0 || s.TotalTokens > 0 || s.Cost != nil
 }
 
 func FetchProviderTokenStats(ctx context.Context) (map[string]ProviderTokenStats, bool) {
@@ -235,6 +235,9 @@ func parseProviderTokenStatsPayload(payload map[string]any) (string, ProviderTok
 		SessionTokens: int64AtPaths(payload, "sessionTokens"),
 		TotalTokens:   tokenTotalAtPaths(payload, "totals.totalTokens", "totalTokens"),
 		Source:        firstString(payload, "source"),
+	}
+	if established, ok := payload["historyCoverageIsEstablished"].(bool); ok {
+		stats.HistoryCoverageEstablished = &established
 	}
 
 	if updatedAtRaw := firstString(payload, "updatedAt"); updatedAtRaw != "" {

@@ -171,7 +171,15 @@ function startWindow(themes: unknown[] = []) {
       if (url.endsWith("/v1/preferences?section=display")) {
         const found = companion.stored;
         await companion.holdRead;
-        return jsonResponse({ ok: true, items: [found] });
+        // The usage engine's own setting "Show usage as" reads beside it.
+        return jsonResponse({ ok: true, items: [found, {
+          id: "codexbar.usageBarsShowUsed", section: "display", owner: "codexbar",
+          type: "boolean", label: "Show usage as used", value: true, effectiveValue: true,
+        }] });
+      }
+      // Agent activity has its own group in Settings; it has no rows here.
+      if (url.endsWith("/v1/preferences?section=agents")) {
+        return jsonResponse({ ok: true, items: [] });
       }
       if (url.endsWith("/v1/preferences?section=providers")) {
         return jsonResponse({ ok: true, items: companion.providers });

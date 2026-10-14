@@ -135,8 +135,8 @@ Fields:
 - `sessionTokens` (number, optional): absolute token total for the current provider session/window when available.
 - `weekTokens` (number, optional): rolling 7-day token total when available.
 - `totalTokens` (number, optional): lifetime token total when available.
-- `activity` (string, optional): the Companion's verdict on whether the customer is working right now. There are two states: `coding` (working) and `idle` (not working). The firmware never infers activity: a frame without `activity`, or with any other value, is not working (see Activity and Expiry).
-- `activityTtlSecs` (number, optional): how long this frame's `activity` stays valid, in seconds **from receipt**. When that time passes without a fresh frame, the device shows `idle` on its own. Relative on purpose: the device needs no wall clock, only `millis()`. Missing or `0`: no bound, the activity holds until the next frame.
+- `activity` (string, optional): what the Companion observed the customer's agents doing right now. Firmware without `agent-activity-v1` receives two states: `coding` (working) and `idle` (not working). Firmware with it receives the observed agent state (see `agentName` below). The firmware never infers activity: a frame without `activity` is not working (see Activity and Expiry).
+- `activityTtlSecs` (number, optional): how long this frame's `activity` stays valid, in seconds **from receipt**. When that time passes without a fresh frame, the device ends the state on its own: `coding` becomes `idle`, an observed agent state becomes unavailable. Relative on purpose: the device needs no wall clock, only `millis()`. Missing or `0`: no bound, the activity holds until the next frame.
 - `time` (string, optional): pre-formatted local time `HH:MM`. **Fallback only.** The device runs its own SNTP clock and uses it for the `time`/`tm` binding; this string is used only while the device clock is not established, and only while it is still current (max age 2 minutes).
 - `date` (string, optional): pre-formatted local date `DD.MM.YYYY`. Same fallback rules as `time`.
 - `clockSchedule` (object, optional): the Companion's validated current UTC offset and, when they exist, the next two offset transitions. `currentOffsetMinutes` is the current quarter-hour offset; `transitionEpoch`/`offsetMinutes` are the first upcoming transition and its resulting offset; `followingTransitionEpoch`/`followingOffsetMinutes` are the immediately following pair. The firmware stores both 10-byte transition records and applies them in order against its own SNTP epoch. The device has no timezone database, POSIX TZ string, libc timezone function, or rule parser.
@@ -165,9 +165,10 @@ Golden frame fixtures:
 {"v":2,"provider":"claude","label":"Claude","session":73,"weekly":45,"resetSecs":8028,"activity":"coding","activityTtlSecs":10}
 ```
 
-Activity has exactly two states, working (`coding`) and not working (`idle`).
-The Companion decides which one applies and writes it into every frame; the
-firmware renders it and decides nothing itself.
+For firmware without `agent-activity-v1`, activity has exactly two states,
+working (`coding`) and not working (`idle`). Firmware with it also receives the
+observed agent states. The Companion decides which one applies and writes it
+into every frame; the firmware renders it and decides nothing itself.
 
 - **No inference.** A frame without `activity` is not working. Earlier
   firmware filled the missing value in from forward usage progress; that
@@ -175,8 +176,10 @@ firmware renders it and decides nothing itself.
   coding did. An error frame reports nothing about activity.
 - **Expiry belongs to the device.** `activityTtlSecs` says for how long the
   frame's activity is valid, counted from the moment the device received it.
-  When it has passed and no fresh frame arrived, the device sets its activity
-  to `idle` and repaints, exactly as if an `idle` frame had come. It does not
+  When it has passed and no fresh frame arrived, the device sets `coding` to
+  `idle` and repaints, exactly as if an `idle` frame had come. A frame from
+  the agent contract (it names an agent, or its activity is neither `coding`
+  nor `idle`) reads as agent status unavailable instead. It does not
   wait for a last frame from the Companion, which a stopped Companion, a
   sleeping Mac or a pulled cable can never send. Everything else the last
   frame carried stays on screen.
@@ -186,8 +189,8 @@ firmware renders it and decides nothing itself.
   `--interval`. The bound guards against the writer going away, not against
   routine switching, which the Companion's own frames do; a bound below the
   cadence would flip a working device to idle between two healthy frames. The
-  firmware has no default and no constant of its own, and caps the value at
-  86400.
+  firmware caps the value at 86400. Its only constant is a 15 second bound
+  for a frame from the agent contract that carries no `activityTtlSecs`.
 - **A running Companion keeps writing.** While it has a device it sends a
   frame every interval, also when it has no fresh reading for the shown
   provider: it then restates the last good frame with the current activity,
@@ -383,7 +386,9 @@ Design constraints:
 - Text primitive `align` (compact `al`) is horizontal: `center` / `right`; omit is left. `valign` (compact `va`) is vertical and separate: `middle` / `center` (same meaning), `bottom`; omit or `top` is top. After shrink chooses a size, firmware offsets `y` using the visual glyph height (`tft.fontHeight()`), not the `fontHeight + 4` clip pad. The vertical box is explicit `h` / `height` when set; otherwise it is `ApproxTextHeight` of the pre-shrink `fontSize` so shrink still sits in the original lane. `y` is the top of that box. Clip height stays `fontHeight + 4` and moves with the glyphs. Hosts must reject `va` on non-text primitives.
 - Text primitive `bgColor` is optional; when omitted, text is drawn transparent over the theme background.
 - `gif` and `sprite` primitives reference uploaded display assets with `assetPath` under `/themes/...`; ESP8266 LittleFS paths are capped at 31 characters.
-- Animated state assets use `stateAssets` (compact key `sa`) with `idle` and `coding` states. The renderer selects `coding` for coding activity and otherwise falls back to `idle`, then `assetPath`.
+- State assets use `stateAssets` (compact key `sa`). Baseline keys are `idle` and `coding`; `agent-theme-states-v1` adds `needs_you`, `done`, and `error`. Packs using the new keys must declare that capability. Working/thinking/tool_use/compacting select `coding`, the three waiting phases select `needs_you`, and done/error/idle select directly. A missing state falls back to idle, then assetPath.
+- `agentName` (at most 40 UTF-8 bytes) identifies the observed agent independently of the usage provider. With `agent-theme-states-v1`, the existing label slot presents the agent status and preserves firmware-notice priority. Unknown/stale means unavailable, never fabricated idle. `animationsDisabled` stops playback and announcements.
+- Without a dedicated asset, a display-state change triggers full-panel inversion at 0–200 ms and 350–550 ms, then returns to normal. Initial display, unchanged grouped states, theme changes, idle, unknown, and animation-off do not announce. The effect uses no theme-specific assets or configuration.
 - Sprite primitives may also declare `providerAssets` (compact key `pa`) as a map from the lowercase wire `provider` key to an asset path. The renderer checks `pa[provider]` first, then `stateAssets`, then `assetPath`. Unknown providers fall back to `assetPath`; omit `assetPath` to hide the sprite when no `pa` entry matches.
 - Progress primitives may declare `colorStops` (compact key `cs`) as up to four `{ "gte": N, "c": "#RRGGBB" }` entries. The renderer picks the first stop whose `gte` is `<=` the bound percent after sorting stops descending by `gte`. Missing `cs` keeps the solid `color`/`c` fill. Old firmware ignores `cs`.
 - `sprite` primitives reference uploaded `CBI1` static sprites or `CBA1` animated sprites under `/themes/...`. `CBA1` stores `width height frameCount fps`, one shared palette of up to 26 colors, then RLE rows for each frame. The browser should convert source sprite sheets into this format before upload. Animated sprites may set `bgColor`/`bg` as the local clear color used between frames.

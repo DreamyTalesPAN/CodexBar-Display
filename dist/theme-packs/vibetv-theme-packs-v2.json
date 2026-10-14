@@ -6,16 +6,17 @@
       "id": "claude-creature",
       "title": "Claude Creature",
       "usage": "live",
-      "version": "1.3.2",
-      "themeRev": 9,
-      "themeSpecPath": "/themes/u/claude--9-5c74ca.json",
+      "version": "1.3.3",
+      "themeRev": 10,
+      "themeSpecPath": "/themes/u/claude-10-ca931b.json",
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
-        "usage-slots-v1"
+        "usage-slots-v1",
+        "agent-theme-states-v1"
       ],
-      "downloadAsset": "vibetv-theme-claude-creature-v1.3.2.zip",
-      "sha256": "c0ed5faf24a708e204e75d7c350da5ff60b995d9c4926a3d5af2db28d06b5272",
-      "bytes": 3343,
+      "downloadAsset": "vibetv-theme-claude-creature-v1.3.3.zip",
+      "sha256": "7454efa274e948baec63172535281205db7b1e3ab41702018e6d1e314b62c44a",
+      "bytes": 15722,
       "earlierThemeSpecPaths": [
         "/themes/u/claude--1-12ab01.json",
         "/themes/u/claude--1-623de0.json",
@@ -27,23 +28,27 @@
         "/themes/u/claude--5-ef8ada.json",
         "/themes/u/claude--6-546f9e.json",
         "/themes/u/claude--7-4963df.json",
-        "/themes/u/claude--8-53ffce.json"
+        "/themes/u/claude--8-53ffce.json",
+        "/themes/u/claude--9-5c74ca.json",
+        "/themes/u/claude-10-7643a9.json"
       ]
     },
     {
       "id": "clippy",
       "title": "Clippy",
       "usage": "live",
-      "version": "1.1.3",
-      "themeRev": 5,
-      "themeSpecPath": "/themes/u/clippy-5-4f3746.json",
-      "requiresFirmware": "1.0.40",
+      "version": "1.2.0",
+      "themeRev": 6,
+      "themeSpecPath": "/themes/u/clippy-6-9b6dd8.json",
+      "requiresFirmware": "1.0.42",
       "requiredCapabilities": [
-        "usage-slots-v1"
+        "usage-slots-v1",
+        "agent-theme-states-v1",
+        "text-valign-v1"
       ],
-      "downloadAsset": "vibetv-theme-clippy-v1.1.3.zip",
-      "sha256": "c1a8cbfc7f222d2250bca8a93915a6f73b338cdd4f81ce52eb40ded6473033a6",
-      "bytes": 18640,
+      "downloadAsset": "vibetv-theme-clippy-v1.2.0.zip",
+      "sha256": "31de16f104b8c7948710eab9d0c981fe00f130a1f9aea26187371d0337e3e230",
+      "bytes": 63460,
       "earlierThemeSpecPaths": [
         "/themes/u/clippy-1-5d86bb.json",
         "/themes/u/clippy-1-bb9192.json",
@@ -51,7 +56,9 @@
         "/themes/u/clippy-1-caafce.json",
         "/themes/u/clippy-2-269831.json",
         "/themes/u/clippy-3-fe3fd4.json",
-        "/themes/u/clippy-4-7eb2b0.json"
+        "/themes/u/clippy-4-7eb2b0.json",
+        "/themes/u/clippy-5-4f3746.json",
+        "/themes/u/clippy-6-f70879.json"
       ]
     },
     {
@@ -123,21 +130,23 @@
       "id": "pixel-battery",
       "title": "Pixel Battery",
       "usage": "live",
-      "version": "1.16.0",
-      "themeRev": 16,
-      "themeSpecPath": "/themes/u/pba-16-f46829.json",
+      "version": "1.17.0",
+      "themeRev": 17,
+      "themeSpecPath": "/themes/u/pba-17-91175e.json",
       "requiresFirmware": "1.0.42",
       "requiredCapabilities": [
         "usage-slots-v1",
         "provider-assets-v1",
         "color-stops-v1",
-        "text-valign-v1"
+        "text-valign-v1",
+        "agent-theme-states-v1"
       ],
-      "downloadAsset": "vibetv-theme-pixel-battery-v1.16.0.zip",
-      "sha256": "9316ceeddd0617afad7be02352f755dc4afc551d93de917e874d7152df16324c",
-      "bytes": 2855,
+      "downloadAsset": "vibetv-theme-pixel-battery-v1.17.0.zip",
+      "sha256": "560dfc471b8ee7bcb874103aa447a44216c11d143af366243edd361429f65f70",
+      "bytes": 2867,
       "earlierThemeSpecPaths": [
-        "/themes/u/pba-15-9e62e5.json"
+        "/themes/u/pba-15-9e62e5.json",
+        "/themes/u/pba-16-f46829.json"
       ]
     },
     {
@@ -163,16 +172,18 @@
       "id": "synthwave",
       "title": "Synthwave",
       "usage": "live",
-      "version": "1.1.3",
-      "themeRev": 5,
-      "themeSpecPath": "/themes/u/synthwa-5-0f760a.json",
-      "requiresFirmware": "1.0.40",
+      "version": "1.2.0",
+      "themeRev": 6,
+      "themeSpecPath": "/themes/u/synthwa-6-80a3bb.json",
+      "requiresFirmware": "1.0.42",
       "requiredCapabilities": [
-        "usage-slots-v1"
+        "usage-slots-v1",
+        "text-valign-v1",
+        "agent-theme-states-v1"
       ],
-      "downloadAsset": "vibetv-theme-synthwave-v1.1.3.zip",
-      "sha256": "70c4382b601043f6c25f26415bae0d4308cbb1478cfc8dab7ac1a1349aee5df2",
-      "bytes": 1585,
+      "downloadAsset": "vibetv-theme-synthwave-v1.2.0.zip",
+      "sha256": "4daaca1893a40c55b1005bbae3ca026ea0bb45c6c04f5241d8bc0c9d1f0d7f70",
+      "bytes": 1621,
       "earlierThemeSpecPaths": [
         "/themes/u/synthwa-1-0432f1.json",
         "/themes/u/synthwa-1-0a355b.json",
@@ -180,26 +191,34 @@
         "/themes/u/synthwa-1-cf338e.json",
         "/themes/u/synthwa-2-5f8ac7.json",
         "/themes/u/synthwa-3-619665.json",
-        "/themes/u/synthwa-4-d3ff8f.json"
+        "/themes/u/synthwa-4-d3ff8f.json",
+        "/themes/u/synthwa-5-0f760a.json",
+        "/themes/u/synthwa-6-18aba9.json"
       ]
     },
     {
       "id": "tiny-office",
       "title": "Tiny Office",
       "usage": "live",
-      "version": "0.6.0",
-      "themeRev": 7,
-      "themeSpecPath": "/themes/u/to-7-d7799cec.json",
+      "version": "0.7.0",
+      "themeRev": 8,
+      "themeSpecPath": "/themes/u/to-8-ab75da.json",
       "requiresFirmware": "1.0.42",
       "requiredCapabilities": [
         "usage-slots-v1",
-        "text-valign-v1"
+        "text-valign-v1",
+        "agent-theme-states-v1"
       ],
-      "downloadAsset": "vibetv-theme-tiny-office-v0.6.0.zip",
-      "sha256": "b548609e4c19886d877119bf5630cc5067fa2bdc3123ab7c5d9a5bd593417d4a",
-      "bytes": 8071,
+      "downloadAsset": "vibetv-theme-tiny-office-v0.7.0.zip",
+      "sha256": "f0e16e5ef34d9c2eb8402876f013d770ada43f3ba0303c120ffe7e5fefbe2ce3",
+      "bytes": 28956,
       "earlierThemeSpecPaths": [
-        "/themes/u/to-6-6eed22ed.json"
+        "/themes/u/to-6-6eed22ed.json",
+        "/themes/u/to-7-d7799cec.json",
+        "/themes/u/to-8-0d46ed.json",
+        "/themes/u/to-8-14d120.json",
+        "/themes/u/to-8-8af3cf.json",
+        "/themes/u/to-8-ade4d2.json"
       ]
     },
     {

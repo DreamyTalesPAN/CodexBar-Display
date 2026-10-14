@@ -25,6 +25,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/agentstatus"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/companionapi"
@@ -623,9 +624,18 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 		}
 	}
 
-	var workerRunning atomic.Bool
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	engine := agentstatus.Start(ctx, agentstatus.BundledDirectory(), runtimepaths.Path(home, "agent-engine"), func() runtimeconfig.AgentActivitySettings {
+		cfg, _ := runtimeconfig.Load(home)
+		return cfg.AgentActivitySettings()
+	}, func() {
+		select {
+		case renderWake <- struct{}{}:
+		default:
+		}
+	})
+	var workerRunning atomic.Bool
 	var dashboard codexbar.DashboardServe
 	var restartUsageService func(context.Context) error
 	if !opts.Daemon.Once {
@@ -638,6 +648,8 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 		Logf:                 logf,
 		AIThemeSecrets:       companionapi.NewDurableAIThemeSecrets(""),
 		DisplayStreamRunning: workerRunning.Load,
+		AgentSnapshot:        engine.Snapshot,
+		ConfigureAgents:      engine.Configure,
 		Addr:                 actualAddr,
 		AllowedOrigins:       []string{opts.APIDevOrigin},
 		RefreshDisplayStream: func(context.Context, string) error {
@@ -674,6 +686,7 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 	defer record(timeline.Event{Component: "companion", State: "stopped"})
 
 	daemonOpts := opts.Daemon
+	daemonOpts.AgentSnapshot = engine.Snapshot
 	daemonOpts.RecordEvent = record
 	daemonOpts.Wake = wake
 	daemonOpts.RenderWake = renderWake

@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { agentThemeState, agentStatusText } from "@/lib/agent-theme-state";
 import Image from "next/image";
+import { staticGif } from "@/lib/static-gif";
 import type { ReactNode } from "react";
 import type { DeviceInfo, UsageSnapshot } from "./control-center-types";
 import {
@@ -28,6 +30,8 @@ type LiveVibeTVPreviewProps = {
   device: DeviceInfo | null;
   displayFrame: DisplayFrameSnapshot | null;
   onPreviewReady?: () => void;
+  /** Render only the real display output when a 3D case provides the housing. */
+  screenOnly?: boolean;
   updateOwnedDisconnect?: boolean;
   usage: UsageSnapshot | null;
 };
@@ -91,6 +95,10 @@ type DisplayFrame = {
   usageSlots?: UsageSlotFrame[];
   providerSlots?: UsageSlotFrame[];
   activity?: string;
+  agentName?: string;
+  animationsDisabled?: boolean;
+  agentAlertsMuted?: boolean;
+  agentReminderSecs?: number;
   sessionTokens?: number;
   weekTokens?: number;
   totalTokens?: number;
@@ -175,7 +183,7 @@ export type ThemePrimitive = {
   p?: string[];
 };
 
-type FrameData = {
+export type FrameData = {
   provider: string;
   label: string;
   session: number;
@@ -209,6 +217,10 @@ type FrameData = {
     idle: boolean;
   }>;
   activity: string;
+  agentName?: string;
+  animationsDisabled?: boolean;
+  agentAlertsMuted?: boolean;
+  agentReminderSecs?: number;
   sessionTokens: number;
   weekTokens: number;
   totalTokens: number;
@@ -269,10 +281,16 @@ const DEVICE_THEME_ALIASES: Record<string, string> = {
   synthwave: "synthwave",
 };
 
+// How long the real VibeTV takes for one animation frame. Health polls change
+// this timing, not the artwork, so the decoded frames stay as they are.
+const DeviceFrameMs = createContext(0);
+
 type DecodedSprite = {
   width: number;
   height: number;
   fps: number;
+  /** Time one frame stays on the real VibeTV; 0 for a still image. */
+  frameMs: number;
   frames: Array<Array<SpriteRect>>;
 };
 
@@ -354,6 +372,7 @@ export function LiveVibeTVPreview({
   device,
   displayFrame,
   onPreviewReady,
+  screenOnly = false,
   updateOwnedDisconnect = false,
   usage,
 }: LiveVibeTVPreviewProps) {
@@ -377,13 +396,13 @@ export function LiveVibeTVPreview({
         // usage as if it were live.
         (device?.connected !== false ||
           frameFreshForReconnect(displayFrame)) &&
-        hasRenderableUsage(displayFrame)),
+        hasRenderableFrame(displayFrame)),
   );
   const deviceReady = deviceIsReady(device);
   const awaitingProviderSetup = deviceAwaitsProviderSetup(device);
   const waitingForUsage = deviceIsWaitingForUsage(device);
   const effectiveDisplayFrame = livePreviewDisplayFrame(device, displayFrame);
-  const frame = hasRenderableUsage(effectiveDisplayFrame)
+  const frame = hasRenderableFrame(effectiveDisplayFrame)
     ? buildFrameData(
         effectiveDisplayFrame?.savedAt || usage?.generatedAt,
         effectiveDisplayFrame.frame,
@@ -508,41 +527,46 @@ export function LiveVibeTVPreview({
     themeSpecPath,
   ]);
 
+  const screen = updateOwnedDisconnect ? (
+    <FirmwareUpdateRestarting />
+  ) : !deviceConnected ? (
+    <ThemePreviewOffline />
+  ) : pack?.spec && frame ? (
+    <ThemeSpecSVG
+      assets={pack.assets || {}}
+      deviceFrameMs={device?.display?.themeSpec?.cbaLastFrameDurationMs}
+      frame={frame}
+      // In standby VibeTV reports its screensaver as the active theme.
+      screensaver={device?.standby?.active ? pack.name || "" : undefined}
+      spec={pack.spec}
+      themeId={pack.themeId || themeId}
+    />
+  ) : frame ? (
+    <ThemeSpecLoading status={packStatus} themeId={themeId} />
+  ) : awaitingProviderSetup ? (
+    <ThemeSpecLoading
+      message="Waiting for AI setup…"
+      status="loading"
+      themeId={themeId}
+    />
+  ) : !deviceReady && !waitingForUsage ? (
+    <ThemePreviewOffline />
+  ) : waitingForUsage ? (
+    <ThemeSpecLoading
+      message="Waiting for usage…"
+      status="loading"
+      themeId={themeId}
+    />
+  ) : (
+    <ThemeSpecLoading status={packStatus} themeId={themeId} />
+  );
+
+  if (screenOnly) return screen;
+
   return (
     <figure className="w-full max-w-[520px]">
       <VibeTVCaseShell>
-        {updateOwnedDisconnect ? (
-          <FirmwareUpdateRestarting />
-        ) : !deviceConnected ? (
-          <ThemePreviewOffline />
-        ) : pack?.spec && frame ? (
-          <ThemeSpecSVG
-            assets={pack.assets || {}}
-            frame={frame}
-            // In standby VibeTV reports its screensaver as the active theme.
-            screensaver={device?.standby?.active ? pack.name || "" : undefined}
-            spec={pack.spec}
-            themeId={pack.themeId || themeId}
-          />
-        ) : frame ? (
-          <ThemeSpecLoading status={packStatus} themeId={themeId} />
-        ) : awaitingProviderSetup ? (
-          <ThemeSpecLoading
-            message="Waiting for AI setup…"
-            status="loading"
-            themeId={themeId}
-          />
-        ) : !deviceReady && !waitingForUsage ? (
-          <ThemePreviewOffline />
-        ) : waitingForUsage ? (
-          <ThemeSpecLoading
-            message="Waiting for usage…"
-            status="loading"
-            themeId={themeId}
-          />
-        ) : (
-          <ThemeSpecLoading status={packStatus} themeId={themeId} />
-        )}
+        {screen}
       </VibeTVCaseShell>
     </figure>
   );
@@ -583,7 +607,7 @@ export function livePreviewDisplayFrame(
       (!deviceIsActive(device) || device?.paired === false)) ||
     (deviceUsesCable(device) &&
       (!device?.deviceId || displayFrame?.deviceId?.toLowerCase() !== device.deviceId.toLowerCase())) ||
-    !hasRenderableUsage(displayFrame)
+    !hasRenderableFrame(displayFrame)
   ) {
     return null;
   }
@@ -644,8 +668,18 @@ function VibeTVCaseShell({ children }: { children: ReactNode }) {
   );
 }
 
+const reducedMotionQuery = "(prefers-reduced-motion: reduce)";
+function subscribeReducedMotion(changed: () => void) {
+  const media = window.matchMedia(reducedMotionQuery);
+  media.addEventListener("change", changed);
+  return () => media.removeEventListener("change", changed);
+}
+function reducedMotionSnapshot() { return window.matchMedia(reducedMotionQuery).matches; }
+function serverReducedMotionSnapshot() { return false; }
+
 function ThemeSpecSVG({
   animate = true,
+  deviceFrameMs = 0,
   assets,
   frame,
   screensaver,
@@ -658,11 +692,47 @@ function ThemeSpecSVG({
   screensaver?: string;
   spec: ThemeSpec;
   themeId: string;
+  deviceFrameMs?: number;
 }) {
+  const svgRef = useRef<SVGSVGElement>(null);
   const primitives = spec.primitives || spec.p || [];
+  const state = agentThemeState(frame.activity);
+  const reducedMotion = useSyncExternalStore(subscribeReducedMotion, reducedMotionSnapshot, serverReducedMotionSnapshot);
+  const motionEnabled = animate && !frame.animationsDisabled && !reducedMotion;
+  const hasAgentStatus = Boolean(frame.agentName);
+  const lastState = useRef({ state, themeId });
+  // A mount, provider rotation, usage refresh, or theme switch is no new event.
+  useEffect(() => {
+    const changed = lastState.current.themeId === themeId && lastState.current.state !== state;
+    lastState.current = { state, themeId };
+    const node = svgRef.current;
+    if (!node || !motionEnabled || !hasAgentStatus || frame.agentAlertsMuted ||
+        ["idle", "unavailable"].includes(state)) return;
+    let animation: Animation | undefined;
+    const blink = () => {
+      animation?.cancel();
+      animation = node.animate([
+        { filter: "invert(1)", offset: 0, easing: "step-end" },
+        { filter: "invert(0)", offset: 200 / 550, easing: "step-end" },
+        { filter: "invert(1)", offset: 350 / 550, easing: "step-end" },
+        { filter: "invert(0)", offset: 1 },
+      ], { duration: 550 });
+    };
+    if (changed) blink();
+    const repeatMs = state === "needs_you" ? (frame.agentReminderSecs ?? 0) * 1000 : 0;
+    const timer = repeatMs > 0 ? window.setInterval(blink, repeatMs) : undefined;
+    return () => { animation?.cancel(); window.clearInterval(timer); };
+  }, [state, motionEnabled, hasAgentStatus, themeId, frame.agentAlertsMuted, frame.agentReminderSecs]);
+  const renderedFrame = frame.agentName ? { ...frame, label: agentStatusText(frame.activity, frame.agentName) } : frame;
+  const renderedAssets = useMemo(() => motionEnabled ? assets : Object.fromEntries(
+    Object.entries(assets).map(([path, asset]) => [path,
+      asset.contentType === "image/gif" && asset.encoding === "base64"
+        ? { ...asset, data: staticGif(asset.data) } : asset]),
+  ), [assets, motionEnabled]);
   return (
     <svg
-      aria-label={themeSpecAriaLabel(themeId, frame, screensaver)}
+      ref={svgRef}
+      aria-label={themeSpecAriaLabel(themeId, renderedFrame, screensaver)}
       className="size-full bg-black [image-rendering:pixelated]"
       role="img"
       viewBox="0 0 240 240"
@@ -672,15 +742,17 @@ function ThemeSpecSVG({
         width="240"
         fill={colorFor(spec.bgColor || spec.bg, "#000000")}
       />
+      <DeviceFrameMs.Provider value={Number.isFinite(deviceFrameMs) ? deviceFrameMs : 0}>
       {primitives.map((primitive, index) => (
         <ThemePrimitiveNode
-          assets={assets}
-          animate={animate}
-          frame={frame}
+          assets={renderedAssets}
+          animate={motionEnabled}
+          frame={renderedFrame}
           key={index}
           primitive={primitive}
         />
       ))}
+      </DeviceFrameMs.Provider>
     </svg>
   );
 }
@@ -1217,19 +1289,22 @@ function FirmwareUpdateRestarting() {
   );
 }
 
-export function hasRenderableUsage(
+export function hasRenderableFrame(
   snapshot: DisplayFrameSnapshot | null | undefined,
 ): snapshot is DisplayFrameSnapshot & { ok: true; frame: DisplayFrame } {
   const displayFrame = snapshot?.frame;
   if (
     snapshot?.ok !== true ||
     !displayFrame ||
-    displayFrame.usageUnavailable === true ||
     typeof displayFrame.v !== "number" ||
     !Number.isInteger(displayFrame.v) ||
     displayFrame.v < 1
   ) {
     return false;
+  }
+  if (displayFrame.usageUnavailable === true) {
+    return typeof displayFrame.agentName === "string" && Boolean(displayFrame.agentName.trim()) &&
+      agentThemeState(displayFrame.activity || "") !== "unavailable";
   }
   const hasProvider = [displayFrame.provider, displayFrame.label].some(
     (value) => typeof value === "string" && value.trim().length > 0,
@@ -1254,6 +1329,18 @@ export function buildFrameData(
   displayFrame: DisplayFrame,
   currentTime = new Date(),
 ): FrameData {
+  // A lifecycle-only carrier shows the agent and none of the retained quota.
+  // Without an agent, retained windows stay listed and read unavailable below.
+  if (displayFrame.usageUnavailable && displayFrame.agentName?.trim()) {
+    displayFrame = {
+      ...displayFrame,
+      session: undefined, weekly: undefined, resetSecs: undefined,
+      sessionUnavailable: true, weeklyUnavailable: true,
+      usageWindows: [], usageSlots: [], providerSlots: [],
+      tokenTotalsKnown: false,
+      sessionTokens: undefined, weekTokens: undefined, totalTokens: undefined,
+    };
+  }
   const elapsedSeconds = secondsSince(generatedAt, currentTime);
   const remainingResetSeconds = (seconds: number | undefined) =>
     remainingResetSecs(seconds, generatedAt, currentTime);
@@ -1333,6 +1420,10 @@ export function buildFrameData(
       idle: false,
     })),
     activity: displayFrame.activity || "idle",
+    agentName: displayFrame.agentName,
+    animationsDisabled: displayFrame.animationsDisabled,
+    agentAlertsMuted: displayFrame.agentAlertsMuted,
+    agentReminderSecs: displayFrame.agentReminderSecs,
     sessionTokens: displayFrame.sessionTokens ?? 0,
     hasTokenTotals:
       displayFrame.tokenTotalsKnown === true ||
@@ -1884,8 +1975,8 @@ function activeAssetPath(primitive: ThemePrimitive, frame: FrameData): string {
     return providerAssets[provider];
   }
   const stateAssets = primitive.stateAssets || primitive.sa || {};
-  if (frame.activity === "coding" && stateAssets.coding) {
-    return stateAssets.coding;
+  if (stateAssets[agentThemeState(frame.activity)]) {
+    return stateAssets[agentThemeState(frame.activity)];
   }
   return stateAssets.idle || primitive.assetPath || primitive.a || "";
 }
@@ -1920,7 +2011,8 @@ export function decodeSprite(raw: string): DecodedSprite | null {
     );
     frames.push(decodeRleRows(rows, width, palette));
   }
-  return { width, height, fps, frames };
+  const frameMs = frameCount > 1 && fps > 0 ? 1000 / fps : 0;
+  return { width, height, fps, frameMs, frames };
 }
 
 function useAnimationTick(framesPerSecond: number): number {
@@ -1990,10 +2082,10 @@ function spriteFrameIndex(
   sprite: DecodedSprite,
   animationTick: number,
 ): number {
-  if (sprite.frames.length <= 1 || sprite.fps <= 0) {
+  if (sprite.frameMs <= 0) {
     return 0;
   }
-  return Math.floor((animationTick / 1000) * sprite.fps) % sprite.frames.length;
+  return Math.floor(animationTick / sprite.frameMs) % sprite.frames.length;
 }
 
 function ThemeSpriteImage({
@@ -2015,7 +2107,12 @@ function ThemeSpriteImage({
 }) {
   // Editor geometry changes clone asset objects. Cache by their immutable text,
   // so only changed image bytes are decoded again, not every pointer move.
-  const sprite = useMemo(() => decodeSprite(raw), [raw]);
+  const decoded = useMemo(() => decodeSprite(raw), [raw]);
+  const deviceFrameMs = useContext(DeviceFrameMs);
+  const sprite = useMemo(() => {
+    if (!decoded || decoded.frameMs <= 0 || deviceFrameMs <= decoded.frameMs) return decoded;
+    return { ...decoded, frameMs: deviceFrameMs, fps: 1000 / deviceFrameMs };
+  }, [decoded, deviceFrameMs]);
   const renderWidth = width || sprite?.width || 0;
   const renderHeight = height || sprite?.height || 0;
   const animationTick = useAnimationTick(

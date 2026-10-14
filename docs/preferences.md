@@ -84,18 +84,18 @@ asking (#555):
 
 ## Display adapter
 
-Display preferences are owned by VibeTV (`owner: "vibetv"`,
-`writeStrategy: "vibetv_override"`). They are stored in the Mac App's runtime
+`vibetv.display.rotateSeconds` is owned by VibeTV (`owner: "vibetv"`,
+`writeStrategy: "vibetv_override"`). It is stored in the Mac App's runtime
 configuration, and a write re-renders the VibeTV frame from the usage already
 collected. No provider is asked again and nothing in CodexBar is changed.
+
+Used or remaining is CodexBar's own setting (`owner: "codexbar"`). The app
+reads and writes `codexbar.usageBarsShowUsed` and keeps no value of its own.
 
 | ID | Type | Values |
 | --- | --- | --- |
 | `vibetv.display.rotateSeconds` | `enum` | `"0"` (When activity changes), `"30"`, `"60"`, `"300"` |
-
-Whether percentages count what is used or what remains is CodexBar's own
-setting (`usageBarsShowUsed`). VibeTV keeps no second copy of it, as the
-CodexBar Integration Boundary in `AGENTS.md` requires.
+| `codexbar.usageBarsShowUsed` | `boolean` | `true` shows used, `false` shows remaining; owned by CodexBar |
 
 `vibetv.display.rotateSeconds` decides when the Automatic display mode moves
 to another provider. Settings shows it under the Automatic card as

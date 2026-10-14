@@ -1,3 +1,4 @@
+import { buildFrameData, type FrameData } from "../live-vibetv-preview";
 import type { UsageProviderInfo, UsageSnapshot } from "../control-center-types";
 import { remainingResetSecs } from "@/lib/reset-countdown";
 import { formatReset } from "../usage-screen";
@@ -19,6 +20,19 @@ export function displayPreviewFor(
   }
   const unavailable = provider.stale === true || provider.usageUnavailable === true;
   return {
+    frame: buildFrameData(undefined, {
+      provider: provider.id, label: provider.label,
+      session: provider.session, weekly: provider.weekly,
+      sessionUnavailable: unavailable || provider.sessionUnavailable,
+      weeklyUnavailable: unavailable || provider.weeklyUnavailable,
+      resetSecs: unavailable ? undefined : provider.resetSecs,
+      usageMode: provider.usageMode,
+      usageWindows: unavailable ? [] : provider.windows?.map((window) => ({
+        id: window.id, label: window.label, percent: window.usedPercent, resetSecs: window.resetSecs,
+      })),
+      sessionTokens: provider.sessionTokens, weekTokens: provider.weekTokens,
+      totalTokens: provider.totalTokens,
+    }),
     providerLabel: provider.label,
     resetLabel: unavailable
       ? null
@@ -41,23 +55,17 @@ export function displayPreviewFor(
   };
 }
 
-/**
- * The rotation Automatic moves through: one frame per provider switched on for
- * this Mac, in that order, so the panel shows the same set the device will.
- *
- * A provider the usage service has not reported yet keeps its place and stays
- * visibly unavailable. Dropping it instead shrank the rotation to whatever had
- * already been read -- on a Mac where that was one provider, Automatic held
- * still and looked exactly like Manual.
- */
+/** Usage choices with the acknowledged display provider first, without timers. */
 export function displayPreviewsFor(
   usage: UsageSnapshot | null,
   providers: { id: string; label: string }[],
+  currentProvider?: string,
 ): SetupDisplayModePreview[] {
   const reported = new Map(
     (usage?.providers || []).map((provider) => [provider.id, provider]),
   );
-  return providers.map(
+  const ordered = [...providers].sort((a, b) => Number(b.id === currentProvider) - Number(a.id === currentProvider));
+  return ordered.map(
     (provider) =>
       displayPreviewFor(reported.get(provider.id)) ?? {
         providerLabel: provider.label,
@@ -65,4 +73,19 @@ export function displayPreviewsFor(
         windows: [],
       },
   );
+}
+
+export type UsageDisplayMode = "used" | "remaining";
+
+/** Convert only the presentation; the collector's snapshot stays untouched. */
+export function previewUsageMode(frame: FrameData, mode: UsageDisplayMode): FrameData {
+  if (frame.usageMode === mode) return frame;
+  const percent = (value: number) => 100 - Math.max(0, Math.min(100, value));
+  return {
+    ...frame, usageMode: mode,
+    session: percent(frame.session), weekly: percent(frame.weekly),
+    usageSlot1Percent: percent(frame.usageSlot1Percent), usageSlot2Percent: percent(frame.usageSlot2Percent),
+    usageWindows: frame.usageWindows.map((slot) => ({ ...slot, percent: percent(slot.percent) })),
+    providerSlots: frame.providerSlots.map((slot) => ({ ...slot, percent: percent(slot.percent) })),
+  };
 }

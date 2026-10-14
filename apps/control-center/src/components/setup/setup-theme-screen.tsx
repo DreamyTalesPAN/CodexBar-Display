@@ -33,6 +33,7 @@ type SetupThemeScreenProps = {
   /** Install steps the companion reported, newest last. */
   installLogs?: string[];
   installing?: boolean;
+  selectedThemeInstalled?: boolean;
   aiFixPrompt?: () => string;
   onBack?: () => void;
   onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
@@ -47,6 +48,7 @@ type SetupThemeScreenProps = {
 export function SetupThemeScreen({
   installLogs = [],
   installing = false,
+  selectedThemeInstalled = false,
   aiFixPrompt,
   onBack,
   onCreateSupportReport,
@@ -101,7 +103,7 @@ export function SetupThemeScreen({
         type="button"
       >
         {installing ? <Spinner data-icon="inline-start" /> : null}
-        <span>{installing ? "Installing" : "Install"}</span>
+        <span>{installing ? "Installing" : selectedThemeInstalled ? "Continue" : "Install"}</span>
       </Button>
       {selected?.blockedReason ? (
         <p

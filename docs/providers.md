@@ -90,22 +90,23 @@ API usage, or account quota:
 
 ## Current Activity Selection
 
-When multiple providers are available, the Mac App tries to choose the one that
-matters right now. It uses signals such as:
+Automatic follows the observed Clawd agent activity when **Show agent activity**
+is on. It joins explicit source-to-provider identity metadata to the enabled,
+available CodexBar frames. The engine owns lifecycle priority: needs-you states
+come before errors, working states and completion. Within the aggregate phase,
+the most recently observed session leads, with stable session IDs breaking ties.
 
-- recent local provider activity
-- usage deltas
-- token deltas
-- sticky current provider
-- CodexBar provider order
+Idle, stale, unavailable or unmapped observations keep the current provider;
+if that provider is no longer available, CodexBar's available-provider order
+wins. Switching Agent activity off also keeps the current provider. Manual mode
+always keeps the selected provider. Token/percentage changes, file timestamps
+and collection freshness never choose a provider or imply agent activity.
 
-These inputs are provider-neutral. Selection code must not branch on provider
-IDs or add provider-specific activity heuristics. CodexBar remains responsible
-for obtaining and interpreting each provider's data; VibeTV only chooses which
-already-normalized provider frame to display.
-
-This is why VibeTV can stay useful even when a user moves between Codex, Claude,
-Cursor, Gemini, and other tools during the same day.
+Codex, Claude Code, Gemini CLI, Antigravity CLI and Copilot CLI have explicit
+usage-provider identities. Other clients still show their observed status but
+do not borrow unrelated quotas. CodexBar continues to own all usage windows,
+authentication and provider errors. Lifecycle wakes render cached usage without
+fetching new provider data.
 
 ## Token Stats
 

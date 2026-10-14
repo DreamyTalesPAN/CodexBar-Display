@@ -1,0 +1,140 @@
+--- a/hooks/codex-user-input.js
++++ b/hooks/codex-user-input.js
+@@ -78,14 +78,50 @@
+   if (!record || record.type !== "response_item") return null;
+   const payload = record.payload;
+   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
++  // Desktop async answers arrive as a correlated user message, not a tool result.
++  if (payload.type === "message" && payload.role === "user") {
++    for (const item of Array.isArray(payload.content) ? payload.content : []) {
++      const match = item?.type === "input_text" && typeof item.text === "string"
++        && item.text.trim().match(/^<send_user_message_question_reply>\s*([\s\S]*?)\s*<\/send_user_message_question_reply>$/);
++      if (!match) continue;
++      try {
++        const answers = JSON.parse(match[1]);
++        const callIds = [...new Set(answers.map(answer => {
++          const [tool, id] = JSON.parse(answer.questionItemId);
++          return tool === "request_user_input_async" ? normalizeCallId(id) : null;
++        }).filter(Boolean))];
++        if (callIds.length) return { phase: "resolved", callId: callIds[0], callIds };
++      } catch { /* malformed or unrelated text is not an answer */ }
++      return null;
++    }
++    // Desktop marks genuine typed messages explicitly. Environment/context
++    // records are also role=user, so role alone must not dismiss a question.
++    const kinds = payload.internal_chat_message_metadata_passthrough?.content_item_kinds;
++    if (Array.isArray(kinds) && kinds.includes("user.text")) {
++      return { phase: "resolved", allAsync: true };
++    }
++    return null;
++  }
+   const callId = normalizeCallId(payload.call_id ?? payload.callId);
+   if (!callId) return null;
++  if (payload.type === "function_call" && payload.name === "request_user_input_async") {
++    try {
++      const args = typeof payload.arguments === "string" ? JSON.parse(payload.arguments) : payload.arguments;
++      const request = normalizeRequestArguments({ questions: args.questions.map((question, index) => ({
++        id: `question_${index + 1}`, question: question.title,
++        options: question.options?.map(label => ({ label })),
++      })) });
++      return request ? { phase: "request", callId, async: true, ...request } : null;
++    } catch { return null; }
++  }
+   if (payload.type === "function_call" && payload.name === "request_user_input") {
+     const request = normalizeRequestArguments(payload.arguments);
+     return request ? { phase: "request", callId, ...request } : null;
+   }
+   if (payload.type === "function_call_output") {
+-    return { phase: "resolved", callId };
++    let accepted = false;
++    try { accepted = JSON.parse(payload.output).accepted === true; } catch {}
++    return { phase: "resolved", callId, accepted };
+   }
+   return null;
+ }
+--- a/agents/codex-log-monitor.js
++++ b/agents/codex-log-monitor.js
+@@ -795,8 +795,11 @@
+       const subtype = payload && typeof payload === "object" ? payload.type || "" : "";
+       const key = subtype ? obj.type + ":" + subtype : obj.type;
+       if (key === "event_msg:task_complete" || key === "event_msg:turn_aborted") {
+-        pending.clear();
+-        pendingTimestampMs.clear();
++        for (const [callId, request] of pending) {
++          if (key === "event_msg:task_complete" && request.async) continue;
++          pending.delete(callId);
++          pendingTimestampMs.delete(callId);
++        }
+         continue;
+       }
+       const record = parseCodexUserInputRecord(obj);
+@@ -806,8 +809,11 @@
+         const ts = typeof obj.timestamp === "string" ? Date.parse(obj.timestamp) : NaN;
+         pendingTimestampMs.set(record.callId, Number.isFinite(ts) ? ts : null);
+       } else {
+-        pending.delete(record.callId);
+-        pendingTimestampMs.delete(record.callId);
++        for (const callId of record.allAsync ? [...pending].filter(([, request]) => request.async).map(([id]) => id) : record.callIds || [record.callId]) {
++          if (record.accepted && pending.get(callId)?.async) continue;
++          pending.delete(callId);
++          pendingTimestampMs.delete(callId);
++        }
+       }
+     }
+     const recentlyActive = latestEmbeddedTimestampMs !== null
+@@ -2013,18 +2019,21 @@
+       }
+       return true;
+     }
+-    if (!tracked.pendingUserInputs.has(record.callId)) return true;
+-    const request = tracked.pendingUserInputs.get(record.callId);
+-    tracked.pendingUserInputs.delete(record.callId);
+-    if (!tracked.backfilling && !tracked.initializingUserInputs && this._onUserInputResolved) {
+-      this._onUserInputResolved(tracked.sessionId, record.callId, {
+-        source: "function-call-output",
+-        // Correlate to the original request, not a newer active turn that may
+-        // already have started before this output is drained from the file.
+-        turnId: request.activity && request.activity.turnId || null,
+-        recapOccurredAt: turnExtra.recapOccurredAt ?? null,
+-        userInputReplay: this._isUserInputReplay(tracked, turnExtra),
+-      });
++    for (const callId of record.allAsync ? [...tracked.pendingUserInputs].filter(([, request]) => request.async).map(([id]) => id) : record.callIds || [record.callId]) {
++      if (!tracked.pendingUserInputs.has(callId)) continue;
++      const request = tracked.pendingUserInputs.get(callId);
++      if (record.accepted && request.async) continue;
++      tracked.pendingUserInputs.delete(callId);
++      if (!tracked.backfilling && !tracked.initializingUserInputs && this._onUserInputResolved) {
++        this._onUserInputResolved(tracked.sessionId, callId, {
++          source: "function-call-output",
++          // Correlate to the original request, not a newer active turn that may
++          // already have started before this output is drained from the file.
++          turnId: request.activity && request.activity.turnId || null,
++          recapOccurredAt: turnExtra.recapOccurredAt ?? null,
++          userInputReplay: this._isUserInputReplay(tracked, turnExtra),
++        });
++      }
+     }
+     return true;
+   }
+@@ -2044,8 +2053,9 @@
+   // non-initializing) transition, matching every other emit in this file.
+   _clearPendingUserInputsForTrackedSession(tracked, reason = "turn-terminal") {
+     if (!(tracked.pendingUserInputs instanceof Map) || tracked.pendingUserInputs.size === 0) return;
+-    const callIds = [...tracked.pendingUserInputs.keys()];
+-    tracked.pendingUserInputs.clear();
++    const callIds = [...tracked.pendingUserInputs.keys()].filter(callId =>
++      reason !== "turn-complete" || !tracked.pendingUserInputs.get(callId).async);
++    for (const callId of callIds) tracked.pendingUserInputs.delete(callId);
+     if (tracked.backfilling || tracked.initializingUserInputs || !this._onUserInputResolved) return;
+     for (const callId of callIds) {
+       this._onUserInputResolved(tracked.sessionId, callId, {
+--- a/src/agent-runtime-main.js
++++ b/src/agent-runtime-main.js
+@@ -609,6 +609,7 @@
+           const shown = showCodexUserInputBubble({
+             sessionId,
+             callId: request.callId,
++            async: request.async === true,
+             questions: request.questions,
+             autoResolutionMs: request.autoResolutionMs,
+             ...extra,

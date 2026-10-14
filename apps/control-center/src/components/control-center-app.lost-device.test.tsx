@@ -132,6 +132,9 @@ function startWindow() {
   };
 }
 
+// What the Overview's header says for a connected VibeTV.
+const connectedStatus = "Online";
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -141,7 +144,7 @@ afterEach(() => {
 it("closes the lost-VibeTV dialog once status reports a connected cable VibeTV", async () => {
   const window = startWindow();
   await window.wait(10);
-  expect(window.text()).toContain("VibeTV is connected");
+  expect(window.text()).toContain(connectedStatus);
 
   window.companion.device = wifiLost;
   await window.wait(30);
@@ -150,11 +153,11 @@ it("closes the lost-VibeTV dialog once status reports a connected cable VibeTV",
   );
   expect(window.text()).toContain(notFound.message);
   expect(window.text()).toContain("Previously connected");
-  expect(window.text()).not.toContain("VibeTV is connected");
+  expect(window.text()).not.toContain(connectedStatus);
 
   window.companion.device = cable;
   await window.wait(10);
-  expect(window.text()).toContain("VibeTV is connected");
+  expect(window.text()).toContain(connectedStatus);
   expect(window.text()).not.toContain(notFound.message);
   expect(window.text()).not.toContain("Previously connected");
 
@@ -170,11 +173,11 @@ it("closes the lost-VibeTV dialog once status reports a connected cable VibeTV",
 it("follows a connection changed to another VibeTV without calling the first one lost", async () => {
   const window = startWindow();
   await window.wait(10);
-  expect(window.text()).toContain("VibeTV is connected");
+  expect(window.text()).toContain(connectedStatus);
 
   window.companion.device = cable;
   await window.wait(30);
-  expect(window.text()).toContain("VibeTV is connected");
+  expect(window.text()).toContain(connectedStatus);
   expect(window.companion.requests).not.toContain(
     "POST /api/local-companion/v1/device/search",
   );

@@ -217,7 +217,10 @@ rehearsal::prune_runs() {
   done
   local total candidates
   total="$(du -sh "$REHEARSAL_STATE_DIR" 2>/dev/null | awk '{print $1}')"
-  candidates="$(du -sh "$REHEARSAL_STATE_DIR/candidates" 2>/dev/null | awk '{print $1}')"
+  candidates="0B"
+  if [[ -d "$REHEARSAL_STATE_DIR/candidates" ]]; then
+    candidates="$(du -sh "$REHEARSAL_STATE_DIR/candidates" 2>/dev/null | awk '{print $1}')"
+  fi
   rehearsal::info "$REHEARSAL_STATE_DIR now holds ${total:-?}, of which candidates/ ${candidates:-0B}, which is never pruned"
 }
 

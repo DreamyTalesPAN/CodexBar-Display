@@ -75,7 +75,7 @@ void emitDeviceHello() {
   transportConfig.boardId = CODEXBAR_DISPLAY_BOARD_ID;
   transportConfig.deviceId = deviceID;
   transportConfig.firmwareVersion = CODEXBAR_DISPLAY_FW_VERSION;
-  transportConfig.featuresJSON = "[]";
+  transportConfig.featuresJSON = "[\"agent-activity-v1\"]";
   transportConfig.capabilitiesJSON =
       "{\"display\":{\"widthPx\":170,\"heightPx\":320,\"colorDepthBits\":16},"
       "\"theme\":{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0,\"builtinThemes\":[]},"
@@ -128,7 +128,7 @@ void loop() {
       !runtimeCtx.screenDirty) {
     renderer.TickActive(runtimeCtx);
     const int64_t remain = codexbar_display::app::CurrentRemainingSecs(runtimeCtx, millis());
-    if (remain != runtimeCtx.lastRenderedSecs) {
+    if (codexbar_display::core::ResetTextChanged(remain, runtimeCtx.lastRenderedSecs)) {
       renderer.DrawReset(runtimeCtx, remain);
     }
   }

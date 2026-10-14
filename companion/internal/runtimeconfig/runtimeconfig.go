@@ -42,16 +42,17 @@ var processPermissionMigrations permissionMigrationCache
 var configTransactionLocks sync.Map
 
 type Config struct {
-	WiFiTransitionStartedAt      int64         `json:"wifiTransitionStartedAt,omitempty"`
-	Theme                        string        `json:"theme,omitempty"`
-	ConnectionMode               string        `json:"connectionMode,omitempty"`
-	DeviceTarget                 string        `json:"deviceTarget,omitempty"`
-	DeviceToken                  string        `json:"deviceToken,omitempty"`
-	DeviceID                     string        `json:"deviceId,omitempty"`
-	DeviceTransports             []string      `json:"deviceTransports,omitempty"`
-	KnownDevices                 []KnownDevice `json:"knownDevices,omitempty"`
-	CableAutoBindDisabled        bool          `json:"cableAutoBindDisabled,omitempty"`
-	ConnectionModeChoiceRequired bool          `json:"connectionModeChoiceRequired,omitempty"`
+	AgentActivity                *AgentActivitySettings `json:"agentActivity,omitempty"`
+	WiFiTransitionStartedAt      int64                  `json:"wifiTransitionStartedAt,omitempty"`
+	Theme                        string                 `json:"theme,omitempty"`
+	ConnectionMode               string                 `json:"connectionMode,omitempty"`
+	DeviceTarget                 string                 `json:"deviceTarget,omitempty"`
+	DeviceToken                  string                 `json:"deviceToken,omitempty"`
+	DeviceID                     string                 `json:"deviceId,omitempty"`
+	DeviceTransports             []string               `json:"deviceTransports,omitempty"`
+	KnownDevices                 []KnownDevice          `json:"knownDevices,omitempty"`
+	CableAutoBindDisabled        bool                   `json:"cableAutoBindDisabled,omitempty"`
+	ConnectionModeChoiceRequired bool                   `json:"connectionModeChoiceRequired,omitempty"`
 	// LegacyWiFiDeviceID is the WiFi VibeTV that ran, or was updated from,
 	// firmware from before cable-only updates. Once it answers over the USB
 	// cable the app connects it by Cable (issue #498).

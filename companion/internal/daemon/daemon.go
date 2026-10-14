@@ -16,8 +16,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/agentstatus"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/motion"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
@@ -28,6 +30,7 @@ import (
 )
 
 type Options struct {
+	AgentSnapshot          func() agentstatus.Snapshot
 	Port                   string
 	Transport              string
 	Target                 string
@@ -50,31 +53,28 @@ type Options struct {
 const (
 	// Firmware confirms or rolls back a WiFi switch within one minute of its
 	// reboot (no setup AP since #489), plus join/reboot time.
-	wifiTransitionQuietPeriod  = 2 * time.Minute
-	defaultInterval            = 2 * time.Second
-	defaultWiFiInterval        = 30 * time.Second
-	defaultCycleTimeout        = 180 * time.Second
-	startupFastPollWindow      = 2 * time.Minute
-	startupFastPollInterval    = 5 * time.Second
-	failureRetryInterval       = 5 * time.Second
-	lastGoodPersistInterval    = 1 * time.Minute
-	themeEnvVar                = "CODEXBAR_DISPLAY_THEME"
-	coldStartTimeoutEnvVar     = "CODEXBAR_DISPLAY_COLDSTART_TIMEOUT_SECS"
-	cycleTimeoutEnvVar         = "CODEXBAR_DISPLAY_CYCLE_TIMEOUT_SECS"
-	collectorIntervalEnvVar    = "CODEXBAR_DISPLAY_COLLECTOR_INTERVAL_SECS"
-	activityPollEnvVar         = "CODEXBAR_DISPLAY_ACTIVITY_POLL_SECS"
-	activityHoldEnvVar         = "CODEXBAR_DISPLAY_ACTIVITY_HOLD_SECS"
-	activityCodingMaxAgeEnvVar = "CODEXBAR_DISPLAY_ACTIVITY_MAX_SECS"
-	activityIdleEvidenceEnvVar = "CODEXBAR_DISPLAY_ACTIVITY_IDLE_EVIDENCE"
-	collectorTimeoutEnvVar     = "CODEXBAR_DISPLAY_FETCH_TIMEOUT_SECS"
-	collectorOrderEnvVar       = "CODEXBAR_DISPLAY_PROVIDER_ORDER"
-	providerMaxAgeEnvVar       = "CODEXBAR_DISPLAY_PROVIDER_LAST_GOOD_MAX_AGE"
-	collectorWarmupEnvVar      = "CODEXBAR_DISPLAY_COLLECTOR_WARMUP_MAX_AGE"
-	defaultProviderMaxAge      = 10 * time.Minute
-	firmwareManifestEnvVar     = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
-	firmwareManifestURL        = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json"
-	firmwareUpdateCheckGap     = 6 * time.Hour
-	firmwareManifestTimeout    = 5 * time.Second
+	wifiTransitionQuietPeriod = 2 * time.Minute
+	defaultInterval           = 2 * time.Second
+	defaultWiFiInterval       = 30 * time.Second
+	defaultCycleTimeout       = 180 * time.Second
+	startupFastPollWindow     = 2 * time.Minute
+	startupFastPollInterval   = 5 * time.Second
+	failureRetryInterval      = 5 * time.Second
+	lastGoodPersistInterval   = 1 * time.Minute
+	themeEnvVar               = "CODEXBAR_DISPLAY_THEME"
+	coldStartTimeoutEnvVar    = "CODEXBAR_DISPLAY_COLDSTART_TIMEOUT_SECS"
+	cycleTimeoutEnvVar        = "CODEXBAR_DISPLAY_CYCLE_TIMEOUT_SECS"
+	collectorIntervalEnvVar   = "CODEXBAR_DISPLAY_COLLECTOR_INTERVAL_SECS"
+	activityPollEnvVar        = "CODEXBAR_DISPLAY_ACTIVITY_POLL_SECS"
+	collectorTimeoutEnvVar    = "CODEXBAR_DISPLAY_FETCH_TIMEOUT_SECS"
+	collectorOrderEnvVar      = "CODEXBAR_DISPLAY_PROVIDER_ORDER"
+	providerMaxAgeEnvVar      = "CODEXBAR_DISPLAY_PROVIDER_LAST_GOOD_MAX_AGE"
+	collectorWarmupEnvVar     = "CODEXBAR_DISPLAY_COLLECTOR_WARMUP_MAX_AGE"
+	defaultProviderMaxAge     = 10 * time.Minute
+	firmwareManifestEnvVar    = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
+	firmwareManifestURL       = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json"
+	firmwareUpdateCheckGap    = 6 * time.Hour
+	firmwareManifestTimeout   = 5 * time.Second
 )
 
 var errMarshalFrameTooLarge = errors.New("frame exceeds max bytes")
@@ -155,6 +155,7 @@ type runtimeDeps struct {
 	startDashboard        func(context.Context, func(string, ...any)) codexbar.DashboardServe
 	dashboard             codexbar.DashboardServe
 	usageBarsShowUsed     func() bool
+	reducedMotion         func(context.Context) bool
 	beginDeviceWrite      func() func()
 	interval              time.Duration
 	sendLine              func(string, []byte) error
@@ -256,28 +257,21 @@ func defaultRuntimeLogf(format string, args ...any) {
 }
 
 type runtimeState struct {
-	selector               *codexbar.ProviderSelector
-	lastGood               protocol.Frame
-	lastGoodAt             time.Time
-	hasLastGood            bool
-	lastPersistedGood      protocol.Frame
-	lastPersistedAt        time.Time
-	hasPersistedGood       bool
-	cliTheme               string
-	firmwareUpdate         protocol.UpdateState
-	hasFirmwareUpdate      bool
-	updateCheckedAt        time.Time
-	updateCheckedBoard     string
-	updateCheckedFirmware  string
-	lastActivityAt         time.Time
-	lastActivityObservedAt time.Time
-	lastIdleEvidenceAt     time.Time
-	idleEvidenceCount      int
-	lastCodingAt           time.Time
-	lastCodingTokenScanAt  time.Time
-	lastActivity           string
-	lastActivityCause      string
-	deviceTarget           string
+	agentSnapshot         func() agentstatus.Snapshot
+	selector              *codexbar.ProviderSelector
+	lastGood              protocol.Frame
+	lastGoodAt            time.Time
+	hasLastGood           bool
+	lastPersistedGood     protocol.Frame
+	lastPersistedAt       time.Time
+	hasPersistedGood      bool
+	cliTheme              string
+	firmwareUpdate        protocol.UpdateState
+	hasFirmwareUpdate     bool
+	updateCheckedAt       time.Time
+	updateCheckedBoard    string
+	updateCheckedFirmware string
+	deviceTarget          string
 	// providerDisplayFallback names the Manual selection that currently names
 	// no provider CodexBar still collects, so the runtime shows the remaining
 	// providers instead of a blank screen. Tied to that selection: a later
@@ -354,6 +348,7 @@ func RunWithLogger(ctx context.Context, opts Options, logf func(string, ...any))
 			transport:         transportlayer.NewWiFiTransport(),
 			transportName:     "wifi",
 			usageBarsShowUsed: codexbar.UsageBarsShowUsed,
+			reducedMotion:     motion.Reduced,
 			startDashboard:    codexbar.StartDashboardServe,
 			logf:              logf,
 		})
@@ -366,6 +361,7 @@ func RunWithLogger(ctx context.Context, opts Options, logf func(string, ...any))
 		sendLine:          usb.SendLine,
 		transportName:     "usb",
 		usageBarsShowUsed: codexbar.UsageBarsShowUsed,
+		reducedMotion:     motion.Reduced,
 		startDashboard:    codexbar.StartDashboardServe,
 		logf:              logf,
 	})
@@ -464,8 +460,9 @@ func signalWake(output chan<- struct{}) {
 
 func initializeRuntimeState(now time.Time, opts Options, deps runtimeDeps) *runtimeState {
 	state := &runtimeState{
-		selector: deps.newSelector(),
-		cliTheme: opts.Theme,
+		agentSnapshot: opts.AgentSnapshot,
+		selector:      deps.newSelector(),
+		cliTheme:      opts.Theme,
 	}
 	bootstrapStateFromPersistedLastGood(state, now, deps)
 	return state
@@ -1299,7 +1296,15 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 		result.failureErr = codexbar.ErrNoProviders
 		return finalizeCycleResult(state, result, now)
 	}
-	decision, ok := state.selector.SelectWithDecision(allProviders)
+	var activeProviders []string
+	// Only a running observer needs the config here; reading it on every cycle
+	// besides applyProviderDisplaySelection's read cost allocations.
+	if state.agentSnapshot != nil {
+		if cfg, ok := loadRuntimeConfig(deps); ok && cfg.AgentActivitySettings().Enabled && (cfg.ProviderDisplay == nil || cfg.ProviderDisplay.Mode == "automatic") {
+			activeProviders = state.agentSnapshot().ActiveProviders()
+		}
+	}
+	decision, ok := state.selector.SelectWithDecision(allProviders, activeProviders...)
 	if !ok {
 		result.failureKind = runtimeErrorNoProviders
 		result.failureOp = "select-provider"
@@ -1307,11 +1312,11 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 		return finalizeCycleResult(state, result, now)
 	}
 
-	// A timed rotation changes which provider is shown, nothing else: the
-	// coding/idle verdict below stays the one for the provider the selector
-	// chose, because the VibeTV starts its screensaver from it.
-	activity := decision
-	if provider, detail, ok := rotateShownProvider(state, allProviders, decision.Selected, now, deps); ok {
+	// A timed rotation changes which provider is shown, nothing else. Observed
+	// agent activity comes first: the timer does not move the display away
+	// from the provider an agent is working in.
+	if len(activeProviders) > 0 {
+	} else if provider, detail, ok := rotateShownProvider(state, allProviders, decision.Selected, now, deps); ok {
 		decision.Selected, decision.Reason, decision.Detail = provider, "timed-rotation", detail
 	}
 
@@ -1342,7 +1347,6 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	result.collectedAt = collectedAt
 	result.resetBasisAt = collectedAt
 	result.frame.ProviderSlots = providerResetSlots(allProviders, collectedAt)
-	result.frame, result.activityDetail = applySelectionActivity(result.frame, activity, state, now)
 	return result
 }
 
@@ -1582,161 +1586,108 @@ func finalizeCycleResult(state *runtimeState, result cycleResult, now time.Time)
 	return result
 }
 
-func applySelectionActivity(frame protocol.Frame, decision codexbar.SelectionDecision, state *runtimeState, now time.Time) (protocol.Frame, string) {
-	if strings.TrimSpace(frame.Activity) != "" {
-		return frame, fmt.Sprintf("activity=explicit value=%s", frame.Activity)
-	}
-	if now.IsZero() {
-		now = time.Now()
-	}
-	if state == nil {
-		state = &runtimeState{}
-	}
-
-	collectedAt := decision.Selected.CollectedAt
-	if collectedAt.IsZero() {
-		collectedAt = now
-	}
-	activityObservedAt := decision.Selected.ActivityObservedAt
-	if activityObservedAt.IsZero() {
-		activityObservedAt = collectedAt
-	}
-	codingExpired := state.lastActivity == "coding" && codingMaxAgeExpired(state, now)
-	// A token scan that completed after the one that showed the work, and
-	// brought no delta, is the answer coding was waiting for. It must be
-	// looked at, not answered from the remembered activity.
-	tokenScanAnswered := state.lastActivity == "coding" && !state.lastCodingTokenScanAt.IsZero() &&
-		decision.Selected.TokenStatsCollectedAt.After(state.lastCodingTokenScanAt)
-	if decision.ActivitySignalReason != codexbar.SelectionReasonUsageDelta &&
-		!activityObservedAt.IsZero() &&
-		activityObservedAt.Equal(state.lastActivityObservedAt) &&
-		state.lastActivity != "" &&
-		!codingExpired && !tokenScanAnswered {
-		state.lastActivityAt = collectedAt
-		frame.Activity = state.lastActivity
-		return frame, fmt.Sprintf("activity=%s reason=unchanged-codexbar-activity detail=%s observedAt=%s", frame.Activity, state.lastActivityCause, activityObservedAt.Format(time.RFC3339))
-	}
-	// Token totals are scanned on their own schedule and land on a usage
-	// snapshot that keeps its collection time, so a delta must never be
-	// answered from the remembered activity.
-	if decision.ActivitySignalReason != codexbar.SelectionReasonUsageDelta &&
-		!collectedAt.IsZero() && collectedAt.Equal(state.lastActivityAt) && state.lastActivity != "" && !codingExpired && !tokenScanAnswered {
-		frame.Activity = state.lastActivity
-		return frame, fmt.Sprintf("activity=%s reason=unchanged-usage-frame detail=%s", frame.Activity, state.lastActivityCause)
-	}
-
-	activity := "idle"
-	signalDetail := strings.TrimSpace(decision.ActivityDetail)
-	signalReason := decision.ActivitySignalReason
-	switch signalReason {
-	case codexbar.SelectionReasonUsageDelta:
-		activity = "coding"
-		state.lastCodingAt = now
-		// The mark names the token scan that showed this work. A provider
-		// without token totals, or one whose history is still being read
-		// in, has no such scan; its delta leaves alone the scan another
-		// provider's work is still waiting for.
-		if decision.Selected.Frame.TokenTotalsKnown && !decision.Selected.TokenHistoryGrowing {
-			state.lastCodingTokenScanAt = decision.Selected.TokenStatsCollectedAt
+// The Clawd snapshot is the sole activity owner. Quota deltas and collection
+// timestamps remain usage facts and cannot keep an agent marked as working.
+func applyAgentActivity(frame protocol.Frame, state *runtimeState, display *runtimeconfig.ProviderDisplayConfig) (protocol.Frame, string) {
+	frame.Activity = "unavailable"
+	frame.AgentName = "Agent"
+	if state != nil && state.agentSnapshot != nil {
+		snapshot := state.agentSnapshot()
+		if display != nil && display.Mode == "fixed" {
+			snapshot = snapshot.ForProvider(normalizeProviderKey(frame.Provider))
 		}
-		state.lastIdleEvidenceAt = time.Time{}
-		state.idleEvidenceCount = 0
-	default:
-		if state.lastActivity == "coding" {
-			if codingMaxAgeExpired(state, now) {
-				state.lastIdleEvidenceAt = time.Time{}
-				state.idleEvidenceCount = 0
-				signalReason = "coding-max-age-expired"
-				signalDetail = fmt.Sprintf("last_delta_age=%s max=%s observedAt=%s", now.Sub(state.lastCodingAt).Round(time.Second), activityCodingMaxAge(), activityObservedAt.Format(time.RFC3339))
-			} else {
-				if !activityObservedAt.IsZero() && activityObservedAt.After(state.lastActivityObservedAt) && !activityObservedAt.Equal(state.lastIdleEvidenceAt) {
-					state.lastIdleEvidenceAt = activityObservedAt
-					state.idleEvidenceCount++
-				}
-				// Token totals only move with a token scan. Until the next
-				// scan has completed, usage refreshes without a delta say
-				// nothing about whether the customer stopped working. That
-				// scan covers the whole time since the last one, so it is
-				// all the idle evidence there can be.
-				awaitingTokenScan := !state.lastCodingTokenScanAt.IsZero() && !tokenScanAnswered
-				needsIdleEvidence := !tokenScanAnswered && state.idleEvidenceCount < activityIdleEvidenceRequired()
-				if codingHoldActive(state.lastCodingAt, now) || needsIdleEvidence || awaitingTokenScan {
-					activity = "coding"
-					signalReason = "coding-waiting-for-idle-evidence"
-					signalDetail = fmt.Sprintf("last_delta_age=%s hold=%s max=%s idle_evidence=%d/%d awaiting_token_scan=%t observedAt=%s", now.Sub(state.lastCodingAt).Round(time.Second), activityHoldDuration(), activityCodingMaxAge(), state.idleEvidenceCount, activityIdleEvidenceRequired(), awaitingTokenScan, activityObservedAt.Format(time.RFC3339))
-				} else {
-					state.lastIdleEvidenceAt = time.Time{}
-					state.idleEvidenceCount = 0
+		if snapshot.Health == "ready" && agentstatus.ValidPhase(snapshot.Phase) {
+			frame.Activity = snapshot.Phase
+			frame.AgentName = snapshot.DisplayName()
+			// The status line is one line of large text. An agent that belongs
+			// to a provider is named by that provider's short label ("Claude
+			// is working"), also while another provider's usage is on screen;
+			// an agent of no provider keeps its own name.
+			if active := snapshot.ActiveProviders(); len(active) > 0 {
+				frame.AgentName = codexbar.ProviderLabel(active[0])
+				if active[0] == normalizeProviderKey(frame.Provider) && strings.TrimSpace(frame.Label) != "" {
+					frame.AgentName = strings.TrimSpace(frame.Label)
 				}
 			}
 		}
 	}
-
-	if signalDetail == "" {
-		signalDetail = string(signalReason)
-	}
-	if signalDetail == "" {
-		signalDetail = "no-usage-delta"
-	}
-	reason := string(signalReason)
-	if reason == "" {
-		reason = "no-usage-delta"
-	}
-
-	if activity == "idle" {
-		state.lastCodingTokenScanAt = time.Time{}
-	}
-	state.lastActivityAt = collectedAt
-	state.lastActivityObservedAt = activityObservedAt
-	state.lastActivity = activity
-	state.lastActivityCause = signalDetail
-	frame.Activity = activity
-	return frame, fmt.Sprintf("activity=%s reason=%s detail=%s", activity, reason, signalDetail)
+	return frame, "activity=" + frame.Activity + " source=clawd"
 }
 
-func codingHoldActive(lastCodingAt time.Time, now time.Time) bool {
-	if lastCodingAt.IsZero() {
-		return false
+// Older firmware understands only coding/idle. Negotiate the wire value while
+// the API retains the full lifecycle; new firmware also enforces the 15s lease.
+func applyDeviceActivity(frame protocol.Frame, caps protocol.DeviceCapabilities) protocol.Frame {
+	if !caps.SupportsAgentThemeStatesV1 {
+		frame.AgentName = ""
+		frame.AnimationsDisabled = false
+		frame.AgentAlertsMuted = false
+		frame.AgentReminderSecs = 0
 	}
-	if now.Before(lastCodingAt) {
-		return true
+	if !caps.SupportsAgentActivityV1 {
+		switch frame.Activity {
+		case "working", "thinking", "tool_use", "compacting", "coding":
+			frame.Activity = "coding"
+		default:
+			frame.Activity = "idle"
+		}
+		return frame
 	}
-	return now.Sub(lastCodingAt) <= activityHoldDuration()
-}
-
-func codingMaxAgeExpired(state *runtimeState, now time.Time) bool {
-	if state.lastCodingAt.IsZero() {
-		return false
+	// The device shows one working state. An agent moves between thinking,
+	// tools and compacting many times a minute; sending each move made the
+	// VibeTV repaint its status line and restart the animation for nothing.
+	switch frame.Activity {
+	case "thinking", "tool_use", "compacting":
+		frame.Activity = "working"
 	}
-	if now.Before(state.lastCodingAt) {
-		return false
-	}
-	maxAge := activityCodingMaxAge()
-	if !state.lastCodingTokenScanAt.IsZero() {
-		// Coding that waits for the next token scan must outlast one scan
-		// period (cooldown plus the scan itself), or continuous work is cut
-		// to idle just before that scan.
-		maxAge = max(maxAge, tokenStatsScanCooldown+tokenStatsCollectorTimeout+time.Minute)
-	}
-	return now.Sub(state.lastCodingAt) > maxAge
+	return frame
 }
 
 func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
 	publicPort := publicDeviceTarget(port)
 	authoritativeFrame := result.frame
-	frame := applyUsageBarsPreference(authoritativeFrame.Normalize(), deps.usageBarsShowUsed())
+	frame := authoritativeFrame.Normalize()
+	cfg, _ := loadRuntimeConfig(deps)
+	frame, result.activityDetail = applyAgentActivity(frame, state, cfg.ProviderDisplay)
+	settings := cfg.AgentActivitySettings()
+	if !settings.Enabled {
+		frame.Activity = "idle"
+		frame.AgentName = ""
+	}
+	frame.AgentAlertsMuted = settings.Muted(deps.now())
+	frame.AgentReminderSecs = 0
+	// Claude sends nothing between approving a tool and its result, so an
+	// approval still looks like it is waiting while the tool runs. Remind only
+	// for questions and reviews until that gap is observable.
+	if !frame.AgentAlertsMuted && strings.HasPrefix(frame.Activity, "waiting_for_") && frame.Activity != "waiting_for_permission" {
+		frame.AgentReminderSecs = settings.ReminderSeconds()
+	}
+	// Usage failures remain in the cycle result/API. A valid independent agent
+	// observation can still render its theme before any usage has been collected.
+	// A transient fetch miss must not hide bounded last-good usage just because
+	// the independent agent observation is still active.
+	renderAgent := settings.Enabled && caps.SupportsAgentThemeStatesV1 && frame.Activity != "unavailable" && frame.Activity != "stale"
+	if renderAgent && (frame.Error != "" ||
+		(!result.usageFresh && !isLastGoodFreshAt(result.resetBasisAt, deps.now(), providerSnapshotMaxAge()))) {
+		frame.Error = ""
+		frame.UsageUnavailable = true
+	}
+	frame = applyUsageBarsPreference(frame, deps.usageBarsShowUsed())
+	// An agent on screen does not change this: its status goes out with the
+	// last good usage, not with empty usage, while that reading is current.
 	if !result.usageFresh && result.failureErr == nil {
 		expiredLastGood := state != nil && state.hasLastGood && !isLastGoodFreshAt(state.lastGoodAt, deps.now(), providerSnapshotMaxAge())
 		// The reading is only retained, so there is nothing new to show.
 		// Falling silent would look like a lost writer to the device, which
 		// then ends a working state on its own (#369). Restate the last good
-		// frame instead, as a failed collection does, with the activity
-		// verdict of this cycle. Without a last good frame (the display was
+		// frame instead, as a failed collection does, with the agent
+		// activity of this cycle. Without a last good frame (the display was
 		// just moved to this provider) the retained reading itself goes out,
 		// marked as not live below and never stored as last good.
 		if state != nil && state.hasLastGood && (!frame.UsageUnavailable || !expiredLastGood) {
 			authoritativeFrame = state.lastGood
-			authoritativeFrame.Activity, authoritativeFrame.Update = result.frame.Activity, result.frame.Update
+			authoritativeFrame.Update = result.frame.Update
+			authoritativeFrame.Activity, authoritativeFrame.AgentName = frame.Activity, frame.AgentName
+			authoritativeFrame.AgentAlertsMuted, authoritativeFrame.AgentReminderSecs = frame.AgentAlertsMuted, frame.AgentReminderSecs
 			if !isLastGoodFreshAt(state.lastGoodAt, deps.now(), lastGoodMaxAge()) {
 				authoritativeFrame.UsageUnavailable = true
 			}
@@ -1748,6 +1699,10 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	}
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
 	frame = applyDeviceUsageWindowLimit(frame, caps)
+	if caps.SupportsAgentThemeStatesV1 && deps.reducedMotion != nil {
+		frame.AnimationsDisabled = deps.reducedMotion(ctx)
+	}
+	frame = applyDeviceActivity(frame, caps)
 	if !caps.SupportsProviderSlotsV1 {
 		// Firmware without provider-slots-v1 would carry these rows as dead
 		// wire bytes against its frame budget.
@@ -1896,8 +1851,8 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 // (frameFromDisplayStreamLogLine), so a field missing here is a field the
 // preview sees as empty; its test formats lines with this function.
 func SentFrameLogLine(port, transport, deviceID, source string, fresh bool, frame protocol.Frame, reason, detail, activityDetail string) string {
-	return fmt.Sprintf("sent frame -> %s transport=%s deviceId=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d sessionTokens=%d weekTokens=%d totalTokens=%d tokenTotalsKnown=%t usageUnavailable=%t sessionUnavailable=%t weeklyUnavailable=%t reset=%ds usageWindows=%s usageSlots=%s providerSlots=%s activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q resetTrust=%s resetTrustSecs=%d resetSource=%q\n",
-		port, transport, deviceID, source, fresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.SessionTokens, frame.WeekTokens, frame.TotalTokens, frame.TokenTotalsKnown, frame.UsageUnavailable, frame.SessionUnavailable, frame.WeeklyUnavailable, frame.ResetSec, usageWindowsLogValue(frame.UsageWindows), usageSlotsLogValue(frame.UsageSlots), usageSlotsLogValue(frame.ProviderSlots), frame.Activity, frame.Time, frame.Date, frame.Error, reason, detail, activityDetail, frame.ResetTrust, frame.ResetTrustSec, frame.ResetSource)
+	return fmt.Sprintf("sent frame -> %s transport=%s deviceId=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d sessionTokens=%d weekTokens=%d totalTokens=%d tokenTotalsKnown=%t usageUnavailable=%t sessionUnavailable=%t weeklyUnavailable=%t reset=%ds usageWindows=%s usageSlots=%s providerSlots=%s activity=%q agentName=%q animationsDisabled=%t agentAlertsMuted=%t agentReminderSecs=%d time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q resetTrust=%s resetTrustSecs=%d resetSource=%q\n",
+		port, transport, deviceID, source, fresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.SessionTokens, frame.WeekTokens, frame.TotalTokens, frame.TokenTotalsKnown, frame.UsageUnavailable, frame.SessionUnavailable, frame.WeeklyUnavailable, frame.ResetSec, usageWindowsLogValue(frame.UsageWindows), usageSlotsLogValue(frame.UsageSlots), usageSlotsLogValue(frame.ProviderSlots), frame.Activity, frame.AgentName, frame.AnimationsDisabled, frame.AgentAlertsMuted, frame.AgentReminderSecs, frame.Time, frame.Date, frame.Error, reason, detail, activityDetail, frame.ResetTrust, frame.ResetTrustSec, frame.ResetSource)
 }
 
 func usageSlotsLogValue(slots []protocol.UsageSlot) string {
@@ -2508,64 +2463,6 @@ func activityPollInterval() time.Duration {
 		return max
 	}
 	return override
-}
-
-func activityHoldDuration() time.Duration {
-	const (
-		def = 180 * time.Second
-		min = 5 * time.Second
-		max = 600 * time.Second
-	)
-
-	override := parseSecondsEnv(activityHoldEnvVar, int(def.Seconds()))
-	if override < min {
-		return min
-	}
-	if override > max {
-		return max
-	}
-	return override
-}
-
-func activityCodingMaxAge() time.Duration {
-	const (
-		def = 5 * time.Minute
-		min = 30 * time.Second
-		max = 30 * time.Minute
-	)
-
-	override := parseSecondsEnv(activityCodingMaxAgeEnvVar, int(def.Seconds()))
-	if override < min {
-		return min
-	}
-	if override > max {
-		return max
-	}
-	return override
-}
-
-func activityIdleEvidenceRequired() int {
-	const (
-		def = 2
-		min = 1
-		max = 10
-	)
-
-	raw := strings.TrimSpace(os.Getenv(activityIdleEvidenceEnvVar))
-	if raw == "" {
-		return def
-	}
-	parsed, err := strconv.Atoi(raw)
-	if err != nil {
-		return def
-	}
-	if parsed < min {
-		return min
-	}
-	if parsed > max {
-		return max
-	}
-	return parsed
 }
 
 func cycleRunTimeout() time.Duration {

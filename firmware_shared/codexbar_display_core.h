@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include "agent_activity.h"
 #include <ArduinoJson.h>
 #include <cstdio>
 #include <cstring>
@@ -23,6 +24,8 @@ namespace core {
 constexpr size_t kFrameLineBufferBytes = 2048;
 // One day. Keeps the bound's millisecond count inside 32 bits.
 constexpr int64_t kMaxActivityTtlSecs = 86400;
+// Bound for an observed agent state whose frame names none (agent-activity-v1).
+constexpr uint32_t kAgentLeaseMillis = 15000;
 constexpr size_t kProviderWireBytes = 32;
 constexpr size_t kProviderLabelWireBytes = 24;
 constexpr size_t kUsageWindowIDWireBytes = 32;
@@ -148,6 +151,10 @@ struct Frame {
   bool hasUsageMode = false;
   String usageMode;
   String activity;
+  String agentName;
+  bool animationsDisabled = false;
+  bool agentAlertsMuted = false;
+  uint16_t agentReminderSecs = 0;
   // How long `activity` stays valid without a fresh frame, counted from
   // receipt. 0: the frame carries no bound and its activity never expires.
   uint32_t activityTtlSecs = 0;
@@ -363,8 +370,8 @@ inline int64_t CurrentRemainingSecs(const RuntimeState& state, unsigned long now
 // are checked anyway, and the value keeps flowing through the same
 // change-detection that repaints any other countdown. That is what makes the
 // wording revert on its own when the trust budget later expires: the helpers
-// stop returning the sentinel, its minute bucket (RemainingMinuteBucket)
-// changes, and the periodic redraw fires.
+// stop returning the sentinel, its text changes (ResetTextChanged), and the
+// periodic redraw fires.
 constexpr int64_t kRemainingSecsIdle = -1;
 
 inline bool RemainingSecsAreIdle(int64_t remainingSecs) {
@@ -568,23 +575,19 @@ inline bool DecodeResetTrustRecord(
   return true;
 }
 
-// Countdowns are drawn in whole minutes (FormatDuration) and 0 means "Reset
-// unavailable". A frame arrives every couple of seconds with a few seconds
-// less on the clock; comparing raw seconds repainted the countdown on every
-// frame although its text had not changed.
-inline int64_t ResetCountdownDisplayBucket(int64_t secs) {
-  return secs <= 0 ? -1 : secs / 60;
+// Match the visible reset text, not its second-by-second transport value.
+// Above one day themes show days/hours; below it they show hours/minutes.
+// A running countdown (> 0), "Reset unavailable" (0) and the idle sentinel
+// (< 0, "No active session") are three different texts.
+inline bool ResetTextChanged(int64_t a, int64_t b) {
+  if (a <= 0 || b <= 0) return (a > 0) != (b > 0) || (a < 0) != (b < 0);
+  return (a >= 86400 && b >= 86400) ? a / 3600 != b / 3600 : a / 60 != b / 60;
 }
 
-inline bool ResetCountdownDisplayChanged(int64_t previousSecs, int64_t nextSecs) {
-  return ResetCountdownDisplayBucket(previousSecs) != ResetCountdownDisplayBucket(nextSecs);
-}
-
-inline bool UsageWindowChanged(const UsageWindow& previous, const UsageWindow& next, bool includeReset = true) {
+inline bool UsageWindowChanged(const UsageWindow& previous, const UsageWindow& next) {
   return previous.id != next.id ||
          previous.label != next.label ||
          previous.percent != next.percent ||
-         (includeReset && ResetCountdownDisplayChanged(previous.resetSecs, next.resetSecs)) ||
          previous.available != next.available;
 }
 
@@ -753,30 +756,25 @@ inline bool FrameTokenStatsVisualChanged(const Frame& previous, const Frame& nex
 #endif
 }
 
-#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-// The idle sentinel gets a bucket of its own. "-1 / 60" is 0, the bucket of an
-// expired countdown, so an idle window whose trust budget ran out would keep
-// "No active session" on the screen when no other countdown moved with it.
-inline int64_t RemainingMinuteBucket(int64_t remainingSecs) {
-  return RemainingSecsAreIdle(remainingSecs) ? -1 : remainingSecs / 60;
+// The label slot also carries the observed agent's status (LabelText).
+inline bool FrameLabelChanged(const Frame& previous, const Frame& next) {
+  return previous.label != next.label || previous.agentName != next.agentName ||
+         (previous.activity != next.activity &&
+          (previous.agentName.length() > 0 || next.agentName.length() > 0)) ||
+         previous.updateAvailable != next.updateAvailable;
 }
-
-inline bool RemainingMinuteBucketChanged(int64_t remainingSecs, int64_t lastRenderedMinuteBucket) {
-  return RemainingMinuteBucket(remainingSecs) != lastRenderedMinuteBucket;
-}
-#endif
 
 inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& next, const ThemeSpecLiveUse& use) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   for (size_t i = 0; i < kMaxProviderSlots; ++i) {
     if (use.UsesProviderSlot(i) &&
-        UsageWindowChanged(previous.providerSlots[i], next.providerSlots[i], use.UsesProviderSlotReset(i))) {
+        UsageWindowChanged(previous.providerSlots[i], next.providerSlots[i])) {
       return true;
     }
   }
   for (size_t i = 0; i < kMaxUsageWindows; ++i) {
     if (use.UsesUsageWindow(i) &&
-        UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i], use.UsesUsageWindowReset(i))) {
+        UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i])) {
       return true;
     }
   }
@@ -785,12 +783,9 @@ inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& 
                                   themespec::kThemeSpecFieldWeekly |
                                   themespec::kThemeSpecFieldReset);
   return (use.Uses(themespec::kThemeSpecFieldProvider) && previous.provider != next.provider) ||
-         (use.Uses(themespec::kThemeSpecFieldLabel) &&
-          (previous.label != next.label || previous.updateAvailable != next.updateAvailable)) ||
+         (use.Uses(themespec::kThemeSpecFieldLabel) && FrameLabelChanged(previous, next)) ||
          (use.Uses(themespec::kThemeSpecFieldSession) && previous.session != next.session) ||
          (use.Uses(themespec::kThemeSpecFieldWeekly) && previous.weekly != next.weekly) ||
-         (use.Uses(themespec::kThemeSpecFieldReset) &&
-          ResetCountdownDisplayChanged(previous.resetSecs, next.resetSecs)) ||
          (usesUsage &&
            (previous.usageUnavailable != next.usageUnavailable ||
             previous.sessionUnavailable != next.sessionUnavailable ||
@@ -813,11 +808,13 @@ inline uint32_t ThemeSpecLiveChangedFields(
     const Frame& next,
     const ThemeSpecLiveUse& use) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  // Countdown drawing has one owner: the local reset tick compares the last
+  // rendered text against the current deadline, including new wire values.
   uint32_t fields = 0;
   if (previous.provider != next.provider) {
     fields |= themespec::kThemeSpecFieldProvider;
   }
-  if (previous.label != next.label || previous.updateAvailable != next.updateAvailable) {
+  if (FrameLabelChanged(previous, next)) {
     fields |= themespec::kThemeSpecFieldLabel;
   }
   if (previous.session != next.session) {
@@ -826,23 +823,13 @@ inline uint32_t ThemeSpecLiveChangedFields(
   if (previous.weekly != next.weekly) {
     fields |= themespec::kThemeSpecFieldWeekly;
   }
-  if (ResetCountdownDisplayChanged(previous.resetSecs, next.resetSecs)) {
-    fields |= themespec::kThemeSpecFieldReset;
-  }
   for (size_t i = 0; i < kMaxUsageWindows; ++i) {
-    if (UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i], false)) {
+    if (UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i])) {
       fields |= themespec::kThemeSpecFieldUsageWindows;
-    }
-    if (ResetCountdownDisplayChanged(previous.usageWindows[i].resetSecs, next.usageWindows[i].resetSecs) &&
-        use.UsesUsageWindowReset(i)) {
-      fields |= themespec::kThemeSpecFieldUsageWindowReset;
     }
   }
   for (size_t i = 0; i < kMaxProviderSlots; ++i) {
-    if (UsageWindowChanged(
-            previous.providerSlots[i],
-            next.providerSlots[i],
-            use.UsesProviderSlotReset(i))) {
+    if (UsageWindowChanged(previous.providerSlots[i], next.providerSlots[i])) {
       fields |= themespec::kThemeSpecFieldProviderSlots;
     }
   }
@@ -1127,6 +1114,12 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
     out.updateLastError.trim();
   }
 
+  out.agentName = String(doc["agentName"] | "");
+  if (out.agentName.length() > 40) out.agentName = "Agent";
+  out.animationsDisabled = doc["animationsDisabled"] | false;
+  out.agentAlertsMuted = doc["agentAlertsMuted"] | false;
+  out.agentReminderSecs = doc["agentReminderSecs"] | 0;
+
   if (doc["error"].is<const char*>()) {
     out.hasError = true;
     out.error = String(doc["error"].as<const char*>());
@@ -1187,7 +1180,9 @@ inline bool FrameVisualChangedForThemeSpec(const Frame& previous, const Frame& n
                                      previous.totalTokens != next.totalTokens ||
                                      previous.hasUsageMode != next.hasUsageMode ||
                                      previous.usageMode != next.usageMode ||
-                                     previous.activity != next.activity;
+                                     previous.activity != next.activity ||
+                                     previous.agentName != next.agentName ||
+                                     previous.animationsDisabled != next.animationsDisabled;
   const bool themeIdentityChanged =
          previous.clearThemeSpec != next.clearThemeSpec ||
          previous.hasThemeSpec != next.hasThemeSpec ||
@@ -1380,11 +1375,20 @@ inline void NoteFrameVisualChange(
 #endif
 }
 
-// The device's own activity expiry (#369). A frame says how long its activity
-// is valid; when that time passes without a fresh frame, the writer is gone
-// and the device shows not working instead of holding the last verdict
-// forever. Call it every loop. True when the activity just fell to idle: the
-// caller repaints with outEvent exactly as for an accepted frame.
+// The frame comes from the agent lifecycle contract (agent-activity-v1): it
+// names the observed agent or carries a state beyond plain coding/idle.
+inline bool FrameObservesAgent(const Frame& frame) {
+  return frame.agentName.length() > 0 || (frame.activity != "coding" && frame.activity != "idle");
+}
+
+// The device's own activity expiry (#369), the one rule for every activity
+// state. A frame says how long its activity is valid; when that time passes
+// without a fresh frame, the writer is gone and the device stops showing the
+// last verdict instead of holding it forever. Plain coding falls to idle. An
+// observed agent state falls to unavailable: "Nothing running" would be a
+// claim about the agents the device can no longer stand behind. Call it every
+// loop. True when the activity just changed: the caller repaints with outEvent
+// exactly as for an accepted frame.
 inline bool ExpireActivity(RuntimeState& runtimeState, unsigned long nowMillis, SerialConsumeEvent& outEvent) {
   outEvent = {};
   if (runtimeState.activityTtlMillis == 0 ||
@@ -1393,11 +1397,12 @@ inline bool ExpireActivity(RuntimeState& runtimeState, unsigned long nowMillis, 
   }
   runtimeState.activityTtlMillis = 0;
   Frame& current = runtimeState.current;
-  if (current.hasError || current.activity == "idle") {
+  const char* expired = FrameObservesAgent(current) ? "unavailable" : "idle";
+  if (current.hasError || current.activity == expired) {
     return false;
   }
   Frame next = current;
-  next.activity = "idle";
+  next.activity = expired;
   outEvent.hadFrame = true;
   NoteFrameVisualChange(runtimeState, current, next, outEvent);
   current.activity = next.activity;
@@ -1440,12 +1445,18 @@ inline bool ConsumeFrameLine(
   if (!next.hasError && next.activity.length() == 0) {
     next.activity = "idle";
   }
-  outEvent.reportsWorking = !next.hasError && next.activity == "coding";
+  // Every working phase of an observed agent counts, not only plain coding.
+  outEvent.reportsWorking = !next.hasError && agentactivity::IsWorking(next.activity.c_str());
 
   outEvent.hadFrame = runtimeState.hasFrame;
   NoteFrameVisualChange(runtimeState, previous, next, outEvent);
 
+  // The frame sizes the bound. An observed agent state that came without one
+  // still must not outlive the computer, so it gets the agent lease.
   runtimeState.activityTtlMillis = next.activityTtlSecs * 1000U;
+  if (runtimeState.activityTtlMillis == 0 && !next.hasError && FrameObservesAgent(next)) {
+    runtimeState.activityTtlMillis = kAgentLeaseMillis;
+  }
   runtimeState.activityBaseMillis = static_cast<uint32_t>(nowMillis);
   runtimeState.current = next;
   runtimeState.hasFrame = true;

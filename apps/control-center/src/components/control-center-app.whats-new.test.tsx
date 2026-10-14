@@ -219,7 +219,7 @@ function startWindow({
   };
 }
 
-const notice = () => screen.queryByRole("dialog", { name: "What's new" });
+const notice = () => screen.queryByRole("dialog", { name: /^What's new(?: in version .+)?$/ });
 const keyCaps = () =>
   Array.from(notice()!.querySelectorAll("kbd"), (key) => key.textContent);
 const seen = () => JSON.parse(window.localStorage.getItem(SEEN_KEY) || "null");
@@ -244,7 +244,7 @@ it("tells a set-up customer what is new once, on Overview, until they close it",
   expect(list.contains(within(notice()!).getByRole("button", { name: "Got it" }))).toBe(false);
 
   const text = notice()?.textContent ?? "";
-  expect(text).toContain("Version 1.0.63");
+  expect(text).toContain("What's new in version 1.0.63");
   for (const sentence of [
     "New theme: Gauge",
     "A half ring that fills as you use your limit.",
@@ -321,8 +321,9 @@ it("tells a customer who is setting VibeTV up nothing", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await window.wait(15);
 
+  // Setup goes on with the theme step; the notice stays away there too.
   expect(notice()).toBeNull();
-  expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Choose your theme" })).toBeTruthy();
 });
 
 // Providers that were set up before, by another app on this computer, leave
