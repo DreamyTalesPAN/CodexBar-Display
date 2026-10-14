@@ -3527,3 +3527,29 @@ func TestEnsureSerialPortNotBusyGivesUpOnAHungLsof(t *testing.T) {
 		t.Fatalf("lsof check took %v, want the 5s timeout", elapsed)
 	}
 }
+
+func TestResolveRestoreImagePicksNewestBackupThenPath(t *testing.T) {
+	dir := t.TempDir()
+	base := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	files := map[string]time.Time{
+		"weather_backup_a.bin": base,
+		"weather_backup_b.bin": base.Add(time.Hour),
+		"weather_backup_c.bin": base.Add(time.Hour),
+	}
+	for name, mod := range files {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte("image"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, mod, mod); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := resolveRestoreImage("", []string{dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(dir, "weather_backup_b.bin"); got != want {
+		t.Fatalf("resolveRestoreImage() = %q, want the newest backup with the lowest path %q", got, want)
+	}
+}

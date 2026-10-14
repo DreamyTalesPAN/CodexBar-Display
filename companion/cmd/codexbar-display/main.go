@@ -2416,20 +2416,28 @@ func resolveRestoreImage(requested string, searchDirs []string) (string, error) 
 		return "", errors.New("no known-good backup image found; pass --image <path/to/backup.bin> or add --backup-dir <dir>")
 	}
 
-	sort.Slice(candidates, func(i, j int) bool {
-		si, errI := os.Stat(candidates[i])
-		sj, errJ := os.Stat(candidates[j])
-		if errI == nil && errJ == nil {
-			ti := si.ModTime()
-			tj := sj.ModTime()
-			if !ti.Equal(tj) {
-				return ti.After(tj)
-			}
+	type backupCandidate struct {
+		path    string
+		modTime time.Time
+		hasTime bool
+	}
+	backups := make([]backupCandidate, 0, len(candidates))
+	for _, path := range candidates {
+		backup := backupCandidate{path: path}
+		if info, err := os.Stat(path); err == nil {
+			backup.modTime, backup.hasTime = info.ModTime(), true
 		}
-		return candidates[i] < candidates[j]
+		backups = append(backups, backup)
+	}
+	sort.Slice(backups, func(i, j int) bool {
+		a, b := backups[i], backups[j]
+		if a.hasTime && b.hasTime && !a.modTime.Equal(b.modTime) {
+			return a.modTime.After(b.modTime)
+		}
+		return a.path < b.path
 	})
 
-	return candidates[0], nil
+	return backups[0].path, nil
 }
 
 func resolveRestoreScriptPath(requested string) (string, error) {
