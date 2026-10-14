@@ -7266,6 +7266,13 @@ issue scope, or release permission never implies UI permission.
 - Scope: `lib/whats-new.ts`, its What's new test, and this approval record. Bundle branch only, not merge or release.
 - What's new: none — the change removes the `usage-display` entry and adds nothing
 
+## 2026-10-14 — Main: approval marker after the squash merge of #600
+
+- User approval: Marcus approved the merge of #600 on 2026-10-14 after the customer-visible result was stated to him: the live catalog now lists Gauge and Token Counter; customers on 1.0.64 can install Token Counter, and Gauge shows as not supported until their VibeTV runs the next firmware. The squash merge put all of #600's entries into one commit, and the gate on main checks each of them; the entries from 2026-10-08 predate the What's new line. This entry stands as the newest marker for that merge. No new wording.
+- Approved customer-visible result: as merged with #600 and recorded in its entries above; nothing else changes.
+- Scope: this approval record only.
+- What's new: none — no customer-visible change of its own
+
 ## 2026-10-09 — A cleaner What's new dialog
 
 - User approval: Paul shared a screenshot of the built dialog and asked for a cleaner design on 2026-10-09.
