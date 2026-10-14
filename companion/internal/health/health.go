@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	launchAgentLabel  = "com.codexbar-display.daemon"
+	launchAgentLabel  = runtimepaths.LegacyDisplayStreamLaunchAgentLabel
 	legacyOutLog      = "/tmp/codexbar-display-daemon.out.log"
 	legacyErrLog      = "/tmp/codexbar-display-daemon.err.log"
 	defaultOutLogName = "daemon.out.log"

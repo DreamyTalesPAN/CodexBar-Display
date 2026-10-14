@@ -1138,7 +1138,7 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 		}
 	}
 
-	launchctlOutput, err := doctorLaunchAgentPrintFn("com.codexbar-display.daemon")
+	launchctlOutput, err := doctorLaunchAgentPrintFn(runtimepaths.LegacyDisplayStreamLaunchAgentLabel)
 	if err != nil || !doctorLaunchAgentStateHealthy(string(launchctlOutput)) {
 		return doctorRuntimeConfig{}, nil
 	}
@@ -1167,7 +1167,7 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 	}
 	return doctorRuntimeConfig{
 		configured:  true,
-		label:       "com.codexbar-display.daemon",
+		label:       runtimepaths.LegacyDisplayStreamLaunchAgentLabel,
 		transport:   transportName,
 		target:      target,
 		probeTarget: probeTarget,
@@ -1205,7 +1205,7 @@ func doctorTaskRuntimeConfig(home, label string, args []string) (doctorRuntimeCo
 }
 
 func readDoctorLegacyLaunchAgentPlist(home, launchctlOutput string, readFile func(string) ([]byte, error)) ([]byte, error) {
-	name := "com.codexbar-display.daemon.plist"
+	name := runtimepaths.LegacyDisplayStreamLaunchAgentLabel + ".plist"
 	paths := []string{parseDoctorLaunchAgentPath(launchctlOutput)}
 	paths = append(paths,
 		filepath.Join(home, "Library", "LaunchAgents", name),

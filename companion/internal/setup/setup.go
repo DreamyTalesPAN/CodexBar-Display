@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	launchAgentLabel          = "com.codexbar-display.daemon"
+	launchAgentLabel          = runtimepaths.LegacyDisplayStreamLaunchAgentLabel
 	defaultDaemonInterval     = "2s"
 	defaultWiFiDaemonInterval = "30s"
 	defaultCompanionAPIAddr   = "127.0.0.1:47832"

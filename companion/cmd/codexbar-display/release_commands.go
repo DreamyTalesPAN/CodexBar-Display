@@ -179,7 +179,7 @@ func emitFirmwareUpdateEvent(event firmwareUpdateEvent) {
 	fmt.Printf("%s%s\n", firmwareupdate.EventPrefix, payload)
 }
 
-const launchAgentLabel = "com.codexbar-display.daemon.plist"
+const launchAgentLabel = runtimepaths.LegacyDisplayStreamLaunchAgentLabel + ".plist"
 
 type commandError struct {
 	Op   string
