@@ -397,11 +397,19 @@ struct CodexBarCommandResult {
     let output: String
 }
 
+private final class CommandOutput: @unchecked Sendable {
+    var data = Data()
+}
+
+// With a timeout the child is stopped once it runs out, and the call returns
+// nil. A CodexBar call can otherwise wait on an unanswered macOS prompt for
+// as long as the prompt stays open.
 func runCodexBarCommand(
     executableURL: URL,
     arguments: [String],
     environment: [String: String]? = nil,
-    mergeStandardError: Bool = true
+    mergeStandardError: Bool = true,
+    timeout: TimeInterval? = nil
 ) -> CodexBarCommandResult? {
     let process = Process()
     let pipe = Pipe()
@@ -420,6 +428,27 @@ func runCodexBarCommand(
         try process.run()
     } catch {
         return nil
+    }
+    if let timeout {
+        let output = CommandOutput()
+        let drained = DispatchSemaphore(value: 0)
+        let reader = pipe.fileHandleForReading
+        DispatchQueue.global(qos: .utility).async {
+            output.data = reader.readDataToEndOfFile()
+            drained.signal()
+        }
+        if drained.wait(timeout: .now() + max(timeout, 0)) == .timedOut {
+            process.terminate()
+            if drained.wait(timeout: .now() + 2) == .timedOut {
+                kill(process.processIdentifier, SIGKILL)
+            }
+            return nil
+        }
+        process.waitUntilExit()
+        return CodexBarCommandResult(
+            exitCode: process.terminationStatus,
+            output: String(data: output.data, encoding: .utf8) ?? ""
+        )
     }
     let data = pipe.fileHandleForReading.readDataToEndOfFile()
     process.waitUntilExit()
@@ -454,18 +483,51 @@ func browserSignInReadOutcome(_ output: String) -> BrowserSignInReadOutcome {
     return .notYet
 }
 
+// Does the usage VibeTV serves to the device show this provider with current
+// values. Only then did the browser sign-in CodexBar read actually work: a
+// copied cookie can be old or refused by the provider.
+func browserSignInProviderReady(usage data: Data, provider: String) -> Bool {
+    guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let providers = object["providers"] as? [[String: Any]],
+          let entry = providers.first(where: {
+              ($0["id"] as? String)?.lowercased() == provider
+          }) else {
+        return false
+    }
+    return entry["stale"] as? Bool != true && entry["usageUnavailable"] as? Bool != true
+}
+
+func browserSignInProviderIsReady(provider: String, runtimeOrigins: [URL]) async -> Bool {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.timeoutIntervalForRequest = runtimeHealthRequestTimeout
+    let session = URLSession(configuration: configuration)
+    defer { session.invalidateAndCancel() }
+    for origin in runtimeOrigins {
+        guard let (data, response) = try? await session.data(
+            from: origin.appendingPathComponent("v1/usage")
+        ), (response as? HTTPURLResponse)?.statusCode == 200 else {
+            continue
+        }
+        return browserSignInProviderReady(usage: data, provider: provider)
+    }
+    return false
+}
+
 // Has the app's verified CodexBar read the provider's browser sign-in once.
 // CodexBar keeps what it read in its cookie cache, which the background usage
 // service then uses. May show the macOS Keychain prompt and blocks until it is
-// answered.
+// answered or the timeout runs out.
 func readBrowserSignInWithCodexBar(
     provider: String,
     companionURL: URL,
-    codexBarAppURL: URL
+    codexBarAppURL: URL,
+    timeout: TimeInterval
 ) -> BrowserSignInReadOutcome {
+    let deadline = Date().addingTimeInterval(timeout)
     guard let validated = runCodexBarCommand(
         executableURL: companionURL,
-        arguments: ["validate-codexbar", "--app", codexBarAppURL.path]
+        arguments: ["validate-codexbar", "--app", codexBarAppURL.path],
+        timeout: deadline.timeIntervalSinceNow
     ), validated.exitCode == 0 else {
         return .notYet
     }
@@ -476,7 +538,8 @@ func readBrowserSignInWithCodexBar(
             "cookie", "refresh", "--provider", provider,
             "--allow-keychain-prompt", "--format", "json",
         ],
-        mergeStandardError: false
+        mergeStandardError: false,
+        timeout: deadline.timeIntervalSinceNow
     ) else {
         return .notYet
     }
@@ -2322,7 +2385,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     // background, where CodexBar never shows the Keychain prompt and macOS
     // does not let it look into the browser profile, so it cannot read a
     // browser sign-in by itself. While the customer signs in, the app reads it
-    // instead, until it is read, refused, or the follow-up window ends.
+    // instead, until VibeTV shows the provider's usage, the read is refused,
+    // or the follow-up window ends. A read alone does not end it: the cookie
+    // read before the customer signs in can be an old one the provider refuses.
     private func readBrowserSignIn(provider: String) {
         if browserSignInReadsRunning.contains(provider) {
             return
@@ -2338,24 +2403,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         let codexBarAppURL = appManagedCodexBarAppURL(
             applicationSupportURL: applicationSupportURL()
         )
+        let runtimeOrigins = runtimeOriginCandidates()
         Task { [weak self] in
             let deadline = Date().addingTimeInterval(browserSignInReadWindow)
             var outcome = BrowserSignInReadOutcome.notYet
+            var ready = false
             while true {
+                let remaining = deadline.timeIntervalSinceNow
                 outcome = await Task.detached {
                     readBrowserSignInWithCodexBar(
                         provider: provider,
                         companionURL: companionURL,
-                        codexBarAppURL: codexBarAppURL
+                        codexBarAppURL: codexBarAppURL,
+                        timeout: remaining
                     )
                 }.value
-                if outcome != .notYet
+                if outcome == .declined
                     || Date().addingTimeInterval(browserSignInReadInterval) >= deadline {
                     break
                 }
                 try? await Task.sleep(nanoseconds: UInt64(browserSignInReadInterval * 1_000_000_000))
+                ready = await browserSignInProviderIsReady(
+                    provider: provider,
+                    runtimeOrigins: runtimeOrigins
+                )
+                if ready {
+                    break
+                }
             }
-            NSLog("VibeTV Control Center browser sign-in read for \(provider): \(outcome)")
+            NSLog("VibeTV Control Center browser sign-in read for \(provider): \(outcome), ready: \(ready)")
             self?.browserSignInReadsRunning.remove(provider)
             if outcome == .declined {
                 self?.browserSignInReadDeclinedAt[provider] = Date()

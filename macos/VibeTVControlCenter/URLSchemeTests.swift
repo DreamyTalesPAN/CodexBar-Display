@@ -216,6 +216,36 @@ func runURLSchemeTests() {
         verboseResult?.exitCode == 0 && verboseResult?.output.count == 200000,
         "command output must be drained while a verbose child process is running"
     )
+    let verboseTimedResult = runCodexBarCommand(
+        executableURL: verboseCommand,
+        arguments: [],
+        timeout: 30
+    )
+    require(
+        verboseTimedResult?.exitCode == 0 && verboseTimedResult?.output.count == 200000,
+        "a command with a timeout must still return its whole output"
+    )
+    let hangingCommand = commandFixtureDirectory.appendingPathComponent("hanging-command")
+    try! Data(
+        """
+        #!/bin/sh
+        exec /bin/sleep 30
+        """.utf8
+    ).write(to: hangingCommand)
+    try! FileManager.default.setAttributes(
+        [.posixPermissions: 0o700],
+        ofItemAtPath: hangingCommand.path
+    )
+    let hangingStartedAt = Date()
+    let hangingResult = runCodexBarCommand(
+        executableURL: hangingCommand,
+        arguments: [],
+        timeout: 0.5
+    )
+    require(
+        hangingResult == nil && Date().timeIntervalSince(hangingStartedAt) < 5,
+        "a command that outlives its timeout, like an unanswered Keychain prompt, must be stopped"
+    )
     let environmentCommand = commandFixtureDirectory.appendingPathComponent("environment-command")
     try! Data(
         """
@@ -445,6 +475,25 @@ func runURLSchemeTests() {
         require(
             browserSignInReadOutcome(pendingAnswer) == .notYet,
             "anything else keeps waiting for the sign-in: \(pendingAnswer)"
+        )
+    }
+    require(
+        browserSignInProviderReady(
+            usage: Data(#"{"providers":[{"id":"codex","stale":false},{"id":"claude","stale":false,"session":26}]}"#.utf8),
+            provider: "claude"
+        ),
+        "current Claude usage means the browser sign-in worked"
+    )
+    for notReadyUsage in [
+        #"{"providers":[{"id":"claude","stale":true,"usageUnavailable":true}]}"#,
+        #"{"providers":[{"id":"claude","stale":false,"usageUnavailable":true}]}"#,
+        #"{"providers":[{"id":"codex","stale":false}]}"#,
+        #"{"providers":[]}"#,
+        "not json",
+    ] {
+        require(
+            !browserSignInProviderReady(usage: Data(notReadyUsage.utf8), provider: "claude"),
+            "missing, stale or unavailable usage keeps reading the browser sign-in: \(notReadyUsage)"
         )
     }
     require(
