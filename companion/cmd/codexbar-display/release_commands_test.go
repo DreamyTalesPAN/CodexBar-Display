@@ -3507,3 +3507,23 @@ func TestMultipartUploadReportsCableOnlyFirmwareWithoutWriteWarning(t *testing.T
 		t.Fatalf("a missing WiFi update route must not look like a partial write: %v", err)
 	}
 }
+
+func TestEnsureSerialPortNotBusyGivesUpOnAHungLsof(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("lsof is a POSIX tool")
+	}
+	dir := t.TempDir()
+	// exec replaces the shell, so the timeout kills the process that holds the pipe.
+	if err := os.WriteFile(filepath.Join(dir, "lsof"), []byte("#!/bin/sh\nexec /bin/sleep 60\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	started := time.Now()
+	err := ensureSerialPortNotBusy("/dev/cu.test")
+	if err == nil {
+		t.Fatal("expected an error when lsof does not finish")
+	}
+	if elapsed := time.Since(started); elapsed > 20*time.Second {
+		t.Fatalf("lsof check took %v, want the 5s timeout", elapsed)
+	}
+}

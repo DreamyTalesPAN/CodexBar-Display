@@ -2533,7 +2533,9 @@ func ensureSerialPortNotBusy(port string) error {
 		return nil
 	}
 
-	out, err := exec.Command("lsof", port).CombinedOutput()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "lsof", port).CombinedOutput()
 	trimmed := strings.TrimSpace(string(out))
 	if err == nil {
 		if trimmed == "" {
