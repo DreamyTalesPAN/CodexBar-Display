@@ -244,17 +244,9 @@ func LoadPersistedUsage(now time.Time) (PersistedUsage, bool) {
 		if !ok {
 			continue
 		}
-		frame := snapshot.Frame.Normalize()
-		frame.Provider = normalizeProviderKey(frame.Provider)
-		if frame.Provider == "" {
-			frame.Provider = key
-		}
-		if frame.UsageMode == "" {
-			frame.UsageMode = "used"
-		}
 		snapshot = snapshotWithFreshTokenStats(snapshot, now, providerSnapshotMaxAge())
 		snapshot = snapshotWithExpiredUsageCleared(snapshot, now, providerSnapshotMaxAge())
-		frame = snapshot.Frame.Normalize()
+		frame := snapshot.Frame.Normalize()
 		frame.Provider = normalizeProviderKey(frame.Provider)
 		if frame.Provider == "" {
 			frame.Provider = key
