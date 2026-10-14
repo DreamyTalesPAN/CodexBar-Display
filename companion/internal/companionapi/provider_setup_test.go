@@ -629,6 +629,62 @@ func TestProviderRetryCanTargetExactProvider(t *testing.T) {
 	}
 }
 
+// After the Mac app read a browser sign-in, CodexBar's config is unchanged,
+// so the usual restart would keep the usage service that still holds the
+// failed reading. A working check after such a read replaces it; a plain
+// check, or one that still fails, does not (#607).
+func TestProviderRetryAfterBrowserSignInReadReplacesUsageService(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		target       string
+		status       string
+		wantRestarts int32
+		wantReplaces int32
+	}{
+		{"read works", "/v1/providers/retry?provider=claude&after=browser-sign-in-read", codexbar.ProviderReady, 0, 1},
+		{"plain check", "/v1/providers/retry?provider=claude", codexbar.ProviderReady, 1, 0},
+		{"read refused", "/v1/providers/retry?provider=claude&after=browser-sign-in-read", codexbar.ProviderAuthRequired, 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := newTestServer(t, runtimeconfig.Config{})
+			server.probeExactProvider = func(_ context.Context, _ string, providerID string) codexbar.ProviderSetup {
+				status := "setup_required"
+				if tc.status == codexbar.ProviderReady {
+					status = codexbar.ProviderReady
+				}
+				return codexbar.ProviderSetup{
+					Status: status,
+					Engine: codexbar.EngineReadiness{Status: codexbar.ProviderReady},
+					Providers: []codexbar.ProviderReadiness{{
+						ID: providerID, Label: "Claude", Enabled: providerEnabled(true), Status: tc.status,
+					}},
+				}
+			}
+			var restarts, replaces atomic.Int32
+			server.restartUsageService = func(context.Context) error { restarts.Add(1); return nil }
+			server.freshUsageService = func(context.Context) error { replaces.Add(1); return nil }
+			woke := make(chan struct{}, 1)
+			server.wakeDisplayStream = func() { woke <- struct{}{} }
+
+			rec := httptest.NewRecorder()
+			server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, tc.target, nil))
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+			if tc.wantRestarts+tc.wantReplaces > 0 {
+				select {
+				case <-woke:
+				case <-time.After(5 * time.Second):
+					t.Fatal("the usage service swap never finished")
+				}
+			}
+			if restarts.Load() != tc.wantRestarts || replaces.Load() != tc.wantReplaces {
+				t.Fatalf("restarts=%d replaces=%d, want %d and %d", restarts.Load(), replaces.Load(), tc.wantRestarts, tc.wantReplaces)
+			}
+		})
+	}
+}
+
 func TestExactProviderRetryPreservesFreshFailureOverLastGoodUsage(t *testing.T) {
 	for _, status := range []string{
 		codexbar.ProviderAuthRequired,

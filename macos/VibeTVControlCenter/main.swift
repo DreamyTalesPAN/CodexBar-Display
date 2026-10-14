@@ -579,12 +579,61 @@ func readBrowserSignInWithCodexBar(
 // Each read can show the macOS Keychain prompt again (after a one-time
 // "Allow"), so after a successful read the app waits for the background usage
 // service to use it before reading again. Reading again only makes sense when
-// that read was an old sign-in the provider refused.
-func browserSignInShouldRead(lastReadAt: Date?, now: Date) -> Bool {
+// that read was an old sign-in the provider refused; once the check after the
+// read found the provider working, it never asks again.
+func browserSignInShouldRead(lastReadAt: Date?, readWorks: Bool, now: Date) -> Bool {
     guard let lastReadAt else {
         return true
     }
-    return now.timeIntervalSince(lastReadAt) >= browserSignInReadSettle
+    return !readWorks && now.timeIntervalSince(lastReadAt) >= browserSignInReadSettle
+}
+
+// Did the check the app asked for right after a read find the provider
+// working with the sign-in CodexBar just read.
+func browserSignInReadWorks(check data: Data, provider: String) -> Bool {
+    guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let setup = object["providerSetup"] as? [String: Any],
+          let providers = setup["providers"] as? [[String: Any]],
+          let entry = providers.first(where: {
+              ($0["id"] as? String)?.lowercased() == provider
+          }) else {
+        return false
+    }
+    return entry["status"] as? String == "ready"
+}
+
+// Tells VibeTV that CodexBar just read the provider's browser sign-in. VibeTV
+// checks the provider with it at once and, when it works, starts its usage
+// service fresh: the running one keeps its failed reading for minutes, and the
+// app would read and ask again in the meantime (#607, 2026-10-14).
+func browserSignInCheckAfterRead(provider: String, runtimeOrigins: [URL]) async -> Bool {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.timeoutIntervalForRequest = 90
+    let session = URLSession(configuration: configuration)
+    defer { session.invalidateAndCancel() }
+    for origin in runtimeOrigins {
+        guard var components = URLComponents(
+            url: origin.appendingPathComponent("v1/providers/retry"),
+            resolvingAgainstBaseURL: false
+        ) else {
+            continue
+        }
+        components.queryItems = [
+            URLQueryItem(name: "provider", value: provider),
+            URLQueryItem(name: "after", value: "browser-sign-in-read"),
+        ]
+        guard let url = components.url else {
+            continue
+        }
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
+        request.httpMethod = "POST"
+        guard let (data, response) = try? await session.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200 else {
+            continue
+        }
+        return browserSignInReadWorks(check: data, provider: provider)
+    }
+    return false
 }
 
 
@@ -2452,8 +2501,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             var outcome = BrowserSignInReadOutcome.notYet
             var ready = false
             var lastReadAt: Date?
+            var readWorks = false
             while true {
-                if browserSignInShouldRead(lastReadAt: lastReadAt, now: Date()) {
+                if browserSignInShouldRead(lastReadAt: lastReadAt, readWorks: readWorks, now: Date()) {
                     let remaining = deadline.timeIntervalSinceNow
                     outcome = await Task.detached {
                         readBrowserSignInWithCodexBar(
@@ -2465,6 +2515,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                     }.value
                     if outcome == .read {
                         lastReadAt = Date()
+                        readWorks = await browserSignInCheckAfterRead(
+                            provider: provider,
+                            runtimeOrigins: runtimeOrigins
+                        )
                     }
                 }
                 if outcome == .declined
@@ -2480,7 +2534,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                     break
                 }
             }
-            NSLog("VibeTV Control Center browser sign-in read for \(provider): \(outcome), ready: \(ready)")
+            NSLog("VibeTV Control Center browser sign-in read for \(provider): \(outcome), works: \(readWorks), ready: \(ready)")
             self?.browserSignInReadsRunning.remove(provider)
             if outcome == .declined {
                 self?.browserSignInReadDeclinedAt[provider] = Date()

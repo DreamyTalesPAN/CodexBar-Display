@@ -408,6 +408,10 @@ func timedOutExactProviderSetup(providerID string, now time.Time) codexbar.Provi
 	}
 }
 
+// providerRetryAfterBrowserSignInRead marks a check the Mac app asks for
+// right after CodexBar read the provider's browser sign-in.
+const providerRetryAfterBrowserSignInRead = "browser-sign-in-read"
+
 func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
@@ -415,6 +419,9 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), providerCheckTimeout)
 	defer cancel()
 	providerID := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("provider")))
+	// The Mac app reports here that CodexBar just read the provider's browser
+	// sign-in into its cookie cache.
+	afterBrowserSignInRead := r.URL.Query().Get("after") == providerRetryAfterBrowserSignInRead
 	var setup codexbar.ProviderSetup
 	label := ""
 	if providerID == "" {
@@ -436,7 +443,13 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 		// A reading the running usage service took before CodexBar's config
 		// changed can still look fresh, so it is no evidence that the service
 		// runs on the current config; the supervisor decides that.
-		if providerID != "" && s.restartUsageService != nil {
+		// After a browser sign-in read the config did not change, yet the
+		// running service keeps its failed reading for minutes; only a fresh
+		// one shows the sign-in before the Mac app reads, and asks, again.
+		if providerID != "" && afterBrowserSignInRead && s.freshUsageService != nil {
+			s.usageServiceReplacePending.Store(true)
+			s.requestUsageServiceReplace(providerID)
+		} else if providerID != "" && s.restartUsageService != nil {
 			s.requestUsageServiceReplace(providerID)
 		} else if s.wakeDisplayStream != nil {
 			s.wakeDisplayStream()
@@ -465,8 +478,12 @@ func (s *Server) requestUsageServiceReplace(providerID string) {
 func (s *Server) replaceUsageService(providerID string) {
 	for {
 		for s.usageServiceRestartPending.Swap(false) {
+			restart := s.restartUsageService
+			if s.usageServiceReplacePending.Swap(false) && s.freshUsageService != nil {
+				restart = s.freshUsageService
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			err := s.restartUsageService(ctx)
+			err := restart(ctx)
 			cancel()
 			if err != nil && s.logf != nil {
 				s.logf("VibeTV usage service restart after checking %s failed: %v", providerID, err)

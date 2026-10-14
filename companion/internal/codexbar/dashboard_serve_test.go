@@ -220,6 +220,16 @@ func TestDashboardServeSupervisorRestartReplacesTheRunningChild(t *testing.T) {
 	if current := supervisor.Info(); current.PID != second.PID {
 		t.Fatal("the replacement already has the changed config; do not restart again")
 	}
+
+	// A browser sign-in read changes only CodexBar's cookie cache: Replace
+	// starts a fresh child on unchanged settings.
+	if err := supervisor.Replace(restartCtx); err != nil {
+		t.Fatalf("replace: %v", err)
+	}
+	third := supervisor.Info()
+	if !third.Healthy || third.PID == 0 || third.PID == second.PID {
+		t.Fatalf("expected Replace to start a new healthy child, second=%#v third=%#v", second, third)
+	}
 }
 
 // The same bytes stay current even when touched, while changed bytes with

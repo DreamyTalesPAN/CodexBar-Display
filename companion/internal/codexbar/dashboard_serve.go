@@ -340,10 +340,26 @@ func (s *DashboardServeSupervisor) stopUnhealthyDashboardServeChild(endpoint str
 // already runs on it; a reading it has not delivered yet is a collection still
 // under way, so it keeps running.
 func (s *DashboardServeSupervisor) Restart(ctx context.Context) error {
+	return s.replace(ctx, false)
+}
+
+// Replace swaps the running serve for a fresh one even when CodexBar's config
+// is unchanged, and waits until the new one answers /health. A browser sign-in
+// read in another CodexBar process writes only its cookie cache, which a
+// running serve does not pick up for minutes: it keeps answering with the
+// snapshot that holds the failed reading (cached for the refresh interval, then
+// served again while it revalidates), and a Keychain read that needed
+// interaction pauses its own cookie-cache reads for five minutes. A new child
+// starts without either (2026-10-14, #607).
+func (s *DashboardServeSupervisor) Replace(ctx context.Context) error {
+	return s.replace(ctx, true)
+}
+
+func (s *DashboardServeSupervisor) replace(ctx context.Context, force bool) error {
 	s.mu.Lock()
 	process := s.process
 	oldPID := s.info.PID
-	stale := process != nil && dashboardConfigChanged(s.config)
+	stale := process != nil && (force || dashboardConfigChanged(s.config))
 	s.restart = stale
 	s.mu.Unlock()
 	if process == nil {
@@ -356,7 +372,7 @@ func (s *DashboardServeSupervisor) Restart(ctx context.Context) error {
 		return nil
 	}
 	if s.logf != nil {
-		s.logf("codexbar-dashboard event=restart-requested pid=%d\n", oldPID)
+		s.logf("codexbar-dashboard event=restart-requested pid=%d forced=%t\n", oldPID, force)
 	}
 	if err := process.Kill(); err != nil {
 		return fmt.Errorf("stop codexbar serve: %w", err)

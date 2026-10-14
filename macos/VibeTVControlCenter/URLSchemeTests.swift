@@ -517,17 +517,36 @@ func runURLSchemeTests() {
         )
     }
     require(
-        browserSignInShouldRead(lastReadAt: nil, now: firstRead),
+        browserSignInShouldRead(lastReadAt: nil, readWorks: false, now: firstRead),
         "the first check after Sign in reads the browser sign-in"
     )
     require(
-        !browserSignInShouldRead(lastReadAt: firstRead, now: firstRead.addingTimeInterval(75)),
+        !browserSignInShouldRead(lastReadAt: firstRead, readWorks: false, now: firstRead.addingTimeInterval(75)),
         "after a read the app waits for the usage service instead of asking again"
     )
     require(
-        browserSignInShouldRead(lastReadAt: firstRead, now: firstRead.addingTimeInterval(90)),
-        "a read the usage service still does not show is read again"
+        browserSignInShouldRead(lastReadAt: firstRead, readWorks: false, now: firstRead.addingTimeInterval(90)),
+        "a read the provider did not accept is read again"
     )
+    require(
+        !browserSignInShouldRead(lastReadAt: firstRead, readWorks: true, now: firstRead.addingTimeInterval(170)),
+        "a read the check found working is never read, and asked for, again"
+    )
+    let workingCheck = #"{"ok":true,"providerSetup":{"status":"ready","providers":[{"id":"claude","status":"ready"}]}}"#
+    require(
+        browserSignInReadWorks(check: Data(workingCheck.utf8), provider: "claude"),
+        "a check that finds the provider ready accepts the read: \(workingCheck)"
+    )
+    for notWorking in [
+        #"{"ok":true,"providerSetup":{"status":"setup_required","providers":[{"id":"claude","status":"browser_sign_in_required"}]}}"#,
+        #"{"ok":true,"providerSetup":{"status":"ready","providers":[{"id":"codex","status":"ready"}]}}"#,
+        "not json",
+    ] {
+        require(
+            !browserSignInReadWorks(check: Data(notWorking.utf8), provider: "claude"),
+            "a check that does not find the provider ready keeps reading: \(notWorking)"
+        )
+    }
     require(
         shouldHandleWebViewDownload(
             url: URL(string: "blob:http://127.0.0.1/report")!,
