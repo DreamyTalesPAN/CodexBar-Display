@@ -576,6 +576,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       tone: "unknown",
     },
   ]);
+  // Event ids must stay unique while the log is full: the length of the list
+  // is 20 then, so two events in one millisecond would share an id (React key).
+  const eventIdRef = useRef(0);
 
   const selectedTheme = useMemo(
     () => catalog.themes.find((theme) => theme.themeId === selectedThemeId),
@@ -632,9 +635,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const addEvent = useCallback(
     (event: Omit<ControlCenterEvent, "id" | "at"> & { at?: string }) => {
+      eventIdRef.current += 1;
+      const id = String(eventIdRef.current);
       setEvents((current) =>
         recentEventsWith(current, {
-          id: `${Date.now()}-${current.length}`,
+          id,
           at: event.at || formatTime(),
           ...event,
         }),
