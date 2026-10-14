@@ -1035,9 +1035,6 @@ func New(opts Options) (*Server, error) {
 	if permissionsErr := runtimeconfig.RestrictPermissions(home); permissionsErr != nil {
 		return nil, fmt.Errorf("restrict runtime config permissions: %w", permissionsErr)
 	}
-	if _, recoverErr := runtimeconfig.RecoverPendingDeviceSelection(home); recoverErr != nil {
-		return nil, fmt.Errorf("recover pending device selection: %w", recoverErr)
-	}
 	client := opts.HTTPClient
 	if client == nil {
 		client = &http.Client{Timeout: deviceTimeout}
@@ -8989,10 +8986,6 @@ func (s *Server) captureDisplayRenderBaseline(ctx context.Context, target, token
 	return s.getHealthProbe(ctx, target, "", deviceHealthProbeTime)
 }
 
-func (s *Server) waitForDisplayRender(ctx context.Context, target, token string, baseline deviceHealth) (deviceHealth, error) {
-	return s.waitForDisplayRenderWithStream(ctx, target, token, baseline, displayStreamInfo{})
-}
-
 func (s *Server) waitForDisplayRenderWithStream(
 	ctx context.Context,
 	target string,
@@ -10052,14 +10045,6 @@ func streamPointer(stream displayStreamInfo) *displayStreamInfo {
 	return &stream
 }
 
-func inspectDisplayStream(ctx context.Context, target string) displayStreamInfo {
-	return inspectDisplayStreamAfter(ctx, target, time.Time{})
-}
-
-func inspectDisplayStreamAfter(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
-	return inspectDisplayStreamAfterRunning(ctx, target, notBefore, nil)
-}
-
 func inspectDisplayStreamAfterRunning(ctx context.Context, target string, notBefore time.Time, running func() bool) displayStreamInfo {
 	target = publicTarget(target)
 	stream := displayStreamInfo{Target: target}
@@ -10312,19 +10297,6 @@ func lastDisplayStreamFrameLineAfter(path string, boundary time.Time) (time.Time
 		}
 	}
 	return time.Time{}, "", "", false
-}
-
-func lastDisplayStreamError(path string) (time.Time, string, bool) {
-	boundary, ok := displayStreamLogBoundary(path)
-	if !ok {
-		return time.Time{}, "", false
-	}
-	return lastDisplayStreamErrorAfter(path, boundary)
-}
-
-func lastDisplayStreamErrorAfter(path string, boundary time.Time) (time.Time, string, bool) {
-	when, detail, _, ok := lastDisplayStreamErrorRecordAfter(path, boundary)
-	return when, detail, ok
 }
 
 func lastDisplayStreamErrorRecordAfter(path string, boundary time.Time) (time.Time, string, string, bool) {

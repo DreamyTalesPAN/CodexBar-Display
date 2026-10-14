@@ -872,30 +872,6 @@ func flashFirmware(ctx context.Context, d deps, executablePath, port, firmwareEn
 	return nil
 }
 
-func firmwareProjectDirForEnvironment(repoRoot, firmwareEnv string) string {
-	if target, ok := lookupFirmwareTarget(firmwareEnv); ok {
-		targetDir := filepath.Join(repoRoot, target.ProjectDir)
-		if fileExists(filepath.Join(targetDir, "platformio.ini")) {
-			return targetDir
-		}
-	}
-
-	env := strings.TrimSpace(strings.ToLower(firmwareEnv))
-	switch {
-	case strings.HasPrefix(env, "esp8266_"):
-		esp8266Dir := filepath.Join(repoRoot, "firmware_esp8266")
-		if fileExists(filepath.Join(esp8266Dir, "platformio.ini")) {
-			return esp8266Dir
-		}
-	case strings.HasPrefix(env, "lilygo_"), strings.HasPrefix(env, "esp32_"):
-		esp32Dir := filepath.Join(repoRoot, "firmware_esp32")
-		if fileExists(filepath.Join(esp32Dir, "platformio.ini")) {
-			return esp32Dir
-		}
-	}
-	return filepath.Join(repoRoot, "firmware_esp32")
-}
-
 func flashRecoveryHint(output, port string, uid int) string {
 	lower := strings.ToLower(output)
 	if strings.Contains(lower, "failed to connect") || strings.Contains(lower, "could not open") || strings.Contains(lower, "resource busy") {

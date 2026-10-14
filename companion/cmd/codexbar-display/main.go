@@ -372,11 +372,6 @@ type daemonCommandOptions struct {
 	RuntimeLabel   string
 }
 
-func parseDaemonOptions(args []string) (daemon.Options, error) {
-	opts, err := parseDaemonCommandOptions(args)
-	return opts.Daemon, err
-}
-
 // pinFirmwareManifestToAppRelease points a customer install (Mac App or
 // Windows app) at the firmware manifest of its own release instead of the
 // latest one. App and firmware of a release belong together, so an app only

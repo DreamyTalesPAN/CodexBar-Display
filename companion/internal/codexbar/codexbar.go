@@ -787,17 +787,6 @@ func parseAllProviders(raw []byte) ([]ParsedFrame, error) {
 	return result, nil
 }
 
-func parseUsageJSON(raw []byte) (ParsedFrame, error) {
-	all, err := parseAllProviders(raw)
-	if err != nil {
-		return ParsedFrame{}, err
-	}
-	if len(all) == 0 {
-		return ParsedFrame{}, ErrNoProviders
-	}
-	return all[0], nil
-}
-
 func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 	if providerPayloadHasError(payload) {
 		provider := strings.TrimSpace(strings.ToLower(firstString(payload, "provider", "id", "slug", "name")))

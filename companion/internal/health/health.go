@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 
@@ -290,23 +289,6 @@ func plistStringValues(data []byte) []string {
 		values = append(values, value)
 	}
 	return values
-}
-
-func parseLaunchctlStatus(output string) (state, pid string) {
-	lines := strings.Split(output, "\n")
-	for _, raw := range lines {
-		line := strings.TrimSpace(raw)
-		if strings.HasPrefix(line, "state =") {
-			state = strings.TrimSpace(strings.TrimPrefix(line, "state ="))
-		}
-		if strings.HasPrefix(line, "pid =") {
-			pid = strings.TrimSpace(strings.TrimPrefix(line, "pid ="))
-			if _, err := strconv.Atoi(pid); err != nil {
-				pid = ""
-			}
-		}
-	}
-	return state, pid
 }
 
 func findLastSentFrameEvent(path string, readFile func(string) ([]byte, error)) logEvent {

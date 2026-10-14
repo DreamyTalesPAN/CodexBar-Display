@@ -1295,11 +1295,6 @@ type ResolvedSource struct {
 	Bytes  int64
 }
 
-func ResolveSource(packPath, catalogRef, themeID string) (string, error) {
-	resolved, err := resolveSource(packPath, catalogRef, themeID, "", 0)
-	return resolved.Path, err
-}
-
 func resolveSource(packPath, catalogRef, themeID, packSHA256 string, packSizeBytes int64) (ResolvedSource, error) {
 	if packPath != "" {
 		if catalogRef != "" {
