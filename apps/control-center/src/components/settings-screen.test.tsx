@@ -124,6 +124,12 @@ function render(
   );
 }
 
+describe("Provider settings", () => {
+  it("explains the included usage service in the shared provider list", () => {
+    expect(render(standbyDevice)).toContain("VibeTV reads your AI usage with CodexBar, a helper app installed with VibeTV.");
+  });
+});
+
 // Issues #438/#460: the Windows app must not speak of "this Mac". The Mac
 // wording is pinned by the tests below and must not change at all.
 describe("SettingsScreen on Windows", () => {
