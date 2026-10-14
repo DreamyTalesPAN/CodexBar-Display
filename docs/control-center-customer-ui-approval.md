@@ -7199,3 +7199,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. No new wording or control. On Overview the shadow to the right of the VibeTV photo fades out over its last 57 pixels instead of ending in a vertical line. The VibeTV itself, its size and its place are unchanged; only the transparency of the shadow at the right border of the picture file changed.
 - Scope: `public/images/vibetv-device-overview-cutout.png` and this approval record. Night-shift branch only, not merge or release.
 - What's new: none — a correction, nothing new to announce
+
+## 2026-10-13 — Night shift: test only: the Help menu focus test waits for the focus to move (#214)
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-13/14; wording not yet seen by him. The test added for the review finding on #603 failed once in CI on a slow runner: it read the focus right after the used entry was gone, before the effect that moves the focus had run.
+- Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. No visible change. Only the unit test waits for the focus as it already waited for the entry to go.
+- Scope: `setup/setup-help-menu-log.test.tsx` and this approval record. Night-shift branch only, not merge or release.
+- What's new: none — a correction, nothing new to announce
