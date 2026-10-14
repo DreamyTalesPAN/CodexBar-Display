@@ -96,6 +96,7 @@ import {
 } from "./live-vibetv-preview";
 import { ThemeRenderPreview } from "./theme-render-preview";
 import { ReplaceDraftDialog } from "./theme-studio/replace-draft-dialog";
+import { clampProgress } from "./update-jobs";
 import { SetupStepFailedDialog } from "./setup/setup-provider-dialogs";
 import type { ApiError, StandbySettings } from "./control-center-types";
 import {
@@ -1332,7 +1333,7 @@ function InlineInstallProgress({
   const title = complete ? "Installed" : "Installing";
   return (
     <div className="flex flex-col gap-3" ref={noticeRef} role="status" aria-live="polite">
-      <Progress aria-label={title} className={complete ? "" : "animate-pulse"} value={clampInstallProgress(complete ? 100 : status.progress)} />
+      <Progress aria-label={title} className={complete ? "" : "animate-pulse"} value={clampProgress(complete ? 100 : status.progress)} />
       <Alert>
         {complete ? <ShieldCheck aria-hidden /> : <Spinner />}
         <AlertTitle>{title}</AlertTitle>
@@ -1347,13 +1348,6 @@ function InlineInstallProgress({
       </Alert>
     </div>
   );
-}
-
-function clampInstallProgress(value: number | undefined): number {
-  if (typeof value !== "number" || Number.isNaN(value)) {
-    return 5;
-  }
-  return Math.max(5, Math.min(100, Math.round(value)));
 }
 
 function labelForInstallButton({
