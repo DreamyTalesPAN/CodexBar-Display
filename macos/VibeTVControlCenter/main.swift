@@ -497,6 +497,8 @@ func browserSignInProviderReady(usage data: Data, provider: String) -> Bool {
     return entry["stale"] as? Bool != true && entry["usageUnavailable"] as? Bool != true
 }
 
+// The published endpoint can be stale and point at another listener, so one
+// origin answering "not ready" does not settle it; any ready origin does.
 func browserSignInProviderIsReady(provider: String, runtimeOrigins: [URL]) async -> Bool {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.timeoutIntervalForRequest = runtimeHealthRequestTimeout
@@ -508,7 +510,9 @@ func browserSignInProviderIsReady(provider: String, runtimeOrigins: [URL]) async
         ), (response as? HTTPURLResponse)?.statusCode == 200 else {
             continue
         }
-        return browserSignInProviderReady(usage: data, provider: provider)
+        if browserSignInProviderReady(usage: data, provider: provider) {
+            return true
+        }
     }
     return false
 }
