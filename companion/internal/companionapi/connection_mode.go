@@ -80,14 +80,7 @@ func (s *Server) handleDeviceFactoryReset(w http.ResponseWriter, r *http.Request
 	if s.rejectBusyDevice(w, "Wait for the update to finish, then try again.") {
 		return
 	}
-	s.deviceMaintenanceMu.Lock()
-	defer s.deviceMaintenanceMu.Unlock()
-	s.repairMu.Lock()
-	defer s.repairMu.Unlock()
-	if s.pauseDisplayStream != nil {
-		s.pauseDisplayStream(true)
-		defer s.pauseDisplayStream(false)
-	}
+	defer s.holdDeviceForMaintenance()()
 	cfg, err := s.config()
 	if err != nil {
 		writeInternalError(w, err)
@@ -169,14 +162,7 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 // holds firmwareUpdateStartMu. It writes every response itself except the one
 // for a selected Cable, whose device it returns.
 func (s *Server) selectConnectionMode(w http.ResponseWriter, r *http.Request, mode, requestedDeviceID string) (cable *deviceInfo) {
-	s.deviceMaintenanceMu.Lock()
-	defer s.deviceMaintenanceMu.Unlock()
-	s.repairMu.Lock()
-	defer s.repairMu.Unlock()
-	if s.pauseDisplayStream != nil {
-		s.pauseDisplayStream(true)
-		defer s.pauseDisplayStream(false)
-	}
+	defer s.holdDeviceForMaintenance()()
 	cfg, err := s.config()
 	if err != nil {
 		writeInternalError(w, err)
@@ -568,14 +554,7 @@ func (s *Server) handleSetupWiFi(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.deviceMaintenanceMu.Lock()
-	defer s.deviceMaintenanceMu.Unlock()
-	s.repairMu.Lock()
-	defer s.repairMu.Unlock()
-	if s.pauseDisplayStream != nil {
-		s.pauseDisplayStream(true)
-		defer s.pauseDisplayStream(false)
-	}
+	defer s.holdDeviceForMaintenance()()
 	cfg, err := s.config()
 	if err != nil {
 		writeInternalError(w, err)
@@ -669,14 +648,7 @@ func (s *Server) handleSetupWiFiNetworks(w http.ResponseWriter, r *http.Request)
 	if s.rejectBusyDevice(w, "Wait for the update to finish, then scan again.") {
 		return
 	}
-	s.deviceMaintenanceMu.Lock()
-	defer s.deviceMaintenanceMu.Unlock()
-	s.repairMu.Lock()
-	defer s.repairMu.Unlock()
-	if s.pauseDisplayStream != nil {
-		s.pauseDisplayStream(true)
-		defer s.pauseDisplayStream(false)
-	}
+	defer s.holdDeviceForMaintenance()()
 	cfg, err := s.config()
 	if err != nil {
 		writeInternalError(w, err)

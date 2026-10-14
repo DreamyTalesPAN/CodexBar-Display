@@ -230,6 +230,24 @@ func (s *Server) repairDeviceOnce(
 	return s.repairDeviceOnceLocked(ctx, requestedTarget, expectedDeviceID, forcePair)
 }
 
+// holdDeviceForMaintenance takes VibeTV for a maintenance step: no other
+// maintenance or repair runs and the display stream pauses until the returned
+// release runs.
+func (s *Server) holdDeviceForMaintenance() (release func()) {
+	s.deviceMaintenanceMu.Lock()
+	s.repairMu.Lock()
+	if s.pauseDisplayStream != nil {
+		s.pauseDisplayStream(true)
+	}
+	return func() {
+		if s.pauseDisplayStream != nil {
+			s.pauseDisplayStream(false)
+		}
+		s.repairMu.Unlock()
+		s.deviceMaintenanceMu.Unlock()
+	}
+}
+
 func (s *Server) repairDeviceOnceLocked(
 	ctx context.Context,
 	requestedTarget string,
