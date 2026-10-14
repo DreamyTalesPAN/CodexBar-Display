@@ -75,6 +75,9 @@ struct Shell {
     // Whether Windows gave us Ctrl+Alt+Shift+P; a window created again after
     // a close needs it for its user agent.
     provider_shortcut: AtomicBool,
+    // The presentation count at which hide_after_flush released the window;
+    // 0 when no release is under way.
+    released_at: AtomicU64,
 }
 
 // Who holds the updater, in one lock so a click or an opened window can
@@ -198,6 +201,7 @@ fn main() {
             presentations: AtomicU64::new(0),
             updater: Mutex::new(Updater::Free),
             provider_shortcut: AtomicBool::new(false),
+            released_at: AtomicU64::new(0),
         })
         .setup(|app| {
             let handle = app.handle().clone();
@@ -381,11 +385,25 @@ fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tau
         })
         .build()?;
     let handle = app.clone();
-    window.on_window_event(move |event| {
-        if let WindowEvent::CloseRequested { api, .. } = event {
+    window.on_window_event(move |event| match event {
+        WindowEvent::CloseRequested { api, .. } => {
             api.prevent_close();
             hide_after_flush(&handle);
         }
+        // A present that came between hide_after_flush's check and the
+        // destroy showed the old window just before it went away: create it
+        // again. Only our own release sets `released_at`; quitting does not.
+        WindowEvent::Destroyed => {
+            let shell = handle.state::<Shell>();
+            let released_at = shell.released_at.swap(0, Ordering::SeqCst);
+            if released_at != 0 && shell.presentations.load(Ordering::SeqCst) != released_at {
+                let handle = handle.clone();
+                std::thread::spawn(move || {
+                    prepare_and_load(handle);
+                });
+            }
+        }
+        _ => {}
     });
     Ok(())
 }
@@ -428,13 +446,17 @@ fn present_window(app: &AppHandle) {
 
 // Creates the window again when a close released it. Never call this on the
 // event-loop thread (see present_window).
-fn ensure_window(app: &AppHandle) {
+fn ensure_window(app: &AppHandle) -> bool {
     if app.get_webview_window(WINDOW_LABEL).is_some() {
-        return;
+        return true;
     }
     let provider_shortcut = app.state::<Shell>().provider_shortcut.load(Ordering::SeqCst);
-    if let Err(error) = create_window(app, provider_shortcut, true) {
-        log(&format!("could not create the window again: {error}"));
+    match create_window(app, provider_shortcut, true) {
+        Ok(()) => true,
+        Err(error) => {
+            log(&format!("could not create the window again: {error}"));
+            false
+        }
     }
 }
 
@@ -545,7 +567,9 @@ fn hide_after_flush(app: &AppHandle) {
     std::thread::spawn(move || {
         std::thread::sleep(WINDOW_CLOSE_FLUSH_DELAY);
         // Reopened from the tray or a second launch meanwhile: keep it open.
-        if handle.state::<Shell>().presentations.load(Ordering::SeqCst) == presented {
+        let shell = handle.state::<Shell>();
+        if shell.presentations.load(Ordering::SeqCst) == presented {
+            shell.released_at.store(presented.max(1), Ordering::SeqCst);
             let _ = window.destroy();
         }
     });
@@ -807,9 +831,10 @@ fn prepare_and_load(app: AppHandle) -> bool {
 // the app then loads in the tray, where the customer left it.
 fn load(app: AppHandle, present: bool) -> bool {
     // Before the preparing check: present_window below must find a window,
-    // or it would hand the load to yet another thread.
-    if present {
-        ensure_window(&app);
+    // or it would hand the load to yet another thread. Without one (WebView2
+    // failed to start) this attempt ends here; the next click tries again.
+    if present && !ensure_window(&app) {
+        return false;
     }
     let shell = app.state::<Shell>();
     {
