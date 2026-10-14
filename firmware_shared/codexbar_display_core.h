@@ -958,6 +958,9 @@ inline bool ExtractJsonObjectRaw(const char* json, const char* key, String& out)
     } else if (c == '}') {
       --depth;
       if (depth == 0) {
+        // One allocation: appending char by char regrows the String in small
+        // steps, a hundred reallocations for a 2 KB spec on every frame.
+        out.reserve(static_cast<unsigned int>(cursor - start + 1));
         for (const char* p = start; p <= cursor; ++p) {
           out += *p;
         }
