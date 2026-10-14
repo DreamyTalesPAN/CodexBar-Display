@@ -95,7 +95,7 @@ import {
 } from "./device-recovery-gate";
 import { useCompanionRelease } from "./companion-installer-actions";
 import { LogsScreen } from "./logs-screen";
-import { useLatestDisplayFrame } from "./live-vibetv-preview";
+import { WithLatestDisplayFrame } from "./live-vibetv-preview";
 import { OverviewScreen } from "./overview-screen";
 import {
   PROVIDER_RECONCILE_WINDOW_MS,
@@ -4594,7 +4594,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         hasActiveDevice &&
         device?.paired !== false),
   );
-  const displayFrame = useLatestDisplayFrame(displaySessionActive);
   const startupDeviceCandidates =
     deviceCandidates.length > 0
       ? deviceCandidates
@@ -5435,135 +5434,139 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
     if (setupOwnsScreen) {
       return (
-        <SetupWizard
-          initialWiFiSetup={settingsWiFiSetup}
-          onConnectionComplete={finishConnectionChange}
-          aiFixPrompt={setupAiFixPrompt}
-          usageFailure={usageFailureHidden ? null : usageFailure}
-          onRepairUsageService={retryUsageService}
-          onDismissUsageFailure={() => setUsageFailureHidden(true)}
-          automaticPreviews={setupPreviews}
-          connectSteps={setupConnectSteps}
-          connectionMode={connectionMode}
-          connectionModeChoiceRequired={connectionModeChoiceRequired}
-          activeDeviceId={deviceRecoveryGateRef.current.preferredDeviceId}
-          device={device}
-          deviceCandidates={startupDeviceCandidates}
-          deviceSearchState={startupDeviceSearchState}
-          displayFrame={displayFrame}
-          displayMode={providerDisplay?.mode ?? "automatic"}
-          displayProviderId={providerDisplay?.providerIds?.[0] ?? null}
-          firmwareProgress={firmwareUpdateStatus?.progress}
-          firmwareWrittenPercent={
-            firmwareUpdateInProgress
-              ? firmwareWrittenPercent(firmwareUpdateStatus.logs)
-              : undefined
-          }
-          firmwareInstallLogs={
-            firmwareUpdateInProgress
-              ? firmwareUpdateStatus.logs.map((line) =>
-                  copyForHost(line, windowsHost),
+        <WithLatestDisplayFrame active={displaySessionActive}>
+          {(displayFrame) => (
+            <SetupWizard
+              initialWiFiSetup={settingsWiFiSetup}
+              onConnectionComplete={finishConnectionChange}
+              aiFixPrompt={setupAiFixPrompt}
+              usageFailure={usageFailureHidden ? null : usageFailure}
+              onRepairUsageService={retryUsageService}
+              onDismissUsageFailure={() => setUsageFailureHidden(true)}
+              automaticPreviews={setupPreviews}
+              connectSteps={setupConnectSteps}
+              connectionMode={connectionMode}
+              connectionModeChoiceRequired={connectionModeChoiceRequired}
+              activeDeviceId={deviceRecoveryGateRef.current.preferredDeviceId}
+              device={device}
+              deviceCandidates={startupDeviceCandidates}
+              deviceSearchState={startupDeviceSearchState}
+              displayFrame={displayFrame}
+              displayMode={providerDisplay?.mode ?? "automatic"}
+              displayProviderId={providerDisplay?.providerIds?.[0] ?? null}
+              firmwareProgress={firmwareUpdateStatus?.progress}
+              firmwareWrittenPercent={
+                firmwareUpdateInProgress
+                  ? firmwareWrittenPercent(firmwareUpdateStatus.logs)
+                  : undefined
+              }
+              firmwareInstallLogs={
+                firmwareUpdateInProgress
+                  ? firmwareUpdateStatus.logs.map((line) =>
+                      copyForHost(line, windowsHost),
+                    )
+                  : undefined
+              }
+              displayProviders={displayableProviders.map((item) => ({
+                id: item.providerId,
+                label: item.label,
+              }))}
+              installingTheme={themeInstallStatus?.phase === "installing"}
+              themeError={errorForHost(setupThemeError, windowsHost)}
+              themeErrorDismissible={themeInstallStatus?.phase === "error"}
+              onDismissThemeError={() => {
+                if (themeInstallStatus?.phase === "error") {
+                  setThemeInstallStatus(null);
+                }
+              }}
+              onRetryTheme={() => {
+                if (themeInstallStatus?.phase === "error") {
+                  void installTheme();
+                  return;
+                }
+                window.location.reload();
+              }}
+              themeRetryLabel={
+                setupThemeError?.code === "theme_catalog_unavailable"
+                  ? "Reload catalog"
+                  : undefined
+              }
+              onFindManualTarget={findManualTarget}
+              onConfigureWiFi={configureSetupWiFi}
+              onCreateSupportReport={loadSupportDiagnostics}
+              onFinished={finishSetup}
+              onDisplayContinue={(selection) =>
+                updateProviderDisplay(
+                  selection.mode === "automatic"
+                    ? { ...selection, providerIds: enabledProviderIds }
+                    : selection,
+                  selection.mode === "automatic"
+                    ? enabledProviderIds[0] ?? ""
+                    : selection.providerIds[0] ?? "",
+                  true,
                 )
-              : undefined
-          }
-          displayProviders={displayableProviders.map((item) => ({
-            id: item.providerId,
-            label: item.label,
-          }))}
-          installingTheme={themeInstallStatus?.phase === "installing"}
-          themeError={errorForHost(setupThemeError, windowsHost)}
-          themeErrorDismissible={themeInstallStatus?.phase === "error"}
-          onDismissThemeError={() => {
-            if (themeInstallStatus?.phase === "error") {
-              setThemeInstallStatus(null);
-            }
-          }}
-          onRetryTheme={() => {
-            if (themeInstallStatus?.phase === "error") {
-              void installTheme();
-              return;
-            }
-            window.location.reload();
-          }}
-          themeRetryLabel={
-            setupThemeError?.code === "theme_catalog_unavailable"
-              ? "Reload catalog"
-              : undefined
-          }
-          onFindManualTarget={findManualTarget}
-          onConfigureWiFi={configureSetupWiFi}
-          onCreateSupportReport={loadSupportDiagnostics}
-          onFinished={finishSetup}
-          onDisplayContinue={(selection) =>
-            updateProviderDisplay(
-              selection.mode === "automatic"
-                ? { ...selection, providerIds: enabledProviderIds }
-                : selection,
-              selection.mode === "automatic"
-                ? enabledProviderIds[0] ?? ""
-                : selection.providerIds[0] ?? "",
-              true,
-            )
-          }
-          onReturnToThemes={() => {
-            setSetupThemeChoiceRequired(true);
-            setSetupThemeInstallRequested(false);
-          }}
-          onInstallTheme={() => {
-            setSetupThemeInstallRequested(true);
-            void installTheme();
-          }}
-          onProviderCheck={(provider) => void checkProvider(provider)}
-          onProviderOpenSignIn={
-            providerSignInEnabled
-              ? (provider) => void openProviderSignIn(provider)
-              : undefined
-          }
-          onProviderOpenSetupGuide={
-            providerSignInEnabled
-              ? () => void openProviderSetupGuide()
-              : undefined
-          }
-          onProviderToggle={(provider, enabled) =>
-            void updateProviderPreference(provider, enabled)
-          }
-          onProvidersContinue={completeProviderSetup}
-          pendingCheckIds={pendingProviderCheckIds}
-          pendingPreferenceIds={pendingPreferenceIds}
-          providersLoading={providersLoading}
-          onDismissProviderError={() => {
-            setProviderDisplayError(null);
-            setProviderPreferencesError(null);
-          }}
-          onRetryProviders={() => {
-            void refreshProviderPreferences();
-            void refreshProviderDisplay();
-          }}
-          searchError={
-            startupDeviceSearchState === "failed" && !needsRuntimeRecovery
-              ? errorForHost(lastError, windowsHost)
-              : null
-          }
-          providerError={errorForHost(
-            providerDisplayError || providerPreferencesError,
-            windowsHost,
+              }
+              onReturnToThemes={() => {
+                setSetupThemeChoiceRequired(true);
+                setSetupThemeInstallRequested(false);
+              }}
+              onInstallTheme={() => {
+                setSetupThemeInstallRequested(true);
+                void installTheme();
+              }}
+              onProviderCheck={(provider) => void checkProvider(provider)}
+              onProviderOpenSignIn={
+                providerSignInEnabled
+                  ? (provider) => void openProviderSignIn(provider)
+                  : undefined
+              }
+              onProviderOpenSetupGuide={
+                providerSignInEnabled
+                  ? () => void openProviderSetupGuide()
+                  : undefined
+              }
+              onProviderToggle={(provider, enabled) =>
+                void updateProviderPreference(provider, enabled)
+              }
+              onProvidersContinue={completeProviderSetup}
+              pendingCheckIds={pendingProviderCheckIds}
+              pendingPreferenceIds={pendingPreferenceIds}
+              providersLoading={providersLoading}
+              onDismissProviderError={() => {
+                setProviderDisplayError(null);
+                setProviderPreferencesError(null);
+              }}
+              onRetryProviders={() => {
+                void refreshProviderPreferences();
+                void refreshProviderDisplay();
+              }}
+              searchError={
+                startupDeviceSearchState === "failed" && !needsRuntimeRecovery
+                  ? errorForHost(lastError, windowsHost)
+                  : null
+              }
+              providerError={errorForHost(
+                providerDisplayError || providerPreferencesError,
+                windowsHost,
+              )}
+              onSearchDevices={() => void searchAndConnect()}
+              onScanWiFiNetworks={scanSetupWiFiNetworks}
+              onSelectConnectionMode={selectSetupConnectionMode}
+              displaySavePending={pendingProviderDisplayId !== null}
+              onSelectTheme={(theme) => setSelectedThemeId(theme.id)}
+              providers={setupProviders}
+              selectedThemeId={selectedThemeId}
+              step={settingsWiFiSetup ? "device" : setupStep}
+              themeInstallLogs={(themeInstallStatus?.logs || []).map((line) =>
+                copyForHost(line, windowsHost),
+              )}
+              themes={setupThemes}
+              usage={usage}
+              welcomeLines={setupWelcomeLines}
+              windowsHost={windowsHost}
+            />
           )}
-          onSearchDevices={() => void searchAndConnect()}
-          onScanWiFiNetworks={scanSetupWiFiNetworks}
-          onSelectConnectionMode={selectSetupConnectionMode}
-          displaySavePending={pendingProviderDisplayId !== null}
-          onSelectTheme={(theme) => setSelectedThemeId(theme.id)}
-          providers={setupProviders}
-          selectedThemeId={selectedThemeId}
-          step={settingsWiFiSetup ? "device" : setupStep}
-          themeInstallLogs={(themeInstallStatus?.logs || []).map((line) =>
-            copyForHost(line, windowsHost),
-          )}
-          themes={setupThemes}
-          usage={usage}
-          welcomeLines={setupWelcomeLines}
-          windowsHost={windowsHost}
-        />
+        </WithLatestDisplayFrame>
       );
     }
 
@@ -5583,15 +5586,19 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         }}
       >
         {activeShellTab === "overview" ? (
-          <OverviewScreen
-            companionVersion={companionInfo?.version}
-            companionStatus={companionStatus}
-            device={device}
-            displayFrame={displayFrame}
-            firmwareUpdateStatus={firmwareUpdateStatus}
-            usage={usage}
-            windowsHost={windowsHost}
-          />
+          <WithLatestDisplayFrame active={displaySessionActive}>
+            {(displayFrame) => (
+              <OverviewScreen
+                companionVersion={companionInfo?.version}
+                companionStatus={companionStatus}
+                device={device}
+                displayFrame={displayFrame}
+                firmwareUpdateStatus={firmwareUpdateStatus}
+                usage={usage}
+                windowsHost={windowsHost}
+              />
+            )}
+          </WithLatestDisplayFrame>
         ) : null}
 
         {activeShellTab === "usage" ? (

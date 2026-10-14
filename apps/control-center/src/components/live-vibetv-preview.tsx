@@ -284,24 +284,47 @@ type SpriteRect = {
   color: string;
 };
 
+// The last frame seen, so a screen that mounts again (tab switch) starts with
+// it instead of an empty preview until the next poll answers.
+let lastDisplayFrame: DisplayFrameSnapshot | null = null;
+
+const DISPLAY_FRAME_POLL_MS = 1000;
+const DISPLAY_FRAME_TIMEOUT_MS = 5000;
+
+/**
+ * Polls the frame VibeTV shows, once a second while connected. Call it only in
+ * the screens that draw the preview: every answer re-renders the caller.
+ * One request at a time, each bounded; paused while the window is hidden.
+ */
 export function useLatestDisplayFrame(connected: boolean) {
   const [displayFrame, setDisplayFrame] = useState<DisplayFrameSnapshot | null>(
-    null,
+    () => (connected ? lastDisplayFrame : null),
   );
 
   useEffect(() => {
     if (!connected) {
+      lastDisplayFrame = null;
       const timer = window.setTimeout(() => setDisplayFrame(null), 0);
       return () => window.clearTimeout(timer);
     }
 
-    const controller = new AbortController();
+    let stopped = false;
+    let request: AbortController | null = null;
 
     const refreshDisplayFrame = async () => {
+      if (request || document.hidden) {
+        return;
+      }
+      const current = new AbortController();
+      request = current;
+      const timeout = window.setTimeout(
+        () => current.abort(),
+        DISPLAY_FRAME_TIMEOUT_MS,
+      );
       try {
         const requestInit: LocalDisplayFrameRequestInit = {
           cache: "no-store",
-          signal: controller.signal,
+          signal: current.signal,
         };
         const url = companionRequestUrl("/v1/display-frame/latest");
         if (needsLoopbackTargetAddressSpace(url)) {
@@ -309,28 +332,48 @@ export function useLatestDisplayFrame(connected: boolean) {
         }
         const response = await fetch(url, requestInit);
         const nextFrame = await parseLatestDisplayFrameResponse(response);
-        if (!nextFrame) {
-          setDisplayFrame(null);
-          return;
+        if (!stopped) {
+          lastDisplayFrame = nextFrame;
+          setDisplayFrame(nextFrame);
         }
-        setDisplayFrame(nextFrame);
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") {
-          return;
-        }
+      } catch {
+        // A failed or timed-out poll keeps the last frame; the next tick retries.
+      } finally {
+        window.clearTimeout(timeout);
+        request = null;
+      }
+    };
+
+    const refreshWhenVisible = () => {
+      if (!document.hidden) {
+        void refreshDisplayFrame();
       }
     };
 
     void refreshDisplayFrame();
-    const timer = window.setInterval(refreshDisplayFrame, 1000);
+    const timer = window.setInterval(refreshDisplayFrame, DISPLAY_FRAME_POLL_MS);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
 
     return () => {
-      controller.abort();
+      stopped = true;
+      request?.abort();
       window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
   }, [connected]);
 
   return displayFrame;
+}
+
+/** Renders `children` with the latest frame; only this subtree re-renders per poll. */
+export function WithLatestDisplayFrame({
+  active,
+  children,
+}: {
+  active: boolean;
+  children: (displayFrame: DisplayFrameSnapshot | null) => ReactNode;
+}) {
+  return children(useLatestDisplayFrame(active));
 }
 
 export async function parseLatestDisplayFrameResponse(
