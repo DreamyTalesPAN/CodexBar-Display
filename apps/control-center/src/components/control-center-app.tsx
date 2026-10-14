@@ -5434,6 +5434,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           onCreateSupportReport={loadSupportDiagnostics}
           platform={customerPlatform}
           release={companionRelease}
+          theme={initialTheme}
         />
       );
     }
