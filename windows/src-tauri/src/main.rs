@@ -75,8 +75,8 @@ struct Shell {
     // Whether Windows gave us Ctrl+Alt+Shift+P; a window created again after
     // a close needs it for its user agent.
     provider_shortcut: AtomicBool,
-    // The presentation count at which hide_after_flush released the window;
-    // 0 when no release is under way.
+    // The presentation count + 1 at which hide_after_flush released the
+    // window; 0 when no release is under way.
     released_at: AtomicU64,
 }
 
@@ -396,9 +396,18 @@ fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tau
         WindowEvent::Destroyed => {
             let shell = handle.state::<Shell>();
             let released_at = shell.released_at.swap(0, Ordering::SeqCst);
-            if released_at != 0 && shell.presentations.load(Ordering::SeqCst) != released_at {
+            if released_at != 0 && shell.presentations.load(Ordering::SeqCst) + 1 != released_at {
                 let handle = handle.clone();
                 std::thread::spawn(move || {
+                    // Tauri drops the label only after the Destroyed
+                    // listeners ran; until then ensure_window would find the
+                    // dying window and create nothing.
+                    for _ in 0..40 {
+                        if handle.get_webview_window(WINDOW_LABEL).is_none() {
+                            break;
+                        }
+                        std::thread::sleep(Duration::from_millis(25));
+                    }
                     prepare_and_load(handle);
                 });
             }
@@ -569,7 +578,9 @@ fn hide_after_flush(app: &AppHandle) {
         // Reopened from the tray or a second launch meanwhile: keep it open.
         let shell = handle.state::<Shell>();
         if shell.presentations.load(Ordering::SeqCst) == presented {
-            shell.released_at.store(presented.max(1), Ordering::SeqCst);
+            // Stored as count + 1, so a release before the first present
+            // (count 0) is still told apart from "no release".
+            shell.released_at.store(presented + 1, Ordering::SeqCst);
             let _ = window.destroy();
         }
     });
