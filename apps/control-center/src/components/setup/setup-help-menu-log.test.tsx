@@ -140,7 +140,9 @@ describe("SetupHelpMenu keyboard", () => {
     fireEvent.click(ask);
     await waitFor(() =>
       expect(screen.queryByRole("menuitem", { name: "Ask AI to fix" })).toBeNull());
-    expect(document.activeElement).toBe(create);
+    // The focus moves in an effect after that render; on a slow runner the
+    // removal is seen first.
+    await waitFor(() => expect(document.activeElement).toBe(create));
   });
 
   it("closes on Escape and gives focus back to Help", () => {
