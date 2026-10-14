@@ -604,8 +604,8 @@ type firstCollectSnapshot struct {
 	// settled: CodexBar has answered -- usage arrived or it enumerated zero
 	// providers. Before that the collector knows nothing about this Mac.
 	settled bool
-	// started: one collectOnce actually reached its fetch. The device gate can
-	// hold this off long after runtime start.
+	// started: one collectOnce actually reached its fetch. The read does not
+	// wait for a device, so nothing device-related holds this off.
 	started bool
 	// bounded: a warm-up window exists at all. `daemon --once` runs without
 	// one and reports the immediate verdict.
