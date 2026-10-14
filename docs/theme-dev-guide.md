@@ -59,7 +59,7 @@ display name at runtime, never a name painted into an asset.
 | Working | Codex is working | Existing working animation or a dedicated active pose/prop. |
 | Needs you | Codex needs you | A clear attention gesture or small attention prop. |
 | Finished | Codex is done | A relaxed pose or clear success cue. |
-| Error | Codex hit an error | A readable error pose or restrained glitch. |
+| Error | Codex failed | A readable error pose or restrained glitch. |
 | Nothing running | Nothing running | Existing Idle animation; no announcement flash. |
 
 ### Prefer Dedicated Animation; Share the Fallback

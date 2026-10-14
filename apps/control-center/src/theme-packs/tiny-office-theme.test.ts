@@ -34,7 +34,7 @@ describe("Tiny Office theme pack", () => {
     const parsed = importThemeSpec(JSON.parse(rawSpec));
     const validation = validateThemeSpec(parsed, pack.assets || {}, "live");
     expect(validation.errors).toEqual([]);
-    expect(primitives).toHaveLength(17);
+    expect(primitives).toHaveLength(18);
     expect(Buffer.byteLength(rawSpec)).toBeLessThan(4096);
     let animated = 0;
     for (const asset of Object.values(pack.assets || {})) {
@@ -56,11 +56,12 @@ describe("Tiny Office theme pack", () => {
       expect(Number(lines[2])).toBeLessThanOrEqual(26);
     }
     expect(animated).toBeGreaterThan(2);
-    // Six tiled sprites share one 80x54 buffer, with at most six active cursors.
+    // Six tiled sprites share one 80x46 buffer, with at most six active cursors.
+    // The scene is 240x92 below the 32 px status strip (2026-10-14).
     for (const state of ["idle", "coding", "needs_you", "done", "error"]) {
       const tiles = primitives.filter(p => p.sa?.[state]);
       expect(tiles).toHaveLength(6);
-      expect(tiles.reduce((area, p) => area + (p.w ?? 0) * (p.h ?? 0), 0)).toBe(240 * 108);
+      expect(tiles.reduce((area, p) => area + (p.w ?? 0) * (p.h ?? 0), 0)).toBe(240 * 92);
     }
   });
 

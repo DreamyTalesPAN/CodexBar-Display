@@ -25,7 +25,7 @@ const phaseLabels: Record<string, string> = {
   waiting_for_answer: "Waiting for you",
   waiting_for_review: "Waiting for review",
   done: "Finished",
-  error: "Hit an error",
+  error: "Failed",
   idle: "Idle",
 };
 

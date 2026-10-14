@@ -3390,7 +3390,7 @@ void testAgentStateAssetsAndStatusKeepUsageIndependent() {
   frame.agentName = "Codex";
   const char* phases[] = {"tool_use", "waiting_for_review", "done", "error", "idle", "stale"};
   const char* assets[] = {"/w.cba", "/n.cba", "/d.cbi", "/e.cba", "/i.cbi", "/i.cbi"};
-  const char* labels[] = {"Codex is working", "Codex needs you", "Codex is done", "Codex hit an error", "Nothing running", "Agent status unavailable"};
+  const char* labels[] = {"Codex is working", "Codex needs you", "Codex is done", "Codex failed", "Nothing running", "Agent status unavailable"};
   for (size_t i = 0; i < 6; ++i) {
     frame.activity = phases[i];
     RecordingSink sink;

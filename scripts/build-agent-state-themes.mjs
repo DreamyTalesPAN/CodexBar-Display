@@ -327,17 +327,19 @@ office.p = office.p.filter(
   (p) => p.t !== "sp" || p.a === "/themes/u/to-bg.cbi",
 );
 office.p.splice(3, 0, ...tiles);
-// The status line takes the whole top strip in the theme's large text;
-// "used"/"remaining" moves from the strip's right corner to
-// the two usage labels.
+// The status line takes the whole top strip in the theme's large text.
 Object.assign(office.p.find((p) => p.b === "l"), { x: 4, y: 0, w: 232, h: 32, f: 2, s: 2, al: "center", va: "middle" });
 // The background still draws the old 16 px strip and its divider; cover it
 // and draw the divider under the new strip.
 office.p = office.p.filter((p) => p.t !== "r");
 office.p.splice(1, 0, { t: "r", x: 0, y: 0, w: 240, h: 32, c: "#0E0C1E" }, { t: "r", x: 0, y: 32, w: 240, h: 4, c: "#3A2F5C" });
 office.p = office.p.filter((p) => !(p.v === "{usageMode}" && p.y < 20));
+// "used"/"remaining" takes the small label in the reset row; the countdown
+// says "Reset" itself ("Reset 1h 0m", "Reset unavailable"). The usage labels
+// keep their lane for long names such as "Codex Spark Weekly".
 for (const p of office.p) {
-  if (p.v === "{usageSlot1Label}" || p.v === "{usageSlot2Label}") p.v = `${p.v} {usageMode}`;
+  if (p.v === "Reset") Object.assign(p, { v: "{usageMode}", w: 60 }), delete p.sl;
+  if (p.v === "{usageSlot1Reset}") Object.assign(p, { v: "Reset {usageSlot1Reset}", x: 72, w: 160 });
 }
 office.rev = 8;
 await finish("tiny-office", office, "0.7.0", generated);

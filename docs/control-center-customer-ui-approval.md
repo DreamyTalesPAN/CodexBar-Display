@@ -7307,3 +7307,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: (1) Clippy 1.2.0: the status line sits vertically centred in the title bar and ends before the window buttons. (2) Synthwave 1.2.0: the status line spans the full width above the USAGE heading in large text. (3) Tiny Office 0.7.0: a 32 px status strip with the sentence in large text across the full width; the office picture starts 16 px lower and loses its top wall rows; "used"/"remaining" now follows the two usage labels ("Session used", "Weekly used"). `Claude hit an error` is longer than the lane and stays small in Synthwave and Tiny Office. Not yet seen on a real VibeTV.
 - Scope: `scripts/build-agent-state-themes.mjs`, the three theme packs and catalog, and this approval record. Not merge or release.
 - What's new: none — agent activity gets its own entry when it ships
+
+## 2026-10-14 — An agent failure reads "failed" (#465)
+
+- User approval: Paul in this chat on 2026-10-14: "ja, ändere errors globally zu failed".
+- Approved customer-visible result: VibeTV's status line says `<Name> failed` instead of `<Name> hit an error` (for example `Claude failed`), so it fits the themes' large text. The Overview session card shows `Failed` instead of `Hit an error`. Tiny Office 0.7.0 shows `used`/`remaining` small in the reset row and the countdown as `Reset 1h 0m`; its usage labels keep their full lane for long names. Not yet seen on a real VibeTV.
+- Scope: `firmware_shared/agent_activity.h`, `apps/control-center/src/lib/agent-theme-state.ts`, `agent-sessions.tsx`, the Tiny Office theme pack and generator, their tests, `docs/theme-dev-guide.md`, and this approval record. Not merge or release.
+- What's new: none — agent activity gets its own entry when it ships

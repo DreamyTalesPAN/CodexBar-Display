@@ -24,7 +24,7 @@ export function agentStatusText(phase: string, name: string): string {
     case "done":
       return `${name} is done`;
     case "error":
-      return `${name} hit an error`;
+      return `${name} failed`;
     case "idle":
       return "Nothing running";
     default:

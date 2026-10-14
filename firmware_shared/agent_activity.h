@@ -28,7 +28,7 @@ inline void StatusText(const char* phase, const char* name, char* out, size_t si
   if (state == State::Idle) { std::snprintf(out, size, "Nothing running"); return; }
   if (state == State::Unknown) { std::snprintf(out, size, "Agent status unavailable"); return; }
   const char* suffix = state == State::Working ? "is working" :
-      state == State::NeedsYou ? "needs you" : state == State::Done ? "is done" : "hit an error";
+      state == State::NeedsYou ? "needs you" : state == State::Done ? "is done" : "failed";
   std::snprintf(out, size, "%.40s %s", name != nullptr && name[0] ? name : "Agent", suffix);
 }
 
