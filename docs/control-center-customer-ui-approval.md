@@ -7108,3 +7108,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: None. The pure helpers of `control-center-app.tsx` (error normalization, device merging, device-target storage, theme-install and firmware-update job helpers, runtime surface, event log) moved unchanged into six modules beside it; the rendered app is identical.
 - Scope: `apps/control-center/src/components/control-center-app.tsx`, the new `control-center-errors.ts`, `device-merge.ts`, `device-target-storage.ts`, `update-jobs.ts`, `runtime-surface.ts`, `event-log.ts`, the two tests that import them, and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no customer-visible change
+
+## 2026-10-14 — Overnight audit (#614): unused props, dead CSS, unique activity ids
+
+- User approval: Paul asked on 2026-10-14 for the unattended overnight audit (epic #614) with nothing customer-visible changing. He has not seen this entry.
+- Approved customer-visible result: None. Props nothing read (`ThemeLibraryScreen.installEntry`, `ControlCenterShell.device`) are gone; `globals.css` loses the unused `.vibetv-status-icon*` rules and tokens and theme aliases nothing references (compiled CSS differs only by those); one progress clamp and one theme-spec hash normalizer replace identical copies; Recent activity rows get ids from a counter, so two events in the same millisecond no longer share a React key. Text and layout are unchanged.
+- Scope: `apps/control-center/src/app/globals.css`, `src/components/{control-center-app,control-center-shell,theme-library-screen,updates-screen,update-jobs,live-vibetv-preview,control-center-runtime,theme-studio-preview}.tsx/.ts`, `theme-studio/ai-theme-studio-screen.tsx`, the shell tests, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change
