@@ -7080,3 +7080,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in "#597 joins main after the review bundle #600" above; nothing else changes.
 - Scope: merge of main (#609, approval record only) into `codex/nightshift-1009-issues`, and this approval record.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-14 — Main: approval marker after the squash merge of #597
+
+- User approval: Marcus approved the squash merge of #597 on 2026-10-14 after testing it himself on Windows and on the Mac. The squash merge put all of #597's entries into one commit, and the gate on main checks each of them; the entries from 2026-10-09 predate the What's new line. This entry stands as the newest marker for that merge. No new wording.
+- Approved customer-visible result: as merged with #597 and recorded in its entries above; nothing else changes.
+- Scope: this approval record only.
+- What's new: none — no customer-visible change of its own
