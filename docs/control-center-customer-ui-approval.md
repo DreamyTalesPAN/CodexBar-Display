@@ -7073,3 +7073,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: In Settings, `Run setup again` opens main's single `Run setup again?` dialog, unchanged from main. The theme link (#63), the CodexBar explanation (#333) and the Mac recovery action (#338) stay as approved above. Nothing else changes.
 - Scope: merge of main into `codex/nightshift-1009-issues`; `settings-screen.tsx`, `settings-connection.test.tsx`, `scripts/test-customer-flows.mjs` (main's `runSetupAgain` helper), the Mac and Windows shell merge resolutions, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — the merge adds no feature of its own
+
+## 2026-10-14 — #597 brought up to date with main after #609
+
+- User approval: Marcus tested #597 on head b5c6f1a0 on Windows and on the Mac on 2026-10-14 and reported every step working. This update only brings in main's approval record from #609, so the customer-visible result approved in the entries above stays the same.
+- Approved customer-visible result: as recorded in "#597 joins main after the review bundle #600" above; nothing else changes.
+- Scope: merge of main (#609, approval record only) into `codex/nightshift-1009-issues`, and this approval record.
+- What's new: none — no customer-visible change of its own
