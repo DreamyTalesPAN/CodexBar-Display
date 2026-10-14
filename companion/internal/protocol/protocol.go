@@ -269,7 +269,7 @@ func legacyUsageSlots(windows []UsageWindow) []UsageSlot {
 	if len(windows) == 0 {
 		return nil
 	}
-	limit := minInt(len(windows), 2)
+	limit := min(len(windows), 2)
 	out := make([]UsageSlot, limit)
 	copy(out, windows[:limit])
 	return out
@@ -364,13 +364,6 @@ func hasResetCountdown(f Frame) bool {
 		}
 	}
 	return false
-}
-
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 func truncateUTF8Bytes(value string, maxBytes int) string {
