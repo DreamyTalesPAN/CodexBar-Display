@@ -887,11 +887,11 @@ func runInstallUpdate(args []string) (retErr error) {
 		// The rescued firmware is the first to report the device identity.
 		deviceID = strings.TrimSpace(verifiedHello.DeviceID)
 	}
-	if helloErr != nil || !strings.EqualFold(strings.TrimSpace(verifiedHello.DeviceID), deviceID) {
+	if !strings.EqualFold(strings.TrimSpace(verifiedHello.DeviceID), deviceID) {
 		return &commandError{
 			Op:   "post-update-device-identity",
 			Code: errcode.UpgradeFlashFirmware,
-			Err:  fmt.Errorf("updated VibeTV identity changed: expected=%q got=%q: %v", deviceID, strings.TrimSpace(verifiedHello.DeviceID), helloErr),
+			Err:  fmt.Errorf("updated VibeTV identity changed: expected=%q got=%q", deviceID, strings.TrimSpace(verifiedHello.DeviceID)),
 			Hint: "do not retry the flash; verify the saved VibeTV device identity",
 		}
 	}
