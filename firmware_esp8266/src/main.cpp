@@ -2277,6 +2277,12 @@ void leaveLegacyWifiOnCableContact() {
 }
 
 bool handleSerialControlLine(const String& line) {
+  // Usage frames arrive every few seconds and are no requests; skip their
+  // second full parse. A line without the "request" token cannot carry
+  // kind "request", however it is spaced.
+  if (line.indexOf("\"request\"") < 0) {
+    return false;
+  }
   JsonDocument doc;
   if (deserializeJson(doc, line.c_str())) {
     return false;
