@@ -151,7 +151,7 @@ func (s *Server) repairDevice(
 	expectedDeviceID string,
 	forcePair bool,
 ) (deviceInfo, error) {
-	return s.repairDeviceWithFailureWake(ctx, requestedTarget, expectedDeviceID, forcePair, true)
+	return s.repairDeviceWithFailureWake(ctx, requestedTarget, expectedDeviceID, forcePair)
 }
 
 func (s *Server) repairDeviceWithFailureWake(
@@ -159,9 +159,8 @@ func (s *Server) repairDeviceWithFailureWake(
 	requestedTarget string,
 	expectedDeviceID string,
 	forcePair bool,
-	wakeOnFailure bool,
 ) (deviceInfo, error) {
-	key := fmt.Sprintf("%t|%s", wakeOnFailure, s.repairFlightKey(requestedTarget, expectedDeviceID, forcePair))
+	key := s.repairFlightKey(requestedTarget, expectedDeviceID, forcePair)
 	s.repairFlightsMu.Lock()
 	if s.repairFlights == nil {
 		s.repairFlights = make(map[string]*deviceRepairFlight)
@@ -180,7 +179,7 @@ func (s *Server) repairDeviceWithFailureWake(
 	s.repairFlightsMu.Unlock()
 
 	flight.device, flight.err = s.repairDeviceOnce(ctx, requestedTarget, expectedDeviceID, forcePair)
-	if flight.err != nil && wakeOnFailure && s.wakeDisplayStream != nil {
+	if flight.err != nil && s.wakeDisplayStream != nil {
 		s.wakeDisplayStream()
 	}
 	s.repairFlightsMu.Lock()
@@ -214,7 +213,7 @@ func (s *Server) selectDevice(
 	requestedTarget string,
 	expectedDeviceID string,
 ) (deviceInfo, error) {
-	return s.repairDeviceWithFailureWake(ctx, requestedTarget, expectedDeviceID, true, true)
+	return s.repairDeviceWithFailureWake(ctx, requestedTarget, expectedDeviceID, true)
 }
 
 func (s *Server) repairDeviceOnce(
