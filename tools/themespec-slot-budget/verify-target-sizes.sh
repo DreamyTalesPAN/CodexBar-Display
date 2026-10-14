@@ -13,8 +13,10 @@ if [[ ! -x "${XTENSA}" ]]; then
   exit 1
 fi
 
-PROBE="$(mktemp -t themespec-size-probe).cpp"
-trap 'rm -f "${PROBE}"' EXIT
+PROBE_TMP="$(mktemp -t themespec-size-probe)"
+PROBE="${PROBE_TMP}.cpp"
+trap 'rm -f "${PROBE_TMP}" "${PROBE}"' EXIT
+mv "${PROBE_TMP}" "${PROBE}"
 cat > "${PROBE}" <<'EOF'
 #include <ArduinoJson.h>
 #include "theme_spec_renderer_core.h"
