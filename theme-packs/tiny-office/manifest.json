@@ -12,10 +12,10 @@
     "agent-theme-states-v1"
   ],
   "themeSpec": {
-    "path": "/themes/u/to-8-14d120.json",
+    "path": "/themes/u/to-8-ab75da.json",
     "file": "theme.json",
-    "bytes": 2652,
-    "sha256": "14d12098e21a721f3dd52ac3c7a51fb3c9b67dcdafefa75c67583ba41b1720e0",
+    "bytes": 2671,
+    "sha256": "ab75da5e0de37d18e130f8d5079874e2c349dad9a47921ec65fd8b2644d40f67",
     "contentType": "application/json"
   },
   "assets": [

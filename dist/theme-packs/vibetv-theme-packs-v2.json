@@ -202,7 +202,7 @@
       "usage": "live",
       "version": "0.7.0",
       "themeRev": 8,
-      "themeSpecPath": "/themes/u/to-8-14d120.json",
+      "themeSpecPath": "/themes/u/to-8-ab75da.json",
       "requiresFirmware": "1.0.42",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -210,12 +210,13 @@
         "agent-theme-states-v1"
       ],
       "downloadAsset": "vibetv-theme-tiny-office-v0.7.0.zip",
-      "sha256": "cf23f006de0aa8110e83a70d0cc355868958936263724e9aa1485d14be6b05dd",
-      "bytes": 28955,
+      "sha256": "f0e16e5ef34d9c2eb8402876f013d770ada43f3ba0303c120ffe7e5fefbe2ce3",
+      "bytes": 28956,
       "earlierThemeSpecPaths": [
         "/themes/u/to-6-6eed22ed.json",
         "/themes/u/to-7-d7799cec.json",
         "/themes/u/to-8-0d46ed.json",
+        "/themes/u/to-8-14d120.json",
         "/themes/u/to-8-8af3cf.json",
         "/themes/u/to-8-ade4d2.json"
       ]

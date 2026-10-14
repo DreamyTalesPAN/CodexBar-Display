@@ -334,12 +334,11 @@ Object.assign(office.p.find((p) => p.b === "l"), { x: 4, y: 0, w: 232, h: 32, f:
 office.p = office.p.filter((p) => p.t !== "r");
 office.p.splice(1, 0, { t: "r", x: 0, y: 0, w: 240, h: 32, c: "#0E0C1E" }, { t: "r", x: 0, y: 32, w: 240, h: 4, c: "#3A2F5C" });
 office.p = office.p.filter((p) => !(p.v === "{usageMode}" && p.y < 20));
-// "used"/"remaining" takes the small label in the reset row; the countdown
-// says "Reset" itself ("Reset 1h 0m", "Reset unavailable"). The usage labels
-// keep their lane for long names such as "Codex Spark Weekly".
+// "used"/"remaining" follows the usage labels ("Session used"), as Paul
+// asked on 2026-10-14. A very long window name ("Codex Spark Weekly") leaves
+// no room for it, and the device cuts the word at the lane's right edge.
 for (const p of office.p) {
-  if (p.v === "Reset") Object.assign(p, { v: "{usageMode}", w: 60 }), delete p.sl;
-  if (p.v === "{usageSlot1Reset}") Object.assign(p, { v: "Reset {usageSlot1Reset}", x: 72, w: 160 });
+  if (p.v === "{usageSlot1Label}" || p.v === "{usageSlot2Label}") p.v = `${p.v} {usageMode}`;
 }
 office.rev = 8;
 await finish("tiny-office", office, "0.7.0", generated);

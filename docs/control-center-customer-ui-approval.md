@@ -7314,3 +7314,11 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: VibeTV's status line says `<Name> failed` instead of `<Name> hit an error` (for example `Claude failed`), so it fits the themes' large text. The Overview session card shows `Failed` instead of `Hit an error`. Tiny Office 0.7.0 shows `used`/`remaining` small in the reset row and the countdown as `Reset 1h 0m`; its usage labels keep their full lane for long names. Not yet seen on a real VibeTV.
 - Scope: `firmware_shared/agent_activity.h`, `apps/control-center/src/lib/agent-theme-state.ts`, `agent-sessions.tsx`, the Tiny Office theme pack and generator, their tests, `docs/theme-dev-guide.md`, and this approval record. Not merge or release.
 - What's new: none — agent activity gets its own entry when it ships
+
+## 2026-10-14 — Tiny Office: used/remaining back after the usage names (#465)
+
+- User approval: Paul in this chat on 2026-10-14, rejecting the reset-row placement: "nein. mach das wieder neben den namen."
+- Approved customer-visible result: Tiny Office 0.7.0 shows `Session used` and `Weekly used` (or `remaining`) in the usage label lanes; the reset row is `Reset` and the countdown as before. This replaces the Tiny Office part of the previous entry. For a very long window name such as `Codex Spark Weekly`, the device cuts `remaining` at the right edge of the lane; the name itself always fits.
+- Scope: the Tiny Office theme pack and generator, its test, and this approval record. Not merge or release.
+- What's new: none — agent activity gets its own entry when it ships
+
