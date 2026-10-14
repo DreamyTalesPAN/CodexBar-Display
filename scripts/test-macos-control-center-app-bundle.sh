@@ -940,7 +940,7 @@ launch_method = source[launch_start:launch_end]
 for required_launch_behavior in [
     "withBundleIdentifier: codexBarBundleIdentifier",
     "appManagedCodexBarAppURL(",
-    "validatedPinnedCodexBarCLI(at: appURL)",
+    "await validatedPinnedCodexBarCLI(at: appURL)",
     "NSWorkspace.OpenConfiguration()",
     "configuration.activates = false",
     "configuration.addsToRecentItems = false",
@@ -960,8 +960,8 @@ if (
     '"prepare-codexbar", "--archive"' not in prepare_payload
     or 'arguments.append("--reuse-running")' not in prepare_payload
     or 'withBundleIdentifier: codexBarBundleIdentifier' not in prepare_payload
-    or 'return runPinnedCodexBar(arguments)' not in prepare_payload
-    or 'runPinnedCodexBar(["validate-codexbar", "--app", appURL.path])' not in source
+    or 'return await runPinnedCodexBar(arguments)' not in prepare_payload
+    or 'await runPinnedCodexBar(["validate-codexbar", "--app", appURL.path])' not in source
 ):
     raise SystemExit("native shell must delegate pinned staging/validation and preserve the running-app exception")
 
@@ -979,7 +979,7 @@ if (
     )
 repair_restart = prepare_method.find("if codexBarRepairRestartRequired")
 repair_stop = prepare_method.find("await unregisterBundledRuntimeService()", repair_restart)
-codexbar_publish = prepare_method.find("var codexBarPrepared = bootstrapCodexBar()")
+codexbar_publish = prepare_method.find("var codexBarPrepared = await bootstrapCodexBar()")
 if not (0 <= repair_restart < repair_stop < codexbar_publish):
     raise SystemExit(
         "native CodexBar repair must stop the managed runtime before replacing its private payload"
