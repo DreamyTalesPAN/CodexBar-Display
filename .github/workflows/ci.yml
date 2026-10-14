@@ -8,7 +8,10 @@ on:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # A newer push to a pull request replaces its run. On main every merge keeps
+  # its own run: the approval-record commit that follows a squash merge would
+  # otherwise cancel the merge's CI.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   companion-windows:
@@ -28,6 +31,7 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
       - run: go build ./...
       - run: go vet ./...
       - run: go test ./...
@@ -48,6 +52,7 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
           toolchain: 1.99.0
@@ -140,6 +145,7 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
       - name: Extract pinned macOS release
         if: runner.os == 'macOS'
         shell: bash
@@ -185,6 +191,7 @@ jobs:
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
 
       - name: Run go vet
         working-directory: companion
@@ -221,6 +228,12 @@ jobs:
 
       - name: Test rehearsal web storage purge and restore
         run: ./scripts/test-vibetv-rehearsal-web-storage.sh
+
+      - name: Test rehearsal candidate layout resolution
+        run: ./scripts/test-vibetv-rehearsal-candidate-layout.sh
+
+      - name: Test Microsoft Store submission script
+        run: python3 scripts/test-submit-microsoft-store.py
 
       - name: Check ESP8266 soak gate
         run: ./scripts/check-esp8266-soak-gate.sh
@@ -261,6 +274,7 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
 
       - name: Test Companion on macOS
         working-directory: companion
@@ -355,6 +369,7 @@ jobs:
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
 
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
