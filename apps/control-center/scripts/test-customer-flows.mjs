@@ -3221,6 +3221,13 @@ async function testOfflineActiveDeviceOffersReadOnlyPickerAfterSetupReset(browse
   assert(deviceWriteRequests.length === 0,
     "An admitted session must not adopt another VibeTV after disconnecting");
   await clickNavigation(page, "Settings");
+  // The lost VibeTV's picker may open first on a slow runner; a customer who
+  // wants to run setup again closes it.
+  const lostPicker = page.getByRole("dialog", { name: "Choose your VibeTV" });
+  if (await lostPicker.isVisible()) {
+    await lostPicker.getByRole("button", { name: "Close" }).click();
+    await lostPicker.waitFor({ state: "hidden" });
+  }
   await runSetupAgain(page);
   await waitForSetupDeviceStep(page);
   await page.getByRole("radio", { name: "VibeTV device-82" }).waitFor({
