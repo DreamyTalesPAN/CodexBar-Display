@@ -310,6 +310,12 @@ jobs:
         working-directory: apps/control-center
         run: npm ci
 
+      - name: Cache Playwright browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('apps/control-center/package-lock.json') }}
+
       - name: Install Playwright Chromium
         working-directory: apps/control-center
         run: npx playwright install --with-deps chromium
@@ -339,6 +345,12 @@ jobs:
       - name: Install Control Center dependencies
         working-directory: apps/control-center
         run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('apps/control-center/package-lock.json') }}
 
       - name: Install Playwright Chromium
         working-directory: apps/control-center
@@ -400,6 +412,14 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
+
+      - name: Cache PlatformIO and pip
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: platformio-${{ github.job }}-${{ runner.os }}-${{ hashFiles('firmware_*/platformio.ini') }}
 
       - name: Install PlatformIO
         run: pip install platformio==6.2.0
@@ -466,6 +486,14 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
+
+      - name: Cache PlatformIO and pip
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: platformio-${{ github.job }}-${{ runner.os }}-${{ hashFiles('firmware_*/platformio.ini') }}
 
       - name: Install PlatformIO
         run: pip install platformio==6.2.0
