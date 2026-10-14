@@ -7081,9 +7081,9 @@ issue scope, or release permission never implies UI permission.
 - Scope: merge of main (#609, approval record only) into `codex/nightshift-1009-issues`, and this approval record.
 - What's new: none — no customer-visible change of its own
 
-## 2026-10-14 — Release screenshot mode for customer update mails (#608)
+## 2026-10-14 — Main: approval marker after the squash merge of #597
 
-- User approval: Paul asked for an automation that emails VibeTV customers what is new after each release and explicitly wanted app screenshots in it: "am liebsten auch mit screenshots usw". On 2026-10-14 he asked to bring #608 up to date with main and make CI green.
-- Approved customer-visible result: No UI change. `test-customer-flows.mjs --release-screenshots` only runs the existing flows that already capture screenshots and captures them at 2x for the mail drafts; the app and the other test modes are unchanged.
-- Scope: `apps/control-center/scripts/test-customer-flows.mjs` (new mode), `apps/control-center/package.json` (`capture:release-screenshots`), and this approval record, after merging main.
-- What's new: none — test tooling only
+- User approval: Marcus approved the squash merge of #597 on 2026-10-14 after testing it himself on Windows and on the Mac. The squash merge put all of #597's entries into one commit, and the gate on main checks each of them; the entries from 2026-10-09 predate the What's new line. This entry stands as the newest marker for that merge. No new wording.
+- Approved customer-visible result: as merged with #597 and recorded in its entries above; nothing else changes.
+- Scope: this approval record only.
+- What's new: none — no customer-visible change of its own
