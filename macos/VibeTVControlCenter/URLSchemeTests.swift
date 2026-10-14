@@ -399,6 +399,55 @@ func runURLSchemeTests() {
         "the WebView update URL must route to the native Sparkle action"
     )
     require(
+        nativeControlCenterAction(
+            for: URL(string: "vibetv://read-browser-sign-in?provider=claude")!
+        ) == .readBrowserSignIn(provider: "claude"),
+        "Sign in to Claude must read the Claude browser sign-in from the app"
+    )
+    require(
+        nativeControlCenterAction(
+            for: URL(string: "vibetv://read-browser-sign-in?provider=Cursor")!
+        ) == .readBrowserSignIn(provider: "cursor"),
+        "Sign in to Cursor must read the Cursor browser sign-in from the app"
+    )
+    for rejectedReadURL in [
+        "vibetv://read-browser-sign-in",
+        "vibetv://read-browser-sign-in?provider=codex",
+        "vibetv://read-browser-sign-in?provider=claude&provider=cursor",
+        "vibetv://read-browser-sign-in?provider=claude&all=true",
+        "vibetv://read-browser-sign-in/extra?provider=claude",
+        "https://read-browser-sign-in?provider=claude",
+    ] {
+        require(
+            nativeControlCenterAction(for: URL(string: rejectedReadURL)!) == nil,
+            "unexpected browser sign-in read must be rejected: \(rejectedReadURL)"
+        )
+    }
+    require(
+        browserSignInReadOutcome(
+            #"[{"provider":"claude","status":"refreshed","message":"Browser cookie refreshed."}]"#
+        ) == .read,
+        "a refreshed answer means the browser sign-in was read"
+    )
+    require(
+        browserSignInReadOutcome(
+            #"[{"provider":"claude","status":"failed","message":"Chrome cookie decryption was declined in Keychain; rerun with --allow-keychain-prompt to request Keychain access again."}]"#
+        ) == .declined,
+        "a Keychain refusal must stop the reading, or CodexBar asks again"
+    )
+    for pendingAnswer in [
+        #"[{"provider":"claude","status":"failed","message":"No browser session cookie was refreshed. Sign in in a configured browser and retry."}]"#,
+        #"[{"provider":"claude","status":"blocked","message":"Retry interactively."}]"#,
+        #"[{"status":"refreshed"},{"status":"refreshed"}]"#,
+        "not json",
+        "",
+    ] {
+        require(
+            browserSignInReadOutcome(pendingAnswer) == .notYet,
+            "anything else keeps waiting for the sign-in: \(pendingAnswer)"
+        )
+    }
+    require(
         shouldHandleWebViewDownload(
             url: URL(string: "blob:http://127.0.0.1/report")!,
             requestedByWebContent: true

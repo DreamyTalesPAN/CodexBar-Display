@@ -21,6 +21,12 @@ private let checkForUpdatesURLHost = "check-for-updates"
 private let repairCodexBarURLHost = "repair-codexbar"
 private let finishCodexBarRecoveryURLHost = "finish-codexbar-recovery"
 private let openCodexBarURLHost = "open-codexbar"
+private let readBrowserSignInURLHost = "read-browser-sign-in"
+// Providers CodexBar reads from a browser sign-in on the Mac.
+private let browserSignInReadProviders: Set<String> = ["claude", "cursor"]
+// As long as the app's own checks after "Sign in to <Provider>" run.
+private let browserSignInReadWindow: TimeInterval = 3 * 60
+private let browserSignInReadInterval: TimeInterval = 15
 private let controlCenterBundleIdentifier = "shop.vibetv.control-center"
 private let runtimeLaunchAgentLabel = "shop.vibetv.control-center.runtime"
 private let previewRuntimeLaunchAgentLabel =
@@ -163,6 +169,27 @@ func isOpenCodexBarURL(_ url: URL) -> Bool {
     return true
 }
 
+// vibetv://read-browser-sign-in?provider=claude names the provider whose
+// browser sign-in CodexBar should read; anything else is rejected.
+func browserSignInReadProvider(for url: URL) -> String? {
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          components.scheme?.lowercased() == controlCenterURLScheme,
+          components.host?.lowercased() == readBrowserSignInURLHost,
+          components.user == nil,
+          components.password == nil,
+          components.port == nil,
+          components.fragment == nil,
+          components.path.isEmpty || components.path == "/",
+          let items = components.queryItems,
+          items.count == 1,
+          items[0].name == "provider",
+          let provider = items[0].value?.lowercased(),
+          browserSignInReadProviders.contains(provider) else {
+        return nil
+    }
+    return provider
+}
+
 enum NativeControlCenterAction: Equatable {
     case restartControlCenter
     case repairRuntime
@@ -170,6 +197,7 @@ enum NativeControlCenterAction: Equatable {
     case repairCodexBar
     case finishCodexBarRecovery
     case openCodexBar
+    case readBrowserSignIn(provider: String)
 }
 
 func nativeControlCenterAction(for url: URL) -> NativeControlCenterAction? {
@@ -190,6 +218,9 @@ func nativeControlCenterAction(for url: URL) -> NativeControlCenterAction? {
     }
     if isOpenCodexBarURL(url) {
         return .openCodexBar
+    }
+    if let provider = browserSignInReadProvider(for: url) {
+        return .readBrowserSignIn(provider: provider)
     }
     return nil
 }
@@ -396,6 +427,60 @@ func runCodexBarCommand(
         exitCode: process.terminationStatus,
         output: String(data: data, encoding: .utf8) ?? ""
     )
+}
+
+enum BrowserSignInReadOutcome: Equatable {
+    case read
+    case declined
+    case notYet
+}
+
+// CodexBar answers `cookie refresh --format json` with one result per
+// provider. With --allow-keychain-prompt it asks macOS again on every call,
+// even right after "Deny", so a refusal it names must end the reading.
+func browserSignInReadOutcome(_ output: String) -> BrowserSignInReadOutcome {
+    guard let data = output.data(using: .utf8),
+          let results = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+          results.count == 1 else {
+        return .notYet
+    }
+    if results[0]["status"] as? String == "refreshed" {
+        return .read
+    }
+    if let message = results[0]["message"] as? String,
+       message.localizedCaseInsensitiveContains("declined in Keychain") {
+        return .declined
+    }
+    return .notYet
+}
+
+// Has the app's verified CodexBar read the provider's browser sign-in once.
+// CodexBar keeps what it read in its cookie cache, which the background usage
+// service then uses. May show the macOS Keychain prompt and blocks until it is
+// answered.
+func readBrowserSignInWithCodexBar(
+    provider: String,
+    companionURL: URL,
+    codexBarAppURL: URL
+) -> BrowserSignInReadOutcome {
+    guard let validated = runCodexBarCommand(
+        executableURL: companionURL,
+        arguments: ["validate-codexbar", "--app", codexBarAppURL.path]
+    ), validated.exitCode == 0 else {
+        return .notYet
+    }
+    let cliPath = validated.output.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cliPath.isEmpty, let result = runCodexBarCommand(
+        executableURL: URL(fileURLWithPath: cliPath),
+        arguments: [
+            "cookie", "refresh", "--provider", provider,
+            "--allow-keychain-prompt", "--format", "json",
+        ],
+        mergeStandardError: false
+    ) else {
+        return .notYet
+    }
+    return browserSignInReadOutcome(result.output)
 }
 
 
@@ -1349,6 +1434,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     // reruns preparation with the flag still set instead.
     private var pendingCodexBarRepairRerun = false
     private var codexBarRecoveryApplication: NSRunningApplication?
+    private var browserSignInReadsRunning: Set<String> = []
+    private var browserSignInReadDeclinedAt: [String: Date] = [:]
     private var installationStatusTitle = "Starting Control Center"
     private var installationStatusDetail = "Preparing the Mac App."
     private var installationStatusFailed = false
@@ -2227,6 +2314,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 NSLog(
                     "VibeTV Control Center could not report CodexBar repair result: \(error.localizedDescription)"
                 )
+            }
+        }
+    }
+
+    // "Sign in to Claude/Cursor" on the Mac. The usage service runs in the
+    // background, where CodexBar never shows the Keychain prompt and macOS
+    // does not let it look into the browser profile, so it cannot read a
+    // browser sign-in by itself. While the customer signs in, the app reads it
+    // instead, until it is read, refused, or the follow-up window ends.
+    private func readBrowserSignIn(provider: String) {
+        if browserSignInReadsRunning.contains(provider) {
+            return
+        }
+        if let declined = browserSignInReadDeclinedAt[provider],
+           Date().timeIntervalSince(declined) < browserSignInReadWindow {
+            return
+        }
+        browserSignInReadsRunning.insert(provider)
+        let companionURL = Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Helpers", isDirectory: true)
+            .appendingPathComponent("codexbar-display")
+        let codexBarAppURL = appManagedCodexBarAppURL(
+            applicationSupportURL: applicationSupportURL()
+        )
+        Task { [weak self] in
+            let deadline = Date().addingTimeInterval(browserSignInReadWindow)
+            var outcome = BrowserSignInReadOutcome.notYet
+            while true {
+                outcome = await Task.detached {
+                    readBrowserSignInWithCodexBar(
+                        provider: provider,
+                        companionURL: companionURL,
+                        codexBarAppURL: codexBarAppURL
+                    )
+                }.value
+                if outcome != .notYet
+                    || Date().addingTimeInterval(browserSignInReadInterval) >= deadline {
+                    break
+                }
+                try? await Task.sleep(nanoseconds: UInt64(browserSignInReadInterval * 1_000_000_000))
+            }
+            NSLog("VibeTV Control Center browser sign-in read for \(provider): \(outcome)")
+            self?.browserSignInReadsRunning.remove(provider)
+            if outcome == .declined {
+                self?.browserSignInReadDeclinedAt[provider] = Date()
             }
         }
     }
@@ -4299,6 +4431,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 finishControlCenterCodexBarRecovery()
             case .openCodexBar:
                 openManagedCodexBar()
+            case let .readBrowserSignIn(provider):
+                readBrowserSignIn(provider: provider)
             }
             return
         }
