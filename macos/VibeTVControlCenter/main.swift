@@ -3539,7 +3539,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
            retriesCodexBarBootstrap(repairRequested: codexBarRepairRequired) {
             NSLog("VibeTV Control Center retries its CodexBar preparation once before asking for a repair")
             try? await Task.sleep(for: .seconds(5))
-            codexBarPrepared = bootstrapCodexBar()
+            // A repair requested during the pause has not stopped the runtime
+            // for this preparation; its own rerun replaces CodexBar after it
+            // has.
+            if retriesCodexBarBootstrap(repairRequested: codexBarRepairRequired) {
+                codexBarPrepared = bootstrapCodexBar()
+            }
         }
         guard codexBarPrepared else {
             return .codexBarRepairRequired
