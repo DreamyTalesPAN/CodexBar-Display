@@ -330,7 +330,7 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 
 	fmt.Fprintln(out, "Uploading theme files...")
 	for _, asset := range pack.Assets {
-		if err := uploadAssetAndVerifyWithPairRetry(wifi, &resolvedTarget, asset.Entry.Path, filepath.Base(asset.Entry.File), asset.Data, opts.PairTokenStore, uploadSettleDelay, opts.Verbose, out); err != nil {
+		if err := uploadAssetAndVerifyWithPairRetry(ctx, wifi, &resolvedTarget, asset.Entry.Path, filepath.Base(asset.Entry.File), asset.Data, opts.PairTokenStore, uploadSettleDelay, opts.Verbose, out); err != nil {
 			return Result{}, &InstallError{
 				Op:   "theme-pack/upload",
 				Code: errcode.UpgradeFlashFirmware,
@@ -342,7 +342,7 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 			fmt.Fprintf(out, "Uploaded asset: %s bytes=%d\n", asset.Entry.Path, len(asset.Data))
 		}
 	}
-	if err := uploadAssetAndVerifyWithPairRetry(wifi, &resolvedTarget, pack.ThemeSpecFile.Entry.Path, filepath.Base(pack.ThemeSpecFile.Entry.File), pack.ThemeSpecRaw, opts.PairTokenStore, uploadSettleDelay, opts.Verbose, out); err != nil {
+	if err := uploadAssetAndVerifyWithPairRetry(ctx, wifi, &resolvedTarget, pack.ThemeSpecFile.Entry.Path, filepath.Base(pack.ThemeSpecFile.Entry.File), pack.ThemeSpecRaw, opts.PairTokenStore, uploadSettleDelay, opts.Verbose, out); err != nil {
 		return Result{}, &InstallError{
 			Op:   "theme-pack/upload",
 			Code: errcode.UpgradeFlashFirmware,
@@ -788,21 +788,21 @@ func activateAndVerifyTheme(
 				return &themeActivationError{op: lastOp, err: lastErr}
 			}
 			fmt.Fprintln(out, "Theme activation interrupted, retrying...")
-			if err := sleepActivationRetry(ctx); err != nil {
+			if err := sleepContext(ctx, activationRetryDelay); err != nil {
 				return &themeActivationError{op: lastOp, err: err}
 			}
 			continue
 		}
 
 		sendLiveThemeFrameWithPairRetry(ctx, wifi, target, caps, store, fetchFrame, out)
-		if err := verifyThemeInstallHealth(wifi, *target, activePath, gifAssets); err != nil {
+		if err := verifyThemeInstallHealth(ctx, wifi, *target, activePath, gifAssets); err != nil {
 			lastErr = err
 			lastOp = "theme-pack/render-health"
 			if attempt == attempts {
 				return &themeActivationError{op: lastOp, err: lastErr}
 			}
 			fmt.Fprintln(out, "Theme activation did not settle, retrying...")
-			if err := sleepActivationRetry(ctx); err != nil {
+			if err := sleepContext(ctx, activationRetryDelay); err != nil {
 				return &themeActivationError{op: lastOp, err: err}
 			}
 			continue
@@ -978,11 +978,13 @@ func deleteAssetWithPairRetry(wifi transportlayer.WiFiTransport, target *string,
 	return wifi.DeleteAsset(*target, devicePath)
 }
 
-func sleepActivationRetry(ctx context.Context) error {
-	if activationRetryDelay <= 0 {
+// sleepContext waits for d, or returns ctx's error as soon as the install is
+// cancelled. A zero or negative d returns at once.
+func sleepContext(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
 		return nil
 	}
-	timer := time.NewTimer(activationRetryDelay)
+	timer := time.NewTimer(d)
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():
@@ -1006,6 +1008,7 @@ func uploadAssetWithPairRetry(wifi transportlayer.WiFiTransport, target *string,
 }
 
 func uploadAssetAndVerifyWithPairRetry(
+	ctx context.Context,
 	wifi transportlayer.WiFiTransport,
 	target *string,
 	devicePath,
@@ -1020,7 +1023,7 @@ func uploadAssetAndVerifyWithPairRetry(
 	for attempt := 1; attempt <= uploadVerifyAttempts; attempt++ {
 		if err := uploadAssetWithPairRetry(wifi, target, devicePath, filename, data, store); err != nil {
 			return err
-		} else if err := settleUpload(wifi, *target, devicePath, len(data), settleDelay, verbose, out); err != nil {
+		} else if err := settleUpload(ctx, wifi, *target, devicePath, len(data), settleDelay, verbose, out); err != nil {
 			lastErr = err
 		} else {
 			return nil
@@ -1033,7 +1036,9 @@ func uploadAssetAndVerifyWithPairRetry(
 		if verbose {
 			fmt.Fprintf(out, "Upload retry %d/%d: %s (%v)\n", attempt+1, uploadVerifyAttempts, devicePath, lastErr)
 		}
-		time.Sleep(uploadVerifyRetryDelay)
+		if err := sleepContext(ctx, uploadVerifyRetryDelay); err != nil {
+			return err
+		}
 	}
 	return lastErr
 }
@@ -1163,7 +1168,7 @@ func activationErrorSuggestsDeviceReboot(err error) bool {
 	return false
 }
 
-func verifyThemeInstallHealth(wifi transportlayer.WiFiTransport, target, activePath string, gifAssets []string) error {
+func verifyThemeInstallHealth(ctx context.Context, wifi transportlayer.WiFiTransport, target, activePath string, gifAssets []string) error {
 	expectedGIFs := stringSet(gifAssets)
 	var lastErr error
 	for attempt := 0; attempt < renderHealthAttempts; attempt++ {
@@ -1175,7 +1180,9 @@ func verifyThemeInstallHealth(wifi transportlayer.WiFiTransport, target, activeP
 		} else {
 			return nil
 		}
-		time.Sleep(renderHealthDelay)
+		if err := sleepContext(ctx, renderHealthDelay); err != nil {
+			return err
+		}
 	}
 	return lastErr
 }
@@ -1347,9 +1354,9 @@ func FallbackThemeSpecCapabilities() protocol.DeviceCapabilities {
 	}
 }
 
-func settleUpload(wifi transportlayer.WiFiTransport, target, devicePath string, expectedBytes int, delay time.Duration, verbose bool, out io.Writer) error {
-	if delay > 0 {
-		time.Sleep(delay)
+func settleUpload(ctx context.Context, wifi transportlayer.WiFiTransport, target, devicePath string, expectedBytes int, delay time.Duration, verbose bool, out io.Writer) error {
+	if err := sleepContext(ctx, delay); err != nil {
+		return err
 	}
 	if err := wifi.DeviceHealth(target); err != nil {
 		return &uploadHealthError{devicePath: devicePath, err: err}
