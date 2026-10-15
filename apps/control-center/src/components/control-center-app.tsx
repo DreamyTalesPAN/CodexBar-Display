@@ -5459,7 +5459,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       return (
         <SetupWizard
           macAppUpdate={
-            macAppUpdateAvailable && isNativeControlCenterApp()
+            macAppUpdateAvailable && isNativeControlCenterApp() && !windowsHost
               ? {
                   version: macAppUpdateOfferedVersion,
                   onUpdate: () => {
