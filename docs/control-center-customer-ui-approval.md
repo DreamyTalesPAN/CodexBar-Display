@@ -7226,3 +7226,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the #234 entry above; a theme is kept only if its Install button would be enabled by the catalog, by the same check. A shop link to any other theme keeps an earlier kept theme, and an install from before that earlier order still does not drop it.
 - Scope: `apps/control-center/src/components/control-center-app.tsx`, the export of the existing check in `apps/control-center/src/components/theme-library-screen.tsx`, the customer-flow test, and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — a correction of the unreleased change above
+
+## 2026-10-15 — #627: Continue waits exactly while a switched-on row spins
+
+- User approval: follows the #627 entries above; the Codex review on #642 (d1bbaa0e) found that a switched-on provider whose reading had no percentages kept its row spinning while Continue was already open. The Companion reports such a reading also before the first real reading and after one expired, so it is not a final answer. No new wording.
+- Approved customer-visible result: as in the #627 entries above; Continue stays closed while any switched-on provider row shows its spinner, and opens when that row shows a reading, asks the customer to do something (for example sign in), or is switched off. This replaces the earlier rule that a reading without percentages released the step.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a correction of the unreleased change above

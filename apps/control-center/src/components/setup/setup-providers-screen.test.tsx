@@ -829,15 +829,27 @@ describe("SetupProvidersScreen", () => {
     // Signed out: the row says what to do, and the step is not held for it.
     const signedOut = { ...copilot, value: true };
     expect(setupProvidersCanContinue([claude, signedOut], usage)).toBe(true);
-    // Collected, but nothing to show: that is an answer too.
+    // Off is off.
+    const cursor = provider({ health: "healthy", label: "Cursor", providerId: "cursor" });
+    expect(setupProvidersCanContinue([claude, { ...cursor, value: false }], usage)).toBe(true);
+  });
+
+  it("keeps Continue closed exactly while a switched-on row spins", () => {
+    // A reading without percentages is also what the Companion reports before
+    // the first real reading, so its row spins and Continue waits with it
+    // (Codex review on #642).
+    const closed = /<button[^>]*disabled=""[^>]*>[^<]*<span>Continue<\/span>/;
     const cursor = provider({ health: "healthy", label: "Cursor", providerId: "cursor" });
     const empty: UsageSnapshot = {
       providers: [...usage.providers, { ...usage.providers[0], id: "cursor", label: "Cursor",
         usageUnavailable: true }],
     };
-    expect(setupProvidersCanContinue([claude, cursor], empty)).toBe(true);
-    // Off is off.
-    expect(setupProvidersCanContinue([claude, { ...cursor, value: false }], usage)).toBe(true);
+    const html = render({ providers: [claude, cursor], usage: empty });
+    expect(html).toContain('data-slot="spinner"');
+    expect(html).toMatch(closed);
+    expect(setupProvidersCanContinue([claude, cursor], empty)).toBe(false);
+    // Switching it off is the customer's way on.
+    expect(setupProvidersCanContinue([claude, { ...cursor, value: false }], empty)).toBe(true);
   });
 
     it("finds a provider by label, by its message and by its id", () => {

@@ -601,13 +601,14 @@ export function setupProvidersCanContinue(
 }
 
 /**
- * Switched on and either still checking, or healthy without a current reading:
- * its row shows the spinner and its reading is on its way. A checking provider
- * waits whatever usage says, because Display Mode leaves it out until its row
- * turns healthy; a reading retained from before a restart is stale and does
- * not count. A provider the current collection did include but that has
- * nothing to show is a definite answer, like a sign-in the row asks for, and
- * does not hold the step.
+ * Switched on and its row shows the spinner: still checking, or healthy
+ * without a reading the display can show. Exactly the row's spinner, so
+ * Continue never opens beside a spinning row. A checking provider waits
+ * whatever usage says, because Display Mode leaves it out until its row turns
+ * healthy. A reading without percentages does not end the wait: the Companion
+ * also reports one before the first real reading and once a reading expired.
+ * A sign-in or other problem the row asks about is a definite answer and does
+ * not hold the step; switching a provider off always does.
  */
 export function setupProviderAwaitsFirstReading(
   provider: ProviderItem,
@@ -617,9 +618,7 @@ export function setupProviderAwaitsFirstReading(
   if (provider.health.state === "checking") return true;
   return (
     provider.health.state === "healthy" &&
-    !usage?.providers.some(
-      (reading) => reading.id === provider.providerId && reading.stale !== true,
-    )
+    !setupProviderCanDisplay(provider, usage)
   );
 }
 
