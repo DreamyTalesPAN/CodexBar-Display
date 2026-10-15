@@ -22,6 +22,7 @@ import {
   SetupConnectFailedDialog,
   SetupDeviceNotFoundDialog,
 } from "./setup-device-dialogs";
+import { SetupDeviceScreen } from "./setup-device-screen";
 import { SetupRecoveryDialogs } from "./setup-recovery-dialogs";
 import { SetupWizardTitle } from "./setup-wizard-screen";
 
@@ -84,6 +85,30 @@ describe("Setup WiFi recovery", () => {
       <SetupDeviceNotFoundDialog
         {...props}
         macAppUpdate={{ onUpdate, version: "1.0.62" }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Update the Mac App" }));
+    expect(onUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers the Mac App update while waiting for a WiFi VibeTV without a cable", () => {
+    const onUpdate = vi.fn();
+    render(
+      <SetupDeviceScreen
+        candidates={[]}
+        logLines={[]}
+        macAppUpdate={{ onUpdate, version: "1.0.62" }}
+        onChooseTransport={vi.fn()}
+        onConfigureWiFi={vi.fn()}
+        onConnect={vi.fn()}
+        onEnterAddressManually={vi.fn()}
+        onScanWiFiNetworks={vi.fn()}
+        onSearchAgain={vi.fn()}
+        onSelect={vi.fn()}
+        onWiFiError={vi.fn()}
+        selectedTarget={null}
+        showCandidates={false}
+        wifiSetupPhase="waiting"
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Update the Mac App" }));

@@ -24,7 +24,7 @@ import type {
 } from "../control-center-types";
 import { candidateKey, type SetupTransport } from "./setup-connection";
 import { SetupDeviceCard } from "./setup-device-card";
-import { SetupCableHelpDialog } from "./setup-device-dialogs";
+import { type MacAppUpdateOffer, SetupCableHelpDialog } from "./setup-device-dialogs";
 import { selectedItemClass } from "./setup-selectable-card";
 import { cn } from "@/lib/utils";
 import type { ConnectPhase } from "./setup-connect-log";
@@ -42,6 +42,8 @@ type SetupDeviceScreenProps = {
   /** Names the work in flight, so the button reports it instead of "Connecting" throughout. */
   connectPhase?: ConnectPhase;
   logLines: SetupLogLine[];
+  /** A newer Mac App exists; offered while no VibeTV turns up (#561). */
+  macAppUpdate?: MacAppUpdateOffer;
   aiFixPrompt?: () => string;
   onConnect: () => void;
   onBack?: () => void;
@@ -75,6 +77,7 @@ export function SetupDeviceScreen({
   connecting = false,
   connectPhase,
   logLines,
+  macAppUpdate,
   aiFixPrompt,
   onConnect,
   onBack,
@@ -362,6 +365,7 @@ export function SetupDeviceScreen({
 
       {wifiSetupPhase === "waiting" && !wifiWaitingViaCable ? (
         <SetupCableHelpDialog
+          macAppUpdate={macAppUpdate}
           onEnterAddressManually={onEnterAddressManually}
           onScanAgain={onSearchAgain}
           scanning={searching}

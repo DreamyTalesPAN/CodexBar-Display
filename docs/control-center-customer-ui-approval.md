@@ -7192,3 +7192,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the "Update the Mac App" hint on the "VibeTV not found" pages appears only in the Mac App. The Windows app shows these pages as before.
 - Scope: `control-center-app.tsx` and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — removes a hint from Windows, nothing to announce
+
+## 2026-10-15 — Mac App update hint also while waiting for a WiFi VibeTV (#561)
+
+- User approval: Paul asked on 2026-10-15 to finish PR #639 ("mach den feddich, ci grün, merge ready"), which includes the open Codex review finding: the approved hint was missing from the "Connect the USB cable" help that appears while setup waits for a WiFi VibeTV without a cable. Main is merged in with #641; the UI review gate cannot read a merge commit as approval marker, so this entry also stands for that merge. No new wording.
+- Approved customer-visible result: the same "Update the Mac App" hint as approved above, now also in that waiting help dialog, only in the Mac App and only when a newer Mac App exists. Nothing else changes.
+- Scope: `setup-device-screen.tsx`, `setup-wizard.tsx`, their test, the pinned actions in `.github/workflows/claude.yml` (same change as #640), the merge of main and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — completes the unreleased hint, nothing to announce

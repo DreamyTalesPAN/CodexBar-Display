@@ -734,6 +734,7 @@ export function SetupWizard(props: SetupWizardProps) {
           connecting={connecting}
           connectPhase={connect.state.phase}
           logLines={connectLogLines(connect.state, props.firmwareWrittenPercent)}
+          macAppUpdate={props.macAppUpdate}
           onConnect={startConnect}
           onBack={
             connect.state.phase === "idle" &&
