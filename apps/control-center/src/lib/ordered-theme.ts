@@ -6,21 +6,30 @@
 
 const STORAGE_KEY = "vibetv.controlCenter.orderedTheme";
 
-export function storedOrderedTheme(): string {
+// recordedAt lets an install that finished before the order (one the Companion
+// still reports from earlier) be told apart from the customer's answer to it.
+export type OrderedTheme = { themeId: string; recordedAt: number };
+
+export function storedOrderedTheme(): OrderedTheme | null {
   try {
-    return window.localStorage.getItem(STORAGE_KEY) || "";
+    const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "null");
+    return typeof stored?.themeId === "string" && typeof stored?.recordedAt === "number"
+      ? { themeId: stored.themeId, recordedAt: stored.recordedAt }
+      : null;
   } catch {
     // localStorage may be unavailable in private or restricted browser contexts.
-    return "";
+    return null;
   }
 }
 
-export function rememberOrderedTheme(themeId: string) {
+export function rememberOrderedTheme(themeId: string): OrderedTheme {
+  const ordered = { themeId, recordedAt: Date.now() };
   try {
-    window.localStorage.setItem(STORAGE_KEY, themeId);
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(ordered));
   } catch {
     // See above.
   }
+  return ordered;
 }
 
 export function forgetOrderedTheme() {

@@ -423,23 +423,27 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // Read after mount: the static page has no storage. While it is kept, a
   // settings read does not replace the selection with the active theme.
   const orderedThemeRef = useRef("");
+  const orderedThemeAtRef = useRef(0);
   useEffect(() => {
     if (initialThemeId) {
       if (initialTheme && !initialThemeIsScreensaver) {
-        rememberOrderedTheme(initialTheme.themeId);
-        orderedThemeRef.current = initialTheme.themeId;
+        const ordered = rememberOrderedTheme(initialTheme.themeId);
+        orderedThemeRef.current = ordered.themeId;
+        orderedThemeAtRef.current = ordered.recordedAt;
       }
       return;
     }
+    const stored = storedOrderedTheme();
     const ordered = catalog.themes.find(
       (theme) =>
-        theme.themeId === storedOrderedTheme() &&
+        theme.themeId === stored?.themeId &&
         (theme.usage || "live") === "live",
     )?.themeId;
-    if (!ordered) {
+    if (!ordered || !stored) {
       return;
     }
     orderedThemeRef.current = ordered;
+    orderedThemeAtRef.current = stored.recordedAt;
     const timer = window.setTimeout(() => setSelectedThemeId(ordered), 0);
     return () => window.clearTimeout(timer);
   }, [catalog.themes, initialTheme, initialThemeId, initialThemeIsScreensaver]);
@@ -532,13 +536,20 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [themeInstallStatus, setThemeInstallStatus] =
     useState<ThemeInstallStatus | null>(null);
   // A finished install is the customer's confirmed choice, the ordered theme
-  // or another one, so the ordered theme has nothing left to preselect.
+  // or another one, so the ordered theme has nothing left to preselect. An
+  // install that finished before the order is one the Companion still reports
+  // from earlier, not an answer to it.
   useEffect(() => {
-    if (themeInstallStatus?.phase === "complete") {
-      forgetOrderedTheme();
-      orderedThemeRef.current = "";
+    if (themeInstallStatus?.phase !== "complete") {
+      return;
     }
-  }, [themeInstallStatus?.phase]);
+    const finishedAt = Date.parse(themeInstallStatus.finishedAt ?? "");
+    if (finishedAt < orderedThemeAtRef.current) {
+      return;
+    }
+    forgetOrderedTheme();
+    orderedThemeRef.current = "";
+  }, [themeInstallStatus?.phase, themeInstallStatus?.finishedAt]);
   const [firmwareUpdate, setFirmwareUpdate] =
     useState<FirmwareUpdateInfo | null>(null);
   const [firmwareUpdateStatus, setFirmwareUpdateStatus] =

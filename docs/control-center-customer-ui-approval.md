@@ -7213,3 +7213,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: when the saved selection names a provider that has no usage (for example a signed-out Codex listed first), the Display Mode step in setup uses the first provider that has usage, as Settings already does. The Manual card previews that provider instead of "No usage yet", and Continue is open with Manual chosen.
 - Scope: `apps/control-center/src/components/setup/setup-wizard.tsx`, its test, and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — setup correction, not announced to customers
+## 2026-10-15 — #234: an install from before the order does not drop the bought theme
+
+- User approval: follows the #234 entry above; the Codex review on #642 (70e8b0da) found that an install the Companion still reports from earlier counted as the customer's answer to the shop link and dropped the bought theme, so a restart during setup lost the preselection. No new wording.
+- Approved customer-visible result: as in the #234 entry above; only an install that finished after the shop link was opened drops the kept theme.
+- Scope: `apps/control-center/src/lib/ordered-theme.ts`, `apps/control-center/src/components/control-center-app.tsx`, the customer-flow test, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a correction of the unreleased change above

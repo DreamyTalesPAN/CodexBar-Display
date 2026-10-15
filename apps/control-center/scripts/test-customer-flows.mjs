@@ -10571,6 +10571,18 @@ async function testOrderedThemeSurvivesRestartDuringSetup(browser, appUrl) {
   const installRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
     device: { ...themeMissingDevice, deviceId: "fixture-device-1" },
+    // An install the Companion still reports from before the order must not
+    // count as the customer's answer to it (Codex review on #642).
+    statusThemeInstallJob: {
+      id: "screensaver-job-before-order",
+      themeId: "night-clock",
+      themeName: "Fixture Night Clock Screensaver",
+      slot: "screensaver",
+      phase: "complete",
+      startedAt: "2026-06-23T11:00:00.000Z",
+      finishedAt: "2026-06-23T11:01:00.000Z",
+      logs: [],
+    },
   });
 
   for (const path of ["/install/clippy", ""]) {
