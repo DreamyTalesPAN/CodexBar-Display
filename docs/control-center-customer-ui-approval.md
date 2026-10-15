@@ -7136,3 +7136,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: As in "Busy computer dialog: waits for any other dialog" above, now also for confirmations such as deleting a theme (`alertdialog`). Nothing else changes.
 - Scope: `system-busy-dialog.tsx`, its new test `system-busy-dialog.test.tsx`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — review fix to an error dialog
+
+## 2026-10-15 — Busy computer: VibeTV label "Busy" (#606)
+
+- User approval: Paul approved "Computer busy" as VibeTV's label on 2026-10-15, with "Busy" as the label if "Computer busy" does not fit the title line of every catalog theme (as given in the #606 task). On the bench VibeTV 16199235 (Windows, 9999.0.2268) "Computer busy" fit Mini Classic and Claude Creature but ran into the window buttons of Clippy's title bar.
+- Approved customer-visible result: While the busy computer condition lasts, VibeTV shows "Busy" in place of the provider name; everything else as recorded in the busy computer entries above.
+- Scope: `SystemBusyLabel` in `companion/internal/daemon/daemon.go` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the label of an error state

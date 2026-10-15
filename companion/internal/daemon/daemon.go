@@ -53,8 +53,10 @@ type Options struct {
 }
 
 // SystemBusyLabel replaces the provider name on VibeTV while the computer is
-// too starved for the usage engine to answer.
-const SystemBusyLabel = "Computer busy"
+// too starved for the usage engine to answer. "Computer busy" ran into the
+// window buttons of Clippy's title bar on the bench VibeTV; "Busy" fits the
+// title line of every catalog theme.
+const SystemBusyLabel = "Busy"
 
 // SystemBusy is the condition of issue #606: the usage engine is running but
 // has not answered for several collections, and the computer is low on
