@@ -2,8 +2,8 @@ package codexbar
 
 import (
 	"context"
-	"errors"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -140,7 +140,7 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 		now = time.Now().UTC()
 	}
 
-	snapshotRaw, err := fetchDashboardJSON(ctx, endpoint+dashboardSnapshotPath, strings.TrimSpace(info.Token))
+	snapshotRaw, err := fetchDashboardSnapshot(ctx, endpoint, strings.TrimSpace(info.Token))
 	if err != nil {
 		return nil, err
 	}
@@ -218,15 +218,21 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 	return out, nil
 }
 
-// dashboardRequestTimeout bounds one request to CodexBar's serve. The serve
-// answers from its own cache; a request it does not answer within this time
-// must not hold the whole collection (10 min) and leave VibeTV without usage.
-// The next cycle asks again.
+// dashboardRequestTimeout bounds the snapshot request to CodexBar's serve.
+// The serve answers it from its own cache; a request it does not answer
+// within this time must not hold the whole collection (10 min) and leave
+// VibeTV without usage. The next cycle asks again. The usage requests keep
+// their own budgets: a Windows provider probe may take up to
+// perProviderProbeTimeout.
 var dashboardRequestTimeout = 30 * time.Second
 
-func fetchDashboardJSON(ctx context.Context, url string, token string) ([]byte, error) {
+func fetchDashboardSnapshot(ctx context.Context, endpoint string, token string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, dashboardRequestTimeout)
 	defer cancel()
+	return fetchDashboardJSON(ctx, endpoint+dashboardSnapshotPath, token)
+}
+
+func fetchDashboardJSON(ctx context.Context, url string, token string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err

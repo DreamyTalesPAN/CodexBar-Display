@@ -422,10 +422,27 @@ func TestDashboardRequestGivesUpOnASilentServe(t *testing.T) {
 	dashboardRequestTimeout = 50 * time.Millisecond
 	t.Cleanup(func() { dashboardRequestTimeout = original })
 	start := time.Now()
-	if _, err := fetchDashboardJSON(context.Background(), server.URL+dashboardSnapshotPath, "token"); err == nil {
+	if _, err := fetchDashboardSnapshot(context.Background(), server.URL, "token"); err == nil {
 		t.Fatal("a serve that does not answer must be an error")
 	}
 	if elapsed := time.Since(start); elapsed > 2*time.Second {
 		t.Fatalf("the request waited %s for a silent serve", elapsed)
+	}
+}
+
+// The snapshot's limit is not the usage requests' limit: a Windows provider
+// probe may take up to perProviderProbeTimeout, longer than the snapshot is
+// given (review of #628).
+func TestDashboardUsageRequestKeepsItsOwnBudget(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(150 * time.Millisecond)
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+	original := dashboardRequestTimeout
+	dashboardRequestTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { dashboardRequestTimeout = original })
+	if _, err := fetchDashboardJSON(context.Background(), server.URL+dashboardUsagePath+"?provider=claude", "token"); err != nil {
+		t.Fatalf("a usage request slower than the snapshot limit was cut: %v", err)
 	}
 }
