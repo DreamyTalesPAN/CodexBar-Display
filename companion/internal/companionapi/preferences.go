@@ -802,7 +802,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 		// the one the read is meant to fix (#607, 2026-10-15: a few seconds of
 		// warning icon between the Keychain prompt and the restart spinner).
 		readBeingChecked := setting.Enabled && state != string(codexbar.ProviderHealthHealthy) &&
-			s.browserSignInReadBeingChecked(setting.ID, now, readiness, hasReadiness)
+			s.browserSignInReadBeingChecked(setting, now, readiness, hasReadiness)
 		if readBeingChecked || state == providerHealthStateStale && signInState == "" &&
 			providerFailureUnexplained(setting, readiness, readinessApplies) &&
 			s.usageServiceStartedAfter(now, lastCollectedAt[setting.ID]) {

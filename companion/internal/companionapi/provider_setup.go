@@ -458,17 +458,26 @@ func (s *Server) noteBrowserSignInRead(providerID string, at time.Time) {
 }
 
 // browserSignInReadBeingChecked: the Mac app reported a browser sign-in read
-// for this provider within the grace period, and no exact check since that
-// read has named a failure. Until then the row's failure is from before the
-// read, and the row shows that it is checking.
-func (s *Server) browserSignInReadBeingChecked(providerID string, now time.Time, readiness providerReadinessRecord, hasReadiness bool) bool {
+// for this provider within the grace period. Until the check of that read
+// answers, the row's failure is from before the read and the row shows that it
+// is checking. Once the check answered, a failure it names stands, and after a
+// ready answer the row keeps checking only while nothing newer explains the
+// missing reading: a scan after the check that names a sign-in, permission,
+// throttle or outage failure shows it (Codex review on #607).
+func (s *Server) browserSignInReadBeingChecked(setting codexbar.ProviderSetting, now time.Time, readiness providerReadinessRecord, hasReadiness bool) bool {
 	s.browserSignInReadMu.Lock()
-	at, ok := s.browserSignInReadAt[providerID]
+	at, ok := s.browserSignInReadAt[setting.ID]
 	s.browserSignInReadMu.Unlock()
 	if !ok || now.Before(at) || now.Sub(at) >= usageServiceStartGrace {
 		return false
 	}
-	return !(hasReadiness && !readiness.CheckedAt.Before(at) && readiness.Status != codexbar.ProviderReady)
+	if !hasReadiness || readiness.CheckedAt.Before(at) {
+		return true
+	}
+	if readiness.Status != codexbar.ProviderReady {
+		return false
+	}
+	return providerFailureUnexplained(setting, readiness, true)
 }
 
 // providerRetryAfterBrowserSignInRead marks a check the Mac app asks for

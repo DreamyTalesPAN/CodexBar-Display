@@ -186,6 +186,9 @@ func TestPreferencesShowCheckingWhileABrowserSignInReadIsChecked(t *testing.T) {
 		{"read reported, check running", readAt.Add(5 * time.Second), nil, "checking"},
 		{"no read reported", readAt.Add(5 * time.Second), &providerReadinessRecord{}, "stale"},
 		{"check after the read failed", readAt.Add(10 * time.Second), &providerReadinessRecord{Status: codexbar.ProviderAuthRequired, CheckedAt: readAt.Add(8 * time.Second)}, "stale"},
+		// The check said ready, but the scan since then names a sign-in
+		// failure: the row shows it (Codex review on #607).
+		{"newer scan failure after a ready check", readAt.Add(20 * time.Second), &providerReadinessRecord{Status: codexbar.ProviderReady, CheckedAt: readAt.Add(8 * time.Second)}, "stale"},
 		{"grace over", readAt.Add(4 * time.Minute), nil, "stale"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
