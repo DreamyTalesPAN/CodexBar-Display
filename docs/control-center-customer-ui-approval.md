@@ -7185,3 +7185,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: When the background service reports a newer Mac App, the Mac App now runs Sparkle's background check for that prompt: Sparkle shows its update dialog only when it finds the update itself, and otherwise nothing appears — no "Checking for updates…" and no "You're up to date" alert in the middle of setup. While the launch update check is still running, the prompt does nothing (that check owns updates). "Check for Updates…" in the menu and the Update button still run the visible check. Windows is unchanged.
 - Scope: `macos/VibeTVControlCenter/main.swift` (new action `vibetv://check-for-updates-in-background`), `URLSchemeTests.swift`, `apps/control-center/src/components/control-center-app.tsx`, and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no new feature, the prompt only stops showing a pointless alert
+
+## 2026-10-15 — #619: approval marker after merging main with #607, #620 and #629
+
+- User approval: Paul asked on 2026-10-15 to bring #619 to ready. Main moved on with #607, #620 and #629 while the branch was in review, so main is merged in. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #570 entry above and in the entries of #607, #620 and #629; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
