@@ -5,6 +5,13 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-10-15 — "Your VibeTV is live" without Back, set up once is remembered (#611)
+
+- User approval: Paul decided the behavior in issue #611 on 2026-10-15 ("Decision by Paul, 2026-10-15"). He has not personally previewed this exact build.
+- Approved customer-visible result: "Your VibeTV is live" has no Back. It hands over to Overview only when VibeTV itself reports the theme as rendered (`renderOk`) and real usage arrives, and the preview has drawn that theme. A first setup keeps this rule without timeout or forwarding. For a theme this app has no render pack for (a dev theme, or one installed by a newer app) the preview area says `Unsupported theme` instead of loading forever, and VibeTV's report alone decides the handover. The app remembers per VibeTV that setup was finished; later launches, including a reload from a shop theme link, go from the setup checks straight to Overview or the requested page without showing "Your VibeTV is live". A setup rerun in the same window (Settings connection change) keeps the full check, and "Run setup again" forgets every remembered VibeTV. Cleared web storage shows that screen once more, with the same check. This replaces the 2026-09-02 rule that Overview is never reached without a working preview, for the unsupported-theme case only.
+- Scope: `apps/control-center/src/components/setup/`, `live-vibetv-preview.tsx`, `control-center-app.tsx`, `apps/control-center/src/lib/completed-setup-devices.ts`, their tests, and this approval record. No merge, release, or device write is implied.
+- What's new: none — a setup screen that no longer gets stuck is nothing a customer needs to learn.
+
 ## 2026-10-09 — Return to the shop theme page after first install (#63)
 
 - User approval: Paul delegated customer UI decisions for the autonomous overnight issue work on 2026-10-09. He has not personally previewed this exact wording or layout.
@@ -7094,6 +7101,82 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No UI change. `test-customer-flows.mjs --release-screenshots` only runs the existing flows that already capture screenshots and captures them at 2x for the mail drafts; the app and the other test modes are unchanged.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs` (new mode), `apps/control-center/package.json` (`capture:release-screenshots`), and this approval record, after merging main.
 - What's new: none — test tooling only
+
+## 2026-10-14 — Theme Studio chat: right-edge text and provider readings (#594)
+
+- User approval: Paul asked on 2026-10-14 that the overnight session, once its audit was done, continue open issues that had no branch or pull request yet. This one changes no text; he has not seen it.
+- Approved customer-visible result: When the AI chat changes the words or the size of a text that has no width yet and sits near the right edge, the edit is applied and the text gets a box up to the display edge, as the manual controls already do; before, the chat refused the edit. A design that shows the first or second provider's readings now counts as showing usage, so "remove the usage" in the chat also removes those readings and a new picture keeps them in the usage area. Nothing else changes.
+- Scope: `apps/control-center/src/lib/ai-theme-layout.ts`, `apps/control-center/src/components/theme-studio/design-controls.ts`, their tests, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — two edge cases of the chat editor
+
+## 2026-10-14 — Theme Studio chat: compact provider readings count as usage (#594, review)
+
+- User approval: Paul asked on 2026-10-14 that the overnight session, once its audit was done, continue open issues that had no branch or pull request yet. This one changes no text; he has not seen it.
+- Approved customer-visible result: The entry above also holds for imported designs whose texts use the short reading names (for example `{pv1l}`): they count as showing usage too. Nothing else changes.
+- Scope: `apps/control-center/src/components/theme-studio/design-controls.ts`, `apps/control-center/src/lib/theme-studio.ts` (exports its existing key expansion), the test, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — an edge case of the chat editor
+
+## 2026-10-14 - On the Mac, "Sign in to Claude/Cursor" also reads the browser sign-in from the app
+
+- User approval: A Mac customer (VibeTV order #1175) was signed in to claude.ai, but VibeTV kept showing "No Claude session key found in browser cookies." The background usage service gets no macOS Keychain prompt and, on the bench Mac (macOS 26), may not list the Chrome profile folder, so it never reads a browser sign-in by itself; one read from the foreground fills CodexBar's cookie cache and the background service then shows Claude usage (bench Mac, preview 99.0.1106, 2026-10-14). Asked whether this should become its own pull request, with the note that customers will see a new macOS Keychain prompt, Marcus answered "Okay, dann mach das bitte und danach testest du das."
+- Approved customer-visible result: On the Mac, clicking "Sign in to Claude" or "Sign in to Cursor" (Settings and setup) still opens the provider sign-in as before. In addition, the Mac app has CodexBar read that provider's browser sign-in while the customer signs in, every 15 seconds for at most 3 minutes, and stops as soon as it is read. macOS may show its own prompt asking whether CodexBarCLI may use the browser's stored key. After "Allow" or "Always Allow" the existing automatic checks find the sign-in and the row becomes ready. After "Deny" the app stops reading and does not ask again for that provider for 3 minutes; the row stays as it was. No new text, button or dialog in VibeTV. Windows, other providers and rows without a sign-in action are unchanged.
+- Scope: `macos/VibeTVControlCenter/main.swift`, `macos/VibeTVControlCenter/URLSchemeTests.swift`, `apps/control-center/src/components/control-center-runtime.ts`, `apps/control-center/src/components/control-center-app.tsx`, and this approval record. This approves the pull-request branch only, not merge, release, signing, or a device operation.
+- What's new: none — a fix for the existing "Sign in to Claude/Cursor" action, not announced to customers
+
+## 2026-10-14 — #607: ask once, and approval marker for the main merge
+
+- User approval: Paul asked on 2026-10-14 to test #607 on Mac and Windows and, after the Mac test showed three to four Keychain prompts and Claude values only after 6:40, to investigate and fix it. The UI review gate cannot read a merge commit as approval marker, so this entry also stands for the merge of main into this branch. No new wording.
+- Approved customer-visible result: as approved in the entry above, with one correction: after a read the app asks VibeTV to check the provider with it, and when that check works, VibeTV starts its usage service fresh and the app does not read, or ask, again. On Paul's Mac this gave one prompt and Claude values 104 seconds after the click. During that restart the provider rows show their warning icon for about a minute, as after any settings change. No new text, button or dialog.
+- Scope: `macos/VibeTVControlCenter/main.swift`, `macos/VibeTVControlCenter/URLSchemeTests.swift`, `companion` (provider retry, usage service restart), the merge of main, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a fix for the existing "Sign in to Claude/Cursor" action, not announced to customers
+
+## 2026-10-14 — #607: a spinner while a new usage service reads
+
+- User approval: After the #607 test Paul saw every provider row (Codex and Claude) show the warning icon for about a minute while the usage service was started fresh, and asked on 2026-10-14: "lass doch da dann lieber n spinner oder so anzeigen".
+- Approved customer-visible result: For up to three minutes after the usage service was started (after a settings change, a browser sign-in read or a crash), a provider whose saved reading is older than that service shows the existing "checking" spinner instead of the warning icon. Once the new service delivers, the row is healthy as before; if it has not delivered after three minutes, the row shows the warning icon as before. A throttled provider keeps its warning. No new text, button or dialog.
+- Scope: `companion` (usage service start time, provider row health), this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a row that already had a checking state uses it during a restart, not announced to customers
+
+## 2026-10-14 — #607: approval marker after merging main with #597
+
+- User approval: Paul asked on 2026-10-14 to test, investigate and fix #607. Main moved on with #597 while the branch was under test, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #607 entries above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-14 — #607: the restart spinner keeps known failures
+
+- User approval: follows Paul's request above ("lieber n spinner"); the Codex review on #607 found that the spinner also replaced rows whose provider check already named the failure. No new wording.
+- Approved customer-visible result: as in the spinner entry above, except that a provider whose current check already says why it has no live reading (sign in, permission, throttle and the like) keeps that row and its action during a restart instead of showing the spinner. Only a row with no current explanation shows the spinner.
+- Scope: `companion` provider row health, `macos/VibeTVControlCenter/main.swift` (the post-read check asks every runtime origin within the reading's deadline), and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a correction of the unreleased spinner, not announced to customers
+
+## 2026-10-14 — #607: approval marker after merging main with #608
+
+- User approval: Paul asked on 2026-10-14 to test, investigate and fix #607. Main moved on with #608 while the branch was in review, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #607 entries above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-15 — #607: spinner from the browser sign-in read on
+
+- User approval: Paul saw in the Atlas test on 2026-10-15 that the Claude row showed the warning icon for a few seconds after he allowed the Keychain prompt, before the restart spinner came. Follows his request for a spinner instead of warnings ("lieber n spinner").
+- Approved customer-visible result: from the moment the Mac app reports a browser sign-in read until the check of that read answers, the provider row shows the existing "checking" spinner instead of the warning icon. If that check names a failure, the row shows it as before. No new text, button or dialog.
+- Scope: `companion` provider retry and provider row health, this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a correction of the unreleased spinner, not announced to customers
+
+## 2026-10-15 — #607: approval marker after merging main with #620
+
+- User approval: Paul asked on 2026-10-15 to finish #607 (Atlas test, review fixes). Main moved on with #620 while the branch was in review, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #607 entries above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-15 — #607: approval marker after merging main with #629
+
+- User approval: Paul asked on 2026-10-15 to finish #607 (Atlas test, review fixes). Main moved on with #629 while the branch was in review, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #607 entries above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
 
 ## 2026-10-14 — Windows: an app update found while the app runs installs only with the window closed
 

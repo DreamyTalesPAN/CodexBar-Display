@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import type {
   DeviceInfo,
   SupportDiagnostics,
@@ -14,36 +15,45 @@ import { SetupWizardScreen, SetupWizardTitle } from "./setup-wizard-screen";
 type SetupLiveScreenProps = {
   device: DeviceInfo | null;
   displayFrame: DisplayFrameSnapshot | null;
+  /** This app already finished setup for this VibeTV once. */
+  alreadySetUp?: boolean;
   aiFixPrompt?: () => string;
   onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
   /** The app runs on Windows; the Help menu words its outcomes for it. */
   windowsHost?: boolean;
   onPreviewReady?: () => void;
-  onBack?: () => void;
   usage: UsageSnapshot | null;
 };
 
 /**
- * The wizard leaves once the first frame renders. Back keeps theme recovery
- * available when the active custom preview was lost with the Mac's data.
+ * The wizard leaves once VibeTV shows its theme with real usage and the preview
+ * has drawn it, or VibeTV alone confirms a theme this app cannot draw. A VibeTV
+ * set up before skips this screen. There is no Back: nothing here is a choice.
  */
 export function SetupLiveScreen({
   device,
   displayFrame,
+  alreadySetUp,
   aiFixPrompt,
   onCreateSupportReport,
   windowsHost,
   onPreviewReady,
-  onBack,
   usage,
 }: SetupLiveScreenProps) {
+  useEffect(() => {
+    if (alreadySetUp) {
+      onPreviewReady?.();
+    }
+  }, [alreadySetUp, onPreviewReady]);
+  if (alreadySetUp) {
+    return null;
+  }
   return (
     <SetupWizardScreen
       label="Your VibeTV is live"
       aiFixPrompt={aiFixPrompt}
       onCreateSupportReport={onCreateSupportReport}
       windowsHost={windowsHost}
-      onBack={onBack}
     >
       <SetupWizardTitle>Your VibeTV is live</SetupWizardTitle>
       <LiveVibeTVPreview
