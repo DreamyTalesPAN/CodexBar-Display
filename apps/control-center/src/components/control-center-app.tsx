@@ -606,8 +606,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // Hiding the usage dialog hides the announcement; the repair itself runs on.
   const [usageFailureHidden, setUsageFailureHidden] = useState(false);
   // The computer is too starved for the usage engine to answer (#606).
-  const [systemBusy, setSystemBusy] = useState(false);
-  const [systemBusyDismissed, dismissSystemBusy] = useSystemBusyDismissal(systemBusy);
+  // Its start time keys the incident; null while there is none.
+  const [systemBusySince, setSystemBusySince] = useState<string | null>(null);
+  const [systemBusyDismissed, dismissSystemBusy] = useSystemBusyDismissal(systemBusySince);
   // "Run setup again" asks first, from Settings and from Support alike.
   const [setupAgainRequested, setSetupAgainRequested] = useState(false);
   // The "What's new" entries this customer has seen, null while nothing is
@@ -1516,7 +1517,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         firmwareUpdate?: FirmwareUpdateJob;
         providerSetup?: ProviderSetupInfo;
         setup?: ProviderSelectionSetup;
-        systemBusy?: unknown;
+        systemBusy?: { since?: string };
       }>(takeStatusPath(appUpdateCheckRequested), undefined, {
         preserveLastError: true,
       });
@@ -1528,7 +1529,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       applyConnectionStatus(payload);
       setProviderSetup(payload.providerSetup || null);
       setProviderSelectionSetup(payload.setup || null);
-      setSystemBusy(Boolean(payload.systemBusy));
+      setSystemBusySince(
+        payload.systemBusy ? payload.systemBusy.since || "unknown" : null,
+      );
       const pairingRejection = pairingRejectionForDevice(payload.device);
       if (pairingRejection) {
         setLastError(pairingRejection);
@@ -5132,10 +5135,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, [whatsNewIsNotNews]);
   // Like the usage dialog, an announcement over whatever the customer does,
   // after the runtime repair, the lost VibeTV and setup. A broken usage
-  // service is the bigger problem and is told first.
+  // service is the bigger problem and is told first, and a question the
+  // customer asked for (Run setup again?) is answered first.
   const systemBusyOpen =
-    systemBusy &&
+    systemBusySince !== null &&
     !systemBusyDismissed &&
+    !setupAgainRequested &&
     !needsRuntimeRecovery &&
     !lostDevicePickerOpen &&
     !setupOwnsScreen &&

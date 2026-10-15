@@ -84,7 +84,8 @@ function startWindow({
     displayConfigured: setUp,
     usageBroken: false,
     appUpdate: false,
-    systemBusy: false,
+    // The incident's start time, or false.
+    systemBusy: false as false | string,
   };
   vi.useFakeTimers();
   vi.stubGlobal("matchMedia", () => ({
@@ -132,7 +133,7 @@ function startWindow({
             ? { status: "setup_required", engine: { status: "not_configured" } }
             : undefined,
           systemBusy: companion.systemBusy
-            ? { since: "2026-10-14T09:13:00Z", memoryAvailablePercent: 5, memoryPressure: "warn" }
+            ? { since: companion.systemBusy, memoryAvailablePercent: 5, memoryPressure: "warn" }
             : undefined,
           device: {
             active: true,
@@ -648,7 +649,7 @@ for (const os of ["darwin", "windows"]) {
     await app.wait(10);
     expect(busyDialog()).toBeNull();
 
-    app.companion.systemBusy = true;
+    app.companion.systemBusy = "2026-10-14T09:13:00Z";
     await app.wait(6);
     expect(busyDialog()?.textContent).toContain(
       "VibeTV can't get new usage right now because your computer is low on memory. Close apps you don't need or restart your computer.",
@@ -666,7 +667,14 @@ for (const os of ["darwin", "windows"]) {
     // Gone and back: a new incident.
     app.companion.systemBusy = false;
     await app.wait(6);
-    app.companion.systemBusy = true;
+    app.companion.systemBusy = "2026-10-14T09:40:00Z";
+    await app.wait(6);
+    expect(busyDialog()).not.toBeNull();
+
+    // A new incident whose clear no poll saw (the window was hidden) is new
+    // all the same.
+    fireEvent.click(within(busyDialog()!).getByRole("button", { name: "OK" }));
+    app.companion.systemBusy = "2026-10-14T10:05:00Z";
     await app.wait(6);
     expect(busyDialog()).not.toBeNull();
 
@@ -684,7 +692,7 @@ for (const os of ["darwin", "windows"]) {
 it("tells a busy computer after a broken usage service, and What's new after both", async () => {
   const app = startWindow();
   app.companion.usageBroken = true;
-  app.companion.systemBusy = true;
+  app.companion.systemBusy = "2026-10-14T09:13:00Z";
   await app.wait(10);
   const usageDialog = () => screen.queryByRole("dialog", { name: "AI usage is not set up" });
   const busyDialog = () => screen.queryByRole("dialog", { name: "Your computer is very busy" });
@@ -700,4 +708,23 @@ it("tells a busy computer after a broken usage service, and What's new after bot
   fireEvent.click(within(busyDialog()!).getByRole("button", { name: "OK" }));
   expect(busyDialog()).toBeNull();
   expect(notice()).not.toBeNull();
+});
+
+it("lets the customer's own question come before a busy computer", async () => {
+  const app = startWindow();
+  app.companion.systemBusy = "2026-10-14T09:13:00Z";
+  await app.wait(10);
+  const busyDialog = () => screen.queryByRole("dialog", { name: "Your computer is very busy" });
+  const question = () => screen.queryByRole("dialog", { name: "Run setup again?" });
+  expect(busyDialog()).not.toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "Support" }));
+  await app.wait(1);
+  fireEvent.click(screen.getByRole("button", { name: "Run setup again" }));
+  expect(question()).not.toBeNull();
+  expect(busyDialog()).toBeNull();
+
+  // Answered, the busy computer is told again: the customer never closed it.
+  fireEvent.click(within(question()!).getByRole("button", { name: "Cancel" }));
+  expect(busyDialog()).not.toBeNull();
 });

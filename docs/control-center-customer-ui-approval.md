@@ -7115,3 +7115,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: While the usage engine is running but has not answered for three collection intervals and the computer is low on memory, a dialog over the page reads exactly: title "Your computer is very busy", text "VibeTV can't get new usage right now because your computer is low on memory. Close apps you don't need or restart your computer.", one button "OK". It does not hold the page behind it, waits behind the runtime repair, a lost VibeTV, setup and a broken usage service, and once closed stays closed until the condition has gone and come back. The same words on Mac and Windows. VibeTV shows "Computer busy" in place of the provider name for as long as the condition lasts; the values under it stay the last good ones.
 - Scope: `apps/control-center/src/components/system-busy-dialog.tsx`, its wiring in `control-center-app.tsx`, the tests in `control-center-app.whats-new.test.tsx`, the Companion detection (`companion/internal/systemload`, `companion/internal/daemon`, `/v1/status` and `/v1/diagnostics`), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — an error dialog, not a feature to announce
+
+## 2026-10-15 — Busy computer dialog: review fixes (#606)
+
+- User approval: Paul approved the wording and behaviour of the busy computer dialog in chat on 2026-10-15 (entry above). This follow-up applies two review findings and changes no wording.
+- Approved customer-visible result: As above, with two refinements: a closed dialog opens again for every new incident, also when no status read saw the previous one end (the window was hidden); and the `Run setup again?` question the customer asked for is shown alone, the busy dialog returning after it if the customer had not closed it.
+- Scope: `system-busy-dialog.tsx`, `control-center-app.tsx`, `control-center-app.whats-new.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fixes to an error dialog

@@ -16,19 +16,15 @@ export const systemBusyCopy = {
 
 /**
  * Whether the customer closed the dialog for the incident under way. Closed
- * stays closed while the computer stays busy and opens again only once the
- * condition has gone and come back.
+ * stays closed while the computer stays busy and opens again for the next
+ * incident. An incident is its start time: polls can pause while the window
+ * is hidden, and a clear between two of them must not be missed.
  */
-export function useSystemBusyDismissal(busy: boolean): [boolean, () => void] {
-  const [dismissed, setDismissed] = useState(false);
-  const [wasBusy, setWasBusy] = useState(busy);
-  if (busy !== wasBusy) {
-    setWasBusy(busy);
-    if (!busy) {
-      setDismissed(false);
-    }
-  }
-  return [dismissed, () => setDismissed(true)];
+export function useSystemBusyDismissal(
+  since: string | null,
+): [boolean, () => void] {
+  const [dismissedSince, setDismissedSince] = useState<string | null>(null);
+  return [since !== null && since === dismissedSince, () => setDismissedSince(since)];
 }
 
 /** The computer is too starved for the usage engine to answer (#606). */
