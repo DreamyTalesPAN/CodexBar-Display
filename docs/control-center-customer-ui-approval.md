@@ -7227,3 +7227,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the busy computer entries above; nothing else changes.
 - Scope: merge of main into `claude/issue-606-busy-computer`, the approval record conflict resolved by keeping main's entries and appending this branch's, and this approval record.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-15 — Busy computer dialog: checks for an open dialog before it appears (#606)
+
+- User approval: Paul approved the wording and behaviour of the busy computer dialog in chat on 2026-10-15 (entries above). This follow-up applies a review finding and changes no wording.
+- Approved customer-visible result: As in "Busy computer dialog: waits for any other dialog" above; the check now happens before the dialog first appears, so it never shows for a moment over a question that was already open.
+- Scope: `system-busy-dialog.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to an error dialog

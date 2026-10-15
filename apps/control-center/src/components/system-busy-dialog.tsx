@@ -30,20 +30,24 @@ export function useSystemBusyDismissal(
 /**
  * Whether a dialog other than this one is open. The busy dialog leaves the
  * page usable, so a page's own dialog (Run setup again, a theme preview, a
- * factory reset, a delete confirmation) can open under it, or be open when it comes; it waits for
- * that one instead of covering it, and returns once it is closed.
+ * factory reset, a delete confirmation) can open under it, or be open when it
+ * comes; it waits for that one instead of covering it, and returns once it is
+ * closed. The first answer is read before the first render, so the busy dialog
+ * never mounts over a dialog that was already open.
  */
+function otherDialogOpen(): boolean {
+  return (
+    typeof document !== "undefined" &&
+    Array.from(
+      document.querySelectorAll('[role="dialog"], [role="alertdialog"]'),
+    ).some((dialog) => !dialog.textContent?.includes(systemBusyCopy.title))
+  );
+}
+
 function useOtherDialogOpen(): boolean {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(otherDialogOpen);
   useEffect(() => {
-    const check = () =>
-      setOpen(
-        Array.from(
-          document.querySelectorAll('[role="dialog"], [role="alertdialog"]'),
-        ).some(
-          (dialog) => !dialog.textContent?.includes(systemBusyCopy.title),
-        ),
-      );
+    const check = () => setOpen(otherDialogOpen());
     check();
     const observer = new MutationObserver(check);
     observer.observe(document.body, { childList: true, subtree: true });
