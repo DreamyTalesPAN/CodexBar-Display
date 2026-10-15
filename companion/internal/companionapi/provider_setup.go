@@ -27,8 +27,9 @@ type providerSetupResponse struct {
 }
 
 type exactProviderProbeFlight struct {
-	done  chan struct{}
-	setup codexbar.ProviderSetup
+	done      chan struct{}
+	setup     codexbar.ProviderSetup
+	startedAt time.Time
 }
 
 type providerReadinessRecord struct {
@@ -351,20 +352,31 @@ func checkingProviderSetup(now time.Time) codexbar.ProviderSetup {
 }
 
 func (s *Server) currentExactProviderSetup(ctx context.Context, providerID string) codexbar.ProviderSetup {
+	return s.exactProviderSetupStartedAfter(ctx, providerID, time.Time{})
+}
+
+// exactProviderSetupStartedAfter joins a running probe of the provider only
+// when it started at or after notBefore. A browser sign-in read changes what
+// CodexBar can read, so a probe already running from before it answers for
+// the old state: wait it out, then probe again (#607 Codex review).
+func (s *Server) exactProviderSetupStartedAfter(ctx context.Context, providerID string, notBefore time.Time) codexbar.ProviderSetup {
 	s.exactProviderProbeMu.Lock()
 	if s.exactProviderProbes == nil {
 		s.exactProviderProbes = make(map[string]*exactProviderProbeFlight)
 	}
-	if current := s.exactProviderProbes[providerID]; current != nil {
+	for current := s.exactProviderProbes[providerID]; current != nil; current = s.exactProviderProbes[providerID] {
 		s.exactProviderProbeMu.Unlock()
 		select {
 		case <-current.done:
-			return current.setup
+			if !current.startedAt.Before(notBefore) {
+				return current.setup
+			}
 		case <-ctx.Done():
 			return timedOutExactProviderSetup(providerID, s.currentTime())
 		}
+		s.exactProviderProbeMu.Lock()
 	}
-	flight := &exactProviderProbeFlight{done: make(chan struct{})}
+	flight := &exactProviderProbeFlight{done: make(chan struct{}), startedAt: s.currentTime()}
 	s.exactProviderProbes[providerID] = flight
 	s.exactProviderProbeMu.Unlock()
 
@@ -410,6 +422,68 @@ func timedOutExactProviderSetup(providerID string, now time.Time) codexbar.Provi
 	}
 }
 
+// usageServiceDeliveredSince: the running usage service delivered a fresh,
+// usable reading of the provider of its own at or after since.
+func (s *Server) usageServiceDeliveredSince(providerID string, since time.Time) bool {
+	if s.loadUsage == nil {
+		return false
+	}
+	now := s.currentTime()
+	usage, ok := s.loadUsage(now)
+	if !ok {
+		return false
+	}
+	for _, provider := range usage.Providers {
+		if !strings.EqualFold(strings.TrimSpace(provider.Provider), providerID) || provider.Retained ||
+			provider.CollectedAt.Before(since) {
+			continue
+		}
+		if _, fresh := freshUsableUsageProviderReadiness(provider, now); fresh {
+			return true
+		}
+	}
+	return false
+}
+
+// noteBrowserSignInRead records that CodexBar just read the provider's browser
+// sign-in, so its row shows the check of that read instead of the failure from
+// before it.
+func (s *Server) noteBrowserSignInRead(providerID string, at time.Time) {
+	s.browserSignInReadMu.Lock()
+	defer s.browserSignInReadMu.Unlock()
+	if s.browserSignInReadAt == nil {
+		s.browserSignInReadAt = make(map[string]time.Time)
+	}
+	s.browserSignInReadAt[providerID] = at
+}
+
+// browserSignInReadBeingChecked: the Mac app reported a browser sign-in read
+// for this provider within the grace period. Until the check of that read
+// answers, the row's failure is from before the read and the row shows that it
+// is checking. Once the check answered, a failure it names stands, and after a
+// ready answer the row keeps checking only while nothing newer explains the
+// missing reading: a scan after the check that names a sign-in, permission,
+// throttle or outage failure shows it (Codex review on #607).
+func (s *Server) browserSignInReadBeingChecked(setting codexbar.ProviderSetting, now time.Time, readiness providerReadinessRecord, hasReadiness bool) bool {
+	s.browserSignInReadMu.Lock()
+	at, ok := s.browserSignInReadAt[setting.ID]
+	s.browserSignInReadMu.Unlock()
+	if !ok || now.Before(at) || now.Sub(at) >= usageServiceStartGrace {
+		return false
+	}
+	if !hasReadiness || readiness.CheckedAt.Before(at) {
+		return true
+	}
+	if readiness.Status != codexbar.ProviderReady {
+		return false
+	}
+	return providerFailureUnexplained(setting, readiness, true)
+}
+
+// providerRetryAfterBrowserSignInRead marks a check the Mac app asks for
+// right after CodexBar read the provider's browser sign-in.
+const providerRetryAfterBrowserSignInRead = "browser-sign-in-read"
+
 func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
@@ -417,13 +491,24 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), providerCheckTimeout)
 	defer cancel()
 	providerID := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("provider")))
+	// The Mac app reports here that CodexBar just read the provider's browser
+	// sign-in into its cookie cache.
+	afterBrowserSignInRead := r.URL.Query().Get("after") == providerRetryAfterBrowserSignInRead
+	requestedAt := s.currentTime()
+	if afterBrowserSignInRead && providerID != "" {
+		s.noteBrowserSignInRead(providerID, requestedAt)
+	}
 	var setup codexbar.ProviderSetup
 	label := ""
 	if providerID == "" {
 		setup = s.currentProviderSetup(ctx, true)
 	} else {
 		providerRevision := s.currentProviderRevision(providerID)
-		setup = s.currentExactProviderSetup(ctx, providerID)
+		if afterBrowserSignInRead {
+			setup = s.exactProviderSetupStartedAfter(ctx, providerID, requestedAt)
+		} else {
+			setup = s.currentExactProviderSetup(ctx, providerID)
+		}
 		s.recordExactProviderSetup(providerID, providerRevision, setup)
 		// A too-old engine puts its own row first; name the provider asked for.
 		for _, provider := range setup.Providers {
@@ -438,7 +523,22 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 		// A reading the running usage service took before CodexBar's config
 		// changed can still look fresh, so it is no evidence that the service
 		// runs on the current config; the supervisor decides that.
-		if providerID != "" && s.restartUsageService != nil {
+		// After a browser sign-in read the config did not change, yet the
+		// running service keeps its failed reading for minutes; only a fresh
+		// one shows the sign-in before the Mac app reads, and asks, again.
+		// A service that already delivered the provider after the read needs
+		// no replacement: restarting it only put every row back on the
+		// spinner for a moment (2026-10-15). A reading from before the read
+		// proves nothing about the read, so it does not count.
+		if providerID != "" && afterBrowserSignInRead && s.freshUsageService != nil &&
+			!s.usageServiceDeliveredSince(providerID, requestedAt) {
+			s.usageServiceReplacePending.Store(true)
+			s.requestUsageServiceReplace(providerID)
+		} else if providerID != "" && afterBrowserSignInRead {
+			if s.wakeDisplayStream != nil {
+				s.wakeDisplayStream()
+			}
+		} else if providerID != "" && s.restartUsageService != nil {
 			s.requestUsageServiceReplace(providerID)
 		} else if s.wakeDisplayStream != nil {
 			s.wakeDisplayStream()
@@ -467,8 +567,12 @@ func (s *Server) requestUsageServiceReplace(providerID string) {
 func (s *Server) replaceUsageService(providerID string) {
 	for {
 		for s.usageServiceRestartPending.Swap(false) {
+			restart := s.restartUsageService
+			if s.usageServiceReplacePending.Swap(false) && s.freshUsageService != nil {
+				restart = s.freshUsageService
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			err := s.restartUsageService(ctx)
+			err := restart(ctx)
 			cancel()
 			if err != nil && s.logf != nil {
 				s.logf("VibeTV usage service restart after checking %s failed: %v", providerID, err)

@@ -108,7 +108,7 @@ it.each([
             board: "esp8266",
             firmware: "9999.0.524",
             activeTheme: "mini-classic",
-            display: { themeSpec: { active: true, path: themes[0].themeSpecPath } },
+            display: { themeSpec: { active: true, path: themes[0].themeSpecPath, renderOk: true } },
             // A VibeTV with the screensaver setting reports its standby state.
             standby: { active: false },
             health: { ok: true },
