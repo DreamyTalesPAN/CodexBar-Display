@@ -7122,3 +7122,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: The frame kept across a tab switch is reused only for the VibeTV it came from. After switching to another VibeTV, Overview and setup start with an empty preview until that VibeTV's first frame arrives, instead of briefly showing the previous one. No text or control changes.
 - Scope: `apps/control-center/src/components/live-vibetv-preview.tsx`, `control-center-app.tsx`, and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no customer-visible change
+
+## 2026-10-15 — Keep the hosted device overview image (#615)
+
+- User approval: Paul's rule for the overnight audit of 2026-10-14: nothing the product does today is lost, and anything an outside caller can reach stays.
+- Approved customer-visible result: `public/images/vibetv-device-overview.png` stays published under `/images/`, as on main. The audit had deleted it because nothing in the repository links it, but a mail or page outside the repository may. No screen changes.
+- Scope: `apps/control-center/public/images/vibetv-device-overview.png` (restored unchanged) and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — nothing changes for the customer
