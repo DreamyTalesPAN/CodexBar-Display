@@ -706,41 +706,51 @@ func browserSignInReadWorks(check data: Data, provider: String) -> Bool {
 // stale origin cannot hold the reading, and later sign-in clicks, past its
 // window.
 func browserSignInCheckAfterRead(provider: String, runtimeOrigins: [URL], deadline: Date) async -> Bool {
-    var works = false
-    for origin in runtimeOrigins {
-        let remaining = min(90, deadline.timeIntervalSinceNow)
-        guard remaining > 1 else {
-            break
+    // All candidates at once: a stale origin listed first cannot use up the
+    // time the active runtime needs for its check (Codex review on #607).
+    await withTaskGroup(of: Bool.self) { group in
+        for origin in runtimeOrigins {
+            group.addTask {
+                await browserSignInCheckAfterRead(provider: provider, origin: origin, deadline: deadline)
+            }
         }
-        guard var components = URLComponents(
-            url: origin.appendingPathComponent("v1/providers/retry"),
-            resolvingAgainstBaseURL: false
-        ) else {
-            continue
-        }
-        components.queryItems = [
-            URLQueryItem(name: "provider", value: provider),
-            URLQueryItem(name: "after", value: "browser-sign-in-read"),
-        ]
-        guard let url = components.url else {
-            continue
-        }
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = remaining
-        configuration.timeoutIntervalForResource = remaining
-        let session = URLSession(configuration: configuration)
-        defer { session.invalidateAndCancel() }
-        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
-        request.httpMethod = "POST"
-        guard let (data, response) = try? await session.data(for: request),
-              (response as? HTTPURLResponse)?.statusCode == 200 else {
-            continue
-        }
-        if browserSignInReadWorks(check: data, provider: provider) {
+        var works = false
+        for await answer in group where answer {
             works = true
         }
+        return works
     }
-    return works
+}
+
+// The post-read check against one runtime origin, ended by the deadline.
+func browserSignInCheckAfterRead(provider: String, origin: URL, deadline: Date) async -> Bool {
+    let remaining = min(90, deadline.timeIntervalSinceNow)
+    guard remaining > 1,
+          var components = URLComponents(
+              url: origin.appendingPathComponent("v1/providers/retry"),
+              resolvingAgainstBaseURL: false
+          ) else {
+        return false
+    }
+    components.queryItems = [
+        URLQueryItem(name: "provider", value: provider),
+        URLQueryItem(name: "after", value: "browser-sign-in-read"),
+    ]
+    guard let url = components.url else {
+        return false
+    }
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.timeoutIntervalForRequest = remaining
+    configuration.timeoutIntervalForResource = remaining
+    let session = URLSession(configuration: configuration)
+    defer { session.invalidateAndCancel() }
+    var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
+    request.httpMethod = "POST"
+    guard let (data, response) = try? await session.data(for: request),
+          (response as? HTTPURLResponse)?.statusCode == 200 else {
+        return false
+    }
+    return browserSignInReadWorks(check: data, provider: provider)
 }
 
 
