@@ -446,6 +446,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
         busyAction={null}
         companionStatus="online"
         device={{
+          active: true,
           connected: true,
           paired: true,
           ready: true,

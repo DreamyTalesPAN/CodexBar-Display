@@ -45,7 +45,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Field, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import {
   Item,
   ItemActions,
@@ -97,7 +97,11 @@ import {
 import { ThemeRenderPreview } from "./theme-render-preview";
 import { ReplaceDraftDialog } from "./theme-studio/replace-draft-dialog";
 import { SetupStepFailedDialog } from "./setup/setup-provider-dialogs";
-import type { ApiError, StandbySettings } from "./control-center-types";
+import {
+  screensaverSwitchDisabled,
+  type ApiError,
+  type StandbySettings,
+} from "./control-center-types";
 import {
   ThemeStudioScreen,
   type ThemeStudioEditorTheme,
@@ -108,6 +112,7 @@ import {
 export type ThemeLibraryCompanionStatus = "unknown" | "online" | "missing";
 
 export type ThemeLibraryDeviceInfo = {
+  active?: boolean;
   connected: boolean;
   paired?: boolean;
   ready?: boolean;
@@ -695,17 +700,22 @@ export function ThemeLibraryScreen({
               Show screensaver
             </FieldLabel>
             <Switch
+              aria-describedby="vibetv-library-standby-same"
               aria-label="Show screensaver"
               checked={standby.enabled}
               // Not closed while its own change is saved: that drops keyboard
               // focus to the page (issue #558). The app queues these writes.
-              disabled={device?.ready !== true}
+              disabled={screensaverSwitchDisabled(device, busyAction, standby)}
               id="vibetv-library-standby"
               onCheckedChange={(enabled) =>
                 onSaveStandby?.({ ...standby, enabled })
               }
             />
           </Field>
+          <FieldDescription id="vibetv-library-standby-same">
+            The same switch is in Settings, where you also choose when the
+            screensaver starts and how bright it is.
+          </FieldDescription>
           {!standby.enabled ? (
             <Alert>
               <Info aria-hidden />

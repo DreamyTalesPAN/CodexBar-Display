@@ -7178,3 +7178,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as approved in the #607 entries above; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-15 — #643: Show screensaver says where its twin is
+
+- User approval: Marcus chose on 2026-10-15 to keep both Show screensaver switches (Settings and Appearance › Screensavers) and add a line under each that says they are the same setting (#643, option c), and asked to find and test when either shows a stale value. The wording below is a draft until his click test of this pull request.
+- Approved customer-visible result: under the switch in Settings, "The same switch is under Appearance › Screensavers."; under the switch in Screensavers, "The same switch is in Settings, where you also choose when the screensaver starts and how bright it is." Both switches now open and close by one rule (VibeTV connected, no connection change, setup, erase or firmware update running). The Settings switch stays closed until VibeTV's own setting is read, so it no longer offers placeholder values that a click would save over the customer's time and brightness.
+- Scope: `settings-screen.tsx`, `theme-library-screen.tsx`, `control-center-types.ts`, their tests and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a small clarification of an existing setting, not announced to customers
