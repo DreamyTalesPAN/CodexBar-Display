@@ -247,9 +247,11 @@ export function UsageScreen({
 /**
  * One quiet line per switched-on provider that VibeTV cannot show (#368):
  * its usage is missing, stale or unavailable -- the same test the device's
- * provider rotation uses -- and its health names why. A provider that is
- * still checking (first read, restart) gets no line. The reason and the time
- * come from the Mac App; nothing here judges the provider itself.
+ * provider rotation uses -- and its health names why. The provider of the
+ * frame VibeTV shows (currentProvider) never gets one: with no fresh provider
+ * left, the device keeps showing that one's last reading. A provider that is
+ * still checking (first read, restart) gets no line either. The reason and
+ * the time come from the Mac App; nothing here judges the provider itself.
  */
 export function usageProvidersNotOnVibeTV(
   usage: UsageSnapshot | null,
@@ -266,6 +268,9 @@ export function usageProvidersNotOnVibeTV(
       continue;
     }
     const id = setting.providerId.trim().toLowerCase();
+    if (id === usage?.currentProvider?.trim().toLowerCase()) {
+      continue;
+    }
     const reading = usage?.providers?.find(
       (provider) => provider.id.trim().toLowerCase() === id,
     );

@@ -7186,3 +7186,10 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center` Usage screen, the Settings section anchor, this approval record. Pull-request branch only, not merge or release.
 - What's new: none — a quiet hint on an existing page, not announced to customers
 
+
+## 2026-10-15 — #368: no Usage line for the provider VibeTV shows
+
+- User approval: follows Marcus' decision of 2026-10-15 for the #368 Usage line (entry above); correction from the Codex review of PR #644.
+- Approved customer-visible result: the provider whose frame VibeTV currently shows never gets the `isn't on VibeTV` line, also when its reading is stale: with no fresh provider left, the device keeps showing that provider's last reading. Wording unchanged.
+- Scope: `apps/control-center` Usage screen, this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a correction of the unreleased line

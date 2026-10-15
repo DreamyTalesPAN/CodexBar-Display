@@ -609,6 +609,11 @@ describe("usageProvidersNotOnVibeTV", () => {
     expect(usageProvidersNotOnVibeTV(staleClaude, [claude({ state: "healthy" })], now)).toEqual([]);
   });
 
+  it("stays quiet about the provider whose frame VibeTV shows, even when its reading is stale", () => {
+    const shown: UsageSnapshot = { ...staleClaude, currentProvider: "claude" };
+    expect(usageProvidersNotOnVibeTV(shown, [claude({ state: "stale" })], now)).toEqual([]);
+  });
+
   it("renders the line with a link to Settings", () => {
     const html = renderToStaticMarkup(
       <UsageScreen
