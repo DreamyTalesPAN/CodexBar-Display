@@ -3,6 +3,8 @@ package daemon
 import (
 	"context"
 	"errors"
+	"io"
+	"net"
 	"net/url"
 	"strconv"
 	"strings"
@@ -592,13 +594,17 @@ func (c *providerCollector) noteFetchResult(now time.Time, fetchErr error) {
 	}
 }
 
-// engineSilent is a fetch the engine gave no answer to: no HTTP response came
-// (the request ran out of time, or the connection failed or was cut), or there
-// was no serve to ask. An HTTP error or a body that does not decode is an
-// answer, and keeps its own message.
+// engineSilent is a fetch the engine gave no answer to: no complete HTTP
+// response came (the request ran out of time, or the connection failed or was
+// cut, also in the middle of the body), or there was no serve to ask. An HTTP
+// error or a body that does not decode is an answer, and keeps its own
+// message.
 func engineSilent(err error) bool {
 	var requestErr *url.Error
+	var connErr *net.OpError
 	return errors.As(err, &requestErr) ||
+		errors.As(err, &connErr) ||
+		errors.Is(err, io.ErrUnexpectedEOF) ||
 		errors.Is(err, context.DeadlineExceeded) ||
 		errors.Is(err, codexbar.ErrDashboardServeUnavailable)
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/url"
 	"syscall"
 	"testing"
@@ -252,6 +254,8 @@ func TestSystemBusyOnlyForSilence(t *testing.T) {
 		{name: "collection deadline", err: fmt.Errorf("dashboard snapshot: %w", context.DeadlineExceeded), silent: true},
 		{name: "connection cut", err: &url.Error{Op: "Get", URL: "http://127.0.0.1:50000/x", Err: syscall.ECONNRESET}, silent: true},
 		{name: "no serve", err: codexbar.ErrDashboardServeUnavailable, silent: true},
+		{name: "cut in the body", err: io.ErrUnexpectedEOF, silent: true},
+		{name: "reset in the body", err: &net.OpError{Op: "read", Net: "tcp", Err: syscall.ECONNRESET}, silent: true},
 		{name: "HTTP error", err: errors.New("GET /dashboard/v1/snapshot returned HTTP 500")},
 		{name: "undecodable", err: errors.New("decode dashboard snapshot: unexpected end of JSON input")},
 	} {
