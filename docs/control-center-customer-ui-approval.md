@@ -7192,3 +7192,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the #627 entry above; a stale reading kept from before a restart counts as no reading, so Continue waits for the current one.
 - Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test, and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — a correction of the unreleased change above
+
+## 2026-10-15 — #627: a provider still checking holds Continue
+
+- User approval: follows the #627 entry above; the second Codex review on #642 found that usage can arrive before the provider row turns from checking to healthy, which opened Continue while Display Mode still left that provider out. No new wording.
+- Approved customer-visible result: as in the #627 entry above; Continue also waits while a switched-on provider's row still shows checking.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a correction of the unreleased change above

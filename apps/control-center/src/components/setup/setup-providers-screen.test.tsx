@@ -819,6 +819,10 @@ describe("SetupProvidersScreen", () => {
         stale: true }],
     };
     expect(setupProvidersCanContinue([claude, warming], retained)).toBe(false);
+    // Usage can arrive before the row turns healthy; Display Mode still leaves
+    // a checking provider out, so Continue waits for the row as well.
+    expect(setupProvidersCanContinue([claude, warming], withCursor)).toBe(false);
+    expect(setupProvidersCanContinue([claude, { ...cursor }], retained)).toBe(false);
   });
 
   it("does not wait on a provider that has a definite answer", () => {
