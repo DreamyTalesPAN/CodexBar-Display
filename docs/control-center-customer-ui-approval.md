@@ -7199,3 +7199,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the #627 entry above; Continue also waits while a switched-on provider's row still shows checking.
 - Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test, and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — a correction of the unreleased change above
+
+## 2026-10-15 — Setup keeps the theme of the VibeTV the customer bought (#234)
+
+- User approval: Marcus decided on 2026-10-15 (through the VibeTV orchestrator chat) that the app preselects the bought theme in setup and the customer confirms it with Install; the shop link still never installs a theme by itself (the 2026-10-09 rule stays). This entry also stands for the merge of main (#640, #641) into this branch. No new wording.
+- Approved customer-visible result: after the app was opened through `/install/<theme>` for a live theme, "Choose your theme" in setup has that theme selected, also after the app restarted during setup without the link. Install is still the customer's click. The kept choice is dropped once any theme install completes or VibeTV already shows that theme. Unknown, screensaver or unavailable theme IDs are not kept.
+- Scope: `apps/control-center/src/lib/ordered-theme.ts`, `apps/control-center/src/components/control-center-app.tsx`, the customer-flow test, and this approval record. Pull-request branch only, not merge or release. Shop metafield and shipping mail are separate.
+- What's new: none — part of first setup, not announced to customers

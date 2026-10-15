@@ -403,6 +403,7 @@ async function main() {
       });
       await testInstallLinkKeepsRequestedTheme(browser, appContext.appUrl);
       await testLocalInstallLinkKeepsSetupGate(browser, appContext.appUrl);
+      await testOrderedThemeSurvivesRestartDuringSetup(browser, appContext.appUrl);
       await testInstallLinkSkipsLiveScreenForSetUpVibeTV(browser, appContext.appUrl);
       await testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
         browser,
@@ -1101,6 +1102,7 @@ async function main() {
     await testSavedAddressReconnectsReadOnly(browser, appContext.appUrl);
     await testInstallLinkKeepsRequestedTheme(browser, appContext.appUrl);
     await testInstallLinkSkipsLiveScreenForSetUpVibeTV(browser, appContext.appUrl);
+    await testOrderedThemeSurvivesRestartDuringSetup(browser, appContext.appUrl);
     await testThemeInstallStatusStaysCustomerOnly(browser, appContext.appUrl);
     await testThemeInstallShowsIntermediateProgress(browser, appContext.appUrl);
     await testCustomerLogsStayCustomerOnly(browser, appContext.appUrl);
@@ -10559,6 +10561,34 @@ async function testInstallLinkKeepsRequestedTheme(browser, appUrl) {
 
 // A shop link reloads the app (#611). For a VibeTV this app set up before, the
 // reload goes straight to the requested theme without "Your VibeTV is live".
+// #234: the shop link of a themed VibeTV preselects its theme in setup, and an
+// app restart during setup, which opens the app without the link, keeps that
+// choice. Nothing is installed before the customer clicks Install.
+async function testOrderedThemeSurvivesRestartDuringSetup(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: nativeDefaultViewport,
+  });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: { ...themeMissingDevice, deviceId: "fixture-device-1" },
+  });
+
+  for (const path of ["/install/clippy", ""]) {
+    await page.goto(`${appUrl}${path}`, { waitUntil: "domcontentloaded" });
+    await page
+      .getByRole("heading", { name: SETUP_THEME_SCREEN })
+      .waitFor({ timeout: 20_000 });
+    const clippy = page.getByRole("radio", { name: "Fixture Clippy Theme" });
+    await waitForCondition(
+      async () => (await clippy.getAttribute("aria-checked")) === "true",
+      `setup must preselect the ordered theme (${path || "after restart"})`,
+    );
+  }
+  await page.waitForTimeout(250);
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
 async function testInstallLinkSkipsLiveScreenForSetUpVibeTV(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];

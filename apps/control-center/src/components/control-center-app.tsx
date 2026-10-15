@@ -16,6 +16,11 @@ import {
   setupCompletedFor,
 } from "@/lib/completed-setup-devices";
 import {
+  forgetOrderedTheme,
+  rememberOrderedTheme,
+  storedOrderedTheme,
+} from "@/lib/ordered-theme";
+import {
   NO_THEME_UPGRADE,
   ownThemePaths,
   resolveActiveLiveTheme,
@@ -413,6 +418,31 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [activeTab, setActiveTab] = useState<ActiveTab>(
     initialThemeId ? "theme-library" : "overview",
   );
+  // The theme of the VibeTV the customer bought (#234): kept from the shop
+  // link so setup still preselects it after the app restarts without it.
+  // Read after mount: the static page has no storage. While it is kept, a
+  // settings read does not replace the selection with the active theme.
+  const orderedThemeRef = useRef("");
+  useEffect(() => {
+    if (initialThemeId) {
+      if (initialTheme && !initialThemeIsScreensaver) {
+        rememberOrderedTheme(initialTheme.themeId);
+        orderedThemeRef.current = initialTheme.themeId;
+      }
+      return;
+    }
+    const ordered = catalog.themes.find(
+      (theme) =>
+        theme.themeId === storedOrderedTheme() &&
+        (theme.usage || "live") === "live",
+    )?.themeId;
+    if (!ordered) {
+      return;
+    }
+    orderedThemeRef.current = ordered;
+    const timer = window.setTimeout(() => setSelectedThemeId(ordered), 0);
+    return () => window.clearTimeout(timer);
+  }, [catalog.themes, initialTheme, initialThemeId, initialThemeIsScreensaver]);
   const runtimeSurface = useSyncExternalStore(
     subscribeRuntimeSurface,
     getRuntimeSurfaceSnapshot,
@@ -501,6 +531,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [lastInstall, setLastInstall] = useState<InstallResponse["result"]>();
   const [themeInstallStatus, setThemeInstallStatus] =
     useState<ThemeInstallStatus | null>(null);
+  // A finished install is the customer's confirmed choice, the ordered theme
+  // or another one, so the ordered theme has nothing left to preselect.
+  useEffect(() => {
+    if (themeInstallStatus?.phase === "complete") {
+      forgetOrderedTheme();
+      orderedThemeRef.current = "";
+    }
+  }, [themeInstallStatus?.phase]);
   const [firmwareUpdate, setFirmwareUpdate] =
     useState<FirmwareUpdateInfo | null>(null);
   const [firmwareUpdateStatus, setFirmwareUpdateStatus] =
@@ -1109,7 +1147,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           catalog.themes,
           payload.device,
         );
-        if (!initialThemeId && activeLiveTheme) {
+        if (activeLiveTheme?.themeId === orderedThemeRef.current) {
+          forgetOrderedTheme();
+          orderedThemeRef.current = "";
+        }
+        if (!initialThemeId && !orderedThemeRef.current && activeLiveTheme) {
           setSelectedThemeId(activeLiveTheme.themeId);
         }
       }
