@@ -7129,3 +7129,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: The busy computer dialog no longer stacks with a page's own dialog (Run setup again?, a theme preview, a factory reset or connection change in Settings). While one of them is open, the busy dialog waits and returns after it if the customer had not closed it. It also no longer appears when the usage engine answers with an error of its own; that error keeps its existing message.
 - Scope: `system-busy-dialog.tsx`, `control-center-app.tsx`, `control-center-app.whats-new.test.tsx`, the Companion's silence check (`companion/internal/daemon/collector.go`, `companion/internal/codexbar/dashboard_fetch.go`), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — review fixes to an error dialog
+
+## 2026-10-15 — Busy computer dialog also waits for confirmations (#606)
+
+- User approval: Paul approved the wording and behaviour of the busy computer dialog in chat on 2026-10-15 (entries above). This follow-up applies a review finding and changes no wording.
+- Approved customer-visible result: As in "Busy computer dialog: waits for any other dialog" above, now also for confirmations such as deleting a theme (`alertdialog`). Nothing else changes.
+- Scope: `system-busy-dialog.tsx`, its new test `system-busy-dialog.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to an error dialog

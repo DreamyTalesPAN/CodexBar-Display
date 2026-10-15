@@ -30,7 +30,7 @@ export function useSystemBusyDismissal(
 /**
  * Whether a dialog other than this one is open. The busy dialog leaves the
  * page usable, so a page's own dialog (Run setup again, a theme preview, a
- * factory reset) can open under it, or be open when it comes; it waits for
+ * factory reset, a delete confirmation) can open under it, or be open when it comes; it waits for
  * that one instead of covering it, and returns once it is closed.
  */
 function useOtherDialogOpen(): boolean {
@@ -38,7 +38,9 @@ function useOtherDialogOpen(): boolean {
   useEffect(() => {
     const check = () =>
       setOpen(
-        Array.from(document.querySelectorAll('[role="dialog"]')).some(
+        Array.from(
+          document.querySelectorAll('[role="dialog"], [role="alertdialog"]'),
+        ).some(
           (dialog) => !dialog.textContent?.includes(systemBusyCopy.title),
         ),
       );
