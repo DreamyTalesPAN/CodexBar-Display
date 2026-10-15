@@ -2,6 +2,7 @@ package codexbar
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -444,5 +445,25 @@ func TestDashboardUsageRequestKeepsItsOwnBudget(t *testing.T) {
 	t.Cleanup(func() { dashboardRequestTimeout = original })
 	if _, err := fetchDashboardJSON(context.Background(), server.URL+dashboardUsagePath+"?provider=claude", "token"); err != nil {
 		t.Fatalf("a usage request slower than the snapshot limit was cut: %v", err)
+	}
+}
+
+// The usage request for all providers is bounded like the snapshot: a serve
+// that answered the snapshot and then stalls costs one collection (review of
+// #628).
+func TestDashboardAggregateUsageRequestGivesUp(t *testing.T) {
+	original, originalMode := dashboardRequestTimeout, providerProbePerProvider
+	dashboardRequestTimeout, providerProbePerProvider = 50*time.Millisecond, false
+	t.Cleanup(func() { dashboardRequestTimeout, providerProbePerProvider = original, originalMode })
+	start := time.Now()
+	_, _, err := fetchDashboardUsage(context.Background(), []string{"claude"}, func(ctx context.Context, _ string) ([]byte, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want the request deadline", err)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("the usage request waited %s for a silent serve", elapsed)
 	}
 }

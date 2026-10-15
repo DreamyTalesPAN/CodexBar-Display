@@ -218,12 +218,12 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 	return out, nil
 }
 
-// dashboardRequestTimeout bounds the snapshot request to CodexBar's serve.
-// The serve answers it from its own cache; a request it does not answer
-// within this time must not hold the whole collection (10 min) and leave
-// VibeTV without usage. The next cycle asks again. The usage requests keep
-// their own budgets: a Windows provider probe may take up to
-// perProviderProbeTimeout.
+// dashboardRequestTimeout bounds the snapshot request to CodexBar's serve,
+// and the usage request for all providers at once. The serve answers both
+// from its own cache; a request it does not answer within this time must not
+// hold the whole collection (10 min) and leave VibeTV without usage. The next
+// cycle asks again. A Windows per-provider probe keeps its own budget
+// (perProviderProbeTimeout).
 var dashboardRequestTimeout = 30 * time.Second
 
 func fetchDashboardSnapshot(ctx context.Context, endpoint string, token string) ([]byte, error) {
