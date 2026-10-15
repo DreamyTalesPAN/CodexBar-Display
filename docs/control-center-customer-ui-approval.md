@@ -5,6 +5,13 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-10-15 — Create with AI: no repeated consent, visible progress, Mac export confirmed after saving (#633, #634, #582)
+
+- User approval: Marcus asked on 2026-10-15 to fix #633, #634 and #582 in one pull request; the behaviour follows the preferred option of each issue. The step texts below are drafted and not yet confirmed by Marcus; he sees them in his Mac test before the merge.
+- Approved customer-visible result: Draft, to be confirmed by Marcus. With an OpenAI key saved, the first message in Create with AI goes straight to the AI, also after the app was closed and opened again; the "Create with AI" dialog with the consent box appears only while no key is saved, and Disconnect OpenAI still removes the key so the next message asks again (#633). While the AI works, the three dots are followed by the running step: "Understanding your request…", then for a new picture "Drawing the picture…" and "Adding clock, text and readings…". Once a step runs 10 seconds or longer, its seconds count up next to it ("23 s"). Answers and layout changes show only the first step (#634). On the Mac, Export theme pack shows "Theme pack exported. No device was contacted." only after the save dialog saved the file, and nothing after Cancel; Windows and the browser show it at once as before (#582).
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, the native Theme Studio flow in `apps/control-center/scripts/test-customer-flows.mjs`, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — fixes to the AI editor, nothing new for customers to learn
+
 ## 2026-10-15 — "Your VibeTV is live" without Back, set up once is remembered (#611)
 
 - User approval: Paul decided the behavior in issue #611 on 2026-10-15 ("Decision by Paul, 2026-10-15"). He has not personally previewed this exact build.

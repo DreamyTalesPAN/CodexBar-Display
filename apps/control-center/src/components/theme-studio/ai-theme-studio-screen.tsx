@@ -105,7 +105,7 @@ import { isAttachedSceneAnimation } from "@/lib/ai-theme";
 import { usageSectionIndices } from "./design-controls";
 import {applyAIThemeLayout,layoutContext} from "@/lib/ai-theme-layout";
 import type { ThemeStudioScreenProps } from "../theme-studio-screen";
-import { themeRenderPackUrl } from "../control-center-runtime";
+import { isNativeControlCenterApp, onNativeDownloadFinished, themeRenderPackUrl } from "../control-center-runtime";
 import { copyForHost } from "@/lib/customer-platform";
 import { validateThemeAgainstCapabilities } from "@/lib/theme-studio-capabilities";
 import { buildDeviceThemePack, sendThemeToVibeTV } from "@/lib/theme-install";
@@ -176,6 +176,19 @@ export function AIThemeStudioScreen({
   // The request the AI is working on: shown as the customer's message right
   // away, and added to the conversation for good once it has an answer.
   const [asking, setAsking] = useState<string | null>(null);
+  // The step the AI is working on and how long it has run (#634), so a long
+  // step does not look stuck.
+  const [step, setStep] = useState("");
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    if (!step) return;
+    const timer = window.setInterval(() => setSeconds((s) => s + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [step]);
+  function progress(next: string) {
+    setStep(next);
+    setSeconds(0);
+  }
   const chatEnd = useRef<HTMLDivElement>(null);
   useEffect(() => {
     chatEnd.current?.scrollIntoView({ block: "nearest" });
@@ -196,6 +209,16 @@ export function AIThemeStudioScreen({
   const [loadingSample, setLoadingSample] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
+  // The Mac App asks where to save, and the customer can cancel: an export is
+  // confirmed only once it says the file was saved (#582).
+  const [exporting, setExporting] = useState("");
+  useEffect(() => {
+    if (!exporting) return;
+    return onNativeDownloadFinished(exporting, (saved) => {
+      setExporting("");
+      if (saved) setStatus("Theme pack exported. No device was contacted.");
+    });
+  }, [exporting]);
   const [library, setLibrary] = useState<UserThemeRecord[]>([]);
   const savedDesigns = initialTheme ? library.filter((theme) => (theme.document.usage || "live") === (initialTheme.usage || "live")) : library;
   const [libraryId, setLibraryId] = useState(initialTheme?.libraryId);
@@ -228,7 +251,9 @@ export function AIThemeStudioScreen({
         : undefined;
   const locked = busy || sending || saving || installStatus?.phase === "installing";
   const canCancel = busy && !loadingSample;
-  const aiReady = configured === true && consent;
+  // Connecting needs the consent box ticked, so a saved key is that consent
+  // (#633); Disconnect removes both.
+  const aiReady = configured === true;
   const elementName = primitive
     ? friendlyElementName(primitive, document.assets)
     : "";
@@ -532,7 +557,10 @@ export function AIThemeStudioScreen({
     try {
       const pack = buildDeviceThemePack(document);
       download(new Uint8Array(pack.zipBytes), pack.fileName, "application/zip");
-      setStatus("Theme pack exported. No device was contacted.");
+      if (isNativeControlCenterApp() && !windowsHost) {
+        setStatus("");
+        setExporting(pack.fileName);
+      } else setStatus("Theme pack exported. No device was contacted.");
     } catch {
       setError(
         "This scene cannot be exported yet. Check its elements and assets.",
@@ -719,6 +747,7 @@ export function AIThemeStudioScreen({
     // cancelled request is not shown twice and not sent as an earlier turn.
     const asked = prompt;
     setAsking(asked);
+    progress("Understanding your request…");
     const reply = (content: string) =>
       setMessages((all) => [...all, ...([["user", asked], ["assistant", content]] as const).map(([role, text]) => ({ role, content: text.slice(0, 2000), createdAt: new Date().toISOString() }))].slice(-AI_THEME_LOCAL_HISTORY_LIMIT));
     try {
@@ -770,6 +799,7 @@ export function AIThemeStudioScreen({
         setAttachments([]);
         return;
       }
+      progress("Drawing the picture…");
       const concept = await generateAIThemeConcept(
         {
           prompt,
@@ -799,6 +829,7 @@ export function AIThemeStudioScreen({
       // step; if that fails the picture still stands.
       let added = "";
       try {
+        progress("Adding clock, text and readings…");
         const extras = await planAIThemeLayout(
           "The picture for the following request has just been created and is already in the design. Now add or change ONLY the native elements this request asks for (text, clock, date, usage readings, bars, shapes), placed where the request says. Do not describe or change the picture. For a live theme that shows usage, also harmonize its readouts with the supplied artwork: cohesive colours, compact readable typography, appropriate bar treatment and calm placement clear of the subjects. Keep at least one live percentage, meter or reset unless the customer explicitly requested no readings. For screensavers or explicitly readout-free designs, add only what was requested. Request: " + prompt,
           planningContext(next), controller.signal, [], history,
@@ -834,6 +865,7 @@ export function AIThemeStudioScreen({
         request.current = null;
         setBusy(false);
         setAsking(null);
+        progress("");
       }
     }
   }
@@ -842,6 +874,7 @@ export function AIThemeStudioScreen({
     request.current = null;
     setBusy(false);
     setAsking(null);
+    progress("");
     setStatus(
       "Cancelled. Your scene is unchanged. OpenAI may still bill work already started.",
     );
@@ -1429,11 +1462,14 @@ export function AIThemeStudioScreen({
               {asking !== null ? (
                 <>
                   <p className="ml-8 self-end whitespace-pre-wrap rounded-xl bg-muted px-3 py-2 text-sm [overflow-wrap:anywhere]">{asking}</p>
-                  <p role="status" className="flex h-5 items-center gap-1">
-                    <span className="sr-only">AI is working</span>
-                    {[0, 150, 300].map((delay) => (
-                      <span key={delay} aria-hidden className="size-1.5 animate-bounce rounded-full bg-muted-foreground motion-reduce:animate-none" style={{ animationDelay: `${delay}ms` }} />
-                    ))}
+                  <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <span aria-hidden className="flex gap-1">
+                      {[0, 150, 300].map((delay) => (
+                        <span key={delay} className="size-1.5 animate-bounce rounded-full bg-muted-foreground motion-reduce:animate-none" style={{ animationDelay: `${delay}ms` }} />
+                      ))}
+                    </span>
+                    {step}
+                    {seconds >= 10 ? <span aria-hidden className="tabular-nums">{seconds} s</span> : null}
                   </p>
                 </>
               ) : null}
