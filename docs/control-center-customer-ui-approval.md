@@ -7178,3 +7178,11 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as approved in the #607 entries above; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-15 — #368: Usage names a switched-on provider VibeTV cannot show
+
+- User approval: Marcus decided on 2026-10-15 in the provider-status task that Usage gets one quiet line, for example "Claude isn't on VibeTV: sign in again. No usage reading for 2d.", with a link to Settings. This partly lifts Paul's order of 2026-07-21 (no provider-repair box on Usage): it is a line of muted text, no box. The exact sentences below are still to be seen by Marcus in his test.
+- Approved customer-visible result: below the provider tiles on Usage, one line per switched-on provider whose usage is missing, stale or unavailable while its health names a reason: `<Provider> isn't on VibeTV. <the provider's own health message> No usage reading for <time>.` (`No usage reading yet.` when it never delivered), followed by the link button `Open Settings`, which opens Settings at AI providers. A provider that is checking, healthy or switched off gets no line; the line goes away with the next reading.
+- Scope: `apps/control-center` Usage screen, the Settings section anchor, this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a quiet hint on an existing page, not announced to customers
+
