@@ -271,6 +271,9 @@ func New(opts Options) (*Server, error) {
 	if permissionsErr := runtimeconfig.RestrictPermissions(home); permissionsErr != nil {
 		return nil, fmt.Errorf("restrict runtime config permissions: %w", permissionsErr)
 	}
+	if _, recoverErr := runtimeconfig.RecoverPendingDeviceSelection(home); recoverErr != nil {
+		return nil, fmt.Errorf("recover pending device selection: %w", recoverErr)
+	}
 	client := opts.HTTPClient
 	if client == nil {
 		client = &http.Client{Timeout: deviceTimeout}

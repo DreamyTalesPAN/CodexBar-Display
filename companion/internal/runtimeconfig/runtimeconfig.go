@@ -137,6 +137,10 @@ func WithConfigLock(home string, run func() error) error {
 	return run()
 }
 
+func deviceSelectionJournalPath(home string) string {
+	return runtimepaths.Path(home, deviceSelectionJournalFileName)
+}
+
 func Load(home string) (Config, error) {
 	home = strings.TrimSpace(home)
 	if home == "" {
@@ -219,13 +223,10 @@ func restrictPermissions(home, configPath, configDir string) error {
 	if err := os.Chmod(configDir, privateConfigDirMode); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("restrict runtime config dir permissions: %w", err)
 	}
-	if err := restrictExistingConfigFilePermissions(configPath); err != nil {
-		return err
-	}
-	// Builds before 07856077 could leave a device-selection journal with the
-	// device token behind. Nothing reads it any more.
-	if err := os.Remove(runtimepaths.Path(home, deviceSelectionJournalFileName)); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("remove stale device selection journal: %w", err)
+	for _, path := range []string{configPath, deviceSelectionJournalPath(home)} {
+		if err := restrictExistingConfigFilePermissions(path); err != nil {
+			return err
+		}
 	}
 	for _, pattern := range ConfigBackupFilePatterns() {
 		matches, err := filepath.Glob(filepath.Join(configDir, pattern))
@@ -289,6 +290,52 @@ func restrictExistingConfigFilePermissions(path string) error {
 		return fmt.Errorf("restrict runtime config file permissions: %w", err)
 	}
 	return nil
+}
+
+func CommitDeviceSelection(home string) error {
+	home = strings.TrimSpace(home)
+	if home == "" {
+		return errors.New("home directory is empty")
+	}
+	err := os.Remove(deviceSelectionJournalPath(home))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove device selection journal: %w", err)
+	}
+	return nil
+}
+
+// RecoverPendingDeviceSelection restores the configuration a device-selection
+// journal holds. Releases v1.0.47 to v1.0.50 wrote that journal before staging
+// a candidate device; a companion stopped before the commit left it behind.
+// Nothing writes it any more, so this only finishes such an interrupted
+// selection once.
+func RecoverPendingDeviceSelection(home string) (bool, error) {
+	home = strings.TrimSpace(home)
+	if home == "" {
+		return false, errors.New("home directory is empty")
+	}
+	if err := RestrictPermissions(home); err != nil {
+		return false, err
+	}
+	path := deviceSelectionJournalPath(home)
+	payload, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read device selection journal: %w", err)
+	}
+	var previous Config
+	if err := json.Unmarshal(payload, &previous); err != nil {
+		return false, fmt.Errorf("parse device selection journal: %w", err)
+	}
+	if err := Save(home, previous); err != nil {
+		return false, fmt.Errorf("restore device selection config: %w", err)
+	}
+	if err := CommitDeviceSelection(home); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (cfg Config) KnownDevice(deviceID string) (KnownDevice, bool) {

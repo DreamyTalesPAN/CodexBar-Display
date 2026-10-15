@@ -10,8 +10,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 )
 
 func TestConnectionModeNormalizationKeepsOnlyCustomerChoices(t *testing.T) {
@@ -111,6 +109,35 @@ func TestLoadMigratesExistingConfigPermissions(t *testing.T) {
 
 	assertPermissions(t, path, privateConfigFileMode)
 	assertPermissions(t, filepath.Dir(path), privateConfigDirMode)
+}
+
+func TestRestrictPermissionsMigratesJournalAndRecognizedBackups(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Dir(ConfigPath(home))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	paths := []string{
+		deviceSelectionJournalPath(home),
+		filepath.Join(dir, "config.before-upgrade.json"),
+		filepath.Join(dir, "config.backup-20260721.json"),
+		filepath.Join(dir, "config.json.backup-old"),
+	}
+	for _, path := range paths {
+		if err := os.WriteFile(path, []byte(`{"deviceToken":"secret-token"}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(path, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := RestrictPermissions(home); err != nil {
+		t.Fatal(err)
+	}
+	assertPermissions(t, dir, privateConfigDirMode)
+	for _, path := range paths {
+		assertPermissions(t, path, privateConfigFileMode)
+	}
 }
 
 func TestPermissionMigrationCacheRunsSuccessfulMigrationOnceAcrossConcurrentLoads(t *testing.T) {
@@ -411,6 +438,82 @@ func TestWiFiTransitionPendingDistinguishesResetAndLegacyWiFi(t *testing.T) {
 	}
 }
 
+func TestRecoverPendingDeviceSelectionRestoresLastCommittedConfig(t *testing.T) {
+	home := t.TempDir()
+	previous := Config{
+		Theme:        "mini",
+		DeviceID:     "device-a",
+		DeviceTarget: "http://192.0.2.1",
+		DeviceToken:  "token-a",
+	}
+	previous.Normalize()
+	if err := Save(home, previous); err != nil {
+		t.Fatal(err)
+	}
+	if err := BeginDeviceSelection(home, previous); err != nil {
+		t.Fatal(err)
+	}
+	staged := previous
+	staged.SetActiveDevice(KnownDevice{
+		DeviceID:    "device-b",
+		Target:      "http://192.0.2.2",
+		DeviceToken: "token-b",
+	})
+	if err := Save(home, staged); err != nil {
+		t.Fatal(err)
+	}
+
+	recovered, err := RecoverPendingDeviceSelection(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !recovered {
+		t.Fatal("expected pending device selection recovery")
+	}
+	got, err := Load(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, previous) {
+		t.Fatalf("unexpected recovered config: got=%+v want=%+v", got, previous)
+	}
+	if _, err := os.Stat(deviceSelectionJournalPath(home)); !os.IsNotExist(err) {
+		t.Fatalf("selection journal still exists after recovery: %v", err)
+	}
+}
+
+func TestCommittedDeviceSelectionDoesNotRollBack(t *testing.T) {
+	home := t.TempDir()
+	previous := Config{DeviceID: "device-a", DeviceTarget: "http://192.0.2.1", DeviceToken: "token-a"}
+	previous.Normalize()
+	if err := BeginDeviceSelection(home, previous); err != nil {
+		t.Fatal(err)
+	}
+	selected := previous
+	selected.SetActiveDevice(KnownDevice{DeviceID: "device-b", Target: "http://192.0.2.2", DeviceToken: "token-b"})
+	if err := Save(home, selected); err != nil {
+		t.Fatal(err)
+	}
+	if err := CommitDeviceSelection(home); err != nil {
+		t.Fatal(err)
+	}
+
+	recovered, err := RecoverPendingDeviceSelection(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered {
+		t.Fatal("committed selection must not be recovered")
+	}
+	got, err := Load(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, selected) {
+		t.Fatalf("committed config changed: got=%+v want=%+v", got, selected)
+	}
+}
+
 // A VibeTV paired before device ids were recorded leaves a target and a token
 // and no id. Reading that as "never set up" sent a customer who had been using
 // VibeTV for months back through onboarding on the update that added the flag.
@@ -478,34 +581,5 @@ func TestADiscoveredTargetWithoutPairingIsNotASetUpInstall(t *testing.T) {
 	})
 	if pinned.ProviderSelectionSetupIsComplete() {
 		t.Fatal("pinning an unpaired discovery marked setup complete")
-	}
-}
-
-func TestRestrictPermissionsRemovesStaleJournalAndRestrictsBackups(t *testing.T) {
-	home := t.TempDir()
-	dir := filepath.Dir(ConfigPath(home))
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	journal := runtimepaths.Path(home, deviceSelectionJournalFileName)
-	paths := []string{
-		filepath.Join(dir, "config.before-upgrade.json"),
-		filepath.Join(dir, "config.backup-20260721.json"),
-		filepath.Join(dir, "config.json.backup-old"),
-	}
-	for _, path := range append([]string{journal}, paths...) {
-		if err := os.WriteFile(path, []byte(`{"deviceToken":"secret-token"}`), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := RestrictPermissions(home); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(journal); !os.IsNotExist(err) {
-		t.Fatalf("stale journal still present: %v", err)
-	}
-	assertPermissions(t, dir, privateConfigDirMode)
-	for _, path := range paths {
-		assertPermissions(t, path, privateConfigFileMode)
 	}
 }
