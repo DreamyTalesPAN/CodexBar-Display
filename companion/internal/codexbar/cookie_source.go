@@ -51,7 +51,7 @@ func UseBrowserCookies(home, providerID string) (bool, error) {
 	}
 	// CodexBar's app and CLI from 0.71.0 on publish this file under an flock on
 	// config.json.lock. Holding the same lock keeps them out of the whole
-	// read-modify-write. The bundled 0.63.0 writes without it, so when the
+	// read-modify-write. Older CodexBar builds write without it, so when the
 	// file changed between our read and our replace, start over from its new
 	// content.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
