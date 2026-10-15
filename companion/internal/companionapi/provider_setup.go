@@ -422,6 +422,29 @@ func timedOutExactProviderSetup(providerID string, now time.Time) codexbar.Provi
 	}
 }
 
+// usageServiceDeliveredSince: the running usage service delivered a fresh,
+// usable reading of the provider at or after since.
+func (s *Server) usageServiceDeliveredSince(providerID string, since time.Time) bool {
+	if s.loadUsage == nil {
+		return false
+	}
+	now := s.currentTime()
+	usage, ok := s.loadUsage(now)
+	if !ok {
+		return false
+	}
+	for _, provider := range usage.Providers {
+		if !strings.EqualFold(strings.TrimSpace(provider.Provider), providerID) || provider.Retained ||
+			provider.CollectedAt.Before(since) {
+			continue
+		}
+		if _, fresh := freshUsableUsageProviderReadiness(provider, now); fresh {
+			return true
+		}
+	}
+	return false
+}
+
 // noteBrowserSignInRead records that CodexBar just read the provider's browser
 // sign-in, so its row shows the check of that read instead of the failure from
 // before it.
@@ -462,8 +485,9 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 	// The Mac app reports here that CodexBar just read the provider's browser
 	// sign-in into its cookie cache.
 	afterBrowserSignInRead := r.URL.Query().Get("after") == providerRetryAfterBrowserSignInRead
+	requestedAt := s.currentTime()
 	if afterBrowserSignInRead && providerID != "" {
-		s.noteBrowserSignInRead(providerID, s.currentTime())
+		s.noteBrowserSignInRead(providerID, requestedAt)
 	}
 	var setup codexbar.ProviderSetup
 	label := ""
@@ -472,7 +496,7 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 	} else {
 		providerRevision := s.currentProviderRevision(providerID)
 		if afterBrowserSignInRead {
-			setup = s.exactProviderSetupStartedAfter(ctx, providerID, s.currentTime())
+			setup = s.exactProviderSetupStartedAfter(ctx, providerID, requestedAt)
 		} else {
 			setup = s.currentExactProviderSetup(ctx, providerID)
 		}
@@ -493,9 +517,17 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 		// After a browser sign-in read the config did not change, yet the
 		// running service keeps its failed reading for minutes; only a fresh
 		// one shows the sign-in before the Mac app reads, and asks, again.
-		if providerID != "" && afterBrowserSignInRead && s.freshUsageService != nil {
+		// A service that already delivered the provider after the read needs
+		// no replacement: restarting it only put every row back on the
+		// spinner for a moment (2026-10-15).
+		if providerID != "" && afterBrowserSignInRead && s.freshUsageService != nil &&
+			!s.usageServiceDeliveredSince(providerID, requestedAt) {
 			s.usageServiceReplacePending.Store(true)
 			s.requestUsageServiceReplace(providerID)
+		} else if providerID != "" && afterBrowserSignInRead {
+			if s.wakeDisplayStream != nil {
+				s.wakeDisplayStream()
+			}
 		} else if providerID != "" && s.restartUsageService != nil {
 			s.requestUsageServiceReplace(providerID)
 		} else if s.wakeDisplayStream != nil {

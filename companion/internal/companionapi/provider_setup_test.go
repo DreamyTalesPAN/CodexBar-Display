@@ -644,6 +644,7 @@ func TestProviderRetryAfterBrowserSignInReadReplacesUsageService(t *testing.T) {
 		{"read works", "/v1/providers/retry?provider=claude&after=browser-sign-in-read", codexbar.ProviderReady, 0, 1},
 		{"plain check", "/v1/providers/retry?provider=claude", codexbar.ProviderReady, 1, 0},
 		{"read refused", "/v1/providers/retry?provider=claude&after=browser-sign-in-read", codexbar.ProviderAuthRequired, 0, 0},
+		{"service already delivered", "/v1/providers/retry?provider=claude&after=browser-sign-in-read", codexbar.ProviderReady, 0, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			server := newTestServer(t, runtimeconfig.Config{})
@@ -658,6 +659,11 @@ func TestProviderRetryAfterBrowserSignInReadReplacesUsageService(t *testing.T) {
 					Providers: []codexbar.ProviderReadiness{{
 						ID: providerID, Label: "Claude", Enabled: providerEnabled(true), Status: tc.status,
 					}},
+				}
+			}
+			if tc.name == "service already delivered" {
+				server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+					return freshProviderUsage("claude", "Claude", server.currentTime().Add(time.Second)), true
 				}
 			}
 			var restarts, replaces atomic.Int32
