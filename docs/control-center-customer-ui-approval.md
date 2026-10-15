@@ -7157,3 +7157,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: from the moment the Mac app reports a browser sign-in read until the check of that read answers, the provider row shows the existing "checking" spinner instead of the warning icon. If that check names a failure, the row shows it as before. No new text, button or dialog.
 - Scope: `companion` provider retry and provider row health, this approval record. Pull-request branch only, not merge or release.
 - What's new: none — a correction of the unreleased spinner, not announced to customers
+
+## 2026-10-15 — #607: approval marker after merging main with #620
+
+- User approval: Paul asked on 2026-10-15 to finish #607 (Atlas test, review fixes). Main moved on with #620 while the branch was in review, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #607 entries above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
