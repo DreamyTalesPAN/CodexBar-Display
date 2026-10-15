@@ -13,7 +13,7 @@ import { markWhatsNewSeen } from "@/lib/whats-new";
 import { ControlCenterApp } from "./control-center-app";
 
 const CHECK_FOR_UPDATES = "vibetv://check-for-updates";
-const themeSpec = { active: true, path: "/themes/codex/spec-v7.json", hash: "hash-v7" };
+const themeSpec = { active: true, path: "/themes/codex/spec-v7.json", hash: "hash-v7", renderOk: true };
 const claude = {
   id: "codexbar.providers.claude.enabled",
   section: "providers",

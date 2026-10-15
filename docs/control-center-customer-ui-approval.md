@@ -7205,3 +7205,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as approved in the #610 entries above and in the entries of #607, #620 and #629; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-15 — #610: update-prompt test fixture reports renderOk (after #629)
+
+- User approval: Paul asked on 2026-10-15 to bring #618, which is stacked on this branch, to ready. Since #629 a VibeTV counts as live only when it reports its theme as rendered, so this branch's new test fixture now says `renderOk: true`, as #629 did for every other app test.
+- Approved customer-visible result: none; test fixture only.
+- Scope: `apps/control-center/src/components/control-center-app.app-update-prompt.test.tsx` and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — test only
