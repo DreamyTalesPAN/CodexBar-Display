@@ -142,6 +142,56 @@ func TestPreferencesShowCheckingWhileANewUsageServiceReads(t *testing.T) {
 	}
 }
 
+// #607: between the Mac app's report of a browser sign-in read and the
+// answer of the check it asks for, the row's failure is from before the read.
+// The row shows that it is checking, not the warning icon; a check after the
+// read that names a failure ends that.
+func TestPreferencesShowCheckingWhileABrowserSignInReadIsChecked(t *testing.T) {
+	collectedAt := time.Date(2026, 10, 15, 6, 15, 0, 0, time.UTC)
+	readAt := collectedAt.Add(4 * time.Minute)
+	for _, tc := range []struct {
+		name      string
+		now       time.Time
+		readiness *providerReadinessRecord
+		wantState string
+	}{
+		{"read reported, check running", readAt.Add(5 * time.Second), nil, "checking"},
+		{"no read reported", readAt.Add(5 * time.Second), &providerReadinessRecord{}, "stale"},
+		{"check after the read failed", readAt.Add(10 * time.Second), &providerReadinessRecord{Status: codexbar.ProviderAuthRequired, CheckedAt: readAt.Add(8 * time.Second)}, "stale"},
+		{"grace over", readAt.Add(4 * time.Minute), nil, "stale"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := newTestServer(t, runtimeconfig.Config{})
+			server.now = func() time.Time { return tc.now }
+			if tc.readiness == nil || tc.readiness.Status != "" {
+				server.noteBrowserSignInRead("claude", readAt)
+			}
+			if tc.readiness != nil && tc.readiness.Status != "" {
+				// The exact check the Mac app asked for after the read.
+				server.providerReadiness = map[string]providerReadinessRecord{"claude": *tc.readiness}
+			}
+			server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+				return []codexbar.ProviderSetting{{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthAuthRequired, Service: codexbar.ProviderServiceUnknown}}, nil
+			}
+			server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+				return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
+					Provider: "claude", Frame: protocol.Frame{Provider: "claude", Session: 12}, CollectedAt: collectedAt, Retained: true,
+				}}}, true
+			}
+
+			recorder := httptest.NewRecorder()
+			server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+			var response preferencesResponse
+			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if got := response.Items[0].Health.State; got != tc.wantState {
+				t.Fatalf("state=%q want %q: %#v", got, tc.wantState, response.Items[0].Health)
+			}
+		})
+	}
+}
+
 // Issue #368: a provider that stopped delivering says since when, also once
 // its saved reading is too old to show and lastSuccessAt is gone. A provider
 // the collector never stored says nothing.

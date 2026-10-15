@@ -793,7 +793,13 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 		// only while nothing current explains the stale reading. A health scan
 		// or exact check that already names a failure (sign-in, permission,
 		// throttle, ...) keeps its state and action.
-		if state == providerHealthStateStale && signInState == "" &&
+		// The same holds from the moment the Mac app reports a browser
+		// sign-in read until its check answers: the failure the row knows is
+		// the one the read is meant to fix (#607, 2026-10-15: a few seconds of
+		// warning icon between the Keychain prompt and the restart spinner).
+		readBeingChecked := setting.Enabled && state != string(codexbar.ProviderHealthHealthy) &&
+			s.browserSignInReadBeingChecked(setting.ID, now, readiness, hasReadiness)
+		if readBeingChecked || state == providerHealthStateStale && signInState == "" &&
 			providerFailureUnexplained(setting, readiness, readinessApplies) &&
 			s.usageServiceStartedAfter(now, lastCollectedAt[setting.ID]) {
 			state = string(codexbar.ProviderHealthChecking)
@@ -801,6 +807,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			reported = ""
 			nextAction = ""
 			signInState = ""
+			signInURL = ""
 		}
 		// The exact check reports a throttle as well. A saved reading the
 		// device can still show keeps such a row stale, exactly like a

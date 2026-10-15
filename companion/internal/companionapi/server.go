@@ -343,6 +343,10 @@ type Server struct {
 	macAppReleaseCache     companionReleaseInfo
 	setupEvents            setupEventLog
 	timeline               *timeline.Store
+
+	// When the Mac app last reported a browser sign-in read, per provider.
+	browserSignInReadMu sync.Mutex
+	browserSignInReadAt map[string]time.Time
 }
 
 type apiError struct {

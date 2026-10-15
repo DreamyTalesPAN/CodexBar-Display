@@ -7136,3 +7136,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as approved in the #607 entries above; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-15 — #607: spinner from the browser sign-in read on
+
+- User approval: Paul saw in the Atlas test on 2026-10-15 that the Claude row showed the warning icon for a few seconds after he allowed the Keychain prompt, before the restart spinner came. Follows his request for a spinner instead of warnings ("lieber n spinner").
+- Approved customer-visible result: from the moment the Mac app reports a browser sign-in read until the check of that read answers, the provider row shows the existing "checking" spinner instead of the warning icon. If that check names a failure, the row shows it as before. No new text, button or dialog.
+- Scope: `companion` provider retry and provider row health, this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a correction of the unreleased spinner, not announced to customers

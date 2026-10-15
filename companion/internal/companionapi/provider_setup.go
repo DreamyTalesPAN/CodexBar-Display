@@ -422,6 +422,32 @@ func timedOutExactProviderSetup(providerID string, now time.Time) codexbar.Provi
 	}
 }
 
+// noteBrowserSignInRead records that CodexBar just read the provider's browser
+// sign-in, so its row shows the check of that read instead of the failure from
+// before it.
+func (s *Server) noteBrowserSignInRead(providerID string, at time.Time) {
+	s.browserSignInReadMu.Lock()
+	defer s.browserSignInReadMu.Unlock()
+	if s.browserSignInReadAt == nil {
+		s.browserSignInReadAt = make(map[string]time.Time)
+	}
+	s.browserSignInReadAt[providerID] = at
+}
+
+// browserSignInReadBeingChecked: the Mac app reported a browser sign-in read
+// for this provider within the grace period, and no exact check since that
+// read has named a failure. Until then the row's failure is from before the
+// read, and the row shows that it is checking.
+func (s *Server) browserSignInReadBeingChecked(providerID string, now time.Time, readiness providerReadinessRecord, hasReadiness bool) bool {
+	s.browserSignInReadMu.Lock()
+	at, ok := s.browserSignInReadAt[providerID]
+	s.browserSignInReadMu.Unlock()
+	if !ok || now.Before(at) || now.Sub(at) >= usageServiceStartGrace {
+		return false
+	}
+	return !(hasReadiness && !readiness.CheckedAt.Before(at) && readiness.Status != codexbar.ProviderReady)
+}
+
 // providerRetryAfterBrowserSignInRead marks a check the Mac app asks for
 // right after CodexBar read the provider's browser sign-in.
 const providerRetryAfterBrowserSignInRead = "browser-sign-in-read"
@@ -436,6 +462,9 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 	// The Mac app reports here that CodexBar just read the provider's browser
 	// sign-in into its cookie cache.
 	afterBrowserSignInRead := r.URL.Query().Get("after") == providerRetryAfterBrowserSignInRead
+	if afterBrowserSignInRead && providerID != "" {
+		s.noteBrowserSignInRead(providerID, s.currentTime())
+	}
 	var setup codexbar.ProviderSetup
 	label := ""
 	if providerID == "" {
