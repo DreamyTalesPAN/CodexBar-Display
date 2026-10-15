@@ -3043,7 +3043,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 try? await Task.sleep(nanoseconds: UInt64(browserSignInReadInterval * 1_000_000_000))
                 // Only the ownership-verified runtime may end the reading: a
                 // stale runtime that still answers healthy says nothing about
-                // the one serving the device (Codex review on #607).
+                // the one serving the device. The runtime can move to another
+                // port during the prompt, so it is found and verified again
+                // each round, within the reading's deadline (Codex review on
+                // #607).
+                if deadline.timeIntervalSinceNow > runtimeInitialHealthTimeout + 1 {
+                    await self?.rediscoverRuntimeOriginForNavigationRetry()
+                }
                 let activeOrigin = self?.activeRuntimeOrigin
                 ready = await browserSignInProviderIsReady(
                     provider: provider,
