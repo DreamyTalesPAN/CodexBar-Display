@@ -68,6 +68,28 @@ describe("Setup WiFi recovery", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("offers the Mac App update on the not-found page only when one exists", () => {
+    const onUpdate = vi.fn();
+    const props = {
+      open: true,
+      onOpenChange: vi.fn(),
+      onEnterAddressManually: vi.fn(),
+      onScanAgain: vi.fn(),
+      onUseCable: vi.fn(),
+      onUseWiFi: vi.fn(),
+    };
+    const { rerender } = render(<SetupDeviceNotFoundDialog {...props} />);
+    expect(screen.queryByRole("button", { name: "Update the Mac App" })).toBeNull();
+    rerender(
+      <SetupDeviceNotFoundDialog
+        {...props}
+        macAppUpdate={{ onUpdate, version: "1.0.62" }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Update the Mac App" }));
+    expect(onUpdate).toHaveBeenCalledTimes(1);
+  });
+
   it("routes the two not-found choices separately", () => {
     const onUseCable = vi.fn();
     const onUseWiFi = vi.fn();

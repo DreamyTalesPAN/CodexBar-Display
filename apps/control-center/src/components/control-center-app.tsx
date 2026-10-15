@@ -5458,6 +5458,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     if (setupOwnsScreen) {
       return (
         <SetupWizard
+          macAppUpdate={
+            macAppUpdateAvailable && isNativeControlCenterApp()
+              ? {
+                  version: macAppUpdateOfferedVersion,
+                  onUpdate: () => {
+                    window.location.href = "vibetv://check-for-updates";
+                  },
+                }
+              : undefined
+          }
           initialWiFiSetup={settingsWiFiSetup}
           onConnectionComplete={finishConnectionChange}
           aiFixPrompt={setupAiFixPrompt}

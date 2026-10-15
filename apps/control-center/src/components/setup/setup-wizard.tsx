@@ -17,6 +17,7 @@ import { copyForHost } from "@/lib/customer-platform";
 import { useSetupConnect, type SetupConnectSteps } from "./setup-connect";
 import { connectLogLines } from "./setup-connect-log";
 import {
+  type MacAppUpdateOffer,
   SetupAddressDialog,
   SetupConnectFailedDialog,
   SetupDeviceNotFoundDialog,
@@ -70,6 +71,8 @@ export type SetupWizardProps = {
   onDismissUsageFailure?: () => void;
   /** The app runs on Windows, where "this Mac" reads "this computer". */
   windowsHost?: boolean;
+  /** A newer Mac App exists; offered on the "VibeTV not found" pages (#561). */
+  macAppUpdate?: MacAppUpdateOffer;
   automaticPreviews: SetupDisplayModePreview[];
   connectSteps: SetupConnectSteps;
   connectionMode: string;
@@ -789,11 +792,13 @@ export function SetupWizard(props: SetupWizardProps) {
         ) : null}
         {searchFailed && !wifiSetup && !props.connectionMode && !preferredTransport ? (
           <SetupCableHelpDialog
+            macAppUpdate={props.macAppUpdate}
             onEnterAddressManually={openAddressDialog}
             onScanAgain={searchAgain}
           />
         ) : (
           <SetupDeviceNotFoundDialog
+            macAppUpdate={props.macAppUpdate}
             onEnterAddressManually={openAddressDialog}
             onOpenChange={(open) => setNotFoundDismissed(!open)}
             onScanAgain={searchAgain}
