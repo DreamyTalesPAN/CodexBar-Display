@@ -596,8 +596,8 @@ func browserSignInProviderHealthy(preferences data: Data, provider: String) -> B
     return health["state"] as? String == "healthy"
 }
 
-// The published endpoint can be stale and point at another listener, so one
-// origin answering "not ready" does not settle it; any ready origin does.
+// The caller passes the ownership-verified runtime only; a stale listener's
+// "ready" must not end the reading.
 // Every request ends by the reading's deadline, so stale origins cannot keep
 // the reading, and later sign-in clicks, past its window.
 func browserSignInProviderIsReady(provider: String, runtimeOrigins: [URL], deadline: Date) async -> Bool {
@@ -3041,9 +3041,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                     break
                 }
                 try? await Task.sleep(nanoseconds: UInt64(browserSignInReadInterval * 1_000_000_000))
+                // Only the ownership-verified runtime may end the reading: a
+                // stale runtime that still answers healthy says nothing about
+                // the one serving the device (Codex review on #607).
+                let activeOrigin = self?.activeRuntimeOrigin
                 ready = await browserSignInProviderIsReady(
                     provider: provider,
-                    runtimeOrigins: self?.runtimeOriginCandidates() ?? [],
+                    runtimeOrigins: activeOrigin.map { [$0] } ?? [],
                     deadline: deadline
                 )
                 if ready {
