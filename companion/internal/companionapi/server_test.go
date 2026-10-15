@@ -3920,6 +3920,12 @@ func TestInspectDisplayStreamMapsCurrentUSBPathToStableCableTarget(t *testing.T)
 	if !stream.Running || !stream.Healthy || stream.Target != cableDeviceTarget || stream.LastTarget != cableDeviceTarget {
 		t.Fatalf("expected healthy canonical Cable stream, got %+v", stream)
 	}
+
+	// The same frame was not sent to a VibeTV on WiFi: it names no provider (#368).
+	other := inspectDisplayStream(context.Background(), "http://192.168.178.72")
+	if other.Healthy || other.Provider != "" {
+		t.Fatalf("a frame for another connection mode must not name the shown provider, got %+v", other)
+	}
 }
 
 func TestConfiguredRuntimeRejectsRecentLegacyFrameWithoutStartMarker(t *testing.T) {
