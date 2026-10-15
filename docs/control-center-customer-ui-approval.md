@@ -7095,6 +7095,20 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs` (new mode), `apps/control-center/package.json` (`capture:release-screenshots`), and this approval record, after merging main.
 - What's new: none — test tooling only
 
+## 2026-10-14 — Theme Studio chat: right-edge text and provider readings (#594)
+
+- User approval: Paul asked on 2026-10-14 that the overnight session, once its audit was done, continue open issues that had no branch or pull request yet. This one changes no text; he has not seen it.
+- Approved customer-visible result: When the AI chat changes the words or the size of a text that has no width yet and sits near the right edge, the edit is applied and the text gets a box up to the display edge, as the manual controls already do; before, the chat refused the edit. A design that shows the first or second provider's readings now counts as showing usage, so "remove the usage" in the chat also removes those readings and a new picture keeps them in the usage area. Nothing else changes.
+- Scope: `apps/control-center/src/lib/ai-theme-layout.ts`, `apps/control-center/src/components/theme-studio/design-controls.ts`, their tests, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — two edge cases of the chat editor
+
+## 2026-10-14 — Theme Studio chat: compact provider readings count as usage (#594, review)
+
+- User approval: Paul asked on 2026-10-14 that the overnight session, once its audit was done, continue open issues that had no branch or pull request yet. This one changes no text; he has not seen it.
+- Approved customer-visible result: The entry above also holds for imported designs whose texts use the short reading names (for example `{pv1l}`): they count as showing usage too. Nothing else changes.
+- Scope: `apps/control-center/src/components/theme-studio/design-controls.ts`, `apps/control-center/src/lib/theme-studio.ts` (exports its existing key expansion), the test, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — an edge case of the chat editor
+
 ## 2026-10-14 - On the Mac, "Sign in to Claude/Cursor" also reads the browser sign-in from the app
 
 - User approval: A Mac customer (VibeTV order #1175) was signed in to claude.ai, but VibeTV kept showing "No Claude session key found in browser cookies." The background usage service gets no macOS Keychain prompt and, on the bench Mac (macOS 26), may not list the Chrome profile folder, so it never reads a browser sign-in by itself; one read from the foreground fills CodexBar's cookie cache and the background service then shows Claude usage (bench Mac, preview 99.0.1106, 2026-10-14). Asked whether this should become its own pull request, with the note that customers will see a new macOS Keychain prompt, Marcus answered "Okay, dann mach das bitte und danach testest du das."
