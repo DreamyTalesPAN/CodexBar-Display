@@ -422,9 +422,9 @@ func timedOutExactProviderSetup(providerID string, now time.Time) codexbar.Provi
 	}
 }
 
-// usageServiceDeliveredSince: the running usage service delivered a fresh,
-// usable reading of the provider at or after since.
-func (s *Server) usageServiceDeliveredSince(providerID string, since time.Time) bool {
+// usageServiceDelivers: the running usage service has a fresh, usable reading
+// of the provider of its own (not one retained from an earlier collection).
+func (s *Server) usageServiceDelivers(providerID string) bool {
 	if s.loadUsage == nil {
 		return false
 	}
@@ -434,8 +434,7 @@ func (s *Server) usageServiceDeliveredSince(providerID string, since time.Time) 
 		return false
 	}
 	for _, provider := range usage.Providers {
-		if !strings.EqualFold(strings.TrimSpace(provider.Provider), providerID) || provider.Retained ||
-			provider.CollectedAt.Before(since) {
+		if !strings.EqualFold(strings.TrimSpace(provider.Provider), providerID) || provider.Retained {
 			continue
 		}
 		if _, fresh := freshUsableUsageProviderReadiness(provider, now); fresh {
@@ -517,11 +516,12 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 		// After a browser sign-in read the config did not change, yet the
 		// running service keeps its failed reading for minutes; only a fresh
 		// one shows the sign-in before the Mac app reads, and asks, again.
-		// A service that already delivered the provider after the read needs
-		// no replacement: restarting it only put every row back on the
-		// spinner for a moment (2026-10-15).
+		// A service that already delivers the provider fresh needs no
+		// replacement: it is not the one holding a failed reading, and
+		// restarting it only put every row back on the spinner for a moment
+		// (2026-10-15).
 		if providerID != "" && afterBrowserSignInRead && s.freshUsageService != nil &&
-			!s.usageServiceDeliveredSince(providerID, requestedAt) {
+			!s.usageServiceDelivers(providerID) {
 			s.usageServiceReplacePending.Store(true)
 			s.requestUsageServiceReplace(providerID)
 		} else if providerID != "" && afterBrowserSignInRead {
