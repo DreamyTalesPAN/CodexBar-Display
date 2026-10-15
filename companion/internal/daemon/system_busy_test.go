@@ -234,6 +234,16 @@ func TestSystemBusyReplacesLabelOnVibeTV(t *testing.T) {
 		t.Fatal("the busy label must never become the last good frame")
 	}
 
+	// Paul, 2026-10-15: while the computer is busy, the last good provider
+	// and its values stay, also past the last good window, so a screensaver
+	// keeps showing them. Twenty minutes of starvation:
+	h.cycles(40)
+	send()
+	frame = decodeFrameLine(t, sent)
+	if frame.Label != SystemBusyLabel || frame.Provider != "claude" || frame.Session != 28 || frame.UsageUnavailable {
+		t.Fatalf("frame after twenty busy minutes = %+v, want the last good values", frame)
+	}
+
 	h.answers = true
 	h.cycles(1)
 	send()
@@ -267,5 +277,42 @@ func TestSystemBusyOnlyForSilence(t *testing.T) {
 				t.Fatalf("busy = %v after five cycles of %v, want %v", busy, test.err, test.silent)
 			}
 		})
+	}
+}
+
+// Without a busy computer the last good frame still expires: the rule of #606
+// changes nothing for an engine that is down for another reason.
+func TestLastGoodStillExpiresWithoutBusyComputer(t *testing.T) {
+	h := newSystemBusyHarness(t)
+	h.figures = systemload.Figures{MemoryAvailablePercent: 60, MemoryPressure: "normal", MemoryTotalMB: 24576}
+	h.answers = true
+	h.collector.fetchDashboard = func(context.Context, codexbar.DashboardServeInfo, time.Time) ([]codexbar.ParsedFrame, error) {
+		if !h.answers {
+			return nil, h.silence
+		}
+		return []codexbar.ParsedFrame{testParsedFrame("claude", 28, 35, 7200)}, nil
+	}
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	var sent []byte
+	deps := runtimeDeps{
+		now:         func() time.Time { return h.now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		sendLine: func(_ string, line []byte) error {
+			sent = append([]byte(nil), line...)
+			return nil
+		},
+		logf: func(string, ...any) {},
+	}
+	h.cycles(1)
+	if err := runCycleFromCollector(context.Background(), "", state, h.collector, deps); err != nil {
+		t.Fatal(err)
+	}
+	h.answers = false
+	h.cycles(40)
+	if err := runCycleFromCollector(context.Background(), "", state, h.collector, deps); err != nil {
+		t.Fatal(err)
+	}
+	if frame := decodeFrameLine(t, sent); !frame.UsageUnavailable || frame.Label == SystemBusyLabel {
+		t.Fatalf("frame after twenty minutes without a busy computer = %+v, want usage unavailable", frame)
 	}
 }

@@ -7143,3 +7143,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: While the busy computer condition lasts, VibeTV shows "Busy" in place of the provider name; everything else as recorded in the busy computer entries above.
 - Scope: `SystemBusyLabel` in `companion/internal/daemon/daemon.go` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — the label of an error state
+
+## 2026-10-15 — Busy computer: last good values stay on VibeTV (#606)
+
+- User approval: Paul decided on 2026-10-15 for #628, about the screensavers (Night Clock and the others): "nein, das sind ja screensaver. wenn die aktiv sind, muss der kunde gerade ja eh keine usage daten sehen, sonst wäre ja nicht der screensaver an. da einfach last good provider und data nehmen".
+- Approved customer-visible result: While the busy computer condition lasts, VibeTV keeps the last good provider and its values instead of losing the percentages and the reset line after ten minutes. Screensavers (Night Clock, Reset Countdown, Token Fire) show no "Busy" and just keep that last good provider and data; live themes show the same values under "Busy". The reset countdown keeps its own five-hour limit. Without a busy computer nothing changes.
+- Scope: `sendCycleResult` in `companion/internal/daemon/daemon.go`, its tests in `system_busy_test.go`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the behaviour of an error state
