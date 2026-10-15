@@ -602,24 +602,12 @@ func browserSignInProviderHealthy(preferences data: Data, provider: String) -> B
 // the reading, and later sign-in clicks, past its window.
 func browserSignInProviderIsReady(provider: String, runtimeOrigins: [URL], deadline: Date) async -> Bool {
     for origin in runtimeOrigins {
-        let remaining = min(runtimeHealthRequestTimeout, deadline.timeIntervalSinceNow)
-        guard remaining > 1 else {
-            break
-        }
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = remaining
-        configuration.timeoutIntervalForResource = remaining
-        let session = URLSession(configuration: configuration)
-        defer { session.invalidateAndCancel() }
-        guard let (data, response) = try? await session.data(
-            from: origin.appendingPathComponent("v1/usage")
-        ), (response as? HTTPURLResponse)?.statusCode == 200 else {
-            continue
-        }
-        guard browserSignInProviderReady(usage: data, provider: provider),
-              let (preferences, preferencesResponse) = try? await session.data(
-                  from: origin.appendingPathComponent("v1/preferences")
-              ), (preferencesResponse as? HTTPURLResponse)?.statusCode == 200 else {
+        guard let usage = await browserSignInFetch(origin.appendingPathComponent("v1/usage"), deadline: deadline),
+              browserSignInProviderReady(usage: usage, provider: provider),
+              let preferences = await browserSignInFetch(
+                  origin.appendingPathComponent("v1/preferences"),
+                  deadline: deadline
+              ) else {
             continue
         }
         if browserSignInProviderHealthy(preferences: preferences, provider: provider) {
@@ -627,6 +615,25 @@ func browserSignInProviderIsReady(provider: String, runtimeOrigins: [URL], deadl
         }
     }
     return false
+}
+
+// One GET of the readiness poll. Its timeout is what is left of the reading's
+// window when it starts, so two sequential requests cannot add up past it.
+func browserSignInFetch(_ url: URL, deadline: Date) async -> Data? {
+    let remaining = min(runtimeHealthRequestTimeout, deadline.timeIntervalSinceNow)
+    guard remaining > 1 else {
+        return nil
+    }
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.timeoutIntervalForRequest = remaining
+    configuration.timeoutIntervalForResource = remaining
+    let session = URLSession(configuration: configuration)
+    defer { session.invalidateAndCancel() }
+    guard let (data, response) = try? await session.data(from: url),
+          (response as? HTTPURLResponse)?.statusCode == 200 else {
+        return nil
+    }
+    return data
 }
 
 // Has the app's verified CodexBar read the provider's browser sign-in once.
@@ -3001,7 +3008,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let codexBarAppURL = appManagedCodexBarAppURL(
             applicationSupportURL: applicationSupportURL()
         )
-        let runtimeOrigins = runtimeOriginCandidates()
         Task { [weak self] in
             let deadline = Date().addingTimeInterval(browserSignInReadWindow)
             var outcome = BrowserSignInReadOutcome.notYet
@@ -3021,9 +3027,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                     }.value
                     if outcome == .read {
                         lastReadAt = Date()
+                        // The runtime can move to another port while the
+                        // customer answers the prompt: resolve it each time.
                         readWorks = await browserSignInCheckAfterRead(
                             provider: provider,
-                            runtimeOrigins: runtimeOrigins,
+                            runtimeOrigins: self?.runtimeOriginCandidates() ?? [],
                             deadline: deadline
                         )
                     }
@@ -3035,7 +3043,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 try? await Task.sleep(nanoseconds: UInt64(browserSignInReadInterval * 1_000_000_000))
                 ready = await browserSignInProviderIsReady(
                     provider: provider,
-                    runtimeOrigins: runtimeOrigins,
+                    runtimeOrigins: self?.runtimeOriginCandidates() ?? [],
                     deadline: deadline
                 )
                 if ready {

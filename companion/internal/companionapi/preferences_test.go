@@ -142,6 +142,34 @@ func TestPreferencesShowCheckingWhileANewUsageServiceReads(t *testing.T) {
 	}
 }
 
+// A provider-side outage the scan reports stays visible during the restart
+// grace (Codex review on #607).
+func TestPreferencesKeepOutageDuringUsageServiceStartGrace(t *testing.T) {
+	collectedAt := time.Date(2026, 10, 14, 13, 49, 0, 0, time.UTC)
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.now = func() time.Time { return collectedAt.Add(2 * time.Minute) }
+	server.usageServiceInfo = func() codexbar.DashboardServeInfo {
+		return codexbar.DashboardServeInfo{Running: true, StartedAt: collectedAt.Add(time.Minute)}
+	}
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthUnavailable, Service: codexbar.ProviderServiceOutage}}, nil
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
+			Provider: "codex", Frame: protocol.Frame{Provider: "codex", Session: 12}, CollectedAt: collectedAt, Retained: true,
+		}}}, true
+	}
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+	var response preferencesResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if got := response.Items[0].Health.State; got == "checking" {
+		t.Fatalf("an outage must not turn into the restart spinner: %#v", response.Items[0].Health)
+	}
+}
+
 // #607: between the Mac app's report of a browser sign-in read and the
 // answer of the check it asks for, the row's failure is from before the read.
 // The row shows that it is checking, not the warning icon; a check after the

@@ -661,6 +661,10 @@ func providerFailureUnexplained(setting codexbar.ProviderSetting, readiness prov
 	if readinessApplies && readiness.Status != codexbar.ProviderReady {
 		return false
 	}
+	// A provider-side outage or degradation explains it as well.
+	if setting.Service == codexbar.ProviderServiceOutage || setting.Service == codexbar.ProviderServiceDegraded {
+		return false
+	}
 	switch setting.Health {
 	case "", codexbar.ProviderHealthHealthy, codexbar.ProviderHealthChecking, codexbar.ProviderHealthUnavailable:
 		return true
