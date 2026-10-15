@@ -104,7 +104,7 @@ export function applyAIThemeLayout(current:ThemeStudioDocument,plan:AIThemeLayou
     if(p.type==='text'&&!p.text&&!p.binding) return fail();
     // Text widths are clipping boxes; grow them like the manual controls do so
     // a longer label, reading or font size is never cut off.
-    if(p.type==='text'&&p.width&&(edit.text!=null||edit.reading!=null||edit.fontSize!=null)) p.width=Math.min(240-p.x,Math.max(p.width,textPrimitiveNaturalWidth(p)));
+    if(p.type==='text'&&(edit.text!=null||edit.reading!=null||edit.fontSize!=null)) p.width=Math.min(240-p.x,Math.max(p.width||0,textPrimitiveNaturalWidth(p)));
     if(p.type!=='text'&&(!p.width||!p.height)) return fail();
     const bounds=primitiveBounds({...p,x:0,y:0});
     if(p.x<0||p.y<0||p.x+bounds.width>240||p.y+bounds.height>240) return fail();
