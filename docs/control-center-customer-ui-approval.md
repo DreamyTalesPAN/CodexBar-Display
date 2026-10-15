@@ -7178,3 +7178,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as approved in the #607 entries above; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-15 — Setup waits for every switched-on provider, Automatic rotates every 2 s (#627, #631)
+
+- User approval: Paul described the expected behavior in issue #627 (2026-10-15: Continue only once every provider switched on has delivered usage or a definite answer) and in issue #631 ("every 2 seconds it switches to the next switched-on provider"). Marcus assigned both issues for this pull request on 2026-10-15. Neither has personally previewed this exact build.
+- Approved customer-visible result: on "Choose AI providers", Continue stays closed while a provider the customer switched on is still on its first reading; that row keeps its existing spinner. A provider whose row names a sign-in or another failure, or that the usage collection included without anything to show, does not hold the step. Display Mode then lists every provider that has usage. The Automatic card in setup and in Settings moves to the next provider every 2 seconds (was 1 second) and holds while the window is hidden. No new text, button or dialog.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, `setup-display-mode-screen.tsx`, their tests, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — setup corrections, not announced to customers

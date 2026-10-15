@@ -584,12 +584,37 @@ function SetupProvidersLoadingScreen({
   );
 }
 
-/** One enabled provider with a real reading is enough, including 0%. */
+/**
+ * One enabled provider with a real reading, including 0%, and none still on
+ * its first reading. Continuing earlier opened Display Mode without a provider
+ * switched on a moment before: Automatic had nothing to rotate to and Manual
+ * could not offer it (#627).
+ */
 export function setupProvidersCanContinue(
   providers: ProviderItem[],
   usage: UsageSnapshot | null,
 ): boolean {
-  return providers.some((provider) => setupProviderCanDisplay(provider, usage));
+  return (
+    providers.some((provider) => setupProviderCanDisplay(provider, usage)) &&
+    !providers.some((provider) => setupProviderAwaitsFirstReading(provider, usage))
+  );
+}
+
+/**
+ * Switched on, checking or healthy, and not yet in any usage collection: its
+ * row shows the spinner and its first reading is on its way. A provider the
+ * collection did include but that has nothing to show is a definite answer,
+ * like a sign-in the row asks for, and does not hold the step.
+ */
+export function setupProviderAwaitsFirstReading(
+  provider: ProviderItem,
+  usage: UsageSnapshot | null,
+): boolean {
+  return (
+    provider.value === true &&
+    (provider.health.state === "checking" || provider.health.state === "healthy") &&
+    !usage?.providers.some((reading) => reading.id === provider.providerId)
+  );
 }
 
 /** Keep CodexBar's order inside the on and off groups. */
