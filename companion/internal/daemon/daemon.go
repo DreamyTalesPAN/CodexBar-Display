@@ -21,6 +21,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/systemload"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/timeline"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
@@ -45,6 +46,22 @@ type Options struct {
 	// RecordEvent receives the worker's state for the support timeline. It is
 	// called on every cycle; the timeline keeps only the transitions.
 	RecordEvent func(timeline.Event)
+	// ReportSystemBusy receives the collector's busy-computer verdict after
+	// every collection: nil while usage arrives or the computer has memory
+	// to spare (issue #606).
+	ReportSystemBusy func(*SystemBusy)
+}
+
+// SystemBusyLabel replaces the provider name on VibeTV while the computer is
+// too starved for the usage engine to answer.
+const SystemBusyLabel = "Computer busy"
+
+// SystemBusy is the condition of issue #606: the usage engine is running but
+// has not answered for several collections, and the computer is low on
+// memory. Since is when the collector first saw both.
+type SystemBusy struct {
+	Since time.Time `json:"since"`
+	systemload.Figures
 }
 
 const (
@@ -162,6 +179,8 @@ type runtimeDeps struct {
 	newSelector           func() *codexbar.ProviderSelector
 	logf                  func(string, ...any)
 	record                func(timeline.Event)
+	reportSystemBusy      func(*SystemBusy)
+	readSystemLoad        func() (systemload.Figures, error)
 	homeDir               func() (string, error)
 	loadConfig            func(string) (runtimeconfig.Config, error)
 	saveConfig            func(string, runtimeconfig.Config) error
@@ -220,6 +239,9 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 	}
 	if d.logf == nil {
 		d.logf = defaultRuntimeLogf
+	}
+	if d.readSystemLoad == nil {
+		d.readSystemLoad = systemload.Read
 	}
 	if d.homeDir == nil {
 		d.homeDir = os.UserHomeDir
@@ -305,6 +327,8 @@ type cycleResult struct {
 	// resetBasisAt is when the reset deadline in frame was collected. It is the
 	// anchor the device-facing freshness fields are derived from.
 	resetBasisAt time.Time
+	// systemBusy puts SystemBusyLabel in place of the provider name.
+	systemBusy bool
 }
 
 type persistedLastGood struct {
@@ -379,6 +403,9 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	deps.interval = opts.Interval
 	if opts.RecordEvent != nil {
 		deps.record = opts.RecordEvent
+	}
+	if opts.ReportSystemBusy != nil {
+		deps.reportSystemBusy = opts.ReportSystemBusy
 	}
 	syncCycleMode := deps.fetchProviders != nil && deps.fetchProvider == nil
 	deps = deps.withDefaults()
@@ -1746,6 +1773,11 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 			frame = applyUsageBarsPreference(authoritativeFrame.Normalize(), deps.usageBarsShowUsed())
 		}
 	}
+	if result.systemBusy {
+		// The values on screen are old because the computer is starved, and
+		// VibeTV says so where it names the provider (#606).
+		frame.Label = SystemBusyLabel
+	}
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
 	frame = applyDeviceUsageWindowLimit(frame, caps)
 	if !caps.SupportsProviderSlotsV1 {
@@ -2146,6 +2178,7 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 		}
 	}
 
+	result.systemBusy = collector.isSystemBusy()
 	attachFirmwareUpdateState(ctx, state, deps, caps, &result)
 	return sendCycleResult(ctx, port, caps, maxFrameBytes, state, deps, result)
 }

@@ -203,6 +203,9 @@ type Options struct {
 	DisplayStreamRunning func() bool
 	// Logf writes one line to the runtime's log. Nil outside the runtime.
 	Logf func(string, ...any)
+	// SystemBusy is the display worker's latest busy-computer verdict
+	// (#606). Nil outside the runtime.
+	SystemBusy func() *daemon.SystemBusy
 	// Where Theme Studio keeps the customer's verified OpenAI key across
 	// restarts. Nil (tests, tools) keeps it in memory only.
 	AIThemeSecrets SecretStore
@@ -258,6 +261,7 @@ type Server struct {
 	// A successful check that arrived while a replacement was running.
 	usageServiceRestartPending atomic.Bool
 	displayStreamRunning       func() bool
+	systemBusy                 func() *daemon.SystemBusy
 	firmwareUpdateActive       atomic.Bool
 	firmwareUpdateStartMu      sync.Mutex
 	// One shortcut press at a time: each reads the provider on screen and
@@ -568,6 +572,9 @@ type statusResponse struct {
 	Setup                        setupProgress          `json:"setup"`
 	ThemeInstall                 *themeInstallJob       `json:"themeInstall,omitempty"`
 	FirmwareUpdate               *firmwareUpdateJob     `json:"firmwareUpdate,omitempty"`
+	// SystemBusy is present while the computer is too starved for the usage
+	// engine to answer (#606); the app then tells the customer.
+	SystemBusy *daemon.SystemBusy `json:"systemBusy,omitempty"`
 }
 
 type deviceActionResponse struct {
@@ -757,6 +764,9 @@ type diagnosticsResponse struct {
 	// NoReadingSince names the providers that are not delivering and when
 	// each one's last usage reading was (#368); see noReadingSinceByProvider.
 	NoReadingSince map[string]string `json:"noReadingSince,omitempty"`
+	// SystemBusy has the memory and load figures while the computer is too
+	// starved for the usage engine to answer (#606).
+	SystemBusy *daemon.SystemBusy `json:"systemBusy,omitempty"`
 }
 
 type diagnosticsEnvironment struct {
@@ -1119,6 +1129,7 @@ func New(opts Options) (*Server, error) {
 		renderDisplayStream:   opts.RenderDisplayStream,
 		restartUsageService:   opts.RestartUsageService,
 		displayStreamRunning:  opts.DisplayStreamRunning,
+		systemBusy:            opts.SystemBusy,
 		pairAttempts:          defaultPairAttempts,
 		pairAttemptTimeout:    defaultPairAttemptTimeout,
 		pairRetryGap:          defaultPairRetryGap,
@@ -1709,7 +1720,15 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Setup:                        setupProgressForConfig(cfg),
 		ThemeInstall:                 themeInstall,
 		FirmwareUpdate:               firmwareUpdate,
+		SystemBusy:                   s.currentSystemBusy(),
 	})
+}
+
+func (s *Server) currentSystemBusy() *daemon.SystemBusy {
+	if s.systemBusy == nil {
+		return nil
+	}
+	return s.systemBusy()
 }
 
 func cableHelloMatchesConfig(hello protocol.DeviceHello, configuredDeviceID string) bool {
@@ -2644,6 +2663,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			UsageEngine:      usageEngineDiagnostics(providerSetup.Engine),
 			LastCollection:   lastCollection,
 			NoReadingSince:   noReadingSince,
+			SystemBusy:       s.currentSystemBusy(),
 			SetupLog:         s.setupEvents.snapshot(s.currentTime()),
 			Timeline:         s.timeline.Snapshot(s.currentTime()),
 			Checks:           checks,

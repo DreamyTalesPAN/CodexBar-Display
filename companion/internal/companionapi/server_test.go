@@ -34,6 +34,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/systemload"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themepack"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/timeline"
@@ -15366,5 +15367,39 @@ func TestDisplayStreamLogLineCarriesResetTrust(t *testing.T) {
 	frame, ok = frameFromDisplayStreamLogLine(head)
 	if !ok || frame.ResetTrust != "" || frame.Activity != "idle" {
 		t.Fatalf("old line changed: ok=%t %+v", ok, frame)
+	}
+}
+
+// Issue #606: the busy-computer verdict reaches the app with the status and
+// support with the report, figures included; absent while there is none.
+func TestStatusAndDiagnosticsCarrySystemBusy(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.subnetTargets = func() []string { return nil }
+	var busy *daemon.SystemBusy
+	server.systemBusy = func() *daemon.SystemBusy { return busy }
+	read := func(endpoint string) map[string]any {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, endpoint, nil))
+		var got map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("%s: %v", endpoint, err)
+		}
+		return got
+	}
+	for _, endpoint := range []string{"/v1/status", "/v1/diagnostics"} {
+		if got, ok := read(endpoint)["systemBusy"]; ok {
+			t.Fatalf("%s: systemBusy without an incident: %v", endpoint, got)
+		}
+	}
+	busy = &daemon.SystemBusy{
+		Since:   time.Date(2026, 10, 14, 9, 13, 0, 0, time.UTC),
+		Figures: systemload.Figures{MemoryAvailablePercent: 5, MemoryPressure: "warn", MemoryTotalMB: 24576, SwapUsedMB: 23040, Load1: 214, CPUs: 8},
+	}
+	for _, endpoint := range []string{"/v1/status", "/v1/diagnostics"} {
+		got, _ := read(endpoint)["systemBusy"].(map[string]any)
+		if got["since"] != "2026-10-14T09:13:00Z" || got["memoryPressure"] != "warn" || got["swapUsedMB"] != float64(23040) || got["load1"] != float64(214) {
+			t.Fatalf("%s: systemBusy = %v", endpoint, got)
+		}
 	}
 }

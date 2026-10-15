@@ -78,7 +78,14 @@ function startWindow({
   // `usageBroken`: the usage service cannot start, which the app says in a
   // dialog of its own.
   // `appUpdate`: a newer app is on offer.
-  const companion = { setUp, displayConfigured: setUp, usageBroken: false, appUpdate: false };
+  // `systemBusy`: the computer is too starved for the usage engine (#606).
+  const companion = {
+    setUp,
+    displayConfigured: setUp,
+    usageBroken: false,
+    appUpdate: false,
+    systemBusy: false,
+  };
   vi.useFakeTimers();
   vi.stubGlobal("matchMedia", () => ({
     matches: true,
@@ -123,6 +130,9 @@ function startWindow({
           setup,
           providerSetup: companion.usageBroken
             ? { status: "setup_required", engine: { status: "not_configured" } }
+            : undefined,
+          systemBusy: companion.systemBusy
+            ? { since: "2026-10-14T09:13:00Z", memoryAvailablePercent: 5, memoryPressure: "warn" }
             : undefined,
           device: {
             active: true,
@@ -625,4 +635,69 @@ it("does not announce the shortcut when the system refused its keys", async () =
   expect(text).not.toContain("Switch providers with a shortcut");
   expect(keyCaps()).toEqual([]);
   vi.restoreAllMocks();
+});
+
+// #606: a computer too starved for the usage engine is told in a dialog over
+// the page, in the same words on the Mac and on Windows. Closed stays closed
+// until the condition has gone and come back.
+for (const os of ["darwin", "windows"]) {
+  it(`tells a customer on ${os} that the computer is very busy`, async () => {
+    window.localStorage.setItem(SEEN_KEY, JSON.stringify(allIds));
+    const app = startWindow({ os });
+    const busyDialog = () => screen.queryByRole("dialog", { name: "Your computer is very busy" });
+    await app.wait(10);
+    expect(busyDialog()).toBeNull();
+
+    app.companion.systemBusy = true;
+    await app.wait(6);
+    expect(busyDialog()?.textContent).toContain(
+      "VibeTV can't get new usage right now because your computer is low on memory. Close apps you don't need or restart your computer.",
+    );
+    // The page behind it stays usable.
+    expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
+    const dialogHtml = busyDialog()!.outerHTML;
+
+    fireEvent.click(within(busyDialog()!).getByRole("button", { name: "OK" }));
+    expect(busyDialog()).toBeNull();
+    // Still busy: closed stays closed.
+    await app.wait(12);
+    expect(busyDialog()).toBeNull();
+
+    // Gone and back: a new incident.
+    app.companion.systemBusy = false;
+    await app.wait(6);
+    app.companion.systemBusy = true;
+    await app.wait(6);
+    expect(busyDialog()).not.toBeNull();
+
+    // Gone while open: the dialog goes with it.
+    app.companion.systemBusy = false;
+    await app.wait(6);
+    expect(busyDialog()).toBeNull();
+
+    // axe waits on real timers.
+    vi.useRealTimers();
+    await expectNoAxeViolations(dialogHtml);
+  }, 15_000);
+}
+
+it("tells a busy computer after a broken usage service, and What's new after both", async () => {
+  const app = startWindow();
+  app.companion.usageBroken = true;
+  app.companion.systemBusy = true;
+  await app.wait(10);
+  const usageDialog = () => screen.queryByRole("dialog", { name: "AI usage is not set up" });
+  const busyDialog = () => screen.queryByRole("dialog", { name: "Your computer is very busy" });
+  expect(usageDialog()).not.toBeNull();
+  expect(busyDialog()).toBeNull();
+  expect(notice()).toBeNull();
+
+  app.companion.usageBroken = false;
+  await app.wait(6);
+  expect(busyDialog()).not.toBeNull();
+  expect(notice()).toBeNull();
+
+  fireEvent.click(within(busyDialog()!).getByRole("button", { name: "OK" }));
+  expect(busyDialog()).toBeNull();
+  expect(notice()).not.toBeNull();
 });

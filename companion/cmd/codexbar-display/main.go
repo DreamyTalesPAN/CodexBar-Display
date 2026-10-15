@@ -624,6 +624,7 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 	}
 
 	var workerRunning atomic.Bool
+	var systemBusy atomic.Pointer[daemon.SystemBusy]
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var dashboard codexbar.DashboardServe
@@ -638,6 +639,7 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 		Logf:                 logf,
 		AIThemeSecrets:       companionapi.NewDurableAIThemeSecrets(""),
 		DisplayStreamRunning: workerRunning.Load,
+		SystemBusy:           systemBusy.Load,
 		Addr:                 actualAddr,
 		AllowedOrigins:       []string{opts.APIDevOrigin},
 		RefreshDisplayStream: func(context.Context, string) error {
@@ -680,6 +682,7 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 	daemonOpts.PauseDeviceWrites = deviceWrites.isPaused
 	daemonOpts.BeginDeviceWrite = deviceWrites.beginWrite
 	daemonOpts.Dashboard = dashboard
+	daemonOpts.ReportSystemBusy = systemBusy.Store
 
 	errc := make(chan error, 1)
 	go func() {

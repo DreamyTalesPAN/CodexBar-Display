@@ -7108,3 +7108,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: The entry above also holds for imported designs whose texts use the short reading names (for example `{pv1l}`): they count as showing usage too. Nothing else changes.
 - Scope: `apps/control-center/src/components/theme-studio/design-controls.ts`, `apps/control-center/src/lib/theme-studio.ts` (exports its existing key expansion), the test, and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — an edge case of the chat editor
+
+## 2026-10-15 — Busy computer dialog and VibeTV label (#606)
+
+- User approval: Paul approved this wording in chat on 2026-10-15 after seeing the mockup, and asked that it say "computer" so the same text works on the Mac and on Windows (the proposal said "Your Mac is very busy" / "Mac busy").
+- Approved customer-visible result: While the usage engine is running but has not answered for three collection intervals and the computer is low on memory, a dialog over the page reads exactly: title "Your computer is very busy", text "VibeTV can't get new usage right now because your computer is low on memory. Close apps you don't need or restart your computer.", one button "OK". It does not hold the page behind it, waits behind the runtime repair, a lost VibeTV, setup and a broken usage service, and once closed stays closed until the condition has gone and come back. The same words on Mac and Windows. VibeTV shows "Computer busy" in place of the provider name for as long as the condition lasts; the values under it stay the last good ones.
+- Scope: `apps/control-center/src/components/system-busy-dialog.tsx`, its wiring in `control-center-app.tsx`, the tests in `control-center-app.whats-new.test.tsx`, the Companion detection (`companion/internal/systemload`, `companion/internal/daemon`, `/v1/status` and `/v1/diagnostics`), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — an error dialog, not a feature to announce
