@@ -44,12 +44,10 @@ try {
     await page.getByRole("button",{name:"Close",exact:true}).click();
   }
   await input.fill(prompt);
-  await page.getByRole("button",{name:"Create with AI",exact:true}).click();
-  await page.getByRole("dialog",{name:"Create with AI",exact:true}).waitFor();
-  await page.getByLabel(/I agree to send/).check();
   const responsePromise=page.waitForResponse(r=>r.url().endsWith("/ai-theme/concepts") && r.request().postDataJSON().target !== "layout",{timeout:250000});
   const started=Date.now();
-  await page.getByRole("button",{name:"Continue",exact:true}).click();
+  // A saved key is the consent (#633): the request goes straight on.
+  await page.getByRole("button",{name:"Create",exact:true}).click();
   const response=await responsePromise;
   const body=await response.json();
   await writeFile(join(output,"provider-result.json"),JSON.stringify(body));

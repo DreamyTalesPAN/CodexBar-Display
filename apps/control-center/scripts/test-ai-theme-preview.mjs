@@ -300,7 +300,8 @@ try {
   assert.equal(uploads,3,"Each click sends once; errors never retry a hardware write");
   console.log("PASS explicit ZIP transfer, accepted-job recovery after reload and actionable failure without retries (mocked device)");
 
-  // Another tab can have a connected helper but no billing consent yet.
+  // A new session can lose the page's storage while the helper keeps the key:
+  // the saved key is the consent, so the request goes straight on (#633).
   await page.evaluate(()=>localStorage.removeItem("vibetv.aiTheme.consent"));
   await page.reload();
   await input.waitFor();
@@ -308,12 +309,10 @@ try {
   await input.fill("Keep this office quiet");
   const beforeConsent=requests.length;
   await create.click();
-  await page.getByRole("dialog",{name:"Create with AI",exact:true}).waitFor();
-  await page.getByLabel(/I agree to send/).check();
-  await page.getByRole("button",{name:"Continue",exact:true}).click();
   await page.getByRole("log",{name:"Conversation",exact:true}).getByText("A quiet office.",{exact:true}).last().waitFor();
   await page.getByLabel("Your idea",{exact:true}).waitFor();
-  assert.equal(requests.length,beforeConsent+1,"Existing key + fresh consent continues the original request");
+  assert.equal(await page.getByRole("dialog").count(),0,"A saved key asks for no consent again");
+  assert.equal(requests.length,beforeConsent+1,"A saved key sends the request once, without the consent dialog");
   configured=false;
   const count=requests.length;
   await input.fill("A softer atmosphere");

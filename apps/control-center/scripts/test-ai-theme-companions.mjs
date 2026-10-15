@@ -29,10 +29,8 @@ try {
   });
   await page.goto('http://localhost:3015/internal/theme-studio-preview');
   await page.getByLabel('Your idea',{exact:true}).fill(count===1?'A fox in a quiet woodland':'A fox and a small bird in a quiet woodland');
-  await page.getByRole('button',{name:'Create with AI',exact:true}).click();
-  await page.getByRole('dialog',{name:'Create with AI',exact:true}).waitFor();
-  await page.getByLabel(/I agree to send/).check();
-  await page.getByRole('button',{name:'Continue',exact:true}).click();
+  // A saved key is the consent (#633): the request goes straight on.
+  await page.getByRole('button',{name:'Create',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('textarea')?.value==='' || !!document.querySelector('p[role="alert"]'),null,{timeout:30000});
   assert.deepEqual(await page.locator('p[role="alert"]').allTextContents(),[]);
   assert.equal(requests,1);
