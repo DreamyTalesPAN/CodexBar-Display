@@ -210,12 +210,12 @@ func runURLSchemeTests() {
     )
     require(
         appManagedCodexBarAppURL(applicationSupportURL: appSupportURL).path
-            == "/Users/customer/Library/Application Support/codexbar-display/CodexBar/0.63.0/CodexBar.app",
+            == "/Users/customer/Library/Application Support/codexbar-display/CodexBar/0.75.0/CodexBar.app",
         "VibeTV must publish CodexBar only into its private versioned app support directory"
     )
     require(
         appManagedCodexBarCLIURL(applicationSupportURL: appSupportURL).path
-            == "/Users/customer/Library/Application Support/codexbar-display/CodexBar/0.63.0/CodexBar.app/Contents/Helpers/CodexBarCLI",
+            == "/Users/customer/Library/Application Support/codexbar-display/CodexBar/0.75.0/CodexBar.app/Contents/Helpers/CodexBarCLI",
         "the Companion must use the exact private CodexBarCLI path"
     )
     let managedApp = appManagedCodexBarAppURL(applicationSupportURL: appSupportURL)
@@ -312,6 +312,36 @@ func runURLSchemeTests() {
     require(
         verboseResult?.exitCode == 0 && verboseResult?.output.count == 200000,
         "command output must be drained while a verbose child process is running"
+    )
+    let verboseTimedResult = runCodexBarCommand(
+        executableURL: verboseCommand,
+        arguments: [],
+        timeout: 30
+    )
+    require(
+        verboseTimedResult?.exitCode == 0 && verboseTimedResult?.output.count == 200000,
+        "a command with a timeout must still return its whole output"
+    )
+    let hangingCommand = commandFixtureDirectory.appendingPathComponent("hanging-command")
+    try! Data(
+        """
+        #!/bin/sh
+        exec /bin/sleep 30
+        """.utf8
+    ).write(to: hangingCommand)
+    try! FileManager.default.setAttributes(
+        [.posixPermissions: 0o700],
+        ofItemAtPath: hangingCommand.path
+    )
+    let hangingStartedAt = Date()
+    let hangingResult = runCodexBarCommand(
+        executableURL: hangingCommand,
+        arguments: [],
+        timeout: 0.5
+    )
+    require(
+        hangingResult == nil && Date().timeIntervalSince(hangingStartedAt) < 5,
+        "a command that outlives its timeout, like an unanswered Keychain prompt, must be stopped"
     )
     let environmentCommand = commandFixtureDirectory.appendingPathComponent("environment-command")
     try! Data(
@@ -496,6 +526,125 @@ func runURLSchemeTests() {
         "the WebView update URL must route to the native Sparkle action"
     )
     require(
+        nativeControlCenterAction(
+            for: URL(string: "vibetv://read-browser-sign-in?provider=claude")!
+        ) == .readBrowserSignIn(provider: "claude"),
+        "Sign in to Claude must read the Claude browser sign-in from the app"
+    )
+    require(
+        nativeControlCenterAction(
+            for: URL(string: "vibetv://read-browser-sign-in?provider=Cursor")!
+        ) == .readBrowserSignIn(provider: "cursor"),
+        "Sign in to Cursor must read the Cursor browser sign-in from the app"
+    )
+    for rejectedReadURL in [
+        "vibetv://read-browser-sign-in",
+        "vibetv://read-browser-sign-in?provider=codex",
+        "vibetv://read-browser-sign-in?provider=claude&provider=cursor",
+        "vibetv://read-browser-sign-in?provider=claude&all=true",
+        "vibetv://read-browser-sign-in/extra?provider=claude",
+        "https://read-browser-sign-in?provider=claude",
+    ] {
+        require(
+            nativeControlCenterAction(for: URL(string: rejectedReadURL)!) == nil,
+            "unexpected browser sign-in read must be rejected: \(rejectedReadURL)"
+        )
+    }
+    require(
+        browserSignInReadOutcome(
+            #"[{"provider":"claude","status":"refreshed","message":"Browser cookie refreshed."}]"#
+        ) == .read,
+        "a refreshed answer means the browser sign-in was read"
+    )
+    require(
+        browserSignInReadOutcome(
+            #"[{"provider":"claude","status":"failed","message":"Chrome cookie decryption was declined in Keychain; rerun with --allow-keychain-prompt to request Keychain access again."}]"#
+        ) == .declined,
+        "a Keychain refusal must stop the reading, or CodexBar asks again"
+    )
+    for pendingAnswer in [
+        #"[{"provider":"claude","status":"failed","message":"No browser session cookie was refreshed. Sign in in a configured browser and retry."}]"#,
+        #"[{"provider":"claude","status":"blocked","message":"Retry interactively."}]"#,
+        #"[{"status":"refreshed"},{"status":"refreshed"}]"#,
+        "not json",
+        "",
+    ] {
+        require(
+            browserSignInReadOutcome(pendingAnswer) == .notYet,
+            "anything else keeps waiting for the sign-in: \(pendingAnswer)"
+        )
+    }
+    require(
+        browserSignInProviderReady(
+            usage: Data(#"{"providers":[{"id":"codex","stale":false},{"id":"claude","stale":false,"session":26}]}"#.utf8),
+            provider: "claude"
+        ),
+        "current Claude usage means the browser sign-in worked"
+    )
+    for notReadyUsage in [
+        #"{"providers":[{"id":"claude","stale":true,"usageUnavailable":true}]}"#,
+        #"{"providers":[{"id":"claude","stale":false,"usageUnavailable":true}]}"#,
+        #"{"providers":[{"id":"codex","stale":false}]}"#,
+        #"{"providers":[]}"#,
+        "not json",
+    ] {
+        require(
+            !browserSignInProviderReady(usage: Data(notReadyUsage.utf8), provider: "claude"),
+            "missing, stale or unavailable usage keeps reading the browser sign-in: \(notReadyUsage)"
+        )
+    }
+    let firstRead = Date(timeIntervalSince1970: 1_000)
+    require(
+        browserSignInProviderHealthy(
+            preferences: Data(#"{"items":[{"id":"codexbar.providers.codex.enabled","health":{"state":"auth_required"}},{"id":"codexbar.providers.claude.enabled","health":{"state":"healthy"}}]}"#.utf8),
+            provider: "claude"
+        ),
+        "a healthy Claude row means the browser sign-in worked"
+    )
+    for notHealthyPreferences in [
+        #"{"items":[{"id":"codexbar.providers.claude.enabled","health":{"state":"browser_sign_in_required"}}]}"#,
+        #"{"items":[{"id":"codexbar.providers.claude.enabled","health":{"state":"stale","signInState":"browser_sign_in_required"}}]}"#,
+        #"{"items":[{"id":"codexbar.providers.claude.enabled"}]}"#,
+        #"{"items":[]}"#,
+        "not json",
+    ] {
+        require(
+            !browserSignInProviderHealthy(preferences: Data(notHealthyPreferences.utf8), provider: "claude"),
+            "a row still asking to sign in keeps reading the browser sign-in: \(notHealthyPreferences)"
+        )
+    }
+    require(
+        browserSignInShouldRead(lastReadAt: nil, readWorks: false, now: firstRead),
+        "the first check after Sign in reads the browser sign-in"
+    )
+    require(
+        !browserSignInShouldRead(lastReadAt: firstRead, readWorks: false, now: firstRead.addingTimeInterval(75)),
+        "after a read the app waits for the usage service instead of asking again"
+    )
+    require(
+        browserSignInShouldRead(lastReadAt: firstRead, readWorks: false, now: firstRead.addingTimeInterval(90)),
+        "a read the provider did not accept is read again"
+    )
+    require(
+        !browserSignInShouldRead(lastReadAt: firstRead, readWorks: true, now: firstRead.addingTimeInterval(170)),
+        "a read the check found working is never read, and asked for, again"
+    )
+    let workingCheck = #"{"ok":true,"providerSetup":{"status":"ready","providers":[{"id":"claude","status":"ready"}]}}"#
+    require(
+        browserSignInReadWorks(check: Data(workingCheck.utf8), provider: "claude"),
+        "a check that finds the provider ready accepts the read: \(workingCheck)"
+    )
+    for notWorking in [
+        #"{"ok":true,"providerSetup":{"status":"setup_required","providers":[{"id":"claude","status":"browser_sign_in_required"}]}}"#,
+        #"{"ok":true,"providerSetup":{"status":"ready","providers":[{"id":"codex","status":"ready"}]}}"#,
+        "not json",
+    ] {
+        require(
+            !browserSignInReadWorks(check: Data(notWorking.utf8), provider: "claude"),
+            "a check that does not find the provider ready keeps reading: \(notWorking)"
+        )
+    }
+    require(
         shouldHandleWebViewDownload(
             url: URL(string: "blob:http://127.0.0.1/report")!,
             requestedByWebContent: true
@@ -586,7 +735,7 @@ func runURLSchemeTests() {
         "http://github.com/steipete/CodexBar/releases/latest",
         "https://github.com/other/CodexBar/releases/latest",
         "https://github.com/steipete/CodexBar/releases/latest?download=1",
-        "https://github.com/steipete/CodexBar/releases/download/v0.63.0/CodexBar.zip",
+        "https://github.com/steipete/CodexBar/releases/download/v0.75.0/CodexBar.zip",
     ] {
         require(
             !isApprovedCodexBarDownloadURL(URL(string: rejectedURL)!),
