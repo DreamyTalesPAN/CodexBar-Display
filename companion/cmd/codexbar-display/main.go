@@ -683,6 +683,7 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 	daemonOpts.BeginDeviceWrite = deviceWrites.beginWrite
 	daemonOpts.Dashboard = dashboard
 	daemonOpts.ReportSystemBusy = systemBusy.Store
+	daemonOpts.CurrentSystemBusy = systemBusy.Load
 
 	errc := make(chan error, 1)
 	go func() {

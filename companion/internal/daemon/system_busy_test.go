@@ -316,3 +316,38 @@ func TestLastGoodStillExpiresWithoutBusyComputer(t *testing.T) {
 		t.Fatalf("frame after twenty minutes without a busy computer = %+v, want usage unavailable", frame)
 	}
 }
+
+// The display worker restarts during an incident (a connection mode change):
+// the new collector carries the incident on with its start, so a dialog the
+// customer closed stays closed (review of #628).
+func TestSystemBusySurvivesWorkerRestart(t *testing.T) {
+	h := newSystemBusyHarness(t)
+	h.cycles(4)
+	before := h.last()
+	if before == nil {
+		t.Fatal("expected busy before the restart")
+	}
+	shared := before
+	restarted := newProviderCollector(runtimeDeps{
+		now:               func() time.Time { return h.now },
+		logf:              func(string, ...any) {},
+		readSystemLoad:    func() (systemload.Figures, error) { return h.figures, nil },
+		reportSystemBusy:  func(busy *SystemBusy) { h.reported = append(h.reported, busy); shared = busy },
+		currentSystemBusy: func() *SystemBusy { return shared },
+	}, Options{Once: true})
+	restarted.dashboard, restarted.fetchDashboard = h.collector.dashboard, h.collector.fetchDashboard
+	restarted.interval = h.collector.interval
+	if !restarted.isSystemBusy() {
+		t.Fatal("the new worker must show the incident from its start")
+	}
+	h.collector = restarted
+	h.cycles(1)
+	if got := h.last(); got == nil || !got.Since.Equal(before.Since) {
+		t.Fatalf("after the restart busy = %+v, want the incident since %s", got, before.Since)
+	}
+	h.answers = true
+	h.cycles(1)
+	if h.last() != nil {
+		t.Fatalf("busy after the engine answered: %+v", h.last())
+	}
+}

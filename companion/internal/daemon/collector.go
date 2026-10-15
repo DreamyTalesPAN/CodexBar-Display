@@ -184,6 +184,12 @@ func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
 		}
 	}
 
+	if deps.currentSystemBusy != nil {
+		// A replaced worker's incident goes on: its start, and with it the
+		// customer's dismissal, stay until the engine answers again.
+		collector.systemBusy = deps.currentSystemBusy()
+	}
+
 	if loaded, savedAt, ok := loadPersistedProviderSnapshotsAnyAge(); ok {
 		collector.providers = migrateLegacySnapshotUsageWindows(loaded)
 		collector.lastPersistedAt = savedAt

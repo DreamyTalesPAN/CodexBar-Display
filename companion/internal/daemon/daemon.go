@@ -50,6 +50,10 @@ type Options struct {
 	// every collection: nil while usage arrives or the computer has memory
 	// to spare (issue #606).
 	ReportSystemBusy func(*SystemBusy)
+	// CurrentSystemBusy is the verdict last reported, also by a worker that
+	// has since been replaced: a restart of the worker does not end the
+	// incident.
+	CurrentSystemBusy func() *SystemBusy
 }
 
 // SystemBusyLabel replaces the provider name on VibeTV while the computer is
@@ -182,6 +186,7 @@ type runtimeDeps struct {
 	logf                  func(string, ...any)
 	record                func(timeline.Event)
 	reportSystemBusy      func(*SystemBusy)
+	currentSystemBusy     func() *SystemBusy
 	readSystemLoad        func() (systemload.Figures, error)
 	homeDir               func() (string, error)
 	loadConfig            func(string) (runtimeconfig.Config, error)
@@ -408,6 +413,9 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	}
 	if opts.ReportSystemBusy != nil {
 		deps.reportSystemBusy = opts.ReportSystemBusy
+	}
+	if opts.CurrentSystemBusy != nil {
+		deps.currentSystemBusy = opts.CurrentSystemBusy
 	}
 	syncCycleMode := deps.fetchProviders != nil && deps.fetchProvider == nil
 	deps = deps.withDefaults()
