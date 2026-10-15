@@ -5,6 +5,13 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-10-15 — Offer the Mac App update on the VibeTV-not-found pages (#561)
+
+- User approval: Paul approved this change in the comment on PR #639 on 2026-10-15 ("du kannst meine freigabe in das ui review gate eintragen"). He has not personally previewed this exact build.
+- Approved customer-visible result: When a newer Mac App is available, the "VibeTV not found" pages show a hint that an update exists with the button `Update the Mac App`. Without a newer Mac App the pages look as before.
+- Scope: `setup-device-dialogs.tsx`, `setup-wizard.tsx`, `control-center-app.tsx`, the focused dialog test, and this approval record. No merge, release, or device write is implied.
+- What's new: none — the hint appears only while a problem is being solved, nothing a customer needs to learn.
+
 ## 2026-10-15 — "Your VibeTV is live" without Back, set up once is remembered (#611)
 
 - User approval: Paul decided the behavior in issue #611 on 2026-10-15 ("Decision by Paul, 2026-10-15"). He has not personally previewed this exact build.
