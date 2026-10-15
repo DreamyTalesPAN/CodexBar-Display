@@ -7213,3 +7213,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: `public/images/vibetv-device-overview.png` stays published under `/images/`, as on main. The audit had deleted it because nothing in the repository links it, but a mail or page outside the repository may. No screen changes.
 - Scope: `apps/control-center/public/images/vibetv-device-overview.png` (restored unchanged) and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — nothing changes for the customer
+
+## 2026-10-15 — Overnight audit (#614): approval marker after merging main with #607, #620 and #629
+
+- User approval: Paul asked on 2026-10-15 to bring #615 to ready (CI green, tested on Mac and Windows). Main moved on with #607, #620 and #629 while the branch was in review, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #614 entries above and in the entries of #607, #620 and #629; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
