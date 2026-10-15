@@ -7185,3 +7185,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as approved in the #607 entries above; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-15 — Offer the Mac App update only on the Mac (#561)
+
+- User approval: Paul asked on 2026-10-15 to fix the Codex review finding on PR #639 ("ja, fix das alles"): the Windows app must not offer a "Mac App" update. He has not personally previewed this exact build.
+- Approved customer-visible result: the "Update the Mac App" hint on the "VibeTV not found" pages appears only in the Mac App. The Windows app shows these pages as before.
+- Scope: `control-center-app.tsx` and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — removes a hint from Windows, nothing to announce
