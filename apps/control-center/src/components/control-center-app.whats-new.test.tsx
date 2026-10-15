@@ -710,6 +710,7 @@ it("tells a busy computer after a broken usage service, and What's new after bot
   expect(notice()).not.toBeNull();
 });
 
+// Any dialog of a page comes first; Run setup again stands for all of them.
 it("lets the customer's own question come before a busy computer", async () => {
   const app = startWindow();
   app.companion.systemBusy = "2026-10-14T09:13:00Z";
@@ -721,10 +722,12 @@ it("lets the customer's own question come before a busy computer", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Support" }));
   await app.wait(1);
   fireEvent.click(screen.getByRole("button", { name: "Run setup again" }));
+  await app.wait(1);
   expect(question()).not.toBeNull();
   expect(busyDialog()).toBeNull();
 
   // Answered, the busy computer is told again: the customer never closed it.
   fireEvent.click(within(question()!).getByRole("button", { name: "Cancel" }));
+  await app.wait(1);
   expect(busyDialog()).not.toBeNull();
 });

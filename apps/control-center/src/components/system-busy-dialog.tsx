@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SetupDialog } from "./setup/setup-dialog";
 
 /**
@@ -27,8 +27,34 @@ export function useSystemBusyDismissal(
   return [since !== null && since === dismissedSince, () => setDismissedSince(since)];
 }
 
+/**
+ * Whether a dialog other than this one is open. The busy dialog leaves the
+ * page usable, so a page's own dialog (Run setup again, a theme preview, a
+ * factory reset) can open under it, or be open when it comes; it waits for
+ * that one instead of covering it, and returns once it is closed.
+ */
+function useOtherDialogOpen(): boolean {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const check = () =>
+      setOpen(
+        Array.from(document.querySelectorAll('[role="dialog"]')).some(
+          (dialog) => !dialog.textContent?.includes(systemBusyCopy.title),
+        ),
+      );
+    check();
+    const observer = new MutationObserver(check);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
+  return open;
+}
+
 /** The computer is too starved for the usage engine to answer (#606). */
 export function SystemBusyDialog({ onClose }: { onClose: () => void }) {
+  if (useOtherDialogOpen()) {
+    return null;
+  }
   return (
     <SetupDialog
       description={systemBusyCopy.description}

@@ -2,6 +2,7 @@ package codexbar
 
 import (
 	"context"
+	"errors"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -118,6 +119,10 @@ func serveUsageItem(provider dashboardusage.DashboardProvider, item map[string]a
 	return raw, err == nil
 }
 
+// ErrDashboardServeUnavailable is a fetch that found no running, healthy serve
+// to ask.
+var ErrDashboardServeUnavailable = errors.New("dashboard serve unavailable")
+
 func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now time.Time) (_ []ParsedFrame, err error) {
 	defer func() {
 		if err != nil {
@@ -129,7 +134,7 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 	serveUsage.mu.Unlock()
 	endpoint := strings.TrimRight(strings.TrimSpace(info.Endpoint), "/")
 	if endpoint == "" || strings.TrimSpace(info.Token) == "" || !info.Running || !info.Healthy {
-		return nil, fmt.Errorf("dashboard serve unavailable")
+		return nil, ErrDashboardServeUnavailable
 	}
 	if now.IsZero() {
 		now = time.Now().UTC()

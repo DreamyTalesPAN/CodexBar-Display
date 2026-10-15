@@ -5135,12 +5135,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, [whatsNewIsNotNews]);
   // Like the usage dialog, an announcement over whatever the customer does,
   // after the runtime repair, the lost VibeTV and setup. A broken usage
-  // service is the bigger problem and is told first, and a question the
-  // customer asked for (Run setup again?) is answered first.
+  // service is the bigger problem and is told first. Any other dialog comes
+  // first as well (SystemBusyDialog waits for it).
   const systemBusyOpen =
     systemBusySince !== null &&
     !systemBusyDismissed &&
-    !setupAgainRequested &&
     !needsRuntimeRecovery &&
     !lostDevicePickerOpen &&
     !setupOwnsScreen &&

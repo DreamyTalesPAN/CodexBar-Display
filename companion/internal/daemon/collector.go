@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -543,12 +544,12 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 // noteFetchResult decides after every collection whether the computer is too
 // busy for the usage engine (#606). Both must hold: the running engine has not
 // answered for systemBusyCycles intervals, and the computer is low on memory.
-// An engine that answers, even with every provider signed out or failing,
-// ends it: those keep their own messages. While the engine is not running,
-// the verdict stands; its supervisor restarting it is not the end of the
-// starvation that made it fail.
+// An engine that answers, even with an HTTP error or every provider signed
+// out or failing, ends it: those keep their own messages. While the engine is
+// not running, the verdict stands; its supervisor restarting it is not the
+// end of the starvation that made it fail.
 func (c *providerCollector) noteFetchResult(now time.Time, fetchErr error) {
-	answered := fetchErr == nil || codexbar.FetchErrorKindOf(fetchErr) == codexbar.FetchErrorNoProviders
+	answered := fetchErr == nil || !engineSilent(fetchErr)
 	c.mu.Lock()
 	busy := c.systemBusy
 	if answered {
@@ -591,6 +592,17 @@ func (c *providerCollector) noteFetchResult(now time.Time, fetchErr error) {
 	}
 }
 
+// engineSilent is a fetch the engine gave no answer to: no HTTP response came
+// (the request ran out of time, or the connection failed or was cut), or there
+// was no serve to ask. An HTTP error or a body that does not decode is an
+// answer, and keeps its own message.
+func engineSilent(err error) bool {
+	var requestErr *url.Error
+	return errors.As(err, &requestErr) ||
+		errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, codexbar.ErrDashboardServeUnavailable)
+}
+
 func (c *providerCollector) engineRunning() bool {
 	return c.dashboard != nil && c.dashboard.Info().Running
 }
@@ -628,7 +640,7 @@ func (c *providerCollector) fetchProvidersForCollect(ctx context.Context, now ti
 			c.logf("collector dashboard-unavailable source=codexbar-dashboard err=%v\n", err)
 			return nil, "codexbar-dashboard", err
 		}
-		return nil, "codexbar-dashboard", errors.New("dashboard serve unavailable")
+		return nil, "codexbar-dashboard", codexbar.ErrDashboardServeUnavailable
 	}
 	if c.fetchProviders == nil {
 		return nil, "codexbar-usage-json", errors.New("usage provider fetcher unavailable")

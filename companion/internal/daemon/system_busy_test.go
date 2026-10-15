@@ -3,6 +3,9 @@ package daemon
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/url"
+	"syscall"
 	"testing"
 	"time"
 
@@ -19,9 +22,11 @@ type systemBusyHarness struct {
 	now       time.Time
 	running   bool
 	answers   bool
-	figures   systemload.Figures
-	reported  []*SystemBusy
-	events    []timeline.Event
+	// silence is the failed fetch while the engine does not answer.
+	silence  error
+	figures  systemload.Figures
+	reported []*SystemBusy
+	events   []timeline.Event
 }
 
 func newSystemBusyHarness(t *testing.T) *systemBusyHarness {
@@ -30,6 +35,7 @@ func newSystemBusyHarness(t *testing.T) *systemBusyHarness {
 	h := &systemBusyHarness{
 		now:     time.Date(2026, 10, 14, 9, 11, 0, 0, time.UTC),
 		running: true,
+		silence: &url.Error{Op: "Get", URL: "http://127.0.0.1:50000/dashboard/v1/snapshot", Err: context.DeadlineExceeded},
 		figures: starvedMac,
 	}
 	h.collector = &providerCollector{
@@ -46,7 +52,7 @@ func newSystemBusyHarness(t *testing.T) *systemBusyHarness {
 		}),
 		fetchDashboard: func(context.Context, codexbar.DashboardServeInfo, time.Time) ([]codexbar.ParsedFrame, error) {
 			if !h.answers {
-				return nil, errors.New("dashboard snapshot: context deadline exceeded")
+				return nil, h.silence
 			}
 			// Answering is enough, even when the provider itself failed.
 			claude := testParsedFrame("claude", 28, 35, 7200)
@@ -188,7 +194,7 @@ func TestSystemBusyReplacesLabelOnVibeTV(t *testing.T) {
 	h.answers = true
 	h.collector.fetchDashboard = func(context.Context, codexbar.DashboardServeInfo, time.Time) ([]codexbar.ParsedFrame, error) {
 		if !h.answers {
-			return nil, errors.New("dashboard snapshot: context deadline exceeded")
+			return nil, h.silence
 		}
 		return []codexbar.ParsedFrame{testParsedFrame("claude", 28, 35, 7200)}, nil
 	}
@@ -231,5 +237,31 @@ func TestSystemBusyReplacesLabelOnVibeTV(t *testing.T) {
 	send()
 	if frame := decodeFrameLine(t, sent); frame.Label == SystemBusyLabel {
 		t.Fatalf("frame after the incident = %+v", frame)
+	}
+}
+
+// An HTTP error or a reply that does not decode is the engine answering: its
+// own message stays, it is not a busy computer (review of #628).
+func TestSystemBusyOnlyForSilence(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		err    error
+		silent bool
+	}{
+		{name: "request timed out", err: &url.Error{Op: "Get", URL: "http://127.0.0.1:50000/x", Err: context.DeadlineExceeded}, silent: true},
+		{name: "collection deadline", err: fmt.Errorf("dashboard snapshot: %w", context.DeadlineExceeded), silent: true},
+		{name: "connection cut", err: &url.Error{Op: "Get", URL: "http://127.0.0.1:50000/x", Err: syscall.ECONNRESET}, silent: true},
+		{name: "no serve", err: codexbar.ErrDashboardServeUnavailable, silent: true},
+		{name: "HTTP error", err: errors.New("GET /dashboard/v1/snapshot returned HTTP 500")},
+		{name: "undecodable", err: errors.New("decode dashboard snapshot: unexpected end of JSON input")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h := newSystemBusyHarness(t)
+			h.silence = test.err
+			h.cycles(5)
+			if busy := h.last() != nil; busy != test.silent {
+				t.Fatalf("busy = %v after five cycles of %v, want %v", busy, test.err, test.silent)
+			}
+		})
 	}
 }
