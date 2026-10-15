@@ -89,6 +89,140 @@ func TestPreferencesMarksUnavailableProviderStaleFromPersistedUsage(t *testing.T
 	}
 }
 
+// #607: right after the usage service was started (a settings change or a
+// browser sign-in read), a saved reading from the service before it is not a
+// failure: the row shows that it is checking instead of the warning icon,
+// until the grace period ends or the new service delivers.
+func TestPreferencesShowCheckingWhileANewUsageServiceReads(t *testing.T) {
+	collectedAt := time.Date(2026, 10, 14, 13, 49, 0, 0, time.UTC)
+	justStarted := &codexbar.DashboardServeInfo{Running: true, StartedAt: collectedAt.Add(time.Minute)}
+	for _, tc := range []struct {
+		name      string
+		info      *codexbar.DashboardServeInfo
+		now       time.Time
+		health    codexbar.ProviderHealthState
+		wantState string
+	}{
+		{"service started after the reading", justStarted, collectedAt.Add(2 * time.Minute), codexbar.ProviderHealthUnavailable, "checking"},
+		{"grace period over", justStarted, collectedAt.Add(5 * time.Minute), codexbar.ProviderHealthUnavailable, "stale"},
+		{"reading from the running service", &codexbar.DashboardServeInfo{Running: true, StartedAt: collectedAt.Add(-time.Minute)}, collectedAt.Add(time.Minute), codexbar.ProviderHealthUnavailable, "stale"},
+		{"service not running", &codexbar.DashboardServeInfo{StartedAt: collectedAt.Add(time.Minute)}, collectedAt.Add(2 * time.Minute), codexbar.ProviderHealthUnavailable, "stale"},
+		{"no supervised service", nil, collectedAt.Add(2 * time.Minute), codexbar.ProviderHealthUnavailable, "stale"},
+		// A scan that already names the failure keeps the row's state and
+		// action (Codex review on #607).
+		{"known sign-in failure", justStarted, collectedAt.Add(2 * time.Minute), codexbar.ProviderHealthAuthRequired, "stale"},
+		{"known throttle", justStarted, collectedAt.Add(2 * time.Minute), codexbar.ProviderHealthRateLimited, "stale"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := newTestServer(t, runtimeconfig.Config{})
+			server.now = func() time.Time { return tc.now }
+			if tc.info != nil {
+				info := *tc.info
+				server.usageServiceInfo = func() codexbar.DashboardServeInfo { return info }
+			}
+			server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+				return []codexbar.ProviderSetting{{ID: "codex", Label: "Codex", Enabled: true, Health: tc.health, Service: codexbar.ProviderServiceUnknown}}, nil
+			}
+			server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+				return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
+					Provider: "codex", Frame: protocol.Frame{Provider: "codex", Session: 12}, CollectedAt: collectedAt, Retained: true,
+				}}}, true
+			}
+
+			recorder := httptest.NewRecorder()
+			server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+			var response preferencesResponse
+			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if got := response.Items[0].Health.State; got != tc.wantState {
+				t.Fatalf("state=%q want %q: %#v", got, tc.wantState, response.Items[0].Health)
+			}
+		})
+	}
+}
+
+// A provider-side outage the scan reports stays visible during the restart
+// grace (Codex review on #607).
+func TestPreferencesKeepOutageDuringUsageServiceStartGrace(t *testing.T) {
+	collectedAt := time.Date(2026, 10, 14, 13, 49, 0, 0, time.UTC)
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.now = func() time.Time { return collectedAt.Add(2 * time.Minute) }
+	server.usageServiceInfo = func() codexbar.DashboardServeInfo {
+		return codexbar.DashboardServeInfo{Running: true, StartedAt: collectedAt.Add(time.Minute)}
+	}
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthUnavailable, Service: codexbar.ProviderServiceOutage}}, nil
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
+			Provider: "codex", Frame: protocol.Frame{Provider: "codex", Session: 12}, CollectedAt: collectedAt, Retained: true,
+		}}}, true
+	}
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+	var response preferencesResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if got := response.Items[0].Health.State; got == "checking" {
+		t.Fatalf("an outage must not turn into the restart spinner: %#v", response.Items[0].Health)
+	}
+}
+
+// #607: between the Mac app's report of a browser sign-in read and the
+// answer of the check it asks for, the row's failure is from before the read.
+// The row shows that it is checking, not the warning icon; a check after the
+// read that names a failure ends that.
+func TestPreferencesShowCheckingWhileABrowserSignInReadIsChecked(t *testing.T) {
+	collectedAt := time.Date(2026, 10, 15, 6, 15, 0, 0, time.UTC)
+	readAt := collectedAt.Add(4 * time.Minute)
+	for _, tc := range []struct {
+		name      string
+		now       time.Time
+		readiness *providerReadinessRecord
+		wantState string
+	}{
+		{"read reported, check running", readAt.Add(5 * time.Second), nil, "checking"},
+		{"no read reported", readAt.Add(5 * time.Second), &providerReadinessRecord{}, "stale"},
+		{"check after the read failed", readAt.Add(10 * time.Second), &providerReadinessRecord{Status: codexbar.ProviderAuthRequired, CheckedAt: readAt.Add(8 * time.Second)}, "stale"},
+		// The check said ready, but the scan since then names a sign-in
+		// failure: the row shows it (Codex review on #607).
+		{"newer scan failure after a ready check", readAt.Add(20 * time.Second), &providerReadinessRecord{Status: codexbar.ProviderReady, CheckedAt: readAt.Add(8 * time.Second)}, "stale"},
+		{"grace over", readAt.Add(4 * time.Minute), nil, "stale"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := newTestServer(t, runtimeconfig.Config{})
+			server.now = func() time.Time { return tc.now }
+			if tc.readiness == nil || tc.readiness.Status != "" {
+				server.noteBrowserSignInRead("claude", readAt)
+			}
+			if tc.readiness != nil && tc.readiness.Status != "" {
+				// The exact check the Mac app asked for after the read.
+				server.providerReadiness = map[string]providerReadinessRecord{"claude": *tc.readiness}
+			}
+			server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+				return []codexbar.ProviderSetting{{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthAuthRequired, Service: codexbar.ProviderServiceUnknown}}, nil
+			}
+			server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+				return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
+					Provider: "claude", Frame: protocol.Frame{Provider: "claude", Session: 12}, CollectedAt: collectedAt, Retained: true,
+				}}}, true
+			}
+
+			recorder := httptest.NewRecorder()
+			server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+			var response preferencesResponse
+			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if got := response.Items[0].Health.State; got != tc.wantState {
+				t.Fatalf("state=%q want %q: %#v", got, tc.wantState, response.Items[0].Health)
+			}
+		})
+	}
+}
+
 // Issue #368: a provider that stopped delivering says since when, also once
 // its saved reading is too old to show and lastSuccessAt is gone. A provider
 // the collector never stored says nothing.

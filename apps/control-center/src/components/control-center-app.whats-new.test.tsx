@@ -13,7 +13,7 @@ import { expectNoAxeViolations } from "@/test/axe";
 import { ControlCenterApp } from "./control-center-app";
 
 const SEEN_KEY = "vibetv.controlCenter.seenWhatsNew";
-const themeSpec = { active: true, path: "/themes/codex/spec-v7.json", hash: "hash-v7" };
+const themeSpec = { active: true, path: "/themes/codex/spec-v7.json", hash: "hash-v7", renderOk: true };
 const claude = {
   id: "codexbar.providers.claude.enabled",
   section: "providers",

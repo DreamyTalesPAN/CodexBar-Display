@@ -56,7 +56,7 @@ type ThemePackState = {
   themeSpecHash: string;
   themeSpecPath: string;
   pack: ThemeRenderPack | null;
-  status: "ready" | "error";
+  status: "ready" | "error" | "unsupported";
 };
 
 export type DisplayFrameSnapshot = {
@@ -451,7 +451,7 @@ export function LiveVibeTVPreview({
     packState.themeSpecPath === themeSpecPath
       ? packState.pack
       : null;
-  const packStatus: "idle" | "loading" | "ready" | "error" = !themeId
+  const packStatus: "idle" | "loading" | ThemePackState["status"] = !themeId
     ? "idle"
     : packState?.themeId === themeId &&
         packState.themeSpecHash === themeSpecHash &&
@@ -525,7 +525,9 @@ export function LiveVibeTVPreview({
           themeSpecHash,
           themeSpecPath,
           pack: null,
-          status: "error",
+          // No pack for this theme at all: a dev theme, or one installed by a
+          // newer app. Still retried, a cache being built answers the same.
+          status: error instanceof ThemeUnsupportedError ? "unsupported" : "error",
         });
         scheduleRetry();
       });
@@ -538,13 +540,16 @@ export function LiveVibeTVPreview({
     };
   }, [themeId, themeSpecHash, themeSpecPath, packRetryNonce]);
 
-  const previewReady = Boolean(
+  // What VibeTV itself reports: the theme drawn and real usage arriving.
+  const deviceShowsTheme = Boolean(
     deviceIsCustomerConnected(device) &&
       deviceReady &&
       !updateOwnedDisconnect &&
-      pack?.spec &&
+      device?.display?.themeSpec?.renderOk === true &&
       frame,
   );
+  const previewReady =
+    deviceShowsTheme && Boolean(pack?.spec || packStatus === "unsupported");
   useEffect(() => {
     if (!previewReady || !onPreviewReady) {
       return;
@@ -1220,16 +1225,18 @@ function ThemeSpecLoading({
   themeId,
 }: {
   message?: string;
-  status: "idle" | "loading" | "ready" | "error";
+  status: "idle" | "loading" | ThemePackState["status"];
   themeId: string;
 }) {
   const content =
     message ||
-    (status === "error"
-      ? "Preview unavailable"
-      : themeId
-        ? "Loading preview"
-        : "Waiting for theme");
+    (status === "unsupported"
+      ? "Unsupported theme"
+      : status === "error"
+        ? "Preview unavailable"
+        : themeId
+          ? "Loading preview"
+          : "Waiting for theme");
   return (
     <div
       className="grid aspect-square w-full place-items-center whitespace-normal break-words border border-[#747A60] bg-[#111111] p-3 text-center font-mono text-[10px] font-bold uppercase leading-tight text-[#CCFF00] sm:text-xs"
@@ -1487,6 +1494,8 @@ function renderPackSpecHash(pack: ThemeRenderPack): string {
   return normalizeThemeSpecHash(pack.specHash);
 }
 
+class ThemeUnsupportedError extends Error {}
+
 export async function fetchThemeRenderPackRevision(
   themeId: string,
   themeSpecPath: string,
@@ -1502,16 +1511,25 @@ export async function fetchThemeRenderPackRevision(
     return exactResponse.json() as Promise<ThemeRenderPack>;
   }
   if (!themeSpecPath) {
-    throw new Error("theme pack unavailable");
+    throw packUnavailable(exactResponse);
   }
 
   // Old Companions only expose the latest cache by theme ID. Their payload
   // still includes specPath, which lets the caller reject a wrong revision.
   const legacyResponse = await fetcher(themeRenderPackUrl(themeId), { signal });
   if (!legacyResponse.ok) {
-    throw new Error("theme pack unavailable");
+    // Unknown only when both reads say so; a transient exact failure stays one.
+    throw packUnavailable(
+      exactResponse.status === 404 ? legacyResponse : exactResponse,
+    );
   }
   return legacyResponse.json() as Promise<ThemeRenderPack>;
+}
+
+function packUnavailable(response: Response): Error {
+  return response.status === 404
+    ? new ThemeUnsupportedError("theme pack unknown")
+    : new Error("theme pack unavailable");
 }
 
 export function themeRenderPackMatchesActiveRevision(

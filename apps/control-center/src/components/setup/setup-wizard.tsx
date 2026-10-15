@@ -107,8 +107,9 @@ export type SetupWizardProps = {
   ) => void | Promise<boolean | void>;
   /** The closing step has been shown; the app can take the screen back. */
   onFinished: () => void;
+  /** This app already finished setup for the connected VibeTV once. */
+  alreadySetUp?: boolean;
   onInstallTheme: () => void;
-  onReturnToThemes: () => void;
   /** What stopped the catalog read or install on the theme step. */
   themeError: ApiError | null;
   themeErrorDismissible?: boolean;
@@ -316,10 +317,6 @@ export function SetupWizard(props: SetupWizardProps) {
         navigations.current += 1;
         if (step === "theme" && back === "providers") {
           displayChoiceSkipped.current = true;
-        }
-        if (back === "theme") {
-          props.onReturnToThemes();
-          return;
         }
         if (back === "device") {
           resetConnect();
@@ -1070,10 +1067,10 @@ export function SetupWizard(props: SetupWizardProps) {
     <>
       <SetupLiveScreen
         {...help}
+        alreadySetUp={props.alreadySetUp}
         device={props.device}
         displayFrame={props.displayFrame}
         onPreviewReady={props.onFinished}
-        onBack={goBack}
         usage={props.usage}
       />
       {usageDialog}

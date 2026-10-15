@@ -23,7 +23,7 @@ const connectedDevice = {
   paired: true,
   activeTheme: "codex",
   display: {
-    themeSpec: { active: true, path: themeSpecPath, hash: themeSpecHash },
+    themeSpec: { active: true, path: themeSpecPath, hash: themeSpecHash, renderOk: true },
   },
 };
 
@@ -45,10 +45,10 @@ const matchingPack = {
   assets: {},
 };
 
-function jsonResponse(body: unknown, ok = true): Response {
+function jsonResponse(body: unknown, ok = true, status = ok ? 200 : 503): Response {
   return {
     ok,
-    status: ok ? 200 : 503,
+    status,
     json: async () => body,
   } as unknown as Response;
 }
@@ -57,6 +57,54 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   vi.useRealTimers();
+});
+
+describe("setup handover needs VibeTV's own report (issue #611)", () => {
+  it("waits for renderOk even when the preview is drawn", async () => {
+    vi.useFakeTimers();
+    const onPreviewReady = vi.fn();
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(matchingPack)));
+    const unconfirmed = {
+      ...connectedDevice,
+      display: { themeSpec: { ...connectedDevice.display.themeSpec, renderOk: undefined } },
+    };
+    const props = { device: unconfirmed, displayFrame: renderableFrame, onPreviewReady, usage: null };
+    const { rerender } = render(createElement(LiveVibeTVPreview, props));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(onPreviewReady).not.toHaveBeenCalled();
+    rerender(createElement(LiveVibeTVPreview, { ...props, device: connectedDevice }));
+    act(() => vi.advanceTimersByTime(3_000));
+    expect(onPreviewReady).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows an unknown theme as unsupported and lets VibeTV's report finish setup", async () => {
+    vi.useFakeTimers();
+    const onPreviewReady = vi.fn();
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({}, false, 404)));
+    const props = { device: { ...connectedDevice, display: { themeSpec: { ...connectedDevice.display.themeSpec, renderOk: false } } }, displayFrame: renderableFrame, onPreviewReady, usage: null };
+    const { rerender } = render(createElement(LiveVibeTVPreview, props));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByText("Unsupported theme")).toBeTruthy();
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(onPreviewReady).not.toHaveBeenCalled();
+    rerender(createElement(LiveVibeTVPreview, { ...props, device: connectedDevice }));
+    act(() => vi.advanceTimersByTime(3_000));
+    expect(onPreviewReady).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a failing pack read as unavailable without finishing setup", async () => {
+    vi.useFakeTimers();
+    const onPreviewReady = vi.fn();
+    // Exact revision read fails transiently, the legacy fallback has nothing.
+    let reads = 0;
+    vi.stubGlobal("fetch", vi.fn(async () => (reads++ % 2 === 0 ? jsonResponse({}, false) : jsonResponse({}, false, 404))));
+    render(createElement(LiveVibeTVPreview, { device: connectedDevice, displayFrame: renderableFrame, onPreviewReady, usage: null }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByText("Preview unavailable")).toBeTruthy();
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(onPreviewReady).not.toHaveBeenCalled();
+  });
 });
 
 describe("Cable preview identity", () => {

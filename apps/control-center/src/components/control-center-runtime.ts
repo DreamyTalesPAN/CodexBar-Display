@@ -6,6 +6,9 @@ export const REPAIR_CONTROL_CENTER_RUNTIME_URL =
 export const REPAIR_CODEXBAR_URL = "vibetv://repair-codexbar";
 export const FINISH_CODEXBAR_RECOVERY_URL =
   "vibetv://finish-codexbar-recovery";
+export const READ_BROWSER_SIGN_IN_URL = "vibetv://read-browser-sign-in";
+// CodexBar reads these from the browser sign-in on the Mac.
+const MAC_BROWSER_SIGN_IN_PROVIDERS = new Set(["claude", "cursor"]);
 const NATIVE_CONTROL_CENTER_USER_AGENT_PREFIX = "VibeTVControlCenter/";
 const PROVIDER_SHORTCUT_UNAVAILABLE_USER_AGENT_SUFFIX =
   " ProviderShortcut/unavailable";
@@ -89,6 +92,25 @@ export function launchCodexBarRepair(): void {
 
 export function finishCodexBarRecovery(): void {
   launchNativeControlCenterAction(FINISH_CODEXBAR_RECOVERY_URL);
+}
+
+// Only the Mac app can have CodexBar read a browser sign-in: the background
+// usage service gets no macOS Keychain prompt.
+export function canReadBrowserSignIn(providerId: string): boolean {
+  return (
+    isNativeControlCenterApp() &&
+    typeof navigator !== "undefined" &&
+    /^Mac/.test(navigator.platform) &&
+    MAC_BROWSER_SIGN_IN_PROVIDERS.has(providerId)
+  );
+}
+
+// Asks the Mac app to read the provider's browser sign-in while the customer
+// signs in. This may show the macOS Keychain prompt.
+export function readBrowserSignIn(providerId: string): void {
+  launchNativeControlCenterAction(
+    `${READ_BROWSER_SIGN_IN_URL}?provider=${encodeURIComponent(providerId)}`,
+  );
 }
 
 function launchNativeControlCenterAction(url: string): void {

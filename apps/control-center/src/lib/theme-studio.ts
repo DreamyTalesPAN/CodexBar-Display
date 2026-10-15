@@ -1742,7 +1742,7 @@ function expandPrimitiveType(value: string): ThemeStudioPrimitiveType {
   return SHORT_TYPES[normalized] || (normalized as ThemeStudioPrimitiveType);
 }
 
-function expandBinding(value: string): ThemeStudioBinding {
+export function expandBinding(value: string): ThemeStudioBinding {
   const clean = value.trim();
   const normalized = clean.toLowerCase().replace(/[\s-]+/g, "");
   return SHORT_BINDINGS[clean] || SHORT_BINDINGS[normalized] || clean;

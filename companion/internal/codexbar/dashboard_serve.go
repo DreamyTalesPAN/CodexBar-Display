@@ -53,6 +53,10 @@ type DashboardServeInfo struct {
 	LastHealthAt    time.Time     `json:"lastHealthAt,omitempty"`
 	LastError       string        `json:"lastError,omitempty"`
 	RefreshInterval time.Duration `json:"refreshInterval"`
+	// StartedAt is when the serve that delivers usage now was started. A
+	// child that crashes before it ever answered keeps the time of the one
+	// it replaces, so a crash loop does not look like a service just started.
+	StartedAt time.Time `json:"startedAt,omitempty"`
 }
 
 type DashboardServeConfig struct {
@@ -89,6 +93,8 @@ type DashboardServeSupervisor struct {
 	// restart marks the next child exit as one Restart asked for, so the
 	// replacement starts at once instead of after the crash backoff.
 	restart bool
+	// answered: the running child passed a health check.
+	answered bool
 }
 
 func StartDashboardServe(ctx context.Context, logf func(string, ...any)) DashboardServe {
@@ -345,10 +351,26 @@ func (s *DashboardServeSupervisor) stopUnhealthyDashboardServeChild(endpoint str
 // already runs on it; a reading it has not delivered yet is a collection still
 // under way, so it keeps running.
 func (s *DashboardServeSupervisor) Restart(ctx context.Context) error {
+	return s.replace(ctx, false)
+}
+
+// Replace swaps the running serve for a fresh one even when CodexBar's config
+// is unchanged, and waits until the new one answers /health. A browser sign-in
+// read in another CodexBar process writes only its cookie cache, which a
+// running serve does not pick up for minutes: it keeps answering with the
+// snapshot that holds the failed reading (cached for the refresh interval, then
+// served again while it revalidates), and a Keychain read that needed
+// interaction pauses its own cookie-cache reads for five minutes. A new child
+// starts without either (2026-10-14, #607).
+func (s *DashboardServeSupervisor) Replace(ctx context.Context) error {
+	return s.replace(ctx, true)
+}
+
+func (s *DashboardServeSupervisor) replace(ctx context.Context, force bool) error {
 	s.mu.Lock()
 	process := s.process
 	oldPID := s.info.PID
-	stale := process != nil && dashboardConfigChanged(s.config)
+	stale := process != nil && (force || dashboardConfigChanged(s.config))
 	s.restart = stale
 	s.mu.Unlock()
 	if process == nil {
@@ -361,7 +383,7 @@ func (s *DashboardServeSupervisor) Restart(ctx context.Context) error {
 		return nil
 	}
 	if s.logf != nil {
-		s.logf("codexbar-dashboard event=restart-requested pid=%d\n", oldPID)
+		s.logf("codexbar-dashboard event=restart-requested pid=%d forced=%t\n", oldPID, force)
 	}
 	if err := process.Kill(); err != nil {
 		return fmt.Errorf("stop codexbar serve: %w", err)
@@ -452,6 +474,10 @@ func (s *DashboardServeSupervisor) setStarted(endpoint string, process *os.Proce
 	s.config = config
 	s.info.PID = process.Pid
 	s.info.Running = true
+	if s.info.StartedAt.IsZero() || s.answered {
+		s.info.StartedAt = time.Now().UTC()
+	}
+	s.answered = false
 	s.info.Healthy = false
 	s.info.LastError = ""
 	s.info.RefreshInterval = s.refreshInterval
@@ -480,6 +506,9 @@ func (s *DashboardServeSupervisor) setHealth(healthy bool, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.info.Healthy = healthy
+	if healthy && s.process != nil {
+		s.answered = true
+	}
 	s.info.LastHealthAt = time.Now().UTC()
 	if err != nil {
 		s.info.LastError = err.Error()

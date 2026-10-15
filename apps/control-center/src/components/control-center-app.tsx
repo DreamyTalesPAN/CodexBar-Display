@@ -11,6 +11,11 @@ import {
 } from "react";
 import { availableMacAppDmgDownloadUrl } from "@/lib/companion-release";
 import {
+  forgetCompletedSetups,
+  rememberCompletedSetup,
+  setupCompletedFor,
+} from "@/lib/completed-setup-devices";
+import {
   NO_THEME_UPGRADE,
   resolveActiveLiveTheme,
   resolveActiveThemeUpgrade,
@@ -27,6 +32,7 @@ import {
 } from "@/lib/whats-new";
 import { ControlCenterShell } from "./control-center-shell";
 import {
+  canReadBrowserSignIn,
   companionRequestUrl,
   finishCodexBarRecovery,
   isLocalCompanionOrigin,
@@ -36,6 +42,7 @@ import {
   launchCodexBarRepair,
   nativeProviderShortcut,
   needsLoopbackTargetAddressSpace,
+  readBrowserSignIn,
   repairLocalControlCenterRuntime,
   restartLocalControlCenterApp,
   shouldRedirectToLocalControlCenter,
@@ -466,8 +473,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     "repairing" | "failed" | null
   >(null);
   const [themeInstallEnabled, setThemeInstallEnabled] = useState(false);
-  // Only the live preview can admit this launch to the Control Center.
+  // Only the live screen can admit this launch to the Control Center.
   const [hasEnteredControlCenter, setHasEnteredControlCenter] = useState(false);
+  // A VibeTV set up before skips the live screen on launch only. A rerun in
+  // this window (Settings connection change, Run setup again) keeps its check.
+  const [setupFinishedThisSession, setSetupFinishedThisSession] =
+    useState(false);
   const [settingsWiFiSetup, setSettingsWiFiSetup] = useState<{
     status: "waiting_for_wifi" | "wifi_credentials_required";
     deviceId?: string;
@@ -490,7 +501,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
   }, []);
   const finishConnectionChange = useCallback(() => setSettingsWiFiSetup(null), []);
-  const finishSetup = useCallback(() => setHasEnteredControlCenter(true), []);
+  const finishSetup = useCallback(() => {
+    rememberCompletedSetup(device?.deviceId);
+    setSetupFinishedThisSession(true);
+    setHasEnteredControlCenter(true);
+  }, [device?.deviceId]);
   // The completion response clears providerSelectionRequired before the first
   // renderable frame necessarily exists. Keep this setup's confirmed device
   // usable so the next screen is Display Mode, never a flash of Connect.
@@ -1988,6 +2003,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       providerPoolReconcileRetryRef.current = null;
       setProviderPoolReconcilePending(false);
       forgetDeviceTarget();
+      forgetCompletedSetups();
       setDeviceRecoveryGate(resetDeviceRecoveryGate());
       setDeviceTarget("");
       setDeviceSession({
@@ -3584,6 +3600,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       const providerId = item.providerId?.trim().toLowerCase();
       if (!providerId) {
         return;
+      }
+      // On the Mac the app reads the browser sign-in the background check
+      // cannot read. It starts here, inside the customer's click: WebKit
+      // hands a vibetv:// link to the app only then.
+      if (canReadBrowserSignIn(providerId)) {
+        readBrowserSignIn(providerId);
       }
       try {
         await runCompanion(
@@ -5421,6 +5443,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               onConfigureWiFi={configureSetupWiFi}
               onCreateSupportReport={loadSupportDiagnostics}
               onFinished={finishSetup}
+              alreadySetUp={
+                !setupFinishedThisSession && setupCompletedFor(device?.deviceId)
+              }
               onDisplayContinue={(selection) =>
                 updateProviderDisplay(
                   selection.mode === "automatic"
@@ -5432,10 +5457,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                   true,
                 )
               }
-              onReturnToThemes={() => {
-                setSetupThemeChoiceRequired(true);
-                setSetupThemeInstallRequested(false);
-              }}
               onInstallTheme={() => {
                 setSetupThemeInstallRequested(true);
                 void installTheme();
