@@ -5,6 +5,13 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-10-15 — Marcus confirms the Theme Studio pack in the real Mac App (#633, #634, #582)
+
+- User approval: Marcus tested the local build 9999.0.638 of `8a65e29b` on 2026-10-15 in the real Mac App with VibeTV on the cable and reported #550, #549, #633, #634 and #582 as working; he confirmed the three step texts of #634.
+- Approved customer-visible result: The entry "Create with AI: no repeated consent, visible progress, Mac export confirmed after saving" below as written, now confirmed: no consent dialog with a saved key, the steps "Understanding your request…", "Drawing the picture…" and "Adding clock, text and readings…" with seconds from 10 s on, and on the Mac the export notice only after the file was saved.
+- Scope: this approval record only. This approves the customer-visible result on the pull-request branch, not merge or release.
+- What's new: none — fixes to the AI editor, nothing new for customers to learn
+
 ## 2026-10-15 — Create with AI: no repeated consent, visible progress, Mac export confirmed after saving (#633, #634, #582)
 
 - User approval: Marcus asked on 2026-10-15 to fix #633, #634 and #582 in one pull request; the behaviour follows the preferred option of each issue. The step texts below are drafted and not yet confirmed by Marcus; he sees them in his Mac test before the merge.
