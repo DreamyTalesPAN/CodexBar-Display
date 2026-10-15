@@ -705,17 +705,28 @@ func browserSignInReadWorks(check data: Data, provider: String) -> Bool {
 // working counts. Each request ends by the reading's deadline, so a slow or
 // stale origin cannot hold the reading, and later sign-in clicks, past its
 // window.
-func browserSignInCheckAfterRead(provider: String, runtimeOrigins: [URL], deadline: Date) async -> Bool {
+func browserSignInCheckAfterRead(
+    provider: String,
+    runtimeOrigins: [URL],
+    activeOrigin: URL?,
+    deadline: Date
+) async -> Bool {
+    var origins = runtimeOrigins
+    if let activeOrigin, !origins.contains(activeOrigin) {
+        origins.append(activeOrigin)
+    }
     // All candidates at once: a stale origin listed first cannot use up the
-    // time the active runtime needs for its check (Codex review on #607).
-    await withTaskGroup(of: Bool.self) { group in
-        for origin in runtimeOrigins {
+    // time the active runtime needs for its check. Only the ownership-verified
+    // runtime's answer counts: a stale runtime's "ready" says nothing about
+    // the service that feeds the device (Codex review on #607).
+    return await withTaskGroup(of: (URL, Bool).self) { group in
+        for origin in origins {
             group.addTask {
-                await browserSignInCheckAfterRead(provider: provider, origin: origin, deadline: deadline)
+                (origin, await browserSignInCheckAfterRead(provider: provider, origin: origin, deadline: deadline))
             }
         }
         var works = false
-        for await answer in group where answer {
+        for await (origin, answer) in group where answer && origin == activeOrigin {
             works = true
         }
         return works
@@ -3038,10 +3049,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                     if outcome == .read {
                         lastReadAt = Date()
                         // The runtime can move to another port while the
-                        // customer answers the prompt: resolve it each time.
+                        // customer answers the prompt: resolve and verify it
+                        // each time.
+                        if deadline.timeIntervalSinceNow > runtimeInitialHealthTimeout + 1 {
+                            await self?.rediscoverRuntimeOriginForNavigationRetry()
+                        }
                         readWorks = await browserSignInCheckAfterRead(
                             provider: provider,
                             runtimeOrigins: self?.runtimeOriginCandidates() ?? [],
+                            activeOrigin: self?.activeRuntimeOrigin,
                             deadline: deadline
                         )
                     }
