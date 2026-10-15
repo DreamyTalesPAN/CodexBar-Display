@@ -7206,3 +7206,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: after the app was opened through `/install/<theme>` for a live theme, "Choose your theme" in setup has that theme selected, also after the app restarted during setup without the link. Install is still the customer's click. The kept choice is dropped once any theme install completes or VibeTV already shows that theme. Unknown, screensaver or unavailable theme IDs are not kept.
 - Scope: `apps/control-center/src/lib/ordered-theme.ts`, `apps/control-center/src/components/control-center-app.tsx`, the customer-flow test, and this approval record. Pull-request branch only, not merge or release. Shop metafield and shipping mail are separate.
 - What's new: none — part of first setup, not announced to customers
+
+## 2026-10-15 — Display Mode in setup skips a saved provider that shows nothing
+
+- User approval: found in the Windows walk-through of #642 on 2026-10-15 and reported to Marcus through the VibeTV orchestrator chat, which asked to fix it in this pull request and to keep the rule identical to Settings. No new wording.
+- Approved customer-visible result: when the saved selection names a provider that has no usage (for example a signed-out Codex listed first), the Display Mode step in setup uses the first provider that has usage, as Settings already does. The Manual card previews that provider instead of "No usage yet", and Continue is open with Manual chosen.
+- Scope: `apps/control-center/src/components/setup/setup-wizard.tsx`, its test, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — setup correction, not announced to customers
