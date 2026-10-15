@@ -7115,3 +7115,66 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: The entry above also holds for imported designs whose texts use the short reading names (for example `{pv1l}`): they count as showing usage too. Nothing else changes.
 - Scope: `apps/control-center/src/components/theme-studio/design-controls.ts`, `apps/control-center/src/lib/theme-studio.ts` (exports its existing key expansion), the test, and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — an edge case of the chat editor
+
+## 2026-10-14 - On the Mac, "Sign in to Claude/Cursor" also reads the browser sign-in from the app
+
+- User approval: A Mac customer (VibeTV order #1175) was signed in to claude.ai, but VibeTV kept showing "No Claude session key found in browser cookies." The background usage service gets no macOS Keychain prompt and, on the bench Mac (macOS 26), may not list the Chrome profile folder, so it never reads a browser sign-in by itself; one read from the foreground fills CodexBar's cookie cache and the background service then shows Claude usage (bench Mac, preview 99.0.1106, 2026-10-14). Asked whether this should become its own pull request, with the note that customers will see a new macOS Keychain prompt, Marcus answered "Okay, dann mach das bitte und danach testest du das."
+- Approved customer-visible result: On the Mac, clicking "Sign in to Claude" or "Sign in to Cursor" (Settings and setup) still opens the provider sign-in as before. In addition, the Mac app has CodexBar read that provider's browser sign-in while the customer signs in, every 15 seconds for at most 3 minutes, and stops as soon as it is read. macOS may show its own prompt asking whether CodexBarCLI may use the browser's stored key. After "Allow" or "Always Allow" the existing automatic checks find the sign-in and the row becomes ready. After "Deny" the app stops reading and does not ask again for that provider for 3 minutes; the row stays as it was. No new text, button or dialog in VibeTV. Windows, other providers and rows without a sign-in action are unchanged.
+- Scope: `macos/VibeTVControlCenter/main.swift`, `macos/VibeTVControlCenter/URLSchemeTests.swift`, `apps/control-center/src/components/control-center-runtime.ts`, `apps/control-center/src/components/control-center-app.tsx`, and this approval record. This approves the pull-request branch only, not merge, release, signing, or a device operation.
+- What's new: none — a fix for the existing "Sign in to Claude/Cursor" action, not announced to customers
+
+## 2026-10-14 — #607: ask once, and approval marker for the main merge
+
+- User approval: Paul asked on 2026-10-14 to test #607 on Mac and Windows and, after the Mac test showed three to four Keychain prompts and Claude values only after 6:40, to investigate and fix it. The UI review gate cannot read a merge commit as approval marker, so this entry also stands for the merge of main into this branch. No new wording.
+- Approved customer-visible result: as approved in the entry above, with one correction: after a read the app asks VibeTV to check the provider with it, and when that check works, VibeTV starts its usage service fresh and the app does not read, or ask, again. On Paul's Mac this gave one prompt and Claude values 104 seconds after the click. During that restart the provider rows show their warning icon for about a minute, as after any settings change. No new text, button or dialog.
+- Scope: `macos/VibeTVControlCenter/main.swift`, `macos/VibeTVControlCenter/URLSchemeTests.swift`, `companion` (provider retry, usage service restart), the merge of main, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a fix for the existing "Sign in to Claude/Cursor" action, not announced to customers
+
+## 2026-10-14 — #607: a spinner while a new usage service reads
+
+- User approval: After the #607 test Paul saw every provider row (Codex and Claude) show the warning icon for about a minute while the usage service was started fresh, and asked on 2026-10-14: "lass doch da dann lieber n spinner oder so anzeigen".
+- Approved customer-visible result: For up to three minutes after the usage service was started (after a settings change, a browser sign-in read or a crash), a provider whose saved reading is older than that service shows the existing "checking" spinner instead of the warning icon. Once the new service delivers, the row is healthy as before; if it has not delivered after three minutes, the row shows the warning icon as before. A throttled provider keeps its warning. No new text, button or dialog.
+- Scope: `companion` (usage service start time, provider row health), this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a row that already had a checking state uses it during a restart, not announced to customers
+
+## 2026-10-14 — #607: approval marker after merging main with #597
+
+- User approval: Paul asked on 2026-10-14 to test, investigate and fix #607. Main moved on with #597 while the branch was under test, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #607 entries above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-14 — #607: the restart spinner keeps known failures
+
+- User approval: follows Paul's request above ("lieber n spinner"); the Codex review on #607 found that the spinner also replaced rows whose provider check already named the failure. No new wording.
+- Approved customer-visible result: as in the spinner entry above, except that a provider whose current check already says why it has no live reading (sign in, permission, throttle and the like) keeps that row and its action during a restart instead of showing the spinner. Only a row with no current explanation shows the spinner.
+- Scope: `companion` provider row health, `macos/VibeTVControlCenter/main.swift` (the post-read check asks every runtime origin within the reading's deadline), and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a correction of the unreleased spinner, not announced to customers
+
+## 2026-10-14 — #607: approval marker after merging main with #608
+
+- User approval: Paul asked on 2026-10-14 to test, investigate and fix #607. Main moved on with #608 while the branch was in review, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #607 entries above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-15 — #607: spinner from the browser sign-in read on
+
+- User approval: Paul saw in the Atlas test on 2026-10-15 that the Claude row showed the warning icon for a few seconds after he allowed the Keychain prompt, before the restart spinner came. Follows his request for a spinner instead of warnings ("lieber n spinner").
+- Approved customer-visible result: from the moment the Mac app reports a browser sign-in read until the check of that read answers, the provider row shows the existing "checking" spinner instead of the warning icon. If that check names a failure, the row shows it as before. No new text, button or dialog.
+- Scope: `companion` provider retry and provider row health, this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a correction of the unreleased spinner, not announced to customers
+
+## 2026-10-15 — #607: approval marker after merging main with #620
+
+- User approval: Paul asked on 2026-10-15 to finish #607 (Atlas test, review fixes). Main moved on with #620 while the branch was in review, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #607 entries above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-15 — #607: approval marker after merging main with #629
+
+- User approval: Paul asked on 2026-10-15 to finish #607 (Atlas test, review fixes). Main moved on with #629 while the branch was in review, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #607 entries above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own

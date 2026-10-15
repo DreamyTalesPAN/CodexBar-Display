@@ -37,6 +37,7 @@ import {
 } from "@/lib/whats-new";
 import { ControlCenterShell } from "./control-center-shell";
 import {
+  canReadBrowserSignIn,
   companionRequestUrl,
   finishCodexBarRecovery,
   isLocalCompanionOrigin,
@@ -46,6 +47,7 @@ import {
   launchCodexBarRepair,
   nativeProviderShortcut,
   needsLoopbackTargetAddressSpace,
+  readBrowserSignIn,
   repairLocalControlCenterRuntime,
   restartLocalControlCenterApp,
   shouldRedirectToLocalControlCenter,
@@ -3675,6 +3677,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       const providerId = item.providerId?.trim().toLowerCase();
       if (!providerId) {
         return;
+      }
+      // On the Mac the app reads the browser sign-in the background check
+      // cannot read. It starts here, inside the customer's click: WebKit
+      // hands a vibetv:// link to the app only then.
+      if (canReadBrowserSignIn(providerId)) {
+        readBrowserSignIn(providerId);
       }
       try {
         await runCompanion(
