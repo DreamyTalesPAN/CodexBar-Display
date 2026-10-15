@@ -7193,6 +7193,13 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test, and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — a correction of the unreleased change above
 
+## 2026-10-15 — #234: a kept theme the catalog no longer offers is dropped
+
+- User approval: follows the #234 entries above; the Codex review on #642 (f4ed9664) found that a kept theme the catalog no longer offers for install stayed stored and could come back with a later catalog. No new wording.
+- Approved customer-visible result: as in the #234 entries above; when the loaded catalog no longer offers the kept theme for install, it is forgotten and setup preselects as without a shop link. A catalog that could not be loaded forgets nothing.
+- Scope: `apps/control-center/src/components/control-center-app.tsx`, the customer-flow test, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a correction of the unreleased change above
+
 ## 2026-10-15 — #627: a provider still checking holds Continue
 
 - User approval: follows the #627 entry above; the second Codex review on #642 found that usage can arrive before the provider row turns from checking to healthy, which opened Continue while Display Mode still left that provider out. No new wording.

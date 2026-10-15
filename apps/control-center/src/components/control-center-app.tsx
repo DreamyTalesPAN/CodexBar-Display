@@ -447,6 +447,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         !themeMetadataBlocker(theme),
     )?.themeId;
     if (!ordered || !stored) {
+      // A kept theme the loaded catalog no longer offers for install is
+      // dropped, so a later catalog cannot bring the old order back. A catalog
+      // that could not be loaded is empty and drops nothing.
+      if (stored && catalog.themes.length > 0) {
+        forgetOrderedTheme();
+      }
       return;
     }
     orderedThemeRef.current = ordered;
@@ -457,7 +463,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
     const timer = window.setTimeout(() => setSelectedThemeId(ordered), 0);
     return () => window.clearTimeout(timer);
-  }, [catalog.themes, initialTheme, initialThemeId, initialThemeIsScreensaver]);
+  }, [
+    catalog.themes,
+    initialTheme,
+    initialThemeId,
+    initialThemeIsScreensaver,
+  ]);
   const runtimeSurface = useSyncExternalStore(
     subscribeRuntimeSurface,
     getRuntimeSurfaceSnapshot,

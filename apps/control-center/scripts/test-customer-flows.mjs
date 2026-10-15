@@ -10615,6 +10615,36 @@ async function testOrderedThemeSurvivesRestartDuringSetup(browser, appUrl) {
   await page.waitForTimeout(250);
   assertNoInstallRequests(installRequests);
   await page.close();
+
+  // A kept theme the catalog no longer offers for install is dropped, here
+  // without any finished install that could drop it instead (Codex review on
+  // #642).
+  const stale = await newCustomerPage(browser, appUrl, {
+    viewport: nativeDefaultViewport,
+  });
+  await routeCompanionOnline(stale, installRequests, () => {}, {
+    device: { ...themeMissingDevice, deviceId: "fixture-device-1" },
+  });
+  await stale.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await stale.evaluate(() =>
+    localStorage.setItem(
+      "vibetv.controlCenter.orderedTheme",
+      JSON.stringify({ themeId: "missing-pack", recordedAt: Date.now() }),
+    ),
+  );
+  await stale.reload({ waitUntil: "domcontentloaded" });
+  await stale
+    .getByRole("heading", { name: SETUP_THEME_SCREEN })
+    .waitFor({ timeout: 20_000 });
+  await waitForCondition(
+    async () =>
+      (await stale.evaluate(() =>
+        localStorage.getItem("vibetv.controlCenter.orderedTheme"),
+      )) === null,
+    "a kept theme the catalog no longer offers must be dropped",
+  );
+  assertNoInstallRequests(installRequests);
+  await stale.close();
 }
 
 async function testInstallLinkSkipsLiveScreenForSetUpVibeTV(browser, appUrl) {
