@@ -31,6 +31,13 @@ describe('AI native layout edits',()=>{
   expect(label.width).toBeGreaterThan(30);
   expect(label.width).toBe(textPrimitiveNaturalWidth(label));
  });
+ it('gives text without a stored width the clipping box at the right edge (#594)',()=>{
+  const doc=structuredClone(before);
+  doc.spec.primitives.push({type:'text',x:200,y:200,text:'OK',color:'#FFFFFF',fontSize:1});
+  const next=applyAIThemeLayout(doc,plan([{action:'update',index:2,kind:'text',text:'OFFICE HOURS',fontSize:2}]));
+  const label=next.spec.primitives[2];
+  expect(label).toMatchObject({text:'OFFICE HOURS',fontSize:2,width:40});
+ });
  it('clears old provider/usage owners when the AI changes a bar reading',()=>{
   const doc=structuredClone(before);
   doc.spec.primitives.push({type:'progress',x:12,y:204,width:216,height:13,color:'#0055AA',binding:'providerSlot1Percent',providerSlot:1,usageIndex:0});
