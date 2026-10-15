@@ -1634,7 +1634,9 @@ export function buildThemeInstallBlocker({
   return null;
 }
 
-function themeMetadataBlocker(theme: ThemeProduct): ThemeInstallBlocker | null {
+export function themeMetadataBlocker(
+  theme: ThemeProduct,
+): ThemeInstallBlocker | null {
   if (!theme.isFree || !isRemoteThemePackUrl(theme.packUrl)) {
     return {
       reason: "Theme is not available right now.",

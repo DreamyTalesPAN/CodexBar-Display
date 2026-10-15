@@ -7219,3 +7219,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the #234 entry above; only an install that finished after the shop link was opened drops the kept theme.
 - Scope: `apps/control-center/src/lib/ordered-theme.ts`, `apps/control-center/src/components/control-center-app.tsx`, the customer-flow test, and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — a correction of the unreleased change above
+
+## 2026-10-15 — #234: only an installable theme is kept as the bought theme
+
+- User approval: follows the #234 entries above; the Codex review on #642 (a1c90761) found that a shop link to a catalog theme that cannot be installed (paid, or missing its download, checksum or size) was still kept and preselected after a restart, although its Install button shows it as unavailable. No new wording.
+- Approved customer-visible result: as in the #234 entry above; a theme is kept only if its Install button would be enabled by the catalog, by the same check. A shop link to any other theme keeps an earlier kept theme, and an install from before that earlier order still does not drop it.
+- Scope: `apps/control-center/src/components/control-center-app.tsx`, the export of the existing check in `apps/control-center/src/components/theme-library-screen.tsx`, the customer-flow test, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a correction of the unreleased change above

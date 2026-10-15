@@ -10596,6 +10596,22 @@ async function testOrderedThemeSurvivesRestartDuringSetup(browser, appUrl) {
       `setup must preselect the ordered theme (${path || "after restart"})`,
     );
   }
+  // A shop link to a theme that cannot be installed must not replace it
+  // (Codex review on #642).
+  await page.goto(`${appUrl}/install/missing-pack`, {
+    waitUntil: "domcontentloaded",
+  });
+  await page
+    .getByRole("heading", { name: SETUP_THEME_SCREEN })
+    .waitFor({ timeout: 20_000 });
+  await page.waitForTimeout(250);
+  const kept = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("vibetv.controlCenter.orderedTheme") || "null"),
+  );
+  assert(
+    kept?.themeId === "clippy",
+    `an unavailable theme must not be kept as the ordered theme, got ${kept?.themeId}`,
+  );
   await page.waitForTimeout(250);
   assertNoInstallRequests(installRequests);
   await page.close();
