@@ -45,6 +45,17 @@ source for version, ZIP URL, checksum, size, firmware, and capability
 requirements. Shopify pack metadata is only used when that theme ID does not
 have complete technical metadata in the current GitHub catalog.
 
+### Hardware with an included theme (#234)
+
+Two product metafields carry a theme ID, with different meanings. Keep both:
+
+- `vibetv.theme_id` sits on **theme products** and says "this product is theme X". The theme catalog and the theme product pages read it.
+- `vibetv.included_theme_id` ("Included theme ID") sits on **hardware products** and says "this VibeTV ships with theme X": `clippy-tv` = `clippy`, `synthwave-tv` = `synthwave`, `claude-tv` = `claude-creature`; `vibe-tv` stays blank. It only feeds the setup link `https://app.vibetv.shop/install/<id>`.
+
+Never set `vibetv.theme_id` on hardware: the catalog would read the VibeTV as a theme product. Never derive either value from a title, handle, or SKU.
+
+Opened through that link, the app selects the included theme on "Choose your theme" during setup, also after an app restart during setup. The customer still installs it with Install; the link never installs a theme by itself.
+
 ## Product Button
 
 The product button opens hosted setup with the selected theme:
