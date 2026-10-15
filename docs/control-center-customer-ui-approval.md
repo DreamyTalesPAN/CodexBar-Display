@@ -5,6 +5,13 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-10-15 — "Your VibeTV is live" without Back, set up once is remembered (#611)
+
+- User approval: Paul decided the behavior in issue #611 on 2026-10-15 ("Decision by Paul, 2026-10-15"). He has not personally previewed this exact build.
+- Approved customer-visible result: "Your VibeTV is live" has no Back. It hands over to Overview only when VibeTV itself reports the theme as rendered (`renderOk`) and real usage arrives, and the preview has drawn that theme. A first setup keeps this rule without timeout or forwarding. For a theme this app has no render pack for (a dev theme, or one installed by a newer app) the preview area says `Unsupported theme` instead of loading forever, and VibeTV's report alone decides the handover. The app remembers per VibeTV that setup was finished; later launches, including a reload from a shop theme link, go from the setup checks straight to Overview or the requested page without showing "Your VibeTV is live". A setup rerun in the same window (Settings connection change) keeps the full check, and "Run setup again" forgets every remembered VibeTV. Cleared web storage shows that screen once more, with the same check. This replaces the 2026-09-02 rule that Overview is never reached without a working preview, for the unsupported-theme case only.
+- Scope: `apps/control-center/src/components/setup/`, `live-vibetv-preview.tsx`, `control-center-app.tsx`, `apps/control-center/src/lib/completed-setup-devices.ts`, their tests, and this approval record. No merge, release, or device write is implied.
+- What's new: none — a setup screen that no longer gets stuck is nothing a customer needs to learn.
+
 ## 2026-10-09 — Return to the shop theme page after first install (#63)
 
 - User approval: Paul delegated customer UI decisions for the autonomous overnight issue work on 2026-10-09. He has not personally previewed this exact wording or layout.

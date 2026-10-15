@@ -403,6 +403,7 @@ async function main() {
       });
       await testInstallLinkKeepsRequestedTheme(browser, appContext.appUrl);
       await testLocalInstallLinkKeepsSetupGate(browser, appContext.appUrl);
+      await testInstallLinkSkipsLiveScreenForSetUpVibeTV(browser, appContext.appUrl);
       await testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
         browser,
         appContext.appUrl,
@@ -554,7 +555,7 @@ async function main() {
         testMixedTransportDeviceSelection,
         testRejectedPairingTokenUsesTypedRecovery,
         testFirstSetupStillWaitsForARenderedPreview,
-        testMissingCustomPreviewCanChooseTheme,
+        testUnsupportedThemeHandsOverOnDeviceReport,
         testStartupStateMachine,
         testConnectInstallsFirmwareUpdate,
         testConnectFirmwareUpdateFailureOffersRetry,
@@ -695,7 +696,7 @@ async function main() {
         browser,
         appContext.appUrl,
       );
-      await testMissingCustomPreviewCanChooseTheme(browser, appContext.appUrl);
+      await testUnsupportedThemeHandsOverOnDeviceReport(browser, appContext.appUrl);
       await testTransientDisplayReadStillOpensOverview(
         browser,
         appContext.appUrl,
@@ -932,7 +933,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testMissingCustomPreviewCanChooseTheme(browser, appContext.appUrl);
+    await testUnsupportedThemeHandsOverOnDeviceReport(browser, appContext.appUrl);
     await testTransientDisplayReadStillOpensOverview(
       browser,
       appContext.appUrl,
@@ -1099,6 +1100,7 @@ async function main() {
     );
     await testSavedAddressReconnectsReadOnly(browser, appContext.appUrl);
     await testInstallLinkKeepsRequestedTheme(browser, appContext.appUrl);
+    await testInstallLinkSkipsLiveScreenForSetUpVibeTV(browser, appContext.appUrl);
     await testThemeInstallStatusStaysCustomerOnly(browser, appContext.appUrl);
     await testThemeInstallShowsIntermediateProgress(browser, appContext.appUrl);
     await testCustomerLogsStayCustomerOnly(browser, appContext.appUrl);
@@ -5853,34 +5855,27 @@ async function testSavedPairingStartupWaitsForPreview(browser, appUrl) {
   await page.close();
 }
 
-// The other half of the same rule: a Mac that has NOT been through setup still
-// gets the wizard, and still has to see the VibeTV draw before Overview.
-async function testMissingCustomPreviewCanChooseTheme(browser, appUrl) {
+// A theme this app has no render pack for (#611): the preview says so, there is
+// no Back into setup, and VibeTV's own report alone admits the Control Center.
+async function testUnsupportedThemeHandsOverOnDeviceReport(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
-  const renderPack = await readTrackedThemeRenderPackFixture("clippy");
   const installRequests = [];
   let missingPackReads = 0;
   await page.route(/\/api\/theme-pack\/lost-custom\?|\/theme-packs\/render\/lost-custom\//, async (route) => {
     missingPackReads += 1;
     await route.fulfill({ status: 404, json: { ok: false } });
   });
-  await page.route(/\/api\/theme-pack\/clippy\?|\/theme-packs\/render\/clippy\//, async (route) => {
-    await route.fulfill({ json: renderPack });
-  });
-  await routeCompanionOnline(page, installRequests, () => {}, {
-    device: { ...companionDevice, activeTheme: "lost-custom", display: { themeSpec: { active: true, renderOk: true, path: "/themes/u/lost-custom.json" } } },
-    deviceAfterThemeInstall: { ...companionDevice, activeTheme: "clippy", display: { themeSpec: { active: true, renderOk: true, path: renderPack.specPath } } },
-    installStatusSequence: [{ phase: "complete", progress: 100, logs: ["Theme is active on VibeTV."], result: { themeId: "clippy", name: "Clippy", activePath: renderPack.specPath, themeRev: 3 } }],
-  });
+  const lostCustom = (renderOk) => ({ ...companionDevice, activeTheme: "lost-custom", display: { themeSpec: { active: true, renderOk, path: "/themes/u/lost-custom.json" } } });
+  const companion = await routeCompanionOnline(page, installRequests, () => {}, { device: lostCustom(false) });
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await waitForCondition(() => missingPackReads > 0, "the missing custom preview should be requested");
-  assert((await page.locator("main.control-center-shell").count()) === 0, "missing custom preview must not admit the Control Center");
-  await page.getByRole("button", { name: "Back", exact: true }).click();
-  await page.getByRole("heading", { name: "Choose your theme", exact: true }).waitFor();
-  await page.getByRole("radio", { name: /Fixture Clippy Theme/ }).click();
-  await page.getByRole("button", { name: "Install", exact: true }).click();
+  await page.getByText("Unsupported theme", { exact: true }).waitFor({ timeout: 10_000 });
+  await page.waitForTimeout(4_000);
+  assert((await page.locator("main.control-center-shell").count()) === 0, "an unsupported theme VibeTV has not confirmed must not admit the Control Center");
+  assert((await page.getByRole("button", { name: "Back", exact: true }).count()) === 0, "Your VibeTV is live must not offer Back");
+  companion.setDevice(lostCustom(true));
   await page.locator("main.control-center-shell").waitFor({ timeout: 20_000 });
-  assert(installRequests.length === 1, "theme recovery must install once before a valid preview admits the app");
+  assert(installRequests.length === 0, "an unsupported theme must not be replaced by an install");
   await page.close();
 }
 
@@ -10559,6 +10554,26 @@ async function testInstallLinkKeepsRequestedTheme(browser, appUrl) {
   await page.waitForTimeout(250);
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+// A shop link reloads the app (#611). For a VibeTV this app set up before, the
+// reload goes straight to the requested theme without "Your VibeTV is live".
+async function testInstallLinkSkipsLiveScreenForSetUpVibeTV(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  await page.addInitScript((deviceId) => {
+    localStorage.setItem("vibetv.controlCenter.completedSetupDevices", JSON.stringify([deviceId]));
+    window.__sawLiveScreen = false;
+    new MutationObserver(() => {
+      if (document.body?.textContent?.includes("Your VibeTV is live")) window.__sawLiveScreen = true;
+    }).observe(document, { childList: true, subtree: true, characterData: true });
+  }, companionDevice.deviceId);
+  await routeCompanionOnline(page, installRequests, () => {});
+  await page.goto(`${appUrl}/install/clippy`, { waitUntil: "domcontentloaded" });
+  await assertSelectedThemeRow(page, "Fixture Clippy Theme");
+  assert(!(await page.evaluate(() => window.__sawLiveScreen)), "a set-up VibeTV must not see Your VibeTV is live after a shop link");
+  assertNoInstallRequests(installRequests);
   await page.close();
 }
 

@@ -15,7 +15,7 @@ const press =
 const refused =
   "The shortcut ⌃⌥⌘P for the next provider is not available: another app may already be using these keys.";
 
-const themeSpec = { active: true, path: "/themes/codex/spec-v7.json", hash: "hash-v7" };
+const themeSpec = { active: true, path: "/themes/codex/spec-v7.json", hash: "hash-v7", renderOk: true };
 
 function jsonResponse(body: unknown, status = 200): Response {
   return { ok: status < 400, status, json: async () => body } as unknown as Response;
