@@ -601,10 +601,11 @@ export function setupProvidersCanContinue(
 }
 
 /**
- * Switched on, checking or healthy, and not yet in any usage collection: its
- * row shows the spinner and its first reading is on its way. A provider the
- * collection did include but that has nothing to show is a definite answer,
- * like a sign-in the row asks for, and does not hold the step.
+ * Switched on, checking or healthy, and without a current reading: its row
+ * shows the spinner and its reading is on its way. A reading retained from
+ * before a usage-service restart is stale and does not count. A provider the
+ * current collection did include but that has nothing to show is a definite
+ * answer, like a sign-in the row asks for, and does not hold the step.
  */
 export function setupProviderAwaitsFirstReading(
   provider: ProviderItem,
@@ -613,7 +614,9 @@ export function setupProviderAwaitsFirstReading(
   return (
     provider.value === true &&
     (provider.health.state === "checking" || provider.health.state === "healthy") &&
-    !usage?.providers.some((reading) => reading.id === provider.providerId)
+    !usage?.providers.some(
+      (reading) => reading.id === provider.providerId && reading.stale !== true,
+    )
   );
 }
 

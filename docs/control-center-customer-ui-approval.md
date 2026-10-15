@@ -7185,3 +7185,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: on "Choose AI providers", Continue stays closed while a provider the customer switched on is still on its first reading; that row keeps its existing spinner. A provider whose row names a sign-in or another failure, or that the usage collection included without anything to show, does not hold the step. Display Mode then lists every provider that has usage. The Automatic card in setup and in Settings moves to the next provider every 2 seconds (was 1 second) and holds while the window is hidden. No new text, button or dialog.
 - Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, `setup-display-mode-screen.tsx`, their tests, and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — setup corrections, not announced to customers
+
+## 2026-10-15 — #627: a reading kept from before a restart does not open Continue
+
+- User approval: follows the #627 entry above; the Codex review on #642 found that a provider shown as checking after a usage-service restart still had its old, stale reading, which opened Continue too early. No new wording.
+- Approved customer-visible result: as in the #627 entry above; a stale reading kept from before a restart counts as no reading, so Continue waits for the current one.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a correction of the unreleased change above

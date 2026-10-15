@@ -811,6 +811,14 @@ describe("SetupProvidersScreen", () => {
       providers: [...usage.providers, { ...usage.providers[0], id: "cursor", label: "Cursor" }],
     };
     expect(setupProvidersCanContinue([claude, cursor], withCursor)).toBe(true);
+
+    // After a usage-service restart the row is checking while the reading
+    // retained from before is stale: still waiting.
+    const retained: UsageSnapshot = {
+      providers: [...usage.providers, { ...usage.providers[0], id: "cursor", label: "Cursor",
+        stale: true }],
+    };
+    expect(setupProvidersCanContinue([claude, warming], retained)).toBe(false);
   });
 
   it("does not wait on a provider that has a definite answer", () => {
