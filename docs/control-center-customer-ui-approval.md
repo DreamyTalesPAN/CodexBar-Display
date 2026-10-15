@@ -6971,6 +6971,10 @@ issue scope, or release permission never implies UI permission.
 - User approval: Paul supplied a reference row and explicitly requested: "also der toggle muss dann verschwinden und stattdessen das so aussehen. ändere das mac und windows." His reference shows the provider name on the left and "Sign in to Claude" with a circular chevron on the right.
 - Approved customer-visible result: In the shared provider list in setup and Settings on both platforms, an available sign-in action replaces the toggle, warning triangle, retry and lime button. The only action is muted "Sign in to <Provider>" text and an outlined circular chevron. Existing automatic sign-in checks restore the normal toggle once the provider is ready. Other provider states retain their existing controls. This supersedes the earlier always-visible switch rule for these sign-in rows only.
 - What's new: none — provider row correction from #590, not announced to customers (line added when main joined the review bundle #600)
+- Amendment 2026-10-15 (#647): the toggle comes back on these sign-in rows. Without it a provider switched on without a sign-in (Cursor on the Mac, found in Marcus' test of #644) could not be switched off again.
+- User approval: Marcus decided on 2026-10-15: the switch always stays visible, with "Sign in to <Provider>" next to it. This changes Paul's approval above on this one point.
+- Approved customer-visible result: In the shared provider list in setup and Settings on Mac and Windows, a row that offers a sign-in shows muted "Sign in to <Provider>" with the outlined circular chevron and, to its right, the provider's normal switch. Switching it off works without signing in and the row then shows only the switch. Everything else above holds: no warning triangle, no retry and no lime button on a sign-in row, and no message opens by itself.
+- What's new: none — provider row correction (#647), not announced to customers
 
 ## 2026-10-13 - Preserve the provider retry race check
 
