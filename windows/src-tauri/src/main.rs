@@ -212,8 +212,16 @@ fn main() {
                 log(&format!("could not enable autostart: {error}"));
             }
             let visible = !relaunched_after_idle_update(&handle);
-            let provider_shortcut = register_provider_shortcut(handle.clone());
-            handle.state::<Shell>().provider_shortcut.store(provider_shortcut, Ordering::SeqCst);
+            {
+                // A second launch during startup recreates the window through
+                // ensure_window, which takes this lock first: it waits for the
+                // registration result instead of building the window with
+                // "ProviderShortcut/unavailable".
+                let shell = handle.state::<Shell>();
+                let _creating = shell.window_creation.lock().unwrap();
+                let provider_shortcut = register_provider_shortcut(handle.clone());
+                shell.provider_shortcut.store(provider_shortcut, Ordering::SeqCst);
+            }
             // Back from an update installed with the window closed: stay in
             // the tray without a WebView2; opening the app creates the window.
             // Through ensure_window: a second launch that arrives during
