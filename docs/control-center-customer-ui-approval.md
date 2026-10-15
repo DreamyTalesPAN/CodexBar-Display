@@ -7193,3 +7193,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the provider whose frame VibeTV currently shows never gets the `isn't on VibeTV` line, also when its reading is stale: with no fresh provider left, the device keeps showing that provider's last reading. Wording unchanged.
 - Scope: `apps/control-center` Usage screen, this approval record. Pull-request branch only, not merge or release.
 - What's new: none — a correction of the unreleased line
+
+## 2026-10-15 — #368: the Usage line follows the last frame sent to VibeTV
+
+- User approval: follows Marcus' decision of 2026-10-15 for the #368 Usage line (entries above); second correction from the Codex review of PR #644.
+- Approved customer-visible result: the provider that is spared the `isn't on VibeTV` line is the provider of the last frame sent to VibeTV, which the Mac App now names with the display stream. When no frame was sent, every switched-on provider without a reading gets its line. Wording unchanged.
+- Scope: `companion` display stream status (one field), `apps/control-center` Usage screen, this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a correction of the unreleased line

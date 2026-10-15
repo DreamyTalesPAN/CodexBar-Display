@@ -3893,6 +3893,9 @@ func TestInspectDisplayStreamUsesConfiguredRuntimeLabelAndSharedLog(t *testing.T
 	if stream.LastSentAt != sentAt.Format(time.RFC3339) || stream.LastTarget != "http://192.168.178.72" {
 		t.Fatalf("unexpected configured runtime stream metadata: %+v", stream)
 	}
+	if stream.Provider != "codex" {
+		t.Fatalf("the stream must name the provider of its last frame, got %+v", stream)
+	}
 }
 
 func TestInspectDisplayStreamMapsCurrentUSBPathToStableCableTarget(t *testing.T) {

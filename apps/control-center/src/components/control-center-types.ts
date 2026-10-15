@@ -310,6 +310,8 @@ export type DeviceInfo = {
     healthy?: boolean;
     running?: boolean;
     lastSentAt?: string;
+    /** The provider of the last frame sent to VibeTV. */
+    provider?: string;
     target?: string;
     lastTarget?: string;
     detail?: string;

@@ -502,6 +502,11 @@ type displayStreamInfo struct {
 	Healthy    bool   `json:"healthy"`
 	Running    bool   `json:"running"`
 	LastSentAt string `json:"lastSentAt,omitempty"`
+	// Provider is the provider of the last frame sent to VibeTV, read from
+	// the same log line as LastSentAt (#368). Usage reads it to tell which
+	// provider the device shows; usage.currentProvider falls back to the
+	// first provider when no frame was kept.
+	Provider   string `json:"provider,omitempty"`
 	Target     string `json:"target,omitempty"`
 	LastTarget string `json:"lastTarget,omitempty"`
 	Detail     string `json:"detail,omitempty"`
@@ -10130,6 +10135,7 @@ func inspectDisplayStreamAfterRunning(ctx context.Context, target string, notBef
 	stream.LastSentAt = lastSentAt.UTC().Format(time.RFC3339)
 	stream.LastTarget = publicTarget(lastTarget)
 	stream.DeviceID = displayStreamLogValue(frameLine, "deviceId")
+	stream.Provider = displayStreamLogValue(frameLine, "provider")
 
 	if samePublicTarget(target, cableDeviceTarget) {
 		if !strings.EqualFold(displayStreamLogValue(frameLine, "transport"), "usb") {
