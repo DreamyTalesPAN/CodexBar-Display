@@ -645,6 +645,7 @@ func TestProviderRetryAfterBrowserSignInReadReplacesUsageService(t *testing.T) {
 		{"plain check", "/v1/providers/retry?provider=claude", codexbar.ProviderReady, 1, 0},
 		{"read refused", "/v1/providers/retry?provider=claude&after=browser-sign-in-read", codexbar.ProviderAuthRequired, 0, 0},
 		{"service already delivered", "/v1/providers/retry?provider=claude&after=browser-sign-in-read", codexbar.ProviderReady, 0, 0},
+		{"reading from before the read", "/v1/providers/retry?provider=claude&after=browser-sign-in-read", codexbar.ProviderReady, 0, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			server := newTestServer(t, runtimeconfig.Config{})
@@ -661,9 +662,16 @@ func TestProviderRetryAfterBrowserSignInReadReplacesUsageService(t *testing.T) {
 					}},
 				}
 			}
-			if tc.name == "service already delivered" {
+			switch tc.name {
+			case "service already delivered":
 				server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
 					return freshProviderUsage("claude", "Claude", server.currentTime().Add(time.Second)), true
+				}
+			case "reading from before the read":
+				// Still fresh, but collected before the read: no proof the
+				// running service saw the new sign-in (Codex review on #607).
+				server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+					return freshProviderUsage("claude", "Claude", server.currentTime().Add(-30*time.Second)), true
 				}
 			}
 			var restarts, replaces atomic.Int32
