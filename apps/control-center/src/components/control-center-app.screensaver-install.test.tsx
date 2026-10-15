@@ -119,7 +119,7 @@ function startApp(install?: Record<string, unknown>) {
             board: "esp8266",
             firmware: "9999.0.524",
             activeTheme: "mini-classic",
-            display: { themeSpec: { active: true, path: themes[0].themeSpecPath } },
+            display: { themeSpec: { active: true, path: themes[0].themeSpecPath, renderOk: true } },
             health: { ok: true },
             capabilities: {
               standby: { supported: true },
