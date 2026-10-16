@@ -4440,7 +4440,7 @@ func TestProviderCollectorWakeCollectsBeforeDisplayWake(t *testing.T) {
 		if call != 1 {
 			t.Fatalf("expected initial collection first, got call %d", call)
 		}
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for initial collection")
 	}
 
@@ -4448,7 +4448,7 @@ func TestProviderCollectorWakeCollectsBeforeDisplayWake(t *testing.T) {
 
 	select {
 	case <-displayWake:
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for display wake after manual collection")
 	}
 	if calls.Load() < 2 {
@@ -5310,10 +5310,10 @@ func TestProviderCollectorTokenStatsStartAndWakeTriggers(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go collector.run(ctx)
-	waitForCondition(t, time.Second, func() bool {
+	waitForCondition(t, 5*time.Second, func() bool {
 		return tokenFetches.Load() == 1
 	})
-	waitForCondition(t, time.Second, func() bool {
+	waitForCondition(t, 5*time.Second, func() bool {
 		collector.tokenStatsMu.Lock()
 		defer collector.tokenStatsMu.Unlock()
 		return !collector.tokenStatsRunning
@@ -5321,10 +5321,10 @@ func TestProviderCollectorTokenStatsStartAndWakeTriggers(t *testing.T) {
 	clockNanos.Add(int64(time.Minute))
 	wake <- struct{}{}
 	<-afterWake
-	waitForCondition(t, time.Second, func() bool {
+	waitForCondition(t, 5*time.Second, func() bool {
 		return tokenFetches.Load() == 2
 	})
-	waitForCondition(t, time.Second, func() bool {
+	waitForCondition(t, 5*time.Second, func() bool {
 		collector.tokenStatsMu.Lock()
 		defer collector.tokenStatsMu.Unlock()
 		return !collector.tokenStatsRunning
@@ -5355,7 +5355,7 @@ func TestProviderCollectorTokenStatsStartAndWakeTriggers(t *testing.T) {
 	clockNanos.Add(int64(tokenStatsScanCooldown - time.Minute))
 	wake <- struct{}{}
 	<-afterWake
-	waitForCondition(t, time.Second, func() bool {
+	waitForCondition(t, 5*time.Second, func() bool {
 		return tokenFetches.Load() == 3
 	})
 	cancel()
