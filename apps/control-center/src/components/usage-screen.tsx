@@ -85,11 +85,12 @@ export function UsageScreen({
     usage?.providers || [],
     usage?.currentProvider,
   );
-  const notOnVibeTV = usageProvidersNotOnVibeTV(
-    usage,
-    providerSettings,
-    shownProviders,
-  );
+  // Only live Mac App data can tell what VibeTV shows; offline, the cached
+  // provider health and stream fields could be stale.
+  const notOnVibeTV =
+    companionStatus === "online"
+      ? usageProvidersNotOnVibeTV(usage, providerSettings, shownProviders)
+      : [];
   const hasProviders = providers.length > 0;
   const tokenUsageReady =
     usage?.tokenUsageReady === true || usageProvidersHaveTokenResult(providers);

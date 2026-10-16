@@ -3966,6 +3966,7 @@ func TestStalledStreamKeepsProviderOfLastFrame(t *testing.T) {
 		{"VibeTV restarted after the frame", deviceInfo{Stream: stalled(30 * time.Second), Display: theme, Health: &deviceHealthInfo{LastResetAt: now.Add(-10 * time.Second).Format(time.RFC3339Nano)}}, ""},
 		{"VibeTV restarted before the frame", deviceInfo{Stream: stalled(30 * time.Minute), Display: theme, Health: &deviceHealthInfo{LastResetAt: now.Add(-time.Hour).Format(time.RFC3339Nano)}}, "codex"},
 		{"healthy stream", deviceInfo{Stream: &displayStreamInfo{Healthy: true, Provider: "codex", shownAt: now.Add(-time.Hour)}}, "codex"},
+		{"VibeTV restarted right after a healthy send", deviceInfo{Stream: &displayStreamInfo{Healthy: true, Provider: "codex", shownAt: now.Add(-5 * time.Second)}, Health: &deviceHealthInfo{OK: true, LastResetAt: now.Add(-2 * time.Second).Format(time.RFC3339Nano)}}, ""},
 		{"frame went to another VibeTV", deviceInfo{DeviceID: "5804558", Health: answered, Display: theme, Stream: &displayStreamInfo{Running: true, Provider: "codex", shownAt: now.Add(-time.Minute), shownDeviceID: "777"}}, ""},
 		{"frame went to this VibeTV", deviceInfo{DeviceID: "5804558", Health: answered, Display: theme, Stream: &displayStreamInfo{Running: true, Provider: "codex", shownAt: now.Add(-time.Minute), shownDeviceID: "5804558"}}, "codex"},
 	} {

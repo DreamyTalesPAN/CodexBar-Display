@@ -135,7 +135,17 @@ const firmwareFrameStaleAge = 150 * time.Second
 // the frame lost it either way.
 func withoutReplacedFrameProvider(device deviceInfo, now time.Time) deviceInfo {
 	stream := device.Stream
-	if stream == nil || stream.Healthy || (stream.Provider == "" && len(stream.SlotProviders) == 0) {
+	if stream == nil || (stream.Provider == "" && len(stream.SlotProviders) == 0) {
+		return device
+	}
+	// A VibeTV that restarted after the frame lost it, also while the stream
+	// still counts as healthy from that recent send.
+	if !stream.shownAt.IsZero() && restartedAfter(device.Health, stream.shownAt) {
+		cleared := withoutShownProviders(*stream)
+		device.Stream = &cleared
+		return device
+	}
+	if stream.Healthy {
 		return device
 	}
 	// A frame sent to another VibeTV (an address now taken by another

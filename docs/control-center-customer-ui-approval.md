@@ -7351,3 +7351,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: besides the provider of the last frame sent to VibeTV, the providers in that frame's provider slots, which a theme can show next to it, never get the `isn't on VibeTV` line either. Wording unchanged.
 - Scope: `companion` display stream status (one field), `apps/control-center` Usage screen, this approval record. Pull-request branch only, not merge or release.
 - What's new: none — a correction of the unreleased line
+
+## 2026-10-16 — #368: no Usage line while the Mac App is offline
+
+- User approval: follows Marcus' decision of 2026-10-15 for the #368 Usage line (entries above); fourth correction from the Codex review of PR #644.
+- Approved customer-visible result: the `isn't on VibeTV` lines show only while the Mac App answers; while it is offline, Usage shows none, because the cached provider health could be stale. Wording unchanged.
+- Scope: `apps/control-center` Usage screen, this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a correction of the unreleased line

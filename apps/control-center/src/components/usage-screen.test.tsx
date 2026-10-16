@@ -635,4 +635,16 @@ describe("usageProvidersNotOnVibeTV", () => {
     expect(html).toContain("Claude isn&#x27;t on VibeTV. Sign in again for this provider.");
     expect(html).toContain("Open Settings");
   });
+
+  it("shows no line while the Mac App is offline", () => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="missing"
+        onOpenProviderSettings={vi.fn()}
+        providerSettings={[claude({})]}
+        usage={null}
+      />,
+    );
+    expect(html).not.toContain("isn&#x27;t on VibeTV");
+  });
 });
