@@ -82,6 +82,9 @@ struct Shell {
     // Set once setup stored the shortcut registration result. ensure_window
     // waits for it: a second launch can reach ensure_window before setup.
     shortcut_registered: Mutex<bool>,
+    // Counts the windows built; the Destroyed handler tells a replacement
+    // that a present already built from the window that is going away.
+    windows_created: AtomicU64,
     shortcut_registered_changed: Condvar,
 }
 
@@ -214,6 +217,7 @@ fn main() {
             released_at: AtomicU64::new(0),
             window_creation: Mutex::new(()),
             shortcut_registered: Mutex::new(false),
+            windows_created: AtomicU64::new(0),
             shortcut_registered_changed: Condvar::new(),
         })
         .setup(|app| {
@@ -408,6 +412,7 @@ fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tau
             }
         })
         .build()?;
+    app.state::<Shell>().windows_created.fetch_add(1, Ordering::SeqCst);
     let handle = app.clone();
     window.on_window_event(move |event| match event {
         WindowEvent::CloseRequested { api, .. } => {
@@ -421,6 +426,7 @@ fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tau
             let shell = handle.state::<Shell>();
             let released_at = shell.released_at.swap(0, Ordering::SeqCst);
             if released_at != 0 {
+                let created_before = shell.windows_created.load(Ordering::SeqCst);
                 let handle = handle.clone();
                 std::thread::spawn(move || {
                     // Tauri drops the label only after the Destroyed
@@ -434,8 +440,12 @@ fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tau
                         }
                         std::thread::sleep(Duration::from_millis(25));
                     }
-                    let presented = handle.state::<Shell>().presentations.load(Ordering::SeqCst);
-                    if presented + 1 != released_at {
+                    let shell = handle.state::<Shell>();
+                    let presented = shell.presentations.load(Ordering::SeqCst);
+                    // A present that already built a replacement loads it
+                    // itself; loading again could leave a theme page.
+                    let replaced = shell.windows_created.load(Ordering::SeqCst) != created_before;
+                    if presented + 1 != released_at && !replaced {
                         prepare_and_load(handle);
                     }
                 });
