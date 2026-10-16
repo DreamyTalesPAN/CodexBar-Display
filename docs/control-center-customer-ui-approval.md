@@ -7337,3 +7337,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as approved in the #368 entries above and in the entries of #628 and #619; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — merge of main, no new wording
+
+## 2026-10-16 — #644: approval marker after merging main with #657
+
+- User approval: follows Marcus' decision of 2026-10-15 for the #368 Usage line (entries above). Main moved on with #657 (approval record only), so main is merged into `codex/provider-status-pack` again; the approval record conflict is resolved by keeping main's entries and appending this branch's. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #368 entries above and in the entries of #628 and #619; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
+- What's new: none — merge of main, no new wording
