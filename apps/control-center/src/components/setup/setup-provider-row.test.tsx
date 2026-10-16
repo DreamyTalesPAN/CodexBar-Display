@@ -39,15 +39,18 @@ describe("SetupProviderRow", () => {
     expect(html).not.toContain("Open CodexBar");
   });
 
-  it("offers one sign-in action instead of duplicate controls on either host", () => {
+  it("offers one sign-in action beside the switch on either host", () => {
     for (const health of ["auth_required", "setup_required", "browser_sign_in_required"]) {
       const html = render({ health, onOpenSignIn: vi.fn() });
       expect(html).toContain("Sign in to Claude Code");
       expect(html).toContain("lucide-chevron-right");
       expect(html).not.toContain("Show provider message");
       expect(html).not.toContain("Check Claude Code again");
-      expect(html).not.toContain('role="switch"');
-      expect(html.match(/<button\b/g)).toHaveLength(1);
+      // Marcus, 15.10. (#647): the switch stays, so the provider can be
+      // switched off without signing in first.
+      expect(html).toContain('role="switch"');
+      expect(html).not.toMatch(/role="switch"[^>]*disabled=""/);
+      expect(html.match(/<button\b/g)).toHaveLength(2);
     }
     expect(render({ health: "auth_required" })).not.toContain("Sign in to Claude Code");
   });
@@ -60,7 +63,7 @@ describe("SetupProviderRow", () => {
     });
     expect(html).toContain("Sign in to Claude Code");
     expect(html).not.toContain("lucide-loader-circle");
-    expect(html).not.toContain('role="switch"');
+    expect(html).toContain('role="switch"');
   });
 
   it("replaces retry with a spinner while the exact check runs", () => {

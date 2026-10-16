@@ -6985,6 +6985,10 @@ issue scope, or release permission never implies UI permission.
 - User approval: Paul supplied a reference row and explicitly requested: "also der toggle muss dann verschwinden und stattdessen das so aussehen. ändere das mac und windows." His reference shows the provider name on the left and "Sign in to Claude" with a circular chevron on the right.
 - Approved customer-visible result: In the shared provider list in setup and Settings on both platforms, an available sign-in action replaces the toggle, warning triangle, retry and lime button. The only action is muted "Sign in to <Provider>" text and an outlined circular chevron. Existing automatic sign-in checks restore the normal toggle once the provider is ready. Other provider states retain their existing controls. This supersedes the earlier always-visible switch rule for these sign-in rows only.
 - What's new: none — provider row correction from #590, not announced to customers (line added when main joined the review bundle #600)
+- Amendment 2026-10-15 (#647): the toggle comes back on these sign-in rows. Without it a provider switched on without a sign-in (Cursor on the Mac, found in Marcus' test of #644) could not be switched off again.
+- User approval: Marcus decided on 2026-10-15: the switch always stays visible, with "Sign in to <Provider>" next to it. This changes Paul's approval above on this one point.
+- Approved customer-visible result: In the shared provider list in setup and Settings on Mac and Windows, a row that offers a sign-in shows muted "Sign in to <Provider>" with the outlined circular chevron and, to its right, the provider's normal switch. Switching it off works without signing in and the row then shows only the switch. Everything else above holds: no warning triangle, no retry and no lime button on a sign-in row, and no message opens by itself.
+- What's new: none — provider row correction (#647), not announced to customers
 
 ## 2026-10-13 - Preserve the provider retry race check
 
@@ -7350,6 +7354,13 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Settings › AI providers no longer shows the paragraph "VibeTV reads your AI usage with CodexBar, a helper app installed with VibeTV. Turn on the providers you use below. If one needs a sign-in, its row shows a Sign in button." above the provider search. The list, its order and every other text stay as approved above. "Choose AI providers" in setup keeps its intro unchanged in this pull request.
 - Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx` (a `showIntro` prop on the shared provider list), `apps/control-center/src/components/settings-screen.tsx`, `settings-screen.test.tsx`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — a removed explanation paragraph in Settings needs no notice.
+
+## 2026-10-16 — Provider switch stays beside the sign-in action (#648)
+
+- User approval: Paul decided on 2026-10-16 to keep the PR state; Paul chose the PR state over the Claude Design variants A–D (page "Setup Wizard Redesign - 648 Provider sign-in"). This replaces his 2026-10-13 rule that the switch disappears while a sign-in shows.
+- Approved customer-visible result: As in the amendment of 2026-10-15 (#647) under the 2026-10-13 entry: in the shared provider list in setup and Settings on Mac and Windows, a row that offers a sign-in shows muted "Sign in to <Provider>" with the outlined circular chevron and, to its right, the provider's normal switch. Switching it off works without signing in and the row then shows only the switch. No warning triangle, no retry and no lime button on a sign-in row, and no message opens by itself.
+- Scope: `setup-provider-row.tsx`, its tests `setup-provider-row.test.tsx` and `setup-providers-screen.test.tsx`, `apps/control-center/scripts/test-customer-flows.mjs`, the sign-in sentence in `docs/control-center-ui-principles.md`, the merge of main into `codex/provider-signin-switch`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — provider row correction (#648), not announced to customers
 
 ## 2026-10-16 — Windows Claude usage follows the Claude Code login (#630, follow-up to #650)
 
