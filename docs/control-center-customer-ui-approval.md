@@ -7276,3 +7276,10 @@ issue scope, or release permission never implies UI permission.
 - Scope: `system-busy-dialog.tsx` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — review fix to an error dialog
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — #628 merged with current main (#606)
+
+- User approval: Paul approved the busy computer dialog, its wording, the VibeTV label and the last good values on 2026-10-15 (entries above). This entry records only the merge of main into `claude/issue-606-busy-computer`; it adds no wording and no new visible behaviour.
+- Approved customer-visible result: as recorded in the busy computer entries above; nothing else changes.
+- Scope: the merge of main (with #615 and #620) into this branch and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
