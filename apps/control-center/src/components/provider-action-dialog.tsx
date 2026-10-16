@@ -52,6 +52,8 @@ const actionKey = (id: string, action: UsageProviderAction) =>
  */
 export function useProviderActionDismissal(
   actions: Record<string, UsageProviderAction>,
+  /** Settings is the page: it lists the provider in its own dialog, so the overlay counts as seen. */
+  onSettings = false,
 ): [
   { id: string; action: UsageProviderAction; error: ApiError | null } | null,
   () => void,
@@ -72,9 +74,18 @@ export function useProviderActionDismissal(
     failures = new Map([...failures].filter(([key]) => current.has(key)));
     setMemory({ signature, dismissed, failures });
   }
-  const shown = entries.find(
+  let shown: [string, UsageProviderAction] | undefined = entries.find(
     ([id, action]) => !dismissed.has(actionKey(id, action)),
   );
+  if (onSettings && shown) {
+    // Seen on Settings, whatever way the page was opened: marked once here.
+    const seen = actionKey(shown[0], shown[1]);
+    setMemory((previous) => ({
+      ...previous,
+      dismissed: new Set(previous.dismissed).add(seen),
+    }));
+    shown = undefined;
+  }
   const dismiss = () => {
     if (shown) {
       const key = actionKey(shown[0], shown[1]);

@@ -201,3 +201,15 @@ it("a failure from Settings does not reopen a closed overlay", () => {
   fireEvent.click(screen.getByRole("button", { name: "report settings" }));
   expect(dialog("Claude needs a new sign-in")).toBeNull();
 });
+
+function SettingsAware({ actions, onSettings }: { actions: Record<string, UsageProviderAction>; onSettings: boolean }) {
+  const [shown, dismiss] = useProviderActionDismissal(actions, onSettings);
+  return shown ? <ProviderActionDialog action={shown.action} error={shown.error} onDismiss={dismiss} /> : null;
+}
+
+it("counts the overlay as seen on Settings, whichever way the page was opened", async () => {
+  const { rerender } = render(<SettingsAware actions={claude()} onSettings />);
+  expect(dialog("Claude needs a new sign-in")).toBeNull();
+  await act(async () => rerender(<SettingsAware actions={claude()} onSettings={false} />));
+  expect(dialog("Claude needs a new sign-in")).toBeNull();
+});

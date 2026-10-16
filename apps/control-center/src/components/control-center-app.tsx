@@ -4702,16 +4702,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     companionInfo?.features?.providerSignInEnabled === true;
   // The providers that need the customer, for the Usage tiles and the overlay.
   const providerActions = usageProviderActionsFor(providerPreferences, {
-    onOpenSettings: () => {
-      dismissProviderAction();
-      setActiveTab("settings");
-    },
+    onOpenSettings: () => setActiveTab("settings"),
     onSignIn: providerSignInEnabled
       ? (item) => void openProviderSignIn(item, true)
       : undefined,
   });
   const [providerActionShown, dismissProviderAction, reportProviderSignIn] =
-    useProviderActionDismissal(providerActions);
+    useProviderActionDismissal(providerActions, activeTab === "settings");
   useEffect(() => {
     providerActionReportRef.current = reportProviderSignIn;
   });
@@ -5581,10 +5578,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         onTabChange={(tab) => {
           if (disabledTabs.includes(tab)) {
             return;
-          }
-          // Settings lists the provider in its own dialog: the overlay counts as seen.
-          if (tab === "settings") {
-            dismissProviderAction();
           }
           setActiveTab(tab);
         }}
