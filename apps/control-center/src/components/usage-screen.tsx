@@ -6,7 +6,7 @@ import {
   Info,
   RefreshCw,
 } from "lucide-react";
-import { type ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -548,11 +548,21 @@ function UsageProviderTile({
   );
 }
 
+const RESET_COUNTDOWN_TICK_MS = 15_000;
+
+function useNow(intervalMs: number): Date {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), intervalMs);
+    return () => window.clearInterval(timer);
+  }, [intervalMs]);
+  return now;
+}
+
 function ProviderUsageBars({ provider }: { provider: UsageProviderInfo }) {
   const unavailableDetail = quotaUnavailableDetail(provider);
-  // Read at render, as the preview does: the app renders again on every
-  // display-frame and status poll, so the time left moves between usage polls.
-  const now = new Date();
+  // The countdown shows whole minutes; its own tick moves it between usage polls.
+  const now = useNow(RESET_COUNTDOWN_TICK_MS);
   const resetSecsLeft = (resetSecs?: number) =>
     remainingResetSecs(resetSecs, provider.collectedAt, now);
   if (provider.windows?.length) {

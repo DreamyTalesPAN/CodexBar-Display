@@ -210,20 +210,28 @@ Optional:
 
 - `APPLE_SIGNING_IDENTITY`
 
-Before the tagged release build begins, the workflow checks every required name
-and stops with a GitHub Actions error if one is unavailable. It never prints a
-secret value. Dry-run mode prints only missing names and exits without using
+Before signing starts, the signing script checks every required name and stops
+with an error if one is unavailable. It never prints a secret value. Dry-run mode prints only missing names and exits without using
 fake certificates or credentials.
 
-The public release workflow is tag-only. Manual validation runs exclusively
-through `CODEX Validate macOS DMG` on `main`, pinned to one exact feature commit
-and bundle version. It runs the real macOS signing, notarization, stapling,
-mounted-app, and Gatekeeper gates without creating a tag, GitHub Release,
-deployment, or public download. Because this repository is public, the workflow
-never uploads the plaintext signed DMG or full notarization log. When an operator
-provides a one-time public RSA certificate, it may upload only the CMS-encrypted
-DMG with one-day retention; otherwise it records only the source SHA, DMG
-SHA-256, Apple submission ID, and final status in the job summary.
+Two workflows run this signing path in CI. Both are started by hand
+(`workflow_dispatch`):
+
+- `CODEX Prepare and Release VibeTV` (`.github/workflows/vibetv-release-candidate.yml`)
+  takes the final Mac App version, built from the exact `main` SHA, and a firmware
+  choice. Its `sign-and-package` job builds, signs, notarizes, and verifies the
+  DMG. Its last job calls `CODEX Publish Prepared VibeTV Candidate`
+  (`.github/workflows/release.yml`), which validates and freezes the payload and
+  then creates the tag and GitHub Release behind the `Production` environment.
+- `CODEX Build macOS Preview DMG` (`.github/workflows/validate-macos-dmg.yml`)
+  takes one `source_ref` (commit SHA or branch). It runs only on `main` and only
+  for the repository owner or a listed maintainer. It signs, notarizes, and
+  verifies the DMG and uploads the signed `VibeTV-Control-Center.dmg` as the
+  workflow artifact `CODEX-vibetv-preview-dmg-<run id>` with one-day retention.
+  It creates no tag, GitHub Release, or public download.
+
+The gates and the release approval are described in
+[VibeTV hosted gates](vibetv-hosted-gates.md).
 
 ## Signing and Notarization Flow
 
@@ -304,12 +312,10 @@ scripts/verify-macos-control-center-dmg.sh \
   --dmg "dist/macos/VibeTV-Control-Center-v${VERSION}.dmg"
 ```
 
-The release workflow's macOS job uploads the DMG artifact only after the final
-distribution gate succeeds. The dedicated validation bootstrap never uploads a
-plaintext signed DMG. For a pushed `v*` tag, the separately write-enabled public
-release job requires the stable
-`VibeTV-Control-Center.dmg` file, then builds checksums and runs the single
-GitHub Release publishing step.
+In the release candidate, `sign-and-package` stages the verified DMG as
+`VibeTV-Control-Center.dmg` in the immutable publish set. `release.yml` publishes
+the frozen payload from that set and does not rebuild it. The preview workflow
+above is a separate artifact path and never reaches a GitHub Release.
 
 Apple references used for this prepared flow:
 

@@ -34,6 +34,7 @@ var (
 	stateNamePattern     = regexp.MustCompile(`^[a-z0-9][a-z0-9\-_]{0,31}$`)
 	colorPattern         = regexp.MustCompile(`^#[A-Fa-f0-9]{6}$`)
 	hexPattern           = regexp.MustCompile(`^[A-Fa-f0-9]+$`)
+	usageBindingPattern  = regexp.MustCompile(`usage\.([0-9]+)\.`)
 )
 
 type ColorStop struct {
@@ -445,7 +446,7 @@ func maxUsageWindowIndex(spec Spec) int {
 }
 
 func usageBindingIndexes(value string) []int {
-	matches := regexp.MustCompile(`usage\.([0-9]+)\.`).FindAllStringSubmatch(value, -1)
+	matches := usageBindingPattern.FindAllStringSubmatch(value, -1)
 	out := make([]int, 0, len(matches))
 	for _, match := range matches {
 		if len(match) != 2 {

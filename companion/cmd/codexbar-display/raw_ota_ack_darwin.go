@@ -42,6 +42,8 @@ func waitForFirmwareRawAck(ctx context.Context, conn net.Conn, timeout time.Dura
 		return err
 	}
 	deadline := time.Now().Add(timeout)
+	ticker := time.NewTicker(3 * time.Millisecond)
+	defer ticker.Stop()
 	for {
 		var pending uint32
 		var socketErr error
@@ -67,7 +69,7 @@ func waitForFirmwareRawAck(ctx context.Context, conn net.Conn, timeout time.Dura
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(3 * time.Millisecond):
+		case <-ticker.C:
 		}
 	}
 }

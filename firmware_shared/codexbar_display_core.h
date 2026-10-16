@@ -20,6 +20,8 @@
 namespace codexbar_display {
 namespace core {
 
+using usage_window_contract::ClampPct;
+
 constexpr size_t kFrameLineBufferBytes = 2048;
 // One day. Keeps the bound's millisecond count inside 32 bits.
 constexpr int64_t kMaxActivityTtlSecs = 86400;
@@ -270,16 +272,6 @@ struct SerialConsumeEvent {
 // usageMode is normalized away by ParseFrameLine and reads as "used".
 inline const char* UsageModeText(const Frame& frame) {
   return frame.hasUsageMode && frame.usageMode == "remaining" ? "remaining" : "used";
-}
-
-inline int ClampPct(int value) {
-  if (value < 0) {
-    return 0;
-  }
-  if (value > 100) {
-    return 100;
-  }
-  return value;
 }
 
 inline int64_t ClampNonNegativeInt64(int64_t value) {
@@ -966,6 +958,9 @@ inline bool ExtractJsonObjectRaw(const char* json, const char* key, String& out)
     } else if (c == '}') {
       --depth;
       if (depth == 0) {
+        // One allocation: appending char by char regrows the String in small
+        // steps, a hundred reallocations for a 2 KB spec on every frame.
+        out.reserve(static_cast<unsigned int>(cursor - start + 1));
         for (const char* p = start; p <= cursor; ++p) {
           out += *p;
         }
@@ -1481,21 +1476,6 @@ inline bool ConsumeLineByte(
   lineState.len = 0;
   lineState.overflowed = false;
   return complete;
-}
-
-inline bool ConsumeSerialByte(
-    LineReaderState& lineState,
-    RuntimeState& runtimeState,
-    char c,
-    unsigned long nowMillis,
-    SerialConsumeEvent& outEvent) {
-  outEvent = {};
-  const char* line = nullptr;
-  if (!ConsumeLineByte(lineState, c, line)) {
-    return false;
-  }
-  return ConsumeFrameLine(runtimeState, line, nowMillis, outEvent) &&
-         outEvent.frameAccepted;
 }
 
 }  // namespace core

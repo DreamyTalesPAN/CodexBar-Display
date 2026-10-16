@@ -3507,3 +3507,49 @@ func TestMultipartUploadReportsCableOnlyFirmwareWithoutWriteWarning(t *testing.T
 		t.Fatalf("a missing WiFi update route must not look like a partial write: %v", err)
 	}
 }
+
+func TestEnsureSerialPortNotBusyGivesUpOnAHungLsof(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("lsof is a POSIX tool")
+	}
+	dir := t.TempDir()
+	// exec replaces the shell, so the timeout kills the process that holds the pipe.
+	if err := os.WriteFile(filepath.Join(dir, "lsof"), []byte("#!/bin/sh\nexec /bin/sleep 60\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	started := time.Now()
+	err := ensureSerialPortNotBusy("/dev/cu.test")
+	if err == nil {
+		t.Fatal("expected an error when lsof does not finish")
+	}
+	if elapsed := time.Since(started); elapsed > 20*time.Second {
+		t.Fatalf("lsof check took %v, want the 5s timeout", elapsed)
+	}
+}
+
+func TestResolveRestoreImagePicksNewestBackupThenPath(t *testing.T) {
+	dir := t.TempDir()
+	base := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	files := map[string]time.Time{
+		"weather_backup_a.bin": base,
+		"weather_backup_b.bin": base.Add(time.Hour),
+		"weather_backup_c.bin": base.Add(time.Hour),
+	}
+	for name, mod := range files {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte("image"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, mod, mod); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := resolveRestoreImage("", []string{dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(dir, "weather_backup_b.bin"); got != want {
+		t.Fatalf("resolveRestoreImage() = %q, want the newest backup with the lowest path %q", got, want)
+	}
+}

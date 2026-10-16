@@ -181,10 +181,6 @@ func (p *Pack) ValidateAgainstCapabilities(caps protocol.DeviceCapabilities) err
 	return nil
 }
 
-func Load(packPath string) (*Pack, error) {
-	return LoadVerified(packPath, "", 0)
-}
-
 // LoadVerified loads a pack and verifies publisher catalog metadata before
 // parsing any ZIP entries. Remote packs always require both values.
 func LoadVerified(packPath, expectedSHA256 string, expectedBytes int64) (*Pack, error) {
