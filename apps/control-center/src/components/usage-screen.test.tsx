@@ -571,6 +571,29 @@ describe("UsageScreen", () => {
     expect(html).toContain('aria-label="34% weekly used"');
   });
 
+  it("keeps a stale provider's last good numbers visible with the Updating spinner", () => {
+    const html = renderUsage(null, {
+      ...usage,
+      providers: [
+        {
+          ...usage.providers[0],
+          session: 45,
+          weekly: 26,
+          resetSecs: 3600,
+          stale: true,
+          usageUnavailable: true,
+          sessionUnavailable: true,
+          weeklyUnavailable: true,
+        },
+      ],
+    });
+    expect(html).toContain('aria-label="45% session used"');
+    expect(html).toContain('aria-label="26% weekly used"');
+    expect(html).toContain('aria-label="Updating"');
+    expect(html).not.toContain("??");
+    expect(html).not.toContain("Reset in");
+  });
+
   it("shows a normal tile's reset time", () => {
     const html = renderUsage(null, {
       ...usage,
@@ -605,6 +628,7 @@ describe("UsageScreen", () => {
       ({
         id: `codexbar.providers.${providerId}.enabled`,
         section: "providers",
+        type: "boolean",
         providerId,
         label: providerId.charAt(0).toUpperCase() + providerId.slice(1),
         value,
@@ -617,11 +641,12 @@ describe("UsageScreen", () => {
         pref("cursor", "setup_required"),
         pref("copilot", "browser_sign_in_required"),
         pref("codex", "healthy"),
+        pref("zai", "auth_required"),
         pref("kiro", "auth_required", false),
       ],
       { onOpenSettings, onSignIn },
     );
-    expect(Object.keys(actions)).toEqual(["claude", "gemini", "cursor", "copilot"]);
+    expect(Object.keys(actions)).toEqual(["claude", "gemini", "cursor", "copilot", "zai"]);
     expect(actions.claude.label).toBe("Sign in needed");
     expect(actions.gemini.label).toBe("Access needed");
     expect(actions.cursor.label).toBe("Setup needed");
@@ -629,7 +654,10 @@ describe("UsageScreen", () => {
 
     actions.claude.onAction();
     expect(onSignIn).toHaveBeenCalledWith(expect.objectContaining({ providerId: "claude" }));
+    // Gemini and Cursor have no sign-in the Companion can start: Settings instead.
+    actions.zai.onAction();
     actions.cursor.onAction();
-    expect(onOpenSettings).toHaveBeenCalledTimes(1);
+    expect(onOpenSettings).toHaveBeenCalledTimes(2);
+    expect(onSignIn).toHaveBeenCalledTimes(1);
   });
 });

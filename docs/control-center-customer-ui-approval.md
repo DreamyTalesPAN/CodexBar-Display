@@ -7315,3 +7315,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Usage tiles use one font in two sizes and two weights, with only the normal text and muted text colours and ink bars. Each tile reads number first: "45% session used", "26% weekly used", and the totals line "41.8M total · 2.4M this week". No Stale pill, no status pill, no "??" and no "Check again". A tile with stale numbers keeps them and shows a small spinner where the reset time was; a tile without numbers shows a grey placeholder shape and the same spinner. A provider that needs the customer shows "Sign in needed", "Access needed" or "Setup needed" in red after its name, with the placeholder shape in place of its numbers; the link opens the sign-in or Settings.
 - Scope: `usage-screen.tsx` and its test, `control-center-app.tsx` (only the wiring of the action tiles), the two wording assertions in `scripts/test-customer-flows.mjs`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — visual calm of the Usage tiles, no new notice
+
+## 2026-10-16 — Usage tiles: Codex review fixes for stale numbers and sign-in actions (#669)
+
+- User approval: Paul chose the calm Usage tiles on 2026-10-16 (entry above, via the review orchestrator); this follow-up applies two Codex review findings and changes no wording.
+- Approved customer-visible result: A stale tile keeps its last good numbers with the small spinner where the reset time was, as in the approved frame 5B; a provider without numbers keeps the grey placeholder shape. "Sign in needed" runs the sign-in only where the Companion can start one; for other providers it opens Settings. No new element, no new wording; this fix is not seen by Paul yet.
+- Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the Usage tiles, no customer-visible change of its own

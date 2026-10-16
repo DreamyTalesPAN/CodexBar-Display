@@ -44,6 +44,11 @@ import {
   formatResetCountdown,
   remainingResetSecs,
 } from "@/lib/reset-countdown";
+import { isProviderItem, type ProviderItem } from "./provider-picker";
+import {
+  providerRowHealthState,
+  setupProviderOffersSignIn,
+} from "./setup/setup-providers-screen";
 import type {
   ApiError,
   CompanionStatus,
@@ -259,24 +264,29 @@ export function usageProviderActionsFor(
   },
 ): Record<string, UsageProviderAction> {
   return Object.fromEntries(
-    (preferences || []).flatMap((item): Array<[string, UsageProviderAction]> => {
-      const state = item.health?.state ?? "";
-      const label = usageActionLabels[state];
-      if (!label || !item.providerId || item.section !== "providers" || item.value !== true) {
-        return [];
-      }
-      const signIn = state === "auth_required" || state === "browser_sign_in_required";
-      return [
-        [
-          item.providerId,
-          {
-            name: item.label,
-            label,
-            onAction: signIn ? () => onSignIn(item) : onOpenSettings,
-          },
-        ],
-      ];
-    }),
+    (preferences || [])
+      .filter(isProviderItem)
+      .flatMap((item: ProviderItem): Array<[string, UsageProviderAction]> => {
+        const state = providerRowHealthState(item.health);
+        const label = usageActionLabels[state];
+        if (!label || item.value !== true) {
+          return [];
+        }
+        // Only a sign-in the Companion can start is offered here; the rest go to Settings.
+        const signIn =
+          (state === "auth_required" || state === "browser_sign_in_required") &&
+          setupProviderOffersSignIn(item);
+        return [
+          [
+            item.providerId,
+            {
+              name: item.label,
+              label,
+              onAction: signIn ? () => onSignIn(item) : onOpenSettings,
+            },
+          ],
+        ];
+      }),
   );
 }
 
@@ -508,6 +518,8 @@ function UsageProviderTile({ provider }: { provider: UsageProviderInfo }) {
   const now = useNow(RESET_COUNTDOWN_TICK_MS);
   // Stale or unavailable is decided by the Mac App; the tile only shows the flags.
   const quiet = Boolean(provider.stale || provider.usageUnavailable);
+  // A stale provider keeps its last good numbers; the API flags its lanes unavailable too.
+  const hasNumbers = Boolean(provider.stale) || !provider.usageUnavailable;
   const lines = usageLines(provider, now, quiet);
   const sessionReset = lines[0]?.resetText;
   return (
@@ -525,9 +537,7 @@ function UsageProviderTile({ provider }: { provider: UsageProviderInfo }) {
         ) : null
       }
     >
-      {provider.usageUnavailable ? (
-        <UsageSkeleton />
-      ) : (
+      {hasNumbers ? (
         <div className="grid gap-4">
           {lines.map((line, index) => (
             <UsageLineView
@@ -538,6 +548,8 @@ function UsageProviderTile({ provider }: { provider: UsageProviderInfo }) {
             />
           ))}
         </div>
+      ) : (
+        <UsageSkeleton />
       )}
       <UsageMetaGrid provider={provider} />
       <TokenRow provider={provider} />
@@ -634,6 +646,7 @@ function usageLines(
     const left = remainingResetSecs(resetSecs, provider.collectedAt, now);
     return !quiet && left ? formatReset(left) : null;
   };
+  const laneUnavailable = (flag?: boolean) => !provider.stale && Boolean(flag);
   if (provider.windows?.length) {
     return provider.windows.map((window) => ({
       key: window.id,
@@ -648,15 +661,19 @@ function usageLines(
       key: "session",
       label: "session",
       percent: clampPercent(provider.session),
-      resetText: provider.sessionUnavailable ? null : resetText(provider.resetSecs),
-      unavailable: Boolean(provider.sessionUnavailable),
+      resetText: laneUnavailable(provider.sessionUnavailable)
+        ? null
+        : resetText(provider.resetSecs),
+      unavailable: laneUnavailable(provider.sessionUnavailable),
     },
     {
       key: "weekly",
       label: "weekly",
       percent: clampPercent(provider.weekly),
-      resetText: provider.weeklyUnavailable ? null : resetText(provider.resetSecs),
-      unavailable: Boolean(provider.weeklyUnavailable),
+      resetText: laneUnavailable(provider.weeklyUnavailable)
+        ? null
+        : resetText(provider.resetSecs),
+      unavailable: laneUnavailable(provider.weeklyUnavailable),
     },
   ];
 }
