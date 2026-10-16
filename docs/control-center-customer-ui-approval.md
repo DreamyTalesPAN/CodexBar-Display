@@ -7304,3 +7304,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Windows angleichung an die freigegebene Mac-Reihenfolge (OpenAI API vor Azure OpenAI). Codex, Claude, Cursor, Antigravity, then OpenAI (API), Azure OpenAI, then the other providers, on Mac and Windows alike. Within the other providers, switched-on ones stay above switched-off ones. No new texts or controls.
 - Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx` (two lines), and this approval record.
 - What's new: none — the same providers in the already approved order.
+
+## 2026-10-16 — Provider list order merged with current main (#651)
+
+- User approval: Marcus, 16.10.2026, channel Abstimmungschat (question 27, answer "ja"), as recorded in the Windows alignment entry above. This entry records only the merge of main (#628) into `codex/provider-list-order`; it adds no wording and no new visible behaviour.
+- Approved customer-visible result: as recorded in the Windows alignment entry above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
