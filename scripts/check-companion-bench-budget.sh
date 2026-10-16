@@ -6,7 +6,10 @@ companion_dir="$repo_root/companion"
 
 max_cycle_ns="${MAX_CYCLE_NS:-50000}"
 max_cycle_allocs="${MAX_CYCLE_ALLOCS:-160}"
-max_marshal_ns="${MAX_MARSHAL_NS:-1000}"
+# CI runners measure this benchmark anywhere between ~500 and ~1040 ns for
+# the same code; at 1000 the gate failed on noise. The allocation budget below
+# is the stable signal; ns only has to catch a real slowdown.
+max_marshal_ns="${MAX_MARSHAL_NS:-1500}"
 max_marshal_allocs="${MAX_MARSHAL_ALLOCS:-4}"
 
 run_benchmark() {

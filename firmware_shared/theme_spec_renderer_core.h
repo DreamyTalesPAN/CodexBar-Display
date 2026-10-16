@@ -12,6 +12,8 @@
 namespace codexbar_display {
 namespace themespec {
 
+using usage_window_contract::ClampPct;
+
 constexpr uint32_t kThemeSpecFieldProvider = 1UL << 0;
 constexpr uint32_t kThemeSpecFieldLabel = 1UL << 1;
 constexpr uint32_t kThemeSpecFieldSession = 1UL << 2;
@@ -322,16 +324,6 @@ class Sink {
   virtual void DrawSprite(const SpriteCommand& cmd) = 0;
   virtual void DrawPixels(const PixelsCommand& cmd) = 0;
 };
-
-inline int ClampPct(int value) {
-  if (value < 0) {
-    return 0;
-  }
-  if (value > 100) {
-    return 100;
-  }
-  return value;
-}
 
 inline uint16_t RGB565(uint8_t r, uint8_t g, uint8_t b) {
   return static_cast<uint16_t>(((r & 0xF8U) << 8) | ((g & 0xFCU) << 3) | (b >> 3));

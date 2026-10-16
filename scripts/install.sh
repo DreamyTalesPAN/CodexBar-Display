@@ -114,7 +114,7 @@ normalize_version() {
 fetch_latest_release_tag() {
   local response tag
   response="$(
-    curl -fsSL --retry 3 --retry-delay 1 --connect-timeout 10 \
+    curl -fsSL --retry 3 --retry-delay 1 --connect-timeout 10 --max-time 30 \
       -H "Accept: application/vnd.github+json" \
       -H "X-GitHub-Api-Version: 2022-11-28" \
       -H "User-Agent: vibetv-install" \
@@ -456,7 +456,7 @@ prepare_control_center_service() {
 wait_for_control_center_service() {
   log "vibetv: waiting for Control Center Mac App service at http://${COMPANION_API_ADDR}/v1/status"
   for _ in $(seq 1 20); do
-    if curl -fsS "http://${COMPANION_API_ADDR}/v1/status" >/dev/null 2>&1; then
+    if curl -fsS --max-time 30 "http://${COMPANION_API_ADDR}/v1/status" >/dev/null 2>&1; then
       log "vibetv: Control Center Mac App service is running"
       log "vibetv: open https://app.vibetv.shop"
       return 0

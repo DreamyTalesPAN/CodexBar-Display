@@ -179,7 +179,7 @@ Useful read-only checks:
 codexbar-display health
 curl -fsS http://127.0.0.1:47832/v1/status
 curl -fsS http://127.0.0.1:47832/v1/usage
-tail -n 200 /tmp/codexbar-display-daemon.out.log
+tail -n 200 "$HOME/Library/Application Support/codexbar-display/logs/daemon.out.log"
 ```
 
 When direct CodexBar output and the Mac App disagree, treat the direct command

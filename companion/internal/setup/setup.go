@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	launchAgentLabel          = "com.codexbar-display.daemon"
+	launchAgentLabel          = runtimepaths.LegacyDisplayStreamLaunchAgentLabel
 	defaultDaemonInterval     = "2s"
 	defaultWiFiDaemonInterval = "30s"
 	defaultCompanionAPIAddr   = "127.0.0.1:47832"
@@ -412,7 +412,7 @@ func runWithDeps(ctx context.Context, opts Options, d deps) (resultErr error) {
 			if !replacementRuntimeCommitted {
 				_ = runtimeconfig.Save(home, previousRuntimeConfig)
 				_ = writeFileAtomic(previousLaunchAgentPath, previousLaunchAgent, 0o644)
-				_ = reloadLaunchAgent(ctx, d, previousLaunchAgentPath)
+				_ = reloadLaunchAgent(ctx, d)
 			}
 		}()
 	}
@@ -643,7 +643,7 @@ func runWithDeps(ctx context.Context, opts Options, d deps) (resultErr error) {
 		fmt.Fprintln(d.stdout, "Launch agent serial mode: identity-resolved")
 	}
 
-	plistPath, err := writeServiceConfig(home, installPath, daemonTransport, daemonTarget, daemonPort, d.goos)
+	_, err = writeServiceConfig(home, installPath, daemonTransport, daemonTarget, daemonPort, d.goos)
 	if err != nil {
 		return &StepError{
 			Step: "write-launchagent",
@@ -654,7 +654,7 @@ func runWithDeps(ctx context.Context, opts Options, d deps) (resultErr error) {
 
 	fmt.Fprintln(d.stdout, "Starting background service ...")
 	registrationAttempted = true
-	if err := reloadLaunchAgent(ctx, d, plistPath); err != nil {
+	if err := reloadLaunchAgent(ctx, d); err != nil {
 		return err
 	}
 	replacementRuntimeCommitted = true
@@ -865,38 +865,14 @@ func flashFirmware(ctx context.Context, d deps, executablePath, port, firmwareEn
 		return &StepError{
 			Step:   "flash-firmware",
 			Err:    err,
-			Hint:   flashRecoveryHint(output, port, d.uid()),
+			Hint:   flashRecoveryHint(output, port),
 			Output: tailLines(output, 30),
 		}
 	}
 	return nil
 }
 
-func firmwareProjectDirForEnvironment(repoRoot, firmwareEnv string) string {
-	if target, ok := lookupFirmwareTarget(firmwareEnv); ok {
-		targetDir := filepath.Join(repoRoot, target.ProjectDir)
-		if fileExists(filepath.Join(targetDir, "platformio.ini")) {
-			return targetDir
-		}
-	}
-
-	env := strings.TrimSpace(strings.ToLower(firmwareEnv))
-	switch {
-	case strings.HasPrefix(env, "esp8266_"):
-		esp8266Dir := filepath.Join(repoRoot, "firmware_esp8266")
-		if fileExists(filepath.Join(esp8266Dir, "platformio.ini")) {
-			return esp8266Dir
-		}
-	case strings.HasPrefix(env, "lilygo_"), strings.HasPrefix(env, "esp32_"):
-		esp32Dir := filepath.Join(repoRoot, "firmware_esp32")
-		if fileExists(filepath.Join(esp32Dir, "platformio.ini")) {
-			return esp32Dir
-		}
-	}
-	return filepath.Join(repoRoot, "firmware_esp32")
-}
-
-func flashRecoveryHint(output, port string, uid int) string {
+func flashRecoveryHint(output, port string) string {
 	lower := strings.ToLower(output)
 	if strings.Contains(lower, "failed to connect") || strings.Contains(lower, "could not open") || strings.Contains(lower, "resource busy") {
 		return fmt.Sprintf("ensure no process holds %s, run `codexbar-display service stop`, then rerun setup", port)
@@ -1099,7 +1075,7 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 	return os.Chmod(path, mode)
 }
 
-func reloadLaunchAgent(ctx context.Context, d deps, plistPath string) error {
+func reloadLaunchAgent(ctx context.Context, d deps) error {
 	home, err := d.homeDir()
 	if err != nil {
 		return err

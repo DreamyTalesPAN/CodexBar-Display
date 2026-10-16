@@ -1,29 +1,6 @@
 export const DEFAULT_CONTROL_CENTER_ORIGIN = "https://app.vibetv.shop";
-export const INSTALLER_SCRIPT_PATH = "/install-control-center-companion.sh";
 export const COMPANION_RELEASE_API_PATH = "/api/companion/latest";
 const LOCAL_COMPANION_PORT = "47832";
-const PREVIEW_INSTALL_VERSION =
-  process.env.NEXT_PUBLIC_VIBETV_PREVIEW_INSTALL_VERSION?.trim() || "";
-
-export function buildMacAppTerminalCommand(
-  origin: string,
-  localControlCenterPath = "/control-center",
-) {
-  const installerOrigin = installCommandOrigin(origin);
-  const installerUrl = `${installerOrigin}${INSTALLER_SCRIPT_PATH}`;
-  const args: string[] = [];
-  if (installerOrigin !== DEFAULT_CONTROL_CENTER_ORIGIN) {
-    args.push("--dev-origin", shellQuote(installerOrigin));
-    if (PREVIEW_INSTALL_VERSION) {
-      args.push("--version", shellQuote(PREVIEW_INSTALL_VERSION));
-    }
-  }
-  if (localControlCenterPath !== "/control-center") {
-    args.push("--control-center-path", shellQuote(localControlCenterPath));
-  }
-  const suffix = args.length > 0 ? ` -s -- ${args.join(" ")}` : "";
-  return `curl -fsSL ${installerUrl} | bash${suffix}`;
-}
 
 export function currentControlCenterOrigin() {
   return typeof window === "undefined"
@@ -40,10 +17,6 @@ export function companionReleaseApiUrl(
     : COMPANION_RELEASE_API_PATH;
 }
 
-function installCommandOrigin(origin: string) {
-  return isLocalCompanionOrigin(origin) ? DEFAULT_CONTROL_CENTER_ORIGIN : origin;
-}
-
 function isLocalCompanionOrigin(origin: string) {
   try {
     const url = new URL(origin);
@@ -55,8 +28,4 @@ function isLocalCompanionOrigin(origin: string) {
   } catch {
     return false;
   }
-}
-
-function shellQuote(value: string) {
-  return `'${value.replaceAll("'", "'\\''")}'`;
 }

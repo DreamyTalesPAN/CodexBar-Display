@@ -159,11 +159,6 @@ func (s *Sender) DeviceHello(path string) (protocol.DeviceHello, error) {
 	return s.deviceHelloWithin(path, s.helloWindow)
 }
 
-// Discovery uses the boot-tolerant window too: WiFi startup can delay hello.
-func (s *Sender) DeviceHelloForDiscovery(path string) (protocol.DeviceHello, error) {
-	return s.deviceHelloWithin(path, s.helloWindow)
-}
-
 func (s *Sender) deviceHelloWithin(path string, window time.Duration) (protocol.DeviceHello, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

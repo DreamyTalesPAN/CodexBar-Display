@@ -18,7 +18,7 @@ important changes before they interrupt your work.
 
 ## Themes
 
-VibeTV comes with 7 pre-built themes, but you can also
+VibeTV comes with 8 pre-built themes, but you can also
 [build your own](docs/theme-dev-guide.md).
 
 <table>
@@ -79,9 +79,10 @@ you work.
 
 The Mac App sends the local usage signal to the device. The page at
 [`app.vibetv.shop`](https://app.vibetv.shop) does exactly one thing: it offers
-the signed Mac App download. Everything after that happens in the app on your
-own Mac, which walks you through setup and then opens the local Control Center
-for themes, display settings, updates, and support.
+the signed app download for your computer, the Mac App on a Mac and the Windows
+app on Windows. Everything after that happens in the app on your own computer,
+which walks you through setup and then opens the local Control Center for
+themes, display settings, updates, and support.
 
 VibeTV is built on top of [CodexBar](https://github.com/steipete/CodexBar) for
 AI provider usage data. CodexBar knows how to read usage and quota information
@@ -153,6 +154,7 @@ curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash -s
 
 - ESP8266 firmware for the current VibeTV hardware target
 - the macOS Mac App / Companion binary `codexbar-display`
+- the Windows app shell (Tauri) in `windows/`
 - the hosted Control Center app in `apps/control-center`
 - the local Companion API used by Control Center
 - Theme Studio and theme-pack tooling
