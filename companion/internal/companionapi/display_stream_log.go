@@ -72,6 +72,38 @@ func lastDisplayStreamFrameLine(path string) (time.Time, string, string, bool) {
 }
 
 func (l displayStreamLog) lastFrameAfter(boundary time.Time) (time.Time, string, string, bool) {
+	return l.lastFrameWhere(boundary, nil)
+}
+
+// providerSlotIDs lists the providers in a logged frame's provider slots.
+func providerSlotIDs(line string) []string {
+	encoded := displayStreamLogValue(line, "providerSlots")
+	if encoded == "" || encoded == "-" {
+		return nil
+	}
+	raw, err := url.QueryUnescape(encoded)
+	if err != nil {
+		return nil
+	}
+	var slots []protocol.UsageSlot
+	if json.Unmarshal([]byte(raw), &slots) != nil {
+		return nil
+	}
+	var ids []string
+	for _, slot := range slots {
+		if id := strings.TrimSpace(slot.ID); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+// lastFrameWhere returns the newest frame line accepted by match (nil accepts
+// all) across the log files and any further sources appended to l.
+func (l displayStreamLog) lastFrameWhere(boundary time.Time, match func(target, line string) bool) (time.Time, string, string, bool) {
+	var bestWhen time.Time
+	var bestTarget, bestLine string
+	found := false
 	for _, lines := range l {
 		for i := len(lines) - 1; i >= 0; i-- {
 			line := strings.TrimSpace(lines[i])
@@ -94,10 +126,16 @@ func (l displayStreamLog) lastFrameAfter(boundary time.Time) (time.Time, string,
 			if fields := strings.Fields(after); len(fields) > 0 {
 				target = fields[0]
 			}
-			return when, target, line, true
+			if match != nil && !match(target, line) {
+				continue
+			}
+			if !found || when.After(bestWhen) {
+				bestWhen, bestTarget, bestLine, found = when, target, line, true
+			}
+			break
 		}
 	}
-	return time.Time{}, "", "", false
+	return bestWhen, bestTarget, bestLine, found
 }
 
 func (l displayStreamLog) lastErrorAfter(boundary time.Time) (time.Time, string, string, bool) {

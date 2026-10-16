@@ -47,6 +47,8 @@ type runtimeDeps struct {
 	saveConfig            func(string, runtimeconfig.Config) error
 	discoverWiFi          func([]string) (transportlayer.WiFiDiscoveryResult, error)
 	transportName         string
+	// shownFramesPath, when set, keeps the last frame sent to each VibeTV.
+	shownFramesPath string
 }
 
 func (d runtimeDeps) withDefaults() runtimeDeps {

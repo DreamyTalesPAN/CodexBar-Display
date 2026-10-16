@@ -2,6 +2,7 @@ package runtimepaths
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -99,6 +100,17 @@ func DisplayStreamOutLogArchive(logPath string) string {
 		return ""
 	}
 	return logPath + ".1"
+}
+
+// DisplayShownFrames keeps, next to the display stream log, the last frame
+// the stream delivered to each VibeTV. The log is read only as a bounded tail,
+// while VibeTV can keep showing a theme frame for hours (#368).
+func DisplayShownFrames(logPath string) string {
+	logPath = strings.TrimSpace(logPath)
+	if logPath == "" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(logPath), "shown-frames.json")
 }
 
 // DisplayStreamLaunchAgentLabel returns the service whose worker state must be

@@ -3894,6 +3894,194 @@ func TestInspectDisplayStreamUsesConfiguredRuntimeLabelAndSharedLog(t *testing.T
 	if stream.LastSentAt != sentAt.Format(time.RFC3339) || stream.LastTarget != "http://192.168.178.72" {
 		t.Fatalf("unexpected configured runtime stream metadata: %+v", stream)
 	}
+	if stream.Provider != "codex" {
+		t.Fatalf("the stream must name the provider of its last frame, got %+v", stream)
+	}
+}
+
+// A frame proven healthy from the log can still be rejected afterwards: it
+// came from another Cable VibeTV, the USB port went away or the pairing was
+// refused. None of them shows that frame's provider, so it is not named (#368).
+func TestUnhealthyStreamNamesNoProvider(t *testing.T) {
+	healthy := displayStreamInfo{
+		Healthy:       true,
+		Running:       true,
+		LastSentAt:    time.Now().UTC().Format(time.RFC3339),
+		Target:        cableDeviceTarget,
+		LastTarget:    cableDeviceTarget,
+		DeviceID:      "5804558",
+		Provider:      "claude",
+		shownDeviceID: "5804558",
+	}
+	same := withDisplayStreamInfo(deviceInfo{Target: cableDeviceTarget, DeviceID: "5804558"}, healthy)
+	if same.Stream == nil || !same.Stream.Healthy || same.Stream.Provider != "claude" {
+		t.Fatalf("the selected VibeTV's own healthy frame must name its provider, got %+v", same.Stream)
+	}
+	other := withDisplayStreamInfo(deviceInfo{Target: cableDeviceTarget, DeviceID: "16197466"}, healthy)
+	if other.Stream == nil || other.Stream.ErrorCode != "device_frame_mismatch" || other.Stream.Provider != "" {
+		t.Fatalf("a frame from another Cable VibeTV must not name its provider, got %+v", other.Stream)
+	}
+	unplugged := healthy
+	unplugged.Healthy = false
+	unplugged.ErrorCode = "device_not_found"
+	if got := streamPointer(unplugged); got == nil || got.Provider != "" {
+		t.Fatalf("an unplugged VibeTV must not name a provider, got %+v", got)
+	}
+	rejected := healthy
+	rejected.Healthy = false
+	rejected.ErrorCode = "pairing_token_rejected"
+	if got := streamPointer(rejected); got == nil || got.Provider != "" {
+		t.Fatalf("a rejected pairing must not name a provider, got %+v", got)
+	}
+	stalled := healthy
+	stalled.Healthy = false
+	stalled.Detail = "Last usage frame is too old."
+	if got := streamPointer(stalled); got == nil || got.Provider != "claude" {
+		t.Fatalf("a stalled stream still shows its last frame and must name its provider, got %+v", got)
+	}
+}
+
+// Sending stalls after a frame: the firmware keeps that frame on screen, so
+// the stream still names its provider until the firmware replaced it, the
+// VibeTV restarted or an error frame was delivered after it (#368).
+func TestStalledStreamKeepsProviderOfLastFrame(t *testing.T) {
+	now := time.Now().UTC()
+	stalled := func(age time.Duration) *displayStreamInfo {
+		return &displayStreamInfo{Running: true, Provider: "codex", shownAt: now.Add(-age)}
+	}
+	theme := &deviceDisplayInfo{ThemeSpec: &themeSpecHealth{Active: true}}
+	answered := &deviceHealthInfo{OK: true}
+	probeFailed := &deviceHealthInfo{Error: "context deadline exceeded"}
+	for _, tc := range []struct {
+		name   string
+		device deviceInfo
+		want   string
+	}{
+		{"usage frame still on screen", deviceInfo{Stream: stalled(140 * time.Second), Health: answered}, "codex"},
+		{"usage frame replaced by Open App", deviceInfo{Stream: stalled(160 * time.Second), Health: answered}, ""},
+		{"theme-spec frame stays", deviceInfo{Stream: stalled(30 * time.Minute), Display: theme, Health: answered}, "codex"},
+		// A failed or missing health probe drops the theme info: the frame may still show.
+		{"health probe failed", deviceInfo{Stream: stalled(30 * time.Minute), Health: probeFailed}, "codex"},
+		{"no health answer", deviceInfo{Stream: stalled(30 * time.Minute)}, "codex"},
+		{"VibeTV restarted after the frame", deviceInfo{Stream: stalled(30 * time.Second), Display: theme, Health: &deviceHealthInfo{LastResetAt: now.Add(-10 * time.Second).Format(time.RFC3339Nano)}}, ""},
+		{"VibeTV restarted before the frame", deviceInfo{Stream: stalled(30 * time.Minute), Display: theme, Health: &deviceHealthInfo{LastResetAt: now.Add(-time.Hour).Format(time.RFC3339Nano)}}, "codex"},
+		{"healthy stream", deviceInfo{Stream: &displayStreamInfo{Healthy: true, Provider: "codex", shownAt: now.Add(-time.Hour)}}, "codex"},
+		{"VibeTV restarted right after a healthy send", deviceInfo{Stream: &displayStreamInfo{Healthy: true, Provider: "codex", shownAt: now.Add(-5 * time.Second)}, Health: &deviceHealthInfo{OK: true, LastResetAt: now.Add(-2 * time.Second).Format(time.RFC3339Nano)}}, ""},
+		{"frame went to another VibeTV", deviceInfo{DeviceID: "5804558", Health: answered, Display: theme, Stream: &displayStreamInfo{Running: true, Provider: "codex", shownAt: now.Add(-time.Minute), shownDeviceID: "777"}}, ""},
+		{"frame went to this VibeTV", deviceInfo{DeviceID: "5804558", Health: answered, Display: theme, Stream: &displayStreamInfo{Running: true, Provider: "codex", shownAt: now.Add(-time.Minute), shownDeviceID: "5804558"}}, "codex"},
+	} {
+		if got := withoutReplacedFrameProvider(tc.device, now); got.Stream.Provider != tc.want {
+			t.Fatalf("%s: want provider %q, got %+v", tc.name, tc.want, got.Stream)
+		}
+	}
+
+	oldPrint := printDisplayStreamService
+	t.Cleanup(func() { printDisplayStreamService = oldPrint })
+	printDisplayStreamService = func(context.Context, string) ([]byte, error) {
+		return []byte("state = running\n"), nil
+	}
+	sentAt := time.Now().UTC().Add(-5 * time.Minute).Truncate(time.Second)
+	frame := sentAt.Format(time.RFC3339Nano) + ` sent frame -> /dev/cu.usbserial-1410 transport=usb deviceId=5804558 source=oauth fresh=true usageMode=remaining provider=codex label=VibeTV session=73 weekly=58 reset=2733s error=""`
+	errorFrame := sentAt.Add(time.Second).Format(time.RFC3339Nano) + ` sent frame -> /dev/cu.usbserial-1410 transport=usb deviceId=5804558 source=unknown fresh=false usageMode=remaining provider= label=VibeTV session=0 weekly=0 reset=0s error="Usage unavailable"`
+	for _, tc := range []struct {
+		name    string
+		lines   []string
+		running bool
+		want    string
+	}{
+		{"stalled", []string{frame}, true, "codex"},
+		// A failed write logs no frame: the device keeps the one before it.
+		{"undelivered error", []string{frame, sentAt.Add(time.Second).Format(time.RFC3339Nano) + ` cycle error: code=runtime_serial_write op=send-line retry=3s err=device-offline`}, true, "codex"},
+		{"delivered error frame", []string{frame, errorFrame}, true, ""},
+		{"stream process stopped", []string{frame}, false, "codex"},
+	} {
+		logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+		t.Setenv(displayStreamOutLogEnv, logPath)
+		if err := os.WriteFile(logPath, []byte(strings.Join(tc.lines, "\n")+"\n"), 0o600); err != nil {
+			t.Fatalf("write display stream log: %v", err)
+		}
+		running := tc.running
+		stream := inspectDisplayStreamAfterRunning(context.Background(), cableDeviceTarget, time.Time{}, func() bool { return running })
+		if stream.Healthy || stream.Provider != tc.want {
+			t.Fatalf("%s: want unhealthy stream naming %q, got %+v", tc.name, tc.want, stream)
+		}
+		if tc.want != "" && (stream.shownDeviceID != "5804558" || !stream.shownAt.Equal(sentAt)) {
+			t.Fatalf("%s: the shown frame must keep its device and time, got %+v", tc.name, stream)
+		}
+	}
+}
+
+func TestShownFrameIgnoresLaterFramesToOtherVibeTVs(t *testing.T) {
+	oldPrint := printDisplayStreamService
+	t.Cleanup(func() { printDisplayStreamService = oldPrint })
+	printDisplayStreamService = func(context.Context, string) ([]byte, error) {
+		return []byte("state = running\n"), nil
+	}
+	sentAt := time.Now().UTC().Add(-5 * time.Minute).Truncate(time.Second)
+	later := sentAt.Add(time.Minute).Format(time.RFC3339Nano)
+	cableFrame := sentAt.Format(time.RFC3339Nano) + ` sent frame -> /dev/cu.usbserial-1410 transport=usb deviceId=5804558 provider=codex label=VibeTV error=""`
+	wifiA := sentAt.Format(time.RFC3339Nano) + ` sent frame -> http://192.168.178.72 transport=wifi deviceId=5804558 provider=codex label=VibeTV error=""`
+	wifiB := later + ` sent frame -> http://192.168.178.73 transport=wifi deviceId=777 provider=claude label=VibeTV error=""`
+	for _, tc := range []struct {
+		name   string
+		target string
+		lines  []string
+	}{
+		{"cable, then another VibeTV over WiFi", cableDeviceTarget, []string{cableFrame, wifiB}},
+		{"WiFi A, then WiFi B", "http://192.168.178.72", []string{wifiA, wifiB}},
+		{"WiFi A, then a cable VibeTV", "http://192.168.178.72", []string{wifiA, later + ` sent frame -> /dev/cu.usbserial-1410 transport=usb deviceId=777 provider=claude error=""`}},
+	} {
+		logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+		t.Setenv(displayStreamOutLogEnv, logPath)
+		if err := os.WriteFile(logPath, []byte(strings.Join(tc.lines, "\n")+"\n"), 0o600); err != nil {
+			t.Fatalf("write display stream log: %v", err)
+		}
+		stream := withShownFrame(displayStreamInfo{Target: tc.target}, tc.target)
+		if stream.Provider != "codex" || stream.shownDeviceID != "5804558" || !stream.shownAt.Equal(sentAt) {
+			t.Fatalf("%s: want the frame sent to %s, got %+v", tc.name, tc.target, stream)
+		}
+	}
+
+	// The same VibeTV got a newer frame over its other connection: it shows that one.
+	sameOverWiFi := later + ` sent frame -> http://192.168.178.72 transport=wifi deviceId=5804558 provider=claude label=VibeTV error=""`
+	sameErrorOverWiFi := later + ` sent frame -> http://192.168.178.72 transport=wifi deviceId=5804558 provider= label=VibeTV error="Usage unavailable"`
+	sameOverCable := later + ` sent frame -> /dev/cu.usbserial-1410 transport=usb deviceId=5804558 provider=claude error=""`
+	for _, tc := range []struct {
+		name   string
+		target string
+		lines  []string
+		want   string
+	}{
+		{"cable, then the same VibeTV over WiFi", cableDeviceTarget, []string{cableFrame, sameOverWiFi}, "claude"},
+		{"WiFi, then the same VibeTV over the cable", "http://192.168.178.72", []string{wifiA, sameOverCable}, "claude"},
+		{"cable, then an error frame to the same VibeTV over WiFi", cableDeviceTarget, []string{cableFrame, sameErrorOverWiFi}, ""},
+	} {
+		logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+		t.Setenv(displayStreamOutLogEnv, logPath)
+		if err := os.WriteFile(logPath, []byte(strings.Join(tc.lines, "\n")+"\n"), 0o600); err != nil {
+			t.Fatalf("write display stream log: %v", err)
+		}
+		stream := withShownFrame(displayStreamInfo{Target: tc.target}, tc.target)
+		if stream.Provider != tc.want {
+			t.Fatalf("%s: want provider %q, got %+v", tc.name, tc.want, stream)
+		}
+	}
+
+	// A theme can show the providers in the frame's provider slots too.
+	slots := url.QueryEscape(`[{"id":"codex","label":"Codex","percent":40,"resetSec":3600},{"id":"claude","label":"Claude","percent":10,"resetSec":7200}]`)
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	t.Setenv(displayStreamOutLogEnv, logPath)
+	if err := os.WriteFile(logPath, []byte(sentAt.Format(time.RFC3339Nano)+` sent frame -> /dev/cu.usbserial-1410 transport=usb deviceId=5804558 provider=codex providerSlots=`+slots+` error=""`+"\n"), 0o600); err != nil {
+		t.Fatalf("write display stream log: %v", err)
+	}
+	stream := withShownFrame(displayStreamInfo{Target: cableDeviceTarget, Running: true}, cableDeviceTarget)
+	if stream.Provider != "codex" || strings.Join(stream.SlotProviders, ",") != "codex,claude" {
+		t.Fatalf("want the slot providers of the shown frame, got %+v", stream)
+	}
+	replaced := withoutReplacedFrameProvider(deviceInfo{DeviceID: "5804558", Health: &deviceHealthInfo{OK: true}, Stream: &stream}, sentAt.Add(10*time.Minute))
+	if replaced.Stream.Provider != "" || len(replaced.Stream.SlotProviders) != 0 {
+		t.Fatalf("a replaced frame shows no slot providers either, got %+v", replaced.Stream)
+	}
 }
 
 func TestInspectDisplayStreamMapsCurrentUSBPathToStableCableTarget(t *testing.T) {
@@ -3917,6 +4105,12 @@ func TestInspectDisplayStreamMapsCurrentUSBPathToStableCableTarget(t *testing.T)
 	stream := inspectDisplayStream(context.Background(), cableDeviceTarget)
 	if !stream.Running || !stream.Healthy || stream.Target != cableDeviceTarget || stream.LastTarget != cableDeviceTarget {
 		t.Fatalf("expected healthy canonical Cable stream, got %+v", stream)
+	}
+
+	// The same frame was not sent to a VibeTV on WiFi: it names no provider (#368).
+	other := inspectDisplayStream(context.Background(), "http://192.168.178.72")
+	if other.Healthy || other.Provider != "" {
+		t.Fatalf("a frame for another connection mode must not name the shown provider, got %+v", other)
 	}
 }
 

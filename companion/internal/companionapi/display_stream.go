@@ -3,10 +3,12 @@ package companionapi
 import (
 	"context"
 	"errors"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/service"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
@@ -22,10 +24,26 @@ type displayStreamInfo struct {
 	Healthy    bool   `json:"healthy"`
 	Running    bool   `json:"running"`
 	LastSentAt string `json:"lastSentAt,omitempty"`
-	Target     string `json:"target,omitempty"`
-	LastTarget string `json:"lastTarget,omitempty"`
-	Detail     string `json:"detail,omitempty"`
-	ErrorCode  string `json:"errorCode,omitempty"`
+	// Provider is the provider of the last frame delivered to this VibeTV
+	// (#368), also when the stream process stopped or later writes failed:
+	// a failed write logs no frame, so the device keeps the one before it.
+	// A delivered error frame, a frame for another VibeTV or connection mode,
+	// an unplugged USB port or a rejected pairing names none, and
+	// withoutReplacedFrameProvider drops it once the firmware replaced the
+	// frame. Usage reads it to tell which provider the device shows;
+	// usage.currentProvider falls back to the first provider when no frame
+	// was kept.
+	Provider string `json:"provider,omitempty"`
+	// SlotProviders are the providers in that frame's provider slots, which a
+	// theme can show next to Provider; they are kept and dropped with it.
+	SlotProviders []string `json:"slotProviders,omitempty"`
+	Target        string   `json:"target,omitempty"`
+	LastTarget    string   `json:"lastTarget,omitempty"`
+	Detail        string   `json:"detail,omitempty"`
+	ErrorCode     string   `json:"errorCode,omitempty"`
+	// When and to which Cable VibeTV the frame behind Provider was sent.
+	shownAt       time.Time
+	shownDeviceID string
 }
 
 func (s *Server) startDisplayStream(ctx context.Context, target string) error {
@@ -70,6 +88,11 @@ func withDisplayStreamInfo(device deviceInfo, stream displayStreamInfo) deviceIn
 		stream.ErrorCode = "device_frame_mismatch"
 		stream.Detail = "Waiting for an image from the selected VibeTV."
 	}
+	// The same holds for the frame that names the shown provider.
+	if samePublicTarget(device.Target, cableDeviceTarget) && (stream.Provider != "" || len(stream.SlotProviders) > 0) &&
+		(stream.shownDeviceID == "" || !strings.EqualFold(stream.shownDeviceID, device.DeviceID)) {
+		stream = withoutShownProviders(stream)
+	}
 	device.Stream = streamPointer(stream)
 	if stream.ErrorCode == "device_pairing_required" {
 		device.Paired = false
@@ -84,10 +107,175 @@ func streamPointer(stream displayStreamInfo) *displayStreamInfo {
 	if !stream.Healthy && !stream.Running && stream.LastSentAt == "" && stream.Target == "" && stream.LastTarget == "" && stream.Detail == "" {
 		return nil
 	}
+	// The provider names what this VibeTV shows. A frame later found to
+	// belong to another Cable VibeTV, a USB port that went away or a rejected
+	// pairing marks the stream unhealthy after it was read; none of them
+	// shows that provider. A stream that only stopped sending keeps it.
+	switch stream.ErrorCode {
+	case "device_frame_mismatch", "device_not_found", "pairing_token_rejected":
+		stream = withoutShownProviders(stream)
+	}
 	return &stream
 }
 
+func withoutShownProviders(stream displayStreamInfo) displayStreamInfo {
+	stream.Provider = ""
+	stream.SlotProviders = nil
+	return stream
+}
+
+// firmwareFrameStaleAge is the firmware's kFrameStaleWarningMs: 150 s after a
+// usage frame arrived without a newer one, VibeTV replaces it with its
+// "Open App" screen. A theme-spec frame is never replaced that way.
+const firmwareFrameStaleAge = 150 * time.Second
+
+// withoutReplacedFrameProvider drops the provider of a stalled stream once
+// the firmware has replaced its frame (#368). Only the device's own report
+// of an active theme spec keeps it longer, and a VibeTV that restarted after
+// the frame lost it either way.
+func withoutReplacedFrameProvider(device deviceInfo, now time.Time) deviceInfo {
+	stream := device.Stream
+	if stream == nil || (stream.Provider == "" && len(stream.SlotProviders) == 0) {
+		return device
+	}
+	// A VibeTV that restarted after the frame lost it, also while the stream
+	// still counts as healthy from that recent send.
+	if !stream.shownAt.IsZero() && restartedAfter(device.Health, stream.shownAt) {
+		cleared := withoutShownProviders(*stream)
+		device.Stream = &cleared
+		return device
+	}
+	if stream.Healthy {
+		return device
+	}
+	// A frame sent to another VibeTV (an address now taken by another
+	// device, a swapped cable) says nothing about this one.
+	if id, shown := strings.TrimSpace(device.DeviceID), stream.shownDeviceID; id != "" && shown != "" && !strings.EqualFold(id, shown) {
+		cleared := withoutShownProviders(*stream)
+		device.Stream = &cleared
+		return device
+	}
+	if sentAt := stream.shownAt; !sentAt.IsZero() && !restartedAfter(device.Health, sentAt) {
+		// Only a health answer proves the frame was replaced; without one, the
+		// VibeTV may still show it, so Usage must not say otherwise.
+		if device.Health == nil || device.Health.Error != "" {
+			return device
+		}
+		if device.Display != nil && device.Display.ThemeSpec != nil && device.Display.ThemeSpec.Active {
+			return device
+		}
+		if now.Sub(sentAt) <= firmwareFrameStaleAge {
+			return device
+		}
+	}
+	cleared := withoutShownProviders(*stream)
+	device.Stream = &cleared
+	return device
+}
+
+func restartedAfter(health *deviceHealthInfo, sentAt time.Time) bool {
+	if health == nil {
+		return false
+	}
+	resetAt, err := time.Parse(time.RFC3339Nano, health.LastResetAt)
+	return err == nil && resetAt.After(sentAt)
+}
+
 func inspectDisplayStreamAfterRunning(ctx context.Context, target string, notBefore time.Time, running func() bool) displayStreamInfo {
+	stream := inspectDisplayStreamLiveness(ctx, target, notBefore, running)
+	return withShownFrame(stream, publicTarget(target))
+}
+
+// withShownFrame names the provider of the last frame delivered to target,
+// whatever the stream process does now (#368).
+func withShownFrame(stream displayStreamInfo, target string) displayStreamInfo {
+	if target == "" {
+		return stream
+	}
+	cable := samePublicTarget(target, cableDeviceTarget)
+	streamLog := shownFrameLog()
+	// Frames to other VibeTVs in between must not hide the last one sent to target.
+	sentAt, _, line, ok := streamLog.lastFrameWhere(time.Time{}, func(lastTarget, line string) bool {
+		if cable {
+			return strings.EqualFold(displayStreamLogValue(line, "transport"), "usb")
+		}
+		return lastTarget == "" || samePublicTarget(target, publicTarget(lastTarget))
+	})
+	// The same VibeTV may have got a newer frame over its other connection
+	// (Cable and WiFi switched); it shows that one.
+	if id := displayStreamLogValue(line, "deviceId"); ok && id != "" {
+		sentAt, _, line, ok = streamLog.lastFrameWhere(time.Time{}, func(_, line string) bool {
+			return strings.EqualFold(displayStreamLogValue(line, "deviceId"), id)
+		})
+	}
+	return withShownLine(stream, sentAt, line, ok)
+}
+
+// withConfiguredDeviceFrame names the providers of the last frame sent to
+// the configured VibeTV itself, over either connection, once its device ID
+// is known (#368): frames to other VibeTVs on the same cable or address
+// never stand in for it. An unplugged USB port or a rejected pairing still
+// names none.
+func withConfiguredDeviceFrame(device deviceInfo, deviceID string) deviceInfo {
+	deviceID = strings.TrimSpace(deviceID)
+	if device.Stream == nil || deviceID == "" {
+		return device
+	}
+	sentAt, _, line, ok := shownFrameLog().lastFrameWhere(time.Time{}, func(_, line string) bool {
+		return strings.EqualFold(displayStreamLogValue(line, "deviceId"), deviceID)
+	})
+	if !ok && device.Stream.Provider != "" && device.Stream.shownDeviceID == "" {
+		// A frame logged without a device ID (older stream): its target match stands.
+		return device
+	}
+	stream := withShownLine(*device.Stream, sentAt, line, ok)
+	switch stream.ErrorCode {
+	case "device_not_found", "pairing_token_rejected":
+		stream = withoutShownProviders(stream)
+	}
+	device.Stream = &stream
+	return device
+}
+
+// shownFrameLog is the stream log tail plus the last frame kept per VibeTV,
+// since a theme frame can stay on screen long after it left the tail.
+func shownFrameLog() displayStreamLog {
+	logPath := displayStreamOutLogPath()
+	return append(readDisplayStreamLog(logPath), shownFrameLines(runtimepaths.DisplayShownFrames(logPath)))
+}
+
+// withShownLine names the providers of a delivered frame line; an error
+// frame or no frame names none.
+func withShownLine(stream displayStreamInfo, sentAt time.Time, line string, ok bool) displayStreamInfo {
+	stream = withoutShownProviders(stream)
+	stream.shownAt, stream.shownDeviceID = time.Time{}, ""
+	if !ok || displayStreamLogValue(line, "error") != "" {
+		return stream
+	}
+	stream.Provider = displayStreamLogValue(line, "provider")
+	stream.SlotProviders = providerSlotIDs(line)
+	stream.shownAt = sentAt
+	stream.shownDeviceID = displayStreamLogValue(line, "deviceId")
+	return stream
+}
+
+// shownFrameLines restates the kept frames as log lines, oldest first.
+func shownFrameLines(path string) []string {
+	var frames []daemon.ShownFrame
+	for _, frame := range daemon.LoadShownFrames(path) {
+		if !frame.SentAt.IsZero() && frame.Line != "" {
+			frames = append(frames, frame)
+		}
+	}
+	sort.Slice(frames, func(i, j int) bool { return frames[i].SentAt.Before(frames[j].SentAt) })
+	lines := make([]string, 0, len(frames))
+	for _, frame := range frames {
+		lines = append(lines, frame.SentAt.UTC().Format(time.RFC3339Nano)+" "+frame.Line)
+	}
+	return lines
+}
+
+func inspectDisplayStreamLiveness(ctx context.Context, target string, notBefore time.Time, running func() bool) displayStreamInfo {
 	target = publicTarget(target)
 	stream := displayStreamInfo{Target: target}
 	if target == "" {

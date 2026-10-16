@@ -562,7 +562,7 @@ export function SettingsScreen({
 
       <ItemSeparator className="my-0" />
 
-      <SettingsSection title="AI providers">
+      <SettingsSection id="settings-ai-providers" title="AI providers">
         <ProviderList
           onCheckAgain={(provider) => void providerPicker.onCheck(provider)}
           onOpenSignIn={

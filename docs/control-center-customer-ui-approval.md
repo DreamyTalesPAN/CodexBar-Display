@@ -7350,3 +7350,60 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Settings › AI providers no longer shows the paragraph "VibeTV reads your AI usage with CodexBar, a helper app installed with VibeTV. Turn on the providers you use below. If one needs a sign-in, its row shows a Sign in button." above the provider search. The list, its order and every other text stay as approved above. "Choose AI providers" in setup keeps its intro unchanged in this pull request.
 - Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx` (a `showIntro` prop on the shared provider list), `apps/control-center/src/components/settings-screen.tsx`, `settings-screen.test.tsx`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — a removed explanation paragraph in Settings needs no notice.
+
+## 2026-10-15 — #368: Usage names a switched-on provider VibeTV cannot show
+
+- User approval: Marcus decided on 2026-10-15 in the provider-status task that Usage gets one quiet line, for example "Claude isn't on VibeTV: sign in again. No usage reading for 2d.", with a link to Settings. This partly lifts Paul's order of 2026-07-21 (no provider-repair box on Usage): it is a line of muted text, no box. The exact sentences below are still to be seen by Marcus in his test.
+- Approved customer-visible result: below the provider tiles on Usage, one line per switched-on provider whose usage is missing, stale or unavailable while its health names a reason: `<Provider> isn't on VibeTV. <the provider's own health message> No usage reading for <time>.` (`No usage reading yet.` when it never delivered), followed by the link button `Open Settings`, which opens Settings at AI providers. A provider that is checking, healthy or switched off gets no line; the line goes away with the next reading.
+- Scope: `apps/control-center` Usage screen, the Settings section anchor, this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a quiet hint on an existing page, not announced to customers
+
+
+## 2026-10-15 — #368: no Usage line for the provider VibeTV shows
+
+- User approval: follows Marcus' decision of 2026-10-15 for the #368 Usage line (entry above); correction from the Codex review of PR #644.
+- Approved customer-visible result: the provider whose frame VibeTV currently shows never gets the `isn't on VibeTV` line, also when its reading is stale: with no fresh provider left, the device keeps showing that provider's last reading. Wording unchanged.
+- Scope: `apps/control-center` Usage screen, this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a correction of the unreleased line
+
+## 2026-10-15 — #368: the Usage line follows the last frame sent to VibeTV
+
+- User approval: follows Marcus' decision of 2026-10-15 for the #368 Usage line (entries above); second correction from the Codex review of PR #644.
+- Approved customer-visible result: the provider that is spared the `isn't on VibeTV` line is the provider of the last frame sent to VibeTV, which the Mac App now names with the display stream. When no frame was sent, every switched-on provider without a reading gets its line. Wording unchanged.
+- Scope: `companion` display stream status (one field), `apps/control-center` Usage screen, this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a correction of the unreleased line
+
+## 2026-10-16 — #644: approval marker after merging main with #628 and #619
+
+- User approval: follows Marcus' decision of 2026-10-15 for the #368 Usage line (entries above). Main moved on with #628 and #619, so main is merged into `codex/provider-status-pack`; the approval record conflict is resolved by keeping main's entries and appending this branch's. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #368 entries above and in the entries of #628 and #619; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — merge of main, no new wording
+
+## 2026-10-16 — #644: approval marker after merging main with #657
+
+- User approval: follows Marcus' decision of 2026-10-15 for the #368 Usage line (entries above). Main moved on with #657 (approval record only), so main is merged into `codex/provider-status-pack` again; the approval record conflict is resolved by keeping main's entries and appending this branch's. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #368 entries above and in the entries of #628 and #619; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
+- What's new: none — merge of main, no new wording
+
+## 2026-10-16 — #368: no Usage line for the providers in VibeTV's provider slots
+
+- User approval: follows Marcus' decision of 2026-10-15 for the #368 Usage line (entries above); third correction from the Codex review of PR #644.
+- Approved customer-visible result: besides the provider of the last frame sent to VibeTV, the providers in that frame's provider slots, which a theme can show next to it, never get the `isn't on VibeTV` line either. Wording unchanged.
+- Scope: `companion` display stream status (one field), `apps/control-center` Usage screen, this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a correction of the unreleased line
+
+## 2026-10-16 — #368: no Usage line while the Mac App is offline
+
+- User approval: follows Marcus' decision of 2026-10-15 for the #368 Usage line (entries above); fourth correction from the Codex review of PR #644.
+- Approved customer-visible result: the `isn't on VibeTV` lines show only while the Mac App answers; while it is offline, Usage shows none, because the cached provider health could be stale. Wording unchanged.
+- Scope: `apps/control-center` Usage screen, this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a correction of the unreleased line
+
+## 2026-10-16 — #644: no line under the Usage tiles
+
+- User approval: Paul decided on 2026-10-16 (via the review orchestrator) to remove the not-on-VibeTV lines under the Usage tiles from #644; the Usage design follows in its own PR. This entry records the removal.
+- Approved customer-visible result: Usage shows no line under the tiles.
+- Scope: `apps/control-center` Usage screen and its wiring from the app, this approval record. Pull-request branch only, not merge or release.
+- What's new: none — removal of the unreleased line
