@@ -56,13 +56,15 @@ export function useProviderActionDismissal(
 ] {
   const entries = Object.entries(actions);
   const signature = entries.map(([id, action]) => actionKey(id, action)).join("\n");
+  const checking = checkingIds.join("\n");
   const [memory, setMemory] = useState({
     signature,
+    checking,
     dismissed: new Set<string>(),
     failures: new Map<string, ApiError>(),
   });
   let { dismissed, failures } = memory;
-  if (memory.signature !== signature) {
+  if (memory.signature !== signature || memory.checking !== checking) {
     // The set of actions changed: keep what is still there, and what is still
     // being checked (a checking read is not a healthy result).
     const current = new Set(signature ? signature.split("\n") : []);
@@ -73,7 +75,7 @@ export function useProviderActionDismissal(
       ),
     );
     failures = new Map([...failures].filter(([key]) => current.has(key)));
-    setMemory({ signature, dismissed, failures });
+    setMemory({ signature, checking, dismissed, failures });
   }
   let shown: [string, UsageProviderAction] | undefined = entries.find(
     ([id, action]) => !dismissed.has(actionKey(id, action)),
@@ -95,7 +97,7 @@ export function useProviderActionDismissal(
         const failuresLeft = new Map(previous.failures);
         failuresLeft.delete(key);
         return {
-          signature: previous.signature,
+          ...previous,
           dismissed: new Set(previous.dismissed).add(key),
           failures: failuresLeft,
         };
@@ -126,7 +128,7 @@ export function useProviderActionDismissal(
       } else {
         failuresNow.delete(key);
       }
-      return { signature: previous.signature, dismissed: dismissedNow, failures: failuresNow };
+      return { ...previous, dismissed: dismissedNow, failures: failuresNow };
     });
   };
   return [

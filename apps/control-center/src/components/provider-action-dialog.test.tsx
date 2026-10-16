@@ -263,3 +263,12 @@ it("a failed sign-in is kept while its provider is checking", async () => {
   await act(async () => rerender(<Reporting actions={claude()} checking={["claude"]} />));
   expect(dialog("Claude needs a new sign-in")?.textContent).toContain("Could not open Claude.");
 });
+
+it("a healthy result after a checking read ends the dismissal", async () => {
+  const { rerender } = render(<CheckingOverlay actions={claude()} checking={[]} />);
+  fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+  await act(async () => rerender(<CheckingOverlay actions={{}} checking={["claude"]} />));
+  await act(async () => rerender(<CheckingOverlay actions={{}} checking={[]} />));
+  await act(async () => rerender(<CheckingOverlay actions={claude()} checking={[]} />));
+  expect(dialog("Claude needs a new sign-in")).not.toBeNull();
+});

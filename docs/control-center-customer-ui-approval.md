@@ -7680,3 +7680,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: A failed sign-in start stays shown for a provider that is being checked again, as in the entries above. No new wording.
 - Scope: `provider-action-dialog.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: a healthy result ends the dismissal after a check (#669)
+
+- User approval: Paul chose the provider overlay on 2026-10-16 (entries above, via the review orchestrator); this follow-up applies a Codex review finding and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: When a provider that was being checked is healthy, its closed overlay is closed for good until it breaks again; a need that returns after that shows the overlay again. No new wording.
+- Scope: `provider-action-dialog.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
