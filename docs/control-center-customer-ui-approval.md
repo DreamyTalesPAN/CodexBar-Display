@@ -7424,3 +7424,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none. The File menu of the Theme Studio header keeps the same five entries, icons, separator and order as approved in the entry "#638: Theme Studio progress line, toolbar V1 and OpenAI key in Settings"; only the ARIA menu roles are removed so the items are ordinary keyboard buttons. Customer flow test selectors are updated to the File menu and to the planning step's first word.
 - Scope: the File menu markup in `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, `apps/control-center/scripts/test-customer-flows.mjs` and the Theme Studio preview script, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no customer-visible change
+
+## 2026-10-16 — #638: tests for the one-line progress and the File menu
+
+- User approval: Codex review fix, no visible change; not seen by Paul.
+- Approved customer-visible result: none. The tests cover the status line approved in "#638: Theme Studio progress line, toolbar V1 and OpenAI key in Settings" (one line, swaps within the step, jumps to the next step's first word, no seconds counter) and the File menu entries and the removed gear dialog.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — tests only, no customer-visible change
