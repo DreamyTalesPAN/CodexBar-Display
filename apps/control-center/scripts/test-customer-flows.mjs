@@ -7381,6 +7381,12 @@ async function testMacAppShowsTheWindowsSignInButton(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  // Claude needs a new sign-in, so the provider overlay opens over the page;
+  // the customer closes it (Not now) before the test navigates to Settings.
+  await page
+    .getByRole("dialog", { name: "Claude needs a new sign-in" })
+    .getByRole("button", { name: "Not now" })
+    .click();
   await clickNavigation(page, "Settings");
   const panel = page
     .locator("section")

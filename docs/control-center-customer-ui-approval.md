@@ -7708,3 +7708,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: While usage is still loading, a provider that needs the customer shows its action tile and no "Usage is still loading" notice beside it. A real usage error is still shown. No new wording.
 - Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — review fix to the Usage tiles, no customer-visible change of its own
+
+## 2026-10-16 — Customer flow: the Windows sign-in test closes the Claude overlay first (#669)
+
+- User approval: Paul approved the provider looks on 2026-10-16 (entries above, via the review orchestrator); this change only updates a customer flow test for the overlay and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: Unchanged. The flow closes the "Claude needs a new sign-in" overlay with "Not now" before it opens Settings.
+- Scope: `scripts/test-customer-flows.mjs` (one test), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — test change, no customer-visible change of its own
