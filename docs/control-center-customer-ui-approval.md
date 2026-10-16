@@ -7219,4 +7219,67 @@ issue scope, or release permission never implies UI permission.
 - User approval: Paul asked on 2026-10-15 to bring #615 to ready (CI green, tested on Mac and Windows). Main moved on with #607, #620 and #629 while the branch was in review, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
 - Approved customer-visible result: as approved in the #614 entries above and in the entries of #607, #620 and #629; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+
+## 2026-10-15 — Busy computer dialog and VibeTV label (#606)
+
+- User approval: Paul approved this wording in chat on 2026-10-15 after seeing the mockup, and asked that it say "computer" so the same text works on the Mac and on Windows (the proposal said "Your Mac is very busy" / "Mac busy").
+- Approved customer-visible result: While the usage engine is running but has not answered for three collection intervals and the computer is low on memory, a dialog over the page reads exactly: title "Your computer is very busy", text "VibeTV can't get new usage right now because your computer is low on memory. Close apps you don't need or restart your computer.", one button "OK". It does not hold the page behind it, waits behind the runtime repair, a lost VibeTV, setup and a broken usage service, and once closed stays closed until the condition has gone and come back. The same words on Mac and Windows. VibeTV shows "Computer busy" in place of the provider name for as long as the condition lasts; the values under it stay the last good ones.
+- Scope: `apps/control-center/src/components/system-busy-dialog.tsx`, its wiring in `control-center-app.tsx`, the tests in `control-center-app.whats-new.test.tsx`, the Companion detection (`companion/internal/systemload`, `companion/internal/daemon`, `/v1/status` and `/v1/diagnostics`), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — an error dialog, not a feature to announce
+
+## 2026-10-15 — Busy computer dialog: review fixes (#606)
+
+- User approval: Paul approved the wording and behaviour of the busy computer dialog in chat on 2026-10-15 (entry above). This follow-up applies two review findings and changes no wording.
+- Approved customer-visible result: As above, with two refinements: a closed dialog opens again for every new incident, also when no status read saw the previous one end (the window was hidden); and the `Run setup again?` question the customer asked for is shown alone, the busy dialog returning after it if the customer had not closed it.
+- Scope: `system-busy-dialog.tsx`, `control-center-app.tsx`, `control-center-app.whats-new.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fixes to an error dialog
+
+## 2026-10-15 — Busy computer dialog: waits for any other dialog (#606)
+
+- User approval: Paul approved the wording and behaviour of the busy computer dialog in chat on 2026-10-15 (entries above). This follow-up applies a review finding and changes no wording.
+- Approved customer-visible result: The busy computer dialog no longer stacks with a page's own dialog (Run setup again?, a theme preview, a factory reset or connection change in Settings). While one of them is open, the busy dialog waits and returns after it if the customer had not closed it. It also no longer appears when the usage engine answers with an error of its own; that error keeps its existing message.
+- Scope: `system-busy-dialog.tsx`, `control-center-app.tsx`, `control-center-app.whats-new.test.tsx`, the Companion's silence check (`companion/internal/daemon/collector.go`, `companion/internal/codexbar/dashboard_fetch.go`), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fixes to an error dialog
+
+## 2026-10-15 — Busy computer dialog also waits for confirmations (#606)
+
+- User approval: Paul approved the wording and behaviour of the busy computer dialog in chat on 2026-10-15 (entries above). This follow-up applies a review finding and changes no wording.
+- Approved customer-visible result: As in "Busy computer dialog: waits for any other dialog" above, now also for confirmations such as deleting a theme (`alertdialog`). Nothing else changes.
+- Scope: `system-busy-dialog.tsx`, its new test `system-busy-dialog.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to an error dialog
+
+## 2026-10-15 — Busy computer: VibeTV label "Busy" (#606)
+
+- User approval: Paul approved "Computer busy" as VibeTV's label on 2026-10-15, with "Busy" as the label if "Computer busy" does not fit the title line of every catalog theme (as given in the #606 task). On the bench VibeTV 16199235 (Windows, 9999.0.2268) "Computer busy" fit Mini Classic and Claude Creature but ran into the window buttons of Clippy's title bar.
+- Approved customer-visible result: While the busy computer condition lasts, VibeTV shows "Busy" in place of the provider name; everything else as recorded in the busy computer entries above.
+- Scope: `SystemBusyLabel` in `companion/internal/daemon/daemon.go` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the label of an error state
+
+## 2026-10-15 — Busy computer: last good values stay on VibeTV (#606)
+
+- User approval: Paul decided on 2026-10-15 for #628, about the screensavers (Night Clock and the others): "nein, das sind ja screensaver. wenn die aktiv sind, muss der kunde gerade ja eh keine usage daten sehen, sonst wäre ja nicht der screensaver an. da einfach last good provider und data nehmen".
+- Approved customer-visible result: While the busy computer condition lasts, VibeTV keeps the last good provider and its values instead of losing the percentages and the reset line after ten minutes. Screensavers (Night Clock, Reset Countdown, Token Fire) show no "Busy" and just keep that last good provider and data; live themes show the same values under "Busy". The reset countdown keeps its own five-hour limit. Without a busy computer nothing changes.
+- Scope: `sendCycleResult` in `companion/internal/daemon/daemon.go`, its tests in `system_busy_test.go`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the behaviour of an error state
+
+## 2026-10-15 — #628 brought up to date with main after #607 and #629
+
+- User approval: Paul approved the busy computer dialog, its wording and VibeTV's behaviour on 2026-10-15 (entries above). This update only merges main (#607, #629) into `claude/issue-606-busy-computer`; the customer-visible result approved above stays the same.
+- Approved customer-visible result: as recorded in the busy computer entries above; nothing else changes.
+- Scope: merge of main into `claude/issue-606-busy-computer`, the approval record conflict resolved by keeping main's entries and appending this branch's, and this approval record.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-15 — Busy computer dialog: checks for an open dialog before it appears (#606)
+
+- User approval: Paul approved the wording and behaviour of the busy computer dialog in chat on 2026-10-15 (entries above). This follow-up applies a review finding and changes no wording.
+- Approved customer-visible result: As in "Busy computer dialog: waits for any other dialog" above; the check now happens before the dialog first appears, so it never shows for a moment over a question that was already open.
+- Scope: `system-busy-dialog.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to an error dialog
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — #628 merged with current main (#606)
+
+- User approval: Paul approved the busy computer dialog, its wording, the VibeTV label and the last good values on 2026-10-15 (entries above). This entry records only the merge of main into `claude/issue-606-busy-computer`; it adds no wording and no new visible behaviour.
+- Approved customer-visible result: as recorded in the busy computer entries above; nothing else changes.
+- Scope: the merge of main (with #615 and #620) into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own

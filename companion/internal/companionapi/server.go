@@ -117,6 +117,9 @@ type Options struct {
 	DisplayStreamRunning func() bool
 	// Logf writes one line to the runtime's log. Nil outside the runtime.
 	Logf func(string, ...any)
+	// SystemBusy is the display worker's latest busy-computer verdict
+	// (#606). Nil outside the runtime.
+	SystemBusy func() *daemon.SystemBusy
 	// Where Theme Studio keeps the customer's verified OpenAI key across
 	// restarts. Nil (tests, tools) keeps it in memory only.
 	AIThemeSecrets SecretStore
@@ -176,6 +179,7 @@ type Server struct {
 	// A browser sign-in read asked for a fresh usage service on unchanged settings.
 	usageServiceReplacePending atomic.Bool
 	displayStreamRunning       func() bool
+	systemBusy                 func() *daemon.SystemBusy
 	firmwareUpdateActive       atomic.Bool
 	firmwareUpdateStartMu      sync.Mutex
 	// One shortcut press at a time: each reads the provider on screen and
@@ -372,6 +376,7 @@ func New(opts Options) (*Server, error) {
 		freshUsageService:    opts.ReplaceUsageService,
 		usageServiceInfo:     opts.UsageServiceInfo,
 		displayStreamRunning: opts.DisplayStreamRunning,
+		systemBusy:           opts.SystemBusy,
 		pairAttempts:         defaultPairAttempts,
 		pairAttemptTimeout:   defaultPairAttemptTimeout,
 		pairRetryGap:         defaultPairRetryGap,
