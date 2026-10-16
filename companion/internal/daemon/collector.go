@@ -72,8 +72,6 @@ type providerCollector struct {
 	fetchTokenStats       func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
 	fetchTokenStatsReport func(context.Context) (map[string]codexbar.ProviderTokenStats, codexbar.ProviderTokenStatsReport)
 	dashboard             codexbar.DashboardServe
-	requestedPort         string
-	requestedPortFn       func() string
 	transportName         string
 	order                 []string
 	interval              time.Duration
@@ -142,7 +140,6 @@ func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
 		fetchTokenStats:       deps.fetchTokenStats,
 		fetchTokenStatsReport: deps.fetchTokenStatsReport,
 		dashboard:             deps.dashboard,
-		requestedPort:         requestedDeviceTarget(opts),
 		transportName:         usageSourceOrDefault(deps.transportName, "usb"),
 		order:                 collectorProviderOrder(),
 		interval:              collectorInterval(opts.Interval),
@@ -159,12 +156,6 @@ func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
 		// `daemon --once` is exempt: one support cycle reports what it finds.
 		collector.warmupUntil = nowFn().Add(collectorWarmupMaxAge())
 	}
-	if normalizeTransportName(opts.Transport) == "wifi" || deps.transportName == "wifi" {
-		collector.requestedPortFn = func() string {
-			return effectiveCycleTarget(requestedDeviceTarget(opts), nil, deps)
-		}
-	}
-
 	if loaded, savedAt, ok := loadPersistedProviderSnapshotsAnyAge(); ok {
 		collector.providers = migrateLegacySnapshotUsageWindows(loaded)
 		collector.lastPersistedAt = savedAt
@@ -613,8 +604,8 @@ type firstCollectSnapshot struct {
 	// settled: CodexBar has answered -- usage arrived or it enumerated zero
 	// providers. Before that the collector knows nothing about this Mac.
 	settled bool
-	// started: one collectOnce actually reached its fetch. The device gate can
-	// hold this off long after runtime start.
+	// started: one collectOnce actually reached its fetch. The read does not
+	// wait for a device, so nothing device-related holds this off.
 	started bool
 	// bounded: a warm-up window exists at all. `daemon --once` runs without
 	// one and reports the immediate verdict.

@@ -2,18 +2,6 @@ import type { ReactNode } from "react";
 import type { CompanionReleaseInfo } from "@/lib/companion-release";
 export type { ThemeProduct } from "@/lib/themes";
 
-export const VIBETV_COLORS = {
-  signal: "#CCFF00",
-  signalActive: "#ABD600",
-  supportAccent: "#506600",
-  darkSurface: "#1B1B1B",
-  bodyText: "#444933",
-  baseSurface: "#F9F9F9",
-  secondarySurface: "#EEEEEE",
-  structuralStroke: "#747A60",
-  inverseText: "#EDEDED",
-} as const;
-
 export type ApiError = {
   code: string;
   message: string;
@@ -635,10 +623,6 @@ export function deviceImageIsStuck(device: DeviceInfo | null | undefined) {
   return Boolean(themeSpec?.active && themeSpec.renderOk === false);
 }
 
-export function deviceStreamIsReady(device: DeviceInfo | null | undefined) {
-  return deviceIsReady(device);
-}
-
 export function deviceIsReady(device: DeviceInfo | null | undefined) {
   return device?.ready === true;
 }
@@ -793,7 +777,7 @@ export function providerSetupIsChecking(
   return status === "" || status === "checking";
 }
 
-export function normalizedProviderStatus(value?: string) {
+function normalizedProviderStatus(value?: string) {
   return value?.trim().toLowerCase().replace(/^provider_/, "") || "";
 }
 
@@ -876,23 +860,6 @@ export function providerSetupNeedsEngineRecovery(
         provider.id === "codexbar" &&
         normalizedProviderStatus(provider.status) !== "ready",
     )
-  );
-}
-
-export function providerSetupHasEngineButNoEnabledProvider(
-  providerSetup: ProviderSetupInfo | null | undefined,
-) {
-  const providers = providerSetup?.providers ?? [];
-  return (
-    providerSetupEngineIsReady(providerSetup) &&
-    providers.length > 0 &&
-    // `codexbar` is not a provider. CodexBar reports the usage service itself
-    // under that id when its own probe timed out or failed, and the enablement
-    // flag on that stand-in is a zero value, not an answer. Reading it as
-    // "every provider is off" hides a failure behind the wrong screen.
-    !providers.some((provider) => provider.id === "codexbar") &&
-    // Every real provider must say it is off. A missing flag is not evidence.
-    providers.every((provider) => provider.enabled === false)
   );
 }
 

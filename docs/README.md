@@ -17,6 +17,8 @@ Center on the customer's Mac.
 - [Control Center UI principles](control-center-ui-principles.md): customer-facing UI rules.
 - [Control Center UI approvals](control-center-customer-ui-approval.md): append-only approval log for visible UI changes.
 - [Control Center accessibility](control-center-accessibility.md): supported screen readers, the automated check, and the VoiceOver release checklist.
+- [Windows shell](windows-shell.md): the Tauri Windows app shell, a thin counterpart of the Mac App UI.
+- [Windows Companion](windows-companion.md): the Companion's Windows runtime path and the signed Windows installer.
 
 ## Device And Release Docs
 
@@ -24,7 +26,6 @@ Center on the customer's Mac.
 - [Firmware provisioning](firmware-provisioning.md): provisioning and OTA packaging.
 - [Firmware guardrails](firmware-guardrails.md): firmware safety rules.
 - [ThemeSpec slot budget](themespec-slot-budget.md): measured RAM and transition cost of a second resident ThemeSpec.
-- [Operator runbook](operator-runbook.md): support, recovery, and smoke-test procedures.
 - [Firmware migrations](firmware-migrations/1.0.36-to-1.0.37.md): per-version migration notes and their compatibility modes.
 - [macOS DMG distribution](macos-dmg-distribution.md): signed and notarized customer distribution path.
 - [Hosted VibeTV gates](vibetv-hosted-gates.md): owner-dispatched merge and release-candidate gates in GitHub Actions.
@@ -32,6 +33,7 @@ Center on the customer's Mac.
 - [Firmware OTA contract](firmware-ota-contract.md): the supported customer update path and its safety invariants.
 - [Customer rehearsal](../AGENTS.md#customer-rehearsal-cold-and-warm-start): the cold/warm-start scripts every change is validated with before hand-off.
 - [Usage polling architecture](usage-polling-architecture.md): usage collection and latency behavior.
+- [Companion platform boundary](windows-platform-neutral.md): shared Companion code for Windows and the open Win-CodexBar blockers.
 - [Preferences registry](preferences.md): typed local settings descriptors and the provider adapter.
 - [Token usage support matrix](token-usage-support-matrix.md): token stats by provider shape.
 - [Protocol](../protocol/PROTOCOL.md): frame protocol and payload details.
@@ -40,6 +42,8 @@ Center on the customer's Mac.
 
 - [AI Theme Studio design draft](design/ai-theme-studio/README.md): offline interaction prototype for #151, not a production feature.
 - [Themes](themes.md): public theme overview.
+- [Tiny Office](tiny-office-theme.md): the provider-neutral Tiny Office live theme.
+- [AI Theme Studio local decision](adr-ai-theme-local-preview.md): decision record for the local preview implementation (#151).
 - [Theme packs](theme-packs.md): installable theme-pack format and CLI.
 - [Theme development guide](theme-dev-guide.md): hardware-safe ThemeSpec and asset rules.
 - [Shopify theme boundary](vibetv-shopify-theme-shop.md): separation between Shopify products and Mac App theme packaging.

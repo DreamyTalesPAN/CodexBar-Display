@@ -16,6 +16,21 @@ import (
 	serial "go.bug.st/serial"
 )
 
+func TestWithLineEndingLeavesCallerBufferAlone(t *testing.T) {
+	backing := []byte{'a', 'b', 0, 0}
+	line := backing[:2]
+	got := withLineEnding(line)
+	if string(got) != "ab\n" {
+		t.Fatalf("withLineEnding() = %q, want %q", got, "ab\n")
+	}
+	if backing[2] != 0 {
+		t.Fatalf("caller's backing array was written: %v", backing)
+	}
+	if string(withLineEnding([]byte("ok\n"))) != "ok\n" {
+		t.Fatal("a line that already ends in a newline must not gain another")
+	}
+}
+
 func TestResolvePortRequiresExplicitRecoveryTarget(t *testing.T) {
 	_, err := ResolvePort("")
 	if errcode.Of(err) != errcode.TransportSerialPortNotFound {

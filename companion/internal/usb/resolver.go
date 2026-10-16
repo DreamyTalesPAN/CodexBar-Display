@@ -321,21 +321,6 @@ func cableSerialCandidates(ports []string, goos string) []string {
 	return candidates
 }
 
-func resolveVibeTVCandidates(
-	candidates []string,
-	explicit,
-	expectedDeviceID string,
-	readHello func(string) (protocol.DeviceHello, error),
-) (string, error) {
-	return resolveVibeTVCandidatesForControl(
-		candidates,
-		explicit,
-		expectedDeviceID,
-		readHello,
-		false,
-	)
-}
-
 func resolveVibeTVCandidatesForControl(
 	candidates []string,
 	explicit,
