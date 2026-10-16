@@ -3898,6 +3898,35 @@ func TestInspectDisplayStreamUsesConfiguredRuntimeLabelAndSharedLog(t *testing.T
 	}
 }
 
+// A frame proven healthy from the log can still be rejected afterwards: it
+// came from another Cable VibeTV, the USB port went away or the pairing was
+// refused. None of them shows that frame's provider, so it is not named (#368).
+func TestUnhealthyStreamNamesNoProvider(t *testing.T) {
+	healthy := displayStreamInfo{
+		Healthy:    true,
+		Running:    true,
+		LastSentAt: time.Now().UTC().Format(time.RFC3339),
+		Target:     cableDeviceTarget,
+		LastTarget: cableDeviceTarget,
+		DeviceID:   "5804558",
+		Provider:   "claude",
+	}
+	same := withDisplayStreamInfo(deviceInfo{Target: cableDeviceTarget, DeviceID: "5804558"}, healthy)
+	if same.Stream == nil || !same.Stream.Healthy || same.Stream.Provider != "claude" {
+		t.Fatalf("the selected VibeTV's own healthy frame must name its provider, got %+v", same.Stream)
+	}
+	other := withDisplayStreamInfo(deviceInfo{Target: cableDeviceTarget, DeviceID: "16197466"}, healthy)
+	if other.Stream == nil || other.Stream.ErrorCode != "device_frame_mismatch" || other.Stream.Provider != "" {
+		t.Fatalf("a frame from another Cable VibeTV must not name its provider, got %+v", other.Stream)
+	}
+	unplugged := healthy
+	unplugged.Healthy = false
+	unplugged.ErrorCode = "device_not_found"
+	if got := streamPointer(unplugged); got == nil || got.Provider != "" {
+		t.Fatalf("an unhealthy stream must not name a provider, got %+v", got)
+	}
+}
+
 func TestInspectDisplayStreamMapsCurrentUSBPathToStableCableTarget(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
 	t.Setenv(displayStreamOutLogEnv, logPath)

@@ -91,6 +91,13 @@ func streamPointer(stream displayStreamInfo) *displayStreamInfo {
 	if !stream.Healthy && !stream.Running && stream.LastSentAt == "" && stream.Target == "" && stream.LastTarget == "" && stream.Detail == "" {
 		return nil
 	}
+	// The provider names what this VibeTV shows, so it holds only while the
+	// stream is healthy. A frame later found to belong to another Cable
+	// VibeTV, a USB port that went away or a rejected pairing marks the
+	// stream unhealthy after it was read; none of them shows that provider.
+	if !stream.Healthy {
+		stream.Provider = ""
+	}
 	return &stream
 }
 
