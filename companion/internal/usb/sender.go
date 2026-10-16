@@ -403,7 +403,7 @@ func (s *Sender) currentMatchingPort(explicit, expectedDeviceID string, allowWiF
 	path := strings.TrimSpace(s.path)
 	explicit = strings.TrimSpace(explicit)
 	expectedDeviceID = strings.TrimSpace(expectedDeviceID)
-	if (explicit == "" && expectedDeviceID == "") || s.port == nil || !s.helloSeen || path == "" ||
+	if s.port == nil || !s.helloSeen || path == "" ||
 		(explicit != "" && explicit != path) {
 		return "", false
 	}

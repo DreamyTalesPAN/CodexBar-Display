@@ -582,6 +582,33 @@ func TestResolvePortIsAtomicAgainstTheStatusSearch(t *testing.T) {
 	}
 }
 
+// Codex P2 on #662: the status path asks for a VibeTV without identifiers. An
+// open, hello-verified VibeTV must answer that without a rescan, so a silent
+// second serial port is never opened to ask for its hello.
+func TestResolveControlPortWithoutIdentifiersUsesTheOpenVerifiedPort(t *testing.T) {
+	vibetv, silent := "/dev/cu.usbserial-vibetv", "/dev/cu.usbserial-silent"
+	listSerialPorts(t, vibetv, silent)
+	vibetvPort := replyPort{newMockSerialPort(), unplugTestHello}
+	silentPort := newMockSerialPort()
+	opener := &mockOpener{portsByPath: map[string]SerialPort{vibetv: vibetvPort, silent: silentPort}}
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener: opener,
+		Sleep:  func(time.Duration) {},
+	})
+	defer sender.Close()
+	if _, err := sender.DeviceHello(vibetv); err != nil {
+		t.Fatalf("open the VibeTV: %v", err)
+	}
+
+	got, err := sender.ResolveControlPort("", "")
+	if err != nil || got != vibetv {
+		t.Fatalf("ResolveControlPort(\"\", \"\") = %q, %v; want the open VibeTV %q", got, err, vibetv)
+	}
+	if n := opener.openCount(silent); n != 0 {
+		t.Fatalf("silent candidate was opened %d times; the open VibeTV must answer without a rescan", n)
+	}
+}
+
 func TestResolverKeepsPendingCableTransitionWhenConfirmationIsRejected(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "cu.usbserial-vibetv")
 	if err := os.WriteFile(path, nil, 0o600); err != nil {
