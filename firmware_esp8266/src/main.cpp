@@ -886,9 +886,10 @@ void appendBrightnessCapabilityJSON(String& out) {
   out += "}";
 }
 
-// Standby needs a second ThemeSpec slot, so a build without the ThemeSpec
-// renderer cannot support it. Hosts must read this instead of assuming that a
-// given firmware version implies standby support.
+// Standby reloads its ThemeSpec from LittleFS on each switch (there is no
+// second resident slot), so a build without the ThemeSpec renderer cannot
+// support it. Hosts must read this instead of assuming that a given firmware
+// version implies standby support.
 void appendStandbyCapabilityJSON(String& out) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   out += "{\"supported\":true,\"minTimeoutMinutes\":";
@@ -2276,6 +2277,12 @@ void leaveLegacyWifiOnCableContact() {
 }
 
 bool handleSerialControlLine(const String& line) {
+  // Usage frames arrive every few seconds and are no requests; skip their
+  // second full parse. A line without the "request" token cannot carry
+  // kind "request", however it is spaced.
+  if (line.indexOf("\"request\"") < 0) {
+    return false;
+  }
   JsonDocument doc;
   if (deserializeJson(doc, line.c_str())) {
     return false;
@@ -2479,10 +2486,8 @@ void handleSerialInput() {
     emitSerialError("transfer-active");
     return;
   }
-  if (!codexbar_display::esp8266::device_settings::SupportsCable(
-          deviceSettings.connectionMode) ||
-      deviceSettings.connectionMode !=
-          codexbar_display::esp8266::device_settings::ConnectionMode::kCable) {
+  if (deviceSettings.connectionMode !=
+      codexbar_display::esp8266::device_settings::ConnectionMode::kCable) {
     return;
   }
 
@@ -2718,9 +2723,6 @@ void handleHealth() {
   webServer.send(200, "application/json", out);
 }
 
-// Records which stored ThemeSpec the screensaver slot points at. Loading it
-// into the second render slot is the standby state machine's job; this only
-// validates and stores the reference. An empty path clears the selection.
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
 bool readValidatedStoredThemeSpec(
     const String& path,
@@ -2730,6 +2732,9 @@ bool readValidatedStoredThemeSpec(
     String& error);
 #endif
 
+// Records which stored ThemeSpec the screensaver slot points at. Loading it
+// into the second render slot is the standby state machine's job; this only
+// validates and stores the reference. An empty path clears the selection.
 bool setStandbyScreensaverPath(standby::Settings& target, const String& rawPath, String& error) {
   String path = rawPath;
   path.trim();
@@ -3301,19 +3306,8 @@ bool readStoredThemeSpec(const String& path, String& raw, String& error) {
   return true;
 }
 
-bool themeSpecMetadata(const String& raw, String& themeId, int& themeRev, String& error) {
-  JsonDocument filter;
-  filter["themeId"] = true;
-  filter["id"] = true;
-  filter["themeRev"] = true;
-  filter["rev"] = true;
-
-  JsonDocument doc;
-  const DeserializationError err = deserializeJson(doc, raw.c_str(), DeserializationOption::Filter(filter));
-  if (err) {
-    error = String("bad theme json: ") + err.c_str();
-    return false;
-  }
+bool themeSpecMetadataFromDocument(
+    const JsonDocument& doc, String& themeId, int& themeRev, String& error) {
   JsonObjectConst spec = doc.as<JsonObjectConst>();
   if (spec.isNull()) {
     error = "theme json must be an object";
@@ -3339,6 +3333,23 @@ bool themeSpecMetadata(const String& raw, String& themeId, int& themeRev, String
   return true;
 }
 
+// Parses the whole spec. A filtered parse would link a second copy of the
+// JSON parser (~1.6 KB flash) for this one read.
+bool parseThemeSpecDocument(const String& raw, JsonDocument& doc, String& error) {
+  const DeserializationError err = deserializeJson(doc, raw.c_str());
+  if (err) {
+    error = String("bad theme json: ") + err.c_str();
+    return false;
+  }
+  return true;
+}
+
+bool themeSpecMetadata(const String& raw, String& themeId, int& themeRev, String& error) {
+  JsonDocument doc;
+  return parseThemeSpecDocument(raw, doc, error) &&
+         themeSpecMetadataFromDocument(doc, themeId, themeRev, error);
+}
+
 bool prepareStoredThemeSpec(
     const String& raw,
     const String& themeId,
@@ -3350,12 +3361,14 @@ bool prepareStoredThemeSpec(
       nextRuntime, themeId, themeRev, raw, millis(), event);
 }
 
+// Moves the staged state in: a copy would briefly hold a third RuntimeState
+// (theme spec up to 4 KB plus every frame string) beside the live and staged one.
 void commitStoredThemeSpec(
     const String& path,
     const String& raw,
-    const codexbar_display::core::RuntimeState& nextRuntime,
+    codexbar_display::core::RuntimeState&& nextRuntime,
     const codexbar_display::core::SerialConsumeEvent& event) {
-  runtimeCtx.runtime = nextRuntime;
+  runtimeCtx.runtime = std::move(nextRuntime);
   renderer.ResetGifStateForAssetUpdate();
   activeThemeSpecPath = path;
   activeThemeSpecHash = hashHex8(raw);
@@ -3371,12 +3384,15 @@ bool readValidatedStoredThemeSpec(
   if (!readStoredThemeSpec(path, raw, error)) {
     return false;
   }
-  if (!themeSpecMetadata(raw, themeId, themeRev, error)) {
+  // One parse serves the metadata and the renderability check.
+  JsonDocument doc;
+  if (!parseThemeSpecDocument(raw, doc, error) ||
+      !themeSpecMetadataFromDocument(doc, themeId, themeRev, error)) {
     return false;
   }
-  JsonDocument doc;
   codexbar_display::themespec::CompiledThemeSpec scene;
-  const bool renderable = codexbar_display::themespec::CompileThemeSpec(raw.c_str(), doc, scene);
+  const bool renderable = codexbar_display::themespec::CompileThemeSpecObject(
+      doc.as<JsonObjectConst>(), scene);
   codexbar_display::themespec::ReleaseCompiledThemeSpec(scene);
   if (!renderable) {
     error = "theme spec has no renderable content";
@@ -3420,7 +3436,7 @@ bool activateStoredThemePath(
     error = "save active theme failed";
     return false;
   }
-  commitStoredThemeSpec(path, raw, nextRuntime, event);
+  commitStoredThemeSpec(path, raw, std::move(nextRuntime), event);
   return true;
 }
 
@@ -4042,9 +4058,9 @@ bool parseChunkChecksum(const char* encoded, uint32_t& checksum) {
 
 void emitCableTransferReply(const char* status) {
   String out = "{\"kind\":\"transfer\",\"status\":\"";
-	out += status;
-	out += "\",\"next\":";
-	out += String(cableTransfer.flow.nextSequence);
+  out += status;
+  out += "\",\"next\":";
+  out += String(cableTransfer.flow.nextSequence);
   out += "}";
   Serial.println(out);
 }
@@ -4059,7 +4075,7 @@ void restoreSerialBaudRate() {
 }
 
 void resetCableTransfer(bool discard) {
-	if (!cableTransfer.flow.active) {
+  if (!cableTransfer.flow.active) {
     return;
   }
   // An aborted, rejected, or idle transfer always falls back to the rate the
@@ -4092,13 +4108,13 @@ bool startCableTransfer(JsonDocument& doc) {
   const char* activation = doc["activate"] | "";
   const char* expectedHash = doc["hash"] | "";
   const unsigned long baudRate = doc["baud"] | 0UL;
-	const int expectedBytesValue = doc["bytes"] | 0;
-	const size_t expectedBytes = expectedBytesValue > 0
-	    ? static_cast<size_t>(expectedBytesValue)
-	    : 0;
+  const int expectedBytesValue = doc["bytes"] | 0;
+  const size_t expectedBytes = expectedBytesValue > 0
+      ? static_cast<size_t>(expectedBytesValue)
+      : 0;
   String destination = String(doc["path"] | "");
   destination.trim();
-	if (serialRequestBusy() || strcmp(expectedDeviceID, deviceID.c_str()) != 0 ||
+  if (serialRequestBusy() || strcmp(expectedDeviceID, deviceID.c_str()) != 0 ||
       !deviceAuthConfigured() || strcmp(token, deviceAuthToken.c_str()) != 0 ||
       (expectedBytes == 0 && strcmp(sink, "prepare-theme") != 0)) {
     emitSerialError("transfer-rejected");
@@ -4379,7 +4395,7 @@ void handleFrame() {
   if (!requireWriteAuth()) {
     return;
   }
-  String rawBody = webServer.arg("plain");
+  const String& rawBody = webServer.arg("plain");
   if (rawBody.length() == 0) {
     addCorsHeaders();
     webServer.send(400, "text/plain; charset=utf-8", "empty frame body");

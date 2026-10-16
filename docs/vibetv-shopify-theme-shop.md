@@ -45,6 +45,17 @@ source for version, ZIP URL, checksum, size, firmware, and capability
 requirements. Shopify pack metadata is only used when that theme ID does not
 have complete technical metadata in the current GitHub catalog.
 
+### Hardware with an included theme (#234)
+
+Two product metafields carry a theme ID, with different meanings. Keep both:
+
+- `vibetv.theme_id` sits on **theme products** and says "this product is theme X". The theme catalog and the theme product pages read it.
+- `vibetv.included_theme_id` ("Included theme ID") sits on **hardware products** and says "this VibeTV ships with theme X": `clippy-tv` = `clippy`, `synthwave-tv` = `synthwave`, `claude-tv` = `claude-creature`; `vibe-tv` stays blank. It only feeds the setup link `https://app.vibetv.shop/install/<id>`.
+
+Never set `vibetv.theme_id` on hardware: the catalog would read the VibeTV as a theme product. Never derive either value from a title, handle, or SKU.
+
+Opened through that link, the app selects the included theme on "Choose your theme" during setup, also after an app restart during setup. The customer still installs it with Install; the link never installs a theme by itself.
+
 ## Product Button
 
 The product button opens hosted setup with the selected theme:
@@ -90,11 +101,6 @@ system.
 ## Readiness Boundary
 ```text
 dist/theme-packs/vibetv-theme-packs-v2.json
-dist/theme-packs/vibetv-theme-synthwave-v1.1.0.zip
-dist/theme-packs/vibetv-theme-clippy-v1.1.0.zip
-dist/theme-packs/vibetv-theme-claude-creature-v1.1.0.zip
-dist/theme-packs/vibetv-theme-cozy-meadow-v0.2.0.zip
-dist/theme-packs/vibetv-theme-mini-classic-v1.1.0.zip
 ```
 
 The customer-readiness checker may validate the hosted app catalog and its own
@@ -124,8 +130,7 @@ scripts/check-control-center-companion-customer-readiness.sh \
   --app-url https://app.vibetv.shop \
   --expect-catalog-source shopify \
   --expect-theme-id <theme_id> \
-  --expect-all-free-themes-installable \
-  --expect-shopify-product-pages
+  --expect-all-free-themes-installable
 ```
 
 That check only reads public HTTP pages and the hosted app. It fails if
@@ -134,9 +139,6 @@ selected `theme_id`, returning a paid theme for that ID, missing a free theme
 `themeId`, missing the resolved `packUrl`, returning a `packUrl` that is not an
 `http(s)` download URL, exposing any free collection theme that is not
 installable, or if the selected `/install/<theme_id>` route is not reachable.
-
-During staged rollout, the same checker can still assert the fallback Shopify
-product-page command when `--expect-shopify-product-pages` is intentionally used.
 
 Allowed without extra hardware approval:
 

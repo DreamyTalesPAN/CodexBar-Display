@@ -23,6 +23,7 @@ jobs:
   board-column:
     if: github.repository == 'DreamyTalesPAN/CodexBar-Display'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Add pull requests to the board
         env:

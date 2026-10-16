@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   connectionModeChoiceStatus,
   statusConfirmsSubmittedWiFiChoice,
-  mergeDeviceInfo,
   displayModeChange,
-  recentEventsWith,
   setupThemeCatalogError,
 } from "./control-center-app";
+import { mergeDeviceInfo } from "./device-merge";
+import { recentEventsWith } from "./event-log";
 import { deviceAwaitsProviderSetup } from "./control-center-types";
 
 const TARGET = "http://192.168.178.153";

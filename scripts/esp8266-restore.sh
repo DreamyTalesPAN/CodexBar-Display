@@ -64,7 +64,7 @@ verify_manifest() {
 
   if [[ ! -f "$MANIFEST" ]]; then
     echo "error: manifest not found: $MANIFEST" >&2
-    echo "hint: run backup again to generate a manifest, or pass --skip-verify for legacy backups" >&2
+    echo "hint: run backup again to generate a manifest, or set SKIP_VERIFY=1 for legacy backups" >&2
     exit 1
   fi
 

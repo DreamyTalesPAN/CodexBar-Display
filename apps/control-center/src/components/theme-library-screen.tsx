@@ -96,6 +96,7 @@ import {
 } from "./live-vibetv-preview";
 import { ThemeRenderPreview } from "./theme-render-preview";
 import { ReplaceDraftDialog } from "./theme-studio/replace-draft-dialog";
+import { clampProgress } from "./update-jobs";
 import { SetupStepFailedDialog } from "./setup/setup-provider-dialogs";
 import type { ApiError, StandbySettings } from "./control-center-types";
 import {
@@ -194,7 +195,6 @@ export type ThemeLibraryScreenProps = {
   tokenHistoryUnavailable?: boolean;
   busyAction: string | null;
   installStatus?: ThemeInstallStatus | null;
-  installEntry?: boolean;
   lastInstall?: ThemeInstallResult;
   requestedThemeId?: string;
   storefrontConfigured: boolean;
@@ -872,7 +872,7 @@ function RecoveryCard({
   title: string;
 }) {
   return (
-    <div className="mb-6 grid gap-4 border border-border bg-card p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+    <div className="mb-6 grid gap-4 rounded-[var(--radius-card)] border border-border bg-card p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
       <div className="min-w-0">
         <div className="text-base font-bold text-[#1B1B1B]">
           {title}
@@ -1001,7 +1001,7 @@ function MissingRequestedThemeNotice({
   }
 
   return (
-    <div className="mb-6 flex gap-3 border border-border bg-card p-4 text-sm text-muted-foreground">
+    <div className="mb-6 flex gap-3 rounded-[var(--radius-card)] border border-border bg-card p-4 text-sm text-muted-foreground">
       <Library
         className="mt-0.5 shrink-0 text-[#5E7200]"
         size={18}
@@ -1333,7 +1333,7 @@ function InlineInstallProgress({
   const title = complete ? "Installed" : "Installing";
   return (
     <div className="flex flex-col gap-3" ref={noticeRef} role="status" aria-live="polite">
-      <Progress aria-label={title} className={complete ? "" : "animate-pulse"} value={clampInstallProgress(complete ? 100 : status.progress)} />
+      <Progress aria-label={title} className={complete ? "" : "animate-pulse"} value={clampProgress(complete ? 100 : status.progress)} />
       <Alert>
         {complete ? <ShieldCheck aria-hidden /> : <Spinner />}
         <AlertTitle>{title}</AlertTitle>
@@ -1348,13 +1348,6 @@ function InlineInstallProgress({
       </Alert>
     </div>
   );
-}
-
-function clampInstallProgress(value: number | undefined): number {
-  if (typeof value !== "number" || Number.isNaN(value)) {
-    return 5;
-  }
-  return Math.max(5, Math.min(100, Math.round(value)));
 }
 
 function labelForInstallButton({
@@ -1634,7 +1627,9 @@ export function buildThemeInstallBlocker({
   return null;
 }
 
-function themeMetadataBlocker(theme: ThemeProduct): ThemeInstallBlocker | null {
+export function themeMetadataBlocker(
+  theme: ThemeProduct,
+): ThemeInstallBlocker | null {
   if (!theme.isFree || !isRemoteThemePackUrl(theme.packUrl)) {
     return {
       reason: "Theme is not available right now.",

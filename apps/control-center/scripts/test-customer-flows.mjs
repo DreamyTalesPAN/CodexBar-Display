@@ -403,6 +403,7 @@ async function main() {
       });
       await testInstallLinkKeepsRequestedTheme(browser, appContext.appUrl);
       await testLocalInstallLinkKeepsSetupGate(browser, appContext.appUrl);
+      await testOrderedThemeSurvivesRestartDuringSetup(browser, appContext.appUrl);
       await testInstallLinkSkipsLiveScreenForSetUpVibeTV(browser, appContext.appUrl);
       await testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
         browser,
@@ -1101,6 +1102,7 @@ async function main() {
     await testSavedAddressReconnectsReadOnly(browser, appContext.appUrl);
     await testInstallLinkKeepsRequestedTheme(browser, appContext.appUrl);
     await testInstallLinkSkipsLiveScreenForSetUpVibeTV(browser, appContext.appUrl);
+    await testOrderedThemeSurvivesRestartDuringSetup(browser, appContext.appUrl);
     await testThemeInstallStatusStaysCustomerOnly(browser, appContext.appUrl);
     await testThemeInstallShowsIntermediateProgress(browser, appContext.appUrl);
     await testCustomerLogsStayCustomerOnly(browser, appContext.appUrl);
@@ -2645,6 +2647,9 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       // Customers never see the engine's product name (#334).
       shownMessage:
         "Safari cookie file is not readable. Enable Full Disk Access for usage engine.",
+      // The popup says one fixed sentence per state, never the engine's text
+      // (Paul, 16.10.).
+      dialogSentence: "Allow access on this computer so VibeTV can read Codex usage.",
       rowActions: [
         "Check Codex again",
       ],
@@ -2655,6 +2660,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
         "Claude is connected, but this account does not expose usage limits. Choose another provider.",
       healthState: "no_usage_available",
       reportedMessage: "No usage data is available for this Codex account.",
+      dialogSentence: "This Codex account has no usage yet.",
       rowActions: [
         "Check Codex again",
       ],
@@ -2666,6 +2672,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       healthState: "config_error",
       reportedMessage: "CodexBar could not save the Codex provider settings.",
       shownMessage: "Usage engine could not save the Codex provider settings.",
+      dialogSentence: "VibeTV could not read Codex usage right now and tries again by itself.",
       rowActions: [
         "Check Codex again",
       ],
@@ -2808,18 +2815,20 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
         `${fixture.status} must not open a popup over the sign-in action`);
       assert(await page.getByRole("button", { name: "Show provider message for Codex" }).count() === 0,
         `${fixture.status} must not duplicate the sign-in action in a warning`);
-      assert(await page.getByRole("switch", { name: "Codex" }).count() === 0,
-        `${fixture.status} must replace the toggle with sign-in`);
+      assert(await page.getByRole("switch", { name: "Codex" }).count() === 1,
+        `${fixture.status} must keep the toggle beside sign-in`);
     } else {
-      await providerDialog.getByText(shownMessage, { exact: true })
+      await providerDialog.getByText(fixture.dialogSentence, { exact: true })
         .waitFor({ timeout: 10_000 });
-      await providerDialog.getByRole("button", { name: "Copy provider message for Codex" })
-        .waitFor({ timeout: 10_000 });
+      assert(await providerDialog.getByText(shownMessage, { exact: true }).count() === 0,
+        `${fixture.status} must not show the engine's own text in the popup`);
+      assert(await providerDialog.getByRole("button", { name: /Copy provider message/ }).count() === 0,
+        `${fixture.status} must not offer a copy action in the popup`);
       await providerDialog.getByRole("button", { name: "OK", exact: true }).click();
     }
     assert(
       (await page.getByText(shownMessage, { exact: true }).count()) === 0,
-      `${fixture.status} must keep the reported message in the dismissible dialog, not on the row`,
+      `${fixture.status} must not show the engine text on the page`,
     );
     for (const action of fixture.rowActions) {
       await page
@@ -4775,8 +4784,8 @@ async function testProviderlessDeviceUsesRecoveryBeforeThemeAndOverview(
   const visibleText = await page.evaluate(() => document.body.innerText);
   assert(
     visibleText.includes(
-      "VibeTV reads your AI usage with CodexBar, a helper app installed with VibeTV. Turn on the providers you use below. If one needs a sign-in, its row shows a Sign in button."
-    ),
+      "VibeTV reads your AI usage with CodexBar, a helper app installed with VibeTV. Turn on the providers you use below."
+    ) && !visibleText.includes("If one needs a sign-in"),
     "Provider recovery must explain why CodexBar appears in setup",
   );
 
@@ -7269,8 +7278,8 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
   });
   assert(await signInRow.getByRole("button").count() === 1,
     "Windows must show only the sign-in action");
-  assert(await signInRow.getByRole("switch").count() === 0,
-    "Windows must replace the toggle while sign-in is required");
+  assert(await signInRow.getByRole("switch").count() === 1,
+    "Windows must keep the toggle beside the sign-in action");
   await panel
     .getByText("Cursor", { exact: true })
     .waitFor({ timeout: 10_000 });
@@ -7395,8 +7404,8 @@ async function testMacAppShowsTheWindowsSignInButton(browser, appUrl) {
   const row = panel.getByRole("listitem").filter({ has: page.getByRole("button", { name: "Sign in to Claude" }) });
   assert(await row.getByRole("button").count() === 1,
     "signed-out Claude must have only the sign-in action");
-  assert(await row.getByRole("switch").count() === 0,
-    "the sign-in action replaces the toggle");
+  assert(await row.getByRole("switch").count() === 1,
+    "the toggle stays beside the sign-in action");
   await signInClaude.click();
   await waitForCondition(
     () =>
@@ -7798,8 +7807,8 @@ async function testProviderOnboardingUsesSharedHealthyDescriptor(
   const signInRow = providersScreen.getByRole("listitem").filter({ has: page.getByRole("button", { name: "Sign in to Claude" }) });
   assert(await signInRow.getByRole("button").count() === 1,
     "the sign-in row must not duplicate the action in a warning popup");
-  assert(await signInRow.getByRole("switch").count() === 0,
-    "the sign-in row must replace the toggle");
+  assert(await signInRow.getByRole("switch").count() === 1,
+    "the sign-in row must keep the toggle beside the sign-in action");
 
   // The shell that can start a sign-in offers that button on the row; pressing
   // it must reach the companion.
@@ -10559,6 +10568,92 @@ async function testInstallLinkKeepsRequestedTheme(browser, appUrl) {
 
 // A shop link reloads the app (#611). For a VibeTV this app set up before, the
 // reload goes straight to the requested theme without "Your VibeTV is live".
+// #234: the shop link of a themed VibeTV preselects its theme in setup, and an
+// app restart during setup, which opens the app without the link, keeps that
+// choice. Nothing is installed before the customer clicks Install.
+async function testOrderedThemeSurvivesRestartDuringSetup(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: nativeDefaultViewport,
+  });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: { ...themeMissingDevice, deviceId: "fixture-device-1" },
+    // An install the Companion still reports from before the order must not
+    // count as the customer's answer to it (Codex review on #642).
+    statusThemeInstallJob: {
+      id: "screensaver-job-before-order",
+      themeId: "night-clock",
+      themeName: "Fixture Night Clock Screensaver",
+      slot: "screensaver",
+      phase: "complete",
+      startedAt: "2026-06-23T11:00:00.000Z",
+      finishedAt: "2026-06-23T11:01:00.000Z",
+      logs: [],
+    },
+  });
+
+  for (const path of ["/install/clippy", ""]) {
+    await page.goto(`${appUrl}${path}`, { waitUntil: "domcontentloaded" });
+    await page
+      .getByRole("heading", { name: SETUP_THEME_SCREEN })
+      .waitFor({ timeout: 20_000 });
+    const clippy = page.getByRole("radio", { name: "Fixture Clippy Theme" });
+    await waitForCondition(
+      async () => (await clippy.getAttribute("aria-checked")) === "true",
+      `setup must preselect the ordered theme (${path || "after restart"})`,
+    );
+  }
+  // A shop link to a theme that cannot be installed must not replace it
+  // (Codex review on #642).
+  await page.goto(`${appUrl}/install/missing-pack`, {
+    waitUntil: "domcontentloaded",
+  });
+  await page
+    .getByRole("heading", { name: SETUP_THEME_SCREEN })
+    .waitFor({ timeout: 20_000 });
+  await page.waitForTimeout(250);
+  const kept = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("vibetv.controlCenter.orderedTheme") || "null"),
+  );
+  assert(
+    kept?.themeId === "clippy",
+    `an unavailable theme must not be kept as the ordered theme, got ${kept?.themeId}`,
+  );
+  await page.waitForTimeout(250);
+  assertNoInstallRequests(installRequests);
+  await page.close();
+
+  // A kept theme the catalog no longer offers for install is dropped, here
+  // without any finished install that could drop it instead (Codex review on
+  // #642).
+  const stale = await newCustomerPage(browser, appUrl, {
+    viewport: nativeDefaultViewport,
+  });
+  await routeCompanionOnline(stale, installRequests, () => {}, {
+    device: { ...themeMissingDevice, deviceId: "fixture-device-1" },
+  });
+  await stale.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await stale.evaluate(() =>
+    localStorage.setItem(
+      "vibetv.controlCenter.orderedTheme",
+      JSON.stringify({ themeId: "missing-pack", recordedAt: Date.now() }),
+    ),
+  );
+  await stale.reload({ waitUntil: "domcontentloaded" });
+  await stale
+    .getByRole("heading", { name: SETUP_THEME_SCREEN })
+    .waitFor({ timeout: 20_000 });
+  await waitForCondition(
+    async () =>
+      (await stale.evaluate(() =>
+        localStorage.getItem("vibetv.controlCenter.orderedTheme"),
+      )) === null,
+    "a kept theme the catalog no longer offers must be dropped",
+  );
+  assertNoInstallRequests(installRequests);
+  await stale.close();
+}
+
 async function testInstallLinkSkipsLiveScreenForSetUpVibeTV(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
