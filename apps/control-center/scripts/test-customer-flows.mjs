@@ -2815,8 +2815,8 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
         `${fixture.status} must not open a popup over the sign-in action`);
       assert(await page.getByRole("button", { name: "Show provider message for Codex" }).count() === 0,
         `${fixture.status} must not duplicate the sign-in action in a warning`);
-      assert(await page.getByRole("switch", { name: "Codex" }).count() === 0,
-        `${fixture.status} must replace the toggle with sign-in`);
+      assert(await page.getByRole("switch", { name: "Codex" }).count() === 1,
+        `${fixture.status} must keep the toggle beside sign-in`);
     } else {
       await providerDialog.getByText(fixture.dialogSentence, { exact: true })
         .waitFor({ timeout: 10_000 });
@@ -7278,8 +7278,8 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
   });
   assert(await signInRow.getByRole("button").count() === 1,
     "Windows must show only the sign-in action");
-  assert(await signInRow.getByRole("switch").count() === 0,
-    "Windows must replace the toggle while sign-in is required");
+  assert(await signInRow.getByRole("switch").count() === 1,
+    "Windows must keep the toggle beside the sign-in action");
   await panel
     .getByText("Cursor", { exact: true })
     .waitFor({ timeout: 10_000 });
@@ -7404,8 +7404,8 @@ async function testMacAppShowsTheWindowsSignInButton(browser, appUrl) {
   const row = panel.getByRole("listitem").filter({ has: page.getByRole("button", { name: "Sign in to Claude" }) });
   assert(await row.getByRole("button").count() === 1,
     "signed-out Claude must have only the sign-in action");
-  assert(await row.getByRole("switch").count() === 0,
-    "the sign-in action replaces the toggle");
+  assert(await row.getByRole("switch").count() === 1,
+    "the toggle stays beside the sign-in action");
   await signInClaude.click();
   await waitForCondition(
     () =>
@@ -7807,8 +7807,8 @@ async function testProviderOnboardingUsesSharedHealthyDescriptor(
   const signInRow = providersScreen.getByRole("listitem").filter({ has: page.getByRole("button", { name: "Sign in to Claude" }) });
   assert(await signInRow.getByRole("button").count() === 1,
     "the sign-in row must not duplicate the action in a warning popup");
-  assert(await signInRow.getByRole("switch").count() === 0,
-    "the sign-in row must replace the toggle");
+  assert(await signInRow.getByRole("switch").count() === 1,
+    "the sign-in row must keep the toggle beside the sign-in action");
 
   // The shell that can start a sign-in offers that button on the row; pressing
   // it must reach the companion.
