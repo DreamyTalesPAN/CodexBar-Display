@@ -7729,3 +7729,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Unchanged.
 - Scope: `scripts/test-customer-flows.mjs` (the helper is called after the connected heading), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — test change, no customer-visible change of its own
+
+## 2026-10-16 — Usage: a sign-in failure from the overlay stays in its dialog (#669)
+
+- User approval: Paul approved the provider looks on 2026-10-16 (entries above, via the review orchestrator); this follow-up applies a Codex review finding and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: A sign-in that fails when started from the provider overlay or a Usage tile shows its message in that overlay only; Settings does not show it again. No new wording.
+- Scope: `control-center-app.tsx` (the Settings error is set only for Settings starts), `usage-screen.tsx` (hidden providers keep their token history), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix, no customer-visible change of its own

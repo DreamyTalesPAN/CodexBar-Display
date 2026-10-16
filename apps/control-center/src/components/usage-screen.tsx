@@ -95,18 +95,20 @@ export function UsageScreen({
   hiddenProviderIds = [],
 }: UsageScreenProps) {
   const refreshing = busyAction === "usage";
-  // Off, unsupported and without usage data: no tile, even with an entry.
   const providers = filterVisibleProviders(
     usage?.providers || [],
     usage?.currentProvider,
-  ).filter((provider) => !hiddenProviderIds.includes(provider.id));
+  );
   const hasProviders = providers.length > 0;
   // Action tiles stand in for a provider's numbers; one with no usage entry
   // still gets its tile, after the others. With no Companion there is no
   // provider to act on, so the Mac App message stands alone.
   const actions = companionStatus === "online" ? providerActions : {};
+  // Off, unsupported and without usage data: no tile, even with an entry.
   const tiles = [
-    ...providers.map((provider) => ({
+    ...providers
+      .filter((provider) => !hiddenProviderIds.includes(provider.id))
+      .map((provider) => ({
       id: provider.id,
       node: actions[provider.id] ? (
         <UsageActionTile {...actions[provider.id]} />

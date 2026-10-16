@@ -3716,7 +3716,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           error,
           `The ${item.label} sign-in could not be started.`,
         );
-        setProviderPreferencesError(failure);
+        // An overlay or Usage start reports into its own dialog only; Settings
+        // keeps its shared error for the sign-in it started itself.
+        if (!fromOverlay) {
+          setProviderPreferencesError(failure);
+        }
         providerActionReportRef.current?.(item.providerId ?? "", signInState, failure, fromOverlay);
         return;
       }
