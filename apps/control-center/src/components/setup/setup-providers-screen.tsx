@@ -124,7 +124,7 @@ export function setupProviderOffersSignIn(
  * itself: CodexBar reads its usage from the provider's own app, so that app
  * has to be installed and signed in on this computer.
  */
-export function setupProviderNeedsOwnApp(
+function setupProviderNeedsOwnApp(
   provider: Pick<ProviderItem, "health" | "providerId">,
 ): boolean {
   const state = providerRowHealthState(provider.health);
@@ -134,7 +134,7 @@ export function setupProviderNeedsOwnApp(
   );
 }
 
-export function setupProviderOwnAppNotice(label: string): string {
+function setupProviderOwnAppNotice(label: string): string {
   return `VibeTV reads ${label} usage from ${label}'s own app on this computer. Make sure it is installed and signed in, then click Check again.`;
 }
 
@@ -585,7 +585,7 @@ function SetupProvidersLoadingScreen({
 }
 
 /** One enabled provider with a real reading is enough, including 0%. */
-export function setupProvidersCanContinue(
+function setupProvidersCanContinue(
   providers: ProviderItem[],
   usage: UsageSnapshot | null,
 ): boolean {
