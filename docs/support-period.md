@@ -1,12 +1,11 @@
 # Support Period And Update Commitment (Draft)
 
-> **Draft for #538, not in force.** The support period is a business
-> commitment. It is set by DreamyTales before this document is merged and
-> then appears unchanged in the EU Declaration of Conformity and on the
-> product page.
+> **Draft for #538.** The support period is a business commitment, decided
+> by DreamyTales on 2026-10-16. It appears unchanged in the EU Declaration of
+> Conformity and on the product page.
 >
-> **[SUPPORT PERIOD: to be set. Proposal: security updates for at least
-> 5 years from the date the VibeTV was sold.]**
+> **Support period: security updates for at least 5 years from the date the
+> VibeTV was sold.**
 
 ## What the commitment covers
 
