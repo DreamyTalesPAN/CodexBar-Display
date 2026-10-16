@@ -1024,7 +1024,7 @@ func TestDeviceSearchSerializesCableDiscoveryWithFirmwareUpdateStart(t *testing.
 		}
 		return []usb.CableDevice{{Hello: cableHelloForTest("cable-a")}}, nil
 	}
-	job := server.createFirmwareUpdateJob(runtimeconfig.Config{ConnectionMode: "cable"})
+	job := server.createFirmwareUpdateJob()
 	search := func() *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
 		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`)))
@@ -5624,7 +5624,7 @@ func TestCableReadRoutesSerializeProbesWithFirmwareUpdateStart(t *testing.T) {
 				server.readCableHello = func(string) (protocol.DeviceHello, error) { checkProbe(); return hello, nil }
 				server.readCableHealth = func(string, string) (deviceHealth, error) { checkProbe(); return deviceHealth{OK: true}, nil }
 				if active == "firmware" {
-					server.createFirmwareUpdateJob(cfg)
+					server.createFirmwareUpdateJob()
 				}
 				if active == "theme" {
 					server.themeInstallActive = true
@@ -9288,7 +9288,7 @@ func TestCableControlRequestsStayOffSerialDuringFirmwareUpdate(t *testing.T) {
 	}
 
 	server.firmwareUpdateActive.Store(false)
-	server.createFirmwareUpdateJob(cfg)
+	server.createFirmwareUpdateJob()
 	settings = httptest.NewRecorder()
 	server.Handler().ServeHTTP(settings, httptest.NewRequest(http.MethodGet, "/v1/settings", nil))
 	if settings.Code != http.StatusConflict || !strings.Contains(settings.Body.String(), "firmware_update_in_progress") {
@@ -10723,7 +10723,10 @@ func TestPairAttemptTimeoutBoundsHungResponses(t *testing.T) {
 
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.pairAttempts = 3
-	server.pairAttemptTimeout = 25 * time.Millisecond
+	// 25 ms let an attempt time out before its request reached the test
+	// server on a busy CI runner (2 of 3 attempts arrived); 100 ms keeps all
+	// three well inside the 1 s bound checked below.
+	server.pairAttemptTimeout = 100 * time.Millisecond
 	server.pairRetryGap = 0
 	startedAt := time.Now()
 	token, err := server.pair(context.Background(), device.URL, "")
@@ -12083,7 +12086,7 @@ func TestFirmwareUpdateInstallReturnsAcceptedJobWithoutCableIO(t *testing.T) {
 		t.Run(fmt.Sprint(workerActive), func(t *testing.T) {
 			cfg := runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "updating-device", DeviceToken: "pair-token"}
 			server := newTestServer(t, cfg)
-			job := server.createFirmwareUpdateJob(cfg)
+			job := server.createFirmwareUpdateJob()
 			server.firmwareUpdateActive.Store(workerActive)
 			server.resolveCablePort = func(string, string) (string, error) {
 				t.Error("accepted update must not reopen the parent serial sender")
@@ -13000,132 +13003,6 @@ func TestFirmwareUpdateAsyncRequiresCableReconnectAfterInterruptedTransfer(t *te
 	}
 }
 
-func TestMacAppUpdateAsyncReportsCustomerProgress(t *testing.T) {
-	server := newTestServer(t, runtimeconfig.Config{})
-	server.allowMacAppSelfUpdate = true
-	server.updateMacApp = func(_ context.Context, home string, addr string, req macAppUpdateRequest, out io.Writer) error {
-		if strings.TrimSpace(home) == "" {
-			t.Fatalf("expected update to receive home directory")
-		}
-		if addr != DefaultAddr {
-			t.Fatalf("unexpected update addr: %q", addr)
-		}
-		if req.Version != "1.0.36" {
-			t.Fatalf("unexpected update request: %+v", req)
-		}
-		for _, line := range []string{
-			"vibetv: repo=DreamyTalesPAN/CodexBar-Display",
-			"vibetv: release=v1.0.36",
-			"vibetv: arch=arm64",
-			"vibetv: Mac setup binary installed at /private/tmp/codexbar-display",
-			"vibetv: background service installed at /Users/customer/Library/LaunchAgents/com.codexbar-display.daemon.plist",
-			"vibetv: Mac App answered with version 1.0.36; restarting once",
-			"vibetv: Mac App update verified",
-		} {
-			_, _ = io.WriteString(out, line+"\n")
-		}
-		return nil
-	}
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/v1/mac-app/update", strings.NewReader(`{"version":"1.0.36"}`))
-	req.Header.Set("Content-Type", "application/json")
-	server.Handler().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("expected status 202, got %d body=%s", rec.Code, rec.Body.String())
-	}
-	var started macAppUpdateJobResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
-		t.Fatalf("decode start response: %v", err)
-	}
-	if started.Job.ID == "" || started.Job.Phase != "installing" {
-		t.Fatalf("unexpected started job: %+v", started.Job)
-	}
-
-	var got macAppUpdateJobResponse
-	for attempt := 0; attempt < 50; attempt++ {
-		rec = httptest.NewRecorder()
-		req = httptest.NewRequest(http.MethodGet, "/v1/mac-app/update/status?jobId="+started.Job.ID, nil)
-		server.Handler().ServeHTTP(rec, req)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
-		}
-		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-			t.Fatalf("decode status response: %v", err)
-		}
-		if got.Job.Phase == "complete" {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if got.Job.Phase != "complete" || got.Job.Progress != 100 {
-		t.Fatalf("expected completed Mac App update job, got %+v", got.Job)
-	}
-	if got.Job.Result == nil || got.Job.Result.Version != "1.0.36" {
-		t.Fatalf("expected Mac App version result, got %+v", got.Job.Result)
-	}
-	joinedLogs := strings.Join(got.Job.Logs, "\n")
-	for _, want := range []string{"Downloading Mac App update.", "Preparing this Mac.", "Installing Mac App.", "Restarting Mac App.", "Checking Mac App.", "Mac App updated."} {
-		if !strings.Contains(joinedLogs, want) {
-			t.Fatalf("expected customer Mac App update log %q in %q", want, joinedLogs)
-		}
-	}
-	for _, hidden := range []string{"/private", "LaunchAgents", "DreamyTalesPAN/CodexBar-Display"} {
-		if strings.Contains(joinedLogs, hidden) {
-			t.Fatalf("Mac App update progress leaked technical detail %q in %q", hidden, joinedLogs)
-		}
-	}
-}
-
-func TestMacAppUpdateAsyncReportsCustomerError(t *testing.T) {
-	server := newTestServer(t, runtimeconfig.Config{})
-	server.allowMacAppSelfUpdate = true
-	server.updateMacApp = func(_ context.Context, _ string, _ string, _ macAppUpdateRequest, out io.Writer) error {
-		_, _ = io.WriteString(out, "vibetv: release=v1.0.36\nvibetv: arch=arm64\n")
-		return errors.New("curl https://token@example.com/private failed")
-	}
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/v1/mac-app/update", strings.NewReader(`{"version":"1.0.36"}`))
-	req.Header.Set("Content-Type", "application/json")
-	server.Handler().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("expected status 202, got %d body=%s", rec.Code, rec.Body.String())
-	}
-	var started macAppUpdateJobResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
-		t.Fatalf("decode start response: %v", err)
-	}
-
-	var got macAppUpdateJobResponse
-	for attempt := 0; attempt < 50; attempt++ {
-		rec = httptest.NewRecorder()
-		req = httptest.NewRequest(http.MethodGet, "/v1/mac-app/update/status?jobId="+started.Job.ID, nil)
-		server.Handler().ServeHTTP(rec, req)
-		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-			t.Fatalf("decode status response: %v", err)
-		}
-		if got.Job.Phase == "error" {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if got.Job.Phase != "error" || got.Job.Error == nil {
-		t.Fatalf("expected failed Mac App update job, got %+v", got.Job)
-	}
-	if got.Job.Error.Code != "mac_app_update_failed" {
-		t.Fatalf("unexpected Mac App update error: %+v", got.Job.Error)
-	}
-	joinedLogs := strings.Join(got.Job.Logs, "\n")
-	for _, hidden := range []string{"token@example.com", "/private"} {
-		if strings.Contains(joinedLogs, hidden) {
-			t.Fatalf("failed Mac App update leaked technical detail in logs: %q", joinedLogs)
-		}
-	}
-}
-
 func TestThemeInstallErrorIncludesSanitizedDetail(t *testing.T) {
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -13752,6 +13629,18 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
+	// A firmware job keeps writing its diagnostics after it reports
+	// complete; it holds deviceMaintenanceMu until it has finished. Wait for
+	// it (bounded) before t.TempDir is removed, or the removal races the
+	// job's last write ("directory not empty").
+	t.Cleanup(func() {
+		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+			if server.deviceMaintenanceMu.TryLock() {
+				server.deviceMaintenanceMu.Unlock()
+				return
+			}
+		}
+	})
 	server.probeCacheTime = 0
 	// Tests model a Companion that already knows the VibeTV's port from
 	// pairing or a frame. The restart case sets this to "" itself.
@@ -13795,9 +13684,6 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 	server.defaultWiFiTarget = func() string { return "http://127.0.0.1:1" }
 	server.localNetworkAvailable = func() bool { return true }
 	server.updateFirmware = func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error {
-		return nil
-	}
-	server.updateMacApp = func(context.Context, string, string, macAppUpdateRequest, io.Writer) error {
 		return nil
 	}
 	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
@@ -14396,7 +14282,7 @@ func TestFirmwareUpdatePausesDisplayStreamWhileReactivatingTheme(t *testing.T) {
 // earlier setup lines out of the twelve-line log.
 func TestFirmwareUpdateRescueProgressReplacesTheUpdateLine(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
-	job := server.createFirmwareUpdateJob(runtimeconfig.Config{})
+	job := server.createFirmwareUpdateJob()
 	writer := &firmwareUpdateProgressWriter{server: server, jobID: job.ID}
 	for _, line := range []string{"Checking device...", "Uploading firmware...", "Writing firmware: 10%", "Writing firmware: 60%"} {
 		writer.noteLine(line)

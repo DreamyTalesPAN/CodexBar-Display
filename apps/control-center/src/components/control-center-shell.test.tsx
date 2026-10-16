@@ -25,7 +25,6 @@ describe("ControlCenterShell", () => {
         <ControlCenterShell
           activeAppearanceSection={section}
           activeTab={activeTab}
-          device={{ active: true, connected: true }}
           onTabChange={vi.fn()}
         >
           <div>Content</div>
@@ -57,7 +56,6 @@ describe("ControlCenterShell", () => {
       <TooltipProvider>
         <ControlCenterShell
           activeTab="overview"
-          device={{ active: true, connected: false, paired: true, ready: false }}
           onTabChange={vi.fn()}
         >
           <div>Overview content</div>
@@ -75,7 +73,6 @@ describe("ControlCenterShell", () => {
       <TooltipProvider>
         <ControlCenterShell
           activeTab="overview"
-          device={{ active: true, connected: true }}
           hiddenTabs={["settings", "theme-library", "updates"]}
           onTabChange={vi.fn()}
         >
@@ -97,7 +94,6 @@ describe("ControlCenterShell", () => {
         <TooltipProvider>
           <ControlCenterShell
             activeTab="overview"
-            device={{ active: true, connected: true }}
             onTabChange={vi.fn()}
             updateAvailable
           >

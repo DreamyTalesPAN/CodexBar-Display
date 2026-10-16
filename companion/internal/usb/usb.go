@@ -66,24 +66,17 @@ type PortOpener interface {
 	Open(path string, mode *serial.Mode) (SerialPort, error)
 }
 
-type LineSender interface {
-	Send(path string, line []byte) error
-}
-
-type HelloReader interface {
-	ReadHello(path string) (protocol.DeviceHello, error)
-}
-
-type CapabilitiesReader interface {
-	ReadCapabilities(path string) (protocol.DeviceCapabilities, error)
-}
-
 func SendLine(port string, line []byte) error {
-	if len(line) == 0 || line[len(line)-1] != '\n' {
-		line = append(line, '\n')
-	}
+	return defaultSender.Send(port, withLineEnding(line))
+}
 
-	return defaultSender.Send(port, line)
+// withLineEnding returns line ending in a newline. It copies when it has to add
+// one, so the caller's backing array is never written past its length.
+func withLineEnding(line []byte) []byte {
+	if len(line) > 0 && line[len(line)-1] == '\n' {
+		return line
+	}
+	return append(append(make([]byte, 0, len(line)+1), line...), '\n')
 }
 
 func ReadDeviceHello(port string) (protocol.DeviceHello, error) {

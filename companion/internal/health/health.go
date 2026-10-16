@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 
@@ -23,7 +22,7 @@ import (
 )
 
 const (
-	launchAgentLabel  = "com.codexbar-display.daemon"
+	launchAgentLabel  = runtimepaths.LegacyDisplayStreamLaunchAgentLabel
 	legacyOutLog      = "/tmp/codexbar-display-daemon.out.log"
 	legacyErrLog      = "/tmp/codexbar-display-daemon.err.log"
 	defaultOutLogName = "daemon.out.log"
@@ -116,9 +115,10 @@ func runWithDeps(ctx context.Context, d deps) error {
 	config := readLaunchAgentConfig(d)
 	outLogPath := daemonLogPath(d, defaultOutLogName, legacyOutLog)
 	errLogPath := daemonLogPath(d, defaultErrLogName, legacyErrLog)
-	lastSent := findLastSentFrameEvent(outLogPath, d.readFile)
-	lastOutError := findLastOutErrorEvent(outLogPath, d.readFile)
-	lastErrLogLine := findLastNonEmptyEvent(errLogPath, d.readFile)
+	outLines := readLogLines(outLogPath, d.readFile)
+	lastSent := findLastSentFrameEvent(outLines)
+	lastOutError := findLastOutErrorEvent(outLines)
+	lastErrLogLine := findLastNonEmptyEvent(readLogLines(errLogPath, d.readFile))
 	lastError := latestEvent(lastOutError, lastErrLogLine)
 	errorRecovered := eventIsNotAfter(lastError, lastSent)
 	if errorRecovered {
@@ -292,51 +292,38 @@ func plistStringValues(data []byte) []string {
 	return values
 }
 
-func parseLaunchctlStatus(output string) (state, pid string) {
-	lines := strings.Split(output, "\n")
-	for _, raw := range lines {
-		line := strings.TrimSpace(raw)
-		if strings.HasPrefix(line, "state =") {
-			state = strings.TrimSpace(strings.TrimPrefix(line, "state ="))
-		}
-		if strings.HasPrefix(line, "pid =") {
-			pid = strings.TrimSpace(strings.TrimPrefix(line, "pid ="))
-			if _, err := strconv.Atoi(pid); err != nil {
-				pid = ""
-			}
-		}
+// readLogLines reads a log once; callers reuse the lines for every finder
+// they run within the same health call.
+func readLogLines(path string, readFile func(string) ([]byte, error)) []string {
+	if readFile == nil {
+		return nil
 	}
-	return state, pid
+	data, err := readFile(path)
+	if err != nil {
+		return nil
+	}
+	return strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
 }
 
-func findLastSentFrameEvent(path string, readFile func(string) ([]byte, error)) logEvent {
-	return findLastMatchingEvent(path, readFile, func(line string) bool {
+func findLastSentFrameEvent(lines []string) logEvent {
+	return findLastMatchingEvent(lines, func(line string) bool {
 		return strings.Contains(line, "sent frame ->")
 	})
 }
 
-func findLastOutErrorEvent(path string, readFile func(string) ([]byte, error)) logEvent {
-	return findLastMatchingEvent(path, readFile, func(line string) bool {
+func findLastOutErrorEvent(lines []string) logEvent {
+	return findLastMatchingEvent(lines, func(line string) bool {
 		return strings.Contains(line, "cycle error:")
 	})
 }
 
-func findLastNonEmptyEvent(path string, readFile func(string) ([]byte, error)) logEvent {
-	return findLastMatchingEvent(path, readFile, func(line string) bool {
+func findLastNonEmptyEvent(lines []string) logEvent {
+	return findLastMatchingEvent(lines, func(line string) bool {
 		return strings.TrimSpace(line) != ""
 	})
 }
 
-func findLastMatchingEvent(path string, readFile func(string) ([]byte, error), predicate func(string) bool) logEvent {
-	if readFile == nil || predicate == nil {
-		return logEvent{}
-	}
-	data, err := readFile(path)
-	if err != nil {
-		return logEvent{}
-	}
-
-	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+func findLastMatchingEvent(lines []string, predicate func(string) bool) logEvent {
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := strings.TrimSpace(lines[i])
 		if !predicate(line) {

@@ -90,11 +90,6 @@ system.
 ## Readiness Boundary
 ```text
 dist/theme-packs/vibetv-theme-packs-v2.json
-dist/theme-packs/vibetv-theme-synthwave-v1.1.0.zip
-dist/theme-packs/vibetv-theme-clippy-v1.1.0.zip
-dist/theme-packs/vibetv-theme-claude-creature-v1.1.0.zip
-dist/theme-packs/vibetv-theme-cozy-meadow-v0.2.0.zip
-dist/theme-packs/vibetv-theme-mini-classic-v1.1.0.zip
 ```
 
 The customer-readiness checker may validate the hosted app catalog and its own
@@ -124,8 +119,7 @@ scripts/check-control-center-companion-customer-readiness.sh \
   --app-url https://app.vibetv.shop \
   --expect-catalog-source shopify \
   --expect-theme-id <theme_id> \
-  --expect-all-free-themes-installable \
-  --expect-shopify-product-pages
+  --expect-all-free-themes-installable
 ```
 
 That check only reads public HTTP pages and the hosted app. It fails if
@@ -134,9 +128,6 @@ selected `theme_id`, returning a paid theme for that ID, missing a free theme
 `themeId`, missing the resolved `packUrl`, returning a `packUrl` that is not an
 `http(s)` download URL, exposing any free collection theme that is not
 installable, or if the selected `/install/<theme_id>` route is not reachable.
-
-During staged rollout, the same checker can still assert the fallback Shopify
-product-page command when `--expect-shopify-product-pages` is intentionally used.
 
 Allowed without extra hardware approval:
 

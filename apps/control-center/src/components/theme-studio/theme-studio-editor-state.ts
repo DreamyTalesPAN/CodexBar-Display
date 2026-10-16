@@ -171,14 +171,14 @@ export function cloneDocument(
   };
 }
 
-export function documentsEqual(
+function documentsEqual(
   left: ThemeStudioDocument,
   right: ThemeStudioDocument,
 ): boolean {
   return documentFingerprint(left) === documentFingerprint(right);
 }
 
-export function documentFingerprint(document: ThemeStudioDocument): string {
+function documentFingerprint(document: ThemeStudioDocument): string {
   return JSON.stringify(canonicalize(document));
 }
 
