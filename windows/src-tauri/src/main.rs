@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Mutex;
+use std::sync::{Condvar, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
@@ -79,6 +79,10 @@ struct Shell {
     // window; 0 when no release is under way.
     released_at: AtomicU64,
     window_creation: Mutex<()>,
+    // Set once setup stored the shortcut registration result. ensure_window
+    // waits for it: a second launch can reach ensure_window before setup.
+    shortcut_registered: Mutex<bool>,
+    shortcut_registered_changed: Condvar,
 }
 
 // Who holds the updater, in one lock so a click or an opened window can
@@ -204,6 +208,8 @@ fn main() {
             provider_shortcut: AtomicBool::new(false),
             released_at: AtomicU64::new(0),
             window_creation: Mutex::new(()),
+            shortcut_registered: Mutex::new(false),
+            shortcut_registered_changed: Condvar::new(),
         })
         .setup(|app| {
             let handle = app.handle().clone();
@@ -214,13 +220,13 @@ fn main() {
             let visible = !relaunched_after_idle_update(&handle);
             {
                 // A second launch during startup recreates the window through
-                // ensure_window, which takes this lock first: it waits for the
-                // registration result instead of building the window with
-                // "ProviderShortcut/unavailable".
+                // ensure_window, which waits for this result instead of
+                // building the window with "ProviderShortcut/unavailable".
                 let shell = handle.state::<Shell>();
-                let _creating = shell.window_creation.lock().unwrap();
                 let provider_shortcut = register_provider_shortcut(handle.clone());
                 shell.provider_shortcut.store(provider_shortcut, Ordering::SeqCst);
+                *shell.shortcut_registered.lock().unwrap() = true;
+                shell.shortcut_registered_changed.notify_all();
             }
             // Back from an update installed with the window closed: stay in
             // the tray without a WebView2; opening the app creates the window.
@@ -409,19 +415,24 @@ fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tau
         WindowEvent::Destroyed => {
             let shell = handle.state::<Shell>();
             let released_at = shell.released_at.swap(0, Ordering::SeqCst);
-            if released_at != 0 && shell.presentations.load(Ordering::SeqCst) + 1 != released_at {
+            if released_at != 0 {
                 let handle = handle.clone();
                 std::thread::spawn(move || {
                     // Tauri drops the label only after the Destroyed
                     // listeners ran; until then ensure_window would find the
-                    // dying window and create nothing.
+                    // dying window and create nothing, and a present would
+                    // show it. Compare only once the label is gone: a present
+                    // after that creates its own window.
                     for _ in 0..40 {
                         if handle.get_webview_window(WINDOW_LABEL).is_none() {
                             break;
                         }
                         std::thread::sleep(Duration::from_millis(25));
                     }
-                    prepare_and_load(handle);
+                    let presented = handle.state::<Shell>().presentations.load(Ordering::SeqCst);
+                    if presented + 1 != released_at {
+                        prepare_and_load(handle);
+                    }
                 });
             }
         }
@@ -473,6 +484,16 @@ fn ensure_window(app: &AppHandle) -> bool {
     // tray-only app as a second launch and as a queued link) would otherwise
     // both see no window and build two "main" windows.
     let shell = app.state::<Shell>();
+    {
+        // The window's user agent says whether the shortcut works; build it
+        // only once setup knows. Bounded: a registration that never reports
+        // must not keep the window away.
+        let registered = shell.shortcut_registered.lock().unwrap();
+        let _ = shell
+            .shortcut_registered_changed
+            .wait_timeout_while(registered, Duration::from_secs(5), |done| !*done)
+            .unwrap();
+    }
     let _creating = shell.window_creation.lock().unwrap();
     if app.get_webview_window(WINDOW_LABEL).is_some() {
         return true;
