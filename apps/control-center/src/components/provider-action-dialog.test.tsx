@@ -10,6 +10,7 @@ import {
   ProviderActionDialog,
   useProviderActionDismissal,
 } from "./provider-action-dialog";
+import { SystemBusyDialog, systemBusyCopy } from "./system-busy-dialog";
 import type { UsageProviderAction } from "./usage-screen";
 
 afterEach(cleanup);
@@ -118,5 +119,18 @@ it("waits while another dialog is open", async () => {
       </div>,
     ),
   );
+  expect(dialog("Claude needs a new sign-in")).not.toBeNull();
+});
+
+it("comes before the busy notice: the notice waits for it, not the other way round", async () => {
+  render(
+    <div>
+      <SystemBusyDialog onClose={() => {}} />
+      <Overlay actions={claude()} />
+    </div>,
+  );
+  expect(dialog("Claude needs a new sign-in")).not.toBeNull();
+  await act(async () => {});
+  expect(screen.queryByRole("dialog", { name: systemBusyCopy.title })).toBeNull();
   expect(dialog("Claude needs a new sign-in")).not.toBeNull();
 });

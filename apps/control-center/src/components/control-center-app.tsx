@@ -427,6 +427,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   >(null);
   const [providerPreferencesError, setProviderPreferencesError] =
     useState<ApiError | null>(null);
+  // A failed sign-in start, for the provider overlay that asked for it.
+  const [providerSignInFailure, setProviderSignInFailure] = useState<{
+    providerId: string;
+    error: ApiError;
+  } | null>(null);
   const [providerDisplay, setProviderDisplay] =
     useState<ProviderDisplaySelection | null>(null);
   const providerDisplayRef = useRef<ProviderDisplaySelection | null>(null);
@@ -3630,13 +3635,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           { method: "POST" },
         );
         setProviderPreferencesError(null);
+        setProviderSignInFailure(null);
       } catch (error) {
-        setProviderPreferencesError(
-          normalizeCaughtError(
-            error,
-            `The ${item.label} sign-in could not be started.`,
-          ),
+        const failure = normalizeCaughtError(
+          error,
+          `The ${item.label} sign-in could not be started.`,
         );
+        setProviderPreferencesError(failure);
+        setProviderSignInFailure({ providerId, error: failure });
         return;
       }
       const followUps = providerSignInFollowUpsRef.current;
@@ -5807,7 +5813,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       {providerActionShown && companionStatus === "online" ? (
         <ProviderActionDialog
           action={providerActionShown.action}
-          error={providerPreferencesError}
+          // Only a failed start for this provider belongs in its dialog.
+          error={
+            providerSignInFailure?.providerId ===
+            providerActionShown.id.trim().toLowerCase()
+              ? providerSignInFailure.error
+              : null
+          }
           onDismiss={dismissProviderAction}
         />
       ) : null}

@@ -4,7 +4,7 @@ import { AlertTriangle } from "lucide-react";
 import { useState } from "react";
 import type { ApiError } from "./control-center-types";
 import { SetupDialog } from "./setup/setup-dialog";
-import { useOtherDialogOpen } from "./system-busy-dialog";
+import { systemBusyCopy, useOtherDialogOpen } from "./system-busy-dialog";
 import type { UsageProviderAction } from "./usage-screen";
 
 /**
@@ -94,7 +94,9 @@ export function ProviderActionDialog({
   onDismiss: () => void;
 }) {
   const copy = providerActionCopy(action);
-  if (useOtherDialogOpen(copy.title)) {
+  // The busy notice yields to this overlay (it waits for any other dialog), so
+  // the overlay does not wait for it: otherwise the two would hide each other.
+  if (useOtherDialogOpen([copy.title, systemBusyCopy.title])) {
     return null;
   }
   return (

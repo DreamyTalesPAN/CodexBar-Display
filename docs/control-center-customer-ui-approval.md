@@ -7424,3 +7424,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: As in the overlay entry above. The primary button of "Open AI providers" and of a setup that opens Settings now closes the overlay in the same click, since Settings opens behind it. The overlay does not show while the Mac App is not reachable. Sign-in buttons keep the overlay open until the sign-in finishes. No new wording.
 - Scope: `provider-action-dialog.tsx` and its test, `usage-screen.tsx` (the action's Settings flag), `control-center-app.tsx` (the offline condition), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: priority with the busy notice, error only for its own provider (#669)
+
+- User approval: Paul chose on 2026-10-16 (via the review orchestrator) Claude Design page "Control Center Redesign" 644, "3A + 4A + 5B (weekly: number first), Paul 16.10." — the overlay of the entry above; this follow-up applies two Codex review findings and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: As in the overlay entries above. When both the busy computer notice and a provider overlay are due, the provider overlay shows first and the busy notice returns after it is closed (the busy notice already waits for any other dialog). A failed sign-in start shows in the dialog of that provider only; a failure of another request does not appear there. No new wording.
+- Scope: `provider-action-dialog.tsx` and its test, `system-busy-dialog.tsx` (the shared helper takes the titles it waits for), `control-center-app.tsx` (the failure per provider), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
