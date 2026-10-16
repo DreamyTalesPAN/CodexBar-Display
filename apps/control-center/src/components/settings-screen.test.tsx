@@ -333,7 +333,7 @@ describe("SettingsScreen standby controls", () => {
     ]);
   });
 
-  it("keeps enabled providers first in Settings without reordering either group", () => {
+  it("puts the common subscription tools first in Settings, then switched-on providers", () => {
     const html = render(standbyDevice, savedStandby, {
       ...providerPicker,
       onOpenSignIn: vi.fn(),
@@ -351,11 +351,11 @@ describe("SettingsScreen standby controls", () => {
     });
     const providerSection = html.slice(html.indexOf(">AI providers</h2>"));
     const positions = [
-      "Claude Code",
       "Codex",
-      "OpenAI",
-      "Antigravity",
+      "Claude Code",
       "Cursor",
+      "Antigravity",
+      "OpenAI",
       "Gemini",
     ].map((label) => providerSection.indexOf(`>${label}</`));
 

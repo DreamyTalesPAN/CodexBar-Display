@@ -276,7 +276,7 @@ export function ProviderList({
   const copyKey = issue ? `${issue.provider.id}\n${issue.provider.health.reported}` : "";
   const [query, setQuery] = useState("");
   const [shown, setShown] = useState(PROVIDER_PAGE_SIZE);
-  const matching = setupProvidersEnabledFirst(
+  const matching = setupProvidersInOrder(
     providers.filter((provider) => setupProviderMatchesQuery(provider, query)),
   );
   // CodexBar's inventory is 65 providers deep and almost all of it is off, so
@@ -592,11 +592,31 @@ function setupProvidersCanContinue(
   return providers.some((provider) => setupProviderCanDisplay(provider, usage));
 }
 
-/** Keep CodexBar's order inside the on and off groups. */
-function setupProvidersEnabledFirst(providers: ProviderItem[]): ProviderItem[] {
+/** The subscription tools most customers use, in this order, come first. */
+const COMMON_SUBSCRIPTION_PROVIDER_IDS = [
+  "codex",
+  "claude",
+  "cursor",
+  "antigravity",
+];
+
+/**
+ * Subscription tools first, then the API and cloud providers: switched-on
+ * ones before switched-off ones. Each group keeps CodexBar's order.
+ */
+function setupProvidersInOrder(providers: ProviderItem[]): ProviderItem[] {
+  const idOf = (provider: ProviderItem) =>
+    provider.providerId.trim().toLowerCase();
+  const common = COMMON_SUBSCRIPTION_PROVIDER_IDS.flatMap((id) =>
+    providers.filter((provider) => idOf(provider) === id),
+  );
+  const others = providers.filter(
+    (provider) => !COMMON_SUBSCRIPTION_PROVIDER_IDS.includes(idOf(provider)),
+  );
   return [
-    ...providers.filter((provider) => provider.value === true),
-    ...providers.filter((provider) => provider.value !== true),
+    ...common,
+    ...others.filter((provider) => provider.value === true),
+    ...others.filter((provider) => provider.value !== true),
   ];
 }
 
