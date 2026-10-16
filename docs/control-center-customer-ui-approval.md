@@ -7515,3 +7515,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Unchanged. The test checks that a screen reader hears "session usage unavailable" for an unavailable lane.
 - Scope: `usage-screen.test.tsx`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — test change, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: provider health refreshed on every main page (#669)
+
+- User approval: Paul chose on 2026-10-16 (via the review orchestrator) Claude Design page "Control Center Redesign" 644, "3A + 4A + 5B (weekly: number first), Paul 16.10." — the overlay of the entry above, which is "on any page"; this follow-up applies a Codex review finding and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: As in the overlay entries above: the overlay appears on any main page when a provider needs the customer. The provider health and usage refresh now runs on every main page, not only Overview, Usage and Settings, so the overlay appears without a page change. No new wording.
+- Scope: `control-center-app.tsx` (the refresh condition of the usage surface), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — refresh cadence on other pages, no customer-visible change of its own

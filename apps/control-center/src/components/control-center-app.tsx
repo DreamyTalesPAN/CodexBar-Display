@@ -4863,11 +4863,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const usageRefreshPending = usage?.refresh?.state === "refreshing";
   useEffect(() => {
+    // On every main page: the provider overlay can open on any of them and
+    // needs the provider health to be current.
     if (
       companionStatus !== "online" ||
-      (hasEnteredControlCenter &&
-        (!controlCenterAvailable ||
-          !["usage", "overview", "settings"].includes(activeShellTab)))
+      (hasEnteredControlCenter && !controlCenterAvailable)
     ) {
       return;
     }
