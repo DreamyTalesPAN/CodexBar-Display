@@ -17,8 +17,8 @@ import (
 func TestSentFrameIsKeptForItsVibeTV(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "shown-frames.json")
 	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
-	cycle := func(sendErr error) error {
-		return runCycleWithDeps(context.Background(), "http://192.168.178.159", &runtimeState{}, runtimeDeps{
+	cycleCtx := func(ctx context.Context, send func() error) error {
+		return runCycleWithDeps(ctx, "http://192.168.178.159", &runtimeState{}, runtimeDeps{
 			now:             func() time.Time { return now },
 			transportName:   "wifi",
 			shownFramesPath: path,
@@ -40,8 +40,11 @@ func TestSentFrameIsKeptForItsVibeTV(t *testing.T) {
 				return []codexbar.ParsedFrame{testParsedFrame("codex", 12, 30, 3600)}, nil
 			},
 			logf:     func(format string, args ...any) { _ = fmt.Sprintf(format, args...) },
-			sendLine: func(string, []byte) error { return sendErr },
+			sendLine: func(string, []byte) error { return send() },
 		})
+	}
+	cycle := func(sendErr error) error {
+		return cycleCtx(context.Background(), func() error { return sendErr })
 	}
 
 	if err := cycle(nil); err != nil {
@@ -63,6 +66,17 @@ func TestSentFrameIsKeptForItsVibeTV(t *testing.T) {
 	}
 	if kept := LoadShownFrames(path)["5804558"]; !kept.SentAt.Equal(sentAt) {
 		t.Fatalf("a failed write must not replace the kept frame, got %+v", kept)
+	}
+
+	// The worker stopped right after the frame was delivered: it is still kept.
+	now = now.Add(time.Minute)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := cycleCtx(ctx, func() error { cancel(); return nil }); !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected the canceled cycle to stop, got %v", err)
+	}
+	if kept := LoadShownFrames(path)["5804558"]; !kept.SentAt.Equal(now) {
+		t.Fatalf("a delivered frame must be kept before the worker stops, got %+v", kept)
 	}
 }
 
