@@ -220,13 +220,7 @@ export async function buildAIThemeCandidate(
   );
   try {
     if (concept.companions) {
-      // A companion whose sheet cannot be prepared at all is left out: the
-      // customer gets the picture with the other companions instead of an error.
-      const prepared = concept.companions.map((p, i) => {
-        try { return normalizeCompanionSheet(bitmaps[i + 1]!, Math.min(p.size, 64)); } catch { return undefined; }
-      });
-      const kept = { ...concept, companions: concept.companions.filter((_, i) => prepared[i]) };
-      return buildAIThemeCompanionCandidateFromRGBA(kept, bitmapRGBA(bitmaps[0]!, 240, artHeight(concept)), prepared.filter(frames => frames !== undefined));
+      return buildAIThemeCompanionCandidateFromRGBA(concept, bitmapRGBA(bitmaps[0]!, 240, artHeight(concept)), concept.companions.map((p, i) => normalizeCompanionSheet(bitmaps[i + 1]!, Math.min(p.size, 64))));
     }
     if (concept.sceneAnimation) {
       if (concept.animation)

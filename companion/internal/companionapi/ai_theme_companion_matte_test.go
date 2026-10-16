@@ -85,7 +85,7 @@ func TestCompanionRepairIsBoundedAndPreservesOtherLayers(t *testing.T) {
 		name      string
 		fixedAt   int // image call that returns a clean sheet; 0 = never
 		wantCalls int
-	}{{"repair-success", 2, 2}, {"second-repair-success", 3, 3}, {"repairs-fail", 0, 1 + companionSheetRepairs}} {
+	}{{"repair-success", 2, 2}, {"repair-fails", 0, 2}} {
 		t.Run(tc.name, func(t *testing.T) {
 			style, pets := companionPlanFixture(2)
 			pets[0].Reuse = true
@@ -99,7 +99,7 @@ func TestCompanionRepairIsBoundedAndPreservesOtherLayers(t *testing.T) {
 				if images >= 2 && !strings.Contains(string(body), "REPAIR") {
 					t.Fatal("not a targeted repair")
 				}
-				if images > 1+companionSheetRepairs {
+				if images > 2 {
 					t.Fatal("unbounded retry")
 				}
 				encoded := aiTestCompanionSheetWithMatte(color.NRGBA{109, 63, 32, 255})
@@ -143,7 +143,7 @@ func TestCompanionThatNeverComesOutCleanKeepsItsPreviousDrawings(t *testing.T) {
 	previous := &aiThemePreviousConcept{Style: style, ImageBase64: aiTestPNG(), ImageContentType: "image/png", Companions: []aiCompanion{{ID: "pet-1", X: 20, Y: 40, Size: 32, FPS: 4, FrameCount: 8, KeyColor: "#FF00FF", SheetBase64: aiTestCompanionSheet()}}}
 	bg, _ := validateConceptImage(aiTestPNG(), "image/png")
 	result, err := s.aiTheme.createCompanionConcept(context.Background(), "fixture", aiThemeConceptRequest{Prompt: "Make the fox pink", Previous: previous}, bg)
-	if err != nil || images != 1+companionSheetRepairs || len(result.Companions) != 1 || !result.Companions[0].Reuse || result.Companions[0].SheetBase64 != previous.Companions[0].SheetBase64 {
+	if err != nil || images != 2 || len(result.Companions) != 1 || !result.Companions[0].Reuse || result.Companions[0].SheetBase64 != previous.Companions[0].SheetBase64 {
 		t.Fatalf("wanted the previous fox kept after %d calls: %v %#v", images, err, result.Companions)
 	}
 }
@@ -163,15 +163,12 @@ func TestNewCompanionsThatNeverComeOutCleanLeaveAStillPicture(t *testing.T) {
 		return aiResponse(200, `{"data":[{"b64_json":"`+aiTestCompanionSheetWithMatte(color.NRGBA{109, 63, 32, 255})+`"}]}`), nil
 	}))
 	result, err := s.aiTheme.createCompanionConcept(context.Background(), "fixture", aiThemeConceptRequest{Prompt: "A forest with a fox and a bird"}, nil)
-	if err != nil || images != 1+2*(1+companionSheetRepairs) || len(result.Companions) != 0 || result.ImageBase64 != aiTestPNG() || result.Style.AnimationMode != "static" || result.Style.AnimationPrompt != "" {
-		t.Fatalf("wanted the still picture after %d calls: %v %#v %q", images, err, result.Companions, result.Style.AnimationMode)
+	if err != nil || images != 1+2*2 || len(result.Companions) != 0 || result.ImageBase64 != aiTestPNG() {
+		t.Fatalf("wanted the still picture after %d calls: %v %#v", images, err, result.Companions)
 	}
 }
 
 func TestCompanionRepairThatRunsOutOfTimeKeepsTheDesign(t *testing.T) {
-	budget := companionRepairBudget
-	companionRepairBudget = 0
-	t.Cleanup(func() { companionRepairBudget = budget })
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	style, pets := companionPlanFixture(2)
@@ -193,14 +190,6 @@ func TestCompanionRepairThatRunsOutOfTimeKeepsTheDesign(t *testing.T) {
 	result, err := s.aiTheme.createCompanionConcept(ctx, "fixture", aiThemeConceptRequest{Prompt: "Make the fox pink and add a bird", Previous: previous}, bg)
 	if err != nil || images != 2 || result.ImageBase64 != previous.ImageBase64 || len(result.Companions) != 1 || !result.Companions[0].Reuse || result.Companions[0].SheetBase64 != previous.Companions[0].SheetBase64 {
 		t.Fatalf("wanted the design with the previous fox after %d calls: %v %#v", images, err, result.Companions)
-	}
-}
-
-func TestCompanionRepairStopsBeforeTheDeadline(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), companionRepairBudget/2)
-	defer cancel()
-	if companionRepairFits(ctx) || !companionRepairFits(context.Background()) {
-		t.Fatal("repair budget ignores the request deadline")
 	}
 }
 

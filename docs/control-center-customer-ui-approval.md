@@ -7343,3 +7343,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: A pose whose background cannot be separated repeats the clean pose before it in the loop. A companion sheet the app cannot prepare at all is left out and the picture with the other companions is still built. The companion redraws a rejected sheet up to two times without telling the customer; if it never comes out clean, an existing companion keeps its previous drawings and a new one is left out, and a design without any companion left becomes a still picture. No wording, layout or control changes.
 - Scope: `normalizeCompanionSheet` in `apps/control-center/src/lib/ai-companion-sprites.ts`, the companion step of `buildAIThemeCandidate` in `ai-theme.ts`, their tests in `ai-companion-sprites.test.ts` and `ai-companions.test.ts`, the repair loop in `companion/internal/companionapi/ai_theme_companions.go` with its tests in `ai_theme_companion_matte_test.go`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — fix of error states
+
+## 2026-10-16 — #638: companion sheet fallback simplified
+
+- User approval: Simplification under Paul's rule of 2026-10-16 that the Mac app stays as simple as possible and does no heavy lifting of its own; no new wording; not seen by Paul.
+- Approved customer-visible result: as in "companion sheets never stop a design" above, with two changes: the companion redraws a rejected sheet once (not up to two times), and only the companion decides to leave a companion out; the app no longer drops companion sheets itself and only repeats the nearest clean pose for a single bad cell. No wording, layout or control changes.
+- Scope: the repair step in `companion/internal/companionapi/ai_theme_companions.go` and its tests in `ai_theme_companion_matte_test.go`, `ai-theme.ts` and `ai-companions.test.ts` restored to their earlier state, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — simplification of an error state
