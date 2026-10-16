@@ -7362,3 +7362,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none; test only.
 - Scope: `apps/control-center/src/components/control-center-app.app-update-prompt.test.tsx` and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — test only
+
+## 2026-10-16 — #610: approval marker after merging main with #657
+
+- User approval: Paul asked on 2026-10-16 to resolve the merge conflicts of the open pull requests. Main moved on with #657 (an approval-record marker), so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #610 entries above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
