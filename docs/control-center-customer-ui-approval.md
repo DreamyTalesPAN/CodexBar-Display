@@ -7715,3 +7715,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Unchanged. The flow closes the "Claude needs a new sign-in" overlay with "Not now" before it opens Settings.
 - Scope: `scripts/test-customer-flows.mjs` (one test), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — test change, no customer-visible change of its own
+
+## 2026-10-16 — Customer flows: close the provider overlays where a flow is not about them (#669)
+
+- User approval: Paul approved the provider looks on 2026-10-16 (entries above, via the review orchestrator); this change only updates customer flow tests for the overlay and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: Unchanged. Two flows that open with a sign-in or access need close its overlay with "Not now" before they navigate.
+- Scope: `scripts/test-customer-flows.mjs` (a helper and two calls), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — test change, no customer-visible change of its own

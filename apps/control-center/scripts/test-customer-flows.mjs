@@ -2619,6 +2619,24 @@ async function testDeniedLocalNetworkShowsRecovery(browser, appUrl) {
   await page.close();
 }
 
+// A provider that needs the customer opens its overlay over every main page
+// (states overview 644). A flow that is not about it closes each one with
+// Not now, waiting briefly for it to appear.
+async function closeProviderOverlays(page) {
+  for (let i = 0; i < 4; i++) {
+    const notNow = page
+      .getByRole("dialog")
+      .filter({ hasText: /needs (a new sign-in|access)/ })
+      .getByRole("button", { name: "Not now" });
+    try {
+      await notNow.first().waitFor({ timeout: 2_000 });
+    } catch {
+      return;
+    }
+    await notNow.first().click();
+  }
+}
+
 async function testProviderReadinessCustomerStates(browser, appUrl) {
   const cases = [
     {
@@ -2696,6 +2714,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
     });
 
     await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await closeProviderOverlays(page);
     await page
       .getByRole("heading", { name: "VibeTV is connected" })
       .waitFor({ timeout: 10_000 });
@@ -7673,6 +7692,7 @@ async function testProviderOnboardingUsesSharedHealthyDescriptor(
 
   providerHealthReadyAt = Date.now() + 4_000;
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await closeProviderOverlays(page);
   const providersScreen = setupScreen(page, SETUP_PROVIDERS_SCREEN);
   await providersScreen.waitFor({ timeout: 10_000 });
   const providersContinue = providersScreen.getByRole("button", {
