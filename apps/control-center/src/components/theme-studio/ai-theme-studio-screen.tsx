@@ -41,7 +41,7 @@ import {
 } from "@/components/ui/dialog";
 import { EditableThemePreview } from "./editable-theme-preview";
 import { friendlyElementName } from "./theme-studio-customer-labels";
-import { createDesignElement, isTypingTarget, LIVE_READINGS, moveLayer, pinnedElement, readingKey, setReading, type AddElementKind } from "./design-controls";
+import { createDesignElement, isTypingTarget, LIVE_READINGS, moveLayer, pinnedElement, readingKey, setReading, usageSectionIndices, type AddElementKind } from "./design-controls";
 import { ColorField, NumberField } from "./editor-fields";
 import {
   clampCompanionSize,
@@ -88,7 +88,10 @@ import {
   deleteAIThemeCredential,
   AI_THEME_ANIMATION_ASSET_PATH,
   AI_THEME_LOCAL_HISTORY_LIMIT,
+  AI_THEME_SCREENMASTER_ASSET_PATH,
   AI_THEME_TRANSMITTED_HISTORY_LIMIT,
+  isAttachedSceneAnimation,
+  isCompanionSprite,
   type AIThemeCapabilities,
   type AIThemeMessage,
 } from "@/lib/ai-theme";
@@ -100,9 +103,6 @@ import {
   setAIAnimationSpeed,
   spritePNG,
 } from "@/lib/ai-theme-document";
-import { AI_THEME_SCREENMASTER_ASSET_PATH, isCompanionSprite } from "@/lib/ai-theme";
-import { isAttachedSceneAnimation } from "@/lib/ai-theme";
-import { usageSectionIndices } from "./design-controls";
 import {applyAIThemeLayout,layoutContext} from "@/lib/ai-theme-layout";
 import type { ThemeStudioScreenProps } from "../theme-studio-screen";
 import { isNativeControlCenterApp, onNativeDownloadFinished, themeRenderPackUrl } from "../control-center-runtime";

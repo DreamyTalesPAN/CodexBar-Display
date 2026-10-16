@@ -5,15 +5,7 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --vibetv-signal: #CCFF00;
-  --vibetv-signal-hover: #ABD600;
   --vibetv-support: #506600;
-  --vibetv-ink: #1B1B1B;
-  --vibetv-body: #444933;
-  --vibetv-surface: #F9F9F9;
-  --vibetv-surface-secondary: #EEEEEE;
-  --vibetv-stroke: #E3E3E3;
-  --vibetv-inverse: #EDEDED;
   --background: #F9F9F9;
   --foreground: #1B1B1B;
   --card: #F9F9F9;
@@ -67,20 +59,13 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
   --color-success: var(--success);
@@ -163,51 +148,6 @@ input,
 select,
 textarea {
   letter-spacing: 0;
-}
-
-.vibetv-status-icon {
-  align-items: center;
-  border-radius: 9999px;
-  border-style: solid;
-  border-width: 1px;
-  display: grid;
-  flex-shrink: 0;
-  justify-items: center;
-  place-items: center;
-}
-
-.vibetv-status-icon--hero {
-  height: 4rem;
-  width: 4rem;
-}
-
-.vibetv-status-icon--step {
-  height: 2.75rem;
-  width: 2.75rem;
-}
-
-.vibetv-status-icon--complete {
-  background: #1B1B1B;
-  border-color: #1B1B1B;
-  color: #EDEDED;
-}
-
-.vibetv-status-icon--active {
-  background: #1B1B1B;
-  border-color: #1B1B1B;
-  color: #CCFF00;
-}
-
-.vibetv-status-icon--neutral {
-  background: #EEEEEE;
-  border-color: var(--border);
-  color: #1B1B1B;
-}
-
-.vibetv-status-icon--pending {
-  background: #F9F9F9;
-  border-color: var(--border);
-  color: #506600;
 }
 
 .dark {

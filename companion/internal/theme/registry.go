@@ -32,16 +32,6 @@ var registry = []Definition{
 	},
 }
 
-func DefaultProtocolName() string {
-	return Classic
-}
-
-func Definitions() []Definition {
-	out := make([]Definition, len(registry))
-	copy(out, registry)
-	return out
-}
-
 func Names() []string {
 	out := make([]string, len(registry))
 	for i := range registry {

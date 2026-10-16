@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { pollFirmwareUpdateJob } from "./control-center-app";
+import { pollFirmwareUpdateJob } from "./update-jobs";
 
 afterEach(() => vi.useRealTimers());
 

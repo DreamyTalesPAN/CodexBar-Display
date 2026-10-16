@@ -11,6 +11,7 @@ STAGING_DIR=""
 STAGING_IS_TEMP=0
 VOLUME_NAME="VibeTV Control Center"
 DRY_RUN=0
+OUTPUT_GIVEN=0
 
 usage() {
   cat <<EOF
@@ -43,6 +44,7 @@ while [[ $# -gt 0 ]]; do
     --output)
       need_value "$1" "${2:-}"
       DMG_PATH="$2"
+      OUTPUT_GIVEN=1
       shift 2
       ;;
     --staging-dir)
@@ -58,7 +60,9 @@ while [[ $# -gt 0 ]]; do
     --version)
       need_value "$1" "${2:-}"
       VERSION="${2#v}"
-      DMG_PATH="${ROOT}/dist/macos/VibeTV-Control-Center-v${VERSION}.dmg"
+      if [[ "$OUTPUT_GIVEN" == "0" ]]; then
+        DMG_PATH="${ROOT}/dist/macos/VibeTV-Control-Center-v${VERSION}.dmg"
+      fi
       shift 2
       ;;
     --dry-run)
