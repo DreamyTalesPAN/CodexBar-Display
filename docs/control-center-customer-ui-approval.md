@@ -7378,3 +7378,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: For a provider whose reading is stale and that needs sign-in, the tile shows its last good numbers with the red action link after the name, instead of the placeholder shape. Frame 5B shows the link only with the placeholder shape, so this combination is not yet approved. Wording stays the same; not seen by Paul yet.
 - Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — review fix to the Usage tiles, no customer-visible change of its own
+
+## 2026-10-16 — Usage tiles: a cleared stale provider shows no 0% (#669)
+
+- User approval: Paul chose the calm Usage tiles on 2026-10-16 (entry above, via the review orchestrator); this follow-up applies a Codex review finding and changes no wording.
+- Approved customer-visible result: A stale provider with nothing retained (all zeros) shows the grey placeholder shape and the spinner, not "0% session used" or "0% weekly used". A stale provider with a non-zero last good reading shows it as in the entry above. No new element; not seen by Paul yet.
+- Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the Usage tiles, no customer-visible change of its own

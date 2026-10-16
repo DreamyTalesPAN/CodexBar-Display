@@ -98,9 +98,9 @@ export function UsageScreen({
   const tiles = [
     ...providers.map((provider) => ({
       id: provider.id,
-      // A stale provider keeps its last good numbers beside the action.
+      // A stale reading keeps its last good numbers beside the action.
       node:
-        actions[provider.id] && !provider.stale ? (
+        actions[provider.id] && !usageRetainedNumbers(provider) ? (
           <UsageActionTile {...actions[provider.id]} />
         ) : (
           <UsageProviderTile action={actions[provider.id]} provider={provider} />
@@ -589,9 +589,20 @@ function UsageActionLink({ label, onAction }: Pick<UsageProviderAction, "label" 
   );
 }
 
-// A stale provider keeps its last good numbers; the API flags its lanes unavailable too.
+// A stale reading keeps its last good numbers, and the API flags its lanes
+// unavailable too. A cleared or never-read stale provider is all zeros and
+// must not show as "0% used", so only a non-zero stale reading counts.
+function usageRetainedNumbers(provider: UsageProviderInfo): boolean {
+  return (
+    Boolean(provider.stale) &&
+    (provider.session > 0 ||
+      provider.weekly > 0 ||
+      (provider.windows || []).some((window) => window.usedPercent > 0))
+  );
+}
+
 function usageHasNumbers(provider: UsageProviderInfo): boolean {
-  return Boolean(provider.stale) || !provider.usageUnavailable;
+  return !provider.usageUnavailable || usageRetainedNumbers(provider);
 }
 
 function UsageTileFrame({

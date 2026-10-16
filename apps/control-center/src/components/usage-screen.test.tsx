@@ -594,6 +594,26 @@ describe("UsageScreen", () => {
     expect(html).not.toContain("Reset in");
   });
 
+  it("shows no 0% for a cleared stale provider with nothing retained", () => {
+    const html = renderUsage(null, {
+      ...usage,
+      providers: [
+        {
+          ...usage.providers[0],
+          session: 0,
+          weekly: 0,
+          stale: true,
+          usageUnavailable: true,
+          sessionUnavailable: true,
+          weeklyUnavailable: true,
+        },
+      ],
+    });
+    expect(html).not.toContain("0% session used");
+    expect(html).not.toContain("0% weekly used");
+    expect(html).toContain('aria-label="Updating"');
+  });
+
   it("shows a normal tile's reset time", () => {
     const html = renderUsage(null, {
       ...usage,
