@@ -7445,3 +7445,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: As in the overlay entries above, on every page except Settings. Settings already shows the same provider's message in its own dialog, so the customer sees one dialog for the provider, not two in a row. No new wording.
 - Scope: `control-center-app.tsx` (overlay mount condition), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: a failed sign-in from a Usage tile reopens it (#669)
+
+- User approval: Paul chose on 2026-10-16 (via the review orchestrator) Claude Design page "Control Center Redesign" 644, "3A + 4A + 5B (weekly: number first), Paul 16.10." — the overlay of the entry above; this follow-up applies two Codex review findings and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: As in the overlay entries above. When a sign-in start fails, the overlay of that provider opens again even after "Not now", and shows the failure in its text. The failure is cleared when the provider is healthy again, when the sign-in succeeds, or when the overlay is closed. No new element; no new wording.
+- Scope: `provider-action-dialog.tsx` and its test (the failure is kept with the action), `control-center-app.tsx` (reports the sign-in start), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own

@@ -427,12 +427,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   >(null);
   const [providerPreferencesError, setProviderPreferencesError] =
     useState<ApiError | null>(null);
-  // A failed sign-in start, for the overlay of that provider and state only.
-  const [providerSignInFailure, setProviderSignInFailure] = useState<{
-    providerId: string;
-    state: string;
-    error: ApiError;
-  } | null>(null);
+  // Reports a sign-in start to the provider overlay (set once it is rendered).
+  const providerActionReportRef = useRef<
+    ((id: string, state: string, error: ApiError | null) => void) | null
+  >(null);
   const [providerDisplay, setProviderDisplay] =
     useState<ProviderDisplaySelection | null>(null);
   const providerDisplayRef = useRef<ProviderDisplaySelection | null>(null);
@@ -3624,6 +3622,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (!providerId) {
         return;
       }
+      const signInState = item.health ? providerRowHealthState(item.health) : "";
       // On the Mac the app reads the browser sign-in the background check
       // cannot read. It starts here, inside the customer's click: WebKit
       // hands a vibetv:// link to the app only then.
@@ -3636,18 +3635,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           { method: "POST" },
         );
         setProviderPreferencesError(null);
-        setProviderSignInFailure(null);
+        providerActionReportRef.current?.(item.providerId ?? "", signInState, null);
       } catch (error) {
         const failure = normalizeCaughtError(
           error,
           `The ${item.label} sign-in could not be started.`,
         );
         setProviderPreferencesError(failure);
-        setProviderSignInFailure({
-          providerId,
-          state: item.health ? providerRowHealthState(item.health) : "",
-          error: failure,
-        });
+        providerActionReportRef.current?.(item.providerId ?? "", signInState, failure);
         return;
       }
       const followUps = providerSignInFollowUpsRef.current;
@@ -4712,8 +4707,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       ? (item) => void openProviderSignIn(item)
       : () => setActiveTab("settings"),
   });
-  const [providerActionShown, dismissProviderAction] =
+  const [providerActionShown, dismissProviderAction, reportProviderSignIn] =
     useProviderActionDismissal(providerActions);
+  useEffect(() => {
+    providerActionReportRef.current = reportProviderSignIn;
+  });
   const providerPickerProps = {
     usage,
     display: providerDisplay,
@@ -5822,19 +5820,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       activeShellTab !== "settings" ? (
         <ProviderActionDialog
           action={providerActionShown.action}
-          // Only a failed start for this provider and state belongs in its dialog.
-          error={
-            providerSignInFailure &&
-            providerSignInFailure.providerId ===
-              providerActionShown.id.trim().toLowerCase() &&
-            providerSignInFailure.state === providerActionShown.action.state
-              ? providerSignInFailure.error
-              : null
-          }
-          onDismiss={() => {
-            setProviderSignInFailure(null);
-            dismissProviderAction();
-          }}
+          error={providerActionShown.error}
+          onDismiss={dismissProviderAction}
         />
       ) : null}
       {setupAgainRequested ? (

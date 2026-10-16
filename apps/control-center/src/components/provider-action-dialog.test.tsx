@@ -134,3 +134,39 @@ it("comes before the busy notice: the notice waits for it, not the other way rou
   expect(screen.queryByRole("dialog", { name: systemBusyCopy.title })).toBeNull();
   expect(dialog("Claude needs a new sign-in")).not.toBeNull();
 });
+
+function ReportingOverlay({ actions }: { actions: Record<string, UsageProviderAction> }) {
+  const [shown, dismiss, report] = useProviderActionDismissal(actions);
+  return (
+    <div>
+      <button
+        onClick={() =>
+          report("claude", "auth_required", {
+            code: "x",
+            message: "Could not open Claude.",
+            nextAction: "Try again later.",
+          })
+        }
+        type="button"
+      >
+        report
+      </button>
+      {shown ? (
+        <ProviderActionDialog action={shown.action} error={shown.error} onDismiss={dismiss} />
+      ) : null}
+    </div>
+  );
+}
+
+it("a failed start reopens a closed overlay with its error, cleared once the provider is healthy", async () => {
+  const { rerender } = render(<ReportingOverlay actions={claude()} />);
+  fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+  expect(dialog("Claude needs a new sign-in")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "report" }));
+  expect(dialog("Claude needs a new sign-in")?.textContent).toContain("Could not open Claude. Try again later.");
+  await act(async () => rerender(<ReportingOverlay actions={{}} />));
+  await act(async () => rerender(<ReportingOverlay actions={claude()} />));
+  const again = dialog("Claude needs a new sign-in");
+  expect(again?.textContent).toContain("VibeTV can't show Claude until you sign in again.");
+  expect(again?.textContent).not.toContain("Could not open Claude.");
+});

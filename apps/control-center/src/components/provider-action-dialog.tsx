@@ -45,24 +45,32 @@ const actionKey = (id: string, action: UsageProviderAction) =>
 /**
  * The one provider overlay to show: the first action not dismissed. A closed
  * overlay stays closed while the provider stays in that state. A provider that
- * is healthy again drops out of `actions`, which clears its dismissal, so it
- * returns when the cause comes back. React state only.
+ * is healthy again drops out of `actions`, which clears its dismissal and its
+ * failure, so it returns when the cause comes back. A failed sign-in start is
+ * reported with `reportSignIn`; it reopens that overlay with the error. React
+ * state only.
  */
 export function useProviderActionDismissal(
   actions: Record<string, UsageProviderAction>,
-): [{ id: string; action: UsageProviderAction } | null, () => void] {
+): [
+  { id: string; action: UsageProviderAction; error: ApiError | null } | null,
+  () => void,
+  (id: string, state: string, error: ApiError | null) => void,
+] {
   const entries = Object.entries(actions);
   const signature = entries.map(([id, action]) => actionKey(id, action)).join("\n");
   const [memory, setMemory] = useState({
     signature,
     dismissed: new Set<string>(),
+    failures: new Map<string, ApiError>(),
   });
-  let dismissed = memory.dismissed;
+  let { dismissed, failures } = memory;
   if (memory.signature !== signature) {
-    // The set of actions changed: keep only dismissals of actions still there.
+    // The set of actions changed: keep only what is still there.
     const current = new Set(signature ? signature.split("\n") : []);
     dismissed = new Set([...dismissed].filter((key) => current.has(key)));
-    setMemory({ signature, dismissed });
+    failures = new Map([...failures].filter(([key]) => current.has(key)));
+    setMemory({ signature, dismissed, failures });
   }
   const shown = entries.find(
     ([id, action]) => !dismissed.has(actionKey(id, action)),
@@ -70,13 +78,43 @@ export function useProviderActionDismissal(
   const dismiss = () => {
     if (shown) {
       const key = actionKey(shown[0], shown[1]);
-      setMemory((previous) => ({
-        signature: previous.signature,
-        dismissed: new Set(previous.dismissed).add(key),
-      }));
+      setMemory((previous) => {
+        const failuresLeft = new Map(previous.failures);
+        failuresLeft.delete(key);
+        return {
+          signature: previous.signature,
+          dismissed: new Set(previous.dismissed).add(key),
+          failures: failuresLeft,
+        };
+      });
     }
   };
-  return [shown ? { id: shown[0], action: shown[1] } : null, dismiss];
+  const reportSignIn = (id: string, state: string, error: ApiError | null) => {
+    const key = `${id}:${state}`;
+    setMemory((previous) => {
+      const failuresNow = new Map(previous.failures);
+      const dismissedNow = new Set(previous.dismissed);
+      if (error) {
+        failuresNow.set(key, error);
+        // A new failure reopens the overlay of that provider, to show it.
+        dismissedNow.delete(key);
+      } else {
+        failuresNow.delete(key);
+      }
+      return { signature: previous.signature, dismissed: dismissedNow, failures: failuresNow };
+    });
+  };
+  return [
+    shown
+      ? {
+          id: shown[0],
+          action: shown[1],
+          error: failures.get(actionKey(shown[0], shown[1])) ?? null,
+        }
+      : null,
+    dismiss,
+    reportSignIn,
+  ];
 }
 
 /**
