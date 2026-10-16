@@ -524,6 +524,7 @@ describe("UsageScreen", () => {
     expect(html).toContain('aria-label="57% weekly used"');
     expect(html).not.toContain("Session: 0%");
     expect(html).not.toContain("session used");
+    expect(html).toContain("session usage unavailable");
     // A screen reader hears the same: a percentage only for the lane that has one.
     expect(html.match(/aria-valuenow="\d+"/g)).toEqual(['aria-valuenow="57"']);
   });
