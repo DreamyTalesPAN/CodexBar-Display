@@ -31,6 +31,8 @@ Center on the customer's Mac.
 - [Hosted VibeTV gates](vibetv-hosted-gates.md): owner-dispatched merge and release-candidate gates in GitHub Actions.
 - [Operator runbook](operator-runbook.md): support, recovery, network diagnosis (`net-probe`), the one-command hardware self-test, and smoke tests.
 - [Firmware OTA contract](firmware-ota-contract.md): the supported customer update path and its safety invariants.
+- [Support period and update commitment](support-period.md): draft of the security-update promise (#538); the period is still a placeholder.
+- [Reporting a security vulnerability](vulnerability-reporting.md): the published contact and how a report is handled.
 - [Customer rehearsal](../AGENTS.md#customer-rehearsal-cold-and-warm-start): the cold/warm-start scripts every change is validated with before hand-off.
 - [Usage polling architecture](usage-polling-architecture.md): usage collection and latency behavior.
 - [Companion platform boundary](windows-platform-neutral.md): shared Companion code for Windows and the open Win-CodexBar blockers.
