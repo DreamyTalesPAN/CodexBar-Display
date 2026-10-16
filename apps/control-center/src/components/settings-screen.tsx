@@ -585,6 +585,7 @@ export function SettingsScreen({
           pendingCheckIds={providerPicker.pendingCheckIds}
           pendingPreferenceIds={providerPicker.pendingPreferenceIds}
           providers={providers}
+          showIntro={false}
         />
       </SettingsSection>
     </div>
