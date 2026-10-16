@@ -552,6 +552,7 @@ func (s *Server) withConfiguredConnectionState(
 	if samePublicTarget(device.Target, cableDeviceTarget) && device.Stream != nil {
 		device = withDisplayStreamInfo(device, *device.Stream)
 	}
+	device = withConfiguredDeviceFrame(device, cfg.DeviceID)
 	device = withoutReplacedFrameProvider(device, time.Now())
 	device.Active = strings.TrimSpace(cfg.DeviceID) != ""
 	if !device.Active {

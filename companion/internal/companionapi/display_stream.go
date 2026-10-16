@@ -183,10 +183,7 @@ func withShownFrame(stream displayStreamInfo, target string) displayStreamInfo {
 		return stream
 	}
 	cable := samePublicTarget(target, cableDeviceTarget)
-	logPath := displayStreamOutLogPath()
-	// The log is read as a bounded tail; the last frame per VibeTV is also
-	// kept on its own, since a theme frame can stay on screen for hours.
-	streamLog := append(readDisplayStreamLog(logPath), shownFrameLines(runtimepaths.DisplayShownFrames(logPath)))
+	streamLog := shownFrameLog()
 	// Frames to other VibeTVs in between must not hide the last one sent to target.
 	sentAt, _, line, ok := streamLog.lastFrameWhere(time.Time{}, func(lastTarget, line string) bool {
 		if cable {
@@ -201,6 +198,47 @@ func withShownFrame(stream displayStreamInfo, target string) displayStreamInfo {
 			return strings.EqualFold(displayStreamLogValue(line, "deviceId"), id)
 		})
 	}
+	return withShownLine(stream, sentAt, line, ok)
+}
+
+// withConfiguredDeviceFrame names the providers of the last frame sent to
+// the configured VibeTV itself, over either connection, once its device ID
+// is known (#368): frames to other VibeTVs on the same cable or address
+// never stand in for it. An unplugged USB port or a rejected pairing still
+// names none.
+func withConfiguredDeviceFrame(device deviceInfo, deviceID string) deviceInfo {
+	deviceID = strings.TrimSpace(deviceID)
+	if device.Stream == nil || deviceID == "" {
+		return device
+	}
+	sentAt, _, line, ok := shownFrameLog().lastFrameWhere(time.Time{}, func(_, line string) bool {
+		return strings.EqualFold(displayStreamLogValue(line, "deviceId"), deviceID)
+	})
+	if !ok && device.Stream.Provider != "" && device.Stream.shownDeviceID == "" {
+		// A frame logged without a device ID (older stream): its target match stands.
+		return device
+	}
+	stream := withShownLine(*device.Stream, sentAt, line, ok)
+	switch stream.ErrorCode {
+	case "device_not_found", "pairing_token_rejected":
+		stream = withoutShownProviders(stream)
+	}
+	device.Stream = &stream
+	return device
+}
+
+// shownFrameLog is the stream log tail plus the last frame kept per VibeTV,
+// since a theme frame can stay on screen long after it left the tail.
+func shownFrameLog() displayStreamLog {
+	logPath := displayStreamOutLogPath()
+	return append(readDisplayStreamLog(logPath), shownFrameLines(runtimepaths.DisplayShownFrames(logPath)))
+}
+
+// withShownLine names the providers of a delivered frame line; an error
+// frame or no frame names none.
+func withShownLine(stream displayStreamInfo, sentAt time.Time, line string, ok bool) displayStreamInfo {
+	stream = withoutShownProviders(stream)
+	stream.shownAt, stream.shownDeviceID = time.Time{}, ""
 	if !ok || displayStreamLogValue(line, "error") != "" {
 		return stream
 	}

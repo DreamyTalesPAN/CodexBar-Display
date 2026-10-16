@@ -48,3 +48,36 @@ func TestShownFrameOutlivesTheLogTail(t *testing.T) {
 		t.Fatalf("want the newer logged frame, got %+v", stream)
 	}
 }
+
+func TestShownFrameFollowsTheConfiguredVibeTV(t *testing.T) {
+	sentAt := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+	at := func(d time.Duration) string { return sentAt.Add(d).Format(time.RFC3339Nano) }
+	cableA := at(0) + ` sent frame -> /dev/cu.usbserial-1410 transport=usb deviceId=5804558 provider=codex label=VibeTV error=""`
+	cableB := at(time.Minute) + ` sent frame -> /dev/cu.usbserial-1410 transport=usb deviceId=777 provider=claude label=VibeTV error=""`
+	wifiA := at(0) + ` sent frame -> http://192.168.178.72 transport=wifi deviceId=5804558 provider=claude label=VibeTV error=""`
+	for _, tc := range []struct {
+		name      string
+		lines     []string
+		errorCode string
+		want      string
+	}{
+		{"cable A, then B, back to A", []string{cableA, cableB}, "", "codex"},
+		{"A moved from WiFi to Cable, no Cable frame yet", []string{wifiA}, "", "claude"},
+		{"stream sends to B while A is configured", []string{cableA, cableB}, "device_frame_mismatch", "codex"},
+		{"no frame for A", []string{cableB}, "", ""},
+		{"frame logged without a device ID", []string{at(0) + ` sent frame -> /dev/cu.usbserial-1410 transport=usb provider=codex label=VibeTV error=""`}, "", "codex"},
+		{"USB unplugged", []string{cableA}, "device_not_found", ""},
+		{"pairing rejected", []string{cableA}, "pairing_token_rejected", ""},
+	} {
+		logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+		t.Setenv(displayStreamOutLogEnv, logPath)
+		if err := os.WriteFile(logPath, []byte(strings.Join(tc.lines, "\n")+"\n"), 0o600); err != nil {
+			t.Fatalf("write display stream log: %v", err)
+		}
+		stream := withShownFrame(displayStreamInfo{Target: cableDeviceTarget, Running: true, ErrorCode: tc.errorCode}, cableDeviceTarget)
+		got := withConfiguredDeviceFrame(deviceInfo{Target: cableDeviceTarget, Stream: &stream}, "5804558")
+		if got.Stream.Provider != tc.want || (tc.want != "" && got.Stream.shownDeviceID != "5804558" && got.Stream.shownDeviceID != "") {
+			t.Fatalf("%s: want provider %q of the configured VibeTV, got %+v", tc.name, tc.want, got.Stream)
+		}
+	}
+}
