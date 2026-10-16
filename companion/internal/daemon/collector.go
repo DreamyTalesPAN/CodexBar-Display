@@ -3,6 +3,9 @@ package daemon
 import (
 	"context"
 	"errors"
+	"io"
+	"net"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -10,6 +13,8 @@ import (
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/systemload"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/timeline"
 )
 
 const (
@@ -25,6 +30,10 @@ const (
 	// found the stored totals expired (ten minutes), took the new ones for a
 	// first reading and could show no work for one more scan period.
 	tokenStatsFailedScanCooldown = time.Minute
+	// systemBusyCycles is how many collection intervals the running usage
+	// engine must go without answering before a starved computer is named as
+	// the reason (#606). One slow answer is not an incident.
+	systemBusyCycles = 3
 )
 
 type providerSnapshot struct {
@@ -82,6 +91,9 @@ type providerCollector struct {
 	wake                  <-chan struct{}
 	afterWakeCollect      func()
 	afterFirstCollect     func()
+	readSystemLoad        func() (systemload.Figures, error)
+	reportSystemBusy      func(*SystemBusy)
+	record                func(timeline.Event)
 
 	warmupUntil time.Time
 
@@ -102,6 +114,10 @@ type providerCollector struct {
 	firstCollectStarted  bool
 	firstCollectDone     bool
 	lastFetchErr         error
+	// fetchFailingSince is when the usage engine stopped answering: the first
+	// failed fetch after the last one it answered. Zero while it answers.
+	fetchFailingSince time.Time
+	systemBusy        *SystemBusy
 	// providerErrors holds each provider's last logged failure kind, so a
 	// failing provider is logged when its failure changes, not every cycle.
 	providerErrors          map[string]string
@@ -149,12 +165,20 @@ func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
 		persistInterval:       1 * time.Minute,
 		tokenStatsCooldown:    tokenStatsScanCooldown,
 		providers:             make(map[string]providerSnapshot),
+		readSystemLoad:        deps.readSystemLoad,
+		reportSystemBusy:      deps.reportSystemBusy,
+		record:                deps.record,
 	}
 	if !opts.Once {
 		// Until the first collection since runtime start completes, an empty
 		// or unavailable collector is warm-up, not an answer about this Mac.
 		// `daemon --once` is exempt: one support cycle reports what it finds.
 		collector.warmupUntil = nowFn().Add(collectorWarmupMaxAge())
+	}
+	if deps.currentSystemBusy != nil {
+		// A replaced worker's incident goes on: its start, and with it the
+		// customer's dismissal, stay until the engine answers again.
+		collector.systemBusy = deps.currentSystemBusy()
 	}
 	if loaded, savedAt, ok := loadPersistedProviderSnapshotsAnyAge(); ok {
 		collector.providers = migrateLegacySnapshotUsageWindows(loaded)
@@ -399,6 +423,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 			c.persistIfNeeded(collectedAt)
 		}
 		c.logf("collector fetch-all transport=%s source=%s fresh=false err=%v timeout=%s\n", usageSourceOrDefault(c.transportName, "usb"), sourceMode, err, c.timeout)
+		c.noteFetchResult(collectedAt, err)
 		return
 	}
 
@@ -507,10 +532,96 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 	c.mu.Unlock()
 
 	c.persistIfNeeded(collectedAt)
+	c.noteFetchResult(collectedAt, nil)
 	for _, change := range providerErrorLog {
 		c.logf("collector provider-error %s\n", change)
 	}
 	c.logf("collector complete transport=%s source=%s fresh=true providers=%d succeeded=%d timeout=%s mode=fetch-all\n", usageSourceOrDefault(c.transportName, "usb"), sourceMode, len(allProviders), successes, c.timeout)
+}
+
+// noteFetchResult decides after every collection whether the computer is too
+// busy for the usage engine (#606). Both must hold: the running engine has not
+// answered for systemBusyCycles intervals, and the computer is low on memory.
+// An engine that answers, even with an HTTP error or every provider signed
+// out or failing, ends it: those keep their own messages. While the engine is
+// not running, the verdict stands; its supervisor restarting it is not the
+// end of the starvation that made it fail.
+func (c *providerCollector) noteFetchResult(now time.Time, fetchErr error) {
+	answered := fetchErr == nil || !engineSilent(fetchErr)
+	c.mu.Lock()
+	busy := c.systemBusy
+	if answered {
+		c.fetchFailingSince = time.Time{}
+		busy = nil
+	} else if c.fetchFailingSince.IsZero() {
+		c.fetchFailingSince = now
+	}
+	failingFor := now.Sub(c.fetchFailingSince)
+	c.mu.Unlock()
+
+	if !answered && failingFor >= systemBusyCycles*c.interval && c.engineRunning() && c.readSystemLoad != nil {
+		figures, err := c.readSystemLoad()
+		switch {
+		case err != nil:
+			c.logf("collector system-load-unreadable err=%v\n", err)
+		case !figures.Starved():
+			busy = nil
+		case busy == nil:
+			busy = &SystemBusy{Since: now, Figures: figures}
+		default:
+			busy = &SystemBusy{Since: busy.Since, Figures: figures}
+		}
+	}
+
+	c.mu.Lock()
+	previous := c.systemBusy
+	c.systemBusy = busy
+	c.mu.Unlock()
+	if c.reportSystemBusy != nil {
+		c.reportSystemBusy(busy)
+	}
+	switch {
+	case previous == nil && busy != nil:
+		c.logf("collector system-busy state=busy failingFor=%s figures=%+v\n", failingFor.Round(time.Second), busy.Figures)
+		c.recordEvent(timeline.Event{Component: "system", State: "busy", Reason: busy.Summary()})
+	case previous != nil && busy == nil:
+		c.logf("collector system-busy state=normal\n")
+		c.recordEvent(timeline.Event{Component: "system", State: "normal"})
+	}
+}
+
+// engineSilent is a fetch the engine gave no answer to: no complete HTTP
+// response came (the request ran out of time, or the connection failed or was
+// cut, also in the middle of the body), or there was no serve to ask. An HTTP
+// error or a body that does not decode is an answer, and keeps its own
+// message.
+func engineSilent(err error) bool {
+	var requestErr *url.Error
+	var connErr *net.OpError
+	return errors.As(err, &requestErr) ||
+		errors.As(err, &connErr) ||
+		errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, codexbar.ErrDashboardServeUnavailable)
+}
+
+func (c *providerCollector) engineRunning() bool {
+	return c.dashboard != nil && c.dashboard.Info().Running
+}
+
+func (c *providerCollector) recordEvent(event timeline.Event) {
+	if c.record != nil {
+		c.record(event)
+	}
+}
+
+func (c *providerCollector) isSystemBusy() bool {
+	if c == nil {
+		return false
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.systemBusy != nil
 }
 
 func parsedProviderCollectedAt(parsed codexbar.ParsedFrame, fallback time.Time) time.Time {
@@ -531,7 +642,7 @@ func (c *providerCollector) fetchProvidersForCollect(ctx context.Context, now ti
 			c.logf("collector dashboard-unavailable source=codexbar-dashboard err=%v\n", err)
 			return nil, "codexbar-dashboard", err
 		}
-		return nil, "codexbar-dashboard", errors.New("dashboard serve unavailable")
+		return nil, "codexbar-dashboard", codexbar.ErrDashboardServeUnavailable
 	}
 	if c.fetchProviders == nil {
 		return nil, "codexbar-usage-json", errors.New("usage provider fetcher unavailable")

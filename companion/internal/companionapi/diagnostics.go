@@ -37,6 +37,9 @@ type diagnosticsResponse struct {
 	// NoReadingSince names the providers that are not delivering and when
 	// each one's last usage reading was (#368); see noReadingSinceByProvider.
 	NoReadingSince map[string]string `json:"noReadingSince,omitempty"`
+	// SystemBusy has the memory and load figures while the computer is too
+	// starved for the usage engine to answer (#606).
+	SystemBusy *daemon.SystemBusy `json:"systemBusy,omitempty"`
 }
 
 type diagnosticsEnvironment struct {
@@ -142,6 +145,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			UsageEngine:      usageEngineDiagnostics(providerSetup.Engine),
 			LastCollection:   lastCollection,
 			NoReadingSince:   noReadingSince,
+			SystemBusy:       s.currentSystemBusy(),
 			SetupLog:         s.setupEvents.snapshot(s.currentTime()),
 			Timeline:         s.timeline.Snapshot(s.currentTime()),
 			Checks:           checks,
