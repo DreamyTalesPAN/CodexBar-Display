@@ -2088,10 +2088,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 updater.automaticallyDownloadsUpdates = false
                 if launchUpdateTurnedDown {
                     // The feed answered after the limit. Offer that update in
-                    // Sparkle's dialog now instead of dropping it for a day.
+                    // Sparkle's dialog now instead of dropping it for a day,
+                    // through the probe below: Sparkle's background check may
+                    // hold a found update back (#570).
                     launchUpdateTurnedDown = false
-                    backgroundUpdateCheckPending = false
-                    updater.checkForUpdatesInBackground()
+                    backgroundUpdateCheckPending = true
                 }
             }
             if backgroundUpdateCheckPending {
