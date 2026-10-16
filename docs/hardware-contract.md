@@ -18,7 +18,7 @@ The firmware `hello.board` value must match the selected firmware environment:
 | Firmware Env | Expected `hello.board` | Release Role |
 |---|---|---|
 | `esp8266_smalltv_st7789` | `esp8266-smalltv-st7789` | release-gated |
-| `lilygo_t_display_s3` | `esp32-lilygo-t-display-s3` | experimental, non-blocking |
+| `lilygo_t_display_s3` | `esp32-lilygo-t-display-s3` | experimental, non-blocking; built in CI, not published in releases or the firmware manifest (#658) |
 
 The experimental ESP32 renderer draws one fixed layout: the label, session and
 weekly percent with bars in the frame's `usageMode` (`used` or `remaining`),
