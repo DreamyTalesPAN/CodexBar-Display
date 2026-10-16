@@ -105,6 +105,11 @@ func fetchDashboardUsage(ctx context.Context, providerIDs []string, fetch func(c
 		return decoded, nil
 	}
 	if !providerProbePerProvider {
+		// One request for every provider, answered from the serve's cache
+		// like the snapshot: bounded like it, so a stalled serve costs one
+		// collection (#606). Per-provider probes keep their own budget.
+		ctx, cancel := context.WithTimeout(ctx, dashboardRequestTimeout)
+		defer cancel()
 		raw, err := fetch(ctx, "")
 		if err != nil {
 			return nil, nil, err

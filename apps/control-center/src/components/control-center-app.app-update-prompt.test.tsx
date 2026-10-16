@@ -13,6 +13,8 @@ import { markWhatsNewSeen } from "@/lib/whats-new";
 import { ControlCenterApp } from "./control-center-app";
 
 const CHECK_FOR_UPDATES = "vibetv://check-for-updates";
+// Since #619 the Mac App's automatic prompt asks for the quiet check (#570).
+const CHECK_FOR_UPDATES_IN_BACKGROUND = "vibetv://check-for-updates-in-background";
 const themeSpec = { active: true, path: "/themes/codex/spec-v7.json", hash: "hash-v7", renderOk: true };
 const claude = {
   id: "codexbar.providers.claude.enabled",
@@ -209,10 +211,10 @@ afterEach(() => {
   }
 });
 
-it("opens Sparkle's dialog in the Mac App once for the offered version", async () => {
+it("asks the Mac App for its quiet update check once for the offered version", async () => {
   const app = startApp("darwin");
   await app.wait(15);
-  expect(app.opened).toEqual([CHECK_FOR_UPDATES]);
+  expect(app.opened).toEqual([CHECK_FOR_UPDATES_IN_BACKGROUND]);
 });
 
 it("installs nothing in the Windows App until the customer clicks Update", async () => {

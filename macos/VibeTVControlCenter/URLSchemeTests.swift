@@ -406,6 +406,16 @@ func runURLSchemeTests() {
         "the exact native Sparkle action must be accepted"
     )
     require(
+        nativeControlCenterAction(for: URL(string: "vibetv://check-for-updates-in-background")!)
+            == .checkForUpdatesInBackground,
+        "the window's own update prompt must map to the background Sparkle check (#570)"
+    )
+    require(
+        nativeControlCenterAction(for: URL(string: "vibetv://check-for-updates")!) == .checkForUpdates
+            && !isCheckForUpdatesInBackgroundURL(URL(string: "vibetv://check-for-updates-in-background?x=1")!),
+        "a click keeps the visible check, and the background action takes no query"
+    )
+    require(
         isRestartControlCenterURL(URL(string: "vibetv://restart-control-center")!),
         "the exact native restart action must be accepted"
     )
