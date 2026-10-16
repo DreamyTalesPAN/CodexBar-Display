@@ -21,6 +21,7 @@ import {
   SetupAddressDialog,
   SetupConnectFailedDialog,
   SetupDeviceNotFoundDialog,
+  SetupMacAppUpdateDialog,
   SetupCableHelpDialog,
 } from "./setup-device-dialogs";
 import { SetupDialog } from "./setup-dialog";
@@ -202,6 +203,9 @@ export function SetupWizard(props: SetupWizardProps) {
   const [wifiError, setWiFiError] = useState<string | null>(null);
   const [addressDialogOpen, setAddressDialogOpen] = useState(false);
   const [notFoundDismissed, setNotFoundDismissed] = useState(false);
+  // Offered once: after "Scan again" or closing it, not-found shows its usual help (#561).
+  const [macAppUpdateDismissed, setMacAppUpdateDismissed] = useState(false);
+  const pendingMacAppUpdate = macAppUpdateDismissed ? undefined : props.macAppUpdate;
   // The completion this step asked for is still on its way. Held here rather
   // than passed in: the wizard is what awaits it.
   const [providersContinuing, setProvidersContinuing] = useState(false);
@@ -734,7 +738,8 @@ export function SetupWizard(props: SetupWizardProps) {
           connecting={connecting}
           connectPhase={connect.state.phase}
           logLines={connectLogLines(connect.state, props.firmwareWrittenPercent)}
-          macAppUpdate={props.macAppUpdate}
+          macAppUpdate={pendingMacAppUpdate}
+          onDismissMacAppUpdate={() => setMacAppUpdateDismissed(true)}
           onConnect={startConnect}
           onBack={
             connect.state.phase === "idle" &&
@@ -791,15 +796,22 @@ export function SetupWizard(props: SetupWizardProps) {
             primaryAction={{ label: "OK", onSelect: () => setWiFiError(null) }}
           />
         ) : null}
-        {searchFailed && !wifiSetup && !props.connectionMode && !preferredTransport ? (
+        {searchFailed && !wifiSetup && pendingMacAppUpdate ? (
+          <SetupMacAppUpdateDialog
+            offer={pendingMacAppUpdate}
+            onDismiss={() => setMacAppUpdateDismissed(true)}
+            onScanAgain={() => {
+              setMacAppUpdateDismissed(true);
+              searchAgain();
+            }}
+          />
+        ) : searchFailed && !wifiSetup && !props.connectionMode && !preferredTransport ? (
           <SetupCableHelpDialog
-            macAppUpdate={props.macAppUpdate}
             onEnterAddressManually={openAddressDialog}
             onScanAgain={searchAgain}
           />
         ) : (
           <SetupDeviceNotFoundDialog
-            macAppUpdate={props.macAppUpdate}
             onEnterAddressManually={openAddressDialog}
             onOpenChange={(open) => setNotFoundDismissed(!open)}
             onScanAgain={searchAgain}

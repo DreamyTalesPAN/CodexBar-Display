@@ -7199,3 +7199,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the same "Update the Mac App" hint as approved above, now also in that waiting help dialog, only in the Mac App and only when a newer Mac App exists. Nothing else changes.
 - Scope: `setup-device-screen.tsx`, `setup-wizard.tsx`, their test, the pinned actions in `.github/workflows/claude.yml` (same change as #640), the merge of main and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — completes the unreleased hint, nothing to announce
+
+## 2026-10-16 — Mac App update as its own dialog before "not found" (#561, design 1d)
+
+- User approval: Paul rejected the inline hint of the entries above on 2026-10-15 after seeing it on the Mac ("das gebe ich nicht frei"), so those entries no longer describe an approved look. He had the hint redesigned in Claude Design (project "Screen-Redesign mit VibeTV", page "Setup - Mac App Update (561)") and chose variant 1d on 2026-10-16 ("1d").
+- Approved customer-visible result: in the Mac App only, when setup finds no VibeTV and a newer Mac App exists, a dialog "Update the Mac App first" appears before "We couldn't find your VibeTV" and before "Connect the USB cable": "We couldn't find your VibeTV. Version <version> is out, and an older app may not find it. Setup scans again after the update." Footer: "Scan again" (outline) and "Update Mac App" (signal), plus the close button. "Scan again" or closing leads to the usual not-found help without any hint; the old inline card is gone. Windows shows no Mac App dialog.
+- Scope: `setup-device-dialogs.tsx`, `setup-device-screen.tsx`, `setup-wizard.tsx`, `setup-dialog.tsx` (description may carry the version in mono), their tests, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — completes the unreleased #561 hint, nothing to announce

@@ -123,26 +123,52 @@ function SetupAddressDialogForm({
 /** A newer Mac App exists; an old app can be why no VibeTV can be found (#561). */
 export type MacAppUpdateOffer = { onUpdate: () => void; version: string };
 
-function MacAppUpdateNotice({ offer }: { offer?: MacAppUpdateOffer }) {
-  if (!offer) {
-    return null;
-  }
+/**
+ * #561, design 1d: when no VibeTV was found and a newer Mac App exists, setup
+ * offers that update first, in its own dialog. "Scan again" and the close
+ * button lead on to the usual not-found help, which then carries no hint.
+ */
+export function SetupMacAppUpdateDialog({
+  offer,
+  onDismiss,
+  onScanAgain,
+}: {
+  offer: MacAppUpdateOffer;
+  onDismiss: () => void;
+  onScanAgain: () => void;
+}) {
   return (
-    <div className="flex w-full flex-col gap-2 rounded-lg border bg-card p-4 text-left text-sm">
-      <p>
-        A newer Mac App{offer.version ? ` (${offer.version})` : ""} is available.
-        An old app can be the reason your VibeTV is not found.
-      </p>
-      <Button onClick={offer.onUpdate} type="button" variant="outline">
-        Update the Mac App
-      </Button>
-    </div>
+    <SetupDialog
+      description={
+        <>
+          We couldn&apos;t find your VibeTV.{" "}
+          {offer.version ? (
+            <>
+              Version <span className="font-mono text-xs">{offer.version}</span>{" "}
+              is out
+            </>
+          ) : (
+            "A newer version is out"
+          )}
+          , and an older app may not find it. Setup scans again after the
+          update.
+        </>
+      }
+      onOpenChange={(open) => {
+        if (!open) {
+          onDismiss();
+        }
+      }}
+      open
+      primaryAction={{ label: "Update Mac App", onSelect: offer.onUpdate }}
+      secondaryAction={{ label: "Scan again", onSelect: onScanAgain }}
+      title="Update the Mac App first"
+    />
   );
 }
 
 type NotFoundDialogProps = {
   busy?: boolean;
-  macAppUpdate?: MacAppUpdateOffer;
   onEnterAddressManually: () => void;
   onOpenChange: (open: boolean) => void;
   onScanAgain: () => void;
@@ -160,7 +186,6 @@ const notFoundChoiceClass = `${selectedItemClass(false)} bg-card p-4 disabled:cu
 /** 02c — neither Cable nor WiFi discovery found a VibeTV. */
 export function SetupDeviceNotFoundDialog({
   busy = false,
-  macAppUpdate,
   onEnterAddressManually,
   onOpenChange,
   onScanAgain,
@@ -182,7 +207,6 @@ export function SetupDeviceNotFoundDialog({
       title="We couldn't find your VibeTV"
     >
       <div className="flex w-full flex-col gap-3">
-        <MacAppUpdateNotice offer={macAppUpdate} />
         <Item asChild className={notFoundChoiceClass} variant="outline">
           <button
             className="text-left"
@@ -230,12 +254,10 @@ export function SetupDeviceNotFoundDialog({
  * afterwards, sent over that cable. Stays dismissible while discovery continues.
  */
 export function SetupCableHelpDialog({
-  macAppUpdate,
   onEnterAddressManually,
   onScanAgain,
   scanning = false,
 }: {
-  macAppUpdate?: MacAppUpdateOffer;
   onEnterAddressManually: () => void;
   onScanAgain: () => void;
   scanning?: boolean;
@@ -266,7 +288,6 @@ export function SetupCableHelpDialog({
         }}
         title="Connect the USB cable"
       >
-        <MacAppUpdateNotice offer={macAppUpdate} />
         <ol className="flex flex-col gap-4 text-left text-sm leading-relaxed">
           {[
             <>

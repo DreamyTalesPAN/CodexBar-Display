@@ -21,6 +21,7 @@ import {
   SetupCableHelpDialog,
   SetupConnectFailedDialog,
   SetupDeviceNotFoundDialog,
+  SetupMacAppUpdateDialog,
 } from "./setup-device-dialogs";
 import { SetupDeviceScreen } from "./setup-device-screen";
 import { SetupRecoveryDialogs } from "./setup-recovery-dialogs";
@@ -69,50 +70,63 @@ describe("Setup WiFi recovery", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("offers the Mac App update on the not-found page only when one exists", () => {
+  it("offers the Mac App update first, in its own dialog (#561, design 1d)", () => {
     const onUpdate = vi.fn();
-    const props = {
-      open: true,
-      onOpenChange: vi.fn(),
-      onEnterAddressManually: vi.fn(),
-      onScanAgain: vi.fn(),
-      onUseCable: vi.fn(),
-      onUseWiFi: vi.fn(),
-    };
-    const { rerender } = render(<SetupDeviceNotFoundDialog {...props} />);
-    expect(screen.queryByRole("button", { name: "Update the Mac App" })).toBeNull();
-    rerender(
-      <SetupDeviceNotFoundDialog
-        {...props}
-        macAppUpdate={{ onUpdate, version: "1.0.62" }}
+    const onScanAgain = vi.fn();
+    const onDismiss = vi.fn();
+    render(
+      <SetupMacAppUpdateDialog
+        offer={{ onUpdate, version: "1.0.65" }}
+        onDismiss={onDismiss}
+        onScanAgain={onScanAgain}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Update the Mac App" }));
+    const dialog = screen.getByRole("dialog", { name: "Update the Mac App first" });
+    expect(dialog.textContent).toContain("We couldn't find your VibeTV.");
+    expect(dialog.textContent).toContain("Version 1.0.65 is out");
+    fireEvent.click(screen.getByRole("button", { name: "Update Mac App" }));
     expect(onUpdate).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Scan again" }));
+    expect(onScanAgain).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 
-  it("offers the Mac App update while waiting for a WiFi VibeTV without a cable", () => {
+  it("offers the Mac App update before the cable help while waiting for a WiFi VibeTV", () => {
     const onUpdate = vi.fn();
-    render(
+    const onSearchAgain = vi.fn();
+    const onDismissMacAppUpdate = vi.fn();
+    const props = {
+      candidates: [],
+      logLines: [],
+      onChooseTransport: vi.fn(),
+      onConfigureWiFi: vi.fn(),
+      onConnect: vi.fn(),
+      onEnterAddressManually: vi.fn(),
+      onScanWiFiNetworks: vi.fn(),
+      onSearchAgain,
+      onSelect: vi.fn(),
+      onWiFiError: vi.fn(),
+      selectedTarget: null,
+      showCandidates: false,
+      wifiSetupPhase: "waiting" as const,
+    };
+    const { rerender } = render(
       <SetupDeviceScreen
-        candidates={[]}
-        logLines={[]}
-        macAppUpdate={{ onUpdate, version: "1.0.62" }}
-        onChooseTransport={vi.fn()}
-        onConfigureWiFi={vi.fn()}
-        onConnect={vi.fn()}
-        onEnterAddressManually={vi.fn()}
-        onScanWiFiNetworks={vi.fn()}
-        onSearchAgain={vi.fn()}
-        onSelect={vi.fn()}
-        onWiFiError={vi.fn()}
-        selectedTarget={null}
-        showCandidates={false}
-        wifiSetupPhase="waiting"
+        {...props}
+        macAppUpdate={{ onUpdate, version: "1.0.65" }}
+        onDismissMacAppUpdate={onDismissMacAppUpdate}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Update the Mac App" }));
+    expect(screen.queryByRole("dialog", { name: "Connect the USB cable" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Update Mac App" }));
     expect(onUpdate).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Scan again" }));
+    expect(onDismissMacAppUpdate).toHaveBeenCalledTimes(1);
+    expect(onSearchAgain).toHaveBeenCalledTimes(1);
+    rerender(<SetupDeviceScreen {...props} />);
+    expect(screen.queryByRole("dialog", { name: "Update the Mac App first" })).toBeNull();
+    expect(screen.getByRole("dialog", { name: "Connect the USB cable" })).toBeTruthy();
   });
 
   it("routes the two not-found choices separately", () => {
