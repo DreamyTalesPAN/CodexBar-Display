@@ -28,6 +28,11 @@ type SenderConfig struct {
 
 type Sender struct {
 	mu sync.Mutex
+	// resolveMu lets one port search run at a time. Status reads search
+	// every port while the stream resolves its VibeTV; asking another port
+	// between the stream's hello and its identity check closed the VibeTV
+	// port (issue #537). Frames and other serial calls take only mu.
+	resolveMu sync.Mutex
 
 	// openPath mirrors path for checks that must not wait on mu. A serial
 	// call stuck on an unplugged device can hold mu for a long time.
@@ -304,6 +309,8 @@ func (s *Sender) ResolvePort(explicit, expectedDeviceID string) (string, error) 
 	if err := s.openPortVanished(explicit); err != nil {
 		return "", err
 	}
+	s.resolveMu.Lock()
+	defer s.resolveMu.Unlock()
 	path, ok := s.currentMatchingPort(explicit, expectedDeviceID, false)
 	if !ok {
 		var err error
@@ -333,6 +340,8 @@ func (s *Sender) ResolveControlPort(explicit, expectedDeviceID string) (string, 
 	if err := s.openPortVanished(explicit); err != nil {
 		return "", err
 	}
+	s.resolveMu.Lock()
+	defer s.resolveMu.Unlock()
 	if path, ok := s.currentMatchingPort(explicit, expectedDeviceID, true); ok {
 		return resolveVibeTVCandidatesForControl([]string{path}, path, expectedDeviceID, s.DeviceHello, true)
 	}

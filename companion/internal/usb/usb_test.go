@@ -528,6 +528,60 @@ func TestSenderReusesResolvedCablePortWithoutReopeningOtherDevices(t *testing.T)
 	}
 }
 
+// replyPort answers every request with reply, like a device that is up.
+type replyPort struct {
+	*mockSerialPort
+	reply string
+}
+
+func (p replyPort) Write(b []byte) (int, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.readQueue = append(p.readQueue, []byte(p.reply))
+	return len(b), nil
+}
+
+// Issue #537: the status read searches every port while the stream resolves
+// its VibeTV. Asking the other port between the stream's hello and its
+// identity check closed the VibeTV port, so one frame was lost with "cable
+// identity changed during resolution".
+func TestResolvePortIsAtomicAgainstTheStatusSearch(t *testing.T) {
+	vibetv, other := "/dev/cu.usbserial-vibetv", "/dev/cu.usbserial-other"
+	listSerialPorts(t, vibetv, other)
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener: &mockOpener{portsByPath: map[string]SerialPort{
+			vibetv: replyPort{newMockSerialPort(), unplugTestHello},
+			other:  replyPort{newMockSerialPort(), `{"kind":"hello","board":"foreign-board"}` + "\n"},
+		}},
+		Sleep: func(time.Duration) {},
+	})
+	defer sender.Close()
+
+	// Status reads arrive concurrently and keep searching while the stream
+	// resolves its port again and again.
+	stop := make(chan struct{})
+	var status sync.WaitGroup
+	for range 4 {
+		status.Go(func() {
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					_, _ = sender.ResolveControlPort("", "")
+				}
+			}
+		})
+	}
+	defer status.Wait()
+	defer close(stop)
+	for i := range 300 {
+		if _, err := sender.ResolvePort("", "5804558"); err != nil {
+			t.Fatalf("round %d: stream resolution: %v", i, err)
+		}
+	}
+}
+
 func TestResolverKeepsPendingCableTransitionWhenConfirmationIsRejected(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "cu.usbserial-vibetv")
 	if err := os.WriteFile(path, nil, 0o600); err != nil {
