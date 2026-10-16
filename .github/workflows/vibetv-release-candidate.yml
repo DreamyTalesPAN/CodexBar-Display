@@ -39,11 +39,11 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: companion/go.mod
           cache-dependency-path: companion/go.sum
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
           cache: npm
@@ -51,7 +51,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.11'
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: CODEX-vibetv-rc-baselines-${{ github.run_id }}
           path: tmp/vibetv-baselines
@@ -63,7 +63,7 @@ jobs:
           version="${VERSION#v}"
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || { echo 'version must be SemVer' >&2; exit 1; }
           test -d companion/cmd/virtual-vibetv || { echo 'error: Issue #177 Core is required: companion/cmd/virtual-vibetv is missing.' >&2; exit 1; }
-          pip install platformio==6.2.0 intelhex==2.3.0
+          pip install platformio==6.2.0
           mkdir -p dist/macos tmp/vibetv-rc/publish/companion tmp/vibetv-rc/publish/firmware tmp/vibetv-rc/test
           (
             cd apps/control-center
@@ -95,14 +95,16 @@ jobs:
           firmware_config=tmp/vibetv-baselines/effective-firmware-versions.json
           python3 - "$firmware_config" > tmp/vibetv-rc/firmware-targets.tsv <<'PY'
           import json, sys
+          # Releases publish only the ESP8266 SmallTV firmware (#658). The ESP32
+          # code under firmware_esp32/ stays buildable in CI but is not published.
           for item in json.load(open(sys.argv[1]))["artifacts"]:
               env, board, fw = item["firmwareEnv"], item["board"], item["firmwareVersion"]
               source = item["artifactSource"]
+              if env != "esp8266_smalltv_st7789": raise SystemExit(f"unsupported firmware target: {env}")
               if source == "public": asset, expected = item["asset"], item["sha256"]
               elif source == "build" and env == "esp8266_smalltv_st7789": asset, expected = f"codexbar-display-firmware-{env}-v{fw}.bin.gz", "-"
-              elif source == "build" and env == "lilygo_t_display_s3": asset, expected = f"codexbar-display-firmware-{env}-v{fw}.bin", "-"
               else: raise SystemExit(f"unsupported firmware target: {env} from {source}")
-              directory = "firmware_esp8266" if env == "esp8266_smalltv_st7789" else "firmware_esp32"
+              directory = "firmware_esp8266"
               print("\t".join((directory, env, board, fw, asset, source, expected)))
           PY
           while IFS=$'\t' read -r dir env board fw asset artifact_source expected_sha; do
@@ -117,13 +119,8 @@ jobs:
               BUILD_LOG="$(mktemp)"
               (cd "$dir" && CODEXBAR_DISPLAY_FW_VERSION="$fw" pio run -e "$env") 2>&1 | tee "$BUILD_LOG"
               source="$dir/.pio/build/$env/firmware.bin"
-              if [[ "$env" == esp8266_* ]]; then
-                ./scripts/check-firmware-size-budget.sh "$BUILD_LOG" "$source" "$env" 47 82 489000 350000
-                gzip -c -9 "$source" > "$destination"
-              else
-                ./scripts/check-firmware-size-budget.sh "$BUILD_LOG" "$source" "$env" 47 82 0 0
-                cp "$source" "$destination"
-              fi
+              ./scripts/check-firmware-size-budget.sh "$BUILD_LOG" "$source" "$env" 47 82 489000 350000
+              gzip -c -9 "$source" > "$destination"
             fi
           done < tmp/vibetv-rc/firmware-targets.tsv
           python3 - "$version" "$GITHUB_REPOSITORY" "$firmware_config" tmp/vibetv-rc/firmware-targets.tsv tmp/vibetv-rc/publish/firmware > tmp/vibetv-rc/publish/firmware/firmware-manifest.json <<'PY'
@@ -142,7 +139,7 @@ jobs:
           cp tmp/vibetv-rc/publish/firmware/firmware-manifest.json "tmp/vibetv-rc/publish/firmware/firmware-manifest-v${version}.json"
           printf '%s\n' "$version" > tmp/vibetv-rc/version.txt
           printf '%s\n' "$GITHUB_SHA" > tmp/vibetv-rc/source-sha.txt
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: CODEX-vibetv-rc-inputs-${{ github.run_id }}
           path: tmp/vibetv-rc
@@ -170,14 +167,14 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: companion/go.mod
           cache-dependency-path: companion/go.sum
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
           toolchain: 1.99.0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
           cache: npm
@@ -393,7 +390,7 @@ jobs:
             }
           }
           Set-Content -Path tmp/vibetv-rc-windows/latest-windows.json -Encoding utf8 -Value ($manifest | ConvertTo-Json -Depth 5)
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: CODEX-vibetv-rc-windows-${{ github.run_id }}
           path: tmp/vibetv-rc-windows
@@ -410,11 +407,11 @@ jobs:
         with:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: CODEX-vibetv-rc-inputs-${{ github.run_id }}
           path: tmp/vibetv-rc
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: CODEX-vibetv-rc-windows-${{ github.run_id }}
           path: tmp/vibetv-rc-windows
@@ -495,7 +492,7 @@ jobs:
               }, destination, indent=2)
               destination.write("\n")
           PY
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: vibetv-release-candidate
           path: |
@@ -574,7 +571,7 @@ jobs:
             --release-version "$VERSION" \
             --firmware-mode "$FIRMWARE_MODE" \
             --output effective-firmware-versions.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: CODEX-vibetv-rc-baselines-${{ github.run_id }}
           path: |
@@ -596,11 +593,11 @@ jobs:
         with:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: vibetv-release-candidate
           path: candidate
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: CODEX-vibetv-rc-baselines-${{ github.run_id }}
           path: baselines
@@ -632,7 +629,7 @@ jobs:
           fi
           firmware_asset="$(python3 -c 'import json; print(next(a["asset"] for a in json.load(open("candidate/publish/firmware/firmware-manifest.json"))["artifacts"] if a["firmwareEnv"] == "esp8266_smalltv_st7789"))')"
           ./scripts/test-vibetv-hosted-guest.sh --dmg candidate/publish/macos/VibeTV-Control-Center.dmg --appcast candidate/publish/macos/appcast.xml --virtual-vibetv candidate/test/virtual-vibetv --companion candidate/test/codexbar-display --firmware "candidate/publish/firmware/$firmware_asset" --firmware-manifest candidate/publish/firmware/firmware-manifest.json --current-firmware "$current_firmware" --version "$version" --state '${{ matrix.state }}' --output 'results/${{ matrix.state }}' "${baseline_args[@]+"${baseline_args[@]}"}"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: CODEX-vibetv-rc-results-${{ matrix.state }}-${{ github.run_id }}
@@ -645,7 +642,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: vibetv-release-candidate
           path: candidate
@@ -672,7 +669,7 @@ jobs:
           if result != "success":
               raise SystemExit("candidate matrix did not pass; result artifact is intentionally non-publishable")
           PY
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: vibetv-release-candidate-result

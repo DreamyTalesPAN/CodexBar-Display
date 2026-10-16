@@ -16,6 +16,11 @@ import {
   setupCompletedFor,
 } from "@/lib/completed-setup-devices";
 import {
+  forgetOrderedTheme,
+  rememberOrderedTheme,
+  storedOrderedTheme,
+} from "@/lib/ordered-theme";
+import {
   NO_THEME_UPGRADE,
   resolveActiveLiveTheme,
   resolveActiveThemeUpgrade,
@@ -147,6 +152,7 @@ import { collectSupportReport } from "./support-report";
 import {
   buildThemeInstallBlocker,
   ThemeLibraryScreen,
+  themeMetadataBlocker,
   themeNeedsUpgradeableFirmware,
 } from "./theme-library-screen";
 import {
@@ -315,6 +321,56 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [activeTab, setActiveTab] = useState<ActiveTab>(
     initialThemeId ? "theme-library" : "overview",
   );
+  // The theme of the VibeTV the customer bought (#234): kept from the shop
+  // link so setup still preselects it after the app restarts without it.
+  // Read after mount: the static page has no storage. While it is kept, a
+  // settings read does not replace the selection with the active theme.
+  // Only a theme the catalog can install is kept, by the same check as its
+  // Install button. A link to any other theme leaves the kept one in place.
+  const orderedThemeRef = useRef("");
+  const orderedThemeAtRef = useRef(0);
+  useEffect(() => {
+    if (
+      initialThemeId &&
+      initialTheme &&
+      !initialThemeIsScreensaver &&
+      !themeMetadataBlocker(initialTheme)
+    ) {
+      const ordered = rememberOrderedTheme(initialTheme.themeId);
+      orderedThemeRef.current = ordered.themeId;
+      orderedThemeAtRef.current = ordered.recordedAt;
+      return;
+    }
+    const stored = storedOrderedTheme();
+    const ordered = catalog.themes.find(
+      (theme) =>
+        theme.themeId === stored?.themeId &&
+        (theme.usage || "live") === "live" &&
+        !themeMetadataBlocker(theme),
+    )?.themeId;
+    if (!ordered || !stored) {
+      // A kept theme the loaded catalog no longer offers for install is
+      // dropped, so a later catalog cannot bring the old order back. A catalog
+      // that could not be loaded is empty and drops nothing.
+      if (stored && catalog.themes.length > 0) {
+        forgetOrderedTheme();
+      }
+      return;
+    }
+    orderedThemeRef.current = ordered;
+    orderedThemeAtRef.current = stored.recordedAt;
+    if (initialThemeId) {
+      // The link's own theme stays selected.
+      return;
+    }
+    const timer = window.setTimeout(() => setSelectedThemeId(ordered), 0);
+    return () => window.clearTimeout(timer);
+  }, [
+    catalog.themes,
+    initialTheme,
+    initialThemeId,
+    initialThemeIsScreensaver,
+  ]);
   const runtimeSurface = useSyncExternalStore(
     subscribeRuntimeSurface,
     getRuntimeSurfaceSnapshot,
@@ -403,6 +459,21 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [lastInstall, setLastInstall] = useState<InstallResponse["result"]>();
   const [themeInstallStatus, setThemeInstallStatus] =
     useState<ThemeInstallStatus | null>(null);
+  // A finished install is the customer's confirmed choice, the ordered theme
+  // or another one, so the ordered theme has nothing left to preselect. An
+  // install that finished before the order is one the Companion still reports
+  // from earlier, not an answer to it.
+  useEffect(() => {
+    if (themeInstallStatus?.phase !== "complete") {
+      return;
+    }
+    const finishedAt = Date.parse(themeInstallStatus.finishedAt ?? "");
+    if (finishedAt < orderedThemeAtRef.current) {
+      return;
+    }
+    forgetOrderedTheme();
+    orderedThemeRef.current = "";
+  }, [themeInstallStatus?.phase, themeInstallStatus?.finishedAt]);
   const [firmwareUpdate, setFirmwareUpdate] =
     useState<FirmwareUpdateInfo | null>(null);
   const [firmwareUpdateStatus, setFirmwareUpdateStatus] =
@@ -1021,7 +1092,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           catalog.themes,
           payload.device,
         );
-        if (!initialThemeId && activeLiveTheme) {
+        if (activeLiveTheme?.themeId === orderedThemeRef.current) {
+          forgetOrderedTheme();
+          orderedThemeRef.current = "";
+        }
+        if (!initialThemeId && !orderedThemeRef.current && activeLiveTheme) {
           setSelectedThemeId(activeLiveTheme.themeId);
         }
       }

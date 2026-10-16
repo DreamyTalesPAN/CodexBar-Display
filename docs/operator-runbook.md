@@ -142,7 +142,7 @@ disconnect power for 10 seconds, and then let `install-update` repeat the full
 preflight before retrying once.
 
 Do not use `scripts/vibetv-provision.sh` or `POST /update` when `/hello` already
-identifies a VibeTV runtime. Those are GeekMagic factory-provisioning paths.
+identifies a VibeTV runtime. Those are provisioning paths for units before their first VibeTV firmware.
 
 ### USB recovery flash path
 

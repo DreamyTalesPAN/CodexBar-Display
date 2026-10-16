@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -589,13 +588,18 @@ func (s *Server) handleThemeActive(w http.ResponseWriter, r *http.Request) {
 // empty, above the limit or without one primitive of a type CompilePrimitive
 // knows.
 //
-// Not mirrored: CompilePrimitive's rules for a primitive of a known type
-// (dimensions, font size, slots, asset paths), so a spec in which none compiles
-// activates here, and the limits on GIF primitives, string bytes and provider
-// assets of a whole spec. JSON is judged by Go's parser and refused as "bad
-// theme json": ArduinoJson appends its error name, answers with a later wording
-// where its filtered first pass does not reach the error, takes single quotes
-// and unquoted keys, and refuses more than 10 nested levels.
+// A primitive counts when primitiveCompiles accepts it, as CompilePrimitive does.
+// The whole-spec limits of CompileThemeSpecObject answer the same 400: a second
+// compiled GIF, and the storage that CountCompiledThemeSpecStorage counts over
+// every primitive (see storageOf).
+//
+// Not mirrored: JSON is judged by Go's parser and refused as "bad theme json":
+// ArduinoJson appends its error name, answers with a later wording where its
+// filtered first pass does not reach the error, takes single quotes and unquoted
+// keys, and refuses more than 10 nested levels. Strings that are invalid UTF-8 or
+// hold a lone surrogate escape are counted as Go decodes them, which may differ
+// from the bytes ArduinoJson stores. The GIF and sprite asset rules do not cut a
+// path at a NUL as the firmware does.
 func storedThemeRefusal(spec []byte) string {
 	if len(bytes.TrimSpace(spec)) == 0 || len(spec) > maxStoredThemeSpecBytes {
 		return "theme file too large"
@@ -622,27 +626,227 @@ func storedThemeRefusal(spec []byte) string {
 		return "theme id/rev missing"
 	}
 	primitives := jsonFor[[]any](object, "primitives", "p")
-	known := slices.ContainsFunc(primitives, func(primitive any) bool {
+	var compiling, gifs, stringBytes, providerAssets int
+	for _, primitive := range primitives {
 		fields, _ := primitive.(map[string]any)
-		return slices.Contains(themePrimitiveTypes, jsonFor[string](fields, "type", "t"))
-	})
-	if len(primitives) > maxThemePrimitives || !known {
+		primitiveBytes, primitiveAssets := storageOf(fields)
+		stringBytes += primitiveBytes
+		providerAssets += primitiveAssets
+		if primitiveCompiles(fields) {
+			compiling++
+			if kind := jsonFor[string](fields, "type", "t"); kind == "gif" || kind == "g" {
+				gifs++
+			}
+		}
+	}
+	if len(primitives) > maxThemePrimitives || compiling == 0 || gifs > themeGifAssets ||
+		stringBytes > themeStringBytes || providerAssets > themeProviderAssets {
 		return "theme spec has no renderable content"
 	}
 	return ""
 }
 
-// themePrimitiveTypes are the long and short type names CompilePrimitive knows.
-var themePrimitiveTypes = []string{"rect", "r", "text", "tx", "progress", "p", "gif", "g", "sprite", "sp", "image", "img", "pixels", "px"}
+// Whole-spec limits of CompileThemeSpecObject and CountCompiledThemeSpecStorage
+// in firmware_shared/theme_spec_renderer_core.h: kMaxThemeSpecGifAssets,
+// kMaxCompiledThemeSpecStringBytes and kMaxCompiledProviderAssets.
+const (
+	themeGifAssets      = 1
+	themeStringBytes    = 1024
+	themeProviderAssets = 16
+)
 
-// jsonFor is the firmware's JsonStringFor and JsonArrayFor: the long key when
-// it holds a T, otherwise the short key.
-func jsonFor[T any](object map[string]any, long, short string) T {
-	if value, ok := object[long].(T); ok {
-		return value
+// storageOf is CountCompiledThemeSpecStorage for one primitive, whether or not it
+// compiles. Each string of the types the firmware copies into its pool takes its
+// bytes up to a NUL plus one, an empty one nothing, and no two strings share
+// bytes. The provider assets are the entries with a key and a path of a sprite or
+// image; a GIF has none counted.
+func storageOf(primitive map[string]any) (stringBytes, providerAssets int) {
+	var strs []string
+	switch jsonFor[string](primitive, "type", "t") {
+	case "text", "tx":
+		strs = []string{jsonFor[string](primitive, "binding", "b"), jsonFor[string](primitive, "text", "v")}
+	case "progress", "p":
+		strs = []string{jsonFor[string](primitive, "binding", "b")}
+	case "gif", "g":
+		strs = assetStrings(primitive)
+	case "sprite", "sp", "image", "img":
+		strs = assetStrings(primitive)
+		for key, value := range jsonFor[map[string]any](primitive, "providerAssets", "pa") {
+			if path, _ := value.(string); cString(key) != "" && cString(path) != "" {
+				providerAssets++
+				strs = append(strs, key, path)
+			}
+		}
+	case "pixels", "px":
+		strs = []string{jsonFor[string](primitive, "data", "d")}
 	}
-	value, _ := object[short].(T)
+	for _, value := range strs {
+		if text := cString(value); text != "" {
+			stringBytes += len(text) + 1
+		}
+	}
+	return stringBytes, providerAssets
+}
+
+// assetStrings are the assetPath and the idle and coding state assets of a GIF,
+// sprite or image.
+func assetStrings(primitive map[string]any) []string {
+	return []string{jsonFor[string](primitive, "assetPath", "a"), stateAsset(primitive, "idle"), stateAsset(primitive, "coding")}
+}
+
+// cString is the C string the firmware reads from a JSON string: up to its first NUL.
+func cString(value string) string {
+	before, _, _ := strings.Cut(value, "\x00")
+	return before
+}
+
+// Slot and colour stop limits of the firmware: usage_window_contract.h kMaxWindows,
+// theme_spec_renderer_core.h kMaxThemeSpecProviderSlots and kMaxCompiledColorStops.
+const (
+	themeUsageWindows  = 3
+	themeProviderSlots = 2
+	themeColorStops    = 4
+)
+
+// primitiveCompiles mirrors the refusals of CompilePrimitive in
+// firmware_shared/theme_spec_renderer_core.h for one primitive. A primitive it
+// refuses is skipped, so a spec in which none compiles is refused.
+func primitiveCompiles(primitive map[string]any) bool {
+	// Lines 1383-1401: the slots are uint8_t in the firmware, so a value that
+	// wraps into range passes, here as there.
+	usageSlot := uint8(jsonInt(primitive, "slot", "sl", 0))
+	if usageIndex := jsonInt(primitive, "usageIndex", "ui", -1); usageIndex >= 0 {
+		if usageIndex >= themeUsageWindows {
+			return false
+		}
+		usageSlot = uint8(usageIndex + 1)
+	}
+	if usageSlot > themeUsageWindows || uint8(jsonInt(primitive, "providerSlot", "pl", 0)) > themeProviderSlots {
+		return false
+	}
+	switch jsonFor[string](primitive, "type", "t") {
+	case "rect", "r", "pixels", "px":
+		// Lines 1406-1410 (rect) and 1555-1567 (pixels): width and height above zero.
+		return jsonInt(primitive, "width", "w", 0) > 0 && jsonInt(primitive, "height", "h", 0) > 0
+	case "text", "tx":
+		// Lines 1415-1441: a font size above zero, 1 when unset. Empty text is kept.
+		return jsonInt(primitive, "fontSize", "s", 1) > 0
+	case "progress", "p":
+		return progressCompiles(primitive)
+	case "gif", "g":
+		return gifCompiles(primitive)
+	case "sprite", "sp", "image", "img":
+		return spriteCompiles(primitive)
+	}
+	return false
+}
+
+// progressCompiles mirrors lines 1449-1491: an arc keeps its start 0-359, its
+// sweep 1-360 and a thickness from 1 to half the smaller side, the colour stops
+// must compile, and width and height are above zero.
+func progressCompiles(primitive map[string]any) bool {
+	width, height := jsonInt(primitive, "width", "w", 0), jsonInt(primitive, "height", "h", 0)
+	if jsonFor[string](primitive, "progressStyle", "ps") == "arc" {
+		start := jsonInt(primitive, "arcStart", "as", 0)
+		sweep := jsonInt(primitive, "arcSweep", "aw", 0)
+		thickness := jsonInt(primitive, "arcThickness", "at", 0)
+		if start < 0 || start > 359 || sweep < 1 || sweep > 360 || thickness < 1 || thickness*2 > min(width, height) {
+			return false
+		}
+	}
+	return width > 0 && height > 0 && colorStopsCompile(primitive)
+}
+
+// colorStopsCompile mirrors CompileProgressColorStops (lines 1770-1790): at most
+// four stops, each an object with gte from 0 to 100 and a colour under "color",
+// or else under "c".
+func colorStopsCompile(primitive map[string]any) bool {
+	stops := jsonFor[[]any](primitive, "colorStops", "cs")
+	if len(stops) > themeColorStops {
+		return false
+	}
+	for _, entry := range stops {
+		stop, ok := entry.(map[string]any)
+		if !ok {
+			return false
+		}
+		color, _ := stop["color"].(string)
+		if color = cString(color); color == "" {
+			color, _ = stop["c"].(string)
+			color = cString(color)
+		}
+		if gte := jsonInt(stop, "gte", "gte", -1); gte < 0 || gte > 100 || color == "" {
+			return false
+		}
+	}
+	return true
+}
+
+// gifCompiles mirrors lines 1492-1520: width and height above zero and at most
+// 80 by 80 (kMaxThemeSpecGifWidth and kMaxThemeSpecGifHeight; the 6,400-pixel
+// limit follows from them). The initial asset, the idle asset when set and
+// otherwise assetPath, and the coding asset when set must all end in .gif.
+func gifCompiles(primitive map[string]any) bool {
+	width, height := jsonInt(primitive, "width", "w", 0), jsonInt(primitive, "height", "h", 0)
+	if width <= 0 || height <= 0 || width > 80 || height > 80 {
+		return false
+	}
+	idle, coding := stateAsset(primitive, "idle"), stateAsset(primitive, "coding")
+	initial := idle
+	if initial == "" {
+		initial = cString(jsonFor[string](primitive, "assetPath", "a"))
+	}
+	return strings.HasSuffix(initial, ".gif") &&
+		(idle == "" || strings.HasSuffix(idle, ".gif")) &&
+		(coding == "" || strings.HasSuffix(coding, ".gif"))
+}
+
+// spriteCompiles mirrors lines 1522-1552 and CompiledPrimitiveHasAssetReference:
+// an assetPath, an idle or coding state asset, or a provider asset with a key
+// and a path. Dimensions are not checked for sprites.
+func spriteCompiles(primitive map[string]any) bool {
+	if cString(jsonFor[string](primitive, "assetPath", "a")) != "" || stateAsset(primitive, "idle") != "" || stateAsset(primitive, "coding") != "" {
+		return true
+	}
+	for key, value := range jsonFor[map[string]any](primitive, "providerAssets", "pa") {
+		if path, _ := value.(string); cString(key) != "" && cString(path) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// stateAsset is the idle or coding path under stateAssets (or "sa"), or "".
+func stateAsset(primitive map[string]any, state string) string {
+	path, _ := jsonFor[map[string]any](primitive, "stateAssets", "sa")[state].(string)
+	return cString(path)
+}
+
+// jsonFor is the firmware's JsonStringFor, JsonArrayFor and JsonObjectFor: the
+// long key when it holds a T, otherwise the short key.
+// A string is read up to its first NUL, as the firmware reads it (cString).
+func jsonFor[T any](object map[string]any, long, short string) T {
+	value, ok := object[long].(T)
+	if !ok {
+		value, _ = object[short].(T)
+	}
+	if text, isString := any(value).(string); isString {
+		return any(cString(text)).(T)
+	}
 	return value
+}
+
+// jsonInt is the firmware's JsonIntFor: the long key when it holds a whole number
+// that fits 32 bits, otherwise the short key, otherwise fallback.
+func jsonInt(object map[string]any, long, short string, fallback int) int {
+	for _, key := range []string{long, short} {
+		if number, ok := object[key].(json.Number); ok {
+			if value, err := strconv.ParseInt(string(number), 10, 32); err == nil {
+				return int(value)
+			}
+		}
+	}
+	return fallback
 }
 
 func (s *Server) handleFirmwareUpdate(w http.ResponseWriter, r *http.Request) {
