@@ -7329,3 +7329,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as approved in the #633, #634 and #582 entries of this branch and in the entries of the merged pull requests; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — #638: companion poses always fit their cells
+
+- User approval: Fix of a customer-blocking error found in Paul's test of 2026-10-16 ("The generated companion needs more space around its poses. Your design is unchanged."); no new wording; the fix itself not seen by Paul.
+- Approved customer-visible result: "Create with AI" no longer stops when a generated companion pose cannot be aligned with the first pose without leaving its cell; that pose keeps the closest alignment that stays inside the cell and the theme is built. The error text is removed; no other wording, layout or control changes.
+- Scope: `registerCompanionFrames` in `apps/control-center/src/lib/ai-companion-sprites.ts`, its tests in `ai-companion-sprites.test.ts`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — fix of an error state

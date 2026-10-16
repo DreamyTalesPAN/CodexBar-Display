@@ -90,3 +90,41 @@ it("still rejects opaque backgrounds and empty sheets", () => {
   expect(() => normalizeCompanionSheet(sheet([20, 30, 40, 255], [255, 255, 255, 255]), 40)).toThrow(/transparent/);
   expect(() => normalizeCompanionSheet(sheet([255, 0, 255, 255]), 40)).toThrow(/transparent/);
 });
+
+// Paul's Mac test 2026-10-16: a pose whose body sits lower in its cell while an
+// arm reaches up. Aligning the body to frame 1 would push the arm out of the
+// cell, and the whole design used to fail with "needs more space around its poses".
+function stubFrames(frames: Uint8ClampedArray[]) {
+  let frame = 0;
+  vi.stubGlobal("document", { createElement: () => ({ getContext: () => ({
+    drawImage: () => {}, getImageData: () => ({ data: frames[frame++ % frames.length].slice() }),
+  }) }) });
+  return { width: 320, height: 160 } as ImageBitmap;
+}
+
+function pose(bodyTop: number, armTop?: number) {
+  const pixels = new Uint8ClampedArray(80 * 80 * 4);
+  for (let i = 0; i < pixels.length; i += 4) pixels.set([255, 0, 255, 255], i);
+  for (let y = bodyTop; y < bodyTop + 40; y++) for (let x = 20; x < 60; x++) pixels.set([80, 40, 20, 255], (y * 80 + x) * 4);
+  if (armTop !== undefined) for (let y = armTop; y < bodyTop; y++) for (let x = 30; x < 34; x++) pixels.set([80, 40, 20, 255], (y * 80 + x) * 4);
+  return pixels;
+}
+
+const opaque = (pixels: Uint8ClampedArray) => pixels.filter((_, i) => i % 4 === 3 && pixels[i] > 0).length;
+
+it("keeps a pose that cannot be fully aligned inside its cell instead of failing the design", () => {
+  const raised = pose(28, 2);
+  const frames = normalizeCompanionSheet(stubFrames([pose(20), ...Array.from({ length: 7 }, () => raised)]), 80);
+  expect(frames).toHaveLength(8);
+  for (const frame of frames.slice(1)) {
+    expect(opaque(frame)).toBe(40 * 40 + 4 * 26);
+    expect(frame[(0 * 80 + 31) * 4 + 3]).toBe(255);
+    expect(frame[(65 * 80 + 40) * 4 + 3]).toBe(255);
+    expect(frame[(66 * 80 + 40) * 4 + 3]).toBe(0);
+  }
+});
+
+it("still aligns a shifted pose exactly when the cell has room", () => {
+  const frames = normalizeCompanionSheet(stubFrames([pose(20), ...Array.from({ length: 7 }, () => pose(28))]), 80);
+  for (const frame of frames) expect(frame).toEqual(frames[0]);
+});

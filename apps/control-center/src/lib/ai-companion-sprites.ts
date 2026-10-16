@@ -1,12 +1,20 @@
 // Fixed-size cells and translation-only registration. No independently scaled
-// poses, guessed body rigs or edits to the background.
+// poses, guessed body rigs or edits to the background. A shift never moves a
+// pose past its cell edge: when full alignment would clip a pose (a raised arm,
+// a long tail), the frame gets the best alignment that keeps every pixel.
 export function registerCompanionFrames(frames: Uint8ClampedArray[], side = 80): Uint8ClampedArray[] {
   if (frames.length !== 8 || frames.some(p => p.length !== side * side * 4))
     throw new Error("A companion needs eight complete sprite frames.");
   const limit = Math.floor(side / 8), reference = frames[0];
   return frames.map((pixels, frame) => {
+    let left = side, right = -1, top = side, bottom = -1;
+    for (let y = 0; y < side; y++) for (let x = 0; x < side; x++) if (pixels[(y * side + x) * 4 + 3]) {
+      left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y);
+    }
+    const minX = Math.max(-limit, -left), maxX = Math.min(limit, side - 1 - right);
+    const minY = Math.max(-limit, -top), maxY = Math.min(limit, side - 1 - bottom);
     let best = Infinity, shiftX = 0, shiftY = 0;
-    for (let dy = -limit; dy <= limit; dy++) for (let dx = -limit; dx <= limit; dx++) {
+    for (let dy = minY; dy <= maxY; dy++) for (let dx = minX; dx <= maxX; dx++) {
       if (frame === 0 && (dx || dy)) continue;
       let score = 0, count = 0;
       for (let y = 4; y < side - 4; y += 2) for (let x = 4; x < side - 4; x += 2) {
@@ -25,10 +33,7 @@ export function registerCompanionFrames(frames: Uint8ClampedArray[], side = 80):
     for (let y = 0; y < side; y++) for (let x = 0; x < side; x++) {
       const a = (y * side + x) * 4;
       if (!pixels[a + 3]) continue;
-      const xx = x + shiftX, yy = y + shiftY;
-      if (xx < 0 || yy < 0 || xx >= side || yy >= side)
-        throw new Error("The generated companion needs more space around its poses. Your design is unchanged.");
-      output.set(pixels.subarray(a, a + 4), (yy * side + xx) * 4);
+      output.set(pixels.subarray(a, a + 4), ((y + shiftY) * side + x + shiftX) * 4);
     }
     return output;
   });
