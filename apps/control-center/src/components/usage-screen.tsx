@@ -268,7 +268,8 @@ export function usageProviderActionsFor(
     onSignIn,
   }: {
     onOpenSettings: () => void;
-    onSignIn: (item: PreferenceDescriptor) => void;
+    /** Absent where the Companion cannot start a sign-in: every action opens Settings. */
+    onSignIn?: (item: PreferenceDescriptor) => void;
   },
 ): Record<string, UsageProviderAction> {
   return Object.fromEntries(
@@ -280,7 +281,7 @@ export function usageProviderActionsFor(
           return [];
         }
         // The setup row's own rule: a sign-in the Companion can start, else Settings.
-        const signIn = setupProviderOffersSignIn(item);
+        const signIn = Boolean(onSignIn) && setupProviderOffersSignIn(item);
         return [
           [
             item.providerId,
@@ -289,7 +290,7 @@ export function usageProviderActionsFor(
               state: providerRowHealthState(item.health),
               inSettings: !signIn,
               label,
-              onAction: signIn ? () => onSignIn(item) : onOpenSettings,
+              onAction: signIn && onSignIn ? () => onSignIn(item) : onOpenSettings,
             },
           ],
         ];

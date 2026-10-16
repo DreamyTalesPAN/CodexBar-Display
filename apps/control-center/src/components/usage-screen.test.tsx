@@ -696,6 +696,23 @@ describe("UsageScreen", () => {
     expect(html).not.toContain("Check again");
   });
 
+  it("opens Settings for every action where the Companion cannot start a sign-in", () => {
+    const onOpenSettings = vi.fn();
+    const pref = {
+      id: "codexbar.providers.claude.enabled",
+      section: "providers",
+      type: "boolean",
+      providerId: "claude",
+      label: "Claude",
+      value: true,
+      health: { state: "auth_required", service: "unknown", message: "" },
+    } as unknown as PreferenceDescriptor;
+    const actions = usageProviderActionsFor([pref], { onOpenSettings });
+    expect(actions.claude.inSettings).toBe(true);
+    actions.claude.onAction();
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
+  });
+
   it("maps each provider health to its action, and only for enabled providers", () => {
     const onOpenSettings = vi.fn();
     const onSignIn = vi.fn();

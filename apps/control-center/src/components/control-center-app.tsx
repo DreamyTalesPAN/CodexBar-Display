@@ -4705,7 +4705,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     onOpenSettings: () => setActiveTab("settings"),
     onSignIn: providerSignInEnabled
       ? (item) => void openProviderSignIn(item)
-      : () => setActiveTab("settings"),
+      : undefined,
   });
   const [providerActionShown, dismissProviderAction, reportProviderSignIn] =
     useProviderActionDismissal(providerActions);
