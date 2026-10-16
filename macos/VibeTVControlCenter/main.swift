@@ -1963,7 +1963,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     // A probe asked for while another Sparkle session still finished; it runs
     // when that cycle ends, because Sparkle ignores a probe meanwhile (#570).
     private var updateInformationProbePending = false
-    // The probe found an update; the visible check follows when its cycle ends.
+    // The probe found an update, or the customer asked for the visible check
+    // while it ran; that check follows when the probe's cycle ends.
     private var updateInformationProbeFound = false
     private var launchUpdateTurnedDown = false
     // Creating the controller starts Sparkle, which may show an overdue
@@ -2993,6 +2994,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
 #if canImport(Sparkle)
         updaterStarted = true
+        if updateInformationProbe && updaterController.updater.sessionInProgress {
+            // Sparkle rejects a visible check while the window's probe runs;
+            // the probe's cycle end starts it (#570).
+            updateInformationProbeFound = true
+            return
+        }
         updaterController.checkForUpdates(nil)
 #else
         let alert = NSAlert()
@@ -5325,10 +5332,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             updateInformationProbe = false
             if updateInformationProbeFound {
                 updateInformationProbeFound = false
-                // The probe's session has ended: show Sparkle's dialog (#570).
-                DispatchQueue.main.async {
-                    updater.checkForUpdates()
-                }
+                // The probe's session has ended: show Sparkle's dialog now.
+                // Started here, before returning, Sparkle schedules no next
+                // check that would take the session first (#570).
+                updater.checkForUpdates()
                 return
             }
         }
@@ -5625,7 +5632,6 @@ extension AppDelegate: SPUUpdaterDelegate {
 
     func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
         updateInformationProbe = false
-        updateInformationProbeFound = false
     }
 }
 #endif
