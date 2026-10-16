@@ -98,8 +98,12 @@ func providerSlotIDs(line string) []string {
 	return ids
 }
 
-// lastFrameWhere returns the newest frame line accepted by match (nil accepts all).
+// lastFrameWhere returns the newest frame line accepted by match (nil accepts
+// all) across the log files and any further sources appended to l.
 func (l displayStreamLog) lastFrameWhere(boundary time.Time, match func(target, line string) bool) (time.Time, string, string, bool) {
+	var bestWhen time.Time
+	var bestTarget, bestLine string
+	found := false
 	for _, lines := range l {
 		for i := len(lines) - 1; i >= 0; i-- {
 			line := strings.TrimSpace(lines[i])
@@ -125,10 +129,13 @@ func (l displayStreamLog) lastFrameWhere(boundary time.Time, match func(target, 
 			if match != nil && !match(target, line) {
 				continue
 			}
-			return when, target, line, true
+			if !found || when.After(bestWhen) {
+				bestWhen, bestTarget, bestLine, found = when, target, line, true
+			}
+			break
 		}
 	}
-	return time.Time{}, "", "", false
+	return bestWhen, bestTarget, bestLine, found
 }
 
 func (l displayStreamLog) lastErrorAfter(boundary time.Time) (time.Time, string, string, bool) {

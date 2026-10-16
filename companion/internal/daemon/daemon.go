@@ -9,6 +9,7 @@ import (
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/systemload"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/timeline"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
@@ -109,6 +110,7 @@ func RunWithLogger(ctx context.Context, opts Options, logf func(string, ...any))
 			usageBarsShowUsed: codexbar.UsageBarsShowUsed,
 			startDashboard:    codexbar.StartDashboardServe,
 			logf:              logf,
+			shownFramesPath:   runtimepaths.DisplayShownFrames(runtimepaths.DisplayStreamOutLog("")),
 		})
 	}
 
@@ -121,6 +123,7 @@ func RunWithLogger(ctx context.Context, opts Options, logf func(string, ...any))
 		usageBarsShowUsed: codexbar.UsageBarsShowUsed,
 		startDashboard:    codexbar.StartDashboardServe,
 		logf:              logf,
+		shownFramesPath:   runtimepaths.DisplayShownFrames(runtimepaths.DisplayStreamOutLog("")),
 	})
 }
 

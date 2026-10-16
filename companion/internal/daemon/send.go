@@ -183,7 +183,11 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 		updateLastGoodState(state, authoritativeFrame, collectedAt, deps)
 	}
 
-	deps.logf("%s", SentFrameLogLine(publicPort, deps.transportName, caps.DeviceID, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame, result.selectionReason, result.selectionDetail, result.activityDetail))
+	sentLine := SentFrameLogLine(publicPort, deps.transportName, caps.DeviceID, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame, result.selectionReason, result.selectionDetail, result.activityDetail)
+	deps.logf("%s", sentLine)
+	if err := saveShownFrame(deps.shownFramesPath, caps.DeviceID, deps.now(), sentLine); err != nil {
+		deps.logf("runtime event=shown-frame-persist-failed err=%v\n", err)
+	}
 
 	// What the VibeTV now shows. Reported after every frame; the timeline keeps
 	// the changes. Every frame has a provider and every hello a firmware, so a

@@ -3,10 +3,12 @@ package companionapi
 import (
 	"context"
 	"errors"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/service"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
@@ -181,7 +183,10 @@ func withShownFrame(stream displayStreamInfo, target string) displayStreamInfo {
 		return stream
 	}
 	cable := samePublicTarget(target, cableDeviceTarget)
-	streamLog := readDisplayStreamLog(displayStreamOutLogPath())
+	logPath := displayStreamOutLogPath()
+	// The log is read as a bounded tail; the last frame per VibeTV is also
+	// kept on its own, since a theme frame can stay on screen for hours.
+	streamLog := append(readDisplayStreamLog(logPath), shownFrameLines(runtimepaths.DisplayShownFrames(logPath)))
 	// Frames to other VibeTVs in between must not hide the last one sent to target.
 	sentAt, _, line, ok := streamLog.lastFrameWhere(time.Time{}, func(lastTarget, line string) bool {
 		if cable {
@@ -204,6 +209,22 @@ func withShownFrame(stream displayStreamInfo, target string) displayStreamInfo {
 	stream.shownAt = sentAt
 	stream.shownDeviceID = displayStreamLogValue(line, "deviceId")
 	return stream
+}
+
+// shownFrameLines restates the kept frames as log lines, oldest first.
+func shownFrameLines(path string) []string {
+	var frames []daemon.ShownFrame
+	for _, frame := range daemon.LoadShownFrames(path) {
+		if !frame.SentAt.IsZero() && frame.Line != "" {
+			frames = append(frames, frame)
+		}
+	}
+	sort.Slice(frames, func(i, j int) bool { return frames[i].SentAt.Before(frames[j].SentAt) })
+	lines := make([]string, 0, len(frames))
+	for _, frame := range frames {
+		lines = append(lines, frame.SentAt.UTC().Format(time.RFC3339Nano)+" "+frame.Line)
+	}
+	return lines
 }
 
 func inspectDisplayStreamLiveness(ctx context.Context, target string, notBefore time.Time, running func() bool) displayStreamInfo {
