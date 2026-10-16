@@ -4702,7 +4702,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     companionInfo?.features?.providerSignInEnabled === true;
   // The providers that need the customer, for the Usage tiles and the overlay.
   const providerActions = usageProviderActionsFor(providerPreferences, {
-    onOpenSettings: () => setActiveTab("settings"),
+    onOpenSettings: () => {
+      dismissProviderAction();
+      setActiveTab("settings");
+    },
     onSignIn: providerSignInEnabled
       ? (item) => void openProviderSignIn(item)
       : undefined,
@@ -5578,6 +5581,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         onTabChange={(tab) => {
           if (disabledTabs.includes(tab)) {
             return;
+          }
+          // Settings lists the provider in its own dialog: the overlay counts as seen.
+          if (tab === "settings") {
+            dismissProviderAction();
           }
           setActiveTab(tab);
         }}

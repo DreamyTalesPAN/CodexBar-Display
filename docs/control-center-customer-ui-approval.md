@@ -7459,3 +7459,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Where the Companion cannot start a sign-in yet, "Sign in to {Label}" opens Settings and closes the overlay, instead of showing a sign-in that does nothing. No new wording.
 - Scope: `usage-screen.tsx` and its test, `control-center-app.tsx` (no fallback in the wiring), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: seen once when Settings opens, late failures ignored (#669)
+
+- User approval: Paul chose on 2026-10-16 (via the review orchestrator) Claude Design page "Control Center Redesign" 644, "3A + 4A + 5B (weekly: number first), Paul 16.10." — the overlay of the entry above; this follow-up applies two Codex review findings and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: As in the overlay entries above. Opening Settings counts the overlay as seen, so leaving Settings does not bring the same overlay back; Settings shows that provider's own dialog. A sign-in failure that arrives after its provider was already healthy again is not shown. No new wording.
+- Scope: `provider-action-dialog.tsx` and its test, `control-center-app.tsx` (tab change and the Settings action), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own

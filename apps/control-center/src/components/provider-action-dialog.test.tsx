@@ -170,3 +170,11 @@ it("a failed start reopens a closed overlay with its error, cleared once the pro
   expect(again?.textContent).toContain("VibeTV can't show Claude until you sign in again.");
   expect(again?.textContent).not.toContain("Could not open Claude.");
 });
+
+it("a late sign-in failure does not revive an action that already ended", async () => {
+  const { rerender } = render(<ReportingOverlay actions={claude()} />);
+  await act(async () => rerender(<ReportingOverlay actions={{}} />));
+  fireEvent.click(screen.getByRole("button", { name: "report" }));
+  await act(async () => rerender(<ReportingOverlay actions={claude()} />));
+  expect(dialog("Claude needs a new sign-in")?.textContent).not.toContain("Could not open Claude.");
+});

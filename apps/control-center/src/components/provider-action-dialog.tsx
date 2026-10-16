@@ -92,6 +92,10 @@ export function useProviderActionDismissal(
   const reportSignIn = (id: string, state: string, error: ApiError | null) => {
     const key = `${id}:${state}`;
     setMemory((previous) => {
+      // A reply that comes after its action ended must not revive it.
+      if (error && !previous.signature.split("\n").includes(key)) {
+        return previous;
+      }
       const failuresNow = new Map(previous.failures);
       const dismissedNow = new Set(previous.dismissed);
       if (error) {
