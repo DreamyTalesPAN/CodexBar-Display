@@ -4523,9 +4523,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     !themeSetupComplete &&
     (themeSetupEntryRequired || themeSetupSessionMatches);
   const macAppUpdatePromptedFor = useRef("");
+  // Mac only: there vibetv://check-for-updates opens Sparkle's dialog, which
+  // asks the customer. The Windows App installs the update behind the same
+  // link without a question, so it installs at launch only (#565) and
+  // otherwise when the customer clicks Update or the tray item.
   useEffect(() => {
     if (
       hostedSetup ||
+      windowsHost ||
       !macAppUpdateAvailable ||
       !macAppUpdateOfferedVersion ||
       firmwareUpdateInProgress ||
