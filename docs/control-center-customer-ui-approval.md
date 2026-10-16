@@ -7659,3 +7659,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: While usage is still loading, a provider that needs the customer shows its action tile (as in the entries above) and not the "Loading usage" line beside it. No new wording.
 - Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — review fix to the Usage tiles, no customer-visible change of its own
+
+## 2026-10-16 — Usage: token history from the visible providers only (#669)
+
+- User approval: Paul approved the Usage tiles and the provider looks on 2026-10-16 (entries above, via the review orchestrator); this follow-up applies a Codex review finding and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: A provider that gets no tile (switched off, unsupported, or without usage data) no longer makes the Usage page report "Token history is unavailable". No new wording.
+- Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the Usage tiles, no customer-visible change of its own

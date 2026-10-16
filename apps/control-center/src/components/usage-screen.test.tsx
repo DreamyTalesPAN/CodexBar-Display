@@ -711,6 +711,23 @@ describe("UsageScreen", () => {
     expect(html).not.toContain("Loading usage");
   });
 
+  it("does not report missing token history for a hidden provider", () => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="online"
+        hiddenProviderIds={["codex"]}
+        usage={{
+          ...usage,
+          providers: [
+            { ...usage.providers[0], cost: undefined },
+            { ...usage.providers[0], id: "claude", label: "Claude", cost: { daily: [{ day: "2026-07-22", totalTokens: 9 }] } },
+          ],
+        }}
+      />,
+    );
+    expect(html).not.toContain("Token history is unavailable");
+  });
+
   it("gives no tile to a hidden provider, even with a usage entry", () => {
     const html = renderToStaticMarkup(
       <UsageScreen

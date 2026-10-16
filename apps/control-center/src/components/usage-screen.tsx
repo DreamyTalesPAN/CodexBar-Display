@@ -125,7 +125,15 @@ export function UsageScreen({
     usage?.tokenUsageReady === true || usageProvidersHaveTokenResult(providers);
   // The Mac App owns this decision; the browser does not re-derive freshness.
   const tokenUsageUpdating = usage?.tokenUsageUpdating === true;
-  const tokenHistoryUnavailable = usageTokenHistoryUnavailable(usage);
+  // The same providers as the tiles: a hidden one must not make the history look missing.
+  const tokenHistoryUnavailable = usageTokenHistoryUnavailable(
+    usage && {
+      ...usage,
+      providers: usage.providers.filter(
+        (provider) => !hiddenProviderIds.includes(provider.id),
+      ),
+    },
+  );
   const hasUsableVisibleUsageContent =
     hasProviders || usageProvidersHaveTokenResult(providers);
   // An action tile is content: no loading state beside it.
