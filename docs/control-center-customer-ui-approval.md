@@ -7743,3 +7743,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: A closed access message for a provider returns when the cause comes back after the provider was healthy or switched off; while the cause stays, it stays closed. No new wording.
 - Scope: `setup/setup-providers-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — review fix, no customer-visible change of its own
+
+## 2026-10-16 — Provider rows: closed messages are forgotten also while the list is hidden; token notice counts shown providers (#669)
+
+- User approval: Paul approved the provider looks on 2026-10-16 (entries above, via the review orchestrator); this follow-up applies Codex review findings and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: A closed access message for a provider returns when the cause comes back after the provider was healthy or switched off, also when the provider list was not on screen in between. The Usage token-history notice names the one provider that is shown, when only one is. No new wording.
+- Scope: `setup/setup-providers-screen.tsx` and its test, `control-center-app.tsx` (the app-level reset on each preference read), `usage-screen.tsx` (the notice uses the shown providers), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fixes, no customer-visible change of its own

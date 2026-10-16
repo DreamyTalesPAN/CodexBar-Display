@@ -186,6 +186,21 @@ export function setupProviderDialogSentence(
  */
 export const acknowledgedProviderIssues = new Map<string, string>();
 
+/**
+ * Forgets the closed message of every provider that is healthy or switched
+ * off. The app calls it on every preference read, so it also happens while the
+ * list is not shown: a later loss of the same permission opens its message.
+ */
+export function forgetResolvedProviderIssues(
+  providers: Pick<ProviderItem, "id" | "health" | "value">[],
+) {
+  for (const provider of providers) {
+    if (!provider.value || providerRowHealthState(provider.health) === "healthy") {
+      acknowledgedProviderIssues.delete(provider.id);
+    }
+  }
+}
+
 type ProviderListProps = {
   className?: string;
   onOpenSignIn?: (provider: ProviderItem) => void;
@@ -239,11 +254,6 @@ export function ProviderList({
       Object.fromEntries(Object.entries(current).filter(([id]) => !definitiveIds.includes(id))),
     );
   }
-  useEffect(() => {
-    for (const id of definitiveKey ? definitiveKey.split("\n") : []) {
-      acknowledgedProviderIssues.delete(id);
-    }
-  }, [definitiveKey]);
   // The provider whose row action the customer clicked. Its message opens
   // whatever the rules below say about popups opening by themselves.
   const [requestedIssueId, setRequestedIssueId] = useState<string | null>(null);

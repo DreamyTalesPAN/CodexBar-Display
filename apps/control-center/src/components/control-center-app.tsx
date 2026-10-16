@@ -125,6 +125,7 @@ import type { SetupConnectSteps } from "./setup/setup-connect";
 import { displayPreviewsFor } from "./setup/setup-display-previews";
 import {
   PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS,
+  forgetResolvedProviderIssues,
   providerRowHealthState,
   setupProviderCanDisplay,
 } from "./setup/setup-providers-screen";
@@ -4801,6 +4802,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     .filter(isProviderItem)
     .filter((item) => providerRowHealthState(item.health) === "checking")
     .map((item) => item.providerId);
+  // A healthy or switched-off provider forgets its closed message, even while
+  // its list is not shown (see forgetResolvedProviderIssues).
+  useEffect(() => {
+    forgetResolvedProviderIssues((providerPreferences || []).filter(isProviderItem));
+  }, [providerPreferences]);
   const [providerActionShown, dismissProviderAction, reportProviderSignIn] =
     useProviderActionDismissal(
       providerActions,

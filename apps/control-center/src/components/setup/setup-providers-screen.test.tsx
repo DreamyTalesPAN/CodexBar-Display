@@ -20,6 +20,7 @@ import {
   SIGN_IN_PROVIDER_IDS,
   SetupProvidersScreen,
   acknowledgedProviderIssues,
+  forgetResolvedProviderIssues,
   setupProviderCanDisplay,
   setupProviderMatchesQuery,
   setupProviderDialogSentence,
@@ -736,4 +737,15 @@ describe("SetupProvidersScreen accessibility", () => {
     expect(screen.getByRole("dialog")).toBeTruthy();
     await expectNoAxeViolations(document.body.innerHTML);
   });
+});
+
+it("forgets the closed message of a provider that is healthy or off, even unmounted", () => {
+  acknowledgedProviderIssues.set("codexbar.providers.gemini.enabled", "Allow access on this computer so VibeTV can read Gemini usage.");
+  acknowledgedProviderIssues.set("codexbar.providers.openai.enabled", "Allow access on this computer so VibeTV can read OpenAI usage.");
+  forgetResolvedProviderIssues([
+    provider({ providerId: "gemini", label: "Gemini", health: "healthy" }),
+    provider({ providerId: "openai", label: "OpenAI", health: "permission_required", value: false }),
+  ]);
+  expect(acknowledgedProviderIssues.has("codexbar.providers.gemini.enabled")).toBe(false);
+  expect(acknowledgedProviderIssues.has("codexbar.providers.openai.enabled")).toBe(false);
 });
