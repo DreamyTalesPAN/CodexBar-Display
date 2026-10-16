@@ -22,20 +22,23 @@ type displayStreamInfo struct {
 	Healthy    bool   `json:"healthy"`
 	Running    bool   `json:"running"`
 	LastSentAt string `json:"lastSentAt,omitempty"`
-	// Provider is the provider of the last frame sent to this VibeTV, read
-	// from the same log line as LastSentAt (#368). It stays set while sending
-	// stalls, because the firmware keeps that frame on screen (a usage frame
-	// for 150 s, a theme-spec frame until the next one, see
-	// withoutReplacedFrameProvider); a frame for another VibeTV or connection
-	// mode, an error frame after it, an unplugged USB port or a rejected
-	// pairing names none. Usage reads it to tell which provider the device
-	// shows; usage.currentProvider falls back to the first provider when no
-	// frame was kept.
+	// Provider is the provider of the last frame delivered to this VibeTV
+	// (#368), also when the stream process stopped or later writes failed:
+	// a failed write logs no frame, so the device keeps the one before it.
+	// A delivered error frame, a frame for another VibeTV or connection mode,
+	// an unplugged USB port or a rejected pairing names none, and
+	// withoutReplacedFrameProvider drops it once the firmware replaced the
+	// frame. Usage reads it to tell which provider the device shows;
+	// usage.currentProvider falls back to the first provider when no frame
+	// was kept.
 	Provider   string `json:"provider,omitempty"`
 	Target     string `json:"target,omitempty"`
 	LastTarget string `json:"lastTarget,omitempty"`
 	Detail     string `json:"detail,omitempty"`
 	ErrorCode  string `json:"errorCode,omitempty"`
+	// When and to which Cable VibeTV the frame behind Provider was sent.
+	shownAt       time.Time
+	shownDeviceID string
 }
 
 func (s *Server) startDisplayStream(ctx context.Context, target string) error {
@@ -80,6 +83,11 @@ func withDisplayStreamInfo(device deviceInfo, stream displayStreamInfo) deviceIn
 		stream.ErrorCode = "device_frame_mismatch"
 		stream.Detail = "Waiting for an image from the selected VibeTV."
 	}
+	// The same holds for the frame that names the shown provider.
+	if samePublicTarget(device.Target, cableDeviceTarget) && stream.Provider != "" &&
+		(stream.shownDeviceID == "" || !strings.EqualFold(stream.shownDeviceID, device.DeviceID)) {
+		stream.Provider = ""
+	}
 	device.Stream = streamPointer(stream)
 	if stream.ErrorCode == "device_pairing_required" {
 		device.Paired = false
@@ -119,7 +127,7 @@ func withoutReplacedFrameProvider(device deviceInfo, now time.Time) deviceInfo {
 	if stream == nil || stream.Healthy || stream.Provider == "" {
 		return device
 	}
-	if sentAt, err := time.Parse(time.RFC3339, stream.LastSentAt); err == nil && !restartedAfter(device.Health, sentAt) {
+	if sentAt := stream.shownAt; !sentAt.IsZero() && !restartedAfter(device.Health, sentAt) {
 		if device.Display != nil && device.Display.ThemeSpec != nil && device.Display.ThemeSpec.Active {
 			return device
 		}
@@ -142,6 +150,34 @@ func restartedAfter(health *deviceHealthInfo, sentAt time.Time) bool {
 }
 
 func inspectDisplayStreamAfterRunning(ctx context.Context, target string, notBefore time.Time, running func() bool) displayStreamInfo {
+	stream := inspectDisplayStreamLiveness(ctx, target, notBefore, running)
+	return withShownFrame(stream, publicTarget(target))
+}
+
+// withShownFrame names the provider of the last frame delivered to target,
+// whatever the stream process does now (#368).
+func withShownFrame(stream displayStreamInfo, target string) displayStreamInfo {
+	if target == "" {
+		return stream
+	}
+	sentAt, lastTarget, line, ok := readDisplayStreamLog(displayStreamOutLogPath()).lastFrameAfter(time.Time{})
+	if !ok || displayStreamLogValue(line, "error") != "" {
+		return stream
+	}
+	if samePublicTarget(target, cableDeviceTarget) {
+		if !strings.EqualFold(displayStreamLogValue(line, "transport"), "usb") {
+			return stream
+		}
+	} else if lastTarget != "" && !samePublicTarget(target, publicTarget(lastTarget)) {
+		return stream
+	}
+	stream.Provider = displayStreamLogValue(line, "provider")
+	stream.shownAt = sentAt
+	stream.shownDeviceID = displayStreamLogValue(line, "deviceId")
+	return stream
+}
+
+func inspectDisplayStreamLiveness(ctx context.Context, target string, notBefore time.Time, running func() bool) displayStreamInfo {
 	target = publicTarget(target)
 	stream := displayStreamInfo{Target: target}
 	if target == "" {
@@ -216,19 +252,11 @@ func inspectDisplayStreamAfterRunning(ctx context.Context, target string, notBef
 		return stream
 	}
 	if time.Since(lastSentAt) > displayStreamReadyAge {
-		// The firmware keeps a usage frame on screen for 150 s and a
-		// theme-spec frame until the next one, so a stalled stream still
-		// shows this provider; withoutReplacedFrameProvider drops it once
-		// the frame was replaced. An error frame sent after it does not.
-		if !errorOK || errorAt.Before(lastSentAt) {
-			stream.Provider = displayStreamLogValue(frameLine, "provider")
-		}
 		stream.Detail = "Last usage frame is too old."
 		return stream
 	}
 
 	stream.Healthy = true
-	stream.Provider = displayStreamLogValue(frameLine, "provider")
 	stream.Detail = "Display stream is sending usage frames."
 	return stream
 }

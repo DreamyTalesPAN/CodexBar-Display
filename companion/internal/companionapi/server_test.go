@@ -3904,13 +3904,14 @@ func TestInspectDisplayStreamUsesConfiguredRuntimeLabelAndSharedLog(t *testing.T
 // refused. None of them shows that frame's provider, so it is not named (#368).
 func TestUnhealthyStreamNamesNoProvider(t *testing.T) {
 	healthy := displayStreamInfo{
-		Healthy:    true,
-		Running:    true,
-		LastSentAt: time.Now().UTC().Format(time.RFC3339),
-		Target:     cableDeviceTarget,
-		LastTarget: cableDeviceTarget,
-		DeviceID:   "5804558",
-		Provider:   "claude",
+		Healthy:       true,
+		Running:       true,
+		LastSentAt:    time.Now().UTC().Format(time.RFC3339),
+		Target:        cableDeviceTarget,
+		LastTarget:    cableDeviceTarget,
+		DeviceID:      "5804558",
+		Provider:      "claude",
+		shownDeviceID: "5804558",
 	}
 	same := withDisplayStreamInfo(deviceInfo{Target: cableDeviceTarget, DeviceID: "5804558"}, healthy)
 	if same.Stream == nil || !same.Stream.Healthy || same.Stream.Provider != "claude" {
@@ -3941,11 +3942,12 @@ func TestUnhealthyStreamNamesNoProvider(t *testing.T) {
 }
 
 // Sending stalls after a frame: the firmware keeps that frame on screen, so
-// the stream still names its provider, unless an error frame followed (#368).
+// the stream still names its provider until the firmware replaced it, the
+// VibeTV restarted or an error frame was delivered after it (#368).
 func TestStalledStreamKeepsProviderOfLastFrame(t *testing.T) {
 	now := time.Now().UTC()
 	stalled := func(age time.Duration) *displayStreamInfo {
-		return &displayStreamInfo{Running: true, Provider: "codex", LastSentAt: now.Add(-age).Format(time.RFC3339)}
+		return &displayStreamInfo{Running: true, Provider: "codex", shownAt: now.Add(-age)}
 	}
 	theme := &deviceDisplayInfo{ThemeSpec: &themeSpecHealth{Active: true}}
 	for _, tc := range []struct {
@@ -3958,7 +3960,7 @@ func TestStalledStreamKeepsProviderOfLastFrame(t *testing.T) {
 		{"theme-spec frame stays", deviceInfo{Stream: stalled(30 * time.Minute), Display: theme}, "codex"},
 		{"VibeTV restarted after the frame", deviceInfo{Stream: stalled(30 * time.Second), Display: theme, Health: &deviceHealthInfo{LastResetAt: now.Add(-10 * time.Second).Format(time.RFC3339Nano)}}, ""},
 		{"VibeTV restarted before the frame", deviceInfo{Stream: stalled(30 * time.Minute), Display: theme, Health: &deviceHealthInfo{LastResetAt: now.Add(-time.Hour).Format(time.RFC3339Nano)}}, "codex"},
-		{"healthy stream", deviceInfo{Stream: &displayStreamInfo{Healthy: true, Provider: "codex", LastSentAt: now.Add(-time.Hour).Format(time.RFC3339)}}, "codex"},
+		{"healthy stream", deviceInfo{Stream: &displayStreamInfo{Healthy: true, Provider: "codex", shownAt: now.Add(-time.Hour)}}, "codex"},
 	} {
 		if got := withoutReplacedFrameProvider(tc.device, now); got.Stream.Provider != tc.want {
 			t.Fatalf("%s: want provider %q, got %+v", tc.name, tc.want, got.Stream)
@@ -3971,23 +3973,32 @@ func TestStalledStreamKeepsProviderOfLastFrame(t *testing.T) {
 		return []byte("state = running\n"), nil
 	}
 	sentAt := time.Now().UTC().Add(-5 * time.Minute).Truncate(time.Second)
-	frame := sentAt.Format(time.RFC3339Nano) + ` sent frame -> /dev/cu.usbserial-1410 transport=usb source=oauth fresh=true usageMode=remaining provider=codex label=VibeTV session=73 weekly=58 reset=2733s`
+	frame := sentAt.Format(time.RFC3339Nano) + ` sent frame -> /dev/cu.usbserial-1410 transport=usb deviceId=5804558 source=oauth fresh=true usageMode=remaining provider=codex label=VibeTV session=73 weekly=58 reset=2733s error=""`
+	errorFrame := sentAt.Add(time.Second).Format(time.RFC3339Nano) + ` sent frame -> /dev/cu.usbserial-1410 transport=usb deviceId=5804558 source=unknown fresh=false usageMode=remaining provider= label=VibeTV session=0 weekly=0 reset=0s error="Usage unavailable"`
 	for _, tc := range []struct {
-		name  string
-		lines []string
-		want  string
+		name    string
+		lines   []string
+		running bool
+		want    string
 	}{
-		{"stalled", []string{frame}, "codex"},
-		{"error frame after it", []string{frame, sentAt.Add(time.Second).Format(time.RFC3339Nano) + ` cycle error: code=runtime_serial_write op=send-line retry=3s err=device-offline`}, ""},
+		{"stalled", []string{frame}, true, "codex"},
+		// A failed write logs no frame: the device keeps the one before it.
+		{"undelivered error", []string{frame, sentAt.Add(time.Second).Format(time.RFC3339Nano) + ` cycle error: code=runtime_serial_write op=send-line retry=3s err=device-offline`}, true, "codex"},
+		{"delivered error frame", []string{frame, errorFrame}, true, ""},
+		{"stream process stopped", []string{frame}, false, "codex"},
 	} {
 		logPath := filepath.Join(t.TempDir(), "daemon.out.log")
 		t.Setenv(displayStreamOutLogEnv, logPath)
 		if err := os.WriteFile(logPath, []byte(strings.Join(tc.lines, "\n")+"\n"), 0o600); err != nil {
 			t.Fatalf("write display stream log: %v", err)
 		}
-		stream := inspectDisplayStream(context.Background(), cableDeviceTarget)
+		running := tc.running
+		stream := inspectDisplayStreamAfterRunning(context.Background(), cableDeviceTarget, time.Time{}, func() bool { return running })
 		if stream.Healthy || stream.Provider != tc.want {
 			t.Fatalf("%s: want unhealthy stream naming %q, got %+v", tc.name, tc.want, stream)
+		}
+		if tc.want != "" && (stream.shownDeviceID != "5804558" || !stream.shownAt.Equal(sentAt)) {
+			t.Fatalf("%s: the shown frame must keep its device and time, got %+v", tc.name, stream)
 		}
 	}
 }
