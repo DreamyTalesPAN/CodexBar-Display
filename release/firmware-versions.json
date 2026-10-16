@@ -7,12 +7,6 @@
       "board": "esp8266-smalltv-st7789",
       "severity": "recommended",
       "message": "Firmware update available. Open the VibeTV Mac App."
-    },
-    {
-      "firmwareEnv": "lilygo_t_display_s3",
-      "board": "esp32-lilygo-t-display-s3",
-      "severity": "recommended",
-      "message": "Firmware update available. Open the VibeTV Mac App."
     }
   ]
 }
