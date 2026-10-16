@@ -603,6 +603,20 @@ describe("UsageScreen", () => {
     expect(html).not.toContain('aria-label="Updating"');
   });
 
+  it("drops action tiles while the Mac App is not reachable", () => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="missing"
+        providerActions={{
+          claude: { name: "Claude", label: "Sign in needed", onAction: vi.fn() },
+        }}
+        usage={null}
+      />,
+    );
+    expect(html).not.toContain("Sign in needed");
+    expect(html).toContain("Mac App needs setup.");
+  });
+
   it("shows action tiles in place of numbers, also for a provider with no usage entry", () => {
     const html = renderToStaticMarkup(
       <UsageScreen
@@ -654,10 +668,10 @@ describe("UsageScreen", () => {
 
     actions.claude.onAction();
     expect(onSignIn).toHaveBeenCalledWith(expect.objectContaining({ providerId: "claude" }));
-    // Gemini and Cursor have no sign-in the Companion can start: Settings instead.
+    // Zai has no sign-in the Companion can start, and Cursor's setup does: the setup row's rule.
     actions.zai.onAction();
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
     actions.cursor.onAction();
-    expect(onOpenSettings).toHaveBeenCalledTimes(2);
-    expect(onSignIn).toHaveBeenCalledTimes(1);
+    expect(onSignIn).toHaveBeenCalledTimes(2);
   });
 });

@@ -92,17 +92,19 @@ export function UsageScreen({
   );
   const hasProviders = providers.length > 0;
   // Action tiles stand in for a provider's numbers; one with no usage entry
-  // still gets its tile, after the others.
+  // still gets its tile, after the others. With no Companion there is no
+  // provider to act on, so the Mac App message stands alone.
+  const actions = companionStatus === "online" ? providerActions : {};
   const tiles = [
     ...providers.map((provider) => ({
       id: provider.id,
-      node: providerActions[provider.id] ? (
-        <UsageActionTile {...providerActions[provider.id]} />
+      node: actions[provider.id] ? (
+        <UsageActionTile {...actions[provider.id]} />
       ) : (
         <UsageProviderTile provider={provider} />
       ),
     })),
-    ...Object.entries(providerActions)
+    ...Object.entries(actions)
       .filter(([id]) => !providers.some((provider) => provider.id === id))
       .map(([id, action]) => ({
         id,
@@ -267,15 +269,12 @@ export function usageProviderActionsFor(
     (preferences || [])
       .filter(isProviderItem)
       .flatMap((item: ProviderItem): Array<[string, UsageProviderAction]> => {
-        const state = providerRowHealthState(item.health);
-        const label = usageActionLabels[state];
+        const label = usageActionLabels[providerRowHealthState(item.health)];
         if (!label || item.value !== true) {
           return [];
         }
-        // Only a sign-in the Companion can start is offered here; the rest go to Settings.
-        const signIn =
-          (state === "auth_required" || state === "browser_sign_in_required") &&
-          setupProviderOffersSignIn(item);
+        // The setup row's own rule: a sign-in the Companion can start, else Settings.
+        const signIn = setupProviderOffersSignIn(item);
         return [
           [
             item.providerId,
