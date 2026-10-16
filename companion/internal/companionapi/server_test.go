@@ -3731,9 +3731,12 @@ func TestNeverReadProviderInventsNoNumbersInRemainingMode(t *testing.T) {
 	labels := map[string]string{"claude": "Claude", "gemini": "Gemini"}
 	for _, provider := range resp.Providers {
 		if provider.Label != labels[provider.ID] || provider.Session != 0 || provider.Weekly != 0 ||
-			!provider.UsageUnavailable || !provider.SessionUnavailable || !provider.WeeklyUnavailable ||
-			provider.UsageMode != "remaining" {
+			!provider.UsageUnavailable || !provider.SessionUnavailable || !provider.WeeklyUnavailable {
 			t.Fatalf("never-read provider must show unknown, not an invented 100%%: %+v", provider)
+		}
+		// Not "remaining": the Control Center reads a remaining 0 as real usage.
+		if provider.UsageMode == "remaining" {
+			t.Fatalf("never-read provider claims a remaining direction: %+v", provider)
 		}
 	}
 }
