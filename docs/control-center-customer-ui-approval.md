@@ -7508,3 +7508,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Unchanged on screen. A screen reader now hears "session usage unavailable" for a lane that has no number, as well as the lane that has one. Not seen by Paul yet.
 - Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — accessible name only, no customer-visible change of its own
+
+## 2026-10-16 — Usage tiles: test for the screen-reader line (#669)
+
+- User approval: Paul chose the calm Usage tiles on 2026-10-16 (entry above, via the review orchestrator); this follow-up adds a test for the screen-reader line of the entry above and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: Unchanged. The test checks that a screen reader hears "session usage unavailable" for an unavailable lane.
+- Scope: `usage-screen.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — test change, no customer-visible change of its own
