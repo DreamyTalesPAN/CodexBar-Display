@@ -7336,3 +7336,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the Windows alignment entry above; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — Provider list order merged with current main again (#651)
+
+- User approval: Marcus, 16.10.2026, channel Abstimmungschat (question 27, answer "ja"), as recorded in the Windows alignment entry above. This entry records only the merge of current main into `codex/provider-list-order`; the approval record conflict was resolved by keeping main's entries in order and appending this branch's entries unchanged. It adds no wording and no new visible behaviour; not seen by Paul.
+- Approved customer-visible result: as recorded in the Windows alignment entry above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
