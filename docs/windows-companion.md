@@ -1,10 +1,12 @@
 # Windows Companion (#416)
 
-The Go Companion has a Windows runtime path. This is not a Windows product
-release: the native shell, installer, updater and firmware flashing are outside
-this change. The Win-CodexBar provider-inventory and serve-command blockers in
-`windows-platform-neutral.md` remain release blockers. Simulation uses an
-explicit mock provider; it does not demonstrate authenticated provider usage.
+The Go Companion has a Windows runtime path, and the Windows app ships as a
+signed NSIS installer (`VibeTV-Control-Center-Setup.exe`). The release candidate
+workflow `.github/workflows/vibetv-release-candidate.yml` builds and signs it,
+and `.github/workflows/release.yml` publishes it. The Win-CodexBar
+provider-inventory and serve-command blockers in `windows-platform-neutral.md`
+remain open. Simulation uses an explicit mock provider; it does not demonstrate
+authenticated provider usage.
 
 ## Per-user storage and credentials
 

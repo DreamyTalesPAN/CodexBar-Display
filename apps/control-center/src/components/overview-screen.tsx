@@ -6,10 +6,8 @@ import {
   Check,
   CircleHelp,
   Monitor,
-  WifiOff,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import {
   Item,
@@ -25,7 +23,6 @@ import type {
   UsageSnapshot,
 } from "./control-center-types";
 import {
-  deviceIsActive,
   deviceIsCustomerConnected,
   deviceIsReady,
   deviceIsWaitingForUsage,
@@ -58,7 +55,6 @@ export function OverviewScreen({
   usage,
   windowsHost = false,
 }: OverviewScreenProps) {
-  const pairingRejected = device?.paired === false;
   const connected = deviceIsCustomerConnected(device);
   const displayReady = deviceIsReady(device);
   const waitingForUsage = deviceIsWaitingForUsage(device);
@@ -67,11 +63,6 @@ export function OverviewScreen({
     connected && device?.connectionState === "display_render_failed";
   // Issue #265: the Mac App names a WiFi signal too weak for reliable updates.
   const weakWiFiSignal = connected && device?.health?.wifi?.weak === true;
-  const reconnecting =
-    deviceIsActive(device) &&
-    !deviceIsReady(device) &&
-    !pairingRejected &&
-    !waitingForUsage;
   const updateOwnedDisconnect = Boolean(
     !connected && firmwareUpdateStatus?.phase === "installing",
   );
@@ -175,22 +166,6 @@ export function OverviewScreen({
         </div>
       </section>
     </div>
-  );
-}
-
-function ReconnectNotice({ device }: { device: DeviceInfo | null }) {
-  const wifiSetupLikely =
-    device?.connected === false || device?.connectionState === "setup_required";
-  return (
-    <Alert className="w-full max-w-[1040px]">
-      <WifiOff aria-hidden />
-      <AlertTitle>Reconnecting to VibeTV</AlertTitle>
-      <AlertDescription>
-        {wifiSetupLikely
-          ? "If VibeTV shows “Connect USB cable”, plug it into this computer with the cable and choose the new WiFi. Your pairing and settings stay saved."
-          : "VibeTV is online, but its display is still reconnecting."}
-      </AlertDescription>
-    </Alert>
   );
 }
 

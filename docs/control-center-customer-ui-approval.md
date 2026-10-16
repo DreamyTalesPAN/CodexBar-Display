@@ -7186,6 +7186,48 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
 
+## 2026-10-14 — Overnight audit (#614): dead UI code removed, preview poll scoped
+
+- User approval: Paul asked on 2026-10-14 for an unattended overnight audit of the whole repository (epic #614), with the rule that nothing the product does today is lost and nothing customer-visible changes unless needed. He has not seen this entry or the branch.
+- Approved customer-visible result: No text, control or layout changes. Deleted files and exports were never rendered: the panels of the native Theme Studio replaced by the AI editor (#422), the Overview `ReconnectNotice`, an unused shell status component and an unused device image. The 1 s display-frame poll now re-renders only Overview and the setup wizard instead of the whole app, runs one request at a time with a 5 s limit and pauses while the window is hidden; the Usage reset countdown keeps moving on its own 15 s tick (it shows whole minutes); background usage polls share one request. The installer served from app.vibetv.shop gives each status check at most 30 s instead of waiting without limit.
+- Scope: `apps/control-center/src/components/{live-vibetv-preview,control-center-app,usage-screen,overview-screen,mac-app-install-command,control-center-types,diagnostics-panel,control-center-runtime,setup-event-log}.ts(x)`, the deleted Theme Studio files, `src/lib/{theme-studio,theme-studio-assets,active-theme-upgrade}.ts`, `public/install-control-center-companion.sh`, `public/images/vibetv-device-overview.png`, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change
+
+## 2026-10-14 — Overnight audit (#614): app helpers moved into modules
+
+- User approval: Paul asked on 2026-10-14 for the unattended overnight audit (epic #614), including splitting the monolithic files, with nothing customer-visible changing. He has not seen this entry.
+- Approved customer-visible result: None. The pure helpers of `control-center-app.tsx` (error normalization, device merging, device-target storage, theme-install and firmware-update job helpers, runtime surface, event log) moved unchanged into six modules beside it; the rendered app is identical.
+- Scope: `apps/control-center/src/components/control-center-app.tsx`, the new `control-center-errors.ts`, `device-merge.ts`, `device-target-storage.ts`, `update-jobs.ts`, `runtime-surface.ts`, `event-log.ts`, the two tests that import them, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change
+
+## 2026-10-14 — Overnight audit (#614): unused props, dead CSS, unique activity ids
+
+- User approval: Paul asked on 2026-10-14 for the unattended overnight audit (epic #614) with nothing customer-visible changing. He has not seen this entry.
+- Approved customer-visible result: None. Props nothing read (`ThemeLibraryScreen.installEntry`, `ControlCenterShell.device`) are gone; `globals.css` loses the unused `.vibetv-status-icon*` rules and tokens and theme aliases nothing references (compiled CSS differs only by those); one progress clamp and one theme-spec hash normalizer replace identical copies; Recent activity rows get ids from a counter, so two events in the same millisecond no longer share a React key. Text and layout are unchanged.
+- Scope: `apps/control-center/src/app/globals.css`, `src/components/{control-center-app,control-center-shell,theme-library-screen,updates-screen,update-jobs,live-vibetv-preview,control-center-runtime,theme-studio-preview}.tsx/.ts`, `theme-studio/ai-theme-studio-screen.tsx`, the shell tests, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change
+
+## 2026-10-14 — Overnight audit (#614): the kept preview frame belongs to one VibeTV
+
+- User approval: Paul asked on 2026-10-14 for the unattended overnight audit (epic #614) with nothing customer-visible changing. This follows the automated review of the scoped preview poll; he has not seen it.
+- Approved customer-visible result: The frame kept across a tab switch is reused only for the VibeTV it came from. After switching to another VibeTV, Overview and setup start with an empty preview until that VibeTV's first frame arrives, instead of briefly showing the previous one. No text or control changes.
+- Scope: `apps/control-center/src/components/live-vibetv-preview.tsx`, `control-center-app.tsx`, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change
+
+## 2026-10-15 — Keep the hosted device overview image (#615)
+
+- User approval: Paul's rule for the overnight audit of 2026-10-14: nothing the product does today is lost, and anything an outside caller can reach stays.
+- Approved customer-visible result: `public/images/vibetv-device-overview.png` stays published under `/images/`, as on main. The audit had deleted it because nothing in the repository links it, but a mail or page outside the repository may. No screen changes.
+- Scope: `apps/control-center/public/images/vibetv-device-overview.png` (restored unchanged) and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — nothing changes for the customer
+
+## 2026-10-15 — Overnight audit (#614): approval marker after merging main with #607, #620 and #629
+
+- User approval: Paul asked on 2026-10-15 to bring #615 to ready (CI green, tested on Mac and Windows). Main moved on with #607, #620 and #629 while the branch was in review, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #614 entries above and in the entries of #607, #620 and #629; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
 ## 2026-10-15 — Offer the Mac App update only on the Mac (#561)
 
 - User approval: Paul asked on 2026-10-15 to fix the Codex review finding on PR #639 ("ja, fix das alles"): the Windows app must not offer a "Mac App" update. He has not personally previewed this exact build.

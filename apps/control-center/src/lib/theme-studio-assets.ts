@@ -417,20 +417,6 @@ function isSpriteTextFile(file: File): boolean {
   return /\.(cbi|cba)$/i.test(file.name) || file.type === "text/plain";
 }
 
-export async function fileToBase64(file: File): Promise<string> {
-  return arrayBufferToBase64(await file.arrayBuffer());
-}
-
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    const chunk = bytes.subarray(offset, offset + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-  return window.btoa(binary);
-}
 
 export function themeAssetByteLength(asset: ThemeStudioAsset): number {
   if (asset.encoding === "text") {
@@ -454,15 +440,6 @@ export function assetKind(path: string): ThemeStudioAssetKind | null {
     return "sprite";
   }
   return null;
-}
-
-export function assetKindLabel(path: string): string {
-  const kind = assetKind(path);
-  return kind === "gif" ? "GIF" : kind === "sprite" ? "Sprite" : "Asset";
-}
-
-export function assetFileName(path: string): string {
-  return path.split("/").pop()?.trim() || "asset.bin";
 }
 
 function ensureTrailingNewline(value: string): string {
