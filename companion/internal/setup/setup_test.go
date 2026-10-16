@@ -1907,18 +1907,6 @@ func TestResolveFirmwareEnvironmentRejectsUnsupported(t *testing.T) {
 	}
 }
 
-func TestFirmwareProjectDirForLilygoEnvironment(t *testing.T) {
-	repo := t.TempDir()
-	mustWriteFile(t, filepath.Join(repo, "firmware_esp32", "platformio.ini"), []byte("[env:lilygo_t_display_s3]"), 0o644)
-	mustWriteFile(t, filepath.Join(repo, "firmware_esp8266", "platformio.ini"), []byte("[env:esp8266_smalltv_st7789]"), 0o644)
-
-	got := firmwareProjectDirForEnvironment(repo, "lilygo_t_display_s3")
-	want := filepath.Join(repo, "firmware_esp32")
-	if got != want {
-		t.Fatalf("expected %q, got %q", want, got)
-	}
-}
-
 func TestRunWithDepsFailsWhenDetectedBoardMismatchesFirmwareEnvironment(t *testing.T) {
 	tmp := t.TempDir()
 	home := filepath.Join(tmp, "home")

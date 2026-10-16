@@ -7,12 +7,6 @@ const (
 
 var hostSupportedProtocolVersions = []int{ProtocolVersionV2, ProtocolVersionV1}
 
-func HostSupportedProtocolVersions() []int {
-	out := make([]int, len(hostSupportedProtocolVersions))
-	copy(out, hostSupportedProtocolVersions)
-	return out
-}
-
 func IsSupportedProtocolVersion(version int) bool {
 	switch version {
 	case ProtocolVersionV1, ProtocolVersionV2:
