@@ -74,7 +74,11 @@ export function useProviderActionDismissal(
         (key) => current.has(key) || held.has(key.split(":")[0]),
       ),
     );
-    failures = new Map([...failures].filter(([key]) => current.has(key)));
+    failures = new Map(
+      [...failures].filter(
+        ([key]) => current.has(key) || held.has(key.split(":")[0]),
+      ),
+    );
     setMemory({ signature, checking, dismissed, failures });
   }
   let shown: [string, UsageProviderAction] | undefined = entries.find(

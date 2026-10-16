@@ -7694,3 +7694,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Unchanged.
 - Scope: `scripts/test-customer-flows.mjs` (three locators), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — test change, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: a shown failure is kept through a check (#669)
+
+- User approval: Paul chose the provider overlay on 2026-10-16 (entries above, via the review orchestrator); this follow-up applies a Codex review finding and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: A sign-in failure shown in the overlay stays there when the provider is checked again and its need returns. No new wording.
+- Scope: `provider-action-dialog.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
