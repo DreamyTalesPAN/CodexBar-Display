@@ -5587,7 +5587,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             }}
             onRefresh={() => refreshUsage()}
             providerSettings={setupProviders}
-            shownProvider={device?.stream?.provider}
+            shownProviders={[
+              device?.stream?.provider ?? "",
+              ...(device?.stream?.slotProviders ?? []),
+            ]}
             usage={usage}
             usageError={errorForHost(usageError, windowsHost)}
             windowsHost={windowsHost}

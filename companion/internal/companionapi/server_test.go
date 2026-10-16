@@ -3966,6 +3966,8 @@ func TestStalledStreamKeepsProviderOfLastFrame(t *testing.T) {
 		{"VibeTV restarted after the frame", deviceInfo{Stream: stalled(30 * time.Second), Display: theme, Health: &deviceHealthInfo{LastResetAt: now.Add(-10 * time.Second).Format(time.RFC3339Nano)}}, ""},
 		{"VibeTV restarted before the frame", deviceInfo{Stream: stalled(30 * time.Minute), Display: theme, Health: &deviceHealthInfo{LastResetAt: now.Add(-time.Hour).Format(time.RFC3339Nano)}}, "codex"},
 		{"healthy stream", deviceInfo{Stream: &displayStreamInfo{Healthy: true, Provider: "codex", shownAt: now.Add(-time.Hour)}}, "codex"},
+		{"frame went to another VibeTV", deviceInfo{DeviceID: "5804558", Health: answered, Display: theme, Stream: &displayStreamInfo{Running: true, Provider: "codex", shownAt: now.Add(-time.Minute), shownDeviceID: "777"}}, ""},
+		{"frame went to this VibeTV", deviceInfo{DeviceID: "5804558", Health: answered, Display: theme, Stream: &displayStreamInfo{Running: true, Provider: "codex", shownAt: now.Add(-time.Minute), shownDeviceID: "5804558"}}, "codex"},
 	} {
 		if got := withoutReplacedFrameProvider(tc.device, now); got.Stream.Provider != tc.want {
 			t.Fatalf("%s: want provider %q, got %+v", tc.name, tc.want, got.Stream)
@@ -4037,6 +4039,47 @@ func TestShownFrameIgnoresLaterFramesToOtherVibeTVs(t *testing.T) {
 		if stream.Provider != "codex" || stream.shownDeviceID != "5804558" || !stream.shownAt.Equal(sentAt) {
 			t.Fatalf("%s: want the frame sent to %s, got %+v", tc.name, tc.target, stream)
 		}
+	}
+
+	// The same VibeTV got a newer frame over its other connection: it shows that one.
+	sameOverWiFi := later + ` sent frame -> http://192.168.178.72 transport=wifi deviceId=5804558 provider=claude label=VibeTV error=""`
+	sameErrorOverWiFi := later + ` sent frame -> http://192.168.178.72 transport=wifi deviceId=5804558 provider= label=VibeTV error="Usage unavailable"`
+	sameOverCable := later + ` sent frame -> /dev/cu.usbserial-1410 transport=usb deviceId=5804558 provider=claude error=""`
+	for _, tc := range []struct {
+		name   string
+		target string
+		lines  []string
+		want   string
+	}{
+		{"cable, then the same VibeTV over WiFi", cableDeviceTarget, []string{cableFrame, sameOverWiFi}, "claude"},
+		{"WiFi, then the same VibeTV over the cable", "http://192.168.178.72", []string{wifiA, sameOverCable}, "claude"},
+		{"cable, then an error frame to the same VibeTV over WiFi", cableDeviceTarget, []string{cableFrame, sameErrorOverWiFi}, ""},
+	} {
+		logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+		t.Setenv(displayStreamOutLogEnv, logPath)
+		if err := os.WriteFile(logPath, []byte(strings.Join(tc.lines, "\n")+"\n"), 0o600); err != nil {
+			t.Fatalf("write display stream log: %v", err)
+		}
+		stream := withShownFrame(displayStreamInfo{Target: tc.target}, tc.target)
+		if stream.Provider != tc.want {
+			t.Fatalf("%s: want provider %q, got %+v", tc.name, tc.want, stream)
+		}
+	}
+
+	// A theme can show the providers in the frame's provider slots too.
+	slots := url.QueryEscape(`[{"id":"codex","label":"Codex","percent":40,"resetSec":3600},{"id":"claude","label":"Claude","percent":10,"resetSec":7200}]`)
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	t.Setenv(displayStreamOutLogEnv, logPath)
+	if err := os.WriteFile(logPath, []byte(sentAt.Format(time.RFC3339Nano)+` sent frame -> /dev/cu.usbserial-1410 transport=usb deviceId=5804558 provider=codex providerSlots=`+slots+` error=""`+"\n"), 0o600); err != nil {
+		t.Fatalf("write display stream log: %v", err)
+	}
+	stream := withShownFrame(displayStreamInfo{Target: cableDeviceTarget, Running: true}, cableDeviceTarget)
+	if stream.Provider != "codex" || strings.Join(stream.SlotProviders, ",") != "codex,claude" {
+		t.Fatalf("want the slot providers of the shown frame, got %+v", stream)
+	}
+	replaced := withoutReplacedFrameProvider(deviceInfo{DeviceID: "5804558", Health: &deviceHealthInfo{OK: true}, Stream: &stream}, sentAt.Add(10*time.Minute))
+	if replaced.Stream.Provider != "" || len(replaced.Stream.SlotProviders) != 0 {
+		t.Fatalf("a replaced frame shows no slot providers either, got %+v", replaced.Stream)
 	}
 }
 

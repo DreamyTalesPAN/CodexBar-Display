@@ -75,6 +75,29 @@ func (l displayStreamLog) lastFrameAfter(boundary time.Time) (time.Time, string,
 	return l.lastFrameWhere(boundary, nil)
 }
 
+// providerSlotIDs lists the providers in a logged frame's provider slots.
+func providerSlotIDs(line string) []string {
+	encoded := displayStreamLogValue(line, "providerSlots")
+	if encoded == "" || encoded == "-" {
+		return nil
+	}
+	raw, err := url.QueryUnescape(encoded)
+	if err != nil {
+		return nil
+	}
+	var slots []protocol.UsageSlot
+	if json.Unmarshal([]byte(raw), &slots) != nil {
+		return nil
+	}
+	var ids []string
+	for _, slot := range slots {
+		if id := strings.TrimSpace(slot.ID); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
 // lastFrameWhere returns the newest frame line accepted by match (nil accepts all).
 func (l displayStreamLog) lastFrameWhere(boundary time.Time, match func(target, line string) bool) (time.Time, string, string, bool) {
 	for _, lines := range l {

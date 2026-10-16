@@ -300,6 +300,8 @@ export type DeviceInfo = {
     lastSentAt?: string;
     /** The provider of the last frame sent to VibeTV. */
     provider?: string;
+    /** The providers in that frame's provider slots, which a theme can show too. */
+    slotProviders?: string[];
     target?: string;
     lastTarget?: string;
     detail?: string;

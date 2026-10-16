@@ -7344,3 +7344,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as approved in the #368 entries above and in the entries of #628 and #619; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no new wording
+
+## 2026-10-16 — #368: no Usage line for the providers in VibeTV's provider slots
+
+- User approval: follows Marcus' decision of 2026-10-15 for the #368 Usage line (entries above); third correction from the Codex review of PR #644.
+- Approved customer-visible result: besides the provider of the last frame sent to VibeTV, the providers in that frame's provider slots, which a theme can show next to it, never get the `isn't on VibeTV` line either. Wording unchanged.
+- Scope: `companion` display stream status (one field), `apps/control-center` Usage screen, this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a correction of the unreleased line

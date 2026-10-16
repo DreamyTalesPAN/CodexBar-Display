@@ -31,11 +31,14 @@ type displayStreamInfo struct {
 	// frame. Usage reads it to tell which provider the device shows;
 	// usage.currentProvider falls back to the first provider when no frame
 	// was kept.
-	Provider   string `json:"provider,omitempty"`
-	Target     string `json:"target,omitempty"`
-	LastTarget string `json:"lastTarget,omitempty"`
-	Detail     string `json:"detail,omitempty"`
-	ErrorCode  string `json:"errorCode,omitempty"`
+	Provider string `json:"provider,omitempty"`
+	// SlotProviders are the providers in that frame's provider slots, which a
+	// theme can show next to Provider; they are kept and dropped with it.
+	SlotProviders []string `json:"slotProviders,omitempty"`
+	Target        string   `json:"target,omitempty"`
+	LastTarget    string   `json:"lastTarget,omitempty"`
+	Detail        string   `json:"detail,omitempty"`
+	ErrorCode     string   `json:"errorCode,omitempty"`
 	// When and to which Cable VibeTV the frame behind Provider was sent.
 	shownAt       time.Time
 	shownDeviceID string
@@ -84,9 +87,9 @@ func withDisplayStreamInfo(device deviceInfo, stream displayStreamInfo) deviceIn
 		stream.Detail = "Waiting for an image from the selected VibeTV."
 	}
 	// The same holds for the frame that names the shown provider.
-	if samePublicTarget(device.Target, cableDeviceTarget) && stream.Provider != "" &&
+	if samePublicTarget(device.Target, cableDeviceTarget) && (stream.Provider != "" || len(stream.SlotProviders) > 0) &&
 		(stream.shownDeviceID == "" || !strings.EqualFold(stream.shownDeviceID, device.DeviceID)) {
-		stream.Provider = ""
+		stream = withoutShownProviders(stream)
 	}
 	device.Stream = streamPointer(stream)
 	if stream.ErrorCode == "device_pairing_required" {
@@ -108,9 +111,15 @@ func streamPointer(stream displayStreamInfo) *displayStreamInfo {
 	// shows that provider. A stream that only stopped sending keeps it.
 	switch stream.ErrorCode {
 	case "device_frame_mismatch", "device_not_found", "pairing_token_rejected":
-		stream.Provider = ""
+		stream = withoutShownProviders(stream)
 	}
 	return &stream
+}
+
+func withoutShownProviders(stream displayStreamInfo) displayStreamInfo {
+	stream.Provider = ""
+	stream.SlotProviders = nil
+	return stream
 }
 
 // firmwareFrameStaleAge is the firmware's kFrameStaleWarningMs: 150 s after a
@@ -124,7 +133,14 @@ const firmwareFrameStaleAge = 150 * time.Second
 // the frame lost it either way.
 func withoutReplacedFrameProvider(device deviceInfo, now time.Time) deviceInfo {
 	stream := device.Stream
-	if stream == nil || stream.Healthy || stream.Provider == "" {
+	if stream == nil || stream.Healthy || (stream.Provider == "" && len(stream.SlotProviders) == 0) {
+		return device
+	}
+	// A frame sent to another VibeTV (an address now taken by another
+	// device, a swapped cable) says nothing about this one.
+	if id, shown := strings.TrimSpace(device.DeviceID), stream.shownDeviceID; id != "" && shown != "" && !strings.EqualFold(id, shown) {
+		cleared := withoutShownProviders(*stream)
+		device.Stream = &cleared
 		return device
 	}
 	if sentAt := stream.shownAt; !sentAt.IsZero() && !restartedAfter(device.Health, sentAt) {
@@ -140,8 +156,7 @@ func withoutReplacedFrameProvider(device deviceInfo, now time.Time) deviceInfo {
 			return device
 		}
 	}
-	cleared := *stream
-	cleared.Provider = ""
+	cleared := withoutShownProviders(*stream)
 	device.Stream = &cleared
 	return device
 }
@@ -166,17 +181,26 @@ func withShownFrame(stream displayStreamInfo, target string) displayStreamInfo {
 		return stream
 	}
 	cable := samePublicTarget(target, cableDeviceTarget)
+	streamLog := readDisplayStreamLog(displayStreamOutLogPath())
 	// Frames to other VibeTVs in between must not hide the last one sent to target.
-	sentAt, _, line, ok := readDisplayStreamLog(displayStreamOutLogPath()).lastFrameWhere(time.Time{}, func(lastTarget, line string) bool {
+	sentAt, _, line, ok := streamLog.lastFrameWhere(time.Time{}, func(lastTarget, line string) bool {
 		if cable {
 			return strings.EqualFold(displayStreamLogValue(line, "transport"), "usb")
 		}
 		return lastTarget == "" || samePublicTarget(target, publicTarget(lastTarget))
 	})
+	// The same VibeTV may have got a newer frame over its other connection
+	// (Cable and WiFi switched); it shows that one.
+	if id := displayStreamLogValue(line, "deviceId"); ok && id != "" {
+		sentAt, _, line, ok = streamLog.lastFrameWhere(time.Time{}, func(_, line string) bool {
+			return strings.EqualFold(displayStreamLogValue(line, "deviceId"), id)
+		})
+	}
 	if !ok || displayStreamLogValue(line, "error") != "" {
 		return stream
 	}
 	stream.Provider = displayStreamLogValue(line, "provider")
+	stream.SlotProviders = providerSlotIDs(line)
 	stream.shownAt = sentAt
 	stream.shownDeviceID = displayStreamLogValue(line, "deviceId")
 	return stream

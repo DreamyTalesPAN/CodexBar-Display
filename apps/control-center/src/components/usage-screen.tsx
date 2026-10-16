@@ -63,8 +63,8 @@ type UsageScreenProps = {
   providerSettings?: ProviderItem[];
   /** Opens Settings at AI providers. */
   onOpenProviderSettings?: () => void;
-  /** The provider of the last frame sent to VibeTV, if one was sent. */
-  shownProvider?: string;
+  /** The providers the last frame sent to VibeTV shows, if one was sent. */
+  shownProviders?: string[];
   /** The app runs on Windows, where "Mac App" reads "app". */
   windowsHost?: boolean;
 };
@@ -77,7 +77,7 @@ export function UsageScreen({
   onRefresh,
   providerSettings = [],
   onOpenProviderSettings,
-  shownProvider,
+  shownProviders = [],
   windowsHost = false,
 }: UsageScreenProps) {
   const refreshing = busyAction === "usage";
@@ -88,7 +88,7 @@ export function UsageScreen({
   const notOnVibeTV = usageProvidersNotOnVibeTV(
     usage,
     providerSettings,
-    shownProvider,
+    shownProviders,
   );
   const hasProviders = providers.length > 0;
   const tokenUsageReady =
@@ -254,9 +254,9 @@ export function UsageScreen({
 /**
  * One quiet line per switched-on provider that VibeTV cannot show (#368):
  * its usage is missing, stale or unavailable -- the same test the device's
- * provider rotation uses -- and its health names why. The provider of the
- * last frame sent to VibeTV never gets one: with no fresh provider left, the
- * device keeps showing that one's last reading. usage.currentProvider cannot
+ * provider rotation uses -- and its health names why. The providers the last
+ * frame sent to VibeTV shows (its provider and its provider slots) never get
+ * one: the device keeps showing that frame. usage.currentProvider cannot
  * tell: it falls back to the first provider when no frame was kept. A provider that is
  * still checking (first read, restart) gets no line either. The reason and
  * the time come from the Mac App; nothing here judges the provider itself.
@@ -264,10 +264,13 @@ export function UsageScreen({
 export function usageProvidersNotOnVibeTV(
   usage: UsageSnapshot | null,
   providerSettings: ProviderItem[],
-  shownProvider?: string,
+  shownProviders: string[] = [],
   now = new Date(),
 ): Array<{ id: string; text: string }> {
   const lines: Array<{ id: string; text: string }> = [];
+  const shown = new Set(
+    shownProviders.map((provider) => provider.trim().toLowerCase()),
+  );
   for (const setting of providerSettings) {
     const health = setting.health;
     if (
@@ -277,7 +280,7 @@ export function usageProvidersNotOnVibeTV(
       continue;
     }
     const id = setting.providerId.trim().toLowerCase();
-    if (id === shownProvider?.trim().toLowerCase()) {
+    if (shown.has(id)) {
       continue;
     }
     const reading = usage?.providers?.find(

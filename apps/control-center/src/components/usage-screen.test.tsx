@@ -581,7 +581,7 @@ describe("usageProvidersNotOnVibeTV", () => {
     const lines = usageProvidersNotOnVibeTV(
       staleClaude,
       [claude({ noReadingSince: "2026-07-28T08:29:00Z" })],
-      "codex",
+      ["codex"],
       now,
     );
     expect(lines).toEqual([
@@ -593,30 +593,34 @@ describe("usageProvidersNotOnVibeTV", () => {
   });
 
   it("says so when the provider never delivered a reading", () => {
-    const lines = usageProvidersNotOnVibeTV(usage, [claude({})], undefined, now);
+    const lines = usageProvidersNotOnVibeTV(usage, [claude({})], [], now);
     expect(lines[0].text).toBe(
       "Claude isn't on VibeTV. Sign in again for this provider. No usage reading yet.",
     );
   });
 
   it("stays quiet while the provider is checking, after it recovered, and once it is off", () => {
-    expect(usageProvidersNotOnVibeTV(usage, [claude({ state: "checking" })], "codex", now)).toEqual([]);
+    expect(usageProvidersNotOnVibeTV(usage, [claude({ state: "checking" })], ["codex"], now)).toEqual([]);
     const recovered: UsageSnapshot = {
       ...usage,
       providers: [...usage.providers, { id: "claude", label: "Claude", session: 3, weekly: 9, usageMode: "used" }],
     };
-    expect(usageProvidersNotOnVibeTV(recovered, [claude({ state: "unavailable" })], "codex", now)).toEqual([]);
-    expect(usageProvidersNotOnVibeTV(staleClaude, [claude({}, false)], "codex", now)).toEqual([]);
-    expect(usageProvidersNotOnVibeTV(staleClaude, [claude({ state: "healthy" })], "codex", now)).toEqual([]);
+    expect(usageProvidersNotOnVibeTV(recovered, [claude({ state: "unavailable" })], ["codex"], now)).toEqual([]);
+    expect(usageProvidersNotOnVibeTV(staleClaude, [claude({}, false)], ["codex"], now)).toEqual([]);
+    expect(usageProvidersNotOnVibeTV(staleClaude, [claude({ state: "healthy" })], ["codex"], now)).toEqual([]);
   });
 
   it("stays quiet about the provider of the last sent frame, even when its reading is stale", () => {
-    expect(usageProvidersNotOnVibeTV(staleClaude, [claude({ state: "stale" })], "claude", now)).toEqual([]);
+    expect(usageProvidersNotOnVibeTV(staleClaude, [claude({ state: "stale" })], ["claude"], now)).toEqual([]);
+  });
+
+  it("stays quiet about a provider in the provider slots of the last sent frame", () => {
+    expect(usageProvidersNotOnVibeTV(staleClaude, [claude({ state: "stale" })], ["codex", "Claude"], now)).toEqual([]);
   });
 
   it("does not take the usage fallback currentProvider for the shown provider", () => {
     const fallback: UsageSnapshot = { ...staleClaude, currentProvider: "claude" };
-    expect(usageProvidersNotOnVibeTV(fallback, [claude({})], undefined, now)).toHaveLength(1);
+    expect(usageProvidersNotOnVibeTV(fallback, [claude({})], [], now)).toHaveLength(1);
   });
 
   it("renders the line with a link to Settings", () => {
