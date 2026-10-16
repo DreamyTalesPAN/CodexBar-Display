@@ -7343,3 +7343,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in "Codex review fix, screensaver values belong to one VibeTV" above. A settings read still on its way for the first VibeTV when another one is connected no longer puts the first one's screensaver values back; the switch stays closed until the new VibeTV's own setting is read.
 - Scope: `control-center-app.tsx`, its display preferences test and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — review fix, no customer-visible change of its own
+
+## 2026-10-16 — #643: Show screensaver only in Settings, a line under Screensavers (variant 645-A)
+
+- User approval: Paul chose variant 645-A on 2026-10-16 (Claude Design page 'Display Settings Redesign', section 645) via the review orchestrator; he has not yet seen this exact build.
+- Approved customer-visible result: the Show screensaver switch exists only in Settings › Screensaver, beside "Show after" and "Brightness in screensaver", without an explanation line under it. Appearance › Screensavers has no switch and no explanation line of its own; while the screensaver is off it shows one muted line "Screensaver is off." with the link "Turn on in Settings", which opens Settings at the Screensaver group. The "Screensaver is turned off" notice ("Turn on Show screensaver to install and use a screensaver.") is gone. Install stays disabled while the screensaver is off ("Turn on first"). The Settings switch opens only once VibeTV's own setting is read. This replaces the two "The same switch is …" lines of the #643 entry above.
+- Scope: `theme-library-screen.tsx`, `settings-screen.tsx`, `control-center-app.tsx`, their tests, `scripts/test-customer-flows.mjs` and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a small change to an existing setting, not announced to customers

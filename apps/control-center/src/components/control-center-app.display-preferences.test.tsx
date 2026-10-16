@@ -736,16 +736,11 @@ it("keeps Brightness in screensaver focused through two arrow keys", async () =>
   ]);
 });
 
-it.each([
-  ["Settings", ["Settings"]],
-  ["Screensavers", ["Appearance", "Screensavers"]],
-])("keeps Show screensaver in %s focused while it is saved", async (_, tabs) => {
+it("keeps Show screensaver focused while it is saved", async () => {
   const window = startWindow();
   await window.wait(10);
-  for (const tab of tabs) {
-    fireEvent.click(screen.getByRole("button", { name: tab }));
-    await window.wait(1);
-  }
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
   const toggle = screen.getByRole("switch", { name: "Show screensaver" });
   toggle.focus();
 
@@ -761,10 +756,9 @@ it.each([
   expect(window.companion.settings.standby.enabled).toBe(true);
 });
 
-// Issue #643: Show screensaver has a switch in Settings and one under
-// Appearance › Screensavers. Both show the one setting, also while a change
-// is on its way, after VibeTV refused it, and when the next change is made on
-// the other page before the first one is stored.
+// Issue #643 (variant 645-A): Show screensaver has its switch in Settings
+// only. Screensavers says in one line when it is off and opens Settings at
+// the switch.
 const screensaverSwitch = () =>
   screen.getByRole("switch", { name: "Show screensaver" });
 const openSettings = async (window: ReturnType<typeof startWindow>) => {
@@ -778,43 +772,27 @@ const openScreensavers = async (window: ReturnType<typeof startWindow>) => {
   await window.wait(1);
 };
 
-it("shows the same Show screensaver on both pages while a change is saved and after it is refused", async () => {
+it("opens Settings at Show screensaver from the line under Screensavers", async () => {
   const window = startWindow();
   await window.wait(10);
-  await openSettings(window);
-
-  const store = window.holdNextWrite();
-  window.companion.refuseWrites = "once";
-  await window.step(() => fireEvent.click(screensaverSwitch()));
   await openScreensavers(window);
-  expect(screensaverSwitch().getAttribute("aria-checked")).toBe("true");
+  expect(screen.queryByRole("switch", { name: "Show screensaver" })).toBeNull();
+  expect(window.text()).toContain("Screensaver is off.");
 
-  store();
+  fireEvent.click(screen.getByRole("link", { name: "Turn on in Settings" }));
   await window.wait(1);
-  expect(screensaverSwitch().getAttribute("aria-checked")).toBe("false");
-  await openSettings(window);
-  expect(screensaverSwitch().getAttribute("aria-checked")).toBe("false");
-  expect(window.companion.settings.standby.enabled).toBe(false);
-});
-
-it("ends both Show screensaver switches on the last change, made on the other page", async () => {
-  const window = startWindow();
-  await window.wait(10);
-  await openSettings(window);
-
-  const store = window.holdNextWrite();
+  expect(screen.getByRole("heading", { name: "Screensaver" }).closest("section")?.id).toBe(
+    "settings-screensaver",
+  );
   await window.step(() => fireEvent.click(screensaverSwitch()));
-  await openScreensavers(window);
-  await window.step(() => fireEvent.click(screensaverSwitch()));
-  expect(screensaverSwitch().getAttribute("aria-checked")).toBe("false");
-
-  store();
   await window.wait(1);
-  expect(screensaverSwitch().getAttribute("aria-checked")).toBe("false");
-  await openSettings(window);
-  expect(screensaverSwitch().getAttribute("aria-checked")).toBe("false");
-  expect(window.settingsWrites().map(({ standby }) => standby.enabled)).toEqual([true, false]);
-  expect(window.companion.settings.standby.enabled).toBe(false);
+  expect(window.companion.settings.standby.enabled).toBe(true);
+
+  fireEvent.click(screen.getByRole("button", { name: "Screensavers" }));
+  await window.wait(1);
+  expect(screen.getByRole("heading", { name: "Screensavers" })).toBeTruthy();
+  expect(window.text()).not.toContain("Screensaver is off.");
+  expect(screen.queryByRole("link", { name: "Turn on in Settings" })).toBeNull();
 });
 
 // Codex review of #645: the screensaver values belong to one VibeTV. When the

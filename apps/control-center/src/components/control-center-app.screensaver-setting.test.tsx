@@ -190,5 +190,4 @@ it.each([
     .getAllByRole("listitem")
     .find((item) => within(item).queryByText("Retro 3D"))!;
   expect((within(row).getByRole("button", { name: "Install" }) as HTMLButtonElement).disabled).toBe(false);
-  expect(screen.getByRole("switch", { name: /Show screensaver/ })).toBeTruthy();
 });

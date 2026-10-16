@@ -3,7 +3,7 @@
 import { CircleArrowRight, Wifi } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Item, ItemSeparator } from "@/components/ui/item";
 import {
   Dialog,
@@ -41,11 +41,9 @@ import {
 } from "./setup/setup-providers-screen";
 import {
   deviceCanSwitchToCable,
-  deviceActionHoldsSettings,
   deviceIsCustomerConnected,
   deviceIsReady,
   deviceOffersCable,
-  screensaverSwitchDisabled,
   type ApiError,
   type DeviceInfo,
   type PreferenceDescriptor,
@@ -141,7 +139,11 @@ export function SettingsScreen({
   // here: a control that closes during its own save drops keyboard focus to
   // the page, and the next arrow key goes nowhere (issue #558). The app sends
   // these writes one after the other, so the next change can follow at once.
-  const localActionBusy = deviceActionHoldsSettings(busyAction);
+  const localActionBusy =
+    busyAction === "connection-mode" ||
+    busyAction === "reset-setup" ||
+    busyAction === "erase-device" ||
+    busyAction === "firmware-update";
   // Firmware that does not advertise standby has no screensaver at all, so the
   // whole block stays hidden instead of showing controls that cannot work.
   const standbySupport = device?.capabilities?.standby?.supported === true;
@@ -150,11 +152,11 @@ export function SettingsScreen({
     timeoutMinutes: 10,
     brightnessPercent: 20,
   };
-  const standbyToggleDisabled = screensaverSwitchDisabled(
-    device,
-    busyAction,
-    standby,
-  );
+  // Not open before VibeTV's own value is read: until then the placeholder
+  // values above stand here, and a save would write them over the customer's
+  // own time and brightness (issue #643).
+  const standbyToggleDisabled =
+    !standby || !deviceIsCustomerConnected(device) || localActionBusy;
   const standbyDetailsDisabled =
     standbyToggleDisabled || !standbyValues.enabled;
   // The customer's own screensavers are saved in this browser, by Theme Studio.
@@ -397,10 +399,9 @@ export function SettingsScreen({
       {standbySupport ? (
         <>
           <ItemSeparator className="my-0" />
-          <SettingsSection title="Screensaver">
+          <SettingsSection id="settings-screensaver" title="Screensaver">
             <Field className="justify-start gap-3" orientation="horizontal">
               <Switch
-                aria-describedby="vibetv-standby-same"
                 aria-label="Show screensaver"
                 checked={standbyValues.enabled}
                 disabled={standbyToggleDisabled}
@@ -411,9 +412,6 @@ export function SettingsScreen({
               />
               <FieldLabel htmlFor="vibetv-standby">Show screensaver</FieldLabel>
             </Field>
-            <FieldDescription id="vibetv-standby-same">
-              The same switch is under Appearance › Screensavers.
-            </FieldDescription>
             <Field data-disabled={standbyDetailsDisabled} orientation="horizontal">
               <FieldLabel htmlFor="vibetv-standby-timeout">Show after</FieldLabel>
               <Select
@@ -605,7 +603,7 @@ function SettingsSection({
   title,
 }: {
   children: ReactNode;
-  /** For a link that opens Settings at this group ("What's new"). */
+  /** For a link that opens Settings at this group ("What's new", Screensavers). */
   id?: string;
   title: string;
 }) {

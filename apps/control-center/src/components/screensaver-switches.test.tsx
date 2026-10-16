@@ -1,8 +1,7 @@
-// Issue #643: Show screensaver has a switch in Settings and one under
-// Appearance › Screensavers, for the same setting. Each says where the other
-// one is, and both open and close by the same rule. Before, Screensavers
-// closed its switch on a VibeTV that waits for usage while Settings left its
-// own open, and the other way round during a firmware update.
+// Issue #643: Show screensaver has its switch in Settings only, beside when
+// the screensaver starts and how bright it is. Appearance › Screensavers says
+// in one line when it is off and links to it (variant 645-A). The Settings
+// switch opens only once VibeTV's own value is read.
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
@@ -57,18 +56,18 @@ function settings(device: DeviceInfo, busyAction: string | null, saved: StandbyS
   );
 }
 
-function screensavers(device: DeviceInfo, busyAction: string | null) {
+function screensavers(saved: StandbySettings | null) {
   return renderToStaticMarkup(
     <ThemeLibraryScreen
-      busyAction={busyAction}
+      busyAction={null}
       companionStatus="online"
-      device={device}
+      device={vibetv}
       onInstallCustomTheme={async () => false}
       onInstallTheme={vi.fn()}
-      onSaveStandby={vi.fn()}
+      onOpenScreensaverSettings={vi.fn()}
       onSelectTheme={vi.fn()}
       selectedThemeId=""
-      standby={standby}
+      standby={saved}
       storefrontConfigured={false}
       themeInstallEnabled
       themes={[]}
@@ -80,27 +79,10 @@ function screensavers(device: DeviceInfo, busyAction: string | null) {
 function switchOf(html: string, id: string) {
   const button = html.match(new RegExp(`<button[^>]*id="${id}"[^>]*>`))?.[0];
   expect(button).toBeTruthy();
-  return {
-    disabled: button!.includes('disabled=""'),
-    describedBy: button!.match(/aria-describedby="([^"]+)"/)?.[1],
-  };
+  return { disabled: button!.includes('disabled=""') };
 }
 
-describe("Show screensaver in Settings and under Screensavers", () => {
-  it("says under each switch where the other one is", () => {
-    const inSettings = settings(vibetv, null, standby);
-    const inScreensavers = screensavers(vibetv, null);
-
-    const settingsSwitch = switchOf(inSettings, "vibetv-standby");
-    expect(inSettings).toContain(
-      `id="${settingsSwitch.describedBy}">The same switch is under Appearance › Screensavers.</p>`,
-    );
-    const screensaversSwitch = switchOf(inScreensavers, "vibetv-library-standby");
-    expect(inScreensavers).toContain(
-      `id="${screensaversSwitch.describedBy}">The same switch is in Settings, where you also choose when the screensaver starts and how bright it is.</p>`,
-    );
-  });
-
+describe("Show screensaver in Settings, a line under Screensavers", () => {
   it.each([
     ["ready", vibetv, null, false],
     ["waiting for usage", { ...vibetv, ready: false }, null, false],
@@ -108,15 +90,34 @@ describe("Show screensaver in Settings and under Screensavers", () => {
     ["changing its connection", vibetv, "connection-mode", true],
     ["saving the screensaver", vibetv, "standby", false],
     ["not connected", { ...vibetv, connected: false }, null, true],
-  ] as const)("opens and closes both switches together while VibeTV is %s", (_, device, busy, closed) => {
+  ] as const)("opens the Settings switch by one rule while VibeTV is %s", (_, device, busy, closed) => {
     expect(switchOf(settings(device, busy, standby), "vibetv-standby").disabled).toBe(closed);
-    expect(switchOf(screensavers(device, busy), "vibetv-library-standby").disabled).toBe(closed);
   });
 
   // Until VibeTV's own value is read, Settings shows placeholder values. A
   // save from there wrote the placeholder time and brightness over the
-  // customer's; Screensavers shows no switch at all then.
+  // customer's.
   it("keeps the Settings switch closed until VibeTV's setting is read", () => {
     expect(switchOf(settings(vibetv, null, null), "vibetv-standby").disabled).toBe(true);
+  });
+
+  it("has no switch and no explanation under Screensavers", () => {
+    for (const saved of [standby, { ...standby, enabled: false }, null]) {
+      const html = screensavers(saved);
+      expect(html).not.toContain('role="switch"');
+      expect(html).not.toContain("The same switch");
+      expect(html).not.toContain("Screensaver is turned off");
+    }
+    expect(settings(vibetv, null, standby)).not.toContain("The same switch");
+  });
+
+  it("says in one line under Screensavers that the screensaver is off and links to Settings", () => {
+    const off = screensavers({ ...standby, enabled: false });
+    expect(off).toContain("<span>Screensaver is off.</span>");
+    expect(off).toMatch(/<a [^>]*href="#settings-screensaver"[^>]*>Turn on in Settings<\/a>/);
+    expect(settings(vibetv, null, standby)).toContain('id="settings-screensaver"');
+
+    expect(screensavers(standby)).not.toContain("Screensaver is off.");
+    expect(screensavers(null)).not.toContain("Screensaver is off.");
   });
 });

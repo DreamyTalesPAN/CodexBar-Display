@@ -627,8 +627,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const mergeDevice = useCallback((next: DeviceInfo) => {
     // The screensaver values belong to one VibeTV. When another one is
     // connected they go, a read still on its way for the first one no longer
-    // counts (readSettings) and the next read starts anew, so both Show
-    // screensaver switches stay closed until the new VibeTV's own setting is
+    // counts (readSettings) and the next read starts anew, so the Show
+    // screensaver switch stays closed until the new VibeTV's own setting is
     // read: a click would send the first VibeTV's time and brightness to it
     // (Codex review of #645).
     const deviceId = next.deviceId?.trim();
@@ -1106,25 +1106,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   const deviceConnectedForSettings = deviceIsCustomerConnected(device);
-
-  // The screensaver values belong to one VibeTV. When another one is
-  // connected they go, so both Show screensaver switches stay closed until its
-  // own setting is read: a click would send the first VibeTV's time and
-  // brightness to it (Codex review of #645).
-  const standbyDeviceIdRef = useRef(device?.deviceId);
-  useEffect(() => {
-    const deviceId = device?.deviceId;
-    const previous = standbyDeviceIdRef.current;
-    if (!deviceId || deviceId === previous) {
-      return;
-    }
-    standbyDeviceIdRef.current = deviceId;
-    if (previous) {
-      standbyDirtyRef.current = null;
-      lastSavedStandbyRef.current = null;
-      setStandby(null);
-    }
-  }, [device?.deviceId]);
 
   // The screensaver setting comes with the settings, and Screensavers installs
   // nothing without it. A VibeTV that has the setting reports a standby state
@@ -5715,7 +5696,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             usage={
               appearanceSection === "screensavers" ? "screensaver" : "live"
             }
-            onSaveStandby={saveStandby}
+            onOpenScreensaverSettings={() => {
+              shownAfterPageOpensRef.current = "settings-screensaver";
+              setActiveTab("settings");
+            }}
             windowsHost={windowsHost}
           />
         ) : null}

@@ -2,7 +2,6 @@
 
 import {
   Edit3,
-  Info,
   Library,
   Lock,
   Monitor,
@@ -45,7 +44,6 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import {
   Item,
   ItemActions,
@@ -58,7 +56,6 @@ import {
 } from "@/components/ui/item";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
-import { Switch } from "@/components/ui/switch";
 import {
   activeLiveThemeId,
   installedScreensaver,
@@ -98,11 +95,7 @@ import { ThemeRenderPreview } from "./theme-render-preview";
 import { ReplaceDraftDialog } from "./theme-studio/replace-draft-dialog";
 import { clampProgress } from "./update-jobs";
 import { SetupStepFailedDialog } from "./setup/setup-provider-dialogs";
-import {
-  screensaverSwitchDisabled,
-  type ApiError,
-  type StandbySettings,
-} from "./control-center-types";
+import type { ApiError, StandbySettings } from "./control-center-types";
 import {
   ThemeStudioScreen,
   type ThemeStudioEditorTheme,
@@ -113,7 +106,6 @@ import {
 export type ThemeLibraryCompanionStatus = "unknown" | "online" | "missing";
 
 export type ThemeLibraryDeviceInfo = {
-  active?: boolean;
   connected: boolean;
   paired?: boolean;
   ready?: boolean;
@@ -207,7 +199,8 @@ export type ThemeLibraryScreenProps = {
   onSelectTheme: (themeId: string) => void;
   onInstallCustomTheme: (payload: ThemeStudioInstallPayload) => Promise<boolean>;
   onInstallTheme: (theme: ThemeProduct) => Promise<unknown> | void;
-  onSaveStandby?: (value: StandbySettings) => Promise<void> | void;
+  /** Opens Settings at its Screensaver group, where the switch is. */
+  onOpenScreensaverSettings?: () => void;
   /** The app runs on Windows, where "Mac App" reads "app". */
   windowsHost?: boolean;
 };
@@ -231,7 +224,7 @@ export function ThemeLibraryScreen({
   onInstallCustomTheme,
   onSelectTheme,
   onInstallTheme,
-  onSaveStandby,
+  onOpenScreensaverSettings,
   windowsHost = false,
 }: ThemeLibraryScreenProps) {
   const visibleThemes = themes.filter(
@@ -692,40 +685,22 @@ export function ThemeLibraryScreen({
       </section>
 
       {/* Installing a screensaver only makes sense while the screensaver is
-          turned on; management (create, edit, preview) stays available. */}
-      {screensavers && standby ? (
-        <section className="space-y-3 pb-5">
-          <Field className="border-y py-4" orientation="horizontal">
-            <FieldLabel htmlFor="vibetv-library-standby">
-              Show screensaver
-            </FieldLabel>
-            <Switch
-              aria-describedby="vibetv-library-standby-same"
-              aria-label="Show screensaver"
-              checked={standby.enabled}
-              // Not closed while its own change is saved: that drops keyboard
-              // focus to the page (issue #558). The app queues these writes.
-              disabled={screensaverSwitchDisabled(device, busyAction, standby)}
-              id="vibetv-library-standby"
-              onCheckedChange={(enabled) =>
-                onSaveStandby?.({ ...standby, enabled })
-              }
-            />
-          </Field>
-          <FieldDescription id="vibetv-library-standby-same">
-            The same switch is in Settings, where you also choose when the
-            screensaver starts and how bright it is.
-          </FieldDescription>
-          {!standby.enabled ? (
-            <Alert>
-              <Info aria-hidden />
-              <AlertTitle>Screensaver is turned off</AlertTitle>
-              <AlertDescription>
-                Turn on Show screensaver to install and use a screensaver.
-              </AlertDescription>
-            </Alert>
-          ) : null}
-        </section>
+          turned on; management (create, edit, preview) stays available. Its
+          switch is in Settings only (issue #643). */}
+      {screensavers && standby && !standby.enabled ? (
+        <p className="mb-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-lg bg-muted px-4 py-3 text-sm">
+          <span>Screensaver is off.</span>
+          <a
+            className="font-medium text-primary underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            href="#settings-screensaver"
+            onClick={(event) => {
+              event.preventDefault();
+              onOpenScreensaverSettings?.();
+            }}
+          >
+            Turn on in Settings
+          </a>
+        </p>
       ) : null}
 
       <section className="py-8">

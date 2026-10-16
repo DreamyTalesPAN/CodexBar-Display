@@ -637,37 +637,6 @@ export function deviceIsCustomerConnected(
   );
 }
 
-// A connection change, a new setup, an erase or a firmware update holds the
-// settings of VibeTV until it ends.
-export function deviceActionHoldsSettings(busyAction: string | null) {
-  return (
-    busyAction === "connection-mode" ||
-    busyAction === "reset-setup" ||
-    busyAction === "erase-device" ||
-    busyAction === "firmware-update"
-  );
-}
-
-// Show screensaver has a switch in Settings and one under Appearance ›
-// Screensavers, for the same setting (issue #643). Both open and close by this
-// one rule. Neither opens before VibeTV's own value is read: until then
-// Settings shows placeholder values, and a save would write the placeholder
-// time and brightness over the customer's own.
-export function screensaverSwitchDisabled(
-  device: Pick<DeviceInfo, "active" | "connected" | "paired"> | null | undefined,
-  busyAction: string | null,
-  standby: StandbySettings | null | undefined,
-) {
-  return (
-    !standby ||
-    // As deviceIsCustomerConnected, which needs the whole DeviceInfo.
-    device?.active !== true ||
-    device.connected !== true ||
-    device.paired === false ||
-    deviceActionHoldsSettings(busyAction)
-  );
-}
-
 export function deviceIsWaitingForUsage(
   device: DeviceInfo | null | undefined,
 ) {
