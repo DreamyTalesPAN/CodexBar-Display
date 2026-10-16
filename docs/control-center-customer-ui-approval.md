@@ -5,6 +5,13 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-10-16 — Subscription providers first in the provider list (#651)
+
+- User approval: Marcus, 16.10.2026, channel Abstimmungschat (question 27, answer "ja").
+- Approved customer-visible result: In "Choose AI providers" (setup) and in Settings › AI providers, Codex, Claude, Cursor and Antigravity are listed first, followed by OpenAI (API), Azure OpenAI and the other providers. Within the other providers, switched-on ones stay above switched-off ones. No new texts or controls.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test, `settings-screen.test.tsx`, and this approval record. No merge, release, or device write is implied.
+- What's new: none — the same providers in a different order needs no notice.
+
 ## 2026-10-15 — "Your VibeTV is live" without Back, set up once is remembered (#611)
 
 - User approval: Paul decided the behavior in issue #611 on 2026-10-15 ("Decision by Paul, 2026-10-15"). He has not personally previewed this exact build.
