@@ -7232,3 +7232,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as approved in the #570 entry above and in the entries of #607, #620 and #629; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — #619: approval marker after merging main with #615
+
+- User approval: Paul asked on 2026-10-15 to keep #619 ready. Main moved on with #615, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #570 entry above and in the #615 entries; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
