@@ -7324,3 +7324,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the provider that is spared the `isn't on VibeTV` line is the provider of the last frame sent to VibeTV, which the Mac App now names with the display stream. When no frame was sent, every switched-on provider without a reading gets its line. Wording unchanged.
 - Scope: `companion` display stream status (one field), `apps/control-center` Usage screen, this approval record. Pull-request branch only, not merge or release.
 - What's new: none — a correction of the unreleased line
+
+## 2026-10-16 — #644: approval marker after merging main with #628 and #619
+
+- User approval: follows Marcus' decision of 2026-10-15 for the #368 Usage line (entries above). Main moved on with #628 and #619, so main is merged into `codex/provider-status-pack`; the approval record conflict is resolved by keeping main's entries and appending this branch's. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #368 entries above and in the entries of #628 and #619; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — merge of main, no new wording
