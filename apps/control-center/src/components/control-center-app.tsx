@@ -1019,7 +1019,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     const writes = deviceSettingWritesRef.current;
     const brightnessWrites = writes.brightness;
     const standbyWrites = writes.standby;
-    const settingsDeviceId = settingsDeviceIdRef.current;
     setBusyAction("settings");
     try {
       const payload = await runCompanion<SettingsResponse>("/v1/settings");
@@ -1037,7 +1036,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (
         standbyDirtyRef.current === null &&
         writes.standby === standbyWrites &&
-        (!settingsDeviceId || settingsDeviceIdRef.current === settingsDeviceId)
+        payload.device?.deviceId === settingsDeviceIdRef.current
       ) {
         lastSavedStandbyRef.current = payload.settings?.standby ?? null;
         setStandby(payload.settings?.standby ?? null);

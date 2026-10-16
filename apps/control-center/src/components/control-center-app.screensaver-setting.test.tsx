@@ -135,6 +135,7 @@ it.each([
           : jsonResponse({
               ok: true,
               settings: { standby: { enabled: true, timeoutMinutes: 10, brightnessPercent: 20 } },
+              device: { deviceId: "16199235" },
             });
       }
       if (url.endsWith("/v1/display-frame/latest")) {

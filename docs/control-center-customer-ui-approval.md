@@ -7357,3 +7357,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: unchanged; the Settings screensaver switch, its line and all copy stay as in the entries above.
 - Scope: `control-center-app.tsx` (standby reset helper shared by the device-change and disconnect paths). Pull-request branch only, not merge or release.
 - What's new: none — refactor, no customer-visible change
+
+## 2026-10-16 — #645: device check on the settings answer (no visible change)
+
+- User approval: none needed, no visible change. Code simplification of the #645 device-switch guard (AGENTS.md: one central reset); the settings answer's own device.deviceId decides whether a read is applied; no visible change; not seen by Paul.
+- Approved customer-visible result: unchanged; the Settings screensaver switch, its line and all copy stay as in the entries above.
+- Scope: `control-center-app.tsx`, the late-read test in `control-center-app.display-preferences.test.tsx` and the settings fixtures in `control-center-app.screensaver-install.test.tsx`, `control-center-app.custom-theme-install.test.tsx`, `control-center-app.screensaver-setting.test.tsx`. Pull-request branch only, not merge or release.
+- What's new: none — refactor and test fixtures, no customer-visible change

@@ -111,6 +111,9 @@ function startWindow(themes: unknown[] = []) {
     // While set, a read of VibeTV's settings answers late, with what it found
     // when it started.
     holdSettingsRead: null as Promise<void> | null,
+    // When set, a held read answers with this VibeTV instead of the one the
+    // companion is connected to when the read was asked.
+    settingsAnswerDevice: null as typeof device | null,
     // While set, a status answers late, with the VibeTV it found when it
     // started.
     holdStatus: null as Promise<void> | null,
@@ -214,11 +217,17 @@ function startWindow(themes: unknown[] = []) {
             ? { ...companion.settings, standby }
             : { ...companion.settings, display: { brightnessPercent } };
         }
+        // The companion answers for the VibeTV it was talking to when asked.
         const found = companion.settings;
+        const answeredBy = companion.device;
         if (!init?.body) {
           await companion.holdSettingsRead;
         }
-        return jsonResponse({ ok: true, settings: init?.body ? companion.settings : found });
+        return jsonResponse({
+          ok: true,
+          settings: init?.body ? companion.settings : found,
+          device: companion.settingsAnswerDevice ?? answeredBy,
+        });
       }
       if (url.endsWith("/v1/provider-display")) {
         if (init?.body && companion.refuseDisplayWrites) {
@@ -845,7 +854,8 @@ it("keeps Show screensaver closed when a read for the first VibeTV answers after
   await window.wait(5);
   window.companion.holdStatus = null;
 
-  // ...while a read of the first VibeTV's settings starts.
+  // ...while a read of the first VibeTV's settings is on its way. Its answer
+  // is held and names the first VibeTV, the one the read was asked for.
   const firstRead = hold();
   window.companion.holdSettingsRead = firstRead.held;
   await openScreensavers(window);
@@ -854,15 +864,21 @@ it("keeps Show screensaver closed when a read for the first VibeTV answers after
     ...window.companion.settings,
     standby: { enabled: true, timeoutMinutes: 30, brightnessPercent: 50 },
   };
+  // The read of the new VibeTV, issued once the status is in, is held too.
   const secondRead = hold();
   window.companion.holdSettingsRead = secondRead.held;
   status.answer();
   await window.wait(1);
 
+  // The first VibeTV's answer arrives late and is ignored: the switch stays
+  // closed until the new VibeTV's own read arrives.
+  window.companion.settingsAnswerDevice = device;
   firstRead.answer();
   await window.wait(1);
+  window.companion.settingsAnswerDevice = null;
   expect(screensaverSwitch().hasAttribute("disabled")).toBe(true);
 
+  // The new VibeTV's own answer is applied.
   secondRead.answer();
   await window.wait(1);
   expect(screensaverSwitch().hasAttribute("disabled")).toBe(false);
