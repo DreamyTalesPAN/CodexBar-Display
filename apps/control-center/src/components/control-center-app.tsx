@@ -429,7 +429,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     useState<ApiError | null>(null);
   // Reports a sign-in start to the provider overlay (set once it is rendered).
   const providerActionReportRef = useRef<
-    ((id: string, state: string, error: ApiError | null) => void) | null
+    ((id: string, state: string, error: ApiError | null, rearm: boolean) => void) | null
   >(null);
   const [providerDisplay, setProviderDisplay] =
     useState<ProviderDisplaySelection | null>(null);
@@ -3617,7 +3617,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // Each sign-in continues independently through transient check failures.
   const providerSignInFollowUpsRef = useRef(new Map<string, () => void>());
   const openProviderSignIn = useCallback(
-    async (item: PreferenceDescriptor) => {
+    async (item: PreferenceDescriptor, fromOverlay = false) => {
       const providerId = item.providerId?.trim().toLowerCase();
       if (!providerId) {
         return;
@@ -3635,14 +3635,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           { method: "POST" },
         );
         setProviderPreferencesError(null);
-        providerActionReportRef.current?.(item.providerId ?? "", signInState, null);
+        providerActionReportRef.current?.(item.providerId ?? "", signInState, null, fromOverlay);
       } catch (error) {
         const failure = normalizeCaughtError(
           error,
           `The ${item.label} sign-in could not be started.`,
         );
         setProviderPreferencesError(failure);
-        providerActionReportRef.current?.(item.providerId ?? "", signInState, failure);
+        providerActionReportRef.current?.(item.providerId ?? "", signInState, failure, fromOverlay);
         return;
       }
       const followUps = providerSignInFollowUpsRef.current;
@@ -4707,7 +4707,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setActiveTab("settings");
     },
     onSignIn: providerSignInEnabled
-      ? (item) => void openProviderSignIn(item)
+      ? (item) => void openProviderSignIn(item, true)
       : undefined,
   });
   const [providerActionShown, dismissProviderAction, reportProviderSignIn] =

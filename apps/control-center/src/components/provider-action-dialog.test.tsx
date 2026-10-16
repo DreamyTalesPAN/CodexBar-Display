@@ -141,15 +141,29 @@ function ReportingOverlay({ actions }: { actions: Record<string, UsageProviderAc
     <div>
       <button
         onClick={() =>
-          report("claude", "auth_required", {
-            code: "x",
-            message: "Could not open Claude.",
-            nextAction: "Try again later.",
-          })
+          report(
+            "claude",
+            "auth_required",
+            { code: "x", message: "Could not open Claude.", nextAction: "Try again later." },
+            true,
+          )
         }
         type="button"
       >
         report
+      </button>
+      <button
+        onClick={() =>
+          report(
+            "claude",
+            "auth_required",
+            { code: "x", message: "Could not open Claude.", nextAction: "Try again later." },
+            false,
+          )
+        }
+        type="button"
+      >
+        report settings
       </button>
       {shown ? (
         <ProviderActionDialog action={shown.action} error={shown.error} onDismiss={dismiss} />
@@ -177,4 +191,11 @@ it("a late sign-in failure does not revive an action that already ended", async 
   fireEvent.click(screen.getByRole("button", { name: "report" }));
   await act(async () => rerender(<ReportingOverlay actions={claude()} />));
   expect(dialog("Claude needs a new sign-in")?.textContent).not.toContain("Could not open Claude.");
+});
+
+it("a failure from Settings does not reopen a closed overlay", () => {
+  render(<ReportingOverlay actions={claude()} />);
+  fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+  fireEvent.click(screen.getByRole("button", { name: "report settings" }));
+  expect(dialog("Claude needs a new sign-in")).toBeNull();
 });

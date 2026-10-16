@@ -55,7 +55,7 @@ export function useProviderActionDismissal(
 ): [
   { id: string; action: UsageProviderAction; error: ApiError | null } | null,
   () => void,
-  (id: string, state: string, error: ApiError | null) => void,
+  (id: string, state: string, error: ApiError | null, rearm: boolean) => void,
 ] {
   const entries = Object.entries(actions);
   const signature = entries.map(([id, action]) => actionKey(id, action)).join("\n");
@@ -89,7 +89,9 @@ export function useProviderActionDismissal(
       });
     }
   };
-  const reportSignIn = (id: string, state: string, error: ApiError | null) => {
+  // rearm: the sign-in was started from the overlay or a Usage tile, so a failure
+  // reopens the overlay; one started in Settings shows there and stays put.
+  const reportSignIn = (id: string, state: string, error: ApiError | null, rearm: boolean) => {
     const key = `${id}:${state}`;
     setMemory((previous) => {
       // A reply that comes after its action ended must not revive it.
@@ -100,8 +102,10 @@ export function useProviderActionDismissal(
       const dismissedNow = new Set(previous.dismissed);
       if (error) {
         failuresNow.set(key, error);
-        // A new failure reopens the overlay of that provider, to show it.
-        dismissedNow.delete(key);
+        if (rearm) {
+          // A new failure reopens the overlay of that provider, to show it.
+          dismissedNow.delete(key);
+        }
       } else {
         failuresNow.delete(key);
       }
