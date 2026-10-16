@@ -7438,3 +7438,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: As in the overlay entries above. The overlay does not appear while setup owns the screen, so its buttons never point at a page that is not there. A failed sign-in start shows in that provider's overlay only while that provider stays in the same state; it is cleared when the sign-in succeeds or the overlay is closed. No new wording.
 - Scope: `control-center-app.tsx` (overlay mount condition and the failure state), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: not on the Settings page, which lists the same provider (#669)
+
+- User approval: Paul chose on 2026-10-16 (via the review orchestrator) Claude Design page "Control Center Redesign" 644, "3A + 4A + 5B (weekly: number first), Paul 16.10." — the overlay of the entry above; this follow-up applies a Codex review finding and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: As in the overlay entries above, on every page except Settings. Settings already shows the same provider's message in its own dialog, so the customer sees one dialog for the provider, not two in a row. No new wording.
+- Scope: `control-center-app.tsx` (overlay mount condition), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own

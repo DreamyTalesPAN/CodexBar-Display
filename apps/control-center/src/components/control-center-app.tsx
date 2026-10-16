@@ -5815,7 +5815,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         />
       ) : null}
       {systemBusyOpen ? <SystemBusyDialog onClose={dismissSystemBusy} /> : null}
-      {providerActionShown && companionStatus === "online" && !setupOwnsScreen ? (
+      {providerActionShown &&
+      companionStatus === "online" &&
+      !setupOwnsScreen &&
+      // Settings lists the same provider with its own dialog; one is enough.
+      activeShellTab !== "settings" ? (
         <ProviderActionDialog
           action={providerActionShown.action}
           // Only a failed start for this provider and state belongs in its dialog.
