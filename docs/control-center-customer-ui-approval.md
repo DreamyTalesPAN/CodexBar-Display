@@ -7312,3 +7312,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the entries above; nothing else changes.
 - Scope: this approval record only. Pull request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — Provider switch stays beside the sign-in action (#648)
+
+- User approval: Paul decided on 2026-10-16 to keep the PR state; Paul chose the PR state over the Claude Design variants A–D (page "Setup Wizard Redesign - 648 Provider sign-in"). This replaces his 2026-10-13 rule that the switch disappears while a sign-in shows.
+- Approved customer-visible result: As in the amendment of 2026-10-15 (#647) under the 2026-10-13 entry: in the shared provider list in setup and Settings on Mac and Windows, a row that offers a sign-in shows muted "Sign in to <Provider>" with the outlined circular chevron and, to its right, the provider's normal switch. Switching it off works without signing in and the row then shows only the switch. No warning triangle, no retry and no lime button on a sign-in row, and no message opens by itself.
+- Scope: `setup-provider-row.tsx`, its tests `setup-provider-row.test.tsx` and `setup-providers-screen.test.tsx`, `apps/control-center/scripts/test-customer-flows.mjs`, the sign-in sentence in `docs/control-center-ui-principles.md`, the merge of main into `codex/provider-signin-switch`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — provider row correction (#648), not announced to customers
