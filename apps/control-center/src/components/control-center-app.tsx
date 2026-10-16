@@ -1087,6 +1087,25 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const deviceConnectedForSettings = deviceIsCustomerConnected(device);
 
+  // The screensaver values belong to one VibeTV. When another one is
+  // connected they go, so both Show screensaver switches stay closed until its
+  // own setting is read: a click would send the first VibeTV's time and
+  // brightness to it (Codex review of #645).
+  const standbyDeviceIdRef = useRef(device?.deviceId);
+  useEffect(() => {
+    const deviceId = device?.deviceId;
+    const previous = standbyDeviceIdRef.current;
+    if (!deviceId || deviceId === previous) {
+      return;
+    }
+    standbyDeviceIdRef.current = deviceId;
+    if (previous) {
+      standbyDirtyRef.current = null;
+      lastSavedStandbyRef.current = null;
+      setStandby(null);
+    }
+  }, [device?.deviceId]);
+
   // The screensaver setting comes with the settings, and Screensavers installs
   // nothing without it. A VibeTV that has the setting reports a standby state
   // with every status; while the setting itself is missing -- the status found

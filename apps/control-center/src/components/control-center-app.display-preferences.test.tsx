@@ -89,6 +89,8 @@ const claude = {
 // VibeTV holds for brightness, screensaver and display mode.
 function startWindow(themes: unknown[] = []) {
   const companion = {
+    // The VibeTV the Mac App is connected to.
+    device: device as typeof device,
     stored: rotation,
     // What VibeTV reports about its screensaver slot, if it reports it.
     slot: undefined as { screensaverPath?: string } | undefined,
@@ -144,13 +146,13 @@ function startWindow(themes: unknown[] = []) {
         return jsonResponse({
           ok: true,
           companion: { version: "9.9.9", installationMode: "dmg" },
-          device: { ...device, standby: companion.slot },
+          device: { ...companion.device, standby: companion.slot },
         });
       }
       if (url.endsWith("/v1/display-frame/latest")) {
         return jsonResponse({
           ok: true,
-          deviceId: device.deviceId,
+          deviceId: companion.device.deviceId,
           frame: {
             v: 2,
             provider: "codex",
@@ -808,6 +810,35 @@ it("ends both Show screensaver switches on the last change, made on the other pa
   expect(screensaverSwitch().getAttribute("aria-checked")).toBe("false");
   expect(window.settingsWrites().map(({ standby }) => standby.enabled)).toEqual([true, false]);
   expect(window.companion.settings.standby.enabled).toBe(false);
+});
+
+// Codex review of #645: the screensaver values belong to one VibeTV. When the
+// Mac App is connected to another one, the switch stays closed until that
+// VibeTV's own setting is read; a click must not send the first VibeTV's time
+// and brightness to it.
+it("closes Show screensaver when another VibeTV is connected until its own setting is read", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  await openSettings(window);
+  expect(screensaverSwitch().hasAttribute("disabled")).toBe(false);
+
+  let answer = () => {};
+  window.companion.holdSettingsRead = new Promise<void>((resolve) => {
+    answer = resolve;
+  });
+  window.companion.settings = {
+    ...window.companion.settings,
+    standby: { enabled: true, timeoutMinutes: 30, brightnessPercent: 50 },
+  };
+  window.companion.device = { ...device, deviceId: "16198106", target: "http://192.168.178.183" };
+  await window.wait(30);
+  expect(screensaverSwitch().hasAttribute("disabled")).toBe(true);
+
+  answer();
+  await window.wait(1);
+  expect(screensaverSwitch().hasAttribute("disabled")).toBe(false);
+  expect(screensaverSwitch().getAttribute("aria-checked")).toBe("true");
+  expect(window.settingsWrites()).toEqual([]);
 });
 
 it("keeps the display mode cards focused while the mode is saved", async () => {
