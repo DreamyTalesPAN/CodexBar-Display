@@ -693,6 +693,26 @@ describe("SetupProvidersScreen", () => {
     expect(within(screen.getByRole("dialog")).getByText("OpenAI")).toBeTruthy();
   });
 
+
+  it("a closed access message comes back once the provider was healthy again", () => {
+    const access = provider({ providerId: "gemini", label: "Gemini", health: "permission_required",
+      message: "Allow access on this computer" });
+    const healthy = provider({ providerId: "gemini", label: "Gemini", health: "healthy" });
+    const props = { usage, onContinue: vi.fn(), onToggle: vi.fn(),
+      pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
+    const { rerender } = renderDom(<SetupProvidersScreen {...props} providers={[access]} />);
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    // The cause is still there: the message stays closed.
+    rerender(<SetupProvidersScreen {...props} providers={[{ ...access }]} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // Healthy again: the cause is gone, so its message is due once it comes back.
+    rerender(<SetupProvidersScreen {...props} providers={[healthy]} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    rerender(<SetupProvidersScreen {...props} providers={[access]} />);
+    expect(within(screen.getByRole("dialog")).getByText("Allow access on this computer so VibeTV can read Gemini usage.")).toBeTruthy();
+  });
+
 });
 
 describe("SetupProvidersScreen accessibility", () => {

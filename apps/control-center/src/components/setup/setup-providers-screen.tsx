@@ -225,6 +225,25 @@ export function ProviderList({
   const [dismissedIssues, setDismissedIssues] = useState<Record<string, string>>(
     () => Object.fromEntries(acknowledgedProviderIssues),
   );
+  // A provider that is healthy or switched off has no cause left: its closed
+  // message is due again when the cause comes back (closed stays closed until
+  // the cause was gone and comes back).
+  const definitiveIds = providers
+    .filter((provider) => !provider.value || providerRowHealthState(provider.health) === "healthy")
+    .map((provider) => provider.id);
+  const definitiveKey = definitiveIds.join("\n");
+  const [clearedFor, setClearedFor] = useState(definitiveKey);
+  if (clearedFor !== definitiveKey) {
+    setClearedFor(definitiveKey);
+    setDismissedIssues((current) =>
+      Object.fromEntries(Object.entries(current).filter(([id]) => !definitiveIds.includes(id))),
+    );
+  }
+  useEffect(() => {
+    for (const id of definitiveKey ? definitiveKey.split("\n") : []) {
+      acknowledgedProviderIssues.delete(id);
+    }
+  }, [definitiveKey]);
   // The provider whose row action the customer clicked. Its message opens
   // whatever the rules below say about popups opening by themselves.
   const [requestedIssueId, setRequestedIssueId] = useState<string | null>(null);

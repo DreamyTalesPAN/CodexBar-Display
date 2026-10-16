@@ -7736,3 +7736,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: A sign-in that fails when started from the provider overlay or a Usage tile shows its message in that overlay only; Settings does not show it again. No new wording.
 - Scope: `control-center-app.tsx` (the Settings error is set only for Settings starts), `usage-screen.tsx` (hidden providers keep their token history), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — review fix, no customer-visible change of its own
+
+## 2026-10-16 — Provider rows: a closed access message comes back after a healthy result (#669)
+
+- User approval: Paul approved the provider looks on 2026-10-16 (entries above, via the review orchestrator); this follow-up applies a Codex review finding and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: A closed access message for a provider returns when the cause comes back after the provider was healthy or switched off; while the cause stays, it stays closed. No new wording.
+- Scope: `setup/setup-providers-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix, no customer-visible change of its own
