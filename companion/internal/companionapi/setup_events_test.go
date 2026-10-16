@@ -31,7 +31,7 @@ func incompatibleEngineSetup() codexbar.ProviderSetup {
 		Providers: []codexbar.ProviderReadiness{{
 			ID: "codexbar", Label: "Usage service", Status: codexbar.ProviderEngineIncompatible,
 			Detail:     "Usage engine 0.17 is too old. Version 0.23 or newer is required.",
-			NextAction: "Repair the usage engine, then check again.",
+			NextAction: "Repair the usage engine.",
 		}},
 	}
 }
@@ -176,7 +176,7 @@ func TestProviderRetryLogsIncompatibleEngineOnce(t *testing.T) {
 	engine, provider := got.Events[0], got.Events[1]
 	if engine.Stage != "usage_engine" || engine.Status != "failed" || engine.Code != codexbar.ProviderEngineIncompatible ||
 		engine.Message != "Usage engine 0.17 is too old. Version 0.23 or newer is required." ||
-		engine.NextAction != "Repair the usage engine, then check again." {
+		engine.NextAction != "Repair the usage engine." {
 		t.Fatalf("unexpected engine event: %+v", engine)
 	}
 	if provider.Stage != "provider_check" || provider.Code != codexbar.ProviderEngineIncompatible || provider.Count != 2 {

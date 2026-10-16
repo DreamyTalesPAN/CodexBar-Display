@@ -79,7 +79,7 @@ describe("the runtime's sentences in the Windows app", () => {
   // runtime itself, belong to a path only the Mac has, or are never shown.
   const keepsTheMac = [
     "macOS blocked access required by this provider.",
-    "Allow the requested macOS permission, then check again.",
+    "Allow the requested macOS permission.",
     "Allow the required macOS access, then check this provider.",
     "Finish installing the Mac App in Applications.",
     "Mac setup binary installed",

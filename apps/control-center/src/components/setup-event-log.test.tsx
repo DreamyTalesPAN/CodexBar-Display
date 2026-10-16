@@ -24,7 +24,7 @@ const log: SetupLog = {
   events: [
     { seq: 1, at: "2026-09-24T10:00:00Z", stage: "setup_reset", status: "started", message: "New setup session started." },
     { seq: 2, at: "2026-09-24T10:00:01Z", stage: "device_search", status: "retry", message: "Searching again.", count: 3 },
-    { seq: 3, at: "2026-09-24T10:00:05Z", stage: "usage_engine", status: "failed", message: "CodexBar 0.17 is too old.", code: "engine_incompatible", nextAction: "Repair the usage engine, then check again." },
+    { seq: 3, at: "2026-09-24T10:00:05Z", stage: "usage_engine", status: "failed", message: "CodexBar 0.17 is too old.", code: "engine_incompatible", nextAction: "Repair the usage engine." },
     { seq: 4, at: "2026-09-24T10:00:06Z", stage: "theme_install", status: "succeeded", message: "Theme installed." },
   ],
 };
@@ -44,7 +44,7 @@ describe("SetupEventList", () => {
     expect(items[1]).toContain("Retrying");
     expect(items[2]).toContain("Usage engine");
     expect(items[2]).toContain("Failed");
-    expect(items[2]).toContain("Repair the usage engine, then check again.");
+    expect(items[2]).toContain("Repair the usage engine.");
     expect(items[3]).toContain("Done");
     expect(items[0]).toMatch(/\d\d:\d\d:\d\d/);
   });

@@ -415,7 +415,7 @@ func usageEngineDiagnostics(engine codexbar.EngineReadiness) diagnosticsUsageEng
 }
 
 func usageEngineDiagnosticCheck(engine codexbar.EngineReadiness) diagnosticCheck {
-	const repair = "Repair the usage engine, then check again."
+	const repair = "Repair the usage engine."
 	check := diagnosticCheck{Name: "usage_engine", Status: "fail", NextAction: repair}
 	switch engine.Status {
 	case codexbar.ProviderReady:

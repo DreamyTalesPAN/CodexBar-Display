@@ -7467,3 +7467,24 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-16 — Provider next steps no longer say "then check again"
+- User approval: follows Paul's rule of 2026-10-16 "no Check again — the app re-checks by itself" (via the review orchestrator); the exact sentences are shown to him for approval on 2026-10-17.
+- Approved customer-visible result: The next-step sentence a customer reads for a provider (in the setup log and in the provider message) no longer ends with ", then check again"; the sentence ends with a period and says only what the customer does. The app re-checks by itself. Before → after:
+  - "Sign in to this provider, then check again." → "Sign in to this provider."
+  - "Sign in to <host> in your browser, close the browser, then check again." → "Sign in to <host> in your browser, close the browser."
+  - "Sign in to this provider in your browser, close the browser, then check again." → "Sign in to this provider in your browser, close the browser."
+  - "Claude usage needs a signed-in claude.ai session in your browser. Sign in to claude.ai in your browser, close the browser, then check again." → "Claude usage needs a signed-in claude.ai session in your browser. Sign in to claude.ai in your browser, close the browser."
+  - "Allow the requested macOS permission, then check again." → "Allow the requested macOS permission."
+  - "Allow the requested access, then check again." → "Allow the requested access."
+  - "Confirm the provider sign-in, then check again." → "Confirm the provider sign-in."
+  - "Repair the usage service, then check again." → "Repair the usage service."
+  - "Repair the usage engine, then check again." → "Repair the usage engine."
+  - "Use this provider once or connect an account with usage, then check again." → "Use this provider once or connect an account with usage."
+  - "Finish setup for this provider, then check again." → "Finish setup for this provider."
+  - "Open <sign-in address> in your browser, sign in, then check again." → "Open <sign-in address> in your browser, sign in."
+  - "Open <sign-in address> in your browser, then check again." → "Open <sign-in address> in your browser."
+  - "Sign in to the provider's app, then check again." → "Sign in to the provider's app."
+  Not changed: "Repair the usage engine, then check again." in the Diagnostics panel (its own Run diagnostics button) and the row sentences of the Setup providers popup (replaced by #669).
+- Scope: `companion/internal/codexbar/provider_setup.go`, `companion/internal/companionapi/preferences.go`, `companion/internal/companionapi/provider_setup.go`, `companion/internal/companionapi/setup_events.go`, their Go tests, `apps/control-center/src/components/setup-event-log.test.tsx`, `apps/control-center/src/components/setup/setup-providers-screen.test.tsx`, `apps/control-center/src/lib/customer-platform.test.ts`, `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — copy only: the same next steps without the check sentence, no new capability

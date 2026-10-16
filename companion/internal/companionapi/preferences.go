@@ -1054,7 +1054,7 @@ func providerReadinessNextAction(status string) string {
 	case codexbar.ProviderUnsupported:
 		return "Read the provider message, then switch this provider off and use another one."
 	case codexbar.ProviderNoUsageAvailable:
-		return "Use this provider once or connect an account with usage, then check again."
+		return "Use this provider once or connect an account with usage."
 	case codexbar.ProviderTimeout:
 		return "Wait a moment, then check this provider again."
 	case codexbar.ProviderRateLimited:
@@ -1062,9 +1062,9 @@ func providerReadinessNextAction(status string) string {
 	case codexbar.ProviderConfigError, codexbar.ProviderEngineError:
 		return "Repair the usage service, then check this provider again."
 	case codexbar.ProviderEngineIncompatible:
-		return "Repair the usage engine, then check again."
+		return "Repair the usage engine."
 	default:
-		return "Finish setup for this provider, then check again."
+		return "Finish setup for this provider."
 	}
 }
 
@@ -1092,7 +1092,7 @@ func providerHealthMessage(state codexbar.ProviderHealthState) string {
 	case codexbar.ProviderHealthAuthRequired:
 		return "Sign in again for this provider."
 	case codexbar.ProviderHealthBrowserSignIn:
-		return "Sign in to this provider in your browser, close the browser, then check again."
+		return "Sign in to this provider in your browser, close the browser."
 	case codexbar.ProviderHealthSetupRequired:
 		return "Finish setup for this provider."
 	case codexbar.ProviderHealthUnsupported:
