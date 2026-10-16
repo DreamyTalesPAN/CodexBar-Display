@@ -7376,3 +7376,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #627, #631 and #234 entries above and in the entries of #615, #619 and #628; nothing else changes.
 - Scope: the merge of main into `codex/setup-display-mode-pack` and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
+## 2026-10-16 — #642 merged with current main (#657)
+
+- User approval: Marcus approved the setup changes of #642 in his click test on 2026-10-16 (entries above). Main moved on with #657 (an approval record only) while #642 was in review, so main is merged in. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording; not seen by Paul.
+- Approved customer-visible result: as recorded in the #627, #631 and #234 entries above and in the entries of #615, #619 and #628; nothing else changes.
+- Scope: the merge of main into `codex/setup-display-mode-pack` and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
