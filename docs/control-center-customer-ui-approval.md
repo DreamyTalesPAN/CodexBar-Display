@@ -7488,3 +7488,9 @@ issue scope, or release permission never implies UI permission.
   Not changed: "Repair the usage engine, then check again." in the Diagnostics panel and its check row (the panel's own Run diagnostics button) and the row sentences of the Setup providers popup (replaced by #669).
 - Scope: `companion/internal/codexbar/provider_setup.go`, `companion/internal/companionapi/preferences.go`, `companion/internal/companionapi/provider_setup.go`, `companion/internal/companionapi/setup_events.go`, their Go tests, `apps/control-center/src/components/setup-event-log.test.tsx`, `apps/control-center/src/components/setup/setup-providers-screen.test.tsx`, `apps/control-center/src/lib/customer-platform.test.ts`, `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — copy only: the same next steps without the check sentence, no new capability
+
+## 2026-10-16 — Diagnostics keeps "then check again"; the setup log does not
+- User approval: follows Paul's rule of 2026-10-16 "no Check again — the app re-checks by itself" (via the review orchestrator); the exact sentences are shown to him for approval on 2026-10-17.
+- Approved customer-visible result: Diagnostics keeps its usage engine sentence "Repair the usage engine, then check again." (Run diagnostics stays the customer's own check). The setup log entry for the usage engine reads "Repair the usage engine." instead, as in the entry above. Nothing else changes.
+- Scope: `companion/internal/companionapi/setup_events.go` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the same Diagnostics wording, the setup log wording shortened
