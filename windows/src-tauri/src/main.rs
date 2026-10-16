@@ -9,8 +9,8 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Condvar, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
@@ -72,6 +72,20 @@ struct Shell {
     // vibetv://check-for-updates must not launch two NSIS installers over
     // the same files.
     updater: Mutex<Updater>,
+    // Whether Windows gave us Ctrl+Alt+Shift+P; a window created again after
+    // a close needs it for its user agent.
+    provider_shortcut: AtomicBool,
+    // The presentation count + 1 at which hide_after_flush released the
+    // window; 0 when no release is under way.
+    released_at: AtomicU64,
+    window_creation: Mutex<()>,
+    // Set once setup stored the shortcut registration result. ensure_window
+    // waits for it: a second launch can reach ensure_window before setup.
+    shortcut_registered: Mutex<bool>,
+    // Counts the windows built; the Destroyed handler tells a replacement
+    // that a present already built from the window that is going away.
+    windows_created: AtomicU64,
+    shortcut_registered_changed: Condvar,
 }
 
 // Who holds the updater, in one lock so a click or an opened window can
@@ -199,6 +213,12 @@ fn main() {
             preparing: Mutex::new(true),
             presentations: AtomicU64::new(0),
             updater: Mutex::new(Updater::Free),
+            provider_shortcut: AtomicBool::new(false),
+            released_at: AtomicU64::new(0),
+            window_creation: Mutex::new(()),
+            shortcut_registered: Mutex::new(false),
+            windows_created: AtomicU64::new(0),
+            shortcut_registered_changed: Condvar::new(),
         })
         .setup(|app| {
             let handle = app.handle().clone();
@@ -207,7 +227,24 @@ fn main() {
                 log(&format!("could not enable autostart: {error}"));
             }
             let visible = !relaunched_after_idle_update(&handle);
-            create_window(&handle, register_provider_shortcut(handle.clone()), visible)?;
+            {
+                // A second launch during startup recreates the window through
+                // ensure_window, which waits for this result instead of
+                // building the window with "ProviderShortcut/unavailable".
+                let shell = handle.state::<Shell>();
+                let provider_shortcut = register_provider_shortcut(handle.clone());
+                shell.provider_shortcut.store(provider_shortcut, Ordering::SeqCst);
+                *shell.shortcut_registered.lock().unwrap() = true;
+                shell.shortcut_registered_changed.notify_all();
+            }
+            // Back from an update installed with the window closed: stay in
+            // the tray without a WebView2; opening the app creates the window.
+            // Through ensure_window: a second launch that arrives during
+            // startup goes the same check-and-create way, so only one window
+            // is built.
+            if visible {
+                ensure_window(&handle);
+            }
             let args: Vec<_> = std::env::args_os().collect();
             if args.len() == 2 {
                 queue_install_link(&handle, args[1].to_str());
@@ -375,12 +412,46 @@ fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tau
             }
         })
         .build()?;
+    app.state::<Shell>().windows_created.fetch_add(1, Ordering::SeqCst);
     let handle = app.clone();
-    window.on_window_event(move |event| {
-        if let WindowEvent::CloseRequested { api, .. } = event {
+    window.on_window_event(move |event| match event {
+        WindowEvent::CloseRequested { api, .. } => {
             api.prevent_close();
             hide_after_flush(&handle);
         }
+        // A present that came between hide_after_flush's check and the
+        // destroy showed the old window just before it went away: create it
+        // again. Only our own release sets `released_at`; quitting does not.
+        WindowEvent::Destroyed => {
+            let shell = handle.state::<Shell>();
+            let released_at = shell.released_at.swap(0, Ordering::SeqCst);
+            if released_at != 0 {
+                let created_before = shell.windows_created.load(Ordering::SeqCst);
+                let handle = handle.clone();
+                std::thread::spawn(move || {
+                    // Tauri drops the label only after the Destroyed
+                    // listeners ran; until then ensure_window would find the
+                    // dying window and create nothing, and a present would
+                    // show it. Compare only once the label is gone: a present
+                    // after that creates its own window.
+                    for _ in 0..40 {
+                        if handle.get_webview_window(WINDOW_LABEL).is_none() {
+                            break;
+                        }
+                        std::thread::sleep(Duration::from_millis(25));
+                    }
+                    let shell = handle.state::<Shell>();
+                    let presented = shell.presentations.load(Ordering::SeqCst);
+                    // A present that already built a replacement loads it
+                    // itself; loading again could leave a theme page.
+                    let replaced = shell.windows_created.load(Ordering::SeqCst) != created_before;
+                    if presented + 1 != released_at && !replaced {
+                        prepare_and_load(handle);
+                    }
+                });
+            }
+        }
+        _ => {}
     });
     Ok(())
 }
@@ -403,10 +474,52 @@ fn present_window(app: &AppHandle) {
             _ => {}
         }
     }
-    if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
-        let _ = window.show();
-        let _ = window.unminimize();
-        let _ = window.set_focus();
+    match app.get_webview_window(WINDOW_LABEL) {
+        Some(window) => {
+            let _ = window.show();
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+        }
+        // Closed earlier and released (hide_after_flush). Building a WebView2
+        // window from an event handler can deadlock, so a thread builds it and
+        // loads the Control Center as a start does.
+        None => {
+            let handle = app.clone();
+            std::thread::spawn(move || {
+                prepare_and_load(handle);
+            });
+        }
+    }
+}
+
+// Creates the window again when a close released it. Never call this on the
+// event-loop thread (see present_window).
+fn ensure_window(app: &AppHandle) -> bool {
+    // One check-and-create at a time: two presents (a theme link reaches a
+    // tray-only app as a second launch and as a queued link) would otherwise
+    // both see no window and build two "main" windows.
+    let shell = app.state::<Shell>();
+    {
+        // The window's user agent says whether the shortcut works; build it
+        // only once setup knows. Bounded: a registration that never reports
+        // must not keep the window away.
+        let registered = shell.shortcut_registered.lock().unwrap();
+        let _ = shell
+            .shortcut_registered_changed
+            .wait_timeout_while(registered, Duration::from_secs(5), |done| !*done)
+            .unwrap();
+    }
+    let _creating = shell.window_creation.lock().unwrap();
+    if app.get_webview_window(WINDOW_LABEL).is_some() {
+        return true;
+    }
+    let provider_shortcut = app.state::<Shell>().provider_shortcut.load(Ordering::SeqCst);
+    match create_window(app, provider_shortcut, true) {
+        Ok(()) => true,
+        Err(error) => {
+            log(&format!("could not create the window again: {error}"));
+            false
+        }
     }
 }
 
@@ -503,7 +616,10 @@ fn acknowledge_loaded_theme(app: AppHandle, loaded: Url) {
     clear_loaded_theme(&mut pending, &loaded, &origin, true);
 }
 
-// Theme Studio saves unsaved work on this event; give it a moment, then hide.
+// Theme Studio saves unsaved work on this event; give it a moment, then
+// release the window. Like the Mac App, a closed Control Center keeps no
+// WebView2 (its processes hold 100+ MB and the page would keep polling);
+// opening it from the tray creates the window again.
 fn hide_after_flush(app: &AppHandle) {
     let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
         return;
@@ -514,8 +630,12 @@ fn hide_after_flush(app: &AppHandle) {
     std::thread::spawn(move || {
         std::thread::sleep(WINDOW_CLOSE_FLUSH_DELAY);
         // Reopened from the tray or a second launch meanwhile: keep it open.
-        if handle.state::<Shell>().presentations.load(Ordering::SeqCst) == presented {
-            let _ = window.hide();
+        let shell = handle.state::<Shell>();
+        if shell.presentations.load(Ordering::SeqCst) == presented {
+            // Stored as count + 1, so a release before the first present
+            // (count 0) is still told apart from "no release".
+            shell.released_at.store(presented + 1, Ordering::SeqCst);
+            let _ = window.destroy();
         }
     });
 }
@@ -775,6 +895,12 @@ fn prepare_and_load(app: AppHandle) -> bool {
 // `present` is false only after an update installed with the window closed:
 // the app then loads in the tray, where the customer left it.
 fn load(app: AppHandle, present: bool) -> bool {
+    // Before the preparing check: present_window below must find a window,
+    // or it would hand the load to yet another thread. Without one (WebView2
+    // failed to start) this attempt ends here; the next click tries again.
+    if present && !ensure_window(&app) {
+        return false;
+    }
     let shell = app.state::<Shell>();
     {
         let mut preparing = shell.preparing.lock().unwrap();
@@ -792,17 +918,14 @@ fn load(app: AppHandle, present: bool) -> bool {
         present_window(&app);
     }
     let result = prepare_runtime(&app);
+    // Which window the navigation below went to: one built later (the old
+    // window was closed and released meanwhile) still shows the start page.
+    let mut navigated = 0;
     match &result {
         Ok(origin) => {
             *shell.runtime_origin.lock().unwrap() = origin.clone();
-            if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
-                let pending = shell.pending_theme.lock().unwrap();
-                let path = pending
-                    .as_ref()
-                    .map(|theme_id| format!("/control-center/install/{theme_id}"))
-                    .unwrap_or_else(|| "/control-center".to_string());
-                let _ = window.navigate(origin.join(&path).expect("validated local path"));
-            }
+            navigated = shell.windows_created.load(Ordering::SeqCst);
+            navigate_to_control_center(&app, origin);
         }
         Err(error) => {
             log(error);
@@ -810,11 +933,29 @@ fn load(app: AppHandle, present: bool) -> bool {
         }
     }
     *shell.preparing.lock().unwrap() = false;
-    if result.is_ok() {
+    if let Ok(origin) = &result {
+        // A replacement built while this load ran skipped its own load
+        // (preparing was set); point it at the Control Center now.
+        if shell.windows_created.load(Ordering::SeqCst) != navigated {
+            navigate_to_control_center(&app, origin);
+        }
         // A second link may have arrived while the first navigation held the queue.
         navigate_to_pending_theme(&app, false);
     }
     result.is_ok()
+}
+
+fn navigate_to_control_center(app: &AppHandle, origin: &Url) {
+    let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
+        return;
+    };
+    let shell = app.state::<Shell>();
+    let pending = shell.pending_theme.lock().unwrap();
+    let path = pending
+        .as_ref()
+        .map(|theme_id| format!("/control-center/install/{theme_id}"))
+        .unwrap_or_else(|| "/control-center".to_string());
+    let _ = window.navigate(origin.join(&path).expect("validated local path"));
 }
 
 fn prepare_runtime(app: &AppHandle) -> Result<Url, String> {
