@@ -2627,7 +2627,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       healthState: "auth_required",
       reportedMessage:
         "Codex connection failed: codex account authentication required to read rate limits",
-      rowActions: ["Sign in to Codex"],
+      rowActions: ["Sign in needed for Codex"],
     },
     {
       status: "permission_required",
@@ -2642,7 +2642,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       // The popup says one fixed sentence per state, never the engine's text
       // (Paul, 16.10.).
       dialogSentence: "Allow access on this computer so VibeTV can read Codex usage.",
-      rowActions: [],
+      rowActions: ["Allow access"],
     },
     {
       status: "no_usage_available",
@@ -2668,7 +2668,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       expected: "No usable AI provider is configured yet.",
       healthState: "setup_required",
       reportedMessage: "No available fetch strategy for codex.",
-      rowActions: ["Sign in to Codex"],
+      rowActions: ["Sign in needed for Codex"],
     },
   ];
 
@@ -2793,9 +2793,9 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       .waitFor({ timeout: 10_000 });
     const providerDialog = page.getByRole("dialog", { name: "Codex", exact: true });
     const shownMessage = fixture.shownMessage ?? fixture.reportedMessage;
-    const signInRow = fixture.rowActions.includes("Sign in to Codex");
+    const signInRow = fixture.rowActions.includes("Sign in needed for Codex");
     if (signInRow) {
-      await page.getByRole("button", { name: "Sign in to Codex" })
+      await page.getByRole("button", { name: "Sign in needed for Codex" })
         .waitFor({ timeout: 10_000 });
       assert(await providerDialog.count() === 0,
         `${fixture.status} must not open a popup over the sign-in action`);
@@ -2803,6 +2803,10 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
         `${fixture.status} must not duplicate the sign-in action in a warning`);
       assert(await page.getByRole("switch", { name: "Codex" }).count() === 1,
         `${fixture.status} must keep the toggle beside sign-in`);
+    } else if (fixture.healthState !== "permission_required") {
+      // Looks 5 and 6 never open a dialog by themselves (states overview 644).
+      assert(await providerDialog.count() === 0,
+        `${fixture.status} must not open a popup by itself`);
     } else {
       await providerDialog.getByText(fixture.dialogSentence, { exact: true })
         .waitFor({ timeout: 10_000 });
@@ -7259,13 +7263,13 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
   const panel = page
     .locator("section")
     .filter({ has: page.getByRole("heading", { name: "AI providers" }) });
-  await panel.getByRole("button", { name: "Sign in to Claude" }).waitFor({ timeout: 10_000 });
+  await panel.getByRole("button", { name: "Sign in needed for Claude" }).waitFor({ timeout: 10_000 });
   assert(
     (await page.getByRole("dialog", { name: "Claude", exact: true }).count()) === 0,
     "A signed-out row must lead to its sign-in button, not a popup over it",
   );
   const signInRow = panel.getByRole("listitem").filter({
-    has: page.getByRole("button", { name: "Sign in to Claude" }),
+    has: page.getByRole("button", { name: "Sign in needed for Claude" }),
   });
   assert(await signInRow.getByRole("button").count() === 1,
     "Windows must show only the sign-in action");
@@ -7384,7 +7388,7 @@ async function testMacAppShowsTheWindowsSignInButton(browser, appUrl) {
   for (const kept of ["Gemini", "GitHub Copilot"]) {
     await panel.getByText(kept, { exact: true }).waitFor({ timeout: 10_000 });
   }
-  const signInClaude = panel.getByRole("button", { name: "Sign in to Claude" });
+  const signInClaude = panel.getByRole("button", { name: "Sign in needed for Claude" });
   await signInClaude.waitFor({ timeout: 10_000 });
   // Marcus's screenshot of 09.10.: this message used to open by itself, with
   // only a copy action. Now the row's sign-in is the one thing to click.
@@ -7392,7 +7396,7 @@ async function testMacAppShowsTheWindowsSignInButton(browser, appUrl) {
     (await page.getByRole("dialog", { name: "Claude", exact: true }).count()) === 0,
     "The Mac must lead signed-out Claude to its sign-in button, not a popup",
   );
-  const row = panel.getByRole("listitem").filter({ has: page.getByRole("button", { name: "Sign in to Claude" }) });
+  const row = panel.getByRole("listitem").filter({ has: page.getByRole("button", { name: "Sign in needed for Claude" }) });
   assert(await row.getByRole("button").count() === 1,
     "signed-out Claude must have only the sign-in action");
   assert(await row.getByRole("switch").count() === 1,
@@ -7718,7 +7722,7 @@ async function testProviderOnboardingUsesSharedHealthyDescriptor(
     (await page.getByRole("dialog", { name: "Claude", exact: true }).count()) === 0,
     "setup must lead signed-out Claude to its sign-in button, not a popup",
   );
-  const signInRow = providersScreen.getByRole("listitem").filter({ has: page.getByRole("button", { name: "Sign in to Claude" }) });
+  const signInRow = providersScreen.getByRole("listitem").filter({ has: page.getByRole("button", { name: "Sign in needed for Claude" }) });
   assert(await signInRow.getByRole("button").count() === 1,
     "the sign-in row must not duplicate the action in a warning popup");
   assert(await signInRow.getByRole("switch").count() === 1,

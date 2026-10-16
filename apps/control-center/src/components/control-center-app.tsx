@@ -4782,6 +4782,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       ? (item) => void openProviderSignIn(item, true)
       : undefined,
   });
+  // Off, unsupported and without usage data: no tile on Usage (look 6 and 7).
+  const hiddenUsageProviderIds = (providerPreferences || [])
+    .filter(isProviderItem)
+    .filter(
+      (item) =>
+        item.value !== true ||
+        ["unsupported", "no_usage_available"].includes(
+          providerRowHealthState(item.health),
+        ),
+    )
+    .map((item) => item.providerId);
   const [providerActionShown, dismissProviderAction, reportProviderSignIn] =
     useProviderActionDismissal(providerActions, activeTab === "settings");
   useEffect(() => {
@@ -5682,6 +5693,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             companionStatus={companionStatus}
             onRefresh={() => refreshUsage()}
             providerActions={providerActions}
+            hiddenProviderIds={hiddenUsageProviderIds}
             usage={usage}
             usageError={errorForHost(usageError, windowsHost)}
             windowsHost={windowsHost}

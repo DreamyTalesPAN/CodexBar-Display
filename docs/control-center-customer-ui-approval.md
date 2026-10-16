@@ -7622,3 +7622,20 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Unchanged. The flow test closes the "Codex" and "Claude" overlays with "Not now" before it navigates, as the customer would.
 - Scope: `scripts/test-customer-flows.mjs` (one test), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — test change, no customer-visible change of its own
+
+## 2026-10-16 — Provider rows: the seven looks of the states overview, quiet error 5b (#669)
+
+- User approval: Paul approved on 2026-10-16 (via the review orchestrator) "644 states overview, quiet error 5b, Paul 16.10." (states-overview.png); he has not yet seen this build.
+- Approved customer-visible result: On "Choose AI providers" and in Settings › AI providers the switch stays at the right in every look:
+  1. Switched on and OK: name and switch.
+  2. Switched on and CodexBar is fetching: name, a small spinner, switch.
+  3. Sign-in needed (not signed in, browser sign-in, or setup needed): name, red "Sign in needed" with an arrow, switch. Clicking starts the sign-in where the app can start it; otherwise it opens the provider's dialog.
+  4. Access missing (macOS): name, red "Allow access" with an arrow, switch. Clicking opens the provider's dialog.
+  5. Quiet error (stale, timed out, rate limited, unavailable, service outage, engine error, config error, unknown): name, a small muted spinner, switch. No text, no warning icon, no button.
+  6. Not supported or no usage data: name in muted text, "No usage data" in muted text, switch.
+  7. Switched off: name and switch off.
+  The warning icon and the round "Sign in to … ›" button are removed. The provider's dialog opens by itself only for looks 3 and 4, once; it never opens for looks 5 and 6.
+  On Usage: no tile for a provider that is switched off, unsupported, or without usage data. Quiet error keeps its last numbers with a small muted spinner in place of the reset time. The access action on a tile reads "Allow access"; the setup action reads "Sign in needed" and starts the sign-in like the row. The weekly line reads "26% weekly used".
+  The provider overlay (frame 3A) opens only for looks 3 and 4. A setup need uses the sign-in copy and its "Sign in to <Provider>" button.
+- Scope: `setup/setup-provider-row.tsx` and its test (the seven looks; the unused message helper removed), `setup/setup-providers-screen.tsx` and its test (the dialog opens by itself only for looks 3 and 4), `usage-screen.tsx` and its test (action labels, no tile for looks 6 and 7), `provider-action-dialog.tsx` and its test (setup need uses the sign-in copy), `control-center-app.tsx` (the hidden-tile list), `control-center-app.display-preferences.test.tsx`, `scripts/test-customer-flows.mjs` (the row names and the dialog expectation for looks 5 and 6), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the approved states overview, no new release note

@@ -697,6 +697,18 @@ describe("UsageScreen", () => {
     expect(html).not.toContain("Check again");
   });
 
+  it("gives no tile to a hidden provider, even with a usage entry", () => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="online"
+        hiddenProviderIds={["codex"]}
+        usage={usage}
+      />,
+    );
+    expect(html).not.toContain("session used");
+    expect(html).not.toContain(">Codex<");
+  });
+
   it("opens Settings for every action where the Companion cannot start a sign-in", () => {
     const onOpenSettings = vi.fn();
     const pref = {
@@ -741,8 +753,8 @@ describe("UsageScreen", () => {
     );
     expect(Object.keys(actions)).toEqual(["claude", "gemini", "cursor", "copilot", "zai"]);
     expect(actions.claude.label).toBe("Sign in needed");
-    expect(actions.gemini.label).toBe("Access needed");
-    expect(actions.cursor.label).toBe("Setup needed");
+    expect(actions.gemini.label).toBe("Allow access");
+    expect(actions.cursor.label).toBe("Sign in needed");
     expect(actions.copilot.label).toBe("Sign in needed");
 
     actions.claude.onAction();

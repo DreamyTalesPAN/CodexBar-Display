@@ -20,12 +20,6 @@ export function providerActionCopy(action: UsageProviderAction) {
       description: `VibeTV can't show ${name} until you allow access on this computer.`,
     };
   }
-  if (state === "setup_required") {
-    return {
-      title: `${name} needs setup`,
-      description: `VibeTV can't show ${name} until it is set up.`,
-    };
-  }
   return {
     title: `${name} needs a new sign-in`,
     description: `VibeTV can't show ${name} until you sign in again.`,
@@ -35,7 +29,6 @@ export function providerActionCopy(action: UsageProviderAction) {
 /** The button label, which the tile's action already says for each state. */
 function providerActionPrimary(action: UsageProviderAction): string {
   if (action.state === "permission_required") return "Open AI providers";
-  if (action.state === "setup_required") return `Set up ${action.name}`;
   return `Sign in to ${action.name}`;
 }
 

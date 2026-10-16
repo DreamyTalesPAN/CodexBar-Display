@@ -225,7 +225,7 @@ export function ProviderList({
   const [dismissedIssues, setDismissedIssues] = useState<Record<string, string>>(
     () => Object.fromEntries(acknowledgedProviderIssues),
   );
-  // The provider whose warning icon the customer clicked. Its message opens
+  // The provider whose row action the customer clicked. Its message opens
   // whatever the rules below say about popups opening by themselves.
   const [requestedIssueId, setRequestedIssueId] = useState<string | null>(null);
   // Providers whose sign-in started less than PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS
@@ -268,10 +268,10 @@ export function ProviderList({
     // a popup on top of it hid that button behind a provider message
     // (bench Mac, 09.10.). Sign-in rows need no duplicate warning.
     if (offersSignIn(provider) || signingIn.has(provider.providerId)) return [];
-    // A stale row still shows its last reading and recovers by itself, e.g.
-    // while CodexBar starts after the runtime restarted. Nothing for the
-    // customer to do, so its message opens only from the row's warning icon.
-    if (provider.health.state === "stale" && dismissedIssues[provider.id] !== "") return [];
+    // Only the sign-in and access looks (3 and 4) open by themselves; a quiet
+    // error retries by itself and the other looks have nothing to decide.
+    const look = setupProviderRowVariant(providerRowHealthState(provider.health));
+    if (look !== "sign_in" && look !== "browser_sign_in" && look !== "permission") return [];
     return dismissedIssues[provider.id] !== message
       ? [{ provider, message, requested }] : [];
   });

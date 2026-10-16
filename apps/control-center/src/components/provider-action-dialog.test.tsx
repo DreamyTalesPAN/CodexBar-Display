@@ -80,7 +80,7 @@ it("closes when its primary action opens Settings", () => {
   expect(dialog("Claude needs access")).toBeNull();
 });
 
-it("uses the permission and setup texts for those states", () => {
+it("uses the access text for permission_required; setup_required uses the sign-in copy", () => {
   const { unmount } = render(<Overlay actions={claude("permission_required")} />);
   expect(dialog("Claude needs access")?.textContent).toContain(
     "VibeTV can't show Claude until you allow access on this computer.",
@@ -88,10 +88,8 @@ it("uses the permission and setup texts for those states", () => {
   expect(screen.getByRole("button", { name: "Open AI providers" })).toBeTruthy();
   unmount();
   render(<Overlay actions={claude("setup_required")} />);
-  expect(dialog("Claude needs setup")?.textContent).toContain(
-    "VibeTV can't show Claude until it is set up.",
-  );
-  expect(screen.getByRole("button", { name: "Set up Claude" })).toBeTruthy();
+  expect(dialog("Claude needs a new sign-in")).not.toBeNull();
+  expect(screen.getByRole("button", { name: "Sign in to Claude" })).toBeTruthy();
 });
 
 it("shows a failed sign-in start in this dialog's description", () => {

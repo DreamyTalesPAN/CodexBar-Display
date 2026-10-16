@@ -80,6 +80,8 @@ type UsageScreenProps = {
   /** The app runs on Windows, where "Mac App" reads "app". */
   windowsHost?: boolean;
   providerActions?: Record<string, UsageProviderAction>;
+  /** Providers that get no tile: switched off, unsupported, or without usage data. */
+  hiddenProviderIds?: string[];
 };
 
 export function UsageScreen({
@@ -90,12 +92,14 @@ export function UsageScreen({
   onRefresh,
   windowsHost = false,
   providerActions = {},
+  hiddenProviderIds = [],
 }: UsageScreenProps) {
   const refreshing = busyAction === "usage";
+  // Off, unsupported and without usage data: no tile, even with an entry.
   const providers = filterVisibleProviders(
     usage?.providers || [],
     usage?.currentProvider,
-  );
+  ).filter((provider) => !hiddenProviderIds.includes(provider.id));
   const hasProviders = providers.length > 0;
   // Action tiles stand in for a provider's numbers; one with no usage entry
   // still gets its tile, after the others. With no Companion there is no
@@ -253,11 +257,12 @@ export function UsageScreen({
   );
 }
 
+// The same looks as the provider rows (states overview 644): 3 sign in, 4 allow access.
 const usageActionLabels: Record<string, string> = {
   auth_required: "Sign in needed",
   browser_sign_in_required: "Sign in needed",
-  permission_required: "Access needed",
-  setup_required: "Setup needed",
+  setup_required: "Sign in needed",
+  permission_required: "Allow access",
 };
 
 /** Action tiles for the enabled providers whose health needs the customer. */
