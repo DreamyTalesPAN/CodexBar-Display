@@ -101,7 +101,8 @@ it("shows a failed sign-in start in this dialog's description", () => {
       error={{ code: "x", message: "Could not open Claude.", nextAction: "Try again later." }}
     />,
   );
-  expect(dialog("Claude needs a new sign-in")?.textContent).toContain("Could not open Claude. Try again later.");
+  expect(dialog("Claude needs a new sign-in")?.textContent).toContain("Could not open Claude.");
+  expect(dialog("Claude needs a new sign-in")?.textContent).not.toContain("Try again later.");
 });
 
 it("waits while another dialog is open", async () => {
@@ -177,7 +178,8 @@ it("a failed start reopens a closed overlay with its error, cleared once the pro
   fireEvent.click(screen.getByRole("button", { name: "Not now" }));
   expect(dialog("Claude needs a new sign-in")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "report" }));
-  expect(dialog("Claude needs a new sign-in")?.textContent).toContain("Could not open Claude. Try again later.");
+  expect(dialog("Claude needs a new sign-in")?.textContent).toContain("Could not open Claude.");
+  expect(dialog("Claude needs a new sign-in")?.textContent).not.toContain("Try again later.");
   await act(async () => rerender(<ReportingOverlay actions={{}} />));
   await act(async () => rerender(<ReportingOverlay actions={claude()} />));
   const again = dialog("Claude needs a new sign-in");

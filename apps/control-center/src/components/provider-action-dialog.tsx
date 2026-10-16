@@ -147,11 +147,9 @@ export function ProviderActionDialog({
   }
   return (
     <SetupDialog
-      description={
-        error
-          ? [error.message, error.nextAction].filter(Boolean).join(" ")
-          : copy.description
-      }
+      // Only the message: the companion's next-action text still names a
+      // "check again" the Control Center no longer offers.
+      description={error ? error.message : copy.description}
       icon={AlertTriangle}
       onOpenChange={(open) => {
         if (!open) {
