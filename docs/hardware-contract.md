@@ -6,10 +6,10 @@ exclusive VibeTV connection modes.
 ## Scope and Release Policy
 - Release-gated MVP target: `esp8266_smalltv_st7789`
 - Experimental fallback (non-blocking): `lilygo_t_display_s3`
-- Fresh hardware waits for the USB cable. The display shows `Connect USB cable` and the Mac App address. Setup and pairing run only over the cable (issue #489); there is no setup access point. A unit flashed over WiFi from the manufacturer firmware forgets that network (ESP8266 SDK copy) on its first boot instead of joining it. The Mac App shows cable instructions if discovery finds no device. The connection selector appears when Cable and WiFi discovery both succeed.
+- Fresh hardware waits for the USB cable. The display shows `Connect USB cable` and the Mac App address. Setup and pairing run only over the cable (issue #489); there is no setup access point. A unit flashed over WiFi before its first VibeTV firmware forgets that network (ESP8266 SDK copy) on its first boot instead of joining it. The Mac App shows cable instructions if discovery finds no device. The connection selector appears when Cable and WiFi discovery both succeed.
 - WiFi remains a complete customer-selectable runtime (`transport.active=wifi`, `transport.mode=wifi`).
 - The physical Cable data link is a CH340 USB-UART bridge, not native USB CDC.
-- Legacy WiFi VibeTVs (issue #489): early hardware has no USB data connection. A device that boots current firmware for the first time with saved WiFi or a pairing token from older VibeTV firmware becomes `legacy-wifi-only`. It keeps WiFi updates, local-WiFi pairing, `/save`, `/scan`, `/reset-wifi` and the `VibeTV-Setup` network, advertises `supported:["wifi"]` and `cableOnlyUpdates:false`, and cannot switch to Cable. Its first request over the USB cable proves the data path: it then becomes `wifi` for good and follows the cable-only rules. A fresh device, including one fresh from the manufacturer firmware, never becomes legacy.
+- Legacy WiFi VibeTVs (issue #489): early hardware has no USB data connection. A device that boots current firmware for the first time with saved WiFi or a pairing token from older VibeTV firmware becomes `legacy-wifi-only`. It keeps WiFi updates, local-WiFi pairing, `/save`, `/scan`, `/reset-wifi` and the `VibeTV-Setup` network, advertises `supported:["wifi"]` and `cableOnlyUpdates:false`, and cannot switch to Cable. Its first request over the USB cable proves the data path: it then becomes `wifi` for good and follows the cable-only rules. A fresh device, including one before its first VibeTV firmware, never becomes legacy.
 
 ## Firmware Environment -> Board Identity
 
@@ -18,7 +18,7 @@ The firmware `hello.board` value must match the selected firmware environment:
 | Firmware Env | Expected `hello.board` | Release Role |
 |---|---|---|
 | `esp8266_smalltv_st7789` | `esp8266-smalltv-st7789` | release-gated |
-| `lilygo_t_display_s3` | `esp32-lilygo-t-display-s3` | experimental, non-blocking |
+| `lilygo_t_display_s3` | `esp32-lilygo-t-display-s3` | experimental, non-blocking; built in CI, not published in releases or the firmware manifest (#658) |
 
 The experimental ESP32 renderer draws one fixed layout: the label, session and
 weekly percent with bars in the frame's `usageMode` (`used` or `remaining`),

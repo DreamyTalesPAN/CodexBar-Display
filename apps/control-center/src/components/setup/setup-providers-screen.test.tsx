@@ -121,9 +121,10 @@ describe("SetupProvidersScreen", () => {
       onToggle: vi.fn(), onContinue: vi.fn(),
       pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
     const { rerender } = renderDom(<SetupProvidersScreen {...props} />);
-    // The row is one action, including while background checks are running.
+    // The row is one sign-in action beside its switch, including while
+    // background checks are running.
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.queryByRole("switch", { name: "Claude" })).toBeNull();
+    expect(screen.getByRole("switch", { name: "Claude" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Check Claude again" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Show provider message for Claude" })).toBeNull();
     rerender(<SetupProvidersScreen {...props} pendingCheckIds={new Set(["claude"])} />);
@@ -662,7 +663,7 @@ describe("SetupProvidersScreen", () => {
     expect(html).not.toContain("Show more providers");
   });
 
-  it("puts switched-on providers first without changing either group", () => {
+  it("puts the common subscription tools first, then switched-on providers", () => {
     const offOpenAI = provider({
       health: "disabled",
       label: "OpenAI",
@@ -681,9 +682,15 @@ describe("SetupProvidersScreen", () => {
       value: false,
     });
 
-    const providers = [offOpenAI, claude, offCursor, onCodex];
+    const offAzure = provider({
+      health: "disabled",
+      label: "Azure OpenAI",
+      providerId: "azureopenai",
+      value: false,
+    });
+    const providers = [offOpenAI, claude, offCursor, onCodex, offAzure];
     const html = render({ providers });
-    const labels = ["Claude Code", "Codex", "OpenAI", "Cursor"];
+    const labels = ["Codex", "Claude Code", "Cursor", "OpenAI", "Azure OpenAI"];
     const positions = labels.map((label) => html.indexOf(`>${label}</`));
 
     expect(positions.every((position) => position >= 0)).toBe(true);
