@@ -42,6 +42,7 @@ import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import { statusForHost } from "@/lib/customer-platform";
 import type { CompanionInfo } from "./control-center-types";
 import { SetupDialog } from "./setup/setup-dialog";
+import { clampProgress } from "./update-jobs";
 
 export type UpdatesCompanionStatus = "unknown" | "online" | "missing";
 
@@ -522,7 +523,7 @@ function InlineUpdateProgress({
   const restarting =
     status.phase === "installing" &&
     (status.stage === "rebooting" || status.stage === "rediscovering");
-  const progress = clampUpdateProgress(
+  const progress = clampProgress(
     complete || attention ? 100 : status.progress,
   );
   const title = attention
@@ -675,11 +676,4 @@ function formatCheckTime(value: string | undefined): string {
         dateStyle: "medium",
         timeStyle: "medium",
       }).format(date);
-}
-
-function clampUpdateProgress(value: number | undefined): number {
-  if (typeof value !== "number" || Number.isNaN(value)) {
-    return 5;
-  }
-  return Math.max(5, Math.min(100, Math.round(value)));
 }

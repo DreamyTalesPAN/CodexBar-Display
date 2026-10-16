@@ -954,7 +954,7 @@ func TestThemePackValidateKeepsLocalPackBehavior(t *testing.T) {
 
 func TestThemePackValidatePassesRemoteIntegrityMetadata(t *testing.T) {
 	packPath, packSHA256, packSizeBytes := writeTestThemePackZip(t, buildTestThemePackZip(t))
-	pack, err := themepack.Load(packPath)
+	pack, err := themepack.LoadVerified(packPath, "", 0)
 	if err != nil {
 		t.Fatalf("load test theme pack: %v", err)
 	}
