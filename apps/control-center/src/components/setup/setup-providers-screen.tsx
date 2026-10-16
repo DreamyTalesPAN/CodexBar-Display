@@ -592,29 +592,34 @@ function setupProvidersCanContinue(
   return providers.some((provider) => setupProviderCanDisplay(provider, usage));
 }
 
-/** The subscription tools most customers use, in this order, come first. */
-const COMMON_SUBSCRIPTION_PROVIDER_IDS = [
+/**
+ * The subscription tools most customers use, then the API providers that
+ * come right after them, in this order.
+ */
+const PRIORITY_PROVIDER_IDS = [
   "codex",
   "claude",
   "cursor",
   "antigravity",
+  "openai",
+  "azureopenai",
 ];
 
 /**
- * Subscription tools first, then the API and cloud providers: switched-on
- * ones before switched-off ones. Each group keeps CodexBar's order.
+ * Priority providers first, then every other provider: switched-on ones
+ * before switched-off ones. Each group keeps CodexBar's order.
  */
 function setupProvidersInOrder(providers: ProviderItem[]): ProviderItem[] {
   const idOf = (provider: ProviderItem) =>
     provider.providerId.trim().toLowerCase();
-  const common = COMMON_SUBSCRIPTION_PROVIDER_IDS.flatMap((id) =>
+  const priority = PRIORITY_PROVIDER_IDS.flatMap((id) =>
     providers.filter((provider) => idOf(provider) === id),
   );
   const others = providers.filter(
-    (provider) => !COMMON_SUBSCRIPTION_PROVIDER_IDS.includes(idOf(provider)),
+    (provider) => !PRIORITY_PROVIDER_IDS.includes(idOf(provider)),
   );
   return [
-    ...common,
+    ...priority,
     ...others.filter((provider) => provider.value === true),
     ...others.filter((provider) => provider.value !== true),
   ];

@@ -681,9 +681,15 @@ describe("SetupProvidersScreen", () => {
       value: false,
     });
 
-    const providers = [offOpenAI, claude, offCursor, onCodex];
+    const offAzure = provider({
+      health: "disabled",
+      label: "Azure OpenAI",
+      providerId: "azureopenai",
+      value: false,
+    });
+    const providers = [offOpenAI, claude, offCursor, onCodex, offAzure];
     const html = render({ providers });
-    const labels = ["Codex", "Claude Code", "Cursor", "OpenAI"];
+    const labels = ["Codex", "Claude Code", "Cursor", "OpenAI", "Azure OpenAI"];
     const positions = labels.map((label) => html.indexOf(`>${label}</`));
 
     expect(positions.every((position) => position >= 0)).toBe(true);
