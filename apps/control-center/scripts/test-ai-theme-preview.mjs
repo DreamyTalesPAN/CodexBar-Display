@@ -92,10 +92,10 @@ try {
   assert.equal(await page.getByRole("textbox").count(),2,"Name and input are visible before connecting");
   assert.equal(await page.getByRole("button",{name:"More options",exact:true}).count(),0);
   await page.getByRole("button",{name:"File",exact:true}).click();
-  const settings=page.getByRole("menu");
+  const settings=page;
   assert.equal(await settings.getByRole("textbox").count(),0,"First key entry belongs to the creation flow");
-  await settings.getByRole("menuitem",{name:"New design",exact:true}).waitFor();
-  await settings.getByRole("menuitem",{name:"Open saved design…",exact:true}).waitFor();
+  await settings.getByRole("button",{name:"New design",exact:true}).waitFor();
+  await settings.getByRole("button",{name:"Open saved design…",exact:true}).waitFor();
   await page.keyboard.press("Escape");
   for(const label of ["Animate scene","Adjust scene motion","Update animation","Edit whole scene","Find motion area with AI","Set up AI"]){
     assert.equal(await page.getByRole("button",{name:label,exact:true}).count(),0);

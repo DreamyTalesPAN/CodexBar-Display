@@ -1000,31 +1000,31 @@ export function AIThemeStudioScreen({
           <div className="flex items-center gap-1">
             <Popover open={fileMenu} onOpenChange={setFileMenu}>
               <PopoverTrigger asChild>
-                <Button variant="ghost" aria-haspopup="menu" disabled={locked}>
+                <Button variant="ghost" disabled={locked}>
                   File
                   <ChevronDown />
                 </Button>
               </PopoverTrigger>
               <PopoverContent align="start" className="w-64 p-1.5">
-                <div role="menu" className="flex flex-col gap-0.5" onClick={() => setFileMenu(false)}>
-                  <Button role="menuitem" size="sm" variant="ghost" className="w-full justify-start font-medium" onClick={() => requestLoad({ document: blank() })}>
+                <div className="flex flex-col gap-0.5" onClick={() => setFileMenu(false)}>
+                  <Button size="sm" variant="ghost" className="w-full justify-start font-medium" onClick={() => requestLoad({ document: blank() })}>
                     <Plus data-icon="inline-start" />
                     <span>New design</span>
                   </Button>
-                  <Button role="menuitem" size="sm" variant="ghost" className="w-full justify-start font-medium" onClick={() => openPanel("library")}>
+                  <Button size="sm" variant="ghost" className="w-full justify-start font-medium" onClick={() => openPanel("library")}>
                     <FolderOpen data-icon="inline-start" />
                     <span>Open saved design…</span>
                   </Button>
-                  <div role="separator" className="my-1 h-px bg-border" />
-                  <Button role="menuitem" size="sm" variant="ghost" className="w-full justify-start font-medium" onClick={() => jsonInput.current?.click()}>
+                  <div aria-hidden className="my-1 h-px bg-border" />
+                  <Button size="sm" variant="ghost" className="w-full justify-start font-medium" onClick={() => jsonInput.current?.click()}>
                     <FileUp data-icon="inline-start" />
                     <span>Open design file…</span>
                   </Button>
-                  <Button role="menuitem" size="sm" variant="ghost" className="w-full justify-start font-medium" disabled={!document.spec.primitives.length} onClick={() => download(JSON.stringify(document, null, 2), "vibetv-scene.json", "application/json")}>
+                  <Button size="sm" variant="ghost" className="w-full justify-start font-medium" disabled={!document.spec.primitives.length} onClick={() => download(JSON.stringify(document, null, 2), "vibetv-scene.json", "application/json")}>
                     <FileDown data-icon="inline-start" />
                     <span>Download editable design</span>
                   </Button>
-                  <Button role="menuitem" size="sm" variant="ghost" className="w-full justify-start font-medium" disabled={!document.spec.primitives.length || validation.errors.length > 0} onClick={exportPack}>
+                  <Button size="sm" variant="ghost" className="w-full justify-start font-medium" disabled={!document.spec.primitives.length || validation.errors.length > 0} onClick={exportPack}>
                     <Package data-icon="inline-start" />
                     <span>Export theme pack</span>
                   </Button>
