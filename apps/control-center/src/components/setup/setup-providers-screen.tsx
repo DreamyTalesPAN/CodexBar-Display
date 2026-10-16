@@ -602,6 +602,8 @@ const PRIORITY_PROVIDER_IDS = [
   "cursor",
   "antigravity",
   "openai",
+  // Win-CodexBar names the same API provider "openaiapi".
+  "openaiapi",
   "azureopenai",
 ];
 
