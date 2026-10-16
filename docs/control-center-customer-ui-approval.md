@@ -7234,3 +7234,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as approved in the #614 entries above and in the entries of #607, #620 and #629; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — Windows alignment of the provider list order (#651, follow-up to 67cb9dcd)
+
+- User approval: Marcus, 16.10.2026, channel Abstimmungschat (question 27, answer "ja"), the same approval as the two entries above. This entry records the implementation of that exact text on Windows: Windows CodexBar names OpenAI (API) `openaiapi`, which the priority list did not match, so OpenAI API fell behind the other providers. The fix puts it right after `openai`.
+- Approved customer-visible result: Windows angleichung an die freigegebene Mac-Reihenfolge (OpenAI API vor Azure OpenAI). Codex, Claude, Cursor, Antigravity, then OpenAI (API), Azure OpenAI, then the other providers, on Mac and Windows alike. Within the other providers, switched-on ones stay above switched-off ones. No new texts or controls.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx` (two lines), and this approval record.
+- What's new: none — the same providers in the already approved order.
