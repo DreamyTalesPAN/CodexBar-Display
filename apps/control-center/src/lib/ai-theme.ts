@@ -79,6 +79,10 @@ export type AIThemeCompanion = {
 export function isCompanionSprite(path?: string): boolean {
   return /^\/themes\/u\/ai-pet-[12]\.cba$/.test(path || "");
 }
+// A companion that moves: fps above zero, where the export uses 4 when none is set.
+export function hasMovingCompanion(primitives: { assetPath?: string; fps?: number }[]): boolean {
+  return primitives.some((p) => isCompanionSprite(p.assetPath) && (p.fps ?? 4) > 0);
+}
 export type AIThemeSession = {
   candidate: AIThemeCandidate;
   concept: AIThemeConcept;

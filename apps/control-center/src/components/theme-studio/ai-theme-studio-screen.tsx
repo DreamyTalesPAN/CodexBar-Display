@@ -93,6 +93,7 @@ import {
   AI_THEME_SCREENMASTER_ASSET_PATH,
   AI_THEME_TRANSMITTED_HISTORY_LIMIT,
   isAttachedSceneAnimation,
+  hasMovingCompanion,
   isCompanionSprite,
   type AIThemeMessage,
 } from "@/lib/ai-theme";
@@ -779,7 +780,8 @@ export function AIThemeStudioScreen({
         setAttachments([]);
         return;
       }
-      progressTo(DRAWING_WORDS(base.spec.primitives.some((p) => isCompanionSprite(p.assetPath))));
+      // Only a companion that moves earns the motion word (Codex review of #638).
+      progressTo(DRAWING_WORDS(hasMovingCompanion(base.spec.primitives)));
       const concept = await generateAIThemeConcept(
         {
           prompt,
