@@ -7321,6 +7321,12 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in that entry above and in #608's entries; nothing else changes.
 - Scope: merge of main into `claude/win-no-silent-app-update`, and this approval record.
 - What's new: none — no customer-visible change of its own
+## 2026-10-16 — Approval record: newest marker after the squash merges of #628 and #619
+
+- User approval: Paul approved the wording and behaviour of the busy computer dialog, the VibeTV label and the last good values for #628 on 2026-10-15 (entries above). Marcus gave the click tests "628 OK" and "619 OK" on 2026-10-16. This entry records these approvals after the squash merges and adds no wording and no new visible behaviour.
+- Approved customer-visible result: as recorded in the entries above; nothing else changes.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
 
 ## 2026-10-15 — #610: approval marker after merging main with #607, #620 and #629
 
@@ -7356,3 +7362,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none; test only.
 - Scope: `apps/control-center/src/components/control-center-app.app-update-prompt.test.tsx` and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — test only
+
+## 2026-10-16 — #610: approval marker after merging main with #657
+
+- User approval: Paul asked on 2026-10-16 to resolve the merge conflicts of the open pull requests. Main moved on with #657 (an approval-record marker), so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #610 entries above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
