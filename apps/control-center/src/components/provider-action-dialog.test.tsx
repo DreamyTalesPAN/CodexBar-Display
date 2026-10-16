@@ -240,3 +240,26 @@ it("a checking read does not end a dismissal; only a healthy result does", async
   await act(async () => rerender(<CheckingOverlay actions={claude()} checking={[]} />));
   expect(dialog("Claude needs a new sign-in")).not.toBeNull();
 });
+
+it("a failed sign-in is kept while its provider is checking", async () => {
+  function Reporting({ actions, checking }: { actions: Record<string, UsageProviderAction>; checking: string[] }) {
+    const [shown, dismiss, report] = useProviderActionDismissal(actions, false, checking);
+    return (
+      <div>
+        <button
+          onClick={() => report("claude", "auth_required", { code: "x", message: "Could not open Claude.", nextAction: "" }, true)}
+          type="button"
+        >
+          report
+        </button>
+        {shown ? <ProviderActionDialog action={shown.action} error={shown.error} onDismiss={dismiss} /> : null}
+      </div>
+    );
+  }
+  const { rerender } = render(<Reporting actions={claude()} checking={[]} />);
+  fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+  await act(async () => rerender(<Reporting actions={{}} checking={["claude"]} />));
+  fireEvent.click(screen.getByRole("button", { name: "report" }));
+  await act(async () => rerender(<Reporting actions={claude()} checking={["claude"]} />));
+  expect(dialog("Claude needs a new sign-in")?.textContent).toContain("Could not open Claude.");
+});

@@ -108,7 +108,11 @@ export function useProviderActionDismissal(
     const key = `${id}:${state}`;
     setMemory((previous) => {
       // A reply that comes after its action ended must not revive it.
-      if (error && !previous.signature.split("\n").includes(key)) {
+      if (
+        error &&
+        !previous.signature.split("\n").includes(key) &&
+        !checkingIds.includes(id)
+      ) {
         return previous;
       }
       const failuresNow = new Map(previous.failures);
