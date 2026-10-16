@@ -112,22 +112,33 @@ const firmwareFrameStaleAge = 150 * time.Second
 
 // withoutReplacedFrameProvider drops the provider of a stalled stream once
 // the firmware has replaced its frame (#368). Only the device's own report
-// of an active theme spec keeps it longer.
+// of an active theme spec keeps it longer, and a VibeTV that restarted after
+// the frame lost it either way.
 func withoutReplacedFrameProvider(device deviceInfo, now time.Time) deviceInfo {
 	stream := device.Stream
 	if stream == nil || stream.Healthy || stream.Provider == "" {
 		return device
 	}
-	if device.Display != nil && device.Display.ThemeSpec != nil && device.Display.ThemeSpec.Active {
-		return device
-	}
-	if sentAt, err := time.Parse(time.RFC3339, stream.LastSentAt); err == nil && now.Sub(sentAt) <= firmwareFrameStaleAge {
-		return device
+	if sentAt, err := time.Parse(time.RFC3339, stream.LastSentAt); err == nil && !restartedAfter(device.Health, sentAt) {
+		if device.Display != nil && device.Display.ThemeSpec != nil && device.Display.ThemeSpec.Active {
+			return device
+		}
+		if now.Sub(sentAt) <= firmwareFrameStaleAge {
+			return device
+		}
 	}
 	cleared := *stream
 	cleared.Provider = ""
 	device.Stream = &cleared
 	return device
+}
+
+func restartedAfter(health *deviceHealthInfo, sentAt time.Time) bool {
+	if health == nil {
+		return false
+	}
+	resetAt, err := time.Parse(time.RFC3339Nano, health.LastResetAt)
+	return err == nil && resetAt.After(sentAt)
 }
 
 func inspectDisplayStreamAfterRunning(ctx context.Context, target string, notBefore time.Time, running func() bool) displayStreamInfo {

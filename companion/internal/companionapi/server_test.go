@@ -3956,6 +3956,8 @@ func TestStalledStreamKeepsProviderOfLastFrame(t *testing.T) {
 		{"usage frame still on screen", deviceInfo{Stream: stalled(140 * time.Second)}, "codex"},
 		{"usage frame replaced by Open App", deviceInfo{Stream: stalled(160 * time.Second)}, ""},
 		{"theme-spec frame stays", deviceInfo{Stream: stalled(30 * time.Minute), Display: theme}, "codex"},
+		{"VibeTV restarted after the frame", deviceInfo{Stream: stalled(30 * time.Second), Display: theme, Health: &deviceHealthInfo{LastResetAt: now.Add(-10 * time.Second).Format(time.RFC3339Nano)}}, ""},
+		{"VibeTV restarted before the frame", deviceInfo{Stream: stalled(30 * time.Minute), Display: theme, Health: &deviceHealthInfo{LastResetAt: now.Add(-time.Hour).Format(time.RFC3339Nano)}}, "codex"},
 		{"healthy stream", deviceInfo{Stream: &displayStreamInfo{Healthy: true, Provider: "codex", LastSentAt: now.Add(-time.Hour).Format(time.RFC3339)}}, "codex"},
 	} {
 		if got := withoutReplacedFrameProvider(tc.device, now); got.Stream.Provider != tc.want {
