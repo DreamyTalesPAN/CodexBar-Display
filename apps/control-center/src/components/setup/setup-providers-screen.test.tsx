@@ -22,7 +22,7 @@ import {
   acknowledgedProviderIssues,
   setupProviderCanDisplay,
   setupProviderMatchesQuery,
-  setupProviderNoReadingLine,
+  setupProviderDialogSentence,
   setupProviderOffersSignIn,
   setupProvidersCanContinue,
 } from "./setup-providers-screen";
@@ -105,7 +105,8 @@ describe("SetupProvidersScreen", () => {
   it("names the included usage service and where provider access is granted", () => {
     const html = render();
     expect(html).toContain("VibeTV reads your AI usage with CodexBar, a helper app installed with VibeTV.");
-    expect(html).toContain("If one needs a sign-in, its row shows a Sign in button.");
+    expect(html).toContain("Turn on the providers you use below.</p>");
+    expect(html).not.toContain("If one needs a sign-in");
   });
 
   it("leads a signed-out row to its sign-in button instead of a popup", () => {
@@ -152,7 +153,9 @@ describe("SetupProvidersScreen", () => {
     act(() => { vi.advanceTimersByTime(PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS); });
     fireEvent.click(screen.getByRole("button", { name: "Check Claude again" }));
     rerender(<SetupProvidersScreen {...props} providers={[{ ...recovering, health: { ...recovering.health, state: "unavailable", message: "Failing after the window." } }]} />);
-    expect(within(screen.getByRole("dialog")).getByText("Failing after the window.")).toBeTruthy();
+    expect(within(screen.getByRole("dialog")).getByText(
+      "VibeTV could not read Claude usage right now and tries again by itself.",
+    )).toBeTruthy();
     rerender(<SetupProvidersScreen {...props} providers={[{ ...claude, label: "Claude" }]} />);
     expect(screen.getByRole("switch", { name: "Claude" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Sign in to Claude" })).toBeNull();
@@ -167,8 +170,10 @@ describe("SetupProvidersScreen", () => {
       onContinue: vi.fn(), pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
     const { rerender } = renderDom(<SetupProvidersScreen {...props} />);
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
-    expect(within(screen.getByRole("dialog")).getByText(failed.health.reported)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Copy provider message for GitHub Copilot" })).toBeTruthy();
+    expect(within(screen.getByRole("dialog")).getByText(
+      "VibeTV reads GitHub Copilot usage from GitHub Copilot's own app, so make sure it is installed and signed in on this computer.",
+    )).toBeTruthy();
+    expect(screen.queryByText(failed.health.reported)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "OK" }));
     rerender(<SetupProvidersScreen {...props} providers={[{ ...claude }, { ...failed }]} />);
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -197,14 +202,17 @@ describe("SetupProvidersScreen", () => {
       pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Show provider message for Codex" }));
-    expect(within(screen.getByRole("dialog")).getByText(stale.health.message)).toBeTruthy();
+    expect(within(screen.getByRole("dialog")).getByText(
+      "VibeTV shows the last Codex reading until a new one arrives.",
+    )).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "OK" }));
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  // Issue #368: a provider was on, used daily and silent for 16 days, and
-  // nothing said for how long.
-  it("says how long a provider that is on has gone without a usage reading", () => {
+  // Paul, 16.10.: the popup carried a status line under the sentence ("No
+  // usage reading yet."). The dialog says one sentence, and time passing
+  // does not open it again.
+  it("shows no reading line beside the sentence", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-13T09:43:00Z"));
     const props = { usage, onContinue: vi.fn(), onCheckAgain: vi.fn(), onToggle: vi.fn(),
@@ -216,34 +224,15 @@ describe("SetupProvidersScreen", () => {
 
     const { rerender } = renderDom(<SetupProvidersScreen {...props}
       providers={[since(failing, "2026-07-28T08:29:00Z")]} />);
-    expect(within(screen.getByRole("dialog")).getByText("No usage reading for 16d 1h.")).toBeTruthy();
-
-    // The line is not part of what was acknowledged: time passing keeps the
-    // popup closed.
+    expect(screen.getByRole("dialog").textContent).not.toContain("No usage reading");
     fireEvent.click(screen.getByRole("button", { name: "OK" }));
     vi.setSystemTime(new Date("2026-08-14T09:43:00Z"));
     rerender(<SetupProvidersScreen {...props} providers={[since(failing, "2026-07-28T08:29:00Z")]} />);
     expect(screen.queryByRole("dialog")).toBeNull();
 
-    // Never read at all.
     fireEvent.click(screen.getByRole("button", { name: "Show provider message for Codex" }));
     rerender(<SetupProvidersScreen {...props} providers={[failing]} />);
-    expect(within(screen.getByRole("dialog")).getByText("No usage reading yet.")).toBeTruthy();
-
-    // Nothing for a provider that delivers or one that is switched off.
-    rerender(<SetupProvidersScreen {...props} providers={[
-      since(claude, "2026-08-13T09:42:00Z"),
-      since({ ...failing, value: false }, "2026-07-28T08:29:00Z"),
-    ]} />);
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(document.body.textContent).not.toContain("No usage reading");
-
-    // The provider only just stopped: nothing to say yet.
-    expect(setupProviderNoReadingLine("2026-08-14T09:42:30Z")).toBeNull();
-    rerender(<SetupProvidersScreen {...props} providers={[since(failing, "2026-08-14T09:42:30Z")]} />);
     expect(screen.getByRole("dialog").textContent).not.toContain("No usage reading");
-    expect(setupProviderNoReadingLine("2026-08-14T09:42:00Z")).toBe("No usage reading for 1m.");
-    expect(setupProviderNoReadingLine("2026-08-14T07:40:00Z")).toBe("No usage reading for 2h 3m.");
   });
 
   // Settings takes the list off the page whenever the customer leaves it.
@@ -264,7 +253,9 @@ describe("SetupProvidersScreen", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     // The row still carries the message, and asking for it shows it.
     fireEvent.click(screen.getByRole("button", { name: "Show provider message for Codex" }));
-    expect(within(screen.getByRole("dialog")).getByText("Authentication required.")).toBeTruthy();
+    expect(within(screen.getByRole("dialog")).getByText(
+      "Sign in to Codex so VibeTV can read its usage.",
+    )).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "OK" }));
     settings.unmount();
 
@@ -272,7 +263,9 @@ describe("SetupProvidersScreen", () => {
     const timedOut = provider({ providerId: "codex", label: "Codex",
       health: "timeout", message: "The provider check timed out." });
     renderDom(<ProviderList {...props} providers={[timedOut, claude]} />);
-    expect(within(screen.getByRole("dialog")).getByText("The provider check timed out.")).toBeTruthy();
+    expect(within(screen.getByRole("dialog")).getByText(
+      "Codex did not answer in time, and VibeTV tries again by itself.",
+    )).toBeTruthy();
   });
 
   // Only the acknowledgement outlives the list. A switch pressed on one visit
@@ -320,51 +313,54 @@ describe("SetupProvidersScreen", () => {
     expect(document.body.innerHTML).not.toMatch(engineText);
   });
 
-  // Issue #558: the button copied the message and showed nothing. It answers
-  // like Copy on Support, and only once the text is on the clipboard.
-  it("confirms a copied provider message on the button", async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
-    const failed = { ...copilot, value: true,
-      health: { ...copilot.health, reported: "No available fetch strategy for copilot." } };
-    const openai = provider({ providerId: "openai", label: "OpenAI", health: "unavailable", message: "Second failure" });
-    renderDom(<SetupProvidersScreen usage={usage}
-      providers={[failed, { ...openai, health: { ...openai.health, reported: "Authentication required" } }]}
-      onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
-      pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Copy provider message for GitHub Copilot" }));
-    });
-    expect(writeText).toHaveBeenCalledWith("No available fetch strategy for copilot.");
-    expect(screen.getByRole("button", { name: "Copied" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /Copy provider message/ })).toBeNull();
-    // The next provider's message has not been copied.
-    fireEvent.click(screen.getByRole("button", { name: "OK" }));
-    expect(screen.getByRole("button", { name: "Copy provider message for OpenAI" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Copied" })).toBeNull();
-    vi.unstubAllGlobals();
-  });
-
-  // Closing the message ends the confirmation: opened again from the row's
-  // warning icon, the button offers the copy again.
-  it("offers the copy again when a copied message is closed and opened again", async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
-    const openai = provider({ providerId: "openai", label: "OpenAI", health: "unavailable", message: "Failure" });
-    renderDom(<SetupProvidersScreen usage={usage}
-      providers={[{ ...openai, health: { ...openai.health, reported: "Authentication required" } }]}
-      onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
-      pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Copy provider message for OpenAI" }));
-    });
-    expect(screen.getByRole("button", { name: "Copied" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "OK" }));
-    fireEvent.click(screen.getByRole("button", { name: "Show provider message for OpenAI" }));
-    expect(screen.getByRole("button", { name: "Copy provider message for OpenAI" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Copied" })).toBeNull();
-    expect(writeText).toHaveBeenCalledTimes(1);
-    vi.unstubAllGlobals();
+  // Paul, 16.10. ("wieso hab ich hier so viele optionen?"): the popup showed
+  // the engine's own text, a status line and a copy action. Every state says
+  // one fixed sentence and ends on OK.
+  it("says one fixed sentence per state, without engine text or a copy action", () => {
+    const engine = "No available fetch strategy for openai.";
+    const cases: [PreferenceHealthState, string][] = [
+      ["auth_required", "VibeTV reads OpenAI usage from OpenAI's own app, so make sure it is installed and signed in on this computer."],
+      ["setup_required", "VibeTV reads OpenAI usage from OpenAI's own app, so make sure it is installed and signed in on this computer."],
+      ["browser_sign_in_required", "Sign in to OpenAI in your browser, then close the browser."],
+      ["permission_required", "Allow access on this computer so VibeTV can read OpenAI usage."],
+      ["unsupported", "OpenAI no longer works with this account, so switch it off and use another provider."],
+      ["no_usage_available", "This OpenAI account has no usage yet."],
+      ["service_outage", "OpenAI has a service outage, and VibeTV tries again by itself."],
+      ["stale", "VibeTV shows the last OpenAI reading until a new one arrives."],
+      ["engine_incompatible", "The usage engine is too old and needs a repair."],
+      ["rate_limited", "Nothing to fix: OpenAI is busy right now, and VibeTV tries again by itself."],
+      ["timeout", "OpenAI did not answer in time, and VibeTV tries again by itself."],
+      ["unavailable", "VibeTV could not read OpenAI usage right now and tries again by itself."],
+      ["config_error", "VibeTV could not read OpenAI usage right now and tries again by itself."],
+    ];
+    for (const [state, sentence] of cases) {
+      const item = provider({ providerId: "openai", label: "OpenAI", health: state, message: engine });
+      const failed = { ...item, health: { ...item.health, reported: engine,
+        nextAction: "Finish setup for this provider, then check again.", noReadingSince: undefined } };
+      expect(setupProviderDialogSentence(failed)).toBe(sentence);
+      const { unmount } = renderDom(<SetupProvidersScreen usage={usage} providers={[failed]}
+        onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
+        pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
+      if (state === "stale") {
+        fireEvent.click(screen.getByRole("button", { name: "Show provider message for OpenAI" }));
+      }
+      const dialog = screen.getByRole("dialog");
+      expect(within(dialog).getByText(sentence)).toBeTruthy();
+      expect(dialog.textContent).not.toMatch(/fetch strategy|No usage reading|Check again|check again/);
+      expect(within(dialog).getAllByRole("button").map((button) => button.textContent))
+        .toEqual(["OK", "Close"]);
+      unmount();
+    }
+    for (const state of ["healthy", "checking", "disabled"]) {
+      expect(setupProviderDialogSentence(provider({ providerId: "openai", label: "OpenAI", health: state }))).toBeNull();
+    }
+    // A provider whose sign-in the app starts says so, and its stale row with
+    // a sign-in behind it says the same.
+    const claudeOut = provider({ providerId: "claude", label: "Claude", health: "auth_required" });
+    expect(setupProviderDialogSentence(claudeOut)).toBe("Sign in to Claude so VibeTV can read its usage.");
+    expect(setupProviderDialogSentence({ ...claudeOut,
+      health: { ...claudeOut.health, state: "stale", signInState: "auth_required" } }))
+      .toBe("Sign in to Claude so VibeTV can read its usage.");
   });
 
   it("offers the sign-in on a stale row whose live check waits for one", () => {
@@ -415,8 +411,8 @@ describe("SetupProvidersScreen", () => {
   });
 
   // A signed-out provider the app cannot sign in says what the customer has
-  // to do (its own app, installed and signed in), keeps the provider's own
-  // message and links the setup guide.
+  // to do (its own app, installed and signed in) and offers the setup guide
+  // as its signal action beside OK.
   it("tells a signed-out provider without a sign-in to use its own app", () => {
     const onOpenSetupGuide = vi.fn();
     const failed = { ...copilot, value: true,
@@ -427,28 +423,33 @@ describe("SetupProvidersScreen", () => {
       pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
     const dialog = within(screen.getByRole("dialog"));
     expect(dialog.getByText(
-      "VibeTV reads GitHub Copilot usage from GitHub Copilot's own app on this computer. Make sure it is installed and signed in, then click Check again.",
+      "VibeTV reads GitHub Copilot usage from GitHub Copilot's own app, so make sure it is installed and signed in on this computer.",
     )).toBeTruthy();
-    expect(dialog.getByText("No available fetch strategy for copilot.")).toBeTruthy();
+    expect(dialog.queryByText("No available fetch strategy for copilot.")).toBeNull();
+    expect(dialog.queryByRole("button", { name: /Copy provider message/ })).toBeNull();
+    expect(dialog.getAllByRole("button").map((button) => button.textContent))
+      .toEqual(["OK", "Open setup guide", "Close"]);
     fireEvent.click(dialog.getByRole("button", { name: "Open setup guide" }));
     expect(onOpenSetupGuide).toHaveBeenCalledTimes(1);
-    expect(dialog.getByRole("button", { name: "Copy provider message for GitHub Copilot" })).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("keeps the notice off for sign-in providers, other states and without a setup guide", () => {
+  it("keeps the setup guide off for sign-in providers, other states and without a guide", () => {
     const claudeSignedOut = provider({ providerId: "claude", label: "Claude",
       health: "auth_required", message: "Sign in to Claude." });
     const timedOut = provider({ providerId: "copilot", label: "GitHub Copilot",
       health: "timeout", message: "The provider check timed out." });
     const signedOut = { ...copilot, value: true };
-    for (const [item, guide] of [
-      [claudeSignedOut, vi.fn()], [timedOut, vi.fn()], [signedOut, undefined],
+    for (const [item, guide, sentence] of [
+      [claudeSignedOut, vi.fn(), "Sign in to Claude so VibeTV can read its usage."],
+      [timedOut, vi.fn(), "GitHub Copilot did not answer in time, and VibeTV tries again by itself."],
+      [signedOut, undefined, "VibeTV reads GitHub Copilot usage from GitHub Copilot's own app, so make sure it is installed and signed in on this computer."],
     ] as const) {
       const { unmount } = renderDom(<SetupProvidersScreen usage={usage} providers={[item]}
         onOpenSetupGuide={guide} onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
         pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
       const dialog = within(screen.getByRole("dialog"));
-      expect(dialog.getByText(item.health.message)).toBeTruthy();
+      expect(dialog.getByText(sentence)).toBeTruthy();
       expect(dialog.queryByRole("button", { name: "Open setup guide" })).toBeNull();
       unmount();
     }

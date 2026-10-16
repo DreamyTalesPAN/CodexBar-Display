@@ -16,12 +16,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Item, ItemGroup } from "@/components/ui/item";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatResetCountdown, secondsSince } from "@/lib/reset-countdown";
 import { cn } from "@/lib/utils";
 import { SETUP_REVEAL } from "./setup-reveal";
 import type { ProviderItem } from "../provider-picker";
 import { SetupLog, type SetupLogLine } from "./setup-log";
-import { SetupProviderRow, setupProviderIssueMessage } from "./setup-provider-row";
+import { SetupProviderRow, setupProviderRowVariant } from "./setup-provider-row";
 import { SetupDialog } from "./setup-dialog";
 import { displayPreviewFor } from "./setup-display-previews";
 import {
@@ -66,7 +65,7 @@ export const PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS = 180_000;
 /**
  * The providers whose sign-in the Companion can start (provider_sign_in_launch.go).
  * Every other provider in CodexBar's inventory is listed too; its row keeps
- * the switch, the provider's own message and "Check again".
+ * the switch, its warning and "Check again".
  */
 export const SIGN_IN_PROVIDER_IDS = [
   "codex",
@@ -94,8 +93,7 @@ export function providerRowHealthState(
  *
  * Only the four in SIGN_IN_PROVIDER_IDS have a sign-in the Companion can
  * start. Any other provider would get an action that can only fail, so its
- * row keeps the switch and "Check again", and the provider's own message
- * says what to do.
+ * row keeps the switch and "Check again", and its popup says what to do.
  */
 export function setupProviderOffersSignIn(
   provider: Pick<ProviderItem, "health" | "providerId">,
@@ -134,26 +132,50 @@ function setupProviderNeedsOwnApp(
   );
 }
 
-function setupProviderOwnAppNotice(label: string): string {
-  return `VibeTV reads ${label} usage from ${label}'s own app on this computer. Make sure it is installed and signed in, then click Check again.`;
-}
-
 /**
- * How long ago a provider that is on delivered its last usage reading, or
- * that it has not delivered one yet (#368).
- * Beside the message, never part of it: the message is what a customer
- * acknowledges, and a time that moves would open the popup again.
+ * The one sentence the provider dialog says, fixed per state the row shows
+ * (Paul, 16.10.). Never the engine's own text and no status line beside it:
+ * a customer cannot act on "No available fetch strategy". No "Check again"
+ * either: the open window reads provider health again every 30 s by itself.
  */
-export function setupProviderNoReadingLine(
-  since: string | undefined,
-  now = new Date(),
+export function setupProviderDialogSentence(
+  provider: Pick<ProviderItem, "health" | "label" | "providerId">,
 ): string | null {
-  if (!since) return "No usage reading yet.";
-  const seconds = secondsSince(since, now);
-  // Below a minute the provider only just stopped: nothing to say.
-  return seconds < 60
-    ? null
-    : `No usage reading for ${formatResetCountdown(seconds)}.`;
+  const { label } = provider;
+  const state = providerRowHealthState(provider.health);
+  const variant = setupProviderRowVariant(state);
+  if (variant === "toggle" || variant === "checking") return null;
+  if (variant === "sign_in") {
+    return setupProviderNeedsOwnApp(provider)
+      ? `VibeTV reads ${label} usage from ${label}'s own app, so make sure it is installed and signed in on this computer.`
+      : `Sign in to ${label} so VibeTV can read its usage.`;
+  }
+  if (variant === "browser_sign_in") {
+    return `Sign in to ${label} in your browser, then close the browser.`;
+  }
+  if (variant === "permission") {
+    return `Allow access on this computer so VibeTV can read ${label} usage.`;
+  }
+  if (variant === "unsupported") {
+    return `${label} no longer works with this account, so switch it off and use another provider.`;
+  }
+  if (variant === "no_usage") return `This ${label} account has no usage yet.`;
+  if (variant === "outage") {
+    return `${label} has a service outage, and VibeTV tries again by itself.`;
+  }
+  if (variant === "stale") {
+    return `VibeTV shows the last ${label} reading until a new one arrives.`;
+  }
+  if (state === "engine_incompatible") {
+    return "The usage engine is too old and needs a repair.";
+  }
+  if (state === "rate_limited") {
+    return `Nothing to fix: ${label} is busy right now, and VibeTV tries again by itself.`;
+  }
+  if (state === "timeout") {
+    return `${label} did not answer in time, and VibeTV tries again by itself.`;
+  }
+  return `VibeTV could not read ${label} usage right now and tries again by itself.`;
 }
 
 /**
@@ -238,17 +260,13 @@ export function ProviderList({
   const issues = providers.flatMap((provider): ProviderIssue[] => {
     if (!provider.value || pendingCheckIds.has(provider.providerId) ||
         pendingPreferenceIds.has(provider.id)) return [];
-    const message = setupProviderIssueMessage({
-      health: provider.health.state, label: provider.label,
-      detail: provider.health.message, nextAction: provider.health.nextAction,
-      reportedMessage: provider.health.reported,
-    });
+    const message = setupProviderDialogSentence(provider);
     if (!message) return [];
     const requested = requestedIssueId === provider.id;
     if (requested) return [{ provider, message, requested }];
     // A row with "Sign in to <Provider>" already shows the one thing to do;
-    // a popup on top of it hid that button behind a provider message and a
-    // copy action (bench Mac, 09.10.). Sign-in rows need no duplicate warning.
+    // a popup on top of it hid that button behind a provider message
+    // (bench Mac, 09.10.). Sign-in rows need no duplicate warning.
     if (offersSignIn(provider) || signingIn.has(provider.providerId)) return [];
     // A stale row still shows its last reading and recovers by itself, e.g.
     // while CodexBar starts after the runtime restarted. Nothing for the
@@ -260,7 +278,6 @@ export function ProviderList({
   const issue = issues.find((candidate) => candidate.requested) ?? issues[0];
   const dismissIssue = () => {
     if (!issue) return;
-    setCopied("");
     acknowledgedProviderIssues.set(issue.provider.id, issue.message);
     setDismissedIssues((current) => ({ ...current, [issue.provider.id]: issue.message }));
     setRequestedIssueId(null);
@@ -269,11 +286,6 @@ export function ProviderList({
     acknowledgedProviderIssues.delete(provider.id);
     setDismissedIssues((current) => ({ ...current, [provider.id]: "" }));
   };
-  // The message whose copy reached the clipboard; the button then says so,
-  // like Copy on Support. Another provider, a new message or closing the
-  // message starts over.
-  const [copied, setCopied] = useState("");
-  const copyKey = issue ? `${issue.provider.id}\n${issue.provider.health.reported}` : "";
   const [query, setQuery] = useState("");
   const [shown, setShown] = useState(PROVIDER_PAGE_SIZE);
   const matching = setupProvidersEnabledFirst(
@@ -285,23 +297,19 @@ export function ProviderList({
   // everyone who does not know what to search for.
   const visible = matching.slice(0, shown);
   const remaining = matching.length - visible.length;
-  const noReadingLine =
-    issue && setupProviderNoReadingLine(issue.provider.health.noReadingSince);
-  const ownAppNotice =
-    issue && onOpenSetupGuide && setupProviderNeedsOwnApp(issue.provider);
+  const setupGuide =
+    issue && setupProviderNeedsOwnApp(issue.provider) ? onOpenSetupGuide : undefined;
   const issueSignIn = issue && offersSignIn(issue.provider) ? issue.provider : null;
 
   return (
     <div className={cn("flex w-full flex-col", className)}>
       {issue ? (
+        // One sentence and at most two actions: the sign-in, or the setup
+        // guide beside OK, or OK alone (Paul, 16.10.).
         <SetupDialog
           open
           title={issue.provider.label}
-          description={
-            ownAppNotice
-              ? setupProviderOwnAppNotice(issue.provider.label)
-              : issue.message
-          }
+          description={issue.message}
           icon={TriangleAlert}
           onOpenChange={(open) => { if (!open) dismissIssue(); }}
           primaryAction={issueSignIn ? {
@@ -310,37 +318,20 @@ export function ProviderList({
               dismissIssue();
               startSignIn(issueSignIn);
             },
-          } : { label: "OK", onSelect: dismissIssue }}
-          secondaryAction={issue.provider.health.reported ? {
-            label: copied === copyKey
-              ? "Copied"
-              : `Copy provider message for ${issue.provider.label}`,
+          } : setupGuide ? {
+            label: "Open setup guide",
             onSelect: () => {
-              void navigator.clipboard?.writeText(issue.provider.health.reported!)
-                .then(() => setCopied(copyKey), () => undefined);
+              dismissIssue();
+              setupGuide();
             },
-          } : undefined}
-        >
-          {ownAppNotice ? (
-            <div className="flex flex-col items-start gap-2">
-              <p className="text-sm text-muted-foreground">{issue.message}</p>
-              <Button
-                className="h-auto px-0"
-                onClick={onOpenSetupGuide}
-                type="button"
-                variant="link"
-              >
-                Open setup guide
-              </Button>
-            </div>
-          ) : null}
-          {noReadingLine ? (
-            <p className="text-sm text-muted-foreground">{noReadingLine}</p>
-          ) : null}
-        </SetupDialog>
+          } : { label: "OK", onSelect: dismissIssue }}
+          secondaryAction={!issueSignIn && setupGuide
+            ? { label: "OK", onSelect: dismissIssue }
+            : undefined}
+        />
       ) : null}
       <p className="mb-3 text-sm text-muted-foreground">
-        VibeTV reads your AI usage with CodexBar, a helper app installed with VibeTV. Turn on the providers you use below. If one needs a sign-in, its row shows a Sign in button.
+        VibeTV reads your AI usage with CodexBar, a helper app installed with VibeTV. Turn on the providers you use below.
       </p>
       <div className="relative w-full">
         <Search

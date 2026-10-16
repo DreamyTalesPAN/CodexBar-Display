@@ -2647,6 +2647,9 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       // Customers never see the engine's product name (#334).
       shownMessage:
         "Safari cookie file is not readable. Enable Full Disk Access for usage engine.",
+      // The popup says one fixed sentence per state, never the engine's text
+      // (Paul, 16.10.).
+      dialogSentence: "Allow access on this computer so VibeTV can read Codex usage.",
       rowActions: [
         "Check Codex again",
       ],
@@ -2657,6 +2660,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
         "Claude is connected, but this account does not expose usage limits. Choose another provider.",
       healthState: "no_usage_available",
       reportedMessage: "No usage data is available for this Codex account.",
+      dialogSentence: "This Codex account has no usage yet.",
       rowActions: [
         "Check Codex again",
       ],
@@ -2668,6 +2672,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       healthState: "config_error",
       reportedMessage: "CodexBar could not save the Codex provider settings.",
       shownMessage: "Usage engine could not save the Codex provider settings.",
+      dialogSentence: "VibeTV could not read Codex usage right now and tries again by itself.",
       rowActions: [
         "Check Codex again",
       ],
@@ -2813,15 +2818,17 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       assert(await page.getByRole("switch", { name: "Codex" }).count() === 0,
         `${fixture.status} must replace the toggle with sign-in`);
     } else {
-      await providerDialog.getByText(shownMessage, { exact: true })
+      await providerDialog.getByText(fixture.dialogSentence, { exact: true })
         .waitFor({ timeout: 10_000 });
-      await providerDialog.getByRole("button", { name: "Copy provider message for Codex" })
-        .waitFor({ timeout: 10_000 });
+      assert(await providerDialog.getByText(shownMessage, { exact: true }).count() === 0,
+        `${fixture.status} must not show the engine's own text in the popup`);
+      assert(await providerDialog.getByRole("button", { name: /Copy provider message/ }).count() === 0,
+        `${fixture.status} must not offer a copy action in the popup`);
       await providerDialog.getByRole("button", { name: "OK", exact: true }).click();
     }
     assert(
       (await page.getByText(shownMessage, { exact: true }).count()) === 0,
-      `${fixture.status} must keep the reported message in the dismissible dialog, not on the row`,
+      `${fixture.status} must not show the engine text on the page`,
     );
     for (const action of fixture.rowActions) {
       await page
@@ -4777,8 +4784,8 @@ async function testProviderlessDeviceUsesRecoveryBeforeThemeAndOverview(
   const visibleText = await page.evaluate(() => document.body.innerText);
   assert(
     visibleText.includes(
-      "VibeTV reads your AI usage with CodexBar, a helper app installed with VibeTV. Turn on the providers you use below. If one needs a sign-in, its row shows a Sign in button."
-    ),
+      "VibeTV reads your AI usage with CodexBar, a helper app installed with VibeTV. Turn on the providers you use below."
+    ) && !visibleText.includes("If one needs a sign-in"),
     "Provider recovery must explain why CodexBar appears in setup",
   );
 

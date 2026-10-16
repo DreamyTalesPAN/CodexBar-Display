@@ -7382,3 +7382,22 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #627, #631 and #234 entries above and in the entries of #615, #619 and #628; nothing else changes.
 - Scope: the merge of main into `codex/setup-display-mode-pack` and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
+## 2026-10-16 — #642: provider popup says one sentence, intro without the sign-in sentence
+
+- User approval: Paul requested these exact changes on 2026-10-16 after testing #642 (via the review orchestrator): "Choose AI providers" drops the sentence "If one needs a sign-in, its row shows a Sign in button."; the provider popup ("wieso hab ich hier so viele optionen?") shows, for every provider, no engine text and no status line, no "then click Check again" (the open window reads provider health again every 30 s by itself), a ⚠ title with one fixed sentence per state, no "Copy provider message for <Provider>", and "Open setup guide" as the signal button beside "OK" where a guide exists, otherwise "OK" alone.
+- Approved customer-visible result: intro on "Choose AI providers" and in Settings: "VibeTV reads your AI usage with CodexBar, a helper app installed with VibeTV. Turn on the providers you use below." Provider popup, title "⚠ <Provider>", one sentence per state the row shows:
+  - signed out, provider whose sign-in the app starts (Codex, Claude, Cursor, Antigravity): "Sign in to <Provider> so VibeTV can read its usage." (button "Sign in to <Provider>" where the shell can start it, otherwise "OK")
+  - signed out, any other provider: "VibeTV reads <Provider> usage from <Provider>'s own app, so make sure it is installed and signed in on this computer." (buttons "OK" and "Open setup guide" as signal button where the guide exists, otherwise "OK")
+  - browser sign-in: "Sign in to <Provider> in your browser, then close the browser."
+  - permission: "Allow access on this computer so VibeTV can read <Provider> usage."
+  - account no longer supported: "<Provider> no longer works with this account, so switch it off and use another provider."
+  - no usage on the account: "This <Provider> account has no usage yet."
+  - service outage: "<Provider> has a service outage, and VibeTV tries again by itself."
+  - stale (last reading kept): "VibeTV shows the last <Provider> reading until a new one arrives."
+  - usage engine too old: "The usage engine is too old and needs a repair."
+  - rate limited: "Nothing to fix: <Provider> is busy right now, and VibeTV tries again by itself."
+  - check timed out: "<Provider> did not answer in time, and VibeTV tries again by itself."
+  - any other failed check: "VibeTV could not read <Provider> usage right now and tries again by itself."
+  Removed from the popup: the engine's own text (for example "No available fetch strategy for openai."), the reading line ("No usage reading yet." / "No usage reading for …"), "Copy provider message for <Provider>" and the underlined "Open setup guide" link. Rows, switches, "Check again" on the row and the sign-in row are unchanged.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test, `apps/control-center/scripts/check-customer-ui-copy.mjs`, `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — simpler popup wording, no new capability
