@@ -3815,14 +3815,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         )
     }
 
-    private func runPinnedCodexBar(_ arguments: [String]) -> URL? {
+    // The helper verifies signatures and may take up to its two-minute
+    // deadline on a busy Mac; it runs off the main thread so the window and
+    // the menu stay responsive while the start screen waits for it.
+    private func runPinnedCodexBar(_ arguments: [String]) async -> URL? {
         let companionURL = Bundle.main.bundleURL
             .appendingPathComponent("Contents/Helpers", isDirectory: true)
             .appendingPathComponent("codexbar-display")
-        guard let result = runCodexBarCommand(
-            executableURL: companionURL,
-            arguments: arguments
-        ) else {
+        guard let result = await Task.detached(priority: .userInitiated, operation: {
+            runCodexBarCommand(executableURL: companionURL, arguments: arguments)
+        }).value else {
             NSLog("VibeTV Control Center could not launch its CodexBar preparation helper")
             return nil
         }
@@ -3834,11 +3836,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         return path.isEmpty ? nil : URL(fileURLWithPath: path)
     }
 
-    private func validatedPinnedCodexBarCLI(at appURL: URL) -> URL? {
-        runPinnedCodexBar(["validate-codexbar", "--app", appURL.path])
+    private func validatedPinnedCodexBarCLI(at appURL: URL) async -> URL? {
+        await runPinnedCodexBar(["validate-codexbar", "--app", appURL.path])
     }
 
-    private func prepareBundledCodexBarCLI() -> URL? {
+    private func prepareBundledCodexBarCLI() async -> URL? {
         guard let resourcesURL = Bundle.main.resourceURL else { return nil }
         let targetAppURL = appManagedCodexBarAppURL(applicationSupportURL: applicationSupportURL())
         var arguments = [
@@ -3853,11 +3855,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }) {
             arguments.append("--reuse-running")
         }
-        return runPinnedCodexBar(arguments)
+        return await runPinnedCodexBar(arguments)
     }
 
-    private func bootstrapCodexBar() -> Bool {
-        guard let cliURL = prepareBundledCodexBarCLI() else {
+    private func bootstrapCodexBar() async -> Bool {
+        guard let cliURL = await prepareBundledCodexBarCLI() else {
             NSLog("VibeTV Control Center could not provision its private CodexBar; native setup remains blocked")
             return false
         }
@@ -3886,7 +3888,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             return true
         }
 
-        guard validatedPinnedCodexBarCLI(at: appURL) != nil else {
+        guard await validatedPinnedCodexBarCLI(at: appURL) != nil else {
             NSLog("VibeTV Control Center refused to launch an unverified CodexBar app")
             return false
         }
@@ -3992,7 +3994,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             }
         }
 
-        var codexBarPrepared = bootstrapCodexBar()
+        var codexBarPrepared = await bootstrapCodexBar()
         if !codexBarPrepared,
            retriesCodexBarBootstrap(fromStartScreen: fromStartScreen, repairRequested: codexBarRepairRequired) {
             NSLog("VibeTV Control Center retries its CodexBar preparation once before asking for a repair")
@@ -4001,7 +4003,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             // for this preparation; its own rerun replaces CodexBar after it
             // has.
             if !codexBarRepairRequired {
-                codexBarPrepared = bootstrapCodexBar()
+                codexBarPrepared = await bootstrapCodexBar()
             }
         }
         guard codexBarPrepared else {
