@@ -614,6 +614,26 @@ describe("UsageScreen", () => {
     expect(html).toContain('aria-label="Updating"');
   });
 
+  it("keeps a stale reading's non-zero lane and shows a zero lane as unavailable", () => {
+    const html = renderUsage(null, {
+      ...usage,
+      providers: [
+        {
+          ...usage.providers[0],
+          session: 0,
+          weekly: 58,
+          stale: true,
+          usageUnavailable: true,
+          sessionUnavailable: true,
+          weeklyUnavailable: true,
+        },
+      ],
+    });
+    expect(html).toContain('aria-label="58% weekly used"');
+    expect(html).not.toContain("0% session");
+    expect(html.match(/aria-valuenow="\d+"/g)).toEqual(['aria-valuenow="58"']);
+  });
+
   it("shows a normal tile's reset time", () => {
     const html = renderUsage(null, {
       ...usage,

@@ -665,34 +665,36 @@ function usageLines(
     const left = remainingResetSecs(resetSecs, provider.collectedAt, now);
     return !quiet && left ? formatReset(left) : null;
   };
-  const laneUnavailable = (flag?: boolean) => !provider.stale && Boolean(flag);
+  // A stale reading is flagged unavailable on every lane, yet keeps its last
+  // good numbers. A zero there may be a cleared reading, so it is never shown
+  // as "0% used": the lane shows the placeholder instead.
+  const laneUnavailable = (value: number, flag?: boolean) =>
+    provider.stale ? value === 0 : Boolean(flag);
   if (provider.windows?.length) {
     return provider.windows.map((window) => ({
       key: window.id,
       label: window.label.toLowerCase(),
       percent: clampPercent(window.usedPercent),
       resetText: resetText(window.resetSecs),
-      unavailable: false,
+      unavailable: laneUnavailable(window.usedPercent),
     }));
   }
+  const session = laneUnavailable(provider.session, provider.sessionUnavailable);
+  const weekly = laneUnavailable(provider.weekly, provider.weeklyUnavailable);
   return [
     {
       key: "session",
       label: "session",
       percent: clampPercent(provider.session),
-      resetText: laneUnavailable(provider.sessionUnavailable)
-        ? null
-        : resetText(provider.resetSecs),
-      unavailable: laneUnavailable(provider.sessionUnavailable),
+      resetText: session ? null : resetText(provider.resetSecs),
+      unavailable: session,
     },
     {
       key: "weekly",
       label: "weekly",
       percent: clampPercent(provider.weekly),
-      resetText: laneUnavailable(provider.weeklyUnavailable)
-        ? null
-        : resetText(provider.resetSecs),
-      unavailable: laneUnavailable(provider.weeklyUnavailable),
+      resetText: weekly ? null : resetText(provider.resetSecs),
+      unavailable: weekly,
     },
   ];
 }

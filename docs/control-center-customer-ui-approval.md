@@ -7385,3 +7385,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: A stale provider with nothing retained (all zeros) shows the grey placeholder shape and the spinner, not "0% session used" or "0% weekly used". A stale provider with a non-zero last good reading shows it as in the entry above. No new element; not seen by Paul yet.
 - Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — review fix to the Usage tiles, no customer-visible change of its own
+
+## 2026-10-16 — Usage tiles: a zero on a stale reading shows the placeholder (#669)
+
+- User approval: Paul chose the calm Usage tiles on 2026-10-16 (entry above, via the review orchestrator); this follow-up applies Codex review findings and changes no wording.
+- Approved customer-visible result: On a stale reading a lane with 0% shows the grey placeholder and the spinner, never "0% session used"; a lane with a non-zero value keeps its number, so a stale reading with one unavailable lane shows only the valid one. This also means a real 0% on a stale reading is not shown as a number. No new element; not seen by Paul yet.
+- Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the Usage tiles, no customer-visible change of its own
