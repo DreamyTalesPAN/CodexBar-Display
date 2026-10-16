@@ -60,7 +60,7 @@ describe("ControlCenterShell", () => {
     const onTabChange = vi.fn();
     const { getByRole } = render(
       <TooltipProvider>
-        <ControlCenterShell activeTab="settings" device={{ active: true, connected: true }} onTabChange={onTabChange}>
+        <ControlCenterShell activeTab="settings" onTabChange={onTabChange}>
           <div>Content</div>
         </ControlCenterShell>
       </TooltipProvider>,
