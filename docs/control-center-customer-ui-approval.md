@@ -7308,3 +7308,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the entries above; nothing else changes.
 - Scope: this approval record only. Pull request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — Usage: calm tiles, action tiles and no Check again (#644 follow-up)
+
+- User approval: Paul chose on 2026-10-16 (via the review orchestrator) Claude Design page "Control Center Redesign" 644, "3A + 4A + 5B (weekly: number first), Paul 16.10."; he has not yet seen this build.
+- Approved customer-visible result: Usage tiles use one font in two sizes and two weights, with only the normal text and muted text colours and ink bars. Each tile reads number first: "45% session used", "26% weekly used", and the totals line "41.8M total · 2.4M this week". No Stale pill, no status pill, no "??" and no "Check again". A tile with stale numbers keeps them and shows a small spinner where the reset time was; a tile without numbers shows a grey placeholder shape and the same spinner. A provider that needs the customer shows "Sign in needed", "Access needed" or "Setup needed" in red after its name, with the placeholder shape in place of its numbers; the link opens the sign-in or Settings.
+- Scope: `usage-screen.tsx` and its test, `control-center-app.tsx` (only the wiring of the action tiles), the two wording assertions in `scripts/test-customer-flows.mjs`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — visual calm of the Usage tiles, no new notice

@@ -3382,7 +3382,7 @@ async function testRunningCompanionOutageKeepsControlCenterOpen(
     .getByRole("img", { name: /Rendered VibeTV theme/ })
     .waitFor({ timeout: 10_000 });
   await clickNavigation(page, "Usage");
-  await page.getByText("Session: 12% used", { exact: true }).waitFor();
+  await page.getByText("12% session used", { exact: true }).waitFor();
   failStatus = true;
   // A service that stops answering is restarted by launchd on its own, and the
   // customer hears nothing while that is happening: the announcement used to
@@ -3427,7 +3427,7 @@ async function testRunningCompanionOutageKeepsControlCenterOpen(
   await clickNavigation(page, "Usage");
   await page.getByText("Mac App needs setup.", { exact: true }).waitFor();
   assert(
-    (await page.getByText("Session: 12% used", { exact: true }).count()) === 0,
+    (await page.getByText("12% session used", { exact: true }).count()) === 0,
     "A Mac App outage must remove cached usage instead of presenting it as current",
   );
   assert(

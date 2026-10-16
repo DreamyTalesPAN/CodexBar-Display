@@ -2,8 +2,10 @@
 
 import {
   AlertTriangle,
+  ArrowUpRight,
   BarChart3,
   Info,
+  Loader2,
   RefreshCw,
 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
@@ -15,7 +17,6 @@ import {
   Card,
   CardAction,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -35,6 +36,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { copyForHost } from "@/lib/customer-platform";
@@ -45,11 +47,18 @@ import {
 import type {
   ApiError,
   CompanionStatus,
+  PreferenceDescriptor,
   UsageCostDay,
   UsageProviderInfo,
   UsageSnapshot,
-  UsageWindowInfo,
 } from "./control-center-types";
+
+/** A provider whose customer must act first; keyed by provider id. */
+export type UsageProviderAction = {
+  name: string;
+  label: string;
+  onAction: () => void;
+};
 
 type UsageScreenProps = {
   busyAction?: string | null;
@@ -59,6 +68,7 @@ type UsageScreenProps = {
   onRefresh?: () => void;
   /** The app runs on Windows, where "Mac App" reads "app". */
   windowsHost?: boolean;
+  providerActions?: Record<string, UsageProviderAction>;
 };
 
 export function UsageScreen({
@@ -68,6 +78,7 @@ export function UsageScreen({
   usageError,
   onRefresh,
   windowsHost = false,
+  providerActions = {},
 }: UsageScreenProps) {
   const refreshing = busyAction === "usage";
   const providers = filterVisibleProviders(
@@ -75,6 +86,24 @@ export function UsageScreen({
     usage?.currentProvider,
   );
   const hasProviders = providers.length > 0;
+  // Action tiles stand in for a provider's numbers; one with no usage entry
+  // still gets its tile, after the others.
+  const tiles = [
+    ...providers.map((provider) => ({
+      id: provider.id,
+      node: providerActions[provider.id] ? (
+        <UsageActionTile {...providerActions[provider.id]} />
+      ) : (
+        <UsageProviderTile provider={provider} />
+      ),
+    })),
+    ...Object.entries(providerActions)
+      .filter(([id]) => !providers.some((provider) => provider.id === id))
+      .map(([id, action]) => ({
+        id,
+        node: <UsageActionTile {...action} />,
+      })),
+  ];
   const tokenUsageReady =
     usage?.tokenUsageReady === true || usageProvidersHaveTokenResult(providers);
   // The Mac App owns this decision; the browser does not re-derive freshness.
@@ -191,11 +220,11 @@ export function UsageScreen({
           </Card>
         ) : null}
 
-        {hasProviders ? (
+        {tiles.length > 0 ? (
           <ol className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
-            {providers.map((provider) => (
-              <li className="min-w-0" key={provider.id}>
-                <UsageProviderTile provider={provider} />
+            {tiles.map((tile) => (
+              <li className="min-w-0" key={tile.id}>
+                {tile.node}
               </li>
             ))}
           </ol>
@@ -208,6 +237,46 @@ export function UsageScreen({
         ) : null}
       </section>
     </div>
+  );
+}
+
+const usageActionLabels: Record<string, string> = {
+  auth_required: "Sign in needed",
+  browser_sign_in_required: "Sign in needed",
+  permission_required: "Access needed",
+  setup_required: "Setup needed",
+};
+
+/** Action tiles for the enabled providers whose health needs the customer. */
+export function usageProviderActionsFor(
+  preferences: PreferenceDescriptor[] | null,
+  {
+    onOpenSettings,
+    onSignIn,
+  }: {
+    onOpenSettings: () => void;
+    onSignIn: (item: PreferenceDescriptor) => void;
+  },
+): Record<string, UsageProviderAction> {
+  return Object.fromEntries(
+    (preferences || []).flatMap((item): Array<[string, UsageProviderAction]> => {
+      const state = item.health?.state ?? "";
+      const label = usageActionLabels[state];
+      if (!label || !item.providerId || item.section !== "providers" || item.value !== true) {
+        return [];
+      }
+      const signIn = state === "auth_required" || state === "browser_sign_in_required";
+      return [
+        [
+          item.providerId,
+          {
+            name: item.label,
+            label,
+            onAction: signIn ? () => onSignIn(item) : onOpenSettings,
+          },
+        ],
+      ];
+    }),
   );
 }
 
@@ -422,44 +491,6 @@ function TokenUsageOverTimePanel({
   );
 }
 
-function UsageProviderTile({
-  provider,
-}: {
-  provider: UsageProviderInfo;
-}) {
-  const tokenEvidence = providerHasTokenEvidence(provider);
-  const providerStale = provider.stale && !tokenEvidence;
-  return (
-    <Card
-      className={cn(
-        "h-full min-h-[248px] [--card-spacing:--spacing(5)]",
-        providerStale && "opacity-65",
-      )}
-    >
-      <CardHeader>
-        <CardTitle className="break-words text-xl font-black">
-          {provider.label || provider.id}
-        </CardTitle>
-        {providerStale || provider.status ? (
-          <CardDescription className="flex flex-wrap items-center gap-2">
-            {providerStale ? <StatusPill>Stale</StatusPill> : null}
-            {provider.status ? (
-              <StatusPill>{providerStatusLabel(provider.status.description)}</StatusPill>
-            ) : null}
-          </CardDescription>
-        ) : null}
-      </CardHeader>
-
-      <CardContent className="flex flex-1 flex-col">
-        <ProviderUsageBars provider={provider} />
-
-        <UsageMetaGrid provider={provider} />
-        <TokenRow provider={provider} />
-      </CardContent>
-    </Card>
-  );
-}
-
 const RESET_COUNTDOWN_TICK_MS = 15_000;
 
 function useNow(intervalMs: number): Date {
@@ -471,125 +502,221 @@ function useNow(intervalMs: number): Date {
   return now;
 }
 
-function ProviderUsageBars({ provider }: { provider: UsageProviderInfo }) {
-  const unavailableDetail = quotaUnavailableDetail(provider);
+// One tile per provider: the numbers the Mac App delivers, nothing computed here.
+function UsageProviderTile({ provider }: { provider: UsageProviderInfo }) {
   // The countdown shows whole minutes; its own tick moves it between usage polls.
   const now = useNow(RESET_COUNTDOWN_TICK_MS);
-  const resetSecsLeft = (resetSecs?: number) =>
-    remainingResetSecs(resetSecs, provider.collectedAt, now);
-  if (provider.windows?.length) {
-    return (
-      <div className="grid gap-4">
-        {provider.windows.map((window) => (
-          <UsageWindowBar
-            key={window.id}
-            mode={provider.usageMode}
-            resetSecs={resetSecsLeft(window.resetSecs)}
-            unavailable={provider.usageUnavailable}
-            unavailableDetail={unavailableDetail}
-            window={window}
-          />
-        ))}
-      </div>
-    );
-  }
-
+  // Stale or unavailable is decided by the Mac App; the tile only shows the flags.
+  const quiet = Boolean(provider.stale || provider.usageUnavailable);
+  const lines = usageLines(provider, now, quiet);
+  const sessionReset = lines[0]?.resetText;
   return (
-    <div className="grid gap-4">
-      <UsageBar
-        label="Session"
-        mode={provider.usageMode}
-        resetSecs={resetSecsLeft(provider.resetSecs)}
-        unavailable={
-          provider.usageUnavailable || provider.sessionUnavailable
-        }
-        unavailableDetail={unavailableDetail}
-        value={provider.session}
-      />
-      <UsageBar
-        label="Weekly"
-        mode={provider.usageMode}
-        resetSecs={resetSecsLeft(provider.resetSecs)}
-        unavailable={provider.usageUnavailable || provider.weeklyUnavailable}
-        unavailableDetail={unavailableDetail}
-        value={provider.weekly}
-      />
+    <UsageTileFrame
+      name={provider.label || provider.id}
+      status={
+        quiet ? (
+          <Loader2
+            aria-label="Updating"
+            className="size-3.5 animate-spin text-muted-foreground"
+            role="img"
+          />
+        ) : sessionReset ? (
+          <span className="text-muted-foreground">{sessionReset}</span>
+        ) : null
+      }
+    >
+      {provider.usageUnavailable ? (
+        <UsageSkeleton />
+      ) : (
+        <div className="grid gap-4">
+          {lines.map((line, index) => (
+            <UsageLineView
+              index={index}
+              key={line.key}
+              line={line}
+              mode={provider.usageMode}
+            />
+          ))}
+        </div>
+      )}
+      <UsageMetaGrid provider={provider} />
+      <TokenRow provider={provider} />
+    </UsageTileFrame>
+  );
+}
+
+// The tile for a provider where the customer must act first. No numbers.
+function UsageActionTile({
+  label,
+  name,
+  onAction,
+}: {
+  label: string;
+  name: string;
+  onAction: () => void;
+}) {
+  return (
+    <UsageTileFrame
+      name={name}
+      action={
+        <button
+          className="inline-flex items-center gap-1 font-semibold text-destructive hover:underline"
+          onClick={onAction}
+          type="button"
+        >
+          {label}
+          <ArrowUpRight aria-hidden className="size-3.5" />
+        </button>
+      }
+    >
+      <UsageSkeleton />
+    </UsageTileFrame>
+  );
+}
+
+function UsageTileFrame({
+  action,
+  children,
+  name,
+  status,
+}: {
+  action?: ReactNode;
+  children: ReactNode;
+  name: string;
+  status?: ReactNode;
+}) {
+  return (
+    <Card className="h-full min-h-[248px] [--card-spacing:--spacing(5)]">
+      <CardHeader>
+        <CardTitle className="flex flex-wrap items-baseline gap-x-2 break-words text-[13px] font-semibold">
+          {name}
+          {action}
+        </CardTitle>
+        {status ? (
+          <CardAction className="text-[13px]">{status}</CardAction>
+        ) : null}
+      </CardHeader>
+      <CardContent className="flex flex-1 flex-col">{children}</CardContent>
+    </Card>
+  );
+}
+
+// Stands in for numbers that are not there. Shape only, no text.
+function UsageSkeleton() {
+  return (
+    <div aria-hidden className="grid gap-3">
+      <Skeleton className="h-7 w-24" />
+      <Skeleton className="h-1.5 w-full" />
+      <div className="flex justify-between">
+        <Skeleton className="h-3 w-24" />
+        <Skeleton className="h-3 w-20" />
+      </div>
+      <Skeleton className="h-1.5 w-full" />
+      <Skeleton className="h-3 w-40" />
     </div>
   );
 }
 
-function UsageBar({
-  label,
-  mode,
-  resetSecs,
-  unavailable,
-  unavailableDetail,
-  value,
-}: {
+type UsageLine = {
+  key: string;
   label: string;
+  percent: number;
+  resetText: string | null;
+  unavailable: boolean;
+};
+
+function usageLines(
+  provider: UsageProviderInfo,
+  now: Date,
+  quiet: boolean,
+): UsageLine[] {
+  const resetText = (resetSecs?: number) => {
+    const left = remainingResetSecs(resetSecs, provider.collectedAt, now);
+    return !quiet && left ? formatReset(left) : null;
+  };
+  if (provider.windows?.length) {
+    return provider.windows.map((window) => ({
+      key: window.id,
+      label: window.label.toLowerCase(),
+      percent: clampPercent(window.usedPercent),
+      resetText: resetText(window.resetSecs),
+      unavailable: false,
+    }));
+  }
+  return [
+    {
+      key: "session",
+      label: "session",
+      percent: clampPercent(provider.session),
+      resetText: provider.sessionUnavailable ? null : resetText(provider.resetSecs),
+      unavailable: Boolean(provider.sessionUnavailable),
+    },
+    {
+      key: "weekly",
+      label: "weekly",
+      percent: clampPercent(provider.weekly),
+      resetText: provider.weeklyUnavailable ? null : resetText(provider.resetSecs),
+      unavailable: Boolean(provider.weeklyUnavailable),
+    },
+  ];
+}
+
+// The first line starts with the big number; its reset sits in the tile header.
+function UsageLineView({
+  index,
+  line,
+  mode,
+}: {
+  index: number;
+  line: UsageLine;
   mode?: string;
-  resetSecs?: number;
-  unavailable?: boolean;
-  unavailableDetail?: string;
-  value: number;
 }) {
-  const percent = clampPercent(value);
-  const detail = unavailableDetail || "Usage limits unavailable.";
-  return (
-    <div>
-      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm">
-        <span className="font-bold text-[#1B1B1B]">
-          {label}: {unavailable ? "??" : `${percent}% ${usageModeShortLabel(mode)}`}
-        </span>
-        {!unavailable && resetSecs ? (
-          <span className="ml-auto shrink-0 text-right font-semibold text-[#444933]">
-            {formatReset(resetSecs)}
-          </span>
-        ) : null}
+  if (line.unavailable) {
+    return (
+      <div aria-hidden className="grid gap-2">
+        <Skeleton className="h-3 w-24" />
+        <Skeleton className="h-1.5 w-full" />
       </div>
-      <Progress
-        aria-label={
-          unavailable
-            ? `${label}: ${detail}`
-            : `${label}: ${percent}% ${usageModeShortLabel(mode)}`
-        }
-        className="h-2"
-        value={unavailable ? null : percent}
-      />
-      {unavailable ? (
-        <p className="mt-1 text-xs font-semibold text-[#6A5B00]">{detail}</p>
-      ) : null}
+    );
+  }
+  const modeLabel = usageModeShortLabel(mode);
+  const text = `${line.percent}% ${line.label} ${modeLabel}`;
+  return (
+    <div className="grid gap-2">
+      {index === 0 ? (
+        <p className="text-[13px] text-muted-foreground">
+          <span className="text-[28px] leading-none font-semibold text-foreground">
+            {line.percent}%
+          </span>{" "}
+          {line.label} {modeLabel}
+        </p>
+      ) : (
+        <div className="flex items-baseline justify-between gap-4 text-[13px] text-foreground">
+          <span>{text}</span>
+          {line.resetText ? (
+            <span className="shrink-0 text-muted-foreground">{line.resetText}</span>
+          ) : null}
+        </div>
+      )}
+      <Progress aria-label={text} className="h-1.5" value={line.percent} />
     </div>
   );
 }
 
 function TokenRow({ provider }: { provider: UsageProviderInfo }) {
-  const items = [
-    ["Session", provider.sessionTokens],
-    ["Week", provider.weekTokens],
-    ["Total", provider.totalTokens],
-  ].filter(([, value]) => typeof value === "number" && value > 0);
+  const parts = [
+    provider.totalTokens ? `${formatTokenCount(provider.totalTokens)} total` : null,
+    provider.weekTokens ? `${formatTokenCount(provider.weekTokens)} this week` : null,
+  ].filter(Boolean);
 
-  if (items.length === 0) {
+  if (parts.length === 0) {
     return null;
   }
 
   return (
-    <div className="mt-auto pt-5">
-      <h4 className="mb-3 text-sm font-bold text-foreground">Token usage</h4>
-      <dl className="grid gap-3 sm:grid-cols-3">
-        {items.map(([label, value]) => (
-          <div className="min-w-0" key={label}>
-            <dt className="text-xs font-bold uppercase text-[#506600]">
-              {label}
-            </dt>
-            <dd className="mt-1 break-words text-sm font-semibold text-[#1B1B1B]">
-              {formatTokenCount(value as number)}
-            </dd>
-          </div>
-        ))}
-      </dl>
-    </div>
+    <p className="mt-auto pt-5 text-[13px] text-muted-foreground">
+      {parts.join(" · ")}
+    </p>
   );
 }
 
@@ -609,58 +736,13 @@ function UsageMetaGrid({ provider }: { provider: UsageProviderInfo }) {
     <dl className="mt-5 grid gap-3 sm:grid-cols-3">
       {items.map(([label, value]) => (
         <div className="min-w-0" key={label}>
-          <dt className="text-xs font-bold uppercase text-[#506600]">
-            {label}
-          </dt>
-          <dd className="mt-1 break-words text-sm font-semibold text-[#1B1B1B]">
+          <dt className="text-[13px] text-muted-foreground">{label}</dt>
+          <dd className="mt-1 break-words text-[13px] text-foreground">
             {value}
           </dd>
         </div>
       ))}
     </dl>
-  );
-}
-
-function UsageWindowBar({
-  mode,
-  resetSecs,
-  unavailable,
-  unavailableDetail,
-  window,
-}: {
-  mode?: string;
-  resetSecs: number;
-  unavailable?: boolean;
-  unavailableDetail?: string;
-  window: UsageWindowInfo;
-}) {
-  const percent = clampPercent(window.usedPercent);
-  const detail = unavailableDetail || "Usage limits unavailable.";
-  return (
-    <div>
-      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm">
-        <span className="font-bold text-[#1B1B1B]">
-          {window.label}: {unavailable ? "??" : `${percent}% ${usageModeShortLabel(mode)}`}
-        </span>
-        {!unavailable && resetSecs ? (
-          <span className="ml-auto shrink-0 text-right font-semibold text-[#444933]">
-            {formatReset(resetSecs)}
-          </span>
-        ) : null}
-      </div>
-      <Progress
-        aria-label={
-          unavailable
-            ? `${window.label}: ${detail}`
-            : `${window.label}: ${percent}% ${usageModeShortLabel(mode)}`
-        }
-        className="h-2"
-        value={unavailable ? null : percent}
-      />
-      {unavailable ? (
-        <p className="mt-1 text-xs font-semibold text-[#6A5B00]">{detail}</p>
-      ) : null}
-    </div>
   );
 }
 
@@ -797,16 +879,6 @@ function providerHasCost(provider: UsageProviderInfo): boolean {
   );
 }
 
-function providerHasTokenEvidence(provider: UsageProviderInfo): boolean {
-  return providerHasTokens(provider) || providerHasCost(provider);
-}
-
-function quotaUnavailableDetail(provider: UsageProviderInfo): string {
-  return provider.stale
-    ? "Usage limits are stale."
-    : "Usage limits unavailable.";
-}
-
 function normalizeTokenHistory(days: UsageCostDay[]) {
   return days
     .filter(
@@ -900,14 +972,6 @@ function buildProviderTokenChart(
   );
 
   return { chartConfig, chartData, series };
-}
-
-function StatusPill({ children }: { children: ReactNode }) {
-  return (
-    <Badge className="min-h-6 uppercase" variant="secondary">
-      {children}
-    </Badge>
-  );
 }
 
 function clampPercent(value: number): number {

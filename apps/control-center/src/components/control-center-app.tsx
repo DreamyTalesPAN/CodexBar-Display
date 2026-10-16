@@ -154,7 +154,11 @@ import {
   type ThemeStudioInstallPayload,
 } from "./theme-studio-screen";
 import { UpdatesScreen } from "./updates-screen";
-import { UsageScreen, usageTokenHistoryUnavailableOnVibeTV } from "./usage-screen";
+import {
+  UsageScreen,
+  usageProviderActionsFor,
+  usageTokenHistoryUnavailableOnVibeTV,
+} from "./usage-screen";
 import { WhatsNewDialog } from "./whats-new-dialog";
 import {
   startUsageSurfacePolling,
@@ -5582,6 +5586,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             busyAction={busyAction}
             companionStatus={companionStatus}
             onRefresh={() => refreshUsage()}
+            providerActions={usageProviderActionsFor(providerPreferences, {
+              onOpenSettings: () => setActiveTab("settings"),
+              onSignIn: providerSignInEnabled
+                ? (item) => void openProviderSignIn(item)
+                : () => setActiveTab("settings"),
+            })}
             usage={usage}
             usageError={errorForHost(usageError, windowsHost)}
             windowsHost={windowsHost}
