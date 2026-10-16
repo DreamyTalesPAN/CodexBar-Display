@@ -7455,6 +7455,19 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test, `apps/control-center/scripts/check-customer-ui-copy.mjs`, `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — simpler popup wording, no new capability
 
+## 2026-10-16 — Boxes on Appearance › Themes use the design-system radius
+- User approval: Paul ordered on 2026-10-16 (via the review orchestrator) that boxes, cards and dialogs use the design-system radius token; a pure design-system correction, no new approval needed; he will see before/after in his test.
+- Approved customer-visible result: On Appearance › Themes, the "Continue your unsaved theme" box (Discard/Resume) and the "Theme is not available" notice get the card radius (`--radius-card`, 0.75rem) that Card and Alert already use, instead of square corners. Layout, colors, wording and buttons stay the same. A sweep of `apps/control-center/src` found no other box, card, banner, dialog or panel without a radius or with a hard-coded one; theme render previews and the VibeTV device mockup stay as they are.
+- Scope: `RecoveryCard` and `MissingRequestedThemeNotice` in `apps/control-center/src/components/theme-library-screen.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a design-system correction of two boxes
+
+## 2026-10-16 — Merge of main (#648, #667) into #665
+
+- User approval: none needed for this entry; it records only the merge of main into `claude/ui-radius-tokens`, no visible change of this PR; not seen by Paul.
+- Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
+- What's new: none — merge of main, no customer-visible change of its own
+
 ## 2026-10-16 — Usage: calm tiles, action tiles and no Check again (#644 follow-up)
 
 - User approval: Paul chose on 2026-10-16 (via the review orchestrator) Claude Design page "Control Center Redesign" 644, "3A + 4A + 5B (weekly: number first), Paul 16.10."; he has not yet seen this build.
@@ -7639,3 +7652,10 @@ issue scope, or release permission never implies UI permission.
   The provider overlay (frame 3A) opens only for looks 3 and 4. A setup need uses the sign-in copy and its "Sign in to <Provider>" button.
 - Scope: `setup/setup-provider-row.tsx` and its test (the seven looks; the unused message helper removed), `setup/setup-providers-screen.tsx` and its test (the dialog opens by itself only for looks 3 and 4), `usage-screen.tsx` and its test (action labels, no tile for looks 6 and 7), `provider-action-dialog.tsx` and its test (setup need uses the sign-in copy), `control-center-app.tsx` (the hidden-tile list), `control-center-app.display-preferences.test.tsx`, `scripts/test-customer-flows.mjs` (the row names and the dialog expectation for looks 5 and 6), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — the approved states overview, no new release note
+
+## 2026-10-16 — Usage: no loading line beside a provider action (#669)
+
+- User approval: Paul approved the Usage tiles and the provider looks on 2026-10-16 (entries above, via the review orchestrator); this follow-up applies a Codex review finding and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: While usage is still loading, a provider that needs the customer shows its action tile (as in the entries above) and not the "Loading usage" line beside it. No new wording.
+- Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the Usage tiles, no customer-visible change of its own
