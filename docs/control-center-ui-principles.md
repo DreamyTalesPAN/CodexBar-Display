@@ -39,9 +39,11 @@ This is the customer-facing design standard for VibeTV Control Center. The targe
    to fix` and `Create support report`. The Control Center shell and navigation
    stay hidden for the whole wizard.
    In setup and Settings, a provider that needs a sign-in the app can start
-   shows only "Sign in to <Provider>" and a circular arrow, replacing its
-   switch, warning and retry controls (product-owner design, 2026-10-13).
-   After sign-in, automatic checks restore the normal switch when ready.
+   shows "Sign in to <Provider>" and a circular arrow beside its switch,
+   replacing its warning and retry controls (product-owner design, 2026-10-13;
+   the switch stays beside it, product-owner decision 2026-10-16), so it can be
+   switched off without signing in. After sign-in, automatic checks restore
+   the normal row when ready.
    Other provider states keep their switch and the relevant help action.
    Only providers that can actually produce a reading reach the display step.
 4. Every launch stays in the wizard until the selected VibeTV is connected,
