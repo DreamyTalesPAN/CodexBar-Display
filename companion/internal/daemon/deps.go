@@ -12,6 +12,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/systemload"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/timeline"
 )
 
@@ -38,6 +39,9 @@ type runtimeDeps struct {
 	newSelector           func() *codexbar.ProviderSelector
 	logf                  func(string, ...any)
 	record                func(timeline.Event)
+	reportSystemBusy      func(*SystemBusy)
+	currentSystemBusy     func() *SystemBusy
+	readSystemLoad        func() (systemload.Figures, error)
 	homeDir               func() (string, error)
 	loadConfig            func(string) (runtimeconfig.Config, error)
 	saveConfig            func(string, runtimeconfig.Config) error
@@ -96,6 +100,9 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 	}
 	if d.logf == nil {
 		d.logf = defaultRuntimeLogf
+	}
+	if d.readSystemLoad == nil {
+		d.readSystemLoad = systemload.Read
 	}
 	if d.homeDir == nil {
 		d.homeDir = os.UserHomeDir
