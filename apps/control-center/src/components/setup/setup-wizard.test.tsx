@@ -104,6 +104,34 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
   };
 }
 
+// Windows walk-through of #642: a signed-out Codex stayed first in the saved
+// selection. Manual then previewed "No usage yet" and Continue stayed locked,
+// although Claude was the one provider listed under "Show this provider".
+describe("SetupWizard: display step with a saved provider that shows nothing", () => {
+  it("falls back to the first provider that can show usage", async () => {
+    const props = baseProps({
+      automaticPreviews: [
+        { providerLabel: "Claude", resetLabel: null, windows: [{ label: "Session", percent: 37 }] },
+      ],
+      displayMode: "fixed",
+      displayProviderId: "codex",
+      displayProviders: [{ id: "claude", label: "Claude" }],
+    });
+    render(<SetupWizard {...props} />);
+
+    expect(screen.queryByText("No usage yet")).toBeNull();
+    const continueButton = screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement;
+    expect(continueButton.disabled).toBe(false);
+    await act(async () => {
+      fireEvent.click(continueButton);
+    });
+    expect(props.onDisplayContinue).toHaveBeenCalledWith({
+      mode: "fixed",
+      providerIds: ["claude"],
+    });
+  });
+});
+
 describe("SetupWizard: live step (issue #611)", () => {
   it("offers no Back and does not finish before the preview is ready", () => {
     const props = baseProps({ step: "live" });

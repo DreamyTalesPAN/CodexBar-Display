@@ -975,8 +975,15 @@ export function SetupWizard(props: SetupWizardProps) {
 
   if (step === "display") {
     const displayMode = displayDraft?.mode ?? props.displayMode;
-    const displayProviderId =
-      displayDraft?.providerId ?? props.displayProviderId;
+    // The saved selection can name a provider that shows nothing, such as a
+    // signed-out Codex listed first. Keeping it left Manual on "No usage yet"
+    // with Continue locked; Settings already falls back the same way.
+    const savedProviderId = displayDraft?.providerId ?? props.displayProviderId;
+    const displayProviderId = props.displayProviders.some(
+      (provider) => provider.id === savedProviderId,
+    )
+      ? savedProviderId
+      : (props.displayProviders[0]?.id ?? null);
     return (
       <>
         <SetupDisplayModeScreen
