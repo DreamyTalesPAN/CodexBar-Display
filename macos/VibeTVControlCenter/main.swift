@@ -1958,6 +1958,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     // The window's own update prompt came while the launch check still ran;
     // it runs as soon as that check is done (#570).
     private var backgroundUpdateCheckPending = false
+    // Set while the probing check from the window's update prompt runs (#570).
+    private var updateInformationProbe = false
     private var launchUpdateTurnedDown = false
     // Creating the controller starts Sparkle, which may show an overdue
     // scheduled check at once. A launch check skipped for a running VibeTV
@@ -2963,7 +2965,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             return
         }
         updaterStarted = true
-        updaterController.updater.checkForUpdatesInBackground()
+        // A probing check only reports whether an update exists, and Sparkle's
+        // background check may hold a found update back (gentle reminders)
+        // without any alert. The delegate starts the visible check when the
+        // probe finds an update, so a customer sees the update, never
+        // "You're up to date" mid-setup (#570).
+        updateInformationProbe = true
+        updaterController.updater.checkForUpdateInformation()
 #endif
     }
 
@@ -5573,7 +5581,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 }
 
 #if canImport(Sparkle)
-extension AppDelegate: SPUUpdaterDelegate {}
+extension AppDelegate: SPUUpdaterDelegate {
+    func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
+        guard updateInformationProbe else {
+            return
+        }
+        updateInformationProbe = false
+        // The probe is still finishing; the visible check starts after it.
+        DispatchQueue.main.async {
+            updater.checkForUpdates()
+        }
+    }
+
+    func updaterDidNotFindUpdate(_ updater: SPUUpdater) {
+        updateInformationProbe = false
+    }
+
+    func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
+        updateInformationProbe = false
+    }
+}
 #endif
 
 #if VIBETV_CONTROL_CENTER_TESTING
