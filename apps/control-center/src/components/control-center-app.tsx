@@ -5804,7 +5804,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         />
       ) : null}
       {systemBusyOpen ? <SystemBusyDialog onClose={dismissSystemBusy} /> : null}
-      {providerActionShown ? (
+      {providerActionShown && companionStatus === "online" ? (
         <ProviderActionDialog
           action={providerActionShown.action}
           error={providerPreferencesError}

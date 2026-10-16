@@ -111,7 +111,16 @@ export function ProviderActionDialog({
         }
       }}
       open
-      primaryAction={{ label: providerActionPrimary(action), onSelect: action.onAction }}
+      primaryAction={{
+        label: providerActionPrimary(action),
+        // Settings opens over the overlay, so the overlay goes with the click.
+        onSelect: () => {
+          action.onAction();
+          if (action.inSettings) {
+            onDismiss();
+          }
+        },
+      }}
       secondaryAction={{ label: "Not now", onSelect: onDismiss }}
       title={copy.title}
     />

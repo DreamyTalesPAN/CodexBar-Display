@@ -63,6 +63,8 @@ export type UsageProviderAction = {
   name: string;
   /** The health state that asks for the action (after the setup row's rule). */
   state: string;
+  /** The action opens Settings, so nothing is left to finish here. */
+  inSettings?: boolean;
   label: string;
   onAction: () => void;
 };
@@ -285,6 +287,7 @@ export function usageProviderActionsFor(
             {
               name: item.label,
               state: providerRowHealthState(item.health),
+              inSettings: !signIn,
               label,
               onAction: signIn ? () => onSignIn(item) : onOpenSettings,
             },

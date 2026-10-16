@@ -14,8 +14,12 @@ import type { UsageProviderAction } from "./usage-screen";
 
 afterEach(cleanup);
 
-const claude = (state = "auth_required", onAction = vi.fn()): Record<string, UsageProviderAction> => ({
-  claude: { name: "Claude", state, label: "Sign in needed", onAction },
+const claude = (
+  state = "auth_required",
+  onAction = vi.fn(),
+  inSettings = false,
+): Record<string, UsageProviderAction> => ({
+  claude: { name: "Claude", state, inSettings, label: "Sign in needed", onAction },
 });
 
 function Overlay({
@@ -65,6 +69,14 @@ it("keeps the sign-in action open for the sign-in to finish", () => {
   fireEvent.click(screen.getByRole("button", { name: "Sign in to Claude" }));
   expect(onAction).toHaveBeenCalledTimes(1);
   expect(dialog("Claude needs a new sign-in")).not.toBeNull();
+});
+
+it("closes when its primary action opens Settings", () => {
+  const onAction = vi.fn();
+  render(<Overlay actions={claude("permission_required", onAction, true)} />);
+  fireEvent.click(screen.getByRole("button", { name: "Open AI providers" }));
+  expect(onAction).toHaveBeenCalledTimes(1);
+  expect(dialog("Claude needs access")).toBeNull();
 });
 
 it("uses the permission and setup texts for those states", () => {
