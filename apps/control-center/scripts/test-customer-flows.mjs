@@ -11584,7 +11584,7 @@ async function routeCompanionOnline(
           ...(!ready
             ? {
                 nextAction:
-                  "Open provider setup, sign in again, then check this provider.",
+                  "Open provider setup, sign in again.",
               }
             : {}),
         };

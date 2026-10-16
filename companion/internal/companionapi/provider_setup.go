@@ -807,7 +807,7 @@ func providerDiagnosticCheck(setup codexbar.ProviderSetup) diagnosticCheck {
 		Status:     "attention",
 		Detail:     "No AI provider is delivering usage data yet.",
 		ErrorCode:  "provider_setup_required",
-		NextAction: "Open provider setup, connect a provider, then click Check again.",
+		NextAction: "Open provider setup, connect a provider.",
 	}
 	if len(setup.Providers) > 0 {
 		provider := setup.Providers[0]

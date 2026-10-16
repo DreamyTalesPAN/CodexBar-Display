@@ -1839,7 +1839,7 @@ func TestProviderPermissionCopyNamesTheHostSystem(t *testing.T) {
 	if got := providerReadinessMessage(codexbar.ProviderPermissionRequired); got != "macOS blocked access required by this provider." {
 		t.Fatalf("macOS message = %q", got)
 	}
-	if got := providerReadinessNextAction(codexbar.ProviderPermissionRequired); got != "Allow the required macOS access, then check this provider." {
+	if got := providerReadinessNextAction(codexbar.ProviderPermissionRequired); got != "Allow the required macOS access." {
 		t.Fatalf("macOS next action = %q", got)
 	}
 

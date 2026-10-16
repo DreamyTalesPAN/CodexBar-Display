@@ -205,7 +205,7 @@ func TestSetupLogRecordsProviderChoicesChecksAndDisplayMode(t *testing.T) {
 		defer close(probeDone)
 		return codexbar.ProviderSetup{Status: "setup_required", Providers: []codexbar.ProviderReadiness{{
 			ID: id, Label: "Claude", Status: codexbar.ProviderAuthRequired,
-			Detail: "This provider needs an active sign-in.", NextAction: "Open provider setup, sign in again, then check this provider.",
+			Detail: "This provider needs an active sign-in.", NextAction: "Open provider setup, sign in again.",
 		}}}
 	}
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
@@ -242,7 +242,7 @@ func TestSetupLogRecordsProviderChoicesChecksAndDisplayMode(t *testing.T) {
 
 	want := []setupEvent{
 		{Stage: "provider_choice", Status: "succeeded", Message: "Claude turned on."},
-		{Stage: "provider_check", Status: "failed", Message: "Claude: This provider needs an active sign-in.", Code: codexbar.ProviderAuthRequired, NextAction: "Open provider setup, sign in again, then check this provider."},
+		{Stage: "provider_check", Status: "failed", Message: "Claude: This provider needs an active sign-in.", Code: codexbar.ProviderAuthRequired, NextAction: "Open provider setup, sign in again."},
 		{Stage: "display_mode", Status: "failed", Message: "Always show needs one provider.", Code: "provider_display_fixed_invalid", NextAction: "Choose exactly one provider to show."},
 		{Stage: "display_mode", Status: "succeeded", Message: "Always show Codex."},
 		{Stage: "provider_choice", Status: "succeeded", Message: "Claude turned off."},

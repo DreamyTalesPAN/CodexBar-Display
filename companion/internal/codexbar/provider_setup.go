@@ -937,7 +937,7 @@ func providerResultWithSignIn(id, status, signInURL string) ProviderReadiness {
 		result.NextAction = "Open provider setup and connect an AI provider."
 	default:
 		result.Detail = "The usage service could not read this provider."
-		result.NextAction = "Check this provider, then try again."
+		result.NextAction = "Wait a moment."
 	}
 	return result
 }

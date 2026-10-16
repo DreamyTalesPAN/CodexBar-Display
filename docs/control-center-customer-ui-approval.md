@@ -7494,3 +7494,20 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Diagnostics keeps its usage engine sentence "Repair the usage engine, then check again." (Run diagnostics stays the customer's own check). The setup log entry for the usage engine reads "Repair the usage engine." instead, as in the entry above. Nothing else changes.
 - Scope: `companion/internal/companionapi/setup_events.go` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — the same Diagnostics wording, the setup log wording shortened
+
+## 2026-10-16 — Remaining provider and diagnostics next steps drop the check tail
+- User approval: follows Paul's rule of 2026-10-16 "no Check again — the app re-checks by itself" (via the review orchestrator); the exact sentences are shown to him for approval on 2026-10-17.
+- Approved customer-visible result: The next steps below no longer tell the customer to check or click Check again; each keeps the rest of its sentence. The app re-checks by itself. Before → after:
+  - "Open provider setup, sign in again, then check this provider." → "Open provider setup, sign in again."
+  - "Sign in to this provider in your browser, close the browser, then check this provider." → "Sign in to this provider in your browser, close the browser."
+  - "Allow the required access, then check this provider." → "Allow the required access."
+  - "Allow the required macOS access, then check this provider." → "Allow the required macOS access."
+  - "Wait a moment, then check this provider again." → "Wait a moment."
+  - "Repair the usage service, then check this provider again." → "Repair the usage service."
+  - "Check this provider, then try again." (provider the usage service could not read; nothing to do but wait for the app's own re-check) → "Wait a moment."
+  - "Open provider setup, connect a provider, then click Check again." (Diagnostics check row) → "Open provider setup, connect a provider."
+  - "Finish AI setup in the Mac App, then click Check again." (Diagnostics check row) → "Finish AI setup in the Mac App."
+  - "Finish AI setup in the app, then click Check again." (same row on Windows) → "Finish AI setup in the app."
+  Not changed: the Diagnostics "Run diagnostics" wording and the engine sentence "Repair the usage engine, then check again." (see the entries above).
+- Scope: `companion/internal/codexbar/provider_setup.go`, `companion/internal/companionapi/preferences.go`, `companion/internal/companionapi/preferences_test.go`, `companion/internal/companionapi/provider_setup.go`, `companion/internal/companionapi/diagnostics.go`, `companion/internal/companionapi/setup_events_test.go`, `apps/control-center/src/lib/customer-platform.test.ts`, `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — copy only: the same next steps without the check tail, no new capability

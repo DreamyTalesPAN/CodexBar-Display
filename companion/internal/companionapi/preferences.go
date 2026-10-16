@@ -1043,24 +1043,24 @@ func providerReadinessNextAction(status string) string {
 	case codexbar.ProviderReady:
 		return ""
 	case codexbar.ProviderAuthRequired:
-		return "Open provider setup, sign in again, then check this provider."
+		return "Open provider setup, sign in again."
 	case codexbar.ProviderBrowserSignInRequired:
-		return "Sign in to this provider in your browser, close the browser, then check this provider."
+		return "Sign in to this provider in your browser, close the browser."
 	case codexbar.ProviderPermissionRequired:
 		if providerCopyGOOS == "windows" {
-			return "Allow the required access, then check this provider."
+			return "Allow the required access."
 		}
-		return "Allow the required macOS access, then check this provider."
+		return "Allow the required macOS access."
 	case codexbar.ProviderUnsupported:
 		return "Read the provider message, then switch this provider off and use another one."
 	case codexbar.ProviderNoUsageAvailable:
 		return "Use this provider once or connect an account with usage."
 	case codexbar.ProviderTimeout:
-		return "Wait a moment, then check this provider again."
+		return "Wait a moment."
 	case codexbar.ProviderRateLimited:
 		return codexbar.RateLimitedNextAction
 	case codexbar.ProviderConfigError, codexbar.ProviderEngineError:
-		return "Repair the usage service, then check this provider again."
+		return "Repair the usage service."
 	case codexbar.ProviderEngineIncompatible:
 		return "Repair the usage engine."
 	default:

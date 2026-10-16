@@ -67,7 +67,7 @@ describe("the runtime's sentences in the Windows app", () => {
     ["Mac App update is available.", "App update is available."],
     ["Mac App check failed.", "App check failed."],
     // Diagnostics checks.
-    ["Finish AI setup in the Mac App, then click Check again.", "Finish AI setup in the app, then click Check again."],
+    ["Finish AI setup in the Mac App.", "Finish AI setup in the app."],
     ["Keep VibeTV powered on and connected to the same WiFi as this Mac.", "Keep VibeTV powered on and connected to the same WiFi as this computer."],
     ["Keep the Mac App running until VibeTV receives a usage frame.", "Keep the app running until VibeTV receives a usage frame."],
   ])("%s", (mac, windows) => {
@@ -80,7 +80,7 @@ describe("the runtime's sentences in the Windows app", () => {
   const keepsTheMac = [
     "macOS blocked access required by this provider.",
     "Allow the requested macOS permission.",
-    "Allow the required macOS access, then check this provider.",
+    "Allow the required macOS access.",
     "Finish installing the Mac App in Applications.",
     "Mac setup binary installed",
     "Keep only one VibeTV Companion daemon running for this macOS user.",
