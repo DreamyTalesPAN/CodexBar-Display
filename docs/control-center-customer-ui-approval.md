@@ -7371,3 +7371,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: While the Mac App is not reachable, no action tile is shown and the "Mac App needs setup." message stands alone. "Setup needed" starts the same sign-in as the setup row for the providers the Companion can sign in (Codex, Claude, Cursor, Antigravity) and opens Settings for the others. No new element, no new wording; this fix is not seen by Paul yet.
 - Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — review fix to the Usage tiles, no customer-visible change of its own
+
+## 2026-10-16 — Usage tiles: a stale provider with a sign-in need keeps its numbers (#669)
+
+- User approval: none yet for this combination. The calm Usage tiles were approved by Paul on 2026-10-16 (entry above, via the review orchestrator); this follow-up applies a Codex review finding that the orchestrator must put to Paul before merge.
+- Approved customer-visible result: For a provider whose reading is stale and that needs sign-in, the tile shows its last good numbers with the red action link after the name, instead of the placeholder shape. Frame 5B shows the link only with the placeholder shape, so this combination is not yet approved. Wording stays the same; not seen by Paul yet.
+- Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the Usage tiles, no customer-visible change of its own

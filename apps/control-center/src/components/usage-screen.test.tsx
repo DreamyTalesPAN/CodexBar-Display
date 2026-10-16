@@ -603,6 +603,24 @@ describe("UsageScreen", () => {
     expect(html).not.toContain('aria-label="Updating"');
   });
 
+  it("keeps a stale provider's numbers beside its action", () => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="online"
+        providerActions={{
+          codex: { name: "Codex", label: "Sign in needed", onAction: vi.fn() },
+        }}
+        usage={{
+          ...usage,
+          providers: [{ ...usage.providers[0], session: 45, weekly: 26, stale: true, usageUnavailable: true }],
+        }}
+      />,
+    );
+    expect(html).toContain("Sign in needed");
+    expect(html).toContain('aria-label="45% session used"');
+    expect(html).not.toContain("Reset in");
+  });
+
   it("drops action tiles while the Mac App is not reachable", () => {
     const html = renderToStaticMarkup(
       <UsageScreen
