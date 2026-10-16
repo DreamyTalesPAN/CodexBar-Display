@@ -427,9 +427,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   >(null);
   const [providerPreferencesError, setProviderPreferencesError] =
     useState<ApiError | null>(null);
-  // A failed sign-in start, for the provider overlay that asked for it.
+  // A failed sign-in start, for the overlay of that provider and state only.
   const [providerSignInFailure, setProviderSignInFailure] = useState<{
     providerId: string;
+    state: string;
     error: ApiError;
   } | null>(null);
   const [providerDisplay, setProviderDisplay] =
@@ -3642,7 +3643,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           `The ${item.label} sign-in could not be started.`,
         );
         setProviderPreferencesError(failure);
-        setProviderSignInFailure({ providerId, error: failure });
+        setProviderSignInFailure({
+          providerId,
+          state: item.health ? providerRowHealthState(item.health) : "",
+          error: failure,
+        });
         return;
       }
       const followUps = providerSignInFollowUpsRef.current;
@@ -5810,17 +5815,22 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         />
       ) : null}
       {systemBusyOpen ? <SystemBusyDialog onClose={dismissSystemBusy} /> : null}
-      {providerActionShown && companionStatus === "online" ? (
+      {providerActionShown && companionStatus === "online" && !setupOwnsScreen ? (
         <ProviderActionDialog
           action={providerActionShown.action}
-          // Only a failed start for this provider belongs in its dialog.
+          // Only a failed start for this provider and state belongs in its dialog.
           error={
-            providerSignInFailure?.providerId ===
-            providerActionShown.id.trim().toLowerCase()
+            providerSignInFailure &&
+            providerSignInFailure.providerId ===
+              providerActionShown.id.trim().toLowerCase() &&
+            providerSignInFailure.state === providerActionShown.action.state
               ? providerSignInFailure.error
               : null
           }
-          onDismiss={dismissProviderAction}
+          onDismiss={() => {
+            setProviderSignInFailure(null);
+            dismissProviderAction();
+          }}
         />
       ) : null}
       {setupAgainRequested ? (
