@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 func aiTestCompanionSheet() string {
@@ -164,6 +165,34 @@ func TestNewCompanionsThatNeverComeOutCleanLeaveAStillPicture(t *testing.T) {
 	result, err := s.aiTheme.createCompanionConcept(context.Background(), "fixture", aiThemeConceptRequest{Prompt: "A forest with a fox and a bird"}, nil)
 	if err != nil || images != 1+2*(1+companionSheetRepairs) || len(result.Companions) != 0 || result.ImageBase64 != aiTestPNG() || result.Style.AnimationMode != "static" || result.Style.AnimationPrompt != "" {
 		t.Fatalf("wanted the still picture after %d calls: %v %#v %q", images, err, result.Companions, result.Style.AnimationMode)
+	}
+}
+
+func TestCompanionRepairThatRunsOutOfTimeKeepsTheDesign(t *testing.T) {
+	budget := companionRepairBudget
+	companionRepairBudget = 0
+	t.Cleanup(func() { companionRepairBudget = budget })
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	style, pets := companionPlanFixture(2)
+	images := 0
+	s := aiTestServer(t, aiRoundTrip(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == "/v1/responses" {
+			return autoTextResponse(map[string]any{"style": style, "companions": pets}), nil
+		}
+		images++
+		if images == 1 {
+			return aiResponse(200, `{"data":[{"b64_json":"`+aiTestCompanionSheetWithMatte(color.NRGBA{109, 63, 32, 255})+`"}]}`), nil
+		}
+		// The repair outlives the request deadline.
+		<-r.Context().Done()
+		return nil, r.Context().Err()
+	}))
+	previous := &aiThemePreviousConcept{Style: style, ImageBase64: aiTestPNG(), ImageContentType: "image/png", Companions: []aiCompanion{{ID: "pet-1", X: 20, Y: 40, Size: 32, FPS: 4, FrameCount: 8, KeyColor: "#FF00FF", SheetBase64: aiTestCompanionSheet()}}}
+	bg, _ := validateConceptImage(aiTestPNG(), "image/png")
+	result, err := s.aiTheme.createCompanionConcept(ctx, "fixture", aiThemeConceptRequest{Prompt: "Make the fox pink and add a bird", Previous: previous}, bg)
+	if err != nil || images != 2 || result.ImageBase64 != previous.ImageBase64 || len(result.Companions) != 1 || !result.Companions[0].Reuse || result.Companions[0].SheetBase64 != previous.Companions[0].SheetBase64 {
+		t.Fatalf("wanted the design with the previous fox after %d calls: %v %#v", images, err, result.Companions)
 	}
 }
 
