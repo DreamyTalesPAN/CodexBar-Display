@@ -63,6 +63,8 @@ type cycleResult struct {
 	// resetBasisAt is when the reset deadline in frame was collected. It is the
 	// anchor the device-facing freshness fields are derived from.
 	resetBasisAt time.Time
+	// systemBusy puts SystemBusyLabel in place of the provider name.
+	systemBusy bool
 }
 
 func ensureCycleState(state *runtimeState, deps runtimeDeps) *runtimeState {
@@ -185,6 +187,7 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 		}
 	}
 
+	result.systemBusy = collector.isSystemBusy()
 	attachFirmwareUpdateState(ctx, state, deps, caps, &result)
 	return sendCycleResult(ctx, port, caps, maxFrameBytes, state, deps, result)
 }
