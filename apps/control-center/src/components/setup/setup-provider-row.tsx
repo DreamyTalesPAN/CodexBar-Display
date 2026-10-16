@@ -156,34 +156,34 @@ export function SetupProviderRow({
             </span>
           </Button>
         ) : (
-          <>
-            {variant === "checking" ? (
-              <Spinner />
-            ) : variant === "toggle" ? null : (
-              <>
-                <SetupProviderRowAction
-                  icon={TriangleAlert}
-                  label={`Show provider message for ${label}`}
-                  onClick={onShowIssue}
-                />
-                {variant === "stale" || variant === "unsupported" ? null : checking ? (
-                  <>
-                    <span className="sr-only">Checking {label}…</span>
-                    <Spinner />
-                  </>
-                ) : (
-                  checkAgain
-                )}
-              </>
-            )}
-            <Switch
-              aria-label={label}
-              checked={enabled}
-              disabled={saving}
-              onCheckedChange={onToggle}
-            />
-          </>
+          variant === "checking" ? (
+            <Spinner />
+          ) : variant === "toggle" ? null : (
+            <>
+              <SetupProviderRowAction
+                icon={TriangleAlert}
+                label={`Show provider message for ${label}`}
+                onClick={onShowIssue}
+              />
+              {variant === "stale" || variant === "unsupported" ? null : checking ? (
+                <>
+                  <span className="sr-only">Checking {label}…</span>
+                  <Spinner />
+                </>
+              ) : (
+                checkAgain
+              )}
+            </>
+          )
         )}
+        {/* Always there, also beside a sign-in: a provider switched on by
+            mistake must be switchable off without signing in first (#647). */}
+        <Switch
+          aria-label={label}
+          checked={enabled}
+          disabled={saving}
+          onCheckedChange={onToggle}
+        />
       </ItemActions>
     </Item>
   );
