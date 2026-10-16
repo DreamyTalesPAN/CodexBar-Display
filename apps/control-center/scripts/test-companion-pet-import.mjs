@@ -17,7 +17,6 @@ try{
   assert(samples.size>3,'Imported sprite animation does not advance');
   await page.screenshot({path:path.join(dir,'editor.png'),fullPage:true});
   await page.getByRole('button',{name:'More options',exact:true}).click();
-  await page.locator('summary').filter({hasText:'Import & export'}).click();
   const download=page.waitForEvent('download');await page.getByRole('button',{name:'Download editable design',exact:true}).click();await(await download).saveAs(path.join(dir,'roundtrip.json'));
   const original=JSON.parse(await fs.readFile(path.join(dir,'design.json'))),actual=JSON.parse(await fs.readFile(path.join(dir,'roundtrip.json')));
   assert.deepEqual(actual.assets,original.assets,'Asset content changed on roundtrip');

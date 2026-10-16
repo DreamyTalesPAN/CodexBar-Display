@@ -91,11 +91,11 @@ try {
   await input.waitFor();
   assert.equal(await page.getByRole("textbox").count(),2,"Name and input are visible before connecting");
   assert.equal(await page.getByRole("button",{name:"More options",exact:true}).count(),0);
-  await page.getByRole("button",{name:"Design settings",exact:true}).click();
-  const settings=page.getByRole("dialog",{name:"Settings",exact:true});
+  await page.getByRole("button",{name:"File",exact:true}).click();
+  const settings=page.getByRole("menu");
   assert.equal(await settings.getByRole("textbox").count(),0,"First key entry belongs to the creation flow");
-  await settings.getByRole("button",{name:"New design",exact:true}).waitFor();
-  await settings.getByRole("button",{name:"Open saved design",exact:true}).waitFor();
+  await settings.getByRole("menuitem",{name:"New design",exact:true}).waitFor();
+  await settings.getByRole("menuitem",{name:"Open saved design…",exact:true}).waitFor();
   await page.keyboard.press("Escape");
   for(const label of ["Animate scene","Adjust scene motion","Update animation","Edit whole scene","Find motion area with AI","Set up AI"]){
     assert.equal(await page.getByRole("button",{name:label,exact:true}).count(),0);
@@ -134,18 +134,6 @@ try {
   await page.getByLabel("Your idea",{exact:true}).waitFor({state:"visible"});
   assert.equal(await page.getByRole("textbox").count(),2);
   console.log("PASS connection diagnostics, retry without re-pasting, pending after reload, no generation before verification, one automatic continuation");
-  const beforeSettings=requests.length;
-  await page.getByRole("button",{name:"Design settings",exact:true}).click();
-  await settings.waitFor();
-  await settings.getByRole("button",{name:"Change API key",exact:true}).click();
-  const updateKey=settings.getByRole("button",{name:"Update key",exact:true});
-  assert.equal(await updateKey.isDisabled(),true);
-  await settings.getByLabel("Replace OpenAI key",{exact:true}).fill("fixture-replacement-key");
-  await updateKey.click();
-  await settings.waitFor({state:"hidden"});
-  assert.equal(credentialWrites,3);
-  assert.equal(requests.length,beforeSettings,"Changing a key must not start generation");
-  console.log("PASS unified Settings, separate first-use setup and key replacement without generation");
 
   await page.getByRole("button",{name:"Add manually",exact:true}).click();
   await page.getByRole("button",{name:/^Text Add a name/}).click();
@@ -211,8 +199,7 @@ try {
   console.log("PASS AI-chosen scene representation, no area controls, real playback, labels/reset preserved and save/reload");
 
   const exportDesign=async()=>{
-    await page.getByRole("button",{name:"Design settings",exact:true}).click();
-    await page.getByRole("button",{name:"Import & export",exact:true}).click();
+    await page.getByRole("button",{name:"File",exact:true}).click();
     const download=page.waitForEvent("download");
     await page.getByRole("button",{name:"Download editable design",exact:true}).click();
     const file=await download;const location=join(output,"editable-"+Date.now()+".json");await file.saveAs(location);
@@ -240,8 +227,7 @@ try {
   assert.deepEqual(await exportDesign(),beforeFailure,"Undo restores full scene animation");
   console.log("PASS invalid region, cancellation, static conversion and exact undo");
 
-  await page.getByRole("button",{name:"Design settings",exact:true}).click();
-  await page.getByRole("button",{name:"Import & export",exact:true}).click();
+  await page.getByRole("button",{name:"File",exact:true}).click();
   const download=page.waitForEvent("download");
   await page.getByRole("button",{name:"Export theme pack",exact:true}).click();
   const zip=await download;await zip.saveAs(join(output,"scene.zip"));

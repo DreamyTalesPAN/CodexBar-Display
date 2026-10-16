@@ -35,13 +35,11 @@ try {
     await page.getByText("Design opened.",{exact:true}).waitFor();
     // Compare Undo with the accepted editor state, not unrecognised fields
     // which the normal file importer may have canonicalised on entry.
-    await page.getByRole("button",{name:"Design settings",exact:true}).click();
-    await page.getByRole("button",{name:"Import & export",exact:true}).click();
+    await page.getByRole("button",{name:"File",exact:true}).click();
     const baseline=page.waitForEvent("download");
     await page.getByRole("button",{name:"Download editable design",exact:true}).click();
     await (await baseline).saveAs(join(output,"before.json"));
     beforeGeneration=JSON.parse(await readFile(join(output,"before.json"),"utf8"));
-    await page.getByRole("button",{name:"Close",exact:true}).click();
   }
   await input.fill(prompt);
   const responsePromise=page.waitForResponse(r=>r.url().endsWith("/ai-theme/concepts") && r.request().postDataJSON().target !== "layout",{timeout:250000});
@@ -75,8 +73,7 @@ try {
     }
     console.log("Distinct rendered samples: "+frames.size);
     if (body.sceneAnimation) assert(frames.size > 1, "Scene does not visibly advance");
-    await page.getByRole("button",{name:"Design settings",exact:true}).click();
-    await page.getByRole("button",{name:"Import & export",exact:true}).click();
+    await page.getByRole("button",{name:"File",exact:true}).click();
     const download=page.waitForEvent("download");
     await page.getByRole("button",{name:"Download editable design",exact:true}).click();
     await (await download).saveAs(join(output,"design.json"));
@@ -86,10 +83,8 @@ try {
     await page.getByRole("button",{name:"Export theme pack",exact:true}).click();
     await (await pack).saveAs(join(output,"theme.zip"));
     if(process.argv[3]) {
-      await page.getByRole("button",{name:"Close",exact:true}).click();
       await page.getByRole("button",{name:"Undo last edit",exact:true}).click();
-      await page.getByRole("button",{name:"Design settings",exact:true}).click();
-      await page.getByRole("button",{name:"Import & export",exact:true}).click();
+      await page.getByRole("button",{name:"File",exact:true}).click();
       const undone=page.waitForEvent("download");
       await page.getByRole("button",{name:"Download editable design",exact:true}).click();
       await (await undone).saveAs(join(output,"undo.json"));

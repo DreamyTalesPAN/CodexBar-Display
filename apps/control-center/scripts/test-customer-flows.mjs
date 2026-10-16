@@ -10491,9 +10491,11 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
     const finished = (fileName, saved) => page.evaluate(([fileName, saved]) => window.dispatchEvent(
       new CustomEvent("vibetv:download-finished", { detail: { fileName, saved } })), [fileName, saved]);
     const exported = page.getByText("Theme pack exported. No device was contacted.", { exact: true });
-    const exportPack = () => Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export theme pack", exact: true }).click()]);
-    await page.getByRole("button", { name: "Design settings", exact: true }).click();
-    await page.getByRole("button", { name: "Import & export", exact: true }).click();
+    // The File menu closes after each pick, so every export opens it again.
+    const exportPack = async () => {
+      await page.getByRole("button", { name: "File", exact: true }).click();
+      return Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export theme pack", exact: true }).click()]);
+    };
     const [cancelled] = await exportPack();
     assert(!(await exported.isVisible()), "The export waits for the Mac save dialog");
     await finished(cancelled.suggestedFilename(), false);
@@ -10517,7 +10519,7 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
   await page.getByRole("button", { name: screensaver ? "Create Screensaver" : "Create Theme", exact: true }).click();
   await page.getByLabel("Your idea", { exact: true }).waitFor();
   if (screensaver) {
-    await page.getByRole("button", { name: "Design settings", exact: true }).click();
+    await page.getByRole("button", { name: "File", exact: true }).click();
     await page.getByRole("button", { name: "New design", exact: true }).click();
     await page.getByRole("heading", { name: "Screensaver Studio", exact: true }).waitFor();
     await page.locator('input[accept="application/json,.json"]').setInputFiles({
@@ -10545,7 +10547,7 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
     holdPlan = new Promise((resolve) => { release = resolve; });
     await page.getByRole("button", { name: "Create", exact: true }).click();
     // #634: the chat says which step is running.
-    await page.getByRole("status").filter({ hasText: "Understanding your request…" }).waitFor();
+    await page.getByRole("status").filter({ hasText: "Understanding your idea…" }).waitFor();
     assert(await page.getByRole("dialog").count() === 0, "A saved key asks for no consent again");
     release();
     await page.getByRole("log", { name: "Conversation", exact: true }).getByText("Updated", { exact: true }).waitFor();
