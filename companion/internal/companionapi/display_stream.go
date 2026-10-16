@@ -128,6 +128,11 @@ func withoutReplacedFrameProvider(device deviceInfo, now time.Time) deviceInfo {
 		return device
 	}
 	if sentAt := stream.shownAt; !sentAt.IsZero() && !restartedAfter(device.Health, sentAt) {
+		// Only a health answer proves the frame was replaced; without one, the
+		// VibeTV may still show it, so Usage must not say otherwise.
+		if device.Health == nil || device.Health.Error != "" {
+			return device
+		}
 		if device.Display != nil && device.Display.ThemeSpec != nil && device.Display.ThemeSpec.Active {
 			return device
 		}

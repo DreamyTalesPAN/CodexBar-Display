@@ -3950,14 +3950,19 @@ func TestStalledStreamKeepsProviderOfLastFrame(t *testing.T) {
 		return &displayStreamInfo{Running: true, Provider: "codex", shownAt: now.Add(-age)}
 	}
 	theme := &deviceDisplayInfo{ThemeSpec: &themeSpecHealth{Active: true}}
+	answered := &deviceHealthInfo{OK: true}
+	probeFailed := &deviceHealthInfo{Error: "context deadline exceeded"}
 	for _, tc := range []struct {
 		name   string
 		device deviceInfo
 		want   string
 	}{
-		{"usage frame still on screen", deviceInfo{Stream: stalled(140 * time.Second)}, "codex"},
-		{"usage frame replaced by Open App", deviceInfo{Stream: stalled(160 * time.Second)}, ""},
-		{"theme-spec frame stays", deviceInfo{Stream: stalled(30 * time.Minute), Display: theme}, "codex"},
+		{"usage frame still on screen", deviceInfo{Stream: stalled(140 * time.Second), Health: answered}, "codex"},
+		{"usage frame replaced by Open App", deviceInfo{Stream: stalled(160 * time.Second), Health: answered}, ""},
+		{"theme-spec frame stays", deviceInfo{Stream: stalled(30 * time.Minute), Display: theme, Health: answered}, "codex"},
+		// A failed or missing health probe drops the theme info: the frame may still show.
+		{"health probe failed", deviceInfo{Stream: stalled(30 * time.Minute), Health: probeFailed}, "codex"},
+		{"no health answer", deviceInfo{Stream: stalled(30 * time.Minute)}, "codex"},
 		{"VibeTV restarted after the frame", deviceInfo{Stream: stalled(30 * time.Second), Display: theme, Health: &deviceHealthInfo{LastResetAt: now.Add(-10 * time.Second).Format(time.RFC3339Nano)}}, ""},
 		{"VibeTV restarted before the frame", deviceInfo{Stream: stalled(30 * time.Minute), Display: theme, Health: &deviceHealthInfo{LastResetAt: now.Add(-time.Hour).Format(time.RFC3339Nano)}}, "codex"},
 		{"healthy stream", deviceInfo{Stream: &displayStreamInfo{Healthy: true, Provider: "codex", shownAt: now.Add(-time.Hour)}}, "codex"},
