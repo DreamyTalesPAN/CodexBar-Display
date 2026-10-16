@@ -7666,3 +7666,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: A provider that gets no tile (switched off, unsupported, or without usage data) no longer makes the Usage page report "Token history is unavailable". No new wording.
 - Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — review fix to the Usage tiles, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: a checking read keeps a dismissal (#669)
+
+- User approval: Paul chose the provider overlay on 2026-10-16 (entries above, via the review orchestrator); this follow-up applies a Codex review finding and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: A provider that is checked again (shown as checking) keeps a dismissed overlay closed; the overlay returns only when the provider is healthy again and breaks again. No new wording.
+- Scope: `provider-action-dialog.tsx` and its test, `control-center-app.tsx` (the checking providers), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own

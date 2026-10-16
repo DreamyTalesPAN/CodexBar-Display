@@ -4793,8 +4793,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         ),
     )
     .map((item) => item.providerId);
+  const providerChecking = (providerPreferences || [])
+    .filter(isProviderItem)
+    .filter((item) => providerRowHealthState(item.health) === "checking")
+    .map((item) => item.providerId);
   const [providerActionShown, dismissProviderAction, reportProviderSignIn] =
-    useProviderActionDismissal(providerActions, activeTab === "settings");
+    useProviderActionDismissal(
+      providerActions,
+      activeTab === "settings",
+      providerChecking,
+    );
   useEffect(() => {
     providerActionReportRef.current = reportProviderSignIn;
   });

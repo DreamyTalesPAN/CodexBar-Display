@@ -47,6 +47,8 @@ export function useProviderActionDismissal(
   actions: Record<string, UsageProviderAction>,
   /** Settings is the page: it lists the provider in its own dialog, so the overlay counts as seen. */
   onSettings = false,
+  /** Providers still being checked: their dismissal holds until a definitive healthy or disabled result. */
+  checkingIds: string[] = [],
 ): [
   { id: string; action: UsageProviderAction; error: ApiError | null } | null,
   () => void,
@@ -61,9 +63,15 @@ export function useProviderActionDismissal(
   });
   let { dismissed, failures } = memory;
   if (memory.signature !== signature) {
-    // The set of actions changed: keep only what is still there.
+    // The set of actions changed: keep what is still there, and what is still
+    // being checked (a checking read is not a healthy result).
     const current = new Set(signature ? signature.split("\n") : []);
-    dismissed = new Set([...dismissed].filter((key) => current.has(key)));
+    const held = new Set(checkingIds);
+    dismissed = new Set(
+      [...dismissed].filter(
+        (key) => current.has(key) || held.has(key.split(":")[0]),
+      ),
+    );
     failures = new Map([...failures].filter(([key]) => current.has(key)));
     setMemory({ signature, dismissed, failures });
   }

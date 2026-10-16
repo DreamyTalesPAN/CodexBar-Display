@@ -224,3 +224,19 @@ it("marks many actions seen on Settings in one update", async () => {
   await act(async () => rerender(<SettingsAware actions={many} onSettings={false} />));
   expect(screen.queryAllByRole("dialog")).toHaveLength(0);
 });
+
+function CheckingOverlay({ actions, checking }: { actions: Record<string, UsageProviderAction>; checking: string[] }) {
+  const [shown, dismiss] = useProviderActionDismissal(actions, false, checking);
+  return shown ? <ProviderActionDialog action={shown.action} error={shown.error} onDismiss={dismiss} /> : null;
+}
+
+it("a checking read does not end a dismissal; only a healthy result does", async () => {
+  const { rerender } = render(<CheckingOverlay actions={claude()} checking={[]} />);
+  fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+  await act(async () => rerender(<CheckingOverlay actions={{}} checking={["claude"]} />));
+  await act(async () => rerender(<CheckingOverlay actions={claude()} checking={[]} />));
+  expect(dialog("Claude needs a new sign-in")).toBeNull();
+  await act(async () => rerender(<CheckingOverlay actions={{}} checking={[]} />));
+  await act(async () => rerender(<CheckingOverlay actions={claude()} checking={[]} />));
+  expect(dialog("Claude needs a new sign-in")).not.toBeNull();
+});
