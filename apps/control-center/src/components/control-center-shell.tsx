@@ -314,7 +314,9 @@ function ShellNavButton({
       disabled={disabled}
       isActive={active}
       onClick={() => {
-        if (!collapsible || collapsedToIcons) {
+        // An open Appearance entry toggles its submenu and also starts over at
+        // the top (Codex review of #677); the submenu itself stays a toggle.
+        if (!collapsible || collapsedToIcons || active) {
           onClick();
         }
         if (isMobile && !collapsible) {
