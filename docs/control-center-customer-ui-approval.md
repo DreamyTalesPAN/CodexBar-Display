@@ -7336,3 +7336,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: "Create with AI" no longer stops when a generated companion pose cannot be aligned with the first pose without leaving its cell; that pose keeps the closest alignment that stays inside the cell and the theme is built. The error text is removed; no other wording, layout or control changes.
 - Scope: `registerCompanionFrames` in `apps/control-center/src/lib/ai-companion-sprites.ts`, its tests in `ai-companion-sprites.test.ts`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — fix of an error state
+
+## 2026-10-16 — #638: companion sheets never stop a design
+
+- User approval: Fix of customer-blocking errors under Paul's rule of 2026-10-16 that the app fixes or retries on its own and the customer never sees such errors ("Sprite frame N: … Your design is unchanged." in the app, "Companion … failed after one correction" from the companion); no new wording; not seen by Paul.
+- Approved customer-visible result: A pose whose background cannot be separated repeats the clean pose before it in the loop. A companion sheet the app cannot prepare at all is left out and the picture with the other companions is still built. The companion redraws a rejected sheet up to two times without telling the customer; if it never comes out clean, an existing companion keeps its previous drawings and a new one is left out, and a design without any companion left becomes a still picture. No wording, layout or control changes.
+- Scope: `normalizeCompanionSheet` in `apps/control-center/src/lib/ai-companion-sprites.ts`, the companion step of `buildAIThemeCandidate` in `ai-theme.ts`, their tests in `ai-companion-sprites.test.ts` and `ai-companions.test.ts`, the repair loop in `companion/internal/companionapi/ai_theme_companions.go` with its tests in `ai_theme_companion_matte_test.go`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — fix of error states

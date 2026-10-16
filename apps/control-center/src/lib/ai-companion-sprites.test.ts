@@ -65,7 +65,7 @@ it("never walks through a color gradient into the subject and never mutates sour
   expect(pixels).toEqual(before);
 });
 
-it("does not accept one bad frame just because the other seven are valid", () => {
+it("never keeps an unusable frame: it repeats the neighbouring clean pose instead of failing the design", () => {
   const good = new Uint8ClampedArray(80 * 80 * 4);
   for (let i = 0; i < good.length; i += 4) good.set([240, 45, 229, 255], i);
   for (let y = 20; y < 60; y++) for (let x = 20; x < 60; x++) good.set([80, 40, 20, 255], (y * 80 + x) * 4);
@@ -73,7 +73,10 @@ it("does not accept one bad frame just because the other seven are valid", () =>
   vi.stubGlobal("document", {createElement: () => ({getContext: () => ({
     drawImage: () => {}, getImageData: () => ({data: ++frame === 6 ? new Uint8ClampedArray(good.length) : good.slice()}),
   })})});
-  expect(() => normalizeCompanionSheet({width:320, height:160} as ImageBitmap, 40)).toThrow(/frame 6/);
+  const frames = normalizeCompanionSheet({width:320, height:160} as ImageBitmap, 40);
+  expect(frames).toHaveLength(8);
+  expect(frames[5]).toEqual(frames[4]);
+  expect(frames[5].filter((_, i) => i % 4 === 3 && frames[5][i] > 0)).toHaveLength(400);
 });
 
 it("rejects a wrong sheet aspect ratio instead of cutting through poses", () => {
@@ -127,4 +130,18 @@ it("keeps a pose that cannot be fully aligned inside its cell instead of failing
 it("still aligns a shifted pose exactly when the cell has room", () => {
   const frames = normalizeCompanionSheet(stubFrames([pose(20), ...Array.from({ length: 7 }, () => pose(28))]), 80);
   for (const frame of frames) expect(frame).toEqual(frames[0]);
+});
+
+// The "Sprite frame N: …" errors stopped a design when the AI drew a single cell
+// with scenery behind the subject. That cell now repeats the clean pose before it.
+it("replaces a frame drawn on scenery with the pose before it in the loop", () => {
+  const scenery = pose(20);
+  for (let y = 0; y < 80; y++) for (let x = 0; x < 20; x++) scenery.set([0, 150, 80, 255], (y * 80 + x) * 4);
+  const poses = [scenery, pose(22), pose(24), scenery, pose(26), pose(26), pose(24), pose(22)];
+  expect(() => removeCompanionBackground(scenery, 80, 0)).toThrow(/Sprite frame 1/);
+  const frames = normalizeCompanionSheet(stubFrames(poses), 80);
+  expect(frames).toHaveLength(8);
+  expect(frames[0]).toEqual(frames[7]);
+  expect(frames[3]).toEqual(frames[2]);
+  for (const frame of frames) expect(opaque(frame)).toBe(40 * 40);
 });

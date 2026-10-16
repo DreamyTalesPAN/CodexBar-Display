@@ -1,6 +1,6 @@
 import { loadUserThemes, writeUserThemes } from "./theme-studio-storage";
 import {describe,it,expect,vi} from "vitest";
-import {encodeAIThemeCBI1,buildAIThemeCompanionCandidateFromRGBA,buildAIThemeCandidateFromRGBA,AI_THEME_SCREENMASTER_ASSET_PATH as ART,AI_THEME_ANIMATION_ASSET_PATH as ANIMATION,type AIThemeConcept} from "./ai-theme";
+import {encodeAIThemeCBI1,buildAIThemeCandidate,buildAIThemeCompanionCandidateFromRGBA,buildAIThemeCandidateFromRGBA,AI_THEME_SCREENMASTER_ASSET_PATH as ART,AI_THEME_ANIMATION_ASSET_PATH as ANIMATION,type AIThemeConcept} from "./ai-theme";
 import {applyAIThemeCandidate,conceptFromDocument} from "./ai-theme-document";
 import {registerCompanionFrames} from "./ai-companion-sprites";
 import {decodeSprite} from "@/components/live-vibetv-preview";
@@ -276,5 +276,21 @@ describe("flexible picture layouts",()=>{
   expect(c.spec.primitives.filter(p=>p.type==='progress').map(p=>[p.binding,p.slot])).toEqual([['usageSlot1Percent',1],['usageSlot2Percent',2]]);
   expect(c.spec.primitives.find(p=>p.text==='{usageSlot1Label}')).toMatchObject({fit:'shrink',width:136,slot:1});
   expect(validateThemeSpec(c.spec,c.assets).errors).toEqual([]);
+ });
+});
+
+describe("a companion sheet the app cannot prepare",()=>{
+ it("is left out so the picture and the other companion still become a theme",async()=>{
+  // "Z29vZA==" = good 4x2 sheet, "YmFk" = a sheet with the wrong grid, "Ymc=" = picture.
+  const f=fixture(2);const concept={...f.concept,imageBase64:"Ymc=",companions:f.concept.companions!.map((p,i)=>({...p,sheetBase64:i===0?"Z29vZA==":"YmFk"}))};
+  const cell=new Uint8ClampedArray(80*80*4);for(let i=0;i<cell.length;i+=4)cell.set([255,0,255,255],i);
+  for(let y=20;y<60;y++)for(let x=20;x<60;x++)cell.set([80,40,20,255],(y*80+x)*4);
+  vi.stubGlobal("createImageBitmap",async(blob:Blob)=>({...({good:{width:320,height:160},bad:{width:100,height:100},bg:{width:240,height:128}})[await blob.text() as "good"|"bad"|"bg"],close:()=>{}}));
+  vi.stubGlobal("document",{createElement:()=>({getContext:()=>({drawImage:()=>{},getImageData:(_x:number,_y:number,w:number,h:number)=>({data:w===80?cell.slice():new Uint8ClampedArray(w*h*4).fill(255)})})})});
+  try{
+   const c=await buildAIThemeCandidate(concept);
+   expect(c.spec.primitives.filter(p=>p.assetPath?.endsWith('.cba')).map(p=>p.assetPath)).toEqual(['/themes/u/ai-pet-1.cba']);
+   expect(validateThemeSpec(c.spec,c.assets).errors).toEqual([]);
+  }finally{vi.unstubAllGlobals();}
  });
 });

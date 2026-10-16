@@ -220,8 +220,9 @@ func (a *aiThemeState) createCompanionConcept(ctx context.Context, key string, r
 			if err := ctx.Err(); err != nil {
 				return result, err
 			}
-			if issue := companionSheetIssue(c.SheetBase64); issue != "" {
-				// Repair this sprite once. Never send the rejected scene back as an
+			issue := companionSheetIssue(c.SheetBase64)
+			for repair := 0; issue != "" && repair < companionSheetRepairs && companionRepairFits(ctx); repair++ {
+				// Repair only this sprite. Never send the rejected scene back as an
 				// identity reference, and never regenerate other layers here.
 				repairPrompt := "REPAIR: The previous output was rejected: " + issue + ". Return ONLY an isolated sprite sheet, never an illustration or scene. " + prompt + " FINAL OUTPUT REQUIREMENT: exactly 4 columns by 2 rows of square cells; eight complete poses with empty padding on every edge. Every pixel outside the subject must be uniform #FF00FF. NO environment, floor, UI, text or extra poses."
 				c.SheetBase64, e = a.createConceptImageSized(ctx, key, repairPrompt, identityReference, "1536x768")
@@ -231,12 +232,36 @@ func (a *aiThemeState) createCompanionConcept(ctx context.Context, key string, r
 				if err := ctx.Err(); err != nil {
 					return result, err
 				}
-				if issue = companionSheetIssue(c.SheetBase64); issue != "" {
-					return result, aiThemeQualityFailure("frames", "Companion "+p.ID+" failed after one correction: "+issue, false)
+				issue = companionSheetIssue(c.SheetBase64)
+			}
+			if issue != "" {
+				// Every correction failed. The customer still gets the design: an
+				// existing companion keeps its previous drawings, a new one is left
+				// out of an otherwise finished picture.
+				prior, ok := old[p.ID]
+				if !ok {
+					continue
 				}
+				c.SheetBase64, c.Reuse = prior.SheetBase64, true
 			}
 		}
 		result.Companions = append(result.Companions, c)
 	}
+	if len(result.Companions) == 0 && len(plan.Companions) > 0 {
+		// All planned companions were left out: the picture stands as a still.
+		result.Style.AnimationMode, result.Style.AnimationPrompt = "static", ""
+	}
 	return result, nil
+}
+
+// companionSheetRepairs bounds the silent redraws of one rejected sprite sheet.
+const companionSheetRepairs = 2
+
+// companionRepairBudget is the time a redraw needs. A redraw that would run
+// into the request deadline is skipped so the finished picture is not lost.
+const companionRepairBudget = 60 * time.Second
+
+func companionRepairFits(ctx context.Context) bool {
+	deadline, ok := ctx.Deadline()
+	return !ok || time.Until(deadline) > companionRepairBudget
 }

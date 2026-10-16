@@ -96,13 +96,28 @@ export function normalizeCompanionSheet(bitmap: ImageBitmap, size: number): Uint
   if (bitmap.width <= 0 || bitmap.height <= 0 || bitmap.width !== bitmap.height * 2)
     throw new Error("The companion sheet must use a 4-column, 2-row grid of square frames. Your design is unchanged.");
   const side = 80;
-  const frames = Array.from({ length: 8 }, (_, frame) => {
+  let firstFailure: unknown;
+  const cleaned = Array.from({ length: 8 }, (_, frame) => {
     const canvas = document.createElement("canvas"); canvas.width = side; canvas.height = side;
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) throw new Error("Image preparation is unavailable.");
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(bitmap, frame % 4 * bitmap.width / 4, Math.floor(frame / 4) * bitmap.height / 2, bitmap.width / 4, bitmap.height / 2, 0, 0, side, side);
-    return removeCompanionBackground(ctx.getImageData(0, 0, side, side).data, side, frame);
+    try {
+      return removeCompanionBackground(ctx.getImageData(0, 0, side, side).data, side, frame);
+    } catch (error) {
+      firstFailure ??= error;
+      return undefined;
+    }
+  });
+  // A pose whose background cannot be separated cleanly is never guessed at:
+  // it repeats the nearest clean pose (the one before it in the loop first),
+  // so one bad cell holds a pose briefly instead of failing the whole design.
+  if (cleaned.every(pixels => !pixels)) throw firstFailure;
+  const frames = cleaned.map((pixels, frame) => {
+    for (let distance = 0; !pixels; distance++)
+      pixels = cleaned[(frame - distance + 8) % 8] ?? cleaned[(frame + distance) % 8];
+    return pixels;
   });
   return registerCompanionFrames(frames, side).map(pixels => {
     const output = new Uint8ClampedArray(size * size * 4);

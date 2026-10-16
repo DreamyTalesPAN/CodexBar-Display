@@ -80,8 +80,12 @@ func TestCompanionSheetRejectsSeveralSeparateShapes(t *testing.T) {
 }
 
 func TestCompanionRepairIsBoundedAndPreservesOtherLayers(t *testing.T) {
-	for _, repaired := range []bool{true, false} {
-		t.Run(map[bool]string{true: "repair-success", false: "repair-failure"}[repaired], func(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		fixedAt   int // image call that returns a clean sheet; 0 = never
+		wantCalls int
+	}{{"repair-success", 2, 2}, {"second-repair-success", 3, 3}, {"repairs-fail", 0, 1 + companionSheetRepairs}} {
+		t.Run(tc.name, func(t *testing.T) {
 			style, pets := companionPlanFixture(2)
 			pets[0].Reuse = true
 			images := 0
@@ -91,14 +95,14 @@ func TestCompanionRepairIsBoundedAndPreservesOtherLayers(t *testing.T) {
 				}
 				images++
 				body, _ := io.ReadAll(r.Body)
-				if images == 2 && !strings.Contains(string(body), "REPAIR") {
+				if images >= 2 && !strings.Contains(string(body), "REPAIR") {
 					t.Fatal("not a targeted repair")
 				}
-				if images > 2 {
+				if images > 1+companionSheetRepairs {
 					t.Fatal("unbounded retry")
 				}
 				encoded := aiTestCompanionSheetWithMatte(color.NRGBA{109, 63, 32, 255})
-				if images == 2 && repaired {
+				if images == tc.fixedAt {
 					encoded = aiTestCompanionSheet()
 				}
 				return aiResponse(200, `{"data":[{"b64_json":"`+encoded+`"}]}`), nil
@@ -106,20 +110,68 @@ func TestCompanionRepairIsBoundedAndPreservesOtherLayers(t *testing.T) {
 			previous := &aiThemePreviousConcept{Style: style, ImageBase64: aiTestPNG(), ImageContentType: "image/png", Companions: []aiCompanion{{ID: "pet-1", X: 20, Y: 40, Size: 32, FPS: 4, FrameCount: 8, KeyColor: "#FF00FF", SheetBase64: aiTestCompanionSheet()}}}
 			bg, _ := validateConceptImage(aiTestPNG(), "image/png")
 			result, err := s.aiTheme.createCompanionConcept(context.Background(), "fixture", aiThemeConceptRequest{Prompt: "Add a bird", Previous: previous}, bg)
-			if images != 2 {
-				t.Fatalf("wanted two attempts, got %d", images)
+			if images != tc.wantCalls {
+				t.Fatalf("wanted %d attempts, got %d", tc.wantCalls, images)
 			}
-			if repaired {
-				if err != nil || result.ImageBase64 != previous.ImageBase64 || result.Companions[0].SheetBase64 != previous.Companions[0].SheetBase64 {
-					t.Fatalf("repair changed unaffected layers: %v", err)
+			if err != nil || result.ImageBase64 != previous.ImageBase64 || result.Companions[0].SheetBase64 != previous.Companions[0].SheetBase64 {
+				t.Fatalf("repair changed unaffected layers: %v", err)
+			}
+			if tc.fixedAt == 0 {
+				// The new bird never came out clean: the design still arrives,
+				// with the existing pet and without the bird, and without an error.
+				if len(result.Companions) != 1 || result.Companions[0].ID != "pet-1" || result.Style.AnimationMode != "four_frame" {
+					t.Fatalf("wanted the design without the failed new companion: %#v", result.Companions)
 				}
-			} else {
-				var diagnostic *aiThemeDiagnosticError
-				if !errors.As(err, &diagnostic) || diagnostic.Stage != "frames" || !strings.Contains(diagnostic.Reason, "pet-2") {
-					t.Fatalf("missing safe failure diagnostic: %#v", err)
-				}
+			} else if len(result.Companions) != 2 || result.Companions[1].SheetBase64 != aiTestCompanionSheet() {
+				t.Fatalf("repaired companion missing: %#v", result.Companions)
 			}
 		})
+	}
+}
+
+func TestCompanionThatNeverComesOutCleanKeepsItsPreviousDrawings(t *testing.T) {
+	style, pets := companionPlanFixture(1)
+	images := 0
+	s := aiTestServer(t, aiRoundTrip(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == "/v1/responses" {
+			return autoTextResponse(map[string]any{"style": style, "companions": pets}), nil
+		}
+		images++
+		return aiResponse(200, `{"data":[{"b64_json":"`+aiTestCompanionSheetWithMatte(color.NRGBA{109, 63, 32, 255})+`"}]}`), nil
+	}))
+	previous := &aiThemePreviousConcept{Style: style, ImageBase64: aiTestPNG(), ImageContentType: "image/png", Companions: []aiCompanion{{ID: "pet-1", X: 20, Y: 40, Size: 32, FPS: 4, FrameCount: 8, KeyColor: "#FF00FF", SheetBase64: aiTestCompanionSheet()}}}
+	bg, _ := validateConceptImage(aiTestPNG(), "image/png")
+	result, err := s.aiTheme.createCompanionConcept(context.Background(), "fixture", aiThemeConceptRequest{Prompt: "Make the fox pink", Previous: previous}, bg)
+	if err != nil || images != 1+companionSheetRepairs || len(result.Companions) != 1 || !result.Companions[0].Reuse || result.Companions[0].SheetBase64 != previous.Companions[0].SheetBase64 {
+		t.Fatalf("wanted the previous fox kept after %d calls: %v %#v", images, err, result.Companions)
+	}
+}
+
+func TestNewCompanionsThatNeverComeOutCleanLeaveAStillPicture(t *testing.T) {
+	style, pets := companionPlanFixture(2)
+	style.PreserveArtwork = false
+	images := 0
+	s := aiTestServer(t, aiRoundTrip(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == "/v1/responses" {
+			return autoTextResponse(map[string]any{"style": style, "companions": pets}), nil
+		}
+		images++
+		if images == 1 {
+			return aiResponse(200, `{"data":[{"b64_json":"`+aiTestPNG()+`"}]}`), nil
+		}
+		return aiResponse(200, `{"data":[{"b64_json":"`+aiTestCompanionSheetWithMatte(color.NRGBA{109, 63, 32, 255})+`"}]}`), nil
+	}))
+	result, err := s.aiTheme.createCompanionConcept(context.Background(), "fixture", aiThemeConceptRequest{Prompt: "A forest with a fox and a bird"}, nil)
+	if err != nil || images != 1+2*(1+companionSheetRepairs) || len(result.Companions) != 0 || result.ImageBase64 != aiTestPNG() || result.Style.AnimationMode != "static" || result.Style.AnimationPrompt != "" {
+		t.Fatalf("wanted the still picture after %d calls: %v %#v %q", images, err, result.Companions, result.Style.AnimationMode)
+	}
+}
+
+func TestCompanionRepairStopsBeforeTheDeadline(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), companionRepairBudget/2)
+	defer cancel()
+	if companionRepairFits(ctx) || !companionRepairFits(context.Background()) {
+		t.Fatal("repair budget ignores the request deadline")
 	}
 }
 
