@@ -5,7 +5,7 @@ exclusive VibeTV connection modes.
 
 ## Scope and Release Policy
 - Release-gated MVP target: `esp8266_smalltv_st7789`
-- Experimental fallback (non-blocking): `lilygo_t_display_s3`
+- Experimental fallback (non-blocking): `lilygo_t_display_s3`. Releases publish only the ESP8266 firmware (#658); the ESP32 firmware is built in CI but not published, and the firmware manifest has no ESP32 entry.
 - Fresh hardware waits for the USB cable. The display shows `Connect USB cable` and the Mac App address. Setup and pairing run only over the cable (issue #489); there is no setup access point. A unit flashed over WiFi from the manufacturer firmware forgets that network (ESP8266 SDK copy) on its first boot instead of joining it. The Mac App shows cable instructions if discovery finds no device. The connection selector appears when Cable and WiFi discovery both succeed.
 - WiFi remains a complete customer-selectable runtime (`transport.active=wifi`, `transport.mode=wifi`).
 - The physical Cable data link is a CH340 USB-UART bridge, not native USB CDC.
