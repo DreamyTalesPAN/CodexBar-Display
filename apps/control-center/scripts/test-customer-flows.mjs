@@ -7442,8 +7442,8 @@ async function testConcurrentProviderSignInsSurviveTransientChecks(browser, appU
       .click();
   }
   await clickNavigation(page, "Settings");
-  await page.getByRole("button", { name: "Sign in to Codex" }).click();
-  await page.getByRole("button", { name: "Sign in to Claude" }).click();
+  await page.getByRole("button", { name: "Sign in needed for Codex" }).click();
+  await page.getByRole("button", { name: "Sign in needed for Claude" }).click();
   await waitForCondition(() => retries.codex >= 1 && retries.claude >= 1,
     "starting another sign-in must not cancel the first provider's checks", 20_000);
   await waitForCondition(() => retries.codex >= 2 && retries.claude >= 2,
@@ -7715,7 +7715,7 @@ async function testProviderOnboardingUsesSharedHealthyDescriptor(
 
   const providerDialog = page.getByRole("dialog", { name: "Claude", exact: true });
   const signInClaude = providersScreen.getByRole("button", {
-    name: "Sign in to Claude",
+    name: "Sign in needed for Claude",
   });
   await signInClaude.waitFor({ timeout: 10_000 });
   assert(

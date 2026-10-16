@@ -7687,3 +7687,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: When a provider that was being checked is healthy, its closed overlay is closed for good until it breaks again; a need that returns after that shows the overlay again. No new wording.
 - Scope: `provider-action-dialog.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Customer flow: row locators use the sign-in names (#669)
+
+- User approval: Paul approved the provider looks on 2026-10-16 (entries above, via the review orchestrator); this change only updates customer flow test locators to the approved "Sign in needed for <Provider>" names and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: Unchanged.
+- Scope: `scripts/test-customer-flows.mjs` (three locators), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — test change, no customer-visible change of its own
