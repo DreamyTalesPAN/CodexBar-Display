@@ -199,6 +199,8 @@ type ProviderListProps = {
   /** Preferences whose on/off write is in flight, by preference id. */
   pendingPreferenceIds: Set<string>;
   providers: ProviderItem[];
+  /** Settings shows the list without the setup intro above it. */
+  showIntro?: boolean;
   usage: UsageSnapshot | null;
 };
 
@@ -218,6 +220,7 @@ export function ProviderList({
   pendingCheckIds,
   pendingPreferenceIds,
   providers,
+  showIntro = true,
   usage,
 }: ProviderListProps) {
   // One acknowledged message per provider: polling must not reopen a dismissed
@@ -288,7 +291,7 @@ export function ProviderList({
   };
   const [query, setQuery] = useState("");
   const [shown, setShown] = useState(PROVIDER_PAGE_SIZE);
-  const matching = setupProvidersEnabledFirst(
+  const matching = setupProvidersInOrder(
     providers.filter((provider) => setupProviderMatchesQuery(provider, query)),
   );
   // CodexBar's inventory is 65 providers deep and almost all of it is off, so
@@ -330,9 +333,11 @@ export function ProviderList({
             : undefined}
         />
       ) : null}
+      {showIntro ? (
       <p className="mb-3 text-sm text-muted-foreground">
         VibeTV reads your AI usage with CodexBar, a helper app installed with VibeTV. Turn on the providers you use below.
       </p>
+      ) : null}
       <div className="relative w-full">
         <Search
           aria-hidden
@@ -613,11 +618,38 @@ export function setupProviderAwaitsFirstReading(
   );
 }
 
-/** Keep CodexBar's order inside the on and off groups. */
-function setupProvidersEnabledFirst(providers: ProviderItem[]): ProviderItem[] {
+/**
+ * The subscription tools most customers use, then the API providers that
+ * come right after them, in this order.
+ */
+const PRIORITY_PROVIDER_IDS = [
+  "codex",
+  "claude",
+  "cursor",
+  "antigravity",
+  "openai",
+  // Win-CodexBar names the same API provider "openaiapi".
+  "openaiapi",
+  "azureopenai",
+];
+
+/**
+ * Priority providers first, then every other provider: switched-on ones
+ * before switched-off ones. Each group keeps CodexBar's order.
+ */
+function setupProvidersInOrder(providers: ProviderItem[]): ProviderItem[] {
+  const idOf = (provider: ProviderItem) =>
+    provider.providerId.trim().toLowerCase();
+  const priority = PRIORITY_PROVIDER_IDS.flatMap((id) =>
+    providers.filter((provider) => idOf(provider) === id),
+  );
+  const others = providers.filter(
+    (provider) => !PRIORITY_PROVIDER_IDS.includes(idOf(provider)),
+  );
   return [
-    ...providers.filter((provider) => provider.value === true),
-    ...providers.filter((provider) => provider.value !== true),
+    ...priority,
+    ...others.filter((provider) => provider.value === true),
+    ...others.filter((provider) => provider.value !== true),
   ];
 }
 
