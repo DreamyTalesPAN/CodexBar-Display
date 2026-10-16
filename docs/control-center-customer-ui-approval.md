@@ -7757,3 +7757,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No change. A healthy, fresh tile shows its reset time top-right and on each later window line while the token history is still counting, with no spinner. No new wording.
 - Scope: `usage-screen.test.tsx` (one new test), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — test only, no customer-visible change
+
+## 2026-10-16 — Usage: the token chart draws a day without tokens as zero, not as a gap (#579, carried from #603)
+
+- User approval: pending — Paul sees a before/after picture on 2026-10-17 (via the review orchestrator); carried from #603.
+- Approved customer-visible result: Not yet seen by Paul. In Usage, each provider's line in the token chart runs unbroken from the first to the last day of the chart; a day on which a provider used no tokens sits on the zero line. Calendar days on which no provider used tokens keep their place on the time axis. Where the first and last reported day lie more than 400 days apart, every reported day is kept as it is, without filling in days. Totals and tooltip values of days with tokens are unchanged; a day without tokens shows 0 in the tooltip.
+- Scope: `usage-screen.tsx`, its test, and this approval record. Stacked on #669; pull request branch only, not merge or release.
+- What's new: none — a correction, nothing new to announce
