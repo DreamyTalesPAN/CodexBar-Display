@@ -160,15 +160,15 @@ func withShownFrame(stream displayStreamInfo, target string) displayStreamInfo {
 	if target == "" {
 		return stream
 	}
-	sentAt, lastTarget, line, ok := readDisplayStreamLog(displayStreamOutLogPath()).lastFrameAfter(time.Time{})
-	if !ok || displayStreamLogValue(line, "error") != "" {
-		return stream
-	}
-	if samePublicTarget(target, cableDeviceTarget) {
-		if !strings.EqualFold(displayStreamLogValue(line, "transport"), "usb") {
-			return stream
+	cable := samePublicTarget(target, cableDeviceTarget)
+	// Frames to other VibeTVs in between must not hide the last one sent to target.
+	sentAt, _, line, ok := readDisplayStreamLog(displayStreamOutLogPath()).lastFrameWhere(time.Time{}, func(lastTarget, line string) bool {
+		if cable {
+			return strings.EqualFold(displayStreamLogValue(line, "transport"), "usb")
 		}
-	} else if lastTarget != "" && !samePublicTarget(target, publicTarget(lastTarget)) {
+		return lastTarget == "" || samePublicTarget(target, publicTarget(lastTarget))
+	})
+	if !ok || displayStreamLogValue(line, "error") != "" {
 		return stream
 	}
 	stream.Provider = displayStreamLogValue(line, "provider")

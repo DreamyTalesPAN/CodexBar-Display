@@ -4003,6 +4003,38 @@ func TestStalledStreamKeepsProviderOfLastFrame(t *testing.T) {
 	}
 }
 
+func TestShownFrameIgnoresLaterFramesToOtherVibeTVs(t *testing.T) {
+	oldPrint := printDisplayStreamService
+	t.Cleanup(func() { printDisplayStreamService = oldPrint })
+	printDisplayStreamService = func(context.Context, string) ([]byte, error) {
+		return []byte("state = running\n"), nil
+	}
+	sentAt := time.Now().UTC().Add(-5 * time.Minute).Truncate(time.Second)
+	later := sentAt.Add(time.Minute).Format(time.RFC3339Nano)
+	cableFrame := sentAt.Format(time.RFC3339Nano) + ` sent frame -> /dev/cu.usbserial-1410 transport=usb deviceId=5804558 provider=codex label=VibeTV error=""`
+	wifiA := sentAt.Format(time.RFC3339Nano) + ` sent frame -> http://192.168.178.72 transport=wifi deviceId=5804558 provider=codex label=VibeTV error=""`
+	wifiB := later + ` sent frame -> http://192.168.178.73 transport=wifi deviceId=777 provider=claude label=VibeTV error=""`
+	for _, tc := range []struct {
+		name   string
+		target string
+		lines  []string
+	}{
+		{"cable, then another VibeTV over WiFi", cableDeviceTarget, []string{cableFrame, wifiB}},
+		{"WiFi A, then WiFi B", "http://192.168.178.72", []string{wifiA, wifiB}},
+		{"WiFi A, then a cable VibeTV", "http://192.168.178.72", []string{wifiA, later + ` sent frame -> /dev/cu.usbserial-1410 transport=usb deviceId=777 provider=claude error=""`}},
+	} {
+		logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+		t.Setenv(displayStreamOutLogEnv, logPath)
+		if err := os.WriteFile(logPath, []byte(strings.Join(tc.lines, "\n")+"\n"), 0o600); err != nil {
+			t.Fatalf("write display stream log: %v", err)
+		}
+		stream := withShownFrame(displayStreamInfo{Target: tc.target}, tc.target)
+		if stream.Provider != "codex" || stream.shownDeviceID != "5804558" || !stream.shownAt.Equal(sentAt) {
+			t.Fatalf("%s: want the frame sent to %s, got %+v", tc.name, tc.target, stream)
+		}
+	}
+}
+
 func TestInspectDisplayStreamMapsCurrentUSBPathToStableCableTarget(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
 	t.Setenv(displayStreamOutLogEnv, logPath)

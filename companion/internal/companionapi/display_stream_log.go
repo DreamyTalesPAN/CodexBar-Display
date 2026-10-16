@@ -72,6 +72,11 @@ func lastDisplayStreamFrameLine(path string) (time.Time, string, string, bool) {
 }
 
 func (l displayStreamLog) lastFrameAfter(boundary time.Time) (time.Time, string, string, bool) {
+	return l.lastFrameWhere(boundary, nil)
+}
+
+// lastFrameWhere returns the newest frame line accepted by match (nil accepts all).
+func (l displayStreamLog) lastFrameWhere(boundary time.Time, match func(target, line string) bool) (time.Time, string, string, bool) {
 	for _, lines := range l {
 		for i := len(lines) - 1; i >= 0; i-- {
 			line := strings.TrimSpace(lines[i])
@@ -93,6 +98,9 @@ func (l displayStreamLog) lastFrameAfter(boundary time.Time) (time.Time, string,
 			target := ""
 			if fields := strings.Fields(after); len(fields) > 0 {
 				target = fields[0]
+			}
+			if match != nil && !match(target, line) {
+				continue
 			}
 			return when, target, line, true
 		}
