@@ -7336,3 +7336,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as approved in the 2026-10-16 #561 entry above; nothing else changes.
 - Scope: the merge of main into this branch, the `macAppUpdate` prop moved into the wrapped `SetupWizard` in `control-center-app.tsx`, and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — #561: approval marker after merging main with #619 and #628
+
+- User approval: Paul chose design 1d for #639 on 2026-10-16 (entry above). Main moved on with #619 and #628 while the branch was in review, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the 2026-10-16 #561 entry above; nothing else changes. "Update Mac App" keeps Sparkle's visible check, as #619 keeps it for Update buttons.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
