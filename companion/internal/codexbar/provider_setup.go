@@ -888,7 +888,7 @@ func providerResult(id, status string) ProviderReadiness {
 }
 
 func providerResultWithSignIn(id, status, signInURL string) ProviderReadiness {
-	label := humanLabel(id)
+	label := HumanLabel(id)
 	if id == "codexbar" {
 		label = "Usage service"
 	}

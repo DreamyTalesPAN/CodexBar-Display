@@ -528,14 +528,9 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 		return usageProviderInfo{}, false
 	}
 	neverRead := snapshot.NoReading || snapshot.CollectedAt.IsZero()
-	label := frame.Label
-	if neverRead && strings.EqualFold(strings.TrimSpace(label), id) {
-		// The collector names a provider it has not read yet by its bare id.
-		label = ""
-	}
 	return usageProviderInfo{
 		ID:                    id,
-		Label:                 usageProviderLabel(id, label),
+		Label:                 usageProviderLabel(id, frame.Label),
 		Source:                strings.TrimSpace(snapshot.Source),
 		Session:               frame.Session,
 		Weekly:                frame.Weekly,

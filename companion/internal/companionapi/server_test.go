@@ -3709,7 +3709,7 @@ func TestNeverReadProviderInventsNoNumbersInRemainingMode(t *testing.T) {
 		Providers: []daemon.ProviderUsageSnapshot{
 			{
 				Provider: "claude",
-				Frame:    protocol.Frame{Provider: "claude", Label: "claude", UsageUnavailable: true},
+				Frame:    protocol.Frame{Provider: "claude", Label: "Claude", UsageUnavailable: true},
 				Meta:     codexbar.ProviderUsageMeta{Cost: &codexbar.ProviderCostUsage{Last30DaysTokens: 90}},
 				// Token history only: no reading ever, so no Collected time.
 				TokenStatsCollectedAt: now,
@@ -3717,7 +3717,7 @@ func TestNeverReadProviderInventsNoNumbersInRemainingMode(t *testing.T) {
 			{
 				// A failed first reading: NoReading marks the time of that failure.
 				Provider:    "gemini",
-				Frame:       protocol.Frame{Provider: "gemini", Label: "gemini", UsageUnavailable: true},
+				Frame:       protocol.Frame{Provider: "gemini", Label: "Gemini", UsageUnavailable: true},
 				CollectedAt: now,
 				NoReading:   true,
 			},

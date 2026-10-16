@@ -932,7 +932,7 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 				Provider: key,
 				Frame: protocol.Frame{
 					Provider:         key,
-					Label:            key,
+					Label:            codexbar.HumanLabel(key),
 					UsageUnavailable: true,
 				},
 				Source: strings.TrimSpace(stats.Source),
