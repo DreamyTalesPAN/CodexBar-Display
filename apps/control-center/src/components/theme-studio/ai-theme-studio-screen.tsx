@@ -779,7 +779,7 @@ export function AIThemeStudioScreen({
         setAttachments([]);
         return;
       }
-      progressTo(DRAWING_WORDS(base.spec.primitives.some((p) => isAttachedSceneAnimation(p.assetPath))));
+      progressTo(DRAWING_WORDS(base.spec.primitives.some((p) => isCompanionSprite(p.assetPath))));
       const concept = await generateAIThemeConcept(
         {
           prompt,

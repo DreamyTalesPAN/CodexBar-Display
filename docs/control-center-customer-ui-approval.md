@@ -7431,3 +7431,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none. The tests cover the status line approved in "#638: Theme Studio progress line, toolbar V1 and OpenAI key in Settings" (one line, swaps within the step, jumps to the next step's first word, no seconds counter) and the File menu entries and the removed gear dialog.
 - Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.test.tsx` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — tests only, no customer-visible change
+
+## 2026-10-16 — #638: "Teaching it to move…" follows the companion sprites
+
+- User approval: Codex review fix that implements the approved rule of "#638: Theme Studio progress line, toolbar V1 and OpenAI key in Settings" (the word shows only with an animated companion); no new wording; not seen by Paul.
+- Approved customer-visible result: as approved above. The word is now chosen by the companion sprites of the design (the attached companion pets) instead of the scene animation files, so it appears for an animated companion and not for a scene loop alone.
+- Scope: the choice of the drawing word list in `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — status word of Theme Studio, not announced to customers
