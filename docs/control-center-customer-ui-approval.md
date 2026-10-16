@@ -7494,3 +7494,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: As in the overlay entries above. Whenever Settings is the page, however it was opened (the sidebar, a Usage action, or "Show me in Settings" from What's New), the overlay counts as seen and does not return when leaving Settings. No new wording.
 - Scope: `provider-action-dialog.tsx` and its test, `control-center-app.tsx` (the Settings state is passed to the hook), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: all seen on Settings in one update (#669)
+
+- User approval: Paul chose on 2026-10-16 (via the review orchestrator) Claude Design page "Control Center Redesign" 644, "3A + 4A + 5B (weekly: number first), Paul 16.10." — the overlay of the entry above; this follow-up applies a Codex review finding and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: As in the overlay entries above. Opening Settings marks every provider's overlay seen at once; with many providers the page no longer re-renders once per provider. No new wording.
+- Scope: `provider-action-dialog.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own

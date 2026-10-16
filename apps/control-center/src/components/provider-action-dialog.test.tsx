@@ -213,3 +213,16 @@ it("counts the overlay as seen on Settings, whichever way the page was opened", 
   await act(async () => rerender(<SettingsAware actions={claude()} onSettings={false} />));
   expect(dialog("Claude needs a new sign-in")).toBeNull();
 });
+
+it("marks many actions seen on Settings in one update", async () => {
+  const many = Object.fromEntries(
+    Array.from({ length: 40 }, (_, i) => [
+      `p${i}`,
+      { name: `P${i}`, state: "setup_required", label: "Set up", onAction: vi.fn() },
+    ]),
+  );
+  const { rerender } = render(<SettingsAware actions={many} onSettings />);
+  expect(screen.queryAllByRole("dialog")).toHaveLength(0);
+  await act(async () => rerender(<SettingsAware actions={many} onSettings={false} />));
+  expect(screen.queryAllByRole("dialog")).toHaveLength(0);
+});

@@ -78,11 +78,12 @@ export function useProviderActionDismissal(
     ([id, action]) => !dismissed.has(actionKey(id, action)),
   );
   if (onSettings && shown) {
-    // Seen on Settings, whatever way the page was opened: marked once here.
-    const seen = actionKey(shown[0], shown[1]);
+    // Seen on Settings, whatever way the page was opened: every action present
+    // is marked in one update, so the page never re-renders once per provider.
+    const seen = entries.map(([id, action]) => actionKey(id, action));
     setMemory((previous) => ({
       ...previous,
-      dismissed: new Set(previous.dismissed).add(seen),
+      dismissed: new Set([...previous.dismissed, ...seen]),
     }));
     shown = undefined;
   }
