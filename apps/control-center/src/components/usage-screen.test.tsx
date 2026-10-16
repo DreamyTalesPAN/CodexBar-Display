@@ -644,6 +644,54 @@ describe("UsageScreen", () => {
     expect(html).not.toContain('aria-label="Updating"');
   });
 
+  // Healthy and not stale while token history is still counting: the resets
+  // stay, the spinner stays away, and each window shows its own reset.
+  it("shows the resets of healthy, fresh tiles while token history still counts", () => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="online"
+        onRefresh={vi.fn()}
+        usage={{
+          ...usage,
+          tokenUsageReady: true,
+          tokenUsageUpdating: true,
+          providers: [
+            {
+              id: "claude",
+              label: "Claude",
+              session: 94,
+              weekly: 91,
+              resetSecs: 9469,
+              usageMode: "remaining",
+              stale: false,
+              windows: [
+                { id: "session", label: "Session", usedPercent: 94, resetSecs: 9469 },
+                { id: "weekly", label: "Weekly", usedPercent: 91, resetSecs: 95869 },
+                { id: "fable", label: "Fable only", usedPercent: 100 },
+              ],
+              cost: { daily: [{ day: "2026-10-16", totalTokens: 1234 }] },
+            },
+            {
+              id: "codex",
+              label: "Codex",
+              session: 0,
+              weekly: 71,
+              usageMode: "remaining",
+              stale: false,
+              windows: [{ id: "weekly", label: "Weekly", usedPercent: 71, resetSecs: 471073 }],
+              cost: { daily: [{ day: "2026-10-16", totalTokens: 1234 }] },
+            },
+          ],
+        }}
+      />,
+    );
+    expect(html).toContain('data-testid="token-history-updating"');
+    expect(html).not.toContain('aria-label="Updating"');
+    expect(html).toContain("Reset in 2h 37m");
+    expect(html).toContain("Reset in 1d 2h");
+    expect(html).toContain("Reset in 5d 10h");
+  });
+
   it("leaves an action tile blank even when stale numbers exist", () => {
     const html = renderToStaticMarkup(
       <UsageScreen

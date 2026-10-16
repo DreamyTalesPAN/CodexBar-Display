@@ -7750,3 +7750,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: A closed access message for a provider returns when the cause comes back after the provider was healthy or switched off, also when the provider list was not on screen in between. The Usage token-history notice names the one provider that is shown, when only one is. No new wording.
 - Scope: `setup/setup-providers-screen.tsx` and its test, `control-center-app.tsx` (the app-level reset on each preference read), `usage-screen.tsx` (the notice uses the shown providers), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — review fixes, no customer-visible change of its own
+
+## 2026-10-16 — Usage: test pins the reset times of healthy tiles while token history counts (#669)
+
+- User approval: Paul approved the Usage tiles on 2026-10-16 (entries above, via the review orchestrator); this entry adds a test only for the approved reset display and changes no wording or layout; he has not yet seen this build.
+- Approved customer-visible result: No change. A healthy, fresh tile shows its reset time top-right and on each later window line while the token history is still counting, with no spinner. No new wording.
+- Scope: `usage-screen.test.tsx` (one new test), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — test only, no customer-visible change
