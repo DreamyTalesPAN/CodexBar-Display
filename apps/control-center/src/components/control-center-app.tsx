@@ -624,6 +624,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     companionStatus === "online" && companionInstallationMode === "legacy",
   );
 
+  // The screensaver values of the VibeTV on screen: unsaved and saved ones,
+  // and the shown setting. Dropped when the VibeTV they belong to goes.
+  const resetStandbySettings = useCallback(() => {
+    standbyDirtyRef.current = null;
+    lastSavedStandbyRef.current = null;
+    setStandby(null);
+  }, []);
+
   const mergeDevice = useCallback((next: DeviceInfo) => {
     // The screensaver values belong to one VibeTV. When another one is
     // connected they go, a read still on its way for the first one no longer
@@ -634,10 +642,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     const deviceId = next.deviceId?.trim();
     if (deviceId && deviceId !== settingsDeviceIdRef.current) {
       if (settingsDeviceIdRef.current) {
-        standbyDirtyRef.current = null;
-        lastSavedStandbyRef.current = null;
         settingsReadRef.current = null;
-        setStandby(null);
+        resetStandbySettings();
       }
       settingsDeviceIdRef.current = deviceId;
     }
@@ -658,7 +664,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         ),
       };
     });
-  }, []);
+  }, [resetStandbySettings]);
 
   useEffect(() => {
     providerPreferencesRef.current = providerPreferences;
@@ -2048,9 +2054,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       );
       brightnessDirtyRef.current = null;
       setBrightness(null);
-      standbyDirtyRef.current = null;
-      lastSavedStandbyRef.current = null;
-      setStandby(null);
+      resetStandbySettings();
       setLastInstall(undefined);
       setThemeInstallStatus(null);
       setSupportDiagnostics(null);
@@ -2132,6 +2136,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     addEvent,
     markCompanionAccessBlocked,
     markCompanionUnavailable,
+    resetStandbySettings,
     runCompanion,
     setDeviceRecoveryGate,
   ]);

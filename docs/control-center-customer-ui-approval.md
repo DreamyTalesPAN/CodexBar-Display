@@ -7350,3 +7350,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the Show screensaver switch exists only in Settings › Screensaver, beside "Show after" and "Brightness in screensaver", without an explanation line under it. Appearance › Screensavers has no switch and no explanation line of its own; while the screensaver is off it shows one muted line "Screensaver is off." with the link "Turn on in Settings", which opens Settings at the Screensaver group. The "Screensaver is turned off" notice ("Turn on Show screensaver to install and use a screensaver.") is gone. Install stays disabled while the screensaver is off ("Turn on first"). The Settings switch opens only once VibeTV's own setting is read. This replaces the two "The same switch is …" lines of the #643 entry above.
 - Scope: `theme-library-screen.tsx`, `settings-screen.tsx`, `control-center-app.tsx`, their tests, `scripts/test-customer-flows.mjs` and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — a small change to an existing setting, not announced to customers
+
+## 2026-10-16 — #645: code simplification of the device-switch guard (no visible change)
+
+- User approval: none needed, no visible change. Code simplification of the #645 device-switch guard (AGENTS.md: one central reset); no visible change; not seen by Paul.
+- Approved customer-visible result: unchanged; the Settings screensaver switch, its line and all copy stay as in the entries above.
+- Scope: `control-center-app.tsx` (standby reset helper shared by the device-change and disconnect paths). Pull-request branch only, not merge or release.
+- What's new: none — refactor, no customer-visible change
