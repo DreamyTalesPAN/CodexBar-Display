@@ -728,6 +728,20 @@ describe("UsageScreen", () => {
     expect(html).not.toContain("Token history is unavailable");
   });
 
+  it("shows no still-loading notice beside an action tile", () => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="online"
+        providerActions={{
+          claude: { name: "Claude", state: "auth_required", label: "Sign in needed", onAction: vi.fn() },
+        }}
+        usage={{ ok: true, refresh: { state: "unavailable" }, providers: [] }}
+      />,
+    );
+    expect(html).toContain('aria-label="Sign in needed for Claude"');
+    expect(html).not.toContain("Usage is still loading");
+  });
+
   it("gives no tile to a hidden provider, even with a usage entry", () => {
     const html = renderToStaticMarkup(
       <UsageScreen

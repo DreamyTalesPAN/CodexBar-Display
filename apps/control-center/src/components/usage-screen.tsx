@@ -151,9 +151,11 @@ export function UsageScreen({
   // A requested refresh that still waits for its reading: a small spinner by
   // the token total, not a notice above the page (Paul, 2026-10-09).
   const refreshPending = usage?.refresh?.state === "refreshing";
+  // An action tile is content too: no "still loading" notice beside it.
   const refreshNotice = usageRefreshNotice(usage?.refresh, {
     companionStatus,
-    hasUsableVisibleUsageContent,
+    hasUsableVisibleUsageContent:
+      hasUsableVisibleUsageContent || Object.keys(providerActions).length > 0,
     usageError,
   });
 

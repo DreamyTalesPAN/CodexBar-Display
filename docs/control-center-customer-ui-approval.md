@@ -7701,3 +7701,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: A sign-in failure shown in the overlay stays there when the provider is checked again and its need returns. No new wording.
 - Scope: `provider-action-dialog.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Usage: no "still loading" notice beside an action tile (#669)
+
+- User approval: Paul approved the Usage tiles and the provider looks on 2026-10-16 (entries above, via the review orchestrator); this follow-up applies a Codex review finding and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: While usage is still loading, a provider that needs the customer shows its action tile and no "Usage is still loading" notice beside it. A real usage error is still shown. No new wording.
+- Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the Usage tiles, no customer-visible change of its own
