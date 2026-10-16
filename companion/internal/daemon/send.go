@@ -52,7 +52,12 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	authoritativeFrame := result.frame
 	frame := applyUsageBarsPreference(authoritativeFrame.Normalize(), deps.usageBarsShowUsed())
 	if !result.usageFresh && result.failureErr == nil {
-		expiredLastGood := state != nil && state.hasLastGood && !isLastGoodFreshAt(state.lastGoodAt, deps.now(), providerSnapshotMaxAge())
+		// While the computer is too busy for the usage engine, the last good
+		// frame does not expire: a screensaver shows the last good provider
+		// with its values, and a live theme shows them under SystemBusyLabel
+		// (Paul, 2026-10-15, #628). The reset countdown keeps its own limit.
+		lastGoodLasts := result.systemBusy
+		expiredLastGood := state != nil && state.hasLastGood && !lastGoodLasts && !isLastGoodFreshAt(state.lastGoodAt, deps.now(), providerSnapshotMaxAge())
 		// The reading is only retained, so there is nothing new to show.
 		// Falling silent would look like a lost writer to the device, which
 		// then ends a working state on its own (#369). Restate the last good
@@ -63,7 +68,7 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 		if state != nil && state.hasLastGood && (!frame.UsageUnavailable || !expiredLastGood) {
 			authoritativeFrame = state.lastGood
 			authoritativeFrame.Activity, authoritativeFrame.Update = result.frame.Activity, result.frame.Update
-			if !isLastGoodFreshAt(state.lastGoodAt, deps.now(), lastGoodMaxAge()) {
+			if !lastGoodLasts && !isLastGoodFreshAt(state.lastGoodAt, deps.now(), lastGoodMaxAge()) {
 				authoritativeFrame.UsageUnavailable = true
 			}
 			result.resetBasisAt = state.lastGoodAt
@@ -71,6 +76,11 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 			result.selectionReason, result.selectionDetail = "usage-waiting", "usage-not-fresh"
 			frame = applyUsageBarsPreference(authoritativeFrame.Normalize(), deps.usageBarsShowUsed())
 		}
+	}
+	if result.systemBusy {
+		// The values on screen are old because the computer is starved, and
+		// VibeTV says so where it names the provider (#606).
+		frame.Label = SystemBusyLabel
 	}
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
 	frame = applyDeviceUsageWindowLimit(frame, caps)

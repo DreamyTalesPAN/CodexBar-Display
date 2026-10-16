@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
@@ -117,6 +118,9 @@ type statusResponse struct {
 	Setup                        setupProgress          `json:"setup"`
 	ThemeInstall                 *themeInstallJob       `json:"themeInstall,omitempty"`
 	FirmwareUpdate               *firmwareUpdateJob     `json:"firmwareUpdate,omitempty"`
+	// SystemBusy is present while the computer is too starved for the usage
+	// engine to answer (#606); the app then tells the customer.
+	SystemBusy *daemon.SystemBusy `json:"systemBusy,omitempty"`
 }
 
 type deviceActionResponse struct {
@@ -338,7 +342,15 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Setup:                        setupProgressForConfig(cfg),
 		ThemeInstall:                 themeInstall,
 		FirmwareUpdate:               firmwareUpdate,
+		SystemBusy:                   s.currentSystemBusy(),
 	})
+}
+
+func (s *Server) currentSystemBusy() *daemon.SystemBusy {
+	if s.systemBusy == nil {
+		return nil
+	}
+	return s.systemBusy()
 }
 
 func cableHelloMatchesConfig(hello protocol.DeviceHello, configuredDeviceID string) bool {

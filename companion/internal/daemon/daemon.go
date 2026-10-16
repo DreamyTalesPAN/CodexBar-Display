@@ -9,6 +9,7 @@ import (
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/systemload"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/timeline"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
@@ -32,6 +33,28 @@ type Options struct {
 	// RecordEvent receives the worker's state for the support timeline. It is
 	// called on every cycle; the timeline keeps only the transitions.
 	RecordEvent func(timeline.Event)
+	// ReportSystemBusy receives the collector's busy-computer verdict after
+	// every collection: nil while usage arrives or the computer has memory
+	// to spare (issue #606).
+	ReportSystemBusy func(*SystemBusy)
+	// CurrentSystemBusy is the verdict last reported, also by a worker that
+	// has since been replaced: a restart of the worker does not end the
+	// incident.
+	CurrentSystemBusy func() *SystemBusy
+}
+
+// SystemBusyLabel replaces the provider name on VibeTV while the computer is
+// too starved for the usage engine to answer. "Computer busy" ran into the
+// window buttons of Clippy's title bar on the bench VibeTV; "Busy" fits the
+// title line of every catalog theme.
+const SystemBusyLabel = "Busy"
+
+// SystemBusy is the condition of issue #606: the usage engine is running but
+// has not answered for several collections, and the computer is low on
+// memory. Since is when the collector first saw both.
+type SystemBusy struct {
+	Since time.Time `json:"since"`
+	systemload.Figures
 }
 
 const (
@@ -109,6 +132,12 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	deps.interval = opts.Interval
 	if opts.RecordEvent != nil {
 		deps.record = opts.RecordEvent
+	}
+	if opts.ReportSystemBusy != nil {
+		deps.reportSystemBusy = opts.ReportSystemBusy
+	}
+	if opts.CurrentSystemBusy != nil {
+		deps.currentSystemBusy = opts.CurrentSystemBusy
 	}
 	syncCycleMode := deps.fetchProviders != nil && deps.fetchProvider == nil
 	deps = deps.withDefaults()
