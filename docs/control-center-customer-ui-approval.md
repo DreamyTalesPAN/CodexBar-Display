@@ -12,6 +12,13 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test, `settings-screen.test.tsx`, and this approval record. No merge, release, or device write is implied.
 - What's new: none — the same providers in a different order needs no notice.
 
+## 2026-10-16 — Provider list: OpenAI (API) and Azure OpenAI right after the subscription tools (#651, follow-up to b5fd6748)
+
+- User approval: Marcus, 16.10.2026, channel Abstimmungschat (question 27, answer "ja"), the same approval as the entry above. This entry records the implementation of that exact text, which the first commit did not yet match: OpenAI (API) and Azure OpenAI now follow Codex, Claude, Cursor and Antigravity directly.
+- Approved customer-visible result: As above. Codex, Claude, Cursor, Antigravity, then OpenAI (API), Azure OpenAI, then the other providers; switched-on ones stay above switched-off ones within the other providers. No new texts or controls.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test, and this approval record.
+- What's new: none — same as above.
+
 ## 2026-10-15 — "Your VibeTV is live" without Back, set up once is remembered (#611)
 
 - User approval: Paul decided the behavior in issue #611 on 2026-10-15 ("Decision by Paul, 2026-10-15"). He has not personally previewed this exact build.
