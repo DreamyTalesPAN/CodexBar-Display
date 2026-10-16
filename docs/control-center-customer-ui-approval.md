@@ -7501,3 +7501,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: As in the overlay entries above. Opening Settings marks every provider's overlay seen at once; with many providers the page no longer re-renders once per provider. No new wording.
 - Scope: `provider-action-dialog.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Usage tiles: an unavailable lane is announced to screen readers (#669)
+
+- User approval: Paul chose the calm Usage tiles on 2026-10-16 (entry above, via the review orchestrator); this follow-up applies a Codex review finding and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: Unchanged on screen. A screen reader now hears "session usage unavailable" for a lane that has no number, as well as the lane that has one. Not seen by Paul yet.
+- Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — accessible name only, no customer-visible change of its own

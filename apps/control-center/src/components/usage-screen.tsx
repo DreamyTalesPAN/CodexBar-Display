@@ -711,9 +711,12 @@ function UsageLineView({
 }) {
   if (line.unavailable) {
     return (
-      <div aria-hidden className="grid gap-2">
-        <Skeleton className="h-3 w-24" />
-        <Skeleton className="h-1.5 w-full" />
+      <div className="grid gap-2">
+        <span className="sr-only">{`${line.label} usage unavailable`}</span>
+        <div aria-hidden className="grid gap-2">
+          <Skeleton className="h-3 w-24" />
+          <Skeleton className="h-1.5 w-full" />
+        </div>
       </div>
     );
   }
