@@ -138,6 +138,7 @@ import {
 } from "./setup/setup-usage-dialog";
 import { SetupDevicePickerDialog } from "./setup/setup-device-dialogs";
 import { SetupDialog } from "./setup/setup-dialog";
+import { SystemBusyDialog, useSystemBusyDismissal } from "./system-busy-dialog";
 import { SetupRecoveryDialogs } from "./setup/setup-recovery-dialogs";
 import { SetupWizard } from "./setup/setup-wizard";
 import { SettingsScreen, standbyTimeoutLabel } from "./settings-screen";
@@ -521,6 +522,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [runtimeRecoveryHidden, setRuntimeRecoveryHidden] = useState(false);
   // Hiding the usage dialog hides the announcement; the repair itself runs on.
   const [usageFailureHidden, setUsageFailureHidden] = useState(false);
+  // The computer is too starved for the usage engine to answer (#606).
+  // Its start time keys the incident; null while there is none.
+  const [systemBusySince, setSystemBusySince] = useState<string | null>(null);
+  const [systemBusyDismissed, dismissSystemBusy] = useSystemBusyDismissal(systemBusySince);
   // "Run setup again" asks first, from Settings and from Support alike.
   const [setupAgainRequested, setSetupAgainRequested] = useState(false);
   // The "What's new" entries this customer has seen, null while nothing is
@@ -1434,6 +1439,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         firmwareUpdate?: FirmwareUpdateJob;
         providerSetup?: ProviderSetupInfo;
         setup?: ProviderSelectionSetup;
+        systemBusy?: { since?: string };
       }>(takeStatusPath(appUpdateCheckRequested), undefined, {
         preserveLastError: true,
       });
@@ -1445,6 +1451,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       applyConnectionStatus(payload);
       setProviderSetup(payload.providerSetup || null);
       setProviderSelectionSetup(payload.setup || null);
+      setSystemBusySince(
+        payload.systemBusy ? payload.systemBusy.since || "unknown" : null,
+      );
       const pairingRejection = pairingRejectionForDevice(payload.device);
       if (pairingRejection) {
         setLastError(pairingRejection);
@@ -4526,12 +4535,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       return;
     }
     macAppUpdatePromptedFor.current = macAppUpdateOfferedVersion;
-    window.location.href = "vibetv://check-for-updates";
+    // The Mac App runs a background Sparkle check for this prompt: it shows a
+    // dialog only when Sparkle finds the update, never "You're up to date"
+    // in the middle of setup (#570). Windows keeps its own check.
+    window.location.href = windowsHost
+      ? "vibetv://check-for-updates"
+      : "vibetv://check-for-updates-in-background";
   }, [
     firmwareUpdateInProgress,
     hostedSetup,
     macAppUpdateAvailable,
     macAppUpdateOfferedVersion,
+    windowsHost,
   ]);
   const displaySessionActive = Boolean(
     deviceConnected ||
@@ -5068,6 +5083,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     const timer = window.setTimeout(() => setWhatsNewSeen(markWhatsNewSeen()), 0);
     return () => window.clearTimeout(timer);
   }, [whatsNewIsNotNews]);
+  // Like the usage dialog, an announcement over whatever the customer does,
+  // after the runtime repair, the lost VibeTV and setup. A broken usage
+  // service is the bigger problem and is told first. Any other dialog comes
+  // first as well (SystemBusyDialog waits for it).
+  const systemBusyOpen =
+    systemBusySince !== null &&
+    !systemBusyDismissed &&
+    !needsRuntimeRecovery &&
+    !lostDevicePickerOpen &&
+    !setupOwnsScreen &&
+    !(usageFailure && !usageFailureHidden);
   // The notice opens by itself on Overview, and again from Updates, once
   // nothing else asks for the customer: not during setup or a firmware update,
   // and under no other dialog. It stays on the page it was opened on: other
@@ -5077,7 +5103,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     firmwareUpdateInProgress ||
     needsRuntimeRecovery ||
     lostDevicePickerOpen ||
-    (usageFailure && !usageFailureHidden);
+    (usageFailure && !usageFailureHidden) ||
+    systemBusyOpen;
   const whatsNewEntries = (somethingElseAsks
     ? []
     : whatsNewReopened && activeShellTab === "updates"
@@ -5770,6 +5797,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           windowsHost={windowsHost}
         />
       ) : null}
+      {systemBusyOpen ? <SystemBusyDialog onClose={dismissSystemBusy} /> : null}
       {setupAgainRequested ? (
         <SetupDialog
           description="You connect VibeTV and choose your AI providers and display mode again. VibeTV keeps its WiFi details, settings and themes."

@@ -3,6 +3,7 @@ package codexbar
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -118,6 +119,10 @@ func serveUsageItem(provider dashboardusage.DashboardProvider, item map[string]a
 	return raw, err == nil
 }
 
+// ErrDashboardServeUnavailable is a fetch that found no running, healthy serve
+// to ask.
+var ErrDashboardServeUnavailable = errors.New("dashboard serve unavailable")
+
 func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now time.Time) (_ []ParsedFrame, err error) {
 	defer func() {
 		if err != nil {
@@ -129,13 +134,13 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 	serveUsage.mu.Unlock()
 	endpoint := strings.TrimRight(strings.TrimSpace(info.Endpoint), "/")
 	if endpoint == "" || strings.TrimSpace(info.Token) == "" || !info.Running || !info.Healthy {
-		return nil, fmt.Errorf("dashboard serve unavailable")
+		return nil, ErrDashboardServeUnavailable
 	}
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
 
-	snapshotRaw, err := fetchDashboardJSON(ctx, endpoint+dashboardSnapshotPath, strings.TrimSpace(info.Token))
+	snapshotRaw, err := fetchDashboardSnapshot(ctx, endpoint, strings.TrimSpace(info.Token))
 	if err != nil {
 		return nil, err
 	}
@@ -211,6 +216,20 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 	}
 	serveUsage.mu.Unlock()
 	return out, nil
+}
+
+// dashboardRequestTimeout bounds the snapshot request to CodexBar's serve,
+// and the usage request for all providers at once. The serve answers both
+// from its own cache; a request it does not answer within this time must not
+// hold the whole collection (10 min) and leave VibeTV without usage. The next
+// cycle asks again. A Windows per-provider probe keeps its own budget
+// (perProviderProbeTimeout).
+var dashboardRequestTimeout = 30 * time.Second
+
+func fetchDashboardSnapshot(ctx context.Context, endpoint string, token string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, dashboardRequestTimeout)
+	defer cancel()
+	return fetchDashboardJSON(ctx, endpoint+dashboardSnapshotPath, token)
 }
 
 func fetchDashboardJSON(ctx context.Context, url string, token string) ([]byte, error) {
