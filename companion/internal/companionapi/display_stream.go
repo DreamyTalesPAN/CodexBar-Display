@@ -24,11 +24,13 @@ type displayStreamInfo struct {
 	LastSentAt string `json:"lastSentAt,omitempty"`
 	// Provider is the provider of the last frame sent to this VibeTV, read
 	// from the same log line as LastSentAt (#368). It stays set while sending
-	// stalls, because the firmware keeps that frame on screen; a frame for
-	// another VibeTV or connection mode, an error frame after it, an unplugged
-	// USB port or a rejected pairing names none. Usage reads it to tell which
-	// provider the device shows; usage.currentProvider falls back to the
-	// first provider when no frame was kept.
+	// stalls, because the firmware keeps that frame on screen (a usage frame
+	// for 150 s, a theme-spec frame until the next one, see
+	// withoutReplacedFrameProvider); a frame for another VibeTV or connection
+	// mode, an error frame after it, an unplugged USB port or a rejected
+	// pairing names none. Usage reads it to tell which provider the device
+	// shows; usage.currentProvider falls back to the first provider when no
+	// frame was kept.
 	Provider   string `json:"provider,omitempty"`
 	Target     string `json:"target,omitempty"`
 	LastTarget string `json:"lastTarget,omitempty"`
@@ -101,6 +103,31 @@ func streamPointer(stream displayStreamInfo) *displayStreamInfo {
 		stream.Provider = ""
 	}
 	return &stream
+}
+
+// firmwareFrameStaleAge is the firmware's kFrameStaleWarningMs: 150 s after a
+// usage frame arrived without a newer one, VibeTV replaces it with its
+// "Open App" screen. A theme-spec frame is never replaced that way.
+const firmwareFrameStaleAge = 150 * time.Second
+
+// withoutReplacedFrameProvider drops the provider of a stalled stream once
+// the firmware has replaced its frame (#368). Only the device's own report
+// of an active theme spec keeps it longer.
+func withoutReplacedFrameProvider(device deviceInfo, now time.Time) deviceInfo {
+	stream := device.Stream
+	if stream == nil || stream.Healthy || stream.Provider == "" {
+		return device
+	}
+	if device.Display != nil && device.Display.ThemeSpec != nil && device.Display.ThemeSpec.Active {
+		return device
+	}
+	if sentAt, err := time.Parse(time.RFC3339, stream.LastSentAt); err == nil && now.Sub(sentAt) <= firmwareFrameStaleAge {
+		return device
+	}
+	cleared := *stream
+	cleared.Provider = ""
+	device.Stream = &cleared
+	return device
 }
 
 func inspectDisplayStreamAfterRunning(ctx context.Context, target string, notBefore time.Time, running func() bool) displayStreamInfo {
@@ -180,7 +207,8 @@ func inspectDisplayStreamAfterRunning(ctx context.Context, target string, notBef
 	if time.Since(lastSentAt) > displayStreamReadyAge {
 		// The firmware keeps a usage frame on screen for 150 s and a
 		// theme-spec frame until the next one, so a stalled stream still
-		// shows this provider. An error frame sent after it does not.
+		// shows this provider; withoutReplacedFrameProvider drops it once
+		// the frame was replaced. An error frame sent after it does not.
 		if !errorOK || errorAt.Before(lastSentAt) {
 			stream.Provider = displayStreamLogValue(frameLine, "provider")
 		}

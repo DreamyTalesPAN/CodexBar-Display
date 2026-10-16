@@ -3943,6 +3943,26 @@ func TestUnhealthyStreamNamesNoProvider(t *testing.T) {
 // Sending stalls after a frame: the firmware keeps that frame on screen, so
 // the stream still names its provider, unless an error frame followed (#368).
 func TestStalledStreamKeepsProviderOfLastFrame(t *testing.T) {
+	now := time.Now().UTC()
+	stalled := func(age time.Duration) *displayStreamInfo {
+		return &displayStreamInfo{Running: true, Provider: "codex", LastSentAt: now.Add(-age).Format(time.RFC3339)}
+	}
+	theme := &deviceDisplayInfo{ThemeSpec: &themeSpecHealth{Active: true}}
+	for _, tc := range []struct {
+		name   string
+		device deviceInfo
+		want   string
+	}{
+		{"usage frame still on screen", deviceInfo{Stream: stalled(140 * time.Second)}, "codex"},
+		{"usage frame replaced by Open App", deviceInfo{Stream: stalled(160 * time.Second)}, ""},
+		{"theme-spec frame stays", deviceInfo{Stream: stalled(30 * time.Minute), Display: theme}, "codex"},
+		{"healthy stream", deviceInfo{Stream: &displayStreamInfo{Healthy: true, Provider: "codex", LastSentAt: now.Add(-time.Hour).Format(time.RFC3339)}}, "codex"},
+	} {
+		if got := withoutReplacedFrameProvider(tc.device, now); got.Stream.Provider != tc.want {
+			t.Fatalf("%s: want provider %q, got %+v", tc.name, tc.want, got.Stream)
+		}
+	}
+
 	oldPrint := printDisplayStreamService
 	t.Cleanup(func() { printDisplayStreamService = oldPrint })
 	printDisplayStreamService = func(context.Context, string) ([]byte, error) {
