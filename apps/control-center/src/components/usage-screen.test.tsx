@@ -643,12 +643,12 @@ describe("UsageScreen", () => {
     expect(html).not.toContain('aria-label="Updating"');
   });
 
-  it("keeps a stale provider's numbers beside its action", () => {
+  it("leaves an action tile blank even when stale numbers exist", () => {
     const html = renderToStaticMarkup(
       <UsageScreen
         companionStatus="online"
         providerActions={{
-          codex: { name: "Codex", label: "Sign in needed", onAction: vi.fn() },
+          codex: { name: "Codex", state: "auth_required", label: "Sign in needed", onAction: vi.fn() },
         }}
         usage={{
           ...usage,
@@ -656,8 +656,10 @@ describe("UsageScreen", () => {
         }}
       />,
     );
-    expect(html).toContain("Sign in needed");
-    expect(html).toContain('aria-label="45% session used"');
+    expect(html).toContain('aria-label="Sign in needed for Codex"');
+    expect(html).not.toContain("45%");
+    expect(html).not.toContain("26%");
+    expect(html).not.toContain('aria-label="Updating"');
     expect(html).not.toContain("Reset in");
   });
 
@@ -666,7 +668,7 @@ describe("UsageScreen", () => {
       <UsageScreen
         companionStatus="missing"
         providerActions={{
-          claude: { name: "Claude", label: "Sign in needed", onAction: vi.fn() },
+          claude: { name: "Claude", state: "auth_required", label: "Sign in needed", onAction: vi.fn() },
         }}
         usage={null}
       />,
@@ -680,8 +682,8 @@ describe("UsageScreen", () => {
       <UsageScreen
         companionStatus="online"
         providerActions={{
-          codex: { name: "Codex", label: "Sign in needed", onAction: vi.fn() },
-          claude: { name: "Claude", label: "Sign in needed", onAction: vi.fn() },
+          codex: { name: "Codex", state: "auth_required", label: "Sign in needed", onAction: vi.fn() },
+          claude: { name: "Claude", state: "auth_required", label: "Sign in needed", onAction: vi.fn() },
         }}
         usage={usage}
       />,

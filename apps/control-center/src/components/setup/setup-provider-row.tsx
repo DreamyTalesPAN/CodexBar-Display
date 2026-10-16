@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, RefreshCw, TriangleAlert } from "lucide-react";
+import { ChevronRight, TriangleAlert } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -90,7 +90,6 @@ type SetupProviderRowProps = {
   health: PreferenceHealthState;
   label: string;
   onShowIssue: () => void;
-  onCheckAgain: () => void;
   /**
    * Starts the provider's sign-in through the companion: the browser page
    * for "browser_sign_in_required", the tool's own login (or its install
@@ -114,7 +113,6 @@ export function SetupProviderRow({
   enabled,
   health,
   label,
-  onCheckAgain,
   onShowIssue,
   onOpenSignIn,
   onToggle,
@@ -125,13 +123,6 @@ export function SetupProviderRow({
     (variant === "sign_in" || variant === "browser_sign_in");
   const unusable =
     variant === "no_usage" || variant === "outage" || variant === "unsupported";
-  const checkAgain = (
-    <SetupProviderRowAction
-      icon={RefreshCw}
-      label={`Check ${label} again`}
-      onClick={onCheckAgain}
-    />
-  );
 
   return (
     <Item
@@ -165,14 +156,12 @@ export function SetupProviderRow({
                 label={`Show provider message for ${label}`}
                 onClick={onShowIssue}
               />
-              {variant === "stale" || variant === "unsupported" ? null : checking ? (
+              {checking && variant !== "stale" && variant !== "unsupported" ? (
                 <>
                   <span className="sr-only">Checking {label}…</span>
                   <Spinner />
                 </>
-              ) : (
-                checkAgain
-              )}
+              ) : null}
             </>
           )
         )}
@@ -213,11 +202,11 @@ export function setupProviderIssueMessage({
   const tooOld = health === "engine_incompatible";
   const fallbackMessage =
     tooOld
-      ? "The usage engine is too old. Repair the usage engine, then check again."
+      ? "The usage engine is too old. Repair the usage engine; VibeTV checks again by itself."
       : variant === "sign_in"
       ? `Sign in to ${label}`
       : variant === "browser_sign_in"
-        ? `Sign in to ${label} in your browser, close the browser, then check again`
+        ? `Sign in to ${label} in your browser, then close the browser; VibeTV checks again by itself`
       : variant === "permission"
         ? "Allow access on this computer"
         : variant === "unsupported"

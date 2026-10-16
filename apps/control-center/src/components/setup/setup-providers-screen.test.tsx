@@ -88,7 +88,7 @@ function render(
 ) {
   return renderToStaticMarkup(
     <SetupProvidersScreen
-      onCheckAgain={vi.fn()}
+
       onContinue={vi.fn()}
       onToggle={vi.fn()}
       pendingCheckIds={new Set<string>()}
@@ -116,8 +116,7 @@ describe("SetupProvidersScreen", () => {
       message: "Sign in to claude.ai (or refresh Claude cookies) to load usage data." });
     const signedOut = { ...failed, health: { ...failed.health, reported: failed.health.message } };
     const onOpenSignIn = vi.fn();
-    const onCheckAgain = vi.fn();
-    const props = { usage, providers: [signedOut], onOpenSignIn, onCheckAgain,
+    const props = { usage, providers: [signedOut], onOpenSignIn, 
       onToggle: vi.fn(), onContinue: vi.fn(),
       pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
     const { rerender } = renderDom(<SetupProvidersScreen {...props} />);
@@ -138,19 +137,17 @@ describe("SetupProvidersScreen", () => {
     expect(onOpenSignIn).toHaveBeenCalledWith(changed);
     expect(screen.queryByRole("dialog")).toBeNull();
     // 3. While the sign-in recovers, the row passes through "stale" as the
-    // usage service restarts; even "Check again" opens nothing.
+    // usage service restarts; the row offers no check button.
     const recovering = provider({ providerId: "claude", label: "Claude", health: "stale",
       message: "Live usage is unavailable; the last successful reading is still saved." });
     rerender(<SetupProvidersScreen {...props} providers={[recovering]} />);
     fireEvent.click(screen.getByRole("button", { name: "Show provider message for Claude" }));
     fireEvent.click(screen.getByRole("button", { name: "OK" }));
     rerender(<SetupProvidersScreen {...props} providers={[{ ...recovering, health: { ...recovering.health, state: "unavailable" } }]} />);
-    fireEvent.click(screen.getByRole("button", { name: "Check Claude again" }));
     rerender(<SetupProvidersScreen {...props} providers={[{ ...recovering, health: { ...recovering.health, state: "unavailable", message: "Still failing." } }]} />);
     expect(screen.queryByRole("dialog")).toBeNull();
     // After the three minutes a failing check reports again, as before.
     act(() => { vi.advanceTimersByTime(PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS); });
-    fireEvent.click(screen.getByRole("button", { name: "Check Claude again" }));
     rerender(<SetupProvidersScreen {...props} providers={[{ ...recovering, health: { ...recovering.health, state: "unavailable", message: "Failing after the window." } }]} />);
     expect(within(screen.getByRole("dialog")).getByText("Failing after the window.")).toBeTruthy();
     rerender(<SetupProvidersScreen {...props} providers={[{ ...claude, label: "Claude" }]} />);
@@ -158,12 +155,11 @@ describe("SetupProvidersScreen", () => {
     expect(screen.queryByRole("button", { name: "Sign in to Claude" })).toBeNull();
   });
 
-  it("shows one provider popup, keeps dismissal across polls, and reopens after retry", () => {
-    const onCheckAgain = vi.fn();
+  it("shows one provider popup and keeps its dismissal across polls", () => {
     const onToggle = vi.fn();
     const failed = { ...copilot, value: true,
       health: { ...copilot.health, reported: "No available fetch strategy for copilot." } };
-    const props = { usage, providers: [claude, failed], onCheckAgain, onToggle,
+    const props = { usage, providers: [claude, failed], onToggle,
       onContinue: vi.fn(), pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
     const { rerender } = renderDom(<SetupProvidersScreen {...props} />);
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
@@ -174,13 +170,9 @@ describe("SetupProvidersScreen", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.queryByText(failed.health.reported)).toBeNull();
     expect(screen.getByRole("button", { name: "Continue" }).hasAttribute("disabled")).toBe(false);
-    fireEvent.click(screen.getByRole("button", { name: "Check GitHub Copilot again" }));
-    expect(onCheckAgain).toHaveBeenCalledWith(failed);
     rerender(<SetupProvidersScreen {...props} pendingCheckIds={new Set(["copilot"])} />);
-    expect(screen.queryByRole("dialog")).toBeNull();
     rerender(<SetupProvidersScreen {...props} />);
-    expect(screen.getByRole("dialog")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(screen.getByRole("switch", { name: "GitHub Copilot" }));
     expect(onToggle).toHaveBeenCalledWith(failed, false);
     rerender(<SetupProvidersScreen {...props} providers={[claude, { ...failed, value: false }]} />);
@@ -193,7 +185,7 @@ describe("SetupProvidersScreen", () => {
     const stale = provider({ providerId: "codex", label: "Codex", health: "stale",
       message: "Live usage is unavailable; the last successful reading is still saved." });
     renderDom(<SetupProvidersScreen usage={usage} providers={[stale, claude]}
-      onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
+      onContinue={vi.fn()} onToggle={vi.fn()}
       pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Show provider message for Codex" }));
@@ -207,7 +199,7 @@ describe("SetupProvidersScreen", () => {
   it("says how long a provider that is on has gone without a usage reading", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-13T09:43:00Z"));
-    const props = { usage, onContinue: vi.fn(), onCheckAgain: vi.fn(), onToggle: vi.fn(),
+    const props = { usage, onContinue: vi.fn(), onToggle: vi.fn(),
       pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
     const failing = provider({ providerId: "codex", label: "Codex", health: "auth_required",
       message: "Sign in required." });
@@ -252,7 +244,7 @@ describe("SetupProvidersScreen", () => {
   it("keeps an acknowledged message closed when the list is shown again", () => {
     const signedOut = provider({ providerId: "codex", label: "Codex",
       health: "auth_required", message: "Authentication required." });
-    const props = { usage, onCheckAgain: vi.fn(), onToggle: vi.fn(),
+    const props = { usage, onToggle: vi.fn(),
       pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
     const setup = renderDom(<SetupProvidersScreen {...props} onContinue={vi.fn()}
       providers={[signedOut, claude]} />);
@@ -279,7 +271,7 @@ describe("SetupProvidersScreen", () => {
   // must not let a stale message open by itself on a later one.
   it("does not open a stale message by itself on a later visit", () => {
     const off = provider({ providerId: "codex", label: "Codex", health: "disabled", value: false });
-    const props = { usage, onCheckAgain: vi.fn(), onToggle: vi.fn(),
+    const props = { usage, onToggle: vi.fn(),
       pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
     const first = renderDom(<ProviderList {...props} providers={[off, claude]} />);
     fireEvent.click(screen.getByRole("switch", { name: "Codex" }));
@@ -299,7 +291,7 @@ describe("SetupProvidersScreen", () => {
     const summary = "Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: OAuth error: Claude OAuth usage endpoint is rate limited. Retrying in about 1s; credentials were preserved.; CLI: Claude CLI /usage opened, but this Claude version returned local activity stats instead of plan limit percentages. Use Auto, OAuth, or Web mode for Claude limits. [claude:browser-sign-in-required https://claude.ai/login]";
     const engineText = /OAuth|cookies|https:\/\/|\[claude:/;
     const codex = provider({ providerId: "codex", label: "Codex", health: "checking" });
-    const props = { usage, onOpenSignIn: vi.fn(), onContinue: vi.fn(), onCheckAgain: vi.fn(),
+    const props = { usage, onOpenSignIn: vi.fn(), onContinue: vi.fn(),
       onToggle: vi.fn(), pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
     // A healthy row has nothing to say, whatever an earlier check left on it.
     const { rerender } = renderDom(<SetupProvidersScreen {...props}
@@ -311,7 +303,7 @@ describe("SetupProvidersScreen", () => {
     // A provider that really needs the browser session offers the sign-in on
     // its row. Since #590 a sign-in row opens no popup of its own: the button
     // is the one thing to do, and the engine's summary stays out of the page.
-    const message = "Claude usage needs a signed-in claude.ai session in your browser. Sign in to claude.ai in your browser, close the browser, then check again.";
+    const message = "Claude usage needs a signed-in claude.ai session in your browser. Sign in to claude.ai in your browser, close the browser.";
     const signIn = provider({ providerId: "claude", label: "Claude Code", health: "browser_sign_in_required", message });
     rerender(<SetupProvidersScreen {...props} providers={[codex, { ...signIn,
       health: { ...signIn.health, signInUrl: "https://claude.ai/login", reported: summary } }]} />);
@@ -330,7 +322,7 @@ describe("SetupProvidersScreen", () => {
     const openai = provider({ providerId: "openai", label: "OpenAI", health: "unavailable", message: "Second failure" });
     renderDom(<SetupProvidersScreen usage={usage}
       providers={[failed, { ...openai, health: { ...openai.health, reported: "Authentication required" } }]}
-      onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
+      onContinue={vi.fn()} onToggle={vi.fn()}
       pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Copy provider message for GitHub Copilot" }));
@@ -353,7 +345,7 @@ describe("SetupProvidersScreen", () => {
     const openai = provider({ providerId: "openai", label: "OpenAI", health: "unavailable", message: "Failure" });
     renderDom(<SetupProvidersScreen usage={usage}
       providers={[{ ...openai, health: { ...openai.health, reported: "Authentication required" } }]}
-      onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
+      onContinue={vi.fn()} onToggle={vi.fn()}
       pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Copy provider message for OpenAI" }));
@@ -374,8 +366,7 @@ describe("SetupProvidersScreen", () => {
       message: "Live usage is unavailable; the last successful reading is still saved." });
     const signedOut = { ...stale, health: { ...stale.health, signInState: "auth_required" } };
     const onOpenSignIn = vi.fn();
-    const onCheckAgain = vi.fn();
-    const props = { usage, onContinue: vi.fn(), onCheckAgain, onOpenSignIn, onToggle: vi.fn(),
+    const props = { usage, onContinue: vi.fn(), onOpenSignIn, onToggle: vi.fn(),
       pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
     const { rerender } = renderDom(<SetupProvidersScreen {...props} providers={[signedOut]} />);
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -391,7 +382,7 @@ describe("SetupProvidersScreen", () => {
   it("queues simultaneous provider failures and lets a dismissed message be opened again", () => {
     const second = provider({ providerId: "openai", label: "OpenAI", health: "unavailable", message: "Second failure" });
     renderDom(<SetupProvidersScreen usage={usage} providers={[{ ...copilot, value: true }, second]}
-      onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
+      onContinue={vi.fn()} onToggle={vi.fn()}
       pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
     expect(within(screen.getByRole("dialog")).getByText("GitHub Copilot")).toBeTruthy();
@@ -423,11 +414,11 @@ describe("SetupProvidersScreen", () => {
       health: { ...copilot.health, reported: "No available fetch strategy for copilot." } };
     renderDom(<SetupProvidersScreen usage={usage} providers={[claude, failed]}
       onOpenSetupGuide={onOpenSetupGuide} onOpenSignIn={vi.fn()}
-      onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
+      onContinue={vi.fn()} onToggle={vi.fn()}
       pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
     const dialog = within(screen.getByRole("dialog"));
     expect(dialog.getByText(
-      "VibeTV reads GitHub Copilot usage from GitHub Copilot's own app on this computer. Make sure it is installed and signed in, then click Check again.",
+      "VibeTV reads GitHub Copilot usage from GitHub Copilot's own app on this computer. Make sure it is installed and signed in.",
     )).toBeTruthy();
     expect(dialog.getByText("No available fetch strategy for copilot.")).toBeTruthy();
     fireEvent.click(dialog.getByRole("button", { name: "Open setup guide" }));
@@ -445,7 +436,7 @@ describe("SetupProvidersScreen", () => {
       [claudeSignedOut, vi.fn()], [timedOut, vi.fn()], [signedOut, undefined],
     ] as const) {
       const { unmount } = renderDom(<SetupProvidersScreen usage={usage} providers={[item]}
-        onOpenSetupGuide={guide} onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
+        onOpenSetupGuide={guide} onContinue={vi.fn()} onToggle={vi.fn()}
         pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
       const dialog = within(screen.getByRole("dialog"));
       expect(dialog.getByText(item.health.message)).toBeTruthy();
@@ -531,7 +522,6 @@ describe("SetupProvidersScreen", () => {
     const props = {
       usage,
       loading: true,
-      onCheckAgain: vi.fn(),
       onContinue: vi.fn(),
       onToggle: vi.fn(),
       pendingCheckIds: new Set<string>(),
@@ -598,8 +588,7 @@ describe("SetupProvidersScreen", () => {
   });
 
   it("removes the spinner when a 0% reading arrives without resets or token history", () => {
-    const props = {
-      onCheckAgain: vi.fn(), onContinue: vi.fn(), onToggle: vi.fn(),
+    const props = { onContinue: vi.fn(), onToggle: vi.fn(),
       pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>(),
       providers: [claude, { ...copilot, value: true }],
     };
@@ -609,7 +598,7 @@ describe("SetupProvidersScreen", () => {
     rerender(<SetupProvidersScreen {...props} usage={usage} />);
     expect(screen.getByRole("button", { name: "Continue" }).hasAttribute("disabled")).toBe(false);
     expect(container.querySelector('[data-slot="spinner"]')).toBeNull();
-    expect(screen.getByRole("button", { name: "Check GitHub Copilot again" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Check .* again/ })).toBeNull();
   });
 
   it("continues once an enabled provider is ready", () => {
@@ -866,7 +855,7 @@ describe("SetupProvidersScreen accessibility", () => {
       health: { ...copilot.health, reported: "No available fetch strategy for copilot." } };
     renderDom(
       <SetupProvidersScreen
-        onCheckAgain={vi.fn()}
+
         onContinue={vi.fn()}
         onToggle={vi.fn()}
         pendingCheckIds={new Set<string>()}

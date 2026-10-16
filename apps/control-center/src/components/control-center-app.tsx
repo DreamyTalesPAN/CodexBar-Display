@@ -139,6 +139,10 @@ import {
 import { SetupDevicePickerDialog } from "./setup/setup-device-dialogs";
 import { SetupDialog } from "./setup/setup-dialog";
 import { SystemBusyDialog, useSystemBusyDismissal } from "./system-busy-dialog";
+import {
+  ProviderActionDialog,
+  useProviderActionDismissal,
+} from "./provider-action-dialog";
 import { SetupRecoveryDialogs } from "./setup/setup-recovery-dialogs";
 import { SetupWizard } from "./setup/setup-wizard";
 import { SettingsScreen, standbyTimeoutLabel } from "./settings-screen";
@@ -4690,6 +4694,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // Windows and the Mac alike. Both list every provider CodexBar reports.
   const providerSignInEnabled =
     companionInfo?.features?.providerSignInEnabled === true;
+  // The providers that need the customer, for the Usage tiles and the overlay.
+  const providerActions = usageProviderActionsFor(providerPreferences, {
+    onOpenSettings: () => setActiveTab("settings"),
+    onSignIn: providerSignInEnabled
+      ? (item) => void openProviderSignIn(item)
+      : () => setActiveTab("settings"),
+  });
+  const [providerActionShown, dismissProviderAction] =
+    useProviderActionDismissal(providerActions);
   const providerPickerProps = {
     usage,
     display: providerDisplay,
@@ -4708,7 +4721,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     preferencesError: providerPreferencesError,
     pendingCheckIds: pendingProviderCheckIds,
     pendingPreferenceIds,
-    onCheck: checkProvider,
     onOpenSignIn: providerSignInEnabled ? openProviderSignIn : undefined,
     onOpenSetupGuide: providerSignInEnabled ? openProviderSetupGuide : undefined,
     onDisplayChange: (
@@ -5492,7 +5504,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                 setSetupThemeInstallRequested(true);
                 void installTheme();
               }}
-              onProviderCheck={(provider) => void checkProvider(provider)}
               onProviderOpenSignIn={
                 providerSignInEnabled
                   ? (provider) => void openProviderSignIn(provider)
@@ -5586,12 +5597,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             busyAction={busyAction}
             companionStatus={companionStatus}
             onRefresh={() => refreshUsage()}
-            providerActions={usageProviderActionsFor(providerPreferences, {
-              onOpenSettings: () => setActiveTab("settings"),
-              onSignIn: providerSignInEnabled
-                ? (item) => void openProviderSignIn(item)
-                : () => setActiveTab("settings"),
-            })}
+            providerActions={providerActions}
             usage={usage}
             usageError={errorForHost(usageError, windowsHost)}
             windowsHost={windowsHost}
@@ -5798,6 +5804,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         />
       ) : null}
       {systemBusyOpen ? <SystemBusyDialog onClose={dismissSystemBusy} /> : null}
+      {providerActionShown ? (
+        <ProviderActionDialog
+          action={providerActionShown.action}
+          error={providerPreferencesError}
+          onDismiss={dismissProviderAction}
+        />
+      ) : null}
       {setupAgainRequested ? (
         <SetupDialog
           description="You connect VibeTV and choose your AI providers and display mode again. VibeTV keeps its WiFi details, settings and themes."

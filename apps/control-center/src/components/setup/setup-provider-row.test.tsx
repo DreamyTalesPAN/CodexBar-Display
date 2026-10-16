@@ -9,7 +9,7 @@ import {
 function render(props: Partial<Parameters<typeof SetupProviderRow>[0]> = {}) {
   return renderToStaticMarkup(
     <SetupProviderRow enabled health="healthy" label="Claude Code"
-      onCheckAgain={vi.fn()} onToggle={vi.fn()} onShowIssue={vi.fn()} {...props} />,
+ onToggle={vi.fn()} onShowIssue={vi.fn()} {...props} />,
   );
 }
 
@@ -31,10 +31,10 @@ describe("SetupProviderRow", () => {
     },
   );
 
-  it("keeps error text in the popup and offers its opener plus retry", () => {
+  it("keeps error text in the popup and offers no check button", () => {
     const html = render({ health: "auth_required" });
     expect(html).toContain('aria-label="Show provider message for Claude Code"');
-    expect(html).toContain('aria-label="Check Claude Code again"');
+    expect(html).not.toContain("Check Claude Code again");
     expect(html).not.toContain("Sign in to Claude Code");
     expect(html).not.toContain("Open CodexBar");
   });
@@ -70,20 +70,26 @@ describe("SetupProviderRow", () => {
     for (const health of ["checking", "unavailable", "no_usage_available", "service_outage"]) {
       const html = render({ checking: true, health });
       expect(html).toContain("lucide-loader-circle");
-      expect(html).not.toContain('aria-label="Check Claude Code again"');
+      expect(html).not.toContain("again\"");
     }
   });
 
   it("retains the bounded stale-reading presentation and switch", () => {
     const html = render({ health: "stale" });
     expect(html).toContain('aria-label="Show provider message for Claude Code"');
-    expect(html).not.toContain('aria-label="Check Claude Code again"');
+    expect(html).not.toContain("Check Claude Code again");
+  });
+
+  it("offers no check-again button in any health state", () => {
+    for (const health of ["healthy", "auth_required", "stale", "service_outage", "rate_limited", "timed_out"]) {
+      expect(render({ health })).not.toMatch(/Check .* again/);
+    }
   });
 
   it.each(["no_usage_available", "service_outage"])("dims unusable %s without disabling it", (health) => {
     const html = render({ health });
     expect(html).toMatch(/data-slot="item-title"[^>]*opacity-50/);
-    expect(html).toContain('aria-label="Check Claude Code again"');
+    expect(html).not.toContain("Check Claude Code again");
   });
 });
 
@@ -140,9 +146,9 @@ describe("provider popup guidance", () => {
 
   it("names an engine that is too old instead of a timed-out check", () => {
     expect(setupProviderIssueMessage({ health: "engine_incompatible", label: "Codex" })).toBe(
-      "The usage engine is too old. Repair the usage engine, then check again.",
+      "The usage engine is too old. Repair the usage engine; VibeTV checks again by itself.",
     );
-    expect(render({ health: "engine_incompatible" })).toContain('aria-label="Check Claude Code again"');
+    expect(render({ health: "engine_incompatible" })).not.toContain("Check Claude Code again");
   });
 
   it("keeps the engine's product name out of provider messages", () => {

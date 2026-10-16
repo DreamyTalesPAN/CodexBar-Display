@@ -61,9 +61,13 @@ import type {
 /** A provider whose customer must act first; keyed by provider id. */
 export type UsageProviderAction = {
   name: string;
+  /** The health state that asks for the action (after the setup row's rule). */
+  state: string;
   label: string;
   onAction: () => void;
 };
+
+type UsageActionView = Omit<UsageProviderAction, "state">;
 
 type UsageScreenProps = {
   busyAction?: string | null;
@@ -98,13 +102,11 @@ export function UsageScreen({
   const tiles = [
     ...providers.map((provider) => ({
       id: provider.id,
-      // A stale reading keeps its last good numbers beside the action.
-      node:
-        actions[provider.id] && !usageRetainedNumbers(provider) ? (
-          <UsageActionTile {...actions[provider.id]} />
-        ) : (
-          <UsageProviderTile action={actions[provider.id]} provider={provider} />
-        ),
+      node: actions[provider.id] ? (
+        <UsageActionTile {...actions[provider.id]} />
+      ) : (
+        <UsageProviderTile provider={provider} />
+      ),
     })),
     ...Object.entries(actions)
       .filter(([id]) => !providers.some((provider) => provider.id === id))
@@ -282,6 +284,7 @@ export function usageProviderActionsFor(
             item.providerId,
             {
               name: item.label,
+              state: providerRowHealthState(item.health),
               label,
               onAction: signIn ? () => onSignIn(item) : onOpenSettings,
             },
@@ -514,26 +517,18 @@ function useNow(intervalMs: number): Date {
 }
 
 // One tile per provider: the numbers the Mac App delivers, nothing computed here.
-function UsageProviderTile({
-  action,
-  provider,
-}: {
-  action?: UsageProviderAction;
-  provider: UsageProviderInfo;
-}) {
+function UsageProviderTile({ provider }: { provider: UsageProviderInfo }) {
   // The countdown shows whole minutes; its own tick moves it between usage polls.
   const now = useNow(RESET_COUNTDOWN_TICK_MS);
   // Stale or unavailable is decided by the Mac App; the tile only shows the flags.
   const quiet = Boolean(provider.stale || provider.usageUnavailable);
-  // While a customer action shows, the tile has no spinner and no reset time.
-  const lines = usageLines(provider, now, quiet || Boolean(action));
+  const lines = usageLines(provider, now, quiet);
   const sessionReset = lines[0]?.resetText;
   return (
     <UsageTileFrame
-      action={action ? <UsageActionLink {...action} /> : undefined}
       name={provider.label || provider.id}
       status={
-        action ? null : quiet ? (
+        quiet ? (
           <Loader2
             aria-label="Updating"
             className="size-3.5 animate-spin text-muted-foreground"
@@ -565,7 +560,7 @@ function UsageProviderTile({
 }
 
 // The tile for a provider where the customer must act first. No numbers.
-function UsageActionTile({ label, name, onAction }: UsageProviderAction) {
+function UsageActionTile({ label, name, onAction }: UsageActionView) {
   return (
     <UsageTileFrame
       action={<UsageActionLink label={label} name={name} onAction={onAction} />}
@@ -576,7 +571,7 @@ function UsageActionTile({ label, name, onAction }: UsageProviderAction) {
   );
 }
 
-function UsageActionLink({ label, name, onAction }: UsageProviderAction) {
+function UsageActionLink({ label, name, onAction }: UsageActionView) {
   return (
     <button
       aria-label={`${label} for ${name}`}

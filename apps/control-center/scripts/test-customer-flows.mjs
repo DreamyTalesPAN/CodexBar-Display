@@ -519,10 +519,6 @@ async function main() {
         browser,
         appContext.appUrl,
       );
-      await testProviderCheckWinsOverOlderPreferenceRead(
-        browser,
-        appContext.appUrl,
-      );
       await testFailedSetupResetReconcilesPendingProviderToggle(
         browser,
         appContext.appUrl,
@@ -1004,10 +1000,6 @@ async function main() {
       appContext.appUrl,
     );
     await testProviderPoolRetriesAfterFailedWrite(
-      browser,
-      appContext.appUrl,
-    );
-    await testProviderCheckWinsOverOlderPreferenceRead(
       browser,
       appContext.appUrl,
     );
@@ -2645,9 +2637,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       // Customers never see the engine's product name (#334).
       shownMessage:
         "Safari cookie file is not readable. Enable Full Disk Access for usage engine.",
-      rowActions: [
-        "Check Codex again",
-      ],
+      rowActions: [],
     },
     {
       status: "no_usage_available",
@@ -2655,9 +2645,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
         "Claude is connected, but this account does not expose usage limits. Choose another provider.",
       healthState: "no_usage_available",
       reportedMessage: "No usage data is available for this Codex account.",
-      rowActions: [
-        "Check Codex again",
-      ],
+      rowActions: [],
     },
     {
       status: "config_error",
@@ -2666,9 +2654,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       healthState: "config_error",
       reportedMessage: "CodexBar could not save the Codex provider settings.",
       shownMessage: "Usage engine could not save the Codex provider settings.",
-      rowActions: [
-        "Check Codex again",
-      ],
+      rowActions: [],
     },
     {
       status: "not_configured",
@@ -7584,91 +7570,6 @@ async function testProviderPoolRetriesAfterFailedWrite(browser, appUrl) {
   );
   assert(await claude.isChecked(), "the confirmed provider must remain enabled");
   assert(await cursor.isChecked(), "the second provider must remain enabled");
-  await page.close();
-}
-
-async function testProviderCheckWinsOverOlderPreferenceRead(browser, appUrl) {
-  const page = await newCustomerPage(browser, appUrl, { viewport });
-  const requests = [];
-  let providerRetryFinishedAt = Number.POSITIVE_INFINITY;
-  const codexPreference = {
-    ...providerPreferenceFixture("codex", "Codex"),
-    health: {
-      state: "unavailable",
-      service: "unknown",
-      message: "The provider could not be checked.",
-    },
-  };
-  await routeCompanionOnline(page, [], () => {}, {
-    preferencesDelayMs: 2_000,
-    preferencesSnapshotBeforeDelay: true,
-    preferencesResponse: { ok: true, items: [codexPreference] },
-    onProviderRetry: async (_setup, providerId) => {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      providerRetryFinishedAt = Date.now();
-      return exactProviderSetup(providerId, "ready");
-    },
-    onRequest: (path, method, body) =>
-      requests.push({ path, method, body, at: Date.now() }),
-  });
-
-  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
-    timeout: 10_000,
-  });
-  await clickNavigation(page, "Settings");
-  const checkAgain = page.getByRole("button", { name: "Check Codex again" });
-  await checkAgain.waitFor({ timeout: 10_000 });
-  await page.getByRole("dialog", { name: "Codex", exact: true }).getByRole("button", { name: "OK" }).click();
-  await waitForPreferenceReadsToSettle(requests, 2_000);
-  const readsBeforeNavigation = requests.filter(
-    (request) =>
-      request.path === "/v1/preferences" && request.method === "GET",
-  ).length;
-  assert((await page.getByRole("dialog", { name: "Codex", exact: true }).count()) === 0,
-    "a dismissed provider message must stay closed");
-  await clickNavigation(page, "Overview");
-  await clickNavigation(page, "Settings");
-  await waitForCondition(
-    () =>
-      requests.filter(
-        (request) =>
-          request.path === "/v1/preferences" && request.method === "GET",
-      ).length > readsBeforeNavigation,
-    "navigation must start the stale read used by the provider-check race",
-  );
-
-  assert(
-    (await page.getByRole("dialog", { name: "Codex", exact: true }).count()) === 0,
-    "a provider message acknowledged before leaving Settings must not open again",
-  );
-  await checkAgain.click();
-  await waitForCondition(
-    () =>
-      requests.some(
-        (request) =>
-          request.path === "/v1/providers/retry" && request.method === "POST",
-      ),
-    "Check again must run the exact provider retry",
-  );
-  await waitForCondition(
-    () =>
-      requests.some(
-        (request) =>
-          request.path === "/v1/preferences" &&
-          request.method === "GET" &&
-          request.at >= providerRetryFinishedAt,
-      ),
-    "a successful provider check must start a fresh preference read",
-  );
-  await waitForCondition(
-    async () => (await checkAgain.count()) === 0,
-    "the stale pre-check preference read must not restore the old provider health",
-  );
-  assert(
-    await page.getByRole("switch", { name: "Codex" }).isChecked(),
-    "the confirmed provider must remain enabled after its fresh health read",
-  );
   await page.close();
 }
 
