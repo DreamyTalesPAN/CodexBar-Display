@@ -7485,6 +7485,6 @@ issue scope, or release permission never implies UI permission.
   - "Open <sign-in address> in your browser, sign in, then check again." → "Open <sign-in address> in your browser, sign in."
   - "Open <sign-in address> in your browser, then check again." → "Open <sign-in address> in your browser."
   - "Sign in to the provider's app, then check again." → "Sign in to the provider's app."
-  Not changed: "Repair the usage engine, then check again." in the Diagnostics panel (its own Run diagnostics button) and the row sentences of the Setup providers popup (replaced by #669).
+  Not changed: "Repair the usage engine, then check again." in the Diagnostics panel and its check row (the panel's own Run diagnostics button) and the row sentences of the Setup providers popup (replaced by #669).
 - Scope: `companion/internal/codexbar/provider_setup.go`, `companion/internal/companionapi/preferences.go`, `companion/internal/companionapi/provider_setup.go`, `companion/internal/companionapi/setup_events.go`, their Go tests, `apps/control-center/src/components/setup-event-log.test.tsx`, `apps/control-center/src/components/setup/setup-providers-screen.test.tsx`, `apps/control-center/src/lib/customer-platform.test.ts`, `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — copy only: the same next steps without the check sentence, no new capability
