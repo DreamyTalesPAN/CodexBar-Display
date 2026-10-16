@@ -168,28 +168,35 @@ func TestNewCompanionsThatNeverComeOutCleanLeaveAStillPicture(t *testing.T) {
 	}
 }
 
-func TestCompanionRepairThatRunsOutOfTimeKeepsTheDesign(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	style, pets := companionPlanFixture(2)
-	images := 0
-	s := aiTestServer(t, aiRoundTrip(func(r *http.Request) (*http.Response, error) {
-		if r.URL.Path == "/v1/responses" {
-			return autoTextResponse(map[string]any{"style": style, "companions": pets}), nil
-		}
-		images++
-		if images == 1 {
-			return aiResponse(200, `{"data":[{"b64_json":"`+aiTestCompanionSheetWithMatte(color.NRGBA{109, 63, 32, 255})+`"}]}`), nil
-		}
-		// The repair outlives the request deadline.
-		<-r.Context().Done()
-		return nil, r.Context().Err()
-	}))
-	previous := &aiThemePreviousConcept{Style: style, ImageBase64: aiTestPNG(), ImageContentType: "image/png", Companions: []aiCompanion{{ID: "pet-1", X: 20, Y: 40, Size: 32, FPS: 4, FrameCount: 8, KeyColor: "#FF00FF", SheetBase64: aiTestCompanionSheet()}}}
-	bg, _ := validateConceptImage(aiTestPNG(), "image/png")
-	result, err := s.aiTheme.createCompanionConcept(ctx, "fixture", aiThemeConceptRequest{Prompt: "Make the fox pink and add a bird", Previous: previous}, bg)
-	if err != nil || images != 2 || result.ImageBase64 != previous.ImageBase64 || len(result.Companions) != 1 || !result.Companions[0].Reuse || result.Companions[0].SheetBase64 != previous.Companions[0].SheetBase64 {
-		t.Fatalf("wanted the design with the previous fox after %d calls: %v %#v", images, err, result.Companions)
+func TestCompanionThatRunsOutOfTimeKeepsTheDesign(t *testing.T) {
+	bad := aiTestCompanionSheetWithMatte(color.NRGBA{109, 63, 32, 255})
+	for _, tc := range []struct {
+		name  string
+		first string // pet-1's first sheet; the next image request outlives the deadline
+	}{{"during the repair", bad}, {"during the next companion", aiTestCompanionSheet()}} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			style, pets := companionPlanFixture(2)
+			images := 0
+			s := aiTestServer(t, aiRoundTrip(func(r *http.Request) (*http.Response, error) {
+				if r.URL.Path == "/v1/responses" {
+					return autoTextResponse(map[string]any{"style": style, "companions": pets}), nil
+				}
+				images++
+				if images == 1 {
+					return aiResponse(200, `{"data":[{"b64_json":"`+tc.first+`"}]}`), nil
+				}
+				<-r.Context().Done()
+				return nil, r.Context().Err()
+			}))
+			previous := &aiThemePreviousConcept{Style: style, ImageBase64: aiTestPNG(), ImageContentType: "image/png", Companions: []aiCompanion{{ID: "pet-1", X: 20, Y: 40, Size: 32, FPS: 4, FrameCount: 8, KeyColor: "#FF00FF", SheetBase64: aiTestCompanionSheet()}}}
+			bg, _ := validateConceptImage(aiTestPNG(), "image/png")
+			result, err := s.aiTheme.createCompanionConcept(ctx, "fixture", aiThemeConceptRequest{Prompt: "Make the fox pink and add a bird", Previous: previous}, bg)
+			if err != nil || images != 2 || result.ImageBase64 != previous.ImageBase64 || len(result.Companions) != 1 || result.Companions[0].ID != "pet-1" || result.Companions[0].SheetBase64 != aiTestCompanionSheet() {
+				t.Fatalf("wanted the design with the fox and without the bird after %d calls: %v %#v", images, err, result.Companions)
+			}
+		})
 	}
 }
 

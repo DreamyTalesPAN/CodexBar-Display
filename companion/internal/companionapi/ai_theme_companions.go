@@ -213,12 +213,15 @@ func (a *aiThemeState) createCompanionConcept(ctx context.Context, key string, r
 			}
 			prompt := fmt.Sprintf("%s Create ONE sprite sheet with EXACTLY EIGHT animation frames in a regular 4-COLUMN, 2-ROW grid of equal SQUARE cells, aspect ratio 2:1. Each cell contains the SAME complete isolated subject at identical scale and body anchor. Generous padding; no clipping. Draw one continuous cyclic action in reading order, frame8 returning smoothly to frame1. Keep body size, face, markings and ground/hover anchor consistent; only intended body parts change pose. Chunky crisp pixel art readable at %dx%d display pixels. Use perfectly flat opaque pure magenta RGB(255,0,255) #FF00FF everywhere outside the subject, including holes between limbs. NO checkerboard, scenery, floor, shadows, captions, borders or grid lines. Do not use magenta in the subject. For grounded subjects keep feet at the same baseline around 88%% cell height. Subject: %s. Motion: %s.", identity, p.Size, p.Size, p.Subject, p.Motion)
 			prompt += " Customer change request: " + req.Prompt
-			// Out of time after an earlier companion: keep the finished picture
-			// instead of losing it to a doomed image request.
+			// A companion that runs into the request deadline is left to the
+			// fallback below, so the finished picture is never lost to it.
 			outOfTime := errors.Is(ctx.Err(), context.DeadlineExceeded)
 			issue := ""
 			if !outOfTime {
 				c.SheetBase64, e = a.createConceptImageSized(ctx, key, prompt, reference, "1536x768")
+				outOfTime = errors.Is(ctx.Err(), context.DeadlineExceeded)
+			}
+			if !outOfTime {
 				if e != nil {
 					return result, e
 				}
