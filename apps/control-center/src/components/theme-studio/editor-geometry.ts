@@ -1,8 +1,4 @@
-import {
-  deviceThemeSpecJson,
-  type ThemeStudioPrimitive,
-  type ThemeStudioSpec,
-} from "@/lib/theme-studio";
+import { type ThemeStudioPrimitive } from "@/lib/theme-studio";
 import { themeFirmwareTextMetrics } from "../live-vibetv-preview";
 import { isCompanionSprite } from "@/lib/ai-theme";
 
@@ -43,7 +39,7 @@ export type ResizeSize = {
   width: number;
 };
 
-export const COMPANION_MIN_SIZE = 16;
+const COMPANION_MIN_SIZE = 16;
 export const COMPANION_MAX_SIZE = 80;
 /** Animated companions are square sprites; they only scale uniformly. */
 export function isAspectLockedPrimitive(primitive: ThemeStudioPrimitive): boolean {
@@ -91,10 +87,6 @@ export type SelectionBox = {
 };
 
 export type FieldKey = keyof ThemeStudioPrimitive;
-
-export function prettyJson(spec: ThemeStudioSpec): string {
-  return JSON.stringify(JSON.parse(deviceThemeSpecJson(spec)), null, 2);
-}
 
 export function defaultPrimitive(
   type: "progress" | "rect" | "text",
@@ -306,21 +298,6 @@ export function isFullCanvasBackground(
   );
 }
 
-export function isEditableKeyboardTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-  const tagName = target.tagName.toLowerCase();
-  return (
-    target.isContentEditable ||
-    tagName === "a" ||
-    tagName === "button" ||
-    tagName === "input" ||
-    tagName === "textarea" ||
-    tagName === "select"
-  );
-}
-
 export function textPrimitiveNaturalWidth(
   primitive: ThemeStudioPrimitive,
   fontSize = primitive.fontSize || 1,
@@ -501,10 +478,3 @@ export function clampInt(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(Math.max(min, max), rounded));
 }
 
-export function titleFromThemeId(themeId: string): string {
-  return themeId
-    .split(/[-_]/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}

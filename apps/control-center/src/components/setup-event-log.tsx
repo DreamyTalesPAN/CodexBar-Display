@@ -65,7 +65,7 @@ const STATUS: Record<
  * Polls the setup log while the window is visible. Any failed read -- an
  * older Mac App without the log answers 404 -- keeps what was last read.
  */
-export function useSetupEvents(): SetupLog | null {
+function useSetupEvents(): SetupLog | null {
   const load = useContext(SetupEventsContext);
   const [log, setLog] = useState<SetupLog | null>(null);
 

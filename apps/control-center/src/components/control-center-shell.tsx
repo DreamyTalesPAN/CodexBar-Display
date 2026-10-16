@@ -37,7 +37,6 @@ import {
 import {
   type ActiveTab,
   type AppearanceSection,
-  type DeviceInfo,
   type ShellNavItem,
 } from "./control-center-types";
 import { ControlCenterBrand } from "./control-center-brand";
@@ -48,7 +47,6 @@ type ControlCenterShellProps = {
   onAppearanceSectionChange?: (section: AppearanceSection) => void;
   onTabChange: (tab: ActiveTab) => void;
   children: ReactNode;
-  device: DeviceInfo | null;
   disabledTabs?: ActiveTab[];
   hiddenTabs?: ActiveTab[];
   headerAction?: ReactNode;

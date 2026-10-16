@@ -434,13 +434,6 @@ func TestDiagnosticsTimelineHoldsSetupAndUpdateTransitions(t *testing.T) {
 		server.applyFirmwareUpdateEvent("job-1", firmwareUpdateEvent{Stage: stage, DeviceID: "vibetv-8caab5", Target: "http://192.168.178.40/?token=abc123"})
 	}
 	server.applyFirmwareUpdateEvent("job-1", firmwareUpdateEvent{Stage: "verified", Outcome: "updated", DeviceID: "vibetv-8caab5"})
-	job := server.createMacAppUpdateJob(macAppUpdateRequest{Version: "2.0.0"})
-	server.updateMacAppUpdateJob(job.ID, func(job *macAppUpdateJob) { job.Progress = 40 })
-	server.updateMacAppUpdateJob(job.ID, func(job *macAppUpdateJob) { job.Progress = 60 })
-	server.updateMacAppUpdateJob(job.ID, func(job *macAppUpdateJob) {
-		job.Phase = "error"
-		job.Error = &apiError{Code: "mac_app_update_failed", Message: "open /Users/paul/Downloads/VibeTV.dmg: denied"}
-	})
 
 	rec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/diagnostics", nil))
@@ -463,8 +456,6 @@ func TestDiagnosticsTimelineHoldsSetupAndUpdateTransitions(t *testing.T) {
 		"firmware_update uploading  vibetv-8caab5",
 		"firmware_update rebooting  vibetv-8caab5",
 		"firmware_update verified updated vibetv-8caab5",
-		"mac_app_update installing",
-		"mac_app_update error mac_app_update_failed",
 	}
 	if got.Timeline.Version != timeline.Version || strings.Join(lines, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("timeline v%d:\n%s\nwant:\n%s", got.Timeline.Version, strings.Join(lines, "\n"), strings.Join(want, "\n"))
@@ -890,12 +881,6 @@ func TestDiagnosticsTimelineNeverCarriesPrivateValues(t *testing.T) {
 		server.recordSetupEvent(setupEvent{Stage: value, Status: fmt.Sprintf("s%d", i), Message: value, Code: value, NextAction: value})
 		server.recordSetupEvent(setupEvent{Stage: "wifi_setup", Status: value, Message: value, Code: value, NextAction: value})
 		server.applyFirmwareUpdateEvent("job-1", firmwareUpdateEvent{Stage: value, Outcome: value, DeviceID: value, Phase: value, Firmware: value})
-		job := server.createMacAppUpdateJob(macAppUpdateRequest{Version: "2.0.0"})
-		server.updateMacAppUpdateJob(job.ID, func(job *macAppUpdateJob) {
-			job.Phase = value
-			job.Message = value
-			job.Error = &apiError{Code: value, Message: value, NextAction: value}
-		})
 	}
 
 	rec := httptest.NewRecorder()

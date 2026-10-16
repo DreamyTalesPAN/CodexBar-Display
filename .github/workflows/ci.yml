@@ -8,7 +8,10 @@ on:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # A newer push to a pull request replaces its run. On main every merge keeps
+  # its own run: the approval-record commit that follows a squash merge would
+  # otherwise cancel the merge's CI.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   companion-windows:
@@ -28,6 +31,7 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
       - run: go build ./...
       - run: go vet ./...
       - run: go test ./...
@@ -48,6 +52,7 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
           toolchain: 1.99.0
@@ -123,6 +128,11 @@ jobs:
       - name: Check that no binary needs the Visual C++ Redistributable
         shell: pwsh
         run: ./scripts/check-windows-crt.ps1
+      - name: Run the shell's Rust unit tests
+        # main.rs carries deep-link and theme-queue tests that no job ran;
+        # the build above has put the sidecars they need in place.
+        working-directory: windows/src-tauri
+        run: cargo test --locked
 
   codexbar-release-contract:
     strategy:
@@ -140,6 +150,7 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
       - name: Extract pinned macOS release
         if: runner.os == 'macOS'
         shell: bash
@@ -185,6 +196,7 @@ jobs:
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
 
       - name: Run go vet
         working-directory: companion
@@ -221,6 +233,12 @@ jobs:
 
       - name: Test rehearsal web storage purge and restore
         run: ./scripts/test-vibetv-rehearsal-web-storage.sh
+
+      - name: Test rehearsal candidate layout resolution
+        run: ./scripts/test-vibetv-rehearsal-candidate-layout.sh
+
+      - name: Test Microsoft Store submission script
+        run: python3 scripts/test-submit-microsoft-store.py
 
       - name: Check ESP8266 soak gate
         run: ./scripts/check-esp8266-soak-gate.sh
@@ -261,6 +279,7 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
 
       - name: Test Companion on macOS
         working-directory: companion
@@ -296,6 +315,12 @@ jobs:
         working-directory: apps/control-center
         run: npm ci
 
+      - name: Cache Playwright browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('apps/control-center/package-lock.json') }}
+
       - name: Install Playwright Chromium
         working-directory: apps/control-center
         run: npx playwright install --with-deps chromium
@@ -326,6 +351,12 @@ jobs:
         working-directory: apps/control-center
         run: npm ci
 
+      - name: Cache Playwright browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('apps/control-center/package-lock.json') }}
+
       - name: Install Playwright Chromium
         working-directory: apps/control-center
         run: npx playwright install --with-deps chromium
@@ -355,6 +386,7 @@ jobs:
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
 
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -386,6 +418,14 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Cache PlatformIO and pip
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: platformio-${{ github.job }}-${{ runner.os }}-${{ hashFiles('firmware_*/platformio.ini') }}
+
       - name: Install PlatformIO
         run: pip install platformio==6.2.0
 
@@ -400,6 +440,14 @@ jobs:
       - name: Test device settings defaults
         working-directory: firmware_esp8266
         run: pio test -e native_device_settings
+
+      - name: Test standby settings
+        working-directory: firmware_esp8266
+        run: pio test -e native_standby_settings
+
+      - name: Test standby state
+        working-directory: firmware_esp8266
+        run: pio test -e native_standby_state
 
       - name: Test firmware-only provisioning contract
         run: ./scripts/test-vibetv-provision.sh
@@ -443,6 +491,14 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
+
+      - name: Cache PlatformIO and pip
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: platformio-${{ github.job }}-${{ runner.os }}-${{ hashFiles('firmware_*/platformio.ini') }}
 
       - name: Install PlatformIO
         run: pip install platformio==6.2.0
