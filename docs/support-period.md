@@ -23,9 +23,12 @@ the per-change dependency check in
 
 ## How updates reach the customer
 
-- Firmware updates are installed only over the USB cable, started by the
-  customer in the Mac App or the Windows app. The VibeTV has no network
-  update route.
+- Firmware updates are started by the customer in the Mac App or the
+  Windows app. A VibeTV with current firmware installs them only over the USB
+  cable and has no network update route.
+- Early VibeTVs without a USB data connection (legacy WiFi VibeTV) keep
+  receiving authenticated firmware updates over WiFi
+  ([Firmware OTA contract](firmware-ota-contract.md)).
 - The apps tell the customer when a newer version is available.
 - Every release passes the hosted release gates described in
   [Hosted VibeTV gates](vibetv-hosted-gates.md) before it is published.
