@@ -2714,10 +2714,11 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
     });
 
     await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await closeProviderOverlays(page);
     await page
       .getByRole("heading", { name: "VibeTV is connected" })
       .waitFor({ timeout: 10_000 });
+    // The preferences arrive after the page: then the overlay can open.
+    await closeProviderOverlays(page);
     await page.getByText("Live", { exact: true }).waitFor({ timeout: 10_000 });
     assert(
       (await page.getByText("AI provider", { exact: true }).count()) === 0,
@@ -7692,7 +7693,6 @@ async function testProviderOnboardingUsesSharedHealthyDescriptor(
 
   providerHealthReadyAt = Date.now() + 4_000;
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await closeProviderOverlays(page);
   const providersScreen = setupScreen(page, SETUP_PROVIDERS_SCREEN);
   await providersScreen.waitFor({ timeout: 10_000 });
   const providersContinue = providersScreen.getByRole("button", {
