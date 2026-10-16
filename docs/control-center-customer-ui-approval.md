@@ -7358,3 +7358,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the `isn't on VibeTV` lines show only while the Mac App answers; while it is offline, Usage shows none, because the cached provider health could be stale. Wording unchanged.
 - Scope: `apps/control-center` Usage screen, this approval record. Pull-request branch only, not merge or release.
 - What's new: none — a correction of the unreleased line
+
+## 2026-10-16 — #644: no line under the Usage tiles
+
+- User approval: Paul decided on 2026-10-16 (via the review orchestrator) to remove the not-on-VibeTV lines under the Usage tiles from #644; the Usage design follows in its own PR. This entry records the removal.
+- Approved customer-visible result: Usage shows no line under the tiles.
+- Scope: `apps/control-center` Usage screen and its wiring from the app, this approval record. Pull-request branch only, not merge or release.
+- What's new: none — removal of the unreleased line

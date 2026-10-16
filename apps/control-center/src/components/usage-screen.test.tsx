@@ -2,10 +2,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "@/test/axe";
 import type { UsageSnapshot } from "./control-center-types";
-import type { ProviderItem } from "./provider-picker";
 import {
   UsageScreen,
-  usageProvidersNotOnVibeTV,
   usageTokenHistoryUnavailable,
   usageTokenHistoryUnavailableOnVibeTV,
 } from "./usage-screen";
@@ -540,111 +538,5 @@ describe("UsageScreen", () => {
       }),
     );
     await expectNoAxeViolations(renderUsage(null, { ...usage, providers: [] }));
-  });
-});
-
-// #368: a switched-on provider VibeTV cannot show gets one quiet line on Usage.
-describe("usageProvidersNotOnVibeTV", () => {
-  const now = new Date("2026-08-13T09:43:00Z");
-  const claude = (
-    health: Partial<ProviderItem["health"]>,
-    value = true,
-  ): ProviderItem => ({
-    id: "codexbar.providers.claude.enabled",
-    section: "providers",
-    owner: "codexbar",
-    type: "boolean",
-    label: "Claude",
-    providerId: "claude",
-    value,
-    effectiveValue: value,
-    allowsDefault: false,
-    availability: { state: "available" },
-    writeStrategy: "codexbar_command",
-    writable: true,
-    health: {
-      state: "auth_required",
-      service: "operational",
-      message: "Sign in again for this provider.",
-      ...health,
-    },
-  });
-  const staleClaude: UsageSnapshot = {
-    ...usage,
-    providers: [
-      ...usage.providers,
-      { id: "claude", label: "Claude", session: 0, weekly: 0, usageMode: "used", stale: true, usageUnavailable: true },
-    ],
-  };
-
-  it("explains a signed-out provider and how long it has had no reading", () => {
-    const lines = usageProvidersNotOnVibeTV(
-      staleClaude,
-      [claude({ noReadingSince: "2026-07-28T08:29:00Z" })],
-      ["codex"],
-      now,
-    );
-    expect(lines).toEqual([
-      {
-        id: "claude",
-        text: "Claude isn't on VibeTV. Sign in again for this provider. No usage reading for 16d 1h.",
-      },
-    ]);
-  });
-
-  it("says so when the provider never delivered a reading", () => {
-    const lines = usageProvidersNotOnVibeTV(usage, [claude({})], [], now);
-    expect(lines[0].text).toBe(
-      "Claude isn't on VibeTV. Sign in again for this provider. No usage reading yet.",
-    );
-  });
-
-  it("stays quiet while the provider is checking, after it recovered, and once it is off", () => {
-    expect(usageProvidersNotOnVibeTV(usage, [claude({ state: "checking" })], ["codex"], now)).toEqual([]);
-    const recovered: UsageSnapshot = {
-      ...usage,
-      providers: [...usage.providers, { id: "claude", label: "Claude", session: 3, weekly: 9, usageMode: "used" }],
-    };
-    expect(usageProvidersNotOnVibeTV(recovered, [claude({ state: "unavailable" })], ["codex"], now)).toEqual([]);
-    expect(usageProvidersNotOnVibeTV(staleClaude, [claude({}, false)], ["codex"], now)).toEqual([]);
-    expect(usageProvidersNotOnVibeTV(staleClaude, [claude({ state: "healthy" })], ["codex"], now)).toEqual([]);
-  });
-
-  it("stays quiet about the provider of the last sent frame, even when its reading is stale", () => {
-    expect(usageProvidersNotOnVibeTV(staleClaude, [claude({ state: "stale" })], ["claude"], now)).toEqual([]);
-  });
-
-  it("stays quiet about a provider in the provider slots of the last sent frame", () => {
-    expect(usageProvidersNotOnVibeTV(staleClaude, [claude({ state: "stale" })], ["codex", "Claude"], now)).toEqual([]);
-  });
-
-  it("does not take the usage fallback currentProvider for the shown provider", () => {
-    const fallback: UsageSnapshot = { ...staleClaude, currentProvider: "claude" };
-    expect(usageProvidersNotOnVibeTV(fallback, [claude({})], [], now)).toHaveLength(1);
-  });
-
-  it("renders the line with a link to Settings", () => {
-    const html = renderToStaticMarkup(
-      <UsageScreen
-        companionStatus="online"
-        onOpenProviderSettings={vi.fn()}
-        providerSettings={[claude({})]}
-        usage={staleClaude}
-      />,
-    );
-    expect(html).toContain("Claude isn&#x27;t on VibeTV. Sign in again for this provider.");
-    expect(html).toContain("Open Settings");
-  });
-
-  it("shows no line while the Mac App is offline", () => {
-    const html = renderToStaticMarkup(
-      <UsageScreen
-        companionStatus="missing"
-        onOpenProviderSettings={vi.fn()}
-        providerSettings={[claude({})]}
-        usage={null}
-      />,
-    );
-    expect(html).not.toContain("isn&#x27;t on VibeTV");
   });
 });

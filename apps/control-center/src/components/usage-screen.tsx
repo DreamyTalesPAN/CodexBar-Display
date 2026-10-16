@@ -50,8 +50,6 @@ import type {
   UsageSnapshot,
   UsageWindowInfo,
 } from "./control-center-types";
-import type { ProviderItem } from "./provider-picker";
-import { setupProviderNoReadingLine } from "./setup/setup-providers-screen";
 
 type UsageScreenProps = {
   busyAction?: string | null;
@@ -59,12 +57,6 @@ type UsageScreenProps = {
   usage: UsageSnapshot | null;
   usageError?: ApiError | null;
   onRefresh?: () => void;
-  /** The provider switches with their health, as Settings shows them. */
-  providerSettings?: ProviderItem[];
-  /** Opens Settings at AI providers. */
-  onOpenProviderSettings?: () => void;
-  /** The providers the last frame sent to VibeTV shows, if one was sent. */
-  shownProviders?: string[];
   /** The app runs on Windows, where "Mac App" reads "app". */
   windowsHost?: boolean;
 };
@@ -75,9 +67,6 @@ export function UsageScreen({
   usage,
   usageError,
   onRefresh,
-  providerSettings = [],
-  onOpenProviderSettings,
-  shownProviders = [],
   windowsHost = false,
 }: UsageScreenProps) {
   const refreshing = busyAction === "usage";
@@ -85,12 +74,6 @@ export function UsageScreen({
     usage?.providers || [],
     usage?.currentProvider,
   );
-  // Only live Mac App data can tell what VibeTV shows; offline, the cached
-  // provider health and stream fields could be stale.
-  const notOnVibeTV =
-    companionStatus === "online"
-      ? usageProvidersNotOnVibeTV(usage, providerSettings, shownProviders)
-      : [];
   const hasProviders = providers.length > 0;
   const tokenUsageReady =
     usage?.tokenUsageReady === true || usageProvidersHaveTokenResult(providers);
@@ -223,84 +206,9 @@ export function UsageScreen({
             windowsHost={windowsHost}
           />
         ) : null}
-
-        {notOnVibeTV.length > 0 ? (
-          <ul
-            className="mt-6 grid gap-1 text-sm text-muted-foreground"
-            data-testid="usage-providers-not-on-vibetv"
-          >
-            {notOnVibeTV.map((line) => (
-              <li className="flex flex-wrap items-center gap-x-2" key={line.id}>
-                <span>{line.text}</span>
-                {onOpenProviderSettings ? (
-                  <Button
-                    className="h-auto px-0"
-                    onClick={onOpenProviderSettings}
-                    size="sm"
-                    type="button"
-                    variant="link"
-                  >
-                    Open Settings
-                  </Button>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        ) : null}
       </section>
     </div>
   );
-}
-
-/**
- * One quiet line per switched-on provider that VibeTV cannot show (#368):
- * its usage is missing, stale or unavailable -- the same test the device's
- * provider rotation uses -- and its health names why. The providers the last
- * frame sent to VibeTV shows (its provider and its provider slots) never get
- * one: the device keeps showing that frame. usage.currentProvider cannot
- * tell: it falls back to the first provider when no frame was kept. A provider that is
- * still checking (first read, restart) gets no line either. The reason and
- * the time come from the Mac App; nothing here judges the provider itself.
- */
-export function usageProvidersNotOnVibeTV(
-  usage: UsageSnapshot | null,
-  providerSettings: ProviderItem[],
-  shownProviders: string[] = [],
-  now = new Date(),
-): Array<{ id: string; text: string }> {
-  const lines: Array<{ id: string; text: string }> = [];
-  const shown = new Set(
-    shownProviders.map((provider) => provider.trim().toLowerCase()),
-  );
-  for (const setting of providerSettings) {
-    const health = setting.health;
-    if (
-      !setting.value ||
-      ["", "healthy", "checking", "disabled"].includes(health.state)
-    ) {
-      continue;
-    }
-    const id = setting.providerId.trim().toLowerCase();
-    if (shown.has(id)) {
-      continue;
-    }
-    const reading = usage?.providers?.find(
-      (provider) => provider.id.trim().toLowerCase() === id,
-    );
-    if (reading && !reading.stale && !reading.usageUnavailable) {
-      continue;
-    }
-    const label = setting.label || reading?.label || setting.providerId;
-    const reason = health.message.trim();
-    const since = setupProviderNoReadingLine(health.noReadingSince, now);
-    lines.push({
-      id,
-      text: [`${label} isn't on VibeTV.`, reason, since]
-        .filter(Boolean)
-        .join(" "),
-    });
-  }
-  return lines;
 }
 
 function usageRefreshNotice(

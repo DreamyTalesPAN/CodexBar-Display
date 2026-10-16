@@ -5581,16 +5581,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           <UsageScreen
             busyAction={busyAction}
             companionStatus={companionStatus}
-            onOpenProviderSettings={() => {
-              shownAfterPageOpensRef.current = "settings-ai-providers";
-              setActiveTab("settings");
-            }}
             onRefresh={() => refreshUsage()}
-            providerSettings={setupProviders}
-            shownProviders={[
-              device?.stream?.provider ?? "",
-              ...(device?.stream?.slotProviders ?? []),
-            ]}
             usage={usage}
             usageError={errorForHost(usageError, windowsHost)}
             windowsHost={windowsHost}
