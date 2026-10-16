@@ -7343,3 +7343,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the Windows alignment entry above; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — Settings › AI providers without the setup intro (#651)
+
+- User approval: Paul approved the provider order on 2026-10-16 after his own test (via the review orchestrator) on the condition that the Settings › AI providers intro paragraph is removed; this entry records that removal.
+- Approved customer-visible result: Settings › AI providers no longer shows the paragraph "VibeTV reads your AI usage with CodexBar, a helper app installed with VibeTV. Turn on the providers you use below. If one needs a sign-in, its row shows a Sign in button." above the provider search. The list, its order and every other text stay as approved above. "Choose AI providers" in setup keeps its intro unchanged in this pull request.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx` (a `showIntro` prop on the shared provider list), `apps/control-center/src/components/settings-screen.tsx`, `settings-screen.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a removed explanation paragraph in Settings needs no notice.

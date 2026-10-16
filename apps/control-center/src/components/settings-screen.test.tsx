@@ -125,8 +125,12 @@ function render(
 }
 
 describe("Provider settings", () => {
-  it("explains the included usage service in the shared provider list", () => {
-    expect(render(standbyDevice)).toContain("VibeTV reads your AI usage with CodexBar, a helper app installed with VibeTV.");
+  // Paul, 16.10.2026: the setup intro does not belong above Settings › AI providers.
+  it("shows the provider list without the setup intro", () => {
+    const html = render(standbyDevice);
+    expect(html).toContain("Search providers");
+    expect(html).not.toContain("VibeTV reads your AI usage with CodexBar");
+    expect(html).not.toContain("Turn on the providers you use below.");
   });
 });
 

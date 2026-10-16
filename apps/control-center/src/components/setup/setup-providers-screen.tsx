@@ -177,6 +177,8 @@ type ProviderListProps = {
   /** Preferences whose on/off write is in flight, by preference id. */
   pendingPreferenceIds: Set<string>;
   providers: ProviderItem[];
+  /** Settings shows the list without the setup intro above it. */
+  showIntro?: boolean;
   usage: UsageSnapshot | null;
 };
 
@@ -196,6 +198,7 @@ export function ProviderList({
   pendingCheckIds,
   pendingPreferenceIds,
   providers,
+  showIntro = true,
   usage,
 }: ProviderListProps) {
   // One acknowledged message per provider: polling must not reopen a dismissed
@@ -339,9 +342,11 @@ export function ProviderList({
           ) : null}
         </SetupDialog>
       ) : null}
+      {showIntro ? (
       <p className="mb-3 text-sm text-muted-foreground">
         VibeTV reads your AI usage with CodexBar, a helper app installed with VibeTV. Turn on the providers you use below. If one needs a sign-in, its row shows a Sign in button.
       </p>
+      ) : null}
       <div className="relative w-full">
         <Search
           aria-hidden
