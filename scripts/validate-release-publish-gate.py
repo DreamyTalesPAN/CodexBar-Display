@@ -480,14 +480,16 @@ def resolve_versions(args: argparse.Namespace) -> None:
             item["artifactSource"] = "build"
 
     if args.firmware_mode == "unchanged":
-        if set(public_by_env) != {
-            item["firmwareEnv"] for item in default_artifacts
-        }:
-            fail("public firmware environments do not match firmware defaults")
+        # Only the boards in the defaults are released. A board the current
+        # public release still carries but the defaults dropped (the ESP32
+        # after #658) is left out instead of being carried forward.
+        wanted = {item["firmwareEnv"] for item in default_artifacts}
         frozen = []
         for item in public_artifacts:
             if not isinstance(item, dict) or not item.get("firmwareEnv"):
                 fail("public firmware artifact is invalid")
+            if item["firmwareEnv"] not in wanted:
+                continue
             asset = item.get("asset")
             if (
                 not isinstance(asset, str)

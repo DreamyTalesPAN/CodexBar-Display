@@ -310,8 +310,12 @@ main() {
     'manual rehearsal must discover candidates waiting for Production approval'
   assert_contains "$RC_WORKFLOW" 'ref: ${{ github.sha }}' \
     'release candidate must build the exact main SHA that dispatched it'
-  assert_contains "$RC_WORKFLOW" 'pip install platformio==6.2.0 intelhex==2.3.0' \
-    'release candidate must install the ESP32 bootloader dependency on macOS'
+  assert_contains "$RC_WORKFLOW" 'pip install platformio==6.2.0' \
+    'release candidate must install PlatformIO on macOS'
+  assert_not_contains "$RC_WORKFLOW" 'lilygo_t_display_s3' \
+    'release candidate must publish only the ESP8266 firmware (#658)'
+  assert_not_contains "$ROOT/release/firmware-versions.json" 'lilygo_t_display_s3' \
+    'release firmware defaults must list only the ESP8266 firmware (#658)'
   assert_contains "$RC_WORKFLOW" 'candidate-manifest.json' \
     'release candidate must emit an immutable candidate manifest'
   assert_contains "$RC_WORKFLOW" 'name: vibetv-release-candidate' \
