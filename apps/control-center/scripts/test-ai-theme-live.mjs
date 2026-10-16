@@ -79,6 +79,7 @@ try {
     await (await download).saveAs(join(output,"design.json"));
     const design=JSON.parse(await readFile(join(output,"design.json"),"utf8"));
     console.log("Assets: "+Object.keys(design.assets).join(", "));
+    await page.getByRole("button",{name:"File",exact:true}).click();
     const pack=page.waitForEvent("download");
     await page.getByRole("button",{name:"Export theme pack",exact:true}).click();
     await (await pack).saveAs(join(output,"theme.zip"));

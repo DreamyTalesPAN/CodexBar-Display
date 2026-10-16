@@ -16,11 +16,12 @@ try{
   for(let i=0;i<10;i++){await page.waitForTimeout(140);samples.add(await render.innerHTML());}
   assert(samples.size>3,'Imported sprite animation does not advance');
   await page.screenshot({path:path.join(dir,'editor.png'),fullPage:true});
-  await page.getByRole('button',{name:'More options',exact:true}).click();
+  await page.getByRole('button',{name:'File',exact:true}).click();
   const download=page.waitForEvent('download');await page.getByRole('button',{name:'Download editable design',exact:true}).click();await(await download).saveAs(path.join(dir,'roundtrip.json'));
   const original=JSON.parse(await fs.readFile(path.join(dir,'design.json'))),actual=JSON.parse(await fs.readFile(path.join(dir,'roundtrip.json')));
   assert.deepEqual(actual.assets,original.assets,'Asset content changed on roundtrip');
   assert.deepEqual(actual.spec.primitives.filter(p=>p.assetPath),original.spec.primitives.filter(p=>p.assetPath),'Sprite positions/order changed');
+await page.getByRole('button',{name:'File',exact:true}).click();
   const pack=page.waitForEvent('download');await page.getByRole('button',{name:'Export theme pack',exact:true}).click();await(await pack).saveAs(path.join(dir,'theme.zip'));
   assert.deepEqual(errors,[]);console.log({name,distinctRenderedSamples:samples.size,roundtrip:'exact assets and sprite placement',zipBytes:(await fs.stat(path.join(dir,'theme.zip'))).size});await page.close();
  }

@@ -46,6 +46,7 @@ try {
   const sprites=design.spec.primitives.filter(p=>/^\/themes\/u\/ai-pet-[12]\.cba$/.test(p.assetPath));
   assert.equal(sprites.length,count);
   for(const sprite of sprites){assert.equal(sprite.frameCount,8);assert(design.assets[sprite.assetPath].data.includes('.'),'Sprite needs transparent pixels');}
+  await page.getByRole('button',{name:'File',exact:true}).click();
   const pack=page.waitForEvent('download');await page.getByRole('button',{name:'Export theme pack',exact:true}).click();await(await pack).saveAs(join(output,`${count}-theme.zip`));
   assert.deepEqual(errors,[]);
   console.log(JSON.stringify({count,distinctSamples:samples.size,normalButton:'companions',compile:'pass',export:'pass',source:'replayed approved art, not a fresh provider call'}));
