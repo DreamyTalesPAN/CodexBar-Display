@@ -74,7 +74,6 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
     onFindManualTarget: vi.fn(),
     onFinished: vi.fn(),
     onInstallTheme: vi.fn(),
-    onReturnToThemes: vi.fn(),
     themeError: null,
     onDismissThemeError: vi.fn(),
     onRetryTheme: vi.fn(),
@@ -106,13 +105,20 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
   };
 }
 
-describe("SetupWizard: preview recovery", () => {
-  it("requests theme recovery without admitting an unavailable preview", () => {
+describe("SetupWizard: live step (issue #611)", () => {
+  it("offers no Back and does not finish before the preview is ready", () => {
     const props = baseProps({ step: "live" });
     render(<SetupWizard {...props} />);
-    fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    expect(props.onReturnToThemes).toHaveBeenCalledOnce();
+    expect(screen.getByText("Your VibeTV is live")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
     expect(props.onFinished).not.toHaveBeenCalled();
+  });
+
+  it("skips the screen for a VibeTV this app set up before", () => {
+    const props = baseProps({ step: "live", alreadySetUp: true });
+    render(<SetupWizard {...props} />);
+    expect(screen.queryByText("Your VibeTV is live")).toBeNull();
+    expect(props.onFinished).toHaveBeenCalledOnce();
   });
 });
 

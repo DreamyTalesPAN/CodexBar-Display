@@ -15,6 +15,7 @@ import {
 import {
   companionRequestUrl,
   needsLoopbackTargetAddressSpace,
+  normalizeThemeSpecHash,
   themeRenderPackUrl,
 } from "./control-center-runtime";
 import { loadLocalThemeRenderPack } from "@/lib/local-theme-render-pack";
@@ -55,7 +56,7 @@ type ThemePackState = {
   themeSpecHash: string;
   themeSpecPath: string;
   pack: ThemeRenderPack | null;
-  status: "ready" | "error";
+  status: "ready" | "error" | "unsupported";
 };
 
 export type DisplayFrameSnapshot = {
@@ -284,24 +285,52 @@ type SpriteRect = {
   color: string;
 };
 
-export function useLatestDisplayFrame(connected: boolean) {
+// The last frame seen and the VibeTV it came from, so a screen that mounts
+// again (tab switch) starts with it instead of an empty preview. It is only
+// reused for the same VibeTV: another one must never show the old screen.
+let lastDisplayFrame: { device: string; frame: DisplayFrameSnapshot | null } | null =
+  null;
+
+const DISPLAY_FRAME_POLL_MS = 1000;
+const DISPLAY_FRAME_TIMEOUT_MS = 5000;
+
+/**
+ * Polls the frame VibeTV shows, once a second while connected. Call it only in
+ * the screens that draw the preview: every answer re-renders the caller.
+ * One request at a time, each bounded; paused while the window is hidden.
+ */
+export function useLatestDisplayFrame(connected: boolean, device = "") {
   const [displayFrame, setDisplayFrame] = useState<DisplayFrameSnapshot | null>(
-    null,
+    () => (connected && lastDisplayFrame?.device === device ? lastDisplayFrame.frame : null),
   );
 
   useEffect(() => {
-    if (!connected) {
-      const timer = window.setTimeout(() => setDisplayFrame(null), 0);
-      return () => window.clearTimeout(timer);
+    let resetTimer = 0;
+    if (!connected || lastDisplayFrame?.device !== device) {
+      lastDisplayFrame = null;
+      resetTimer = window.setTimeout(() => setDisplayFrame(null), 0);
+      if (!connected) {
+        return () => window.clearTimeout(resetTimer);
+      }
     }
 
-    const controller = new AbortController();
+    let stopped = false;
+    let request: AbortController | null = null;
 
     const refreshDisplayFrame = async () => {
+      if (request || document.hidden) {
+        return;
+      }
+      const current = new AbortController();
+      request = current;
+      const timeout = window.setTimeout(
+        () => current.abort(),
+        DISPLAY_FRAME_TIMEOUT_MS,
+      );
       try {
         const requestInit: LocalDisplayFrameRequestInit = {
           cache: "no-store",
-          signal: controller.signal,
+          signal: current.signal,
         };
         const url = companionRequestUrl("/v1/display-frame/latest");
         if (needsLoopbackTargetAddressSpace(url)) {
@@ -309,28 +338,52 @@ export function useLatestDisplayFrame(connected: boolean) {
         }
         const response = await fetch(url, requestInit);
         const nextFrame = await parseLatestDisplayFrameResponse(response);
-        if (!nextFrame) {
-          setDisplayFrame(null);
-          return;
+        if (!stopped) {
+          lastDisplayFrame = { device, frame: nextFrame };
+          setDisplayFrame(nextFrame);
         }
-        setDisplayFrame(nextFrame);
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") {
-          return;
-        }
+      } catch {
+        // A failed or timed-out poll keeps the last frame; the next tick retries.
+      } finally {
+        window.clearTimeout(timeout);
+        request = null;
+      }
+    };
+
+    const refreshWhenVisible = () => {
+      if (!document.hidden) {
+        void refreshDisplayFrame();
       }
     };
 
     void refreshDisplayFrame();
-    const timer = window.setInterval(refreshDisplayFrame, 1000);
+    const timer = window.setInterval(refreshDisplayFrame, DISPLAY_FRAME_POLL_MS);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
 
     return () => {
-      controller.abort();
+      stopped = true;
+      window.clearTimeout(resetTimer);
+      request?.abort();
       window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
-  }, [connected]);
+  }, [connected, device]);
 
   return displayFrame;
+}
+
+/** Renders `children` with the latest frame; only this subtree re-renders per poll. */
+export function WithLatestDisplayFrame({
+  active,
+  device,
+  children,
+}: {
+  active: boolean;
+  /** Identity of the selected VibeTV; a cached frame is only reused for it. */
+  device: string;
+  children: (displayFrame: DisplayFrameSnapshot | null) => ReactNode;
+}) {
+  return children(useLatestDisplayFrame(active, device));
 }
 
 export async function parseLatestDisplayFrameResponse(
@@ -398,7 +451,7 @@ export function LiveVibeTVPreview({
     packState.themeSpecPath === themeSpecPath
       ? packState.pack
       : null;
-  const packStatus: "idle" | "loading" | "ready" | "error" = !themeId
+  const packStatus: "idle" | "loading" | ThemePackState["status"] = !themeId
     ? "idle"
     : packState?.themeId === themeId &&
         packState.themeSpecHash === themeSpecHash &&
@@ -472,7 +525,9 @@ export function LiveVibeTVPreview({
           themeSpecHash,
           themeSpecPath,
           pack: null,
-          status: "error",
+          // No pack for this theme at all: a dev theme, or one installed by a
+          // newer app. Still retried, a cache being built answers the same.
+          status: error instanceof ThemeUnsupportedError ? "unsupported" : "error",
         });
         scheduleRetry();
       });
@@ -485,13 +540,16 @@ export function LiveVibeTVPreview({
     };
   }, [themeId, themeSpecHash, themeSpecPath, packRetryNonce]);
 
-  const previewReady = Boolean(
+  // What VibeTV itself reports: the theme drawn and real usage arriving.
+  const deviceShowsTheme = Boolean(
     deviceIsCustomerConnected(device) &&
       deviceReady &&
       !updateOwnedDisconnect &&
-      pack?.spec &&
+      device?.display?.themeSpec?.renderOk === true &&
       frame,
   );
+  const previewReady =
+    deviceShowsTheme && Boolean(pack?.spec || packStatus === "unsupported");
   useEffect(() => {
     if (!previewReady || !onPreviewReady) {
       return;
@@ -556,7 +614,7 @@ const RECONNECT_FRAME_GRACE_MS = 120_000;
 // match the device's active revision yet.
 const THEME_PACK_RETRY_MS = 5_000;
 
-export function frameFreshForReconnect(
+function frameFreshForReconnect(
   displayFrame: DisplayFrameSnapshot | null | undefined,
 ): boolean {
   const savedAt = displayFrame?.savedAt;
@@ -1167,16 +1225,18 @@ function ThemeSpecLoading({
   themeId,
 }: {
   message?: string;
-  status: "idle" | "loading" | "ready" | "error";
+  status: "idle" | "loading" | ThemePackState["status"];
   themeId: string;
 }) {
   const content =
     message ||
-    (status === "error"
-      ? "Preview unavailable"
-      : themeId
-        ? "Loading preview"
-        : "Waiting for theme");
+    (status === "unsupported"
+      ? "Unsupported theme"
+      : status === "error"
+        ? "Preview unavailable"
+        : themeId
+          ? "Loading preview"
+          : "Waiting for theme");
   return (
     <div
       className="grid aspect-square w-full place-items-center whitespace-normal break-words border border-[#747A60] bg-[#111111] p-3 text-center font-mono text-[10px] font-bold uppercase leading-tight text-[#CCFF00] sm:text-xs"
@@ -1430,14 +1490,11 @@ function normalizeThemeAlias(theme: string | undefined): string {
   return DEVICE_THEME_ALIASES[normalized] || normalized;
 }
 
-function normalizeThemeSpecHash(value: string | undefined): string {
-  const hash = (value || "").trim().toLowerCase();
-  return /^[a-f0-9]{8}$/.test(hash) ? hash : "";
-}
-
 function renderPackSpecHash(pack: ThemeRenderPack): string {
   return normalizeThemeSpecHash(pack.specHash);
 }
+
+class ThemeUnsupportedError extends Error {}
 
 export async function fetchThemeRenderPackRevision(
   themeId: string,
@@ -1454,16 +1511,25 @@ export async function fetchThemeRenderPackRevision(
     return exactResponse.json() as Promise<ThemeRenderPack>;
   }
   if (!themeSpecPath) {
-    throw new Error("theme pack unavailable");
+    throw packUnavailable(exactResponse);
   }
 
   // Old Companions only expose the latest cache by theme ID. Their payload
   // still includes specPath, which lets the caller reject a wrong revision.
   const legacyResponse = await fetcher(themeRenderPackUrl(themeId), { signal });
   if (!legacyResponse.ok) {
-    throw new Error("theme pack unavailable");
+    // Unknown only when both reads say so; a transient exact failure stays one.
+    throw packUnavailable(
+      exactResponse.status === 404 ? legacyResponse : exactResponse,
+    );
   }
   return legacyResponse.json() as Promise<ThemeRenderPack>;
+}
+
+function packUnavailable(response: Response): Error {
+  return response.status === 404
+    ? new ThemeUnsupportedError("theme pack unknown")
+    : new Error("theme pack unavailable");
 }
 
 export function themeRenderPackMatchesActiveRevision(
@@ -1631,7 +1697,7 @@ function slotCountdownFor(
 
 // Mirrors the firmware's FormatTokenCount digit for digit (truncated
 // hundredths, never rounded) so catalog previews and the device agree.
-export function formatTokenCount(value: number): string {
+function formatTokenCount(value: number): string {
   if (!Number.isFinite(value) || value < 0) {
     value = 0;
   }

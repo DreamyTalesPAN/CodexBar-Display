@@ -12,9 +12,9 @@ RUNTIME_AGENT_PLIST_NAME="shop.vibetv.control-center.runtime.plist"
 APP_ICON="${ROOT}/macos/VibeTVControlCenter/${ICON_FILE_NAME}"
 RUNTIME_AGENT_PLIST="${ROOT}/macos/VibeTVControlCenter/${RUNTIME_AGENT_PLIST_NAME}"
 SPARKLE_PUBLIC_KEY_FILE="${ROOT}/macos/VibeTVControlCenter/SparklePublicKey.txt"
-CODEXBAR_MANIFEST="${ROOT}/macos/VibeTVControlCenter/CodexBar-v0.63.0.manifest.json"
+CODEXBAR_MANIFEST="${ROOT}/macos/VibeTVControlCenter/CodexBar-v0.75.0.manifest.json"
 CODEXBAR_LICENSE="${ROOT}/macos/VibeTVControlCenter/CodexBar-LICENSE.txt"
-CODEXBAR_ARCHIVE_NAME="CodexBar-macos-universal-0.63.0.zip"
+CODEXBAR_ARCHIVE_NAME="CodexBar-macos-universal-0.75.0.zip"
 SPARKLE_FEED_URL="${SPARKLE_FEED_URL:-https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/appcast.xml}"
 SPARKLE_PUBLIC_ED_KEY="${SPARKLE_PUBLIC_ED_KEY:-}"
 SPARKLE_DIST_DIR=""
@@ -306,13 +306,13 @@ copy_codexbar_distribution() {
   mkdir -p "$target_dir"
 
   if [[ "$DRY_RUN" == "1" ]]; then
-    printf 'CodexBar 0.63.0 dry-run archive placeholder\n' \
+    printf 'CodexBar 0.75.0 dry-run archive placeholder\n' \
       > "${target_dir}/${CODEXBAR_ARCHIVE_NAME}"
   else
     archive="$("${ROOT}/scripts/fetch-codexbar.sh")"
     cp "$archive" "${target_dir}/${CODEXBAR_ARCHIVE_NAME}"
   fi
-  cp "$CODEXBAR_MANIFEST" "${target_dir}/CodexBar-v0.63.0.manifest.json"
+  cp "$CODEXBAR_MANIFEST" "${target_dir}/CodexBar-v0.75.0.manifest.json"
   cp "$CODEXBAR_LICENSE" "${target_dir}/CodexBar-LICENSE.txt"
 }
 
@@ -331,6 +331,19 @@ EOF
   [[ "$(uname -s)" == "Darwin" ]] || die "real Swift app builds require macOS"
   command -v swiftc >/dev/null 2>&1 || die "swiftc is required to build the native WebView shell"
 
+  # -O: without it swiftc builds the shipped shell unoptimized (-Onone).
+  local swift_args=(
+    -O
+    "${ROOT}/macos/VibeTVControlCenter/main.swift"
+    -F "$SPARKLE_DIST_DIR"
+    -framework Cocoa
+    -framework ServiceManagement
+    -framework Sparkle
+    -Xlinker -rpath
+    -Xlinker @executable_path/../Frameworks
+    -framework WebKit
+  )
+
   if [[ "$UNIVERSAL" == "1" ]]; then
     command -v lipo >/dev/null 2>&1 || die "lipo is required for universal app builds"
 
@@ -339,45 +352,15 @@ EOF
     x86_binary="${build_dir}/${EXECUTABLE_NAME}-x86_64"
     arm64_binary="${build_dir}/${EXECUTABLE_NAME}-arm64"
 
-    swiftc \
-      -target x86_64-apple-macos14 \
-      "${ROOT}/macos/VibeTVControlCenter/main.swift" \
-      -o "$x86_binary" \
-      -F "$SPARKLE_DIST_DIR" \
-      -framework Cocoa \
-      -framework ServiceManagement \
-      -framework Sparkle \
-      -Xlinker -rpath \
-      -Xlinker @executable_path/../Frameworks \
-      -framework WebKit
-    swiftc \
-      -target arm64-apple-macos14 \
-      "${ROOT}/macos/VibeTVControlCenter/main.swift" \
-      -o "$arm64_binary" \
-      -F "$SPARKLE_DIST_DIR" \
-      -framework Cocoa \
-      -framework ServiceManagement \
-      -framework Sparkle \
-      -Xlinker -rpath \
-      -Xlinker @executable_path/../Frameworks \
-      -framework WebKit
+    swiftc -target x86_64-apple-macos14 "${swift_args[@]}" -o "$x86_binary"
+    swiftc -target arm64-apple-macos14 "${swift_args[@]}" -o "$arm64_binary"
     lipo -create -output "$target" "$x86_binary" "$arm64_binary"
     rm -rf "$build_dir"
     chmod 755 "$target"
     return 0
   fi
 
-  swiftc \
-    -target "$(uname -m)-apple-macos14" \
-    "${ROOT}/macos/VibeTVControlCenter/main.swift" \
-    -o "$target" \
-    -F "$SPARKLE_DIST_DIR" \
-    -framework Cocoa \
-    -framework ServiceManagement \
-    -framework Sparkle \
-    -Xlinker -rpath \
-    -Xlinker @executable_path/../Frameworks \
-    -framework WebKit
+  swiftc -target "$(uname -m)-apple-macos14" "${swift_args[@]}" -o "$target"
   chmod 755 "$target"
 }
 

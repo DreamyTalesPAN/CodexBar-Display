@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
@@ -574,7 +575,7 @@ func TestVerifyThemeInstallHealthRejectsGIFDecoderFailure(t *testing.T) {
 	defer server.Close()
 
 	wifi := transportlayer.NewWiFiTransportWithClient(server.Client())
-	err := verifyThemeInstallHealth(wifi, server.URL, "/themes/u/mini.json", []string{"/themes/mini/mini.gif"})
+	err := verifyThemeInstallHealth(context.Background(), wifi, server.URL, "/themes/u/mini.json", []string{"/themes/mini/mini.gif"})
 	if err == nil {
 		t.Fatal("expected GIF decoder health failure")
 	}
@@ -596,7 +597,7 @@ func TestVerifyThemeInstallHealthAcceptsOpenGIFDecoder(t *testing.T) {
 	defer server.Close()
 
 	wifi := transportlayer.NewWiFiTransportWithClient(server.Client())
-	if err := verifyThemeInstallHealth(wifi, server.URL, "/themes/u/mini.json", []string{"/themes/mini/mini.gif"}); err != nil {
+	if err := verifyThemeInstallHealth(context.Background(), wifi, server.URL, "/themes/u/mini.json", []string{"/themes/mini/mini.gif"}); err != nil {
 		t.Fatalf("verifyThemeInstallHealth returned error: %v", err)
 	}
 }
@@ -614,8 +615,31 @@ func TestVerifyThemeInstallHealthIgnoresGIFStatusForNonGIFThemes(t *testing.T) {
 	defer server.Close()
 
 	wifi := transportlayer.NewWiFiTransportWithClient(server.Client())
-	if err := verifyThemeInstallHealth(wifi, server.URL, "/themes/u/cozy.json", nil); err != nil {
+	if err := verifyThemeInstallHealth(context.Background(), wifi, server.URL, "/themes/u/cozy.json", nil); err != nil {
 		t.Fatalf("verifyThemeInstallHealth returned error: %v", err)
+	}
+}
+
+func TestVerifyThemeInstallHealthStopsWhenCancelled(t *testing.T) {
+	withFastRenderHealthCheck(t)
+	renderHealthAttempts = 3
+	renderHealthDelay = 30 * time.Second
+	server := healthServer(t, `{
+		"ok": true,
+		"display": {
+			"activeTheme": "mini-classic",
+			"themeSpec": {"active": true, "path": "/themes/u/mini.json", "renderOk": true},
+			"gif": {"activePath": "/themes/mini/mini.gif", "filePresent": true, "decoderAllocated": false, "decoderOpen": false, "lastError": "decoder_alloc"}
+		}
+	}`)
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	wifi := transportlayer.NewWiFiTransportWithClient(server.Client())
+	err := verifyThemeInstallHealth(ctx, wifi, server.URL, "/themes/u/mini.json", []string{"/themes/mini/mini.gif"})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled while waiting to re-check render health, got %v", err)
 	}
 }
 

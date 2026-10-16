@@ -874,60 +874,6 @@ export function deviceThemeSpecJson(spec: ThemeStudioSpec): string {
   return JSON.stringify(buildDeviceThemeSpec(spec));
 }
 
-export function updateThemeColors(
-  spec: ThemeStudioSpec,
-  colors: {
-    background?: string;
-    primary?: string;
-    secondary?: string;
-    muted?: string;
-  },
-): ThemeStudioSpec {
-  const next = normalizeThemeSpec(spec);
-  if (colors.background) {
-    next.bgColor = normalizeColor(colors.background) || next.bgColor;
-    const background = next.primitives.find(
-      (primitive) =>
-        primitive.type === "rect" &&
-        primitive.x === 0 &&
-        primitive.y === 0 &&
-        primitive.width === DISPLAY_SIZE &&
-        primitive.height === DISPLAY_SIZE,
-    );
-    if (background) {
-      background.color = next.bgColor;
-    }
-  }
-  next.primitives.forEach((primitive) => {
-    const text = primitive.text || "";
-    if (
-      colors.primary &&
-      (text.includes("{session}") || primitive.binding === "session")
-    ) {
-      primitive.color = normalizeColor(colors.primary);
-      if (primitive.type === "progress") {
-        primitive.borderColor = normalizeColor(colors.primary);
-      }
-    }
-    if (
-      colors.secondary &&
-      (text.includes("{weekly}") || primitive.binding === "weekly")
-    ) {
-      primitive.color = normalizeColor(colors.secondary);
-    }
-    if (
-      colors.muted &&
-      primitive.type === "text" &&
-      !text.includes("{session}") &&
-      !text.includes("{weekly}") &&
-      primitive.binding !== "label"
-    ) {
-      primitive.color = normalizeColor(colors.muted);
-    }
-  });
-  return next;
-}
-
 function validatePrimitive(
   primitive: ThemeStudioPrimitive,
   index: number,
@@ -1796,7 +1742,7 @@ function expandPrimitiveType(value: string): ThemeStudioPrimitiveType {
   return SHORT_TYPES[normalized] || (normalized as ThemeStudioPrimitiveType);
 }
 
-function expandBinding(value: string): ThemeStudioBinding {
+export function expandBinding(value: string): ThemeStudioBinding {
   const clean = value.trim();
   const normalized = clean.toLowerCase().replace(/[\s-]+/g, "");
   return SHORT_BINDINGS[clean] || SHORT_BINDINGS[normalized] || clean;

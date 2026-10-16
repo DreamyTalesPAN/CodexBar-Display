@@ -5,6 +5,13 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-10-15 — "Your VibeTV is live" without Back, set up once is remembered (#611)
+
+- User approval: Paul decided the behavior in issue #611 on 2026-10-15 ("Decision by Paul, 2026-10-15"). He has not personally previewed this exact build.
+- Approved customer-visible result: "Your VibeTV is live" has no Back. It hands over to Overview only when VibeTV itself reports the theme as rendered (`renderOk`) and real usage arrives, and the preview has drawn that theme. A first setup keeps this rule without timeout or forwarding. For a theme this app has no render pack for (a dev theme, or one installed by a newer app) the preview area says `Unsupported theme` instead of loading forever, and VibeTV's report alone decides the handover. The app remembers per VibeTV that setup was finished; later launches, including a reload from a shop theme link, go from the setup checks straight to Overview or the requested page without showing "Your VibeTV is live". A setup rerun in the same window (Settings connection change) keeps the full check, and "Run setup again" forgets every remembered VibeTV. Cleared web storage shows that screen once more, with the same check. This replaces the 2026-09-02 rule that Overview is never reached without a working preview, for the unsupported-theme case only.
+- Scope: `apps/control-center/src/components/setup/`, `live-vibetv-preview.tsx`, `control-center-app.tsx`, `apps/control-center/src/lib/completed-setup-devices.ts`, their tests, and this approval record. No merge, release, or device write is implied.
+- What's new: none — a setup screen that no longer gets stuck is nothing a customer needs to learn.
+
 ## 2026-10-09 — Return to the shop theme page after first install (#63)
 
 - User approval: Paul delegated customer UI decisions for the autonomous overnight issue work on 2026-10-09. He has not personally previewed this exact wording or layout.
@@ -7094,3 +7101,204 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No UI change. `test-customer-flows.mjs --release-screenshots` only runs the existing flows that already capture screenshots and captures them at 2x for the mail drafts; the app and the other test modes are unchanged.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs` (new mode), `apps/control-center/package.json` (`capture:release-screenshots`), and this approval record, after merging main.
 - What's new: none — test tooling only
+
+## 2026-10-14 — Theme Studio chat: right-edge text and provider readings (#594)
+
+- User approval: Paul asked on 2026-10-14 that the overnight session, once its audit was done, continue open issues that had no branch or pull request yet. This one changes no text; he has not seen it.
+- Approved customer-visible result: When the AI chat changes the words or the size of a text that has no width yet and sits near the right edge, the edit is applied and the text gets a box up to the display edge, as the manual controls already do; before, the chat refused the edit. A design that shows the first or second provider's readings now counts as showing usage, so "remove the usage" in the chat also removes those readings and a new picture keeps them in the usage area. Nothing else changes.
+- Scope: `apps/control-center/src/lib/ai-theme-layout.ts`, `apps/control-center/src/components/theme-studio/design-controls.ts`, their tests, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — two edge cases of the chat editor
+
+## 2026-10-14 — Theme Studio chat: compact provider readings count as usage (#594, review)
+
+- User approval: Paul asked on 2026-10-14 that the overnight session, once its audit was done, continue open issues that had no branch or pull request yet. This one changes no text; he has not seen it.
+- Approved customer-visible result: The entry above also holds for imported designs whose texts use the short reading names (for example `{pv1l}`): they count as showing usage too. Nothing else changes.
+- Scope: `apps/control-center/src/components/theme-studio/design-controls.ts`, `apps/control-center/src/lib/theme-studio.ts` (exports its existing key expansion), the test, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — an edge case of the chat editor
+
+## 2026-10-14 - On the Mac, "Sign in to Claude/Cursor" also reads the browser sign-in from the app
+
+- User approval: A Mac customer (VibeTV order #1175) was signed in to claude.ai, but VibeTV kept showing "No Claude session key found in browser cookies." The background usage service gets no macOS Keychain prompt and, on the bench Mac (macOS 26), may not list the Chrome profile folder, so it never reads a browser sign-in by itself; one read from the foreground fills CodexBar's cookie cache and the background service then shows Claude usage (bench Mac, preview 99.0.1106, 2026-10-14). Asked whether this should become its own pull request, with the note that customers will see a new macOS Keychain prompt, Marcus answered "Okay, dann mach das bitte und danach testest du das."
+- Approved customer-visible result: On the Mac, clicking "Sign in to Claude" or "Sign in to Cursor" (Settings and setup) still opens the provider sign-in as before. In addition, the Mac app has CodexBar read that provider's browser sign-in while the customer signs in, every 15 seconds for at most 3 minutes, and stops as soon as it is read. macOS may show its own prompt asking whether CodexBarCLI may use the browser's stored key. After "Allow" or "Always Allow" the existing automatic checks find the sign-in and the row becomes ready. After "Deny" the app stops reading and does not ask again for that provider for 3 minutes; the row stays as it was. No new text, button or dialog in VibeTV. Windows, other providers and rows without a sign-in action are unchanged.
+- Scope: `macos/VibeTVControlCenter/main.swift`, `macos/VibeTVControlCenter/URLSchemeTests.swift`, `apps/control-center/src/components/control-center-runtime.ts`, `apps/control-center/src/components/control-center-app.tsx`, and this approval record. This approves the pull-request branch only, not merge, release, signing, or a device operation.
+- What's new: none — a fix for the existing "Sign in to Claude/Cursor" action, not announced to customers
+
+## 2026-10-14 — #607: ask once, and approval marker for the main merge
+
+- User approval: Paul asked on 2026-10-14 to test #607 on Mac and Windows and, after the Mac test showed three to four Keychain prompts and Claude values only after 6:40, to investigate and fix it. The UI review gate cannot read a merge commit as approval marker, so this entry also stands for the merge of main into this branch. No new wording.
+- Approved customer-visible result: as approved in the entry above, with one correction: after a read the app asks VibeTV to check the provider with it, and when that check works, VibeTV starts its usage service fresh and the app does not read, or ask, again. On Paul's Mac this gave one prompt and Claude values 104 seconds after the click. During that restart the provider rows show their warning icon for about a minute, as after any settings change. No new text, button or dialog.
+- Scope: `macos/VibeTVControlCenter/main.swift`, `macos/VibeTVControlCenter/URLSchemeTests.swift`, `companion` (provider retry, usage service restart), the merge of main, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a fix for the existing "Sign in to Claude/Cursor" action, not announced to customers
+
+## 2026-10-14 — #607: a spinner while a new usage service reads
+
+- User approval: After the #607 test Paul saw every provider row (Codex and Claude) show the warning icon for about a minute while the usage service was started fresh, and asked on 2026-10-14: "lass doch da dann lieber n spinner oder so anzeigen".
+- Approved customer-visible result: For up to three minutes after the usage service was started (after a settings change, a browser sign-in read or a crash), a provider whose saved reading is older than that service shows the existing "checking" spinner instead of the warning icon. Once the new service delivers, the row is healthy as before; if it has not delivered after three minutes, the row shows the warning icon as before. A throttled provider keeps its warning. No new text, button or dialog.
+- Scope: `companion` (usage service start time, provider row health), this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a row that already had a checking state uses it during a restart, not announced to customers
+
+## 2026-10-14 — #607: approval marker after merging main with #597
+
+- User approval: Paul asked on 2026-10-14 to test, investigate and fix #607. Main moved on with #597 while the branch was under test, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #607 entries above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-14 — #607: the restart spinner keeps known failures
+
+- User approval: follows Paul's request above ("lieber n spinner"); the Codex review on #607 found that the spinner also replaced rows whose provider check already named the failure. No new wording.
+- Approved customer-visible result: as in the spinner entry above, except that a provider whose current check already says why it has no live reading (sign in, permission, throttle and the like) keeps that row and its action during a restart instead of showing the spinner. Only a row with no current explanation shows the spinner.
+- Scope: `companion` provider row health, `macos/VibeTVControlCenter/main.swift` (the post-read check asks every runtime origin within the reading's deadline), and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a correction of the unreleased spinner, not announced to customers
+
+## 2026-10-14 — #607: approval marker after merging main with #608
+
+- User approval: Paul asked on 2026-10-14 to test, investigate and fix #607. Main moved on with #608 while the branch was in review, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #607 entries above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-15 — #607: spinner from the browser sign-in read on
+
+- User approval: Paul saw in the Atlas test on 2026-10-15 that the Claude row showed the warning icon for a few seconds after he allowed the Keychain prompt, before the restart spinner came. Follows his request for a spinner instead of warnings ("lieber n spinner").
+- Approved customer-visible result: from the moment the Mac app reports a browser sign-in read until the check of that read answers, the provider row shows the existing "checking" spinner instead of the warning icon. If that check names a failure, the row shows it as before. No new text, button or dialog.
+- Scope: `companion` provider retry and provider row health, this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a correction of the unreleased spinner, not announced to customers
+
+## 2026-10-15 — #607: approval marker after merging main with #620
+
+- User approval: Paul asked on 2026-10-15 to finish #607 (Atlas test, review fixes). Main moved on with #620 while the branch was in review, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #607 entries above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-15 — #607: approval marker after merging main with #629
+
+- User approval: Paul asked on 2026-10-15 to finish #607 (Atlas test, review fixes). Main moved on with #629 while the branch was in review, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #607 entries above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-14 — Overnight audit (#614): dead UI code removed, preview poll scoped
+
+- User approval: Paul asked on 2026-10-14 for an unattended overnight audit of the whole repository (epic #614), with the rule that nothing the product does today is lost and nothing customer-visible changes unless needed. He has not seen this entry or the branch.
+- Approved customer-visible result: No text, control or layout changes. Deleted files and exports were never rendered: the panels of the native Theme Studio replaced by the AI editor (#422), the Overview `ReconnectNotice`, an unused shell status component and an unused device image. The 1 s display-frame poll now re-renders only Overview and the setup wizard instead of the whole app, runs one request at a time with a 5 s limit and pauses while the window is hidden; the Usage reset countdown keeps moving on its own 15 s tick (it shows whole minutes); background usage polls share one request. The installer served from app.vibetv.shop gives each status check at most 30 s instead of waiting without limit.
+- Scope: `apps/control-center/src/components/{live-vibetv-preview,control-center-app,usage-screen,overview-screen,mac-app-install-command,control-center-types,diagnostics-panel,control-center-runtime,setup-event-log}.ts(x)`, the deleted Theme Studio files, `src/lib/{theme-studio,theme-studio-assets,active-theme-upgrade}.ts`, `public/install-control-center-companion.sh`, `public/images/vibetv-device-overview.png`, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change
+
+## 2026-10-14 — Overnight audit (#614): app helpers moved into modules
+
+- User approval: Paul asked on 2026-10-14 for the unattended overnight audit (epic #614), including splitting the monolithic files, with nothing customer-visible changing. He has not seen this entry.
+- Approved customer-visible result: None. The pure helpers of `control-center-app.tsx` (error normalization, device merging, device-target storage, theme-install and firmware-update job helpers, runtime surface, event log) moved unchanged into six modules beside it; the rendered app is identical.
+- Scope: `apps/control-center/src/components/control-center-app.tsx`, the new `control-center-errors.ts`, `device-merge.ts`, `device-target-storage.ts`, `update-jobs.ts`, `runtime-surface.ts`, `event-log.ts`, the two tests that import them, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change
+
+## 2026-10-14 — Overnight audit (#614): unused props, dead CSS, unique activity ids
+
+- User approval: Paul asked on 2026-10-14 for the unattended overnight audit (epic #614) with nothing customer-visible changing. He has not seen this entry.
+- Approved customer-visible result: None. Props nothing read (`ThemeLibraryScreen.installEntry`, `ControlCenterShell.device`) are gone; `globals.css` loses the unused `.vibetv-status-icon*` rules and tokens and theme aliases nothing references (compiled CSS differs only by those); one progress clamp and one theme-spec hash normalizer replace identical copies; Recent activity rows get ids from a counter, so two events in the same millisecond no longer share a React key. Text and layout are unchanged.
+- Scope: `apps/control-center/src/app/globals.css`, `src/components/{control-center-app,control-center-shell,theme-library-screen,updates-screen,update-jobs,live-vibetv-preview,control-center-runtime,theme-studio-preview}.tsx/.ts`, `theme-studio/ai-theme-studio-screen.tsx`, the shell tests, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change
+
+## 2026-10-14 — Overnight audit (#614): the kept preview frame belongs to one VibeTV
+
+- User approval: Paul asked on 2026-10-14 for the unattended overnight audit (epic #614) with nothing customer-visible changing. This follows the automated review of the scoped preview poll; he has not seen it.
+- Approved customer-visible result: The frame kept across a tab switch is reused only for the VibeTV it came from. After switching to another VibeTV, Overview and setup start with an empty preview until that VibeTV's first frame arrives, instead of briefly showing the previous one. No text or control changes.
+- Scope: `apps/control-center/src/components/live-vibetv-preview.tsx`, `control-center-app.tsx`, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change
+
+## 2026-10-15 — Keep the hosted device overview image (#615)
+
+- User approval: Paul's rule for the overnight audit of 2026-10-14: nothing the product does today is lost, and anything an outside caller can reach stays.
+- Approved customer-visible result: `public/images/vibetv-device-overview.png` stays published under `/images/`, as on main. The audit had deleted it because nothing in the repository links it, but a mail or page outside the repository may. No screen changes.
+- Scope: `apps/control-center/public/images/vibetv-device-overview.png` (restored unchanged) and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — nothing changes for the customer
+
+## 2026-10-15 — Overnight audit (#614): approval marker after merging main with #607, #620 and #629
+
+- User approval: Paul asked on 2026-10-15 to bring #615 to ready (CI green, tested on Mac and Windows). Main moved on with #607, #620 and #629 while the branch was in review, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #614 entries above and in the entries of #607, #620 and #629; nothing else changes.
+
+## 2026-10-14 — The automatic Mac App update prompt never ends in "You're up to date" (#570)
+
+- User approval: Paul asked on 2026-10-14 that the overnight session, once its audit was done, continue open issues that had no branch or pull request yet. This one changes no text; he has not seen it.
+- Approved customer-visible result: When the background service reports a newer Mac App, the Mac App now runs Sparkle's background check for that prompt: Sparkle shows its update dialog only when it finds the update itself, and otherwise nothing appears — no "Checking for updates…" and no "You're up to date" alert in the middle of setup. While the launch update check is still running, the prompt does nothing (that check owns updates). "Check for Updates…" in the menu and the Update button still run the visible check. Windows is unchanged.
+- Scope: `macos/VibeTVControlCenter/main.swift` (new action `vibetv://check-for-updates-in-background`), `URLSchemeTests.swift`, `apps/control-center/src/components/control-center-app.tsx`, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no new feature, the prompt only stops showing a pointless alert
+
+## 2026-10-15 — #619: approval marker after merging main with #607, #620 and #629
+
+- User approval: Paul asked on 2026-10-15 to bring #619 to ready. Main moved on with #607, #620 and #629 while the branch was in review, so main is merged in. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #570 entry above and in the entries of #607, #620 and #629; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — #619: approval marker after merging main with #615
+
+- User approval: Paul asked on 2026-10-15 to keep #619 ready. Main moved on with #615, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #570 entry above and in the #615 entries; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+
+## 2026-10-15 — Busy computer dialog and VibeTV label (#606)
+
+- User approval: Paul approved this wording in chat on 2026-10-15 after seeing the mockup, and asked that it say "computer" so the same text works on the Mac and on Windows (the proposal said "Your Mac is very busy" / "Mac busy").
+- Approved customer-visible result: While the usage engine is running but has not answered for three collection intervals and the computer is low on memory, a dialog over the page reads exactly: title "Your computer is very busy", text "VibeTV can't get new usage right now because your computer is low on memory. Close apps you don't need or restart your computer.", one button "OK". It does not hold the page behind it, waits behind the runtime repair, a lost VibeTV, setup and a broken usage service, and once closed stays closed until the condition has gone and come back. The same words on Mac and Windows. VibeTV shows "Computer busy" in place of the provider name for as long as the condition lasts; the values under it stay the last good ones.
+- Scope: `apps/control-center/src/components/system-busy-dialog.tsx`, its wiring in `control-center-app.tsx`, the tests in `control-center-app.whats-new.test.tsx`, the Companion detection (`companion/internal/systemload`, `companion/internal/daemon`, `/v1/status` and `/v1/diagnostics`), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — an error dialog, not a feature to announce
+
+## 2026-10-15 — Busy computer dialog: review fixes (#606)
+
+- User approval: Paul approved the wording and behaviour of the busy computer dialog in chat on 2026-10-15 (entry above). This follow-up applies two review findings and changes no wording.
+- Approved customer-visible result: As above, with two refinements: a closed dialog opens again for every new incident, also when no status read saw the previous one end (the window was hidden); and the `Run setup again?` question the customer asked for is shown alone, the busy dialog returning after it if the customer had not closed it.
+- Scope: `system-busy-dialog.tsx`, `control-center-app.tsx`, `control-center-app.whats-new.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fixes to an error dialog
+
+## 2026-10-15 — Busy computer dialog: waits for any other dialog (#606)
+
+- User approval: Paul approved the wording and behaviour of the busy computer dialog in chat on 2026-10-15 (entries above). This follow-up applies a review finding and changes no wording.
+- Approved customer-visible result: The busy computer dialog no longer stacks with a page's own dialog (Run setup again?, a theme preview, a factory reset or connection change in Settings). While one of them is open, the busy dialog waits and returns after it if the customer had not closed it. It also no longer appears when the usage engine answers with an error of its own; that error keeps its existing message.
+- Scope: `system-busy-dialog.tsx`, `control-center-app.tsx`, `control-center-app.whats-new.test.tsx`, the Companion's silence check (`companion/internal/daemon/collector.go`, `companion/internal/codexbar/dashboard_fetch.go`), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fixes to an error dialog
+
+## 2026-10-15 — Busy computer dialog also waits for confirmations (#606)
+
+- User approval: Paul approved the wording and behaviour of the busy computer dialog in chat on 2026-10-15 (entries above). This follow-up applies a review finding and changes no wording.
+- Approved customer-visible result: As in "Busy computer dialog: waits for any other dialog" above, now also for confirmations such as deleting a theme (`alertdialog`). Nothing else changes.
+- Scope: `system-busy-dialog.tsx`, its new test `system-busy-dialog.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to an error dialog
+
+## 2026-10-15 — Busy computer: VibeTV label "Busy" (#606)
+
+- User approval: Paul approved "Computer busy" as VibeTV's label on 2026-10-15, with "Busy" as the label if "Computer busy" does not fit the title line of every catalog theme (as given in the #606 task). On the bench VibeTV 16199235 (Windows, 9999.0.2268) "Computer busy" fit Mini Classic and Claude Creature but ran into the window buttons of Clippy's title bar.
+- Approved customer-visible result: While the busy computer condition lasts, VibeTV shows "Busy" in place of the provider name; everything else as recorded in the busy computer entries above.
+- Scope: `SystemBusyLabel` in `companion/internal/daemon/daemon.go` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the label of an error state
+
+## 2026-10-15 — Busy computer: last good values stay on VibeTV (#606)
+
+- User approval: Paul decided on 2026-10-15 for #628, about the screensavers (Night Clock and the others): "nein, das sind ja screensaver. wenn die aktiv sind, muss der kunde gerade ja eh keine usage daten sehen, sonst wäre ja nicht der screensaver an. da einfach last good provider und data nehmen".
+- Approved customer-visible result: While the busy computer condition lasts, VibeTV keeps the last good provider and its values instead of losing the percentages and the reset line after ten minutes. Screensavers (Night Clock, Reset Countdown, Token Fire) show no "Busy" and just keep that last good provider and data; live themes show the same values under "Busy". The reset countdown keeps its own five-hour limit. Without a busy computer nothing changes.
+- Scope: `sendCycleResult` in `companion/internal/daemon/daemon.go`, its tests in `system_busy_test.go`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the behaviour of an error state
+
+## 2026-10-15 — #628 brought up to date with main after #607 and #629
+
+- User approval: Paul approved the busy computer dialog, its wording and VibeTV's behaviour on 2026-10-15 (entries above). This update only merges main (#607, #629) into `claude/issue-606-busy-computer`; the customer-visible result approved above stays the same.
+- Approved customer-visible result: as recorded in the busy computer entries above; nothing else changes.
+- Scope: merge of main into `claude/issue-606-busy-computer`, the approval record conflict resolved by keeping main's entries and appending this branch's, and this approval record.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-15 — Busy computer dialog: checks for an open dialog before it appears (#606)
+
+- User approval: Paul approved the wording and behaviour of the busy computer dialog in chat on 2026-10-15 (entries above). This follow-up applies a review finding and changes no wording.
+- Approved customer-visible result: As in "Busy computer dialog: waits for any other dialog" above; the check now happens before the dialog first appears, so it never shows for a moment over a question that was already open.
+- Scope: `system-busy-dialog.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to an error dialog
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — #628 merged with current main (#606)
+
+- User approval: Paul approved the busy computer dialog, its wording, the VibeTV label and the last good values on 2026-10-15 (entries above). This entry records only the merge of main into `claude/issue-606-busy-computer`; it adds no wording and no new visible behaviour.
+- Approved customer-visible result: as recorded in the busy computer entries above; nothing else changes.
+- Scope: the merge of main (with #615 and #620) into this branch and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own

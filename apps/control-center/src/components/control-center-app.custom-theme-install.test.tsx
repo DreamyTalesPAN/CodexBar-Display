@@ -134,7 +134,7 @@ async function openThemesWithSavedTheme(
             board: "esp8266",
             firmware: "9999.0.524",
             activeTheme: "mini-classic",
-            display: { themeSpec: { active: true, path: miniClassic.themeSpecPath } },
+            display: { themeSpec: { active: true, path: miniClassic.themeSpecPath, renderOk: true } },
             health: { ok: true },
             capabilities: { theme: { supportsThemeSpecV1: true } },
           },

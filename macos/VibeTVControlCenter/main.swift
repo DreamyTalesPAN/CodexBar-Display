@@ -22,9 +22,23 @@ private let installThemeURLHost = "install-theme"
 private let restartControlCenterURLHost = "restart-control-center"
 private let repairRuntimeURLHost = "repair-runtime"
 private let checkForUpdatesURLHost = "check-for-updates"
+// The window's own prompt when the background service reports a newer Mac
+// App (#570): a background Sparkle check, which shows a dialog only when
+// Sparkle finds that update itself, never "You're up to date".
+private let checkForUpdatesInBackgroundURLHost = "check-for-updates-in-background"
 private let repairCodexBarURLHost = "repair-codexbar"
 private let finishCodexBarRecoveryURLHost = "finish-codexbar-recovery"
 private let openCodexBarURLHost = "open-codexbar"
+private let readBrowserSignInURLHost = "read-browser-sign-in"
+// Providers CodexBar reads from a browser sign-in on the Mac.
+private let browserSignInReadProviders: Set<String> = ["claude", "cursor"]
+// As long as the app's own checks after "Sign in to <Provider>" run.
+private let browserSignInReadWindow: TimeInterval = 3 * 60
+private let browserSignInReadInterval: TimeInterval = 15
+// How long after a successful read the app only waits for VibeTV to show the
+// provider before reading again. The background usage service refreshes every
+// 60 seconds, so this covers one refresh plus its fetch.
+private let browserSignInReadSettle: TimeInterval = 90
 private let controlCenterBundleIdentifier = "shop.vibetv.control-center"
 private let runtimeLaunchAgentLabel = "shop.vibetv.control-center.runtime"
 private let previewRuntimeLaunchAgentLabel =
@@ -57,9 +71,9 @@ private let runtimeValidationUnregisterArgument =
 private let runtimeValidationUnregisterEnvironmentKey =
     "VIBETV_RUNTIME_VALIDATION_UNREGISTER"
 private let codexBarBundleIdentifier = "com.steipete.codexbar"
-private let codexBarPinnedVersion = "0.63.0"
+private let codexBarPinnedVersion = "0.75.0"
 
-private let codexBarArchiveName = "CodexBar-macos-universal-0.63.0.zip"
+private let codexBarArchiveName = "CodexBar-macos-universal-0.75.0.zip"
 
 private let legacyLaunchAgents = [
     ("com.codexbar-display.daemon", "com.codexbar-display.daemon.plist"),
@@ -109,6 +123,21 @@ func controlCenterPath(for url: URL) -> String? {
         return "control-center/install/\(themeID)"
     }
     return isOpenControlCenterURL(url) ? "control-center" : nil
+}
+
+func isCheckForUpdatesInBackgroundURL(_ url: URL) -> Bool {
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          components.scheme?.lowercased() == controlCenterURLScheme,
+          components.host?.lowercased() == checkForUpdatesInBackgroundURLHost,
+          components.user == nil,
+          components.password == nil,
+          components.port == nil,
+          components.query == nil,
+          components.fragment == nil,
+          components.path.isEmpty || components.path == "/" else {
+        return false
+    }
+    return true
 }
 
 func isCheckForUpdatesURL(_ url: URL) -> Bool {
@@ -201,13 +230,36 @@ func isOpenCodexBarURL(_ url: URL) -> Bool {
     return true
 }
 
+// vibetv://read-browser-sign-in?provider=claude names the provider whose
+// browser sign-in CodexBar should read; anything else is rejected.
+func browserSignInReadProvider(for url: URL) -> String? {
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          components.scheme?.lowercased() == controlCenterURLScheme,
+          components.host?.lowercased() == readBrowserSignInURLHost,
+          components.user == nil,
+          components.password == nil,
+          components.port == nil,
+          components.fragment == nil,
+          components.path.isEmpty || components.path == "/",
+          let items = components.queryItems,
+          items.count == 1,
+          items[0].name == "provider",
+          let provider = items[0].value?.lowercased(),
+          browserSignInReadProviders.contains(provider) else {
+        return nil
+    }
+    return provider
+}
+
 enum NativeControlCenterAction: Equatable {
     case restartControlCenter
     case repairRuntime
     case checkForUpdates
+    case checkForUpdatesInBackground
     case repairCodexBar
     case finishCodexBarRecovery
     case openCodexBar
+    case readBrowserSignIn(provider: String)
 }
 
 func nativeControlCenterAction(for url: URL) -> NativeControlCenterAction? {
@@ -220,6 +272,9 @@ func nativeControlCenterAction(for url: URL) -> NativeControlCenterAction? {
     if isCheckForUpdatesURL(url) {
         return .checkForUpdates
     }
+    if isCheckForUpdatesInBackgroundURL(url) {
+        return .checkForUpdatesInBackground
+    }
     if isRepairCodexBarURL(url) {
         return .repairCodexBar
     }
@@ -228,6 +283,9 @@ func nativeControlCenterAction(for url: URL) -> NativeControlCenterAction? {
     }
     if isOpenCodexBarURL(url) {
         return .openCodexBar
+    }
+    if let provider = browserSignInReadProvider(for: url) {
+        return .readBrowserSignIn(provider: provider)
     }
     return nil
 }
@@ -445,11 +503,19 @@ struct CodexBarCommandResult {
     let output: String
 }
 
+private final class CommandOutput: @unchecked Sendable {
+    var data = Data()
+}
+
+// With a timeout the child is stopped once it runs out, and the call returns
+// nil. A CodexBar call can otherwise wait on an unanswered macOS prompt for
+// as long as the prompt stays open.
 func runCodexBarCommand(
     executableURL: URL,
     arguments: [String],
     environment: [String: String]? = nil,
-    mergeStandardError: Bool = true
+    mergeStandardError: Bool = true,
+    timeout: TimeInterval? = nil
 ) -> CodexBarCommandResult? {
     let process = Process()
     let pipe = Pipe()
@@ -469,12 +535,256 @@ func runCodexBarCommand(
     } catch {
         return nil
     }
+    if let timeout {
+        let output = CommandOutput()
+        let drained = DispatchSemaphore(value: 0)
+        let reader = pipe.fileHandleForReading
+        DispatchQueue.global(qos: .utility).async {
+            output.data = reader.readDataToEndOfFile()
+            drained.signal()
+        }
+        if drained.wait(timeout: .now() + max(timeout, 0)) == .timedOut {
+            process.terminate()
+            if drained.wait(timeout: .now() + 2) == .timedOut {
+                kill(process.processIdentifier, SIGKILL)
+            }
+            return nil
+        }
+        process.waitUntilExit()
+        return CodexBarCommandResult(
+            exitCode: process.terminationStatus,
+            output: String(data: output.data, encoding: .utf8) ?? ""
+        )
+    }
     let data = pipe.fileHandleForReading.readDataToEndOfFile()
     process.waitUntilExit()
     return CodexBarCommandResult(
         exitCode: process.terminationStatus,
         output: String(data: data, encoding: .utf8) ?? ""
     )
+}
+
+enum BrowserSignInReadOutcome: Equatable {
+    case read
+    case declined
+    case notYet
+}
+
+// CodexBar answers `cookie refresh --format json` with one result per
+// provider. With --allow-keychain-prompt it asks macOS again on every call,
+// even right after "Deny", so a refusal it names must end the reading.
+func browserSignInReadOutcome(_ output: String) -> BrowserSignInReadOutcome {
+    guard let data = output.data(using: .utf8),
+          let results = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+          results.count == 1 else {
+        return .notYet
+    }
+    if results[0]["status"] as? String == "refreshed" {
+        return .read
+    }
+    if let message = results[0]["message"] as? String,
+       message.localizedCaseInsensitiveContains("declined in Keychain") {
+        return .declined
+    }
+    return .notYet
+}
+
+// Does the usage VibeTV serves to the device show this provider with current
+// values. Only then did the browser sign-in CodexBar read actually work: a
+// copied cookie can be old or refused by the provider.
+func browserSignInProviderReady(usage data: Data, provider: String) -> Bool {
+    guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let providers = object["providers"] as? [[String: Any]],
+          let entry = providers.first(where: {
+              ($0["id"] as? String)?.lowercased() == provider
+          }) else {
+        return false
+    }
+    return entry["stale"] as? Bool != true && entry["usageUnavailable"] as? Bool != true
+}
+
+// Does the provider's row show it working. Fresh usage alone is not enough: a
+// reading from the last minutes stays current while the latest exact check
+// already asks the customer to sign in again, and the row then shows
+// "Sign in to <Provider>".
+func browserSignInProviderHealthy(preferences data: Data, provider: String) -> Bool {
+    guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let items = object["items"] as? [[String: Any]],
+          let item = items.first(where: {
+              $0["id"] as? String == "codexbar.providers.\(provider).enabled"
+          }),
+          let health = item["health"] as? [String: Any] else {
+        return false
+    }
+    return health["state"] as? String == "healthy"
+}
+
+// The caller passes the ownership-verified runtime only; a stale listener's
+// "ready" must not end the reading.
+// Every request ends by the reading's deadline, so stale origins cannot keep
+// the reading, and later sign-in clicks, past its window.
+func browserSignInProviderIsReady(provider: String, runtimeOrigins: [URL], deadline: Date) async -> Bool {
+    for origin in runtimeOrigins {
+        guard let usage = await browserSignInFetch(origin.appendingPathComponent("v1/usage"), deadline: deadline),
+              browserSignInProviderReady(usage: usage, provider: provider),
+              let preferences = await browserSignInFetch(
+                  origin.appendingPathComponent("v1/preferences"),
+                  deadline: deadline
+              ) else {
+            continue
+        }
+        if browserSignInProviderHealthy(preferences: preferences, provider: provider) {
+            return true
+        }
+    }
+    return false
+}
+
+// One GET of the readiness poll. Its timeout is what is left of the reading's
+// window when it starts, so two sequential requests cannot add up past it.
+func browserSignInFetch(_ url: URL, deadline: Date) async -> Data? {
+    let remaining = min(runtimeHealthRequestTimeout, deadline.timeIntervalSinceNow)
+    guard remaining > 1 else {
+        return nil
+    }
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.timeoutIntervalForRequest = remaining
+    configuration.timeoutIntervalForResource = remaining
+    let session = URLSession(configuration: configuration)
+    defer { session.invalidateAndCancel() }
+    guard let (data, response) = try? await session.data(from: url),
+          (response as? HTTPURLResponse)?.statusCode == 200 else {
+        return nil
+    }
+    return data
+}
+
+// Has the app's verified CodexBar read the provider's browser sign-in once.
+// CodexBar keeps what it read in its cookie cache, which the background usage
+// service then uses. May show the macOS Keychain prompt and blocks until it is
+// answered or the timeout runs out.
+func readBrowserSignInWithCodexBar(
+    provider: String,
+    companionURL: URL,
+    codexBarAppURL: URL,
+    timeout: TimeInterval
+) -> BrowserSignInReadOutcome {
+    let deadline = Date().addingTimeInterval(timeout)
+    guard let validated = runCodexBarCommand(
+        executableURL: companionURL,
+        arguments: ["validate-codexbar", "--app", codexBarAppURL.path],
+        timeout: deadline.timeIntervalSinceNow
+    ), validated.exitCode == 0 else {
+        return .notYet
+    }
+    let cliPath = validated.output.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cliPath.isEmpty, let result = runCodexBarCommand(
+        executableURL: URL(fileURLWithPath: cliPath),
+        arguments: [
+            "cookie", "refresh", "--provider", provider,
+            "--allow-keychain-prompt", "--format", "json",
+        ],
+        mergeStandardError: false,
+        timeout: deadline.timeIntervalSinceNow
+    ) else {
+        return .notYet
+    }
+    return browserSignInReadOutcome(result.output)
+}
+
+// Each read can show the macOS Keychain prompt again (after a one-time
+// "Allow"), so after a successful read the app waits for the background usage
+// service to use it before reading again. Reading again only makes sense when
+// that read was an old sign-in the provider refused; once the check after the
+// read found the provider working, it never asks again.
+func browserSignInShouldRead(lastReadAt: Date?, readWorks: Bool, now: Date) -> Bool {
+    guard let lastReadAt else {
+        return true
+    }
+    return !readWorks && now.timeIntervalSince(lastReadAt) >= browserSignInReadSettle
+}
+
+// Did the check the app asked for right after a read find the provider
+// working with the sign-in CodexBar just read.
+func browserSignInReadWorks(check data: Data, provider: String) -> Bool {
+    guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let setup = object["providerSetup"] as? [String: Any],
+          let providers = setup["providers"] as? [[String: Any]],
+          let entry = providers.first(where: {
+              ($0["id"] as? String)?.lowercased() == provider
+          }) else {
+        return false
+    }
+    return entry["status"] as? String == "ready"
+}
+
+// Tells VibeTV that CodexBar just read the provider's browser sign-in. VibeTV
+// checks the provider with it at once and, when it works, starts its usage
+// service fresh: the running one keeps its failed reading for minutes, and the
+// app would read and ask again in the meantime (#607, 2026-10-14).
+// The published endpoint can be stale and still answer, so the request goes
+// to every candidate: a stale runtime's answer, either way, must not keep it
+// from the runtime that serves the device. Any origin that finds the read
+// working counts. Each request ends by the reading's deadline, so a slow or
+// stale origin cannot hold the reading, and later sign-in clicks, past its
+// window.
+func browserSignInCheckAfterRead(
+    provider: String,
+    runtimeOrigins: [URL],
+    activeOrigin: URL?,
+    deadline: Date
+) async -> Bool {
+    var origins = runtimeOrigins
+    if let activeOrigin, !origins.contains(activeOrigin) {
+        origins.append(activeOrigin)
+    }
+    // All candidates at once: a stale origin listed first cannot use up the
+    // time the active runtime needs for its check. Only the ownership-verified
+    // runtime's answer counts: a stale runtime's "ready" says nothing about
+    // the service that feeds the device (Codex review on #607).
+    return await withTaskGroup(of: (URL, Bool).self) { group in
+        for origin in origins {
+            group.addTask {
+                (origin, await browserSignInCheckAfterRead(provider: provider, origin: origin, deadline: deadline))
+            }
+        }
+        var works = false
+        for await (origin, answer) in group where answer && origin == activeOrigin {
+            works = true
+        }
+        return works
+    }
+}
+
+// The post-read check against one runtime origin, ended by the deadline.
+func browserSignInCheckAfterRead(provider: String, origin: URL, deadline: Date) async -> Bool {
+    let remaining = min(90, deadline.timeIntervalSinceNow)
+    guard remaining > 1,
+          var components = URLComponents(
+              url: origin.appendingPathComponent("v1/providers/retry"),
+              resolvingAgainstBaseURL: false
+          ) else {
+        return false
+    }
+    components.queryItems = [
+        URLQueryItem(name: "provider", value: provider),
+        URLQueryItem(name: "after", value: "browser-sign-in-read"),
+    ]
+    guard let url = components.url else {
+        return false
+    }
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.timeoutIntervalForRequest = remaining
+    configuration.timeoutIntervalForResource = remaining
+    let session = URLSession(configuration: configuration)
+    defer { session.invalidateAndCancel() }
+    var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
+    request.httpMethod = "POST"
+    guard let (data, response) = try? await session.data(for: request),
+          (response as? HTTPURLResponse)?.statusCode == 200 else {
+        return false
+    }
+    return browserSignInReadWorks(check: data, provider: provider)
 }
 
 
@@ -1605,6 +1915,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private let runtimeService = SMAppService.agent(plistName: runtimeLaunchAgentPlistName)
     private var urlRouter = ControlCenterURLRouter()
     private var reloadAttempts = 0
+    private var webContentTerminations: [Date] = []
     private var scheduledReload: Task<Void, Never>?
     private var preparationTask: Task<Void, Never>?
     private var closePreparationInFlight = false
@@ -1620,6 +1931,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     // reruns preparation with the flag still set instead.
     private var pendingCodexBarRepairRerun = false
     private var codexBarRecoveryApplication: NSRunningApplication?
+    private var browserSignInReadsRunning: Set<String> = []
+    private var browserSignInReadDeclinedAt: [String: Date] = [:]
     private var managedCodexBarOpenTask: Task<Void, Never>?
     private var installationStatusTitle = "Starting Control Center"
     private var installationStatusDetail = "Preparing the Mac App."
@@ -1642,6 +1955,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         case waiting, installing, abandoned, done
     }
     private var launchUpdateCheck = LaunchUpdateCheck.done
+    // The window's own update prompt came while the launch check still ran;
+    // it runs as soon as that check is done (#570).
+    private var backgroundUpdateCheckPending = false
+    // Set while the probing check from the window's update prompt runs (#570).
+    private var updateInformationProbe = false
+    // A probe asked for while another Sparkle session still finished; it runs
+    // when that cycle ends, because Sparkle ignores a probe meanwhile (#570).
+    private var updateInformationProbePending = false
+    // The probe found an update, or the customer asked for the visible check
+    // while it ran; that check follows when the probe's cycle ends.
+    private var updateInformationProbeFound = false
     private var launchUpdateTurnedDown = false
     // Creating the controller starts Sparkle, which may show an overdue
     // scheduled check at once. A launch check skipped for a running VibeTV
@@ -1770,10 +2094,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 updater.automaticallyDownloadsUpdates = false
                 if launchUpdateTurnedDown {
                     // The feed answered after the limit. Offer that update in
-                    // Sparkle's dialog now instead of dropping it for a day.
+                    // Sparkle's dialog now instead of dropping it for a day,
+                    // through the probe below: Sparkle's background check may
+                    // hold a found update back (#570).
                     launchUpdateTurnedDown = false
-                    updater.checkForUpdatesInBackground()
+                    backgroundUpdateCheckPending = true
                 }
+            }
+            if backgroundUpdateCheckPending {
+                backgroundUpdateCheckPending = false
+                checkForUpdatesInBackground()
             }
         }
         if previous != .abandoned {
@@ -1788,6 +2118,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
         if urls.contains(where: isCheckForUpdatesURL) {
             checkForUpdates()
+            return
+        }
+        // The window's quiet prompt (#570) can arrive here too, like the
+        // visible check above; without this it would be dropped.
+        if urls.contains(where: isCheckForUpdatesInBackgroundURL) {
+            checkForUpdatesInBackground()
             return
         }
         if urls.contains(where: isRepairCodexBarURL) {
@@ -2630,6 +2966,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         _ = applicationShouldHandleReopen(NSApp, hasVisibleWindows: false)
     }
 
+    private func checkForUpdatesInBackground() {
+        guard !installationRequired else {
+            return
+        }
+#if canImport(Sparkle)
+        // While the launch check runs it owns updates (and installs without a
+        // dialog); a background check now could restart the app mid-setup.
+        guard launchUpdateCheck == .done else {
+            backgroundUpdateCheckPending = true
+            return
+        }
+        updaterStarted = true
+        let updater = updaterController.updater
+        guard !updater.sessionInProgress else {
+            updateInformationProbePending = true
+            return
+        }
+        // A probing check only reports whether an update exists, and Sparkle's
+        // background check may hold a found update back (gentle reminders)
+        // without any alert. The delegate starts the visible check when the
+        // probe finds an update, so a customer sees the update, never
+        // "You're up to date" mid-setup (#570).
+        updateInformationProbe = true
+        updater.checkForUpdateInformation()
+#endif
+    }
+
     @objc private func checkForUpdates() {
         guard !installationRequired else {
             presentInstallationRequiredAlert()
@@ -2637,6 +3000,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
 #if canImport(Sparkle)
         updaterStarted = true
+        if updateInformationProbe && updaterController.updater.sessionInProgress {
+            // Sparkle rejects a visible check while the window's probe runs;
+            // the probe's cycle end starts it (#570).
+            updateInformationProbeFound = true
+            return
+        }
         updaterController.checkForUpdates(nil)
 #else
         let alert = NSAlert()
@@ -2712,6 +3081,95 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 NSLog(
                     "VibeTV Control Center could not report CodexBar repair result: \(error.localizedDescription)"
                 )
+            }
+        }
+    }
+
+    // "Sign in to Claude/Cursor" on the Mac. The usage service runs in the
+    // background, where CodexBar never shows the Keychain prompt and macOS
+    // does not let it look into the browser profile, so it cannot read a
+    // browser sign-in by itself. While the customer signs in, the app reads it
+    // instead, until VibeTV shows the provider's usage, the read is refused,
+    // or the follow-up window ends. A read alone does not end it: the cookie
+    // read before the customer signs in can be an old one the provider refuses.
+    // After a read it only waits for VibeTV to show the provider, so the
+    // customer is asked once unless that read turns out to be an old one.
+    private func readBrowserSignIn(provider: String) {
+        if browserSignInReadsRunning.contains(provider) {
+            return
+        }
+        if let declined = browserSignInReadDeclinedAt[provider],
+           Date().timeIntervalSince(declined) < browserSignInReadWindow {
+            return
+        }
+        browserSignInReadsRunning.insert(provider)
+        let companionURL = Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Helpers", isDirectory: true)
+            .appendingPathComponent("codexbar-display")
+        let codexBarAppURL = appManagedCodexBarAppURL(
+            applicationSupportURL: applicationSupportURL()
+        )
+        Task { [weak self] in
+            let deadline = Date().addingTimeInterval(browserSignInReadWindow)
+            var outcome = BrowserSignInReadOutcome.notYet
+            var ready = false
+            var lastReadAt: Date?
+            var readWorks = false
+            while true {
+                if browserSignInShouldRead(lastReadAt: lastReadAt, readWorks: readWorks, now: Date()) {
+                    let remaining = deadline.timeIntervalSinceNow
+                    outcome = await Task.detached {
+                        readBrowserSignInWithCodexBar(
+                            provider: provider,
+                            companionURL: companionURL,
+                            codexBarAppURL: codexBarAppURL,
+                            timeout: remaining
+                        )
+                    }.value
+                    if outcome == .read {
+                        lastReadAt = Date()
+                        // The runtime can move to another port while the
+                        // customer answers the prompt: resolve and verify it
+                        // each time.
+                        if deadline.timeIntervalSinceNow > runtimeInitialHealthTimeout + 1 {
+                            await self?.rediscoverRuntimeOriginForNavigationRetry()
+                        }
+                        readWorks = await browserSignInCheckAfterRead(
+                            provider: provider,
+                            runtimeOrigins: self?.runtimeOriginCandidates() ?? [],
+                            activeOrigin: self?.activeRuntimeOrigin,
+                            deadline: deadline
+                        )
+                    }
+                }
+                if outcome == .declined
+                    || Date().addingTimeInterval(browserSignInReadInterval) >= deadline {
+                    break
+                }
+                try? await Task.sleep(nanoseconds: UInt64(browserSignInReadInterval * 1_000_000_000))
+                // Only the ownership-verified runtime may end the reading: a
+                // stale runtime that still answers healthy says nothing about
+                // the one serving the device. The runtime can move to another
+                // port during the prompt, so it is found and verified again
+                // each round, within the reading's deadline (Codex review on
+                // #607).
+                if deadline.timeIntervalSinceNow > runtimeInitialHealthTimeout + 1 {
+                    await self?.rediscoverRuntimeOriginForNavigationRetry()
+                }
+                let activeOrigin = self?.activeRuntimeOrigin
+                ready = await browserSignInProviderIsReady(
+                    provider: provider,
+                    runtimeOrigins: activeOrigin.map { [$0] } ?? [],
+                    deadline: deadline
+                )
+                if ready {
+                    break
+                }
+            }
+            NSLog("VibeTV Control Center browser sign-in read for \(provider): \(outcome), works: \(readWorks), ready: \(ready)")
+            self?.browserSignInReadsRunning.remove(provider)
+            if outcome == .declined {
+                self?.browserSignInReadDeclinedAt[provider] = Date()
             }
         }
     }
@@ -4876,6 +5334,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         error: Error?
     ) {
         finishLaunchUpdateCheck(timedOut: false)
+        if updateCheck == .updateInformation {
+            updateInformationProbe = false
+            if updateInformationProbeFound {
+                updateInformationProbeFound = false
+                // The probe's session has ended: show Sparkle's dialog now.
+                // Started here, before returning, Sparkle schedules no next
+                // check that would take the session first (#570).
+                updater.checkForUpdates()
+                return
+            }
+        }
+        if updateInformationProbePending {
+            // The session that blocked the window's probe has ended (#570).
+            updateInformationProbePending = false
+            DispatchQueue.main.async {
+                self.checkForUpdatesInBackground()
+            }
+        }
     }
 #endif
 
@@ -4906,12 +5382,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 beginRuntimeRepair()
             case .checkForUpdates:
                 checkForUpdates()
+            case .checkForUpdatesInBackground:
+                checkForUpdatesInBackground()
             case .repairCodexBar:
                 beginCodexBarRepair(hasJavaScriptOwner: true)
             case .finishCodexBarRecovery:
                 finishControlCenterCodexBarRecovery()
             case .openCodexBar:
                 openManagedCodexBar()
+            case let .readBrowserSignIn(provider):
+                readBrowserSignIn(provider: provider)
             }
             return
         }
@@ -5092,8 +5572,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         controlCenterRoute.didLoad()
     }
 
+    // WebKit ends the page's process under memory pressure or when it
+    // crashes. The window then stays blank and the page stops polling, so a
+    // setup in progress looks frozen (#616). Load the Control Center again.
+    // A page that crashes again right after every load would otherwise be
+    // respawned forever: at most five in five minutes, through the bounded
+    // and delayed scheduleReload.
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        let now = Date()
+        webContentTerminations = webContentTerminations.filter {
+            now.timeIntervalSince($0) < 300
+        } + [now]
+        guard webContentTerminations.count <= 5 else {
+            NSLog("VibeTV Control Center web content process ended %d times in 5 minutes; not loading the page again", webContentTerminations.count)
+            return
+        }
+        NSLog("VibeTV Control Center web content process ended; loading the Control Center again")
+        activeNavigation = nil
+        scheduleReload()
+    }
+
     private func scheduleReload() {
         guard reloadAttempts < 20, scheduledReload == nil else {
+            if scheduledReload == nil {
+                NSLog("VibeTV Control Center stopped retrying the Control Center page after %d attempts", reloadAttempts)
+            }
             return
         }
         reloadAttempts += 1
@@ -5120,7 +5623,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 }
 
 #if canImport(Sparkle)
-extension AppDelegate: SPUUpdaterDelegate {}
+extension AppDelegate: SPUUpdaterDelegate {
+    func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
+        // Sparkle drops a visible check started while the probe's session
+        // still runs; didFinishUpdateCycleFor starts it once that ended.
+        if updateInformationProbe {
+            updateInformationProbeFound = true
+        }
+    }
+
+    func updaterDidNotFindUpdate(_ updater: SPUUpdater) {
+        updateInformationProbe = false
+    }
+
+    func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
+        updateInformationProbe = false
+    }
+}
 #endif
 
 #if VIBETV_CONTROL_CENTER_TESTING

@@ -35,29 +35,6 @@ inline bool ReadSerialLine(RuntimeContext& ctx, String& outLine) {
   return false;
 }
 
-inline bool ConsumeSerial(
-    RuntimeContext& ctx,
-    unsigned long nowMillis,
-    core::SerialConsumeEvent& outEvent) {
-  outEvent = {};
-
-  while (Serial.available() > 0) {
-    const char c = static_cast<char>(Serial.read());
-    core::SerialConsumeEvent event;
-    if (core::ConsumeSerialByte(
-            ctx.lineReader,
-            ctx.runtime,
-            c,
-            nowMillis,
-            event)) {
-      outEvent = event;
-      return true;
-    }
-  }
-
-  return false;
-}
-
 inline String BuildDeviceHelloJSON(const TransportConfig& config) {
   const char* boardId = config.boardId == nullptr ? "unknown" : config.boardId;
   const char* firmware = config.firmwareVersion == nullptr ? "dev" : config.firmwareVersion;

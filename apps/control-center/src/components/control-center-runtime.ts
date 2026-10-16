@@ -1,4 +1,4 @@
-export const COMPANION_URL = "http://127.0.0.1:47832";
+const COMPANION_URL = "http://127.0.0.1:47832";
 export const RESTART_CONTROL_CENTER_URL =
   "vibetv://restart-control-center";
 export const REPAIR_CONTROL_CENTER_RUNTIME_URL =
@@ -6,6 +6,9 @@ export const REPAIR_CONTROL_CENTER_RUNTIME_URL =
 export const REPAIR_CODEXBAR_URL = "vibetv://repair-codexbar";
 export const FINISH_CODEXBAR_RECOVERY_URL =
   "vibetv://finish-codexbar-recovery";
+export const READ_BROWSER_SIGN_IN_URL = "vibetv://read-browser-sign-in";
+// CodexBar reads these from the browser sign-in on the Mac.
+const MAC_BROWSER_SIGN_IN_PROVIDERS = new Set(["claude", "cursor"]);
 const NATIVE_CONTROL_CENTER_USER_AGENT_PREFIX = "VibeTVControlCenter/";
 const PROVIDER_SHORTCUT_UNAVAILABLE_USER_AGENT_SUFFIX =
   " ProviderShortcut/unavailable";
@@ -91,6 +94,25 @@ export function finishCodexBarRecovery(): void {
   launchNativeControlCenterAction(FINISH_CODEXBAR_RECOVERY_URL);
 }
 
+// Only the Mac app can have CodexBar read a browser sign-in: the background
+// usage service gets no macOS Keychain prompt.
+export function canReadBrowserSignIn(providerId: string): boolean {
+  return (
+    isNativeControlCenterApp() &&
+    typeof navigator !== "undefined" &&
+    /^Mac/.test(navigator.platform) &&
+    MAC_BROWSER_SIGN_IN_PROVIDERS.has(providerId)
+  );
+}
+
+// Asks the Mac app to read the provider's browser sign-in while the customer
+// signs in. This may show the macOS Keychain prompt.
+export function readBrowserSignIn(providerId: string): void {
+  launchNativeControlCenterAction(
+    `${READ_BROWSER_SIGN_IN_URL}?provider=${encodeURIComponent(providerId)}`,
+  );
+}
+
 function launchNativeControlCenterAction(url: string): void {
   if (typeof document === "undefined") {
     return;
@@ -107,7 +129,7 @@ export function isLoopbackHostname(hostname: string): boolean {
   return ["127.0.0.1", "localhost", "::1"].includes(hostname);
 }
 
-export function companionOrigin(): string {
+function companionOrigin(): string {
   if (
     typeof window !== "undefined" &&
     isLoopbackHostname(window.location.hostname) &&
@@ -130,7 +152,7 @@ export function isLocalCompanionOrigin(): boolean {
   );
 }
 
-export function shouldUseNextLocalCompanionProxy(): boolean {
+function shouldUseNextLocalCompanionProxy(): boolean {
   if (typeof window === "undefined") {
     return false;
   }
@@ -239,7 +261,7 @@ function themeSpecFileName(themeSpecPath: string | undefined): string {
   return /^[a-zA-Z0-9._-]+\.json$/.test(file) ? file : "";
 }
 
-function normalizeThemeSpecHash(value: string | undefined): string {
+export function normalizeThemeSpecHash(value: string | undefined): string {
   const hash = (value || "").trim().toLowerCase();
   return /^[a-f0-9]{8}$/.test(hash) ? hash : "";
 }
