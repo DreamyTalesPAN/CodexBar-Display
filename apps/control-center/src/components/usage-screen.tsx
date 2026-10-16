@@ -128,8 +128,13 @@ export function UsageScreen({
   const tokenHistoryUnavailable = usageTokenHistoryUnavailable(usage);
   const hasUsableVisibleUsageContent =
     hasProviders || usageProvidersHaveTokenResult(providers);
+  // An action tile is content: no loading state beside it.
   const usageLoading =
-    companionStatus === "online" && !usageError && !usage && !hasProviders;
+    companionStatus === "online" &&
+    !usageError &&
+    !usage &&
+    !hasProviders &&
+    Object.keys(providerActions).length === 0;
   const tokenUsagePending =
     companionStatus === "online" &&
     !usageError &&

@@ -697,6 +697,20 @@ describe("UsageScreen", () => {
     expect(html).not.toContain("Check again");
   });
 
+  it("shows an action tile, not the loading state, while usage is still pending", () => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="online"
+        providerActions={{
+          claude: { name: "Claude", state: "auth_required", label: "Sign in needed", onAction: vi.fn() },
+        }}
+        usage={null}
+      />,
+    );
+    expect(html).toContain('aria-label="Sign in needed for Claude"');
+    expect(html).not.toContain("Loading usage");
+  });
+
   it("gives no tile to a hidden provider, even with a usage entry", () => {
     const html = renderToStaticMarkup(
       <UsageScreen
