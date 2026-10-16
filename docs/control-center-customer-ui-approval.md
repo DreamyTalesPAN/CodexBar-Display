@@ -7218,6 +7218,25 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul asked on 2026-10-15 to bring #615 to ready (CI green, tested on Mac and Windows). Main moved on with #607, #620 and #629 while the branch was in review, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
 - Approved customer-visible result: as approved in the #614 entries above and in the entries of #607, #620 and #629; nothing else changes.
+
+## 2026-10-14 — The automatic Mac App update prompt never ends in "You're up to date" (#570)
+
+- User approval: Paul asked on 2026-10-14 that the overnight session, once its audit was done, continue open issues that had no branch or pull request yet. This one changes no text; he has not seen it.
+- Approved customer-visible result: When the background service reports a newer Mac App, the Mac App now runs Sparkle's background check for that prompt: Sparkle shows its update dialog only when it finds the update itself, and otherwise nothing appears — no "Checking for updates…" and no "You're up to date" alert in the middle of setup. While the launch update check is still running, the prompt does nothing (that check owns updates). "Check for Updates…" in the menu and the Update button still run the visible check. Windows is unchanged.
+- Scope: `macos/VibeTVControlCenter/main.swift` (new action `vibetv://check-for-updates-in-background`), `URLSchemeTests.swift`, `apps/control-center/src/components/control-center-app.tsx`, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no new feature, the prompt only stops showing a pointless alert
+
+## 2026-10-15 — #619: approval marker after merging main with #607, #620 and #629
+
+- User approval: Paul asked on 2026-10-15 to bring #619 to ready. Main moved on with #607, #620 and #629 while the branch was in review, so main is merged in. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #570 entry above and in the entries of #607, #620 and #629; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — #619: approval marker after merging main with #615
+
+- User approval: Paul asked on 2026-10-15 to keep #619 ready. Main moved on with #615, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #570 entry above and in the #615 entries; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
 
 ## 2026-10-15 — Busy computer dialog and VibeTV label (#606)
