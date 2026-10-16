@@ -663,7 +663,7 @@ describe("SetupProvidersScreen", () => {
     expect(html).not.toContain("Show more providers");
   });
 
-  it("puts switched-on providers first without changing either group", () => {
+  it("puts the common subscription tools first, then switched-on providers", () => {
     const offOpenAI = provider({
       health: "disabled",
       label: "OpenAI",
@@ -682,9 +682,15 @@ describe("SetupProvidersScreen", () => {
       value: false,
     });
 
-    const providers = [offOpenAI, claude, offCursor, onCodex];
+    const offAzure = provider({
+      health: "disabled",
+      label: "Azure OpenAI",
+      providerId: "azureopenai",
+      value: false,
+    });
+    const providers = [offOpenAI, claude, offCursor, onCodex, offAzure];
     const html = render({ providers });
-    const labels = ["Claude Code", "Codex", "OpenAI", "Cursor"];
+    const labels = ["Codex", "Claude Code", "Cursor", "OpenAI", "Azure OpenAI"];
     const positions = labels.map((label) => html.indexOf(`>${label}</`));
 
     expect(positions.every((position) => position >= 0)).toBe(true);
