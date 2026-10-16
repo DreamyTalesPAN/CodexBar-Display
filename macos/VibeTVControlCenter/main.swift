@@ -1963,6 +1963,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     // A probe asked for while another Sparkle session still finished; it runs
     // when that cycle ends, because Sparkle ignores a probe meanwhile (#570).
     private var updateInformationProbePending = false
+    // The probe found an update; the visible check follows when its cycle ends.
+    private var updateInformationProbeFound = false
     private var launchUpdateTurnedDown = false
     // Creating the controller starts Sparkle, which may show an overdue
     // scheduled check at once. A launch check skipped for a running VibeTV
@@ -5321,6 +5323,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         finishLaunchUpdateCheck(timedOut: false)
         if updateCheck == .updateInformation {
             updateInformationProbe = false
+            if updateInformationProbeFound {
+                updateInformationProbeFound = false
+                // The probe's session has ended: show Sparkle's dialog (#570).
+                DispatchQueue.main.async {
+                    updater.checkForUpdates()
+                }
+                return
+            }
         }
         if updateInformationProbePending {
             // The session that blocked the window's probe has ended (#570).
@@ -5602,13 +5612,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 #if canImport(Sparkle)
 extension AppDelegate: SPUUpdaterDelegate {
     func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
-        guard updateInformationProbe else {
-            return
-        }
-        updateInformationProbe = false
-        // The probe is still finishing; the visible check starts after it.
-        DispatchQueue.main.async {
-            updater.checkForUpdates()
+        // Sparkle drops a visible check started while the probe's session
+        // still runs; didFinishUpdateCycleFor starts it once that ended.
+        if updateInformationProbe {
+            updateInformationProbeFound = true
         }
     }
 
@@ -5618,6 +5625,7 @@ extension AppDelegate: SPUUpdaterDelegate {
 
     func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
         updateInformationProbe = false
+        updateInformationProbeFound = false
     }
 }
 #endif
