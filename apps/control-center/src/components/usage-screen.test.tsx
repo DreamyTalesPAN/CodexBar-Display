@@ -686,7 +686,8 @@ describe("UsageScreen", () => {
         usage={usage}
       />,
     );
-    expect(html.match(/Sign in needed/g)).toHaveLength(2);
+    expect(html.match(/Sign in needed<svg/g)).toHaveLength(2);
+    expect(html).toContain('aria-label="Sign in needed for Claude"');
     expect(html).toContain("Claude");
     expect(html).not.toContain("session used");
     expect(html).not.toContain("??");

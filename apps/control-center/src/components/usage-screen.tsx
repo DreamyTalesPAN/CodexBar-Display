@@ -568,7 +568,7 @@ function UsageProviderTile({
 function UsageActionTile({ label, name, onAction }: UsageProviderAction) {
   return (
     <UsageTileFrame
-      action={<UsageActionLink label={label} onAction={onAction} />}
+      action={<UsageActionLink label={label} name={name} onAction={onAction} />}
       name={name}
     >
       <UsageSkeleton />
@@ -576,9 +576,10 @@ function UsageActionTile({ label, name, onAction }: UsageProviderAction) {
   );
 }
 
-function UsageActionLink({ label, onAction }: Pick<UsageProviderAction, "label" | "onAction">) {
+function UsageActionLink({ label, name, onAction }: UsageProviderAction) {
   return (
     <button
+      aria-label={`${label} for ${name}`}
       className="inline-flex items-center gap-1 font-semibold text-destructive hover:underline"
       onClick={onAction}
       type="button"
