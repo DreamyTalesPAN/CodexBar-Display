@@ -111,7 +111,12 @@ fn take_updater(app: &AppHandle, run: UpdateRun) -> bool {
         }
         Updater::IdleInstalling { .. } if run == UpdateRun::Asked => {
             *updater = Updater::IdleInstalling { asked: true };
-            log("update requested while the installer starts; it is answered if the installer fails");
+            // The customer asked for the update: if the installer succeeds,
+            // the app must come back with its window, as after a present.
+            if let Ok(folder) = app.path().app_local_data_dir() {
+                launch_update::release(&folder.join(IDLE_UPDATE_RELAUNCH_MARKER));
+            }
+            log("update requested while the installer starts; the app comes back with its window");
             false
         }
         _ => false,
