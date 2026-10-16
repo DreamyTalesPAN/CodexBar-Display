@@ -7364,3 +7364,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the #627 entries above; Continue stays closed while any switched-on provider row shows its spinner, and opens when that row shows a reading, asks the customer to do something (for example sign in), or is switched off. This replaces the earlier rule that a reading without percentages released the step.
 - Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test, and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — a correction of the unreleased change above
+## 2026-10-16 — #642 merged with current main (#615, #619, #628)
+
+- User approval: Marcus approved the setup changes of #642 in his click test on 2026-10-16 (entries above). Main moved on with #615, #619 and #628 while #642 was in review, so main is merged in. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as recorded in the #627, #631 and #234 entries above and in the entries of #615, #619 and #628; nothing else changes.
+- Scope: the merge of main into `codex/setup-display-mode-pack` and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
