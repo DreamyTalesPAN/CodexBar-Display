@@ -7,13 +7,14 @@ import {
   ArrowRight,
   ArrowUp,
   BringToFront,
-  Download,
-  Settings,
+  FileDown,
+  FileUp,
   Type,
   TimerReset,
   ChartNoAxesColumn,
   ChevronDown,
   ImagePlus,
+  Package,
   Paperclip,
   Square,
   SquarePlus,
@@ -28,6 +29,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
 import { Input } from "@/components/ui/input";
 import { useSidebar } from "@/components/ui/sidebar";
@@ -39,7 +41,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { SETUP_REVEAL } from "../setup/setup-reveal";
+import { cn } from "@/lib/utils";
 import { EditableThemePreview } from "./editable-theme-preview";
+import { OpenAIKeyForm, openAIState } from "./openai-key-form";
 import { friendlyElementName } from "./theme-studio-customer-labels";
 import { createDesignElement, isTypingTarget, LIVE_READINGS, moveLayer, pinnedElement, readingKey, setReading, usageSectionIndices, type AddElementKind } from "./design-controls";
 import { ColorField, NumberField } from "./editor-fields";
@@ -83,16 +88,12 @@ import {
   fetchAIThemeCapabilities,
   generateAIThemeConcept,
   planAIThemeLayout,
-  saveAIThemeCredential,
-  verifyAIThemeCredential,
-  deleteAIThemeCredential,
   AI_THEME_ANIMATION_ASSET_PATH,
   AI_THEME_LOCAL_HISTORY_LIMIT,
   AI_THEME_SCREENMASTER_ASSET_PATH,
   AI_THEME_TRANSMITTED_HISTORY_LIMIT,
   isAttachedSceneAnimation,
   isCompanionSprite,
-  type AIThemeCapabilities,
   type AIThemeMessage,
 } from "@/lib/ai-theme";
 import {
@@ -129,6 +130,21 @@ function planningContext(document: ThemeStudioDocument, selected: number[] = [])
   }));
 }
 
+// The status line while the AI works. Words only rotate inside the real step
+// they belong to, so a word never runs ahead of what the AI is doing.
+const PLANNING_WORDS = ["Understanding your idea…", "Sketching a plan…", "Picking a palette…"];
+const DRAWING_WORDS = (animated: boolean) => [
+  "Getting the paint ready…",
+  "Mixing the colors…",
+  "Drawing the picture…",
+  "Placing every pixel…",
+  ...(animated ? ["Teaching it to move…"] : []),
+  "Checking the light…",
+  "Letting the paint dry…",
+  "Cleaning the brushes…",
+];
+const FITTING_WORDS = ["Adding clock and readings…", "Fitting it to your VibeTV…", "Polishing the details…", "Taking one last look…"];
+
 export function AIThemeStudioScreen({
   initialTheme, onBackToLibrary, onSaveToLibrary, onInstallTheme,
   installStatus, deviceCapabilities, saveBlockedReason, windowsHost = false,
@@ -164,10 +180,8 @@ export function AIThemeStudioScreen({
     documentRef.current = document;
   }, [dirty, document]);
   const [selected, setSelected] = useState<number[]>([]);
-  const [panel, setPanel] = useState<
-    "setup" | "settings" | "add" | "library" | null
-  >(null);
-  const [connectionError, setConnectionError] = useState("");
+  const [panel, setPanel] = useState<"setup" | "add" | "library" | null>(null);
+  const [fileMenu, setFileMenu] = useState(false);
   const dialogTrigger = useRef<HTMLElement | null>(null);
   const [prompt, setPrompt] = useState("");
   // The conversation lives with the open editor: it gives the AI the context
@@ -176,18 +190,16 @@ export function AIThemeStudioScreen({
   // The request the AI is working on: shown as the customer's message right
   // away, and added to the conversation for good once it has an answer.
   const [asking, setAsking] = useState<string | null>(null);
-  // The step the AI is working on and how long it has run (#634), so a long
-  // step does not look stuck.
-  const [step, setStep] = useState("");
-  const [seconds, setSeconds] = useState(0);
+  // One status line shows the words of the step the AI is in; `at` counts the
+  // swaps so each word flies in again.
+  const [progress, setProgress] = useState<{ words: string[]; at: number }>({ words: [], at: 0 });
   useEffect(() => {
-    if (!step) return;
-    const timer = window.setInterval(() => setSeconds((s) => s + 1), 1000);
+    if (!progress.words.length) return;
+    const timer = window.setInterval(() => setProgress((p) => ({ ...p, at: p.at + 1 })), 2500);
     return () => window.clearInterval(timer);
-  }, [step]);
-  function progress(next: string) {
-    setStep(next);
-    setSeconds(0);
+  }, [progress.words]);
+  function progressTo(words: string[]) {
+    setProgress({ words, at: 0 });
   }
   const chatEnd = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -198,9 +210,7 @@ export function AIThemeStudioScreen({
   const attachmentInput = useRef<HTMLInputElement>(null);
   const [enabled, setEnabled] = useState(false);
   const [configured, setConfigured] = useState<boolean | "pending">(false);
-  const [password, setPassword] = useState("");
   const [connecting, setConnecting] = useState(false);
-  const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const [transferStatus, setTransferStatus] = useState("");
@@ -280,13 +290,16 @@ export function AIThemeStudioScreen({
   useEffect(() => {
     const controller = new AbortController();
     void fetchAIThemeCapabilities(controller.signal)
-      .then(updateCapabilities)
+      .then((capabilities) => {
+        const state = openAIState(capabilities);
+        setEnabled(state.enabled);
+        setConfigured(state.configured);
+      })
       .catch(() => {
         if (!controller.signal.aborted) setEnabled(false);
       });
     const hydration = window.setTimeout(() => {
       try {
-        setConsent(localStorage.getItem("vibetv.aiTheme.consent") === "1");
         if (!nativeInstall) setTransferJob(sessionStorage.getItem("vibetv.themeStudio.transferJob"));
       } catch {
         /* Keep consent and transfer state per-page when storage is unavailable. */
@@ -349,12 +362,6 @@ export function AIThemeStudioScreen({
       window.removeEventListener("vibetv:native-window-will-close", persist);
     };
   }, [dirty, document, libraryId]);
-
-  function updateCapabilities(capabilities: AIThemeCapabilities) {
-    setEnabled(capabilities.enabled);
-    const provider = capabilities.providers.find((p) => p.id === "openai");
-    setConfigured(provider?.configured ? provider.verificationRequired ? "pending" : true : false);
-  }
 
   function mutate(fn: (draft: ThemeStudioDocument) => void) {
     if (locked) return;
@@ -696,33 +703,6 @@ export function AIThemeStudioScreen({
     }
   }
 
-  async function connect() {
-    const key = password.trim();
-    if ((!key && configured !== "pending") || connecting || !consent) return;
-    setPassword("");
-    setConnecting(true);
-    setConnectionError("");
-    try {
-      if (key) {
-        await saveAIThemeCredential("openai", key);
-        setConfigured("pending");
-      }
-      const kept = await verifyAIThemeCredential("openai");
-      setConfigured(true);
-      setStatus(kept || !nativeInstall ? "AI is ready." : copyForHost("AI is ready. The key could not be saved on this Mac, so it is needed again after the Mac App restarts.", windowsHost));
-      setPanel(null);
-      if (panel === "setup" && prompt.trim()) await generate(true);
-    } catch (e) {
-      setConnectionError(e instanceof Error ? e.message : "Connection failed.");
-      // A failed model check is not proof of a bad key. Keep it in helper
-      // memory for a deliberate retry, without treating it as verified.
-      const capabilities = await fetchAIThemeCapabilities().catch(() => null);
-      if (capabilities) updateCapabilities(capabilities);
-      else setConfigured(false);
-    } finally {
-      setConnecting(false);
-    }
-  }
   async function generate(connectedNow = false) {
     if (
       request.current ||
@@ -747,7 +727,7 @@ export function AIThemeStudioScreen({
     // cancelled request is not shown twice and not sent as an earlier turn.
     const asked = prompt;
     setAsking(asked);
-    progress("Understanding your request…");
+    progressTo(PLANNING_WORDS);
     const reply = (content: string) =>
       setMessages((all) => [...all, ...([["user", asked], ["assistant", content]] as const).map(([role, text]) => ({ role, content: text.slice(0, 2000), createdAt: new Date().toISOString() }))].slice(-AI_THEME_LOCAL_HISTORY_LIMIT));
     try {
@@ -799,7 +779,7 @@ export function AIThemeStudioScreen({
         setAttachments([]);
         return;
       }
-      progress("Drawing the picture…");
+      progressTo(DRAWING_WORDS(base.spec.primitives.some((p) => isAttachedSceneAnimation(p.assetPath))));
       const concept = await generateAIThemeConcept(
         {
           prompt,
@@ -829,7 +809,7 @@ export function AIThemeStudioScreen({
       // step; if that fails the picture still stands.
       let added = "";
       try {
-        progress("Adding clock, text and readings…");
+        progressTo(FITTING_WORDS);
         const extras = await planAIThemeLayout(
           "The picture for the following request has just been created and is already in the design. Now add or change ONLY the native elements this request asks for (text, clock, date, usage readings, bars, shapes), placed where the request says. Do not describe or change the picture. For a live theme that shows usage, also harmonize its readouts with the supplied artwork: cohesive colours, compact readable typography, appropriate bar treatment and calm placement clear of the subjects. Keep at least one live percentage, meter or reset unless the customer explicitly requested no readings. For screensavers or explicitly readout-free designs, add only what was requested. Request: " + prompt,
           planningContext(next), controller.signal, [], history,
@@ -865,7 +845,7 @@ export function AIThemeStudioScreen({
         request.current = null;
         setBusy(false);
         setAsking(null);
-        progress("");
+        progressTo([]);
       }
     }
   }
@@ -874,7 +854,7 @@ export function AIThemeStudioScreen({
     request.current = null;
     setBusy(false);
     setAsking(null);
-    progress("");
+    progressTo([]);
     setStatus(
       "Cancelled. Your scene is unchanged. OpenAI may still bill work already started.",
     );
@@ -940,27 +920,10 @@ export function AIThemeStudioScreen({
 
   function openPanel(next: typeof panel) {
     dialogTrigger.current = window.document.activeElement as HTMLElement;
-    setPassword("");
-    setConnectionError("");
     setPanel(next);
-    if (next === "settings") {
-      void fetchAIThemeCapabilities().then(updateCapabilities)
-        .catch(() => setConnectionError("Could not check the AI connection."));
-    }
-  }
-  function updateConsent(value: boolean) {
-    setConsent(value);
-    try {
-      if (value) localStorage.setItem("vibetv.aiTheme.consent", "1");
-      else localStorage.removeItem("vibetv.aiTheme.consent");
-    } catch {
-      /* Never store a key or block editing on browser storage. */
-    }
   }
   function closePanel() {
     if (connecting) return;
-    setPassword("");
-    setConnectionError("");
     setPanel(null);
   }
   function selectOnCanvas(indices: number[]) {
@@ -1034,17 +997,62 @@ export function AIThemeStudioScreen({
               })
             }
           />
-          <div className="ml-auto flex items-center gap-2">
+          <div className="flex items-center gap-1">
+            <Popover open={fileMenu} onOpenChange={setFileMenu}>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" aria-haspopup="menu" disabled={locked}>
+                  File
+                  <ChevronDown />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-64 p-1.5">
+                <div role="menu" className="flex flex-col gap-0.5" onClick={() => setFileMenu(false)}>
+                  <Button role="menuitem" size="sm" variant="ghost" className="w-full justify-start font-medium" onClick={() => requestLoad({ document: blank() })}>
+                    <Plus data-icon="inline-start" />
+                    <span>New design</span>
+                  </Button>
+                  <Button role="menuitem" size="sm" variant="ghost" className="w-full justify-start font-medium" onClick={() => openPanel("library")}>
+                    <FolderOpen data-icon="inline-start" />
+                    <span>Open saved design…</span>
+                  </Button>
+                  <div role="separator" className="my-1 h-px bg-border" />
+                  <Button role="menuitem" size="sm" variant="ghost" className="w-full justify-start font-medium" onClick={() => jsonInput.current?.click()}>
+                    <FileUp data-icon="inline-start" />
+                    <span>Open design file…</span>
+                  </Button>
+                  <Button role="menuitem" size="sm" variant="ghost" className="w-full justify-start font-medium" disabled={!document.spec.primitives.length} onClick={() => download(JSON.stringify(document, null, 2), "vibetv-scene.json", "application/json")}>
+                    <FileDown data-icon="inline-start" />
+                    <span>Download editable design</span>
+                  </Button>
+                  <Button role="menuitem" size="sm" variant="ghost" className="w-full justify-start font-medium" disabled={!document.spec.primitives.length || validation.errors.length > 0} onClick={exportPack}>
+                    <Package data-icon="inline-start" />
+                    <span>Export theme pack</span>
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
             <Button
               variant="ghost"
               size="icon"
-              title="Design settings"
-              aria-label="Design settings"
-              disabled={locked}
-              onClick={() => openPanel("settings")}
+              title="Undo · ⌘Z / Ctrl+Z"
+              aria-label="Undo last edit"
+              disabled={!state.past.length || locked}
+              onClick={() => history("undo")}
             >
-              <Settings />
+              <Undo2 />
             </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              title="Redo · ⇧⌘Z / Ctrl+Shift+Z / Ctrl+Y"
+              aria-label="Redo edit"
+              disabled={!state.future.length || locked}
+              onClick={() => history("redo")}
+            >
+              <Redo2 />
+            </Button>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
             <Button
               variant="outline"
               disabled={locked || Boolean(saveBlockedReason) || !document.spec.primitives.length || validation.errors.length > 0}
@@ -1077,32 +1085,6 @@ export function AIThemeStudioScreen({
               aria-busy={busy}
             >
               <EditableThemePreview
-                toolbar={
-            <div className="mx-auto mb-4 flex max-w-[680px] items-center justify-end gap-2">
-              <div data-selection-controls className="flex gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  title="Undo · ⌘Z / Ctrl+Z"
-                  aria-label="Undo last edit"
-                  disabled={!state.past.length || locked}
-                  onClick={() => history("undo")}
-                >
-                  <Undo2 />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  title="Redo · ⇧⌘Z / Ctrl+Shift+Z / Ctrl+Y"
-                  aria-label="Redo edit"
-                  disabled={!state.future.length || locked}
-                  onClick={() => history("redo")}
-                >
-                  <Redo2 />
-                </Button>
-              </div>
-            </div>
-                }
                 animate={locked ? false : undefined}
                 nonInteractiveIndices={document.spec.primitives.flatMap(
                   (p, i) =>
@@ -1462,15 +1444,16 @@ export function AIThemeStudioScreen({
               {asking !== null ? (
                 <>
                   <p className="ml-8 self-end whitespace-pre-wrap rounded-xl bg-muted px-3 py-2 text-sm [overflow-wrap:anywhere]">{asking}</p>
-                  <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <span aria-hidden className="flex gap-1">
-                      {[0, 150, 300].map((delay) => (
-                        <span key={delay} className="size-1.5 animate-bounce rounded-full bg-muted-foreground motion-reduce:animate-none" style={{ animationDelay: `${delay}ms` }} />
-                      ))}
-                    </span>
-                    {step}
-                    {seconds >= 10 ? <span aria-hidden className="tabular-nums">{seconds} s</span> : null}
-                  </p>
+                  {progress.words.length ? (
+                    <div aria-hidden className="font-mono text-[13px] leading-6">
+                      <div key={progress.at} className={cn("flex items-center gap-2 text-muted-foreground", SETUP_REVEAL)}>
+                        <span>&gt; {progress.words[progress.at % progress.words.length]}</span>
+                        <span className="inline-block h-[14px] w-[8px] shrink-0 bg-foreground [animation:vibetv-caret-blink_1.1s_step-end_infinite]" />
+                      </div>
+                    </div>
+                  ) : null}
+                  {/* Announces each real step once, not every word. */}
+                  <p role="status" className="sr-only">{progress.words[0]}</p>
                 </>
               ) : null}
               <div ref={chatEnd} />
@@ -1631,142 +1614,34 @@ export function AIThemeStudioScreen({
             <DialogTitle>
               {panel === "setup"
                 ? "Create with AI"
-                : panel === "settings"
-                  ? "Settings"
-                  : panel === "add"
-                    ? "Add an element"
-                    : panel === "library"
-                      ? "Your saved designs"
-                      : "Settings"}
+                : panel === "add"
+                  ? "Add an element"
+                  : "Your saved designs"}
             </DialogTitle>
             <DialogDescription className="sr-only">
               {panel === "setup"
                 ? "Connect OpenAI to create your design."
-                : panel === "settings"
-                  ? "Manage your design and AI connection."
-                  : panel === "add"
-                    ? "Choose what you want to show. You can move and change it afterwards."
-                    : panel === "library"
-                      ? "Your saved designs."
-                      : "Your design, saved files and other tools."}
+                : panel === "add"
+                  ? "Choose what you want to show. You can move and change it afterwards."
+                  : "Your saved designs."}
             </DialogDescription>
           </DialogHeader>
-          {panel === "setup" || panel === "settings" ? (
-            <div className="space-y-4">
-                <Collapsible open={panel === "setup" ? true : undefined}>
-                  <CollapsibleTrigger asChild className={panel === "setup" ? "hidden" : undefined}>
-                    <Button
-                      variant="ghost"
-                      className="group w-full justify-between"
-                      disabled={!configured}
-                      title={!configured ? "Connect OpenAI through Create with AI first" : undefined}
-                    >
-                      Change API key
-                      <ChevronDown className="transition-transform group-data-[state=open]:rotate-180" />
-                    </Button>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent className="space-y-4 pt-3">
-                    {configured !== true || panel === "settings" ? (
-                      <label className="grid gap-2 text-sm">
-                        {configured ? "Replace OpenAI key" : "OpenAI key"}
-                        <Input
-                          type="password"
-                          autoComplete="off"
-                          spellCheck={false}
-                          value={password}
-                          disabled={!enabled || connecting}
-                          onChange={(e) => setPassword(e.target.value)}
-                          placeholder={
-                            configured
-                              ? "Paste a new key to replace it"
-                              : "Paste your key here"
-                          }
-                          aria-invalid={Boolean(connectionError)}
-                          aria-describedby={connectionError ? "key-error" : undefined}
-                        />
-                      </label>
-                    ) : null}
-                    {panel === "setup" || !consent ? (
-                      <label className="flex items-start gap-3 text-sm">
-                        <input
-                          type="checkbox"
-                          className="mt-0.5 size-5 shrink-0"
-                          checked={consent}
-                          disabled={connecting}
-                          onChange={(e) => updateConsent(e.target.checked)}
-                        />
-                        I agree to send my prompt and design to OpenAI. Usage is billed to my account.
-                      </label>
-                    ) : null}
-                    {!enabled ? (
-                      <p role="alert" className="text-sm text-destructive">
-                        AI is unavailable. Try again later.
-                      </p>
-                    ) : null}
-                    {connectionError ? (
-                      <p id="key-error" role="alert" className="break-words text-sm text-destructive">
-                        {connectionError}
-                      </p>
-                    ) : null}
-                    <div className="grid gap-3">
-                      <Button
-                        className="h-12 w-full"
-                        disabled={
-                          !enabled ||
-                          connecting ||
-                          !consent ||
-                          (panel === "settings" && configured === true && !password.trim()) ||
-                          (!configured && !password.trim())
-                        }
-                        onClick={() => {
-                          if (password.trim() || configured === "pending") void connect();
-                          else {
-                            setPanel(null);
-                            if (panel === "setup") void generate(true);
-                          }
-                        }}
-                      >
-                        {connecting
-                          ? "Checking…"
-                          : configured === "pending" && !password.trim()
-                            ? "Retry connection check"
-                            : panel === "settings"
-                              ? "Update key"
-                              : configured === true && !password.trim()
-                                ? "Continue"
-                                : "Connect and continue"}
-                      </Button>
-                      {configured ? (
-                        <Button
-                          className="h-12 w-full"
-                          variant="outline"
-                          disabled={connecting}
-                          onClick={() => {
-                            setConnecting(true);
-                            void deleteAIThemeCredential("openai")
-                              .then(() => {
-                                setConfigured(false);
-                                updateConsent(false);
-                                setPassword("");
-                                setStatus(
-                                  "OpenAI disconnected. You can keep editing by hand.",
-                                );
-                              })
-                              .catch(() =>
-                                setConnectionError(
-                                  "Could not disconnect. Try again.",
-                                ),
-                              )
-                              .finally(() => setConnecting(false));
-                          }}
-                        >
-                          Disconnect OpenAI
-                        </Button>
-                      ) : null}
-                    </div>
-                  </CollapsibleContent>
-                </Collapsible>
-            </div>
+          {panel === "setup" ? (
+            <OpenAIKeyForm
+              inSetup
+              onConnectingChange={setConnecting}
+              onConnected={(kept) => {
+                setConfigured(true);
+                if (kept !== undefined)
+                  setStatus(kept || !nativeInstall ? "AI is ready." : copyForHost("AI is ready. The key could not be saved on this Mac, so it is needed again after the Mac App restarts.", windowsHost));
+                setPanel(null);
+                if (prompt.trim()) void generate(true);
+              }}
+              onDisconnected={() => {
+                setConfigured(false);
+                setStatus("OpenAI disconnected. You can keep editing by hand.");
+              }}
+            />
           ) : null}
           {panel === "add" ? (
             <div className="grid gap-2">
@@ -1837,76 +1712,6 @@ export function AIThemeStudioScreen({
                   </span>
                 </span>
               </Button>
-            </div>
-          ) : null}
-          {panel === "settings" ? (
-            <div className="space-y-1">
-              <div className="grid gap-1">
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start"
-                  onClick={() => {
-                    setPanel(null);
-                    requestLoad({ document: blank() });
-                  }}
-                >
-                  <Plus />
-                  New design
-                </Button>
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start"
-                  onClick={() => setPanel("library")}
-                >
-                  <FolderOpen />
-                  Open saved design
-                </Button>
-              </div>
-              <Collapsible>
-                <CollapsibleTrigger asChild>
-                  <Button variant="ghost" className="group w-full justify-between">
-                    Import & export
-                    <ChevronDown className="transition-transform group-data-[state=open]:rotate-180" />
-                  </Button>
-                </CollapsibleTrigger>
-                <CollapsibleContent className="px-4 pb-3 pt-2">
-                <div className="mt-2 grid gap-3">
-                  <Button
-                    variant="ghost"
-                    disabled={!document.spec.primitives.length}
-                    onClick={() =>
-                      download(
-                        JSON.stringify(document, null, 2),
-                        "vibetv-scene.json",
-                        "application/json",
-                      )
-                    }
-                  >
-                    Download editable design
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      setPanel(null);
-                      jsonInput.current?.click();
-                    }}
-                  >
-                    Open design file
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    disabled={
-                      !document.spec.primitives.length ||
-                      validation.errors.length > 0
-                    }
-                    onClick={exportPack}
-                  >
-                    <Download />
-                    Export theme pack
-                  </Button>
-                </div>
-              </CollapsibleContent>
-              </Collapsible>
             </div>
           ) : null}
           {panel === "library" ? (

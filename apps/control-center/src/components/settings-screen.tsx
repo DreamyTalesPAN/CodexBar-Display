@@ -30,6 +30,7 @@ import { errorForHost } from "@/lib/customer-platform";
 import { loadUserThemes } from "@/lib/theme-studio-storage";
 import type { ThemeProduct } from "@/lib/themes";
 import { PreferenceControl } from "./preference-control";
+import { ThemeStudioKeyRow } from "./theme-studio/openai-key-form";
 import { isProviderItem, type ProviderPickerProps } from "./provider-picker";
 import {
   DisplayModeChoice,
@@ -584,6 +585,7 @@ export function SettingsScreen({
           providers={providers}
           showIntro={false}
         />
+        <ThemeStudioKeyRow />
       </SettingsSection>
     </div>
   );
