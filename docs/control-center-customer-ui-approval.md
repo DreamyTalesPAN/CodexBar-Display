@@ -7248,3 +7248,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: in the Mac App only, when setup finds no VibeTV and a newer Mac App exists, a dialog "Update the Mac App first" appears before "We couldn't find your VibeTV" and before "Connect the USB cable": "We couldn't find your VibeTV. Version <version> is out, and an older app may not find it. Setup scans again after the update." Footer: "Scan again" (outline) and "Update Mac App" (signal), plus the close button. "Scan again" or closing leads to the usual not-found help without any hint; the old inline card is gone. Windows shows no Mac App dialog.
 - Scope: `setup-device-dialogs.tsx`, `setup-device-screen.tsx`, `setup-wizard.tsx`, `setup-dialog.tsx` (description may carry the version in mono), their tests, and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — completes the unreleased #561 hint, nothing to announce
+
+## 2026-10-16 — #561: approval marker after merging main with #615
+
+- User approval: Paul chose design 1d for #639 on 2026-10-16 (entry above). Main moved on with #615 (overnight audit, `WithLatestDisplayFrame` around the setup wizard) and #640 while the branch was in review, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the 2026-10-16 #561 entry above; nothing else changes.
+- Scope: the merge of main into this branch, the `macAppUpdate` prop moved into the wrapped `SetupWizard` in `control-center-app.tsx`, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
