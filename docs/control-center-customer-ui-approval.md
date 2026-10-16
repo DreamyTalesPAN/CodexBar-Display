@@ -7349,3 +7349,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as approved in the #610 entries above and in the entries of #619 and #628; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — #610: update-prompt test follows the quiet Mac check from #619
+
+- User approval: Paul asked on 2026-10-16 to resolve the merge conflicts of the open pull requests. Since #619 the Mac App's automatic prompt opens `vibetv://check-for-updates-in-background`; this branch's test now expects that URL for the Mac App. Windows keeps the visible check.
+- Approved customer-visible result: none; test only.
+- Scope: `apps/control-center/src/components/control-center-app.app-update-prompt.test.tsx` and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — test only
