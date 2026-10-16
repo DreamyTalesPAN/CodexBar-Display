@@ -3924,7 +3924,49 @@ func TestUnhealthyStreamNamesNoProvider(t *testing.T) {
 	unplugged.Healthy = false
 	unplugged.ErrorCode = "device_not_found"
 	if got := streamPointer(unplugged); got == nil || got.Provider != "" {
-		t.Fatalf("an unhealthy stream must not name a provider, got %+v", got)
+		t.Fatalf("an unplugged VibeTV must not name a provider, got %+v", got)
+	}
+	rejected := healthy
+	rejected.Healthy = false
+	rejected.ErrorCode = "pairing_token_rejected"
+	if got := streamPointer(rejected); got == nil || got.Provider != "" {
+		t.Fatalf("a rejected pairing must not name a provider, got %+v", got)
+	}
+	stalled := healthy
+	stalled.Healthy = false
+	stalled.Detail = "Last usage frame is too old."
+	if got := streamPointer(stalled); got == nil || got.Provider != "claude" {
+		t.Fatalf("a stalled stream still shows its last frame and must name its provider, got %+v", got)
+	}
+}
+
+// Sending stalls after a frame: the firmware keeps that frame on screen, so
+// the stream still names its provider, unless an error frame followed (#368).
+func TestStalledStreamKeepsProviderOfLastFrame(t *testing.T) {
+	oldPrint := printDisplayStreamService
+	t.Cleanup(func() { printDisplayStreamService = oldPrint })
+	printDisplayStreamService = func(context.Context, string) ([]byte, error) {
+		return []byte("state = running\n"), nil
+	}
+	sentAt := time.Now().UTC().Add(-5 * time.Minute).Truncate(time.Second)
+	frame := sentAt.Format(time.RFC3339Nano) + ` sent frame -> /dev/cu.usbserial-1410 transport=usb source=oauth fresh=true usageMode=remaining provider=codex label=VibeTV session=73 weekly=58 reset=2733s`
+	for _, tc := range []struct {
+		name  string
+		lines []string
+		want  string
+	}{
+		{"stalled", []string{frame}, "codex"},
+		{"error frame after it", []string{frame, sentAt.Add(time.Second).Format(time.RFC3339Nano) + ` cycle error: code=runtime_serial_write op=send-line retry=3s err=device-offline`}, ""},
+	} {
+		logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+		t.Setenv(displayStreamOutLogEnv, logPath)
+		if err := os.WriteFile(logPath, []byte(strings.Join(tc.lines, "\n")+"\n"), 0o600); err != nil {
+			t.Fatalf("write display stream log: %v", err)
+		}
+		stream := inspectDisplayStream(context.Background(), cableDeviceTarget)
+		if stream.Healthy || stream.Provider != tc.want {
+			t.Fatalf("%s: want unhealthy stream naming %q, got %+v", tc.name, tc.want, stream)
+		}
 	}
 }
 

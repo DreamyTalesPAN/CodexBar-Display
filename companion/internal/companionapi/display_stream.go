@@ -23,11 +23,12 @@ type displayStreamInfo struct {
 	Running    bool   `json:"running"`
 	LastSentAt string `json:"lastSentAt,omitempty"`
 	// Provider is the provider of the last frame sent to this VibeTV, read
-	// from the same log line as LastSentAt, and set only while the stream is
-	// healthy (#368): a frame for another VibeTV or connection mode, an error
-	// frame or a frame too old is not what this device shows. Usage reads it
-	// to tell which provider the device shows; usage.currentProvider falls
-	// back to the first provider when no frame was kept.
+	// from the same log line as LastSentAt (#368). It stays set while sending
+	// stalls, because the firmware keeps that frame on screen; a frame for
+	// another VibeTV or connection mode, an error frame after it, an unplugged
+	// USB port or a rejected pairing names none. Usage reads it to tell which
+	// provider the device shows; usage.currentProvider falls back to the
+	// first provider when no frame was kept.
 	Provider   string `json:"provider,omitempty"`
 	Target     string `json:"target,omitempty"`
 	LastTarget string `json:"lastTarget,omitempty"`
@@ -91,11 +92,12 @@ func streamPointer(stream displayStreamInfo) *displayStreamInfo {
 	if !stream.Healthy && !stream.Running && stream.LastSentAt == "" && stream.Target == "" && stream.LastTarget == "" && stream.Detail == "" {
 		return nil
 	}
-	// The provider names what this VibeTV shows, so it holds only while the
-	// stream is healthy. A frame later found to belong to another Cable
-	// VibeTV, a USB port that went away or a rejected pairing marks the
-	// stream unhealthy after it was read; none of them shows that provider.
-	if !stream.Healthy {
+	// The provider names what this VibeTV shows. A frame later found to
+	// belong to another Cable VibeTV, a USB port that went away or a rejected
+	// pairing marks the stream unhealthy after it was read; none of them
+	// shows that provider. A stream that only stopped sending keeps it.
+	switch stream.ErrorCode {
+	case "device_frame_mismatch", "device_not_found", "pairing_token_rejected":
 		stream.Provider = ""
 	}
 	return &stream
@@ -176,6 +178,12 @@ func inspectDisplayStreamAfterRunning(ctx context.Context, target string, notBef
 		return stream
 	}
 	if time.Since(lastSentAt) > displayStreamReadyAge {
+		// The firmware keeps a usage frame on screen for 150 s and a
+		// theme-spec frame until the next one, so a stalled stream still
+		// shows this provider. An error frame sent after it does not.
+		if !errorOK || errorAt.Before(lastSentAt) {
+			stream.Provider = displayStreamLogValue(frameLine, "provider")
+		}
 		stream.Detail = "Last usage frame is too old."
 		return stream
 	}
