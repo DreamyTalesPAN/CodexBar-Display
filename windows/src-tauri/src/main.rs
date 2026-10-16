@@ -267,19 +267,6 @@ fn create_window(app: &AppHandle, provider_shortcut: bool) -> tauri::Result<()> 
             }
         })
         .build()?;
-    // Tauri sets only ICON_SMALL; the taskbar reads ICON_BIG, so set it to the exe's icon.
-    #[cfg(windows)]
-    {
-        use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
-        use windows_sys::Win32::UI::WindowsAndMessaging::{
-            ICON_BIG, LoadIconW, SendMessageW, WM_SETICON,
-        };
-        unsafe {
-            let hwnd = window.hwnd()?.0;
-            let icon = LoadIconW(GetModuleHandleW(std::ptr::null()), 32512usize as *const u16);
-            SendMessageW(hwnd, WM_SETICON, ICON_BIG as usize, icon as isize);
-        }
-    }
     let handle = app.clone();
     window.on_window_event(move |event| {
         if let WindowEvent::CloseRequested { api, .. } = event {
