@@ -1210,3 +1210,30 @@ it("keeps a saved screensaver switch when a settings read beside the save answer
   await window.wait(1);
   expect(toggle().getAttribute("aria-checked")).toBe("true");
 });
+
+// Codex review of #674: a status request already on its way reports another
+// VibeTV while the first Brightness write is held and a second one is queued.
+// The queued write must not reach the VibeTV connected after it.
+it("does not send a queued Brightness change to another VibeTV", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  await openSettings(window);
+  let answerStatus = () => {};
+  window.companion.holdStatus = new Promise<void>((resolve) => {
+    answerStatus = resolve;
+  });
+  window.companion.device = { ...device, deviceId: "16198106", target: "http://192.168.178.183" };
+  await window.wait(30);
+  window.companion.holdStatus = null;
+
+  const store = window.holdNextWrite();
+  await window.step(() => fireEvent.keyDown(brightnessSlider(), { key: "ArrowRight" }));
+  await window.step(() => fireEvent.keyDown(brightnessSlider(), { key: "ArrowRight" }));
+  expect(window.settingsWrites()).toEqual([{ brightnessPercent: 21 }]);
+
+  answerStatus();
+  await window.wait(5);
+  store();
+  await window.wait(10);
+  expect(window.settingsWrites()).toEqual([{ brightnessPercent: 21 }]);
+});

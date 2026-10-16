@@ -699,6 +699,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // screensaver values with the shown setting. Unsaved and saved values alike
   // are dropped when that VibeTV goes.
   const resetDeviceSettings = useCallback(() => {
+    // A write still queued for the VibeTV before must not reach the one now
+    // connected: a newer turn makes the queued one stop (Codex review of #674).
+    const writes = deviceSettingWritesRef.current;
+    writes.brightness += 1;
+    writes.standby += 1;
+    setBusyAction((busy) =>
+      busy === "brightness" || busy === "standby" ? null : busy,
+    );
     brightnessDirtyRef.current = null;
     setBrightness(null);
     standbyDirtyRef.current = null;
