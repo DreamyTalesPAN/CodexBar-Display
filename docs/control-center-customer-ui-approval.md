@@ -5,6 +5,20 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-10-16 — Subscription providers first in the provider list (#651)
+
+- User approval: Marcus, 16.10.2026, channel Abstimmungschat (question 27, answer "ja").
+- Approved customer-visible result: In "Choose AI providers" (setup) and in Settings › AI providers, Codex, Claude, Cursor and Antigravity are listed first, followed by OpenAI (API), Azure OpenAI and the other providers. Within the other providers, switched-on ones stay above switched-off ones. No new texts or controls.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test, `settings-screen.test.tsx`, and this approval record. No merge, release, or device write is implied.
+- What's new: none — the same providers in a different order needs no notice.
+
+## 2026-10-16 — Provider list: OpenAI (API) and Azure OpenAI right after the subscription tools (#651, follow-up to b5fd6748)
+
+- User approval: Marcus, 16.10.2026, channel Abstimmungschat (question 27, answer "ja"), the same approval as the entry above. This entry records the implementation of that exact text, which the first commit did not yet match: OpenAI (API) and Azure OpenAI now follow Codex, Claude, Cursor and Antigravity directly.
+- Approved customer-visible result: As above. Codex, Claude, Cursor, Antigravity, then OpenAI (API), Azure OpenAI, then the other providers; switched-on ones stay above switched-off ones within the other providers. No new texts or controls.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test, and this approval record.
+- What's new: none — same as above.
+
 ## 2026-10-15 — "Your VibeTV is live" without Back, set up once is remembered (#611)
 
 - User approval: Paul decided the behavior in issue #611 on 2026-10-15 ("Decision by Paul, 2026-10-15"). He has not personally previewed this exact build.
@@ -7308,6 +7322,34 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the entries above; nothing else changes.
 - Scope: this approval record only. Pull request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — Windows alignment of the provider list order (#651, follow-up to 67cb9dcd)
+
+- User approval: Marcus, 16.10.2026, channel Abstimmungschat (question 27, answer "ja"), the same approval as the two entries above. This entry records the implementation of that exact text on Windows: Windows CodexBar names OpenAI (API) `openaiapi`, which the priority list did not match, so OpenAI API fell behind the other providers. The fix puts it right after `openai`.
+- Approved customer-visible result: Windows angleichung an die freigegebene Mac-Reihenfolge (OpenAI API vor Azure OpenAI). Codex, Claude, Cursor, Antigravity, then OpenAI (API), Azure OpenAI, then the other providers, on Mac and Windows alike. Within the other providers, switched-on ones stay above switched-off ones. No new texts or controls.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx` (two lines), and this approval record.
+- What's new: none — the same providers in the already approved order.
+
+## 2026-10-16 — Provider list order merged with current main (#651)
+
+- User approval: Marcus, 16.10.2026, channel Abstimmungschat (question 27, answer "ja"), as recorded in the Windows alignment entry above. This entry records only the merge of main (#628) into `codex/provider-list-order`; it adds no wording and no new visible behaviour.
+- Approved customer-visible result: as recorded in the Windows alignment entry above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — Provider list order merged with current main again (#651)
+
+- User approval: Marcus, 16.10.2026, channel Abstimmungschat (question 27, answer "ja"), as recorded in the Windows alignment entry above. This entry records only the merge of current main into `codex/provider-list-order`; the approval record conflict was resolved by keeping main's entries in order and appending this branch's entries unchanged. It adds no wording and no new visible behaviour; not seen by Paul.
+- Approved customer-visible result: as recorded in the Windows alignment entry above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — Settings › AI providers without the setup intro (#651)
+
+- User approval: Paul approved the provider order on 2026-10-16 after his own test (via the review orchestrator) on the condition that the Settings › AI providers intro paragraph is removed; this entry records that removal.
+- Approved customer-visible result: Settings › AI providers no longer shows the paragraph "VibeTV reads your AI usage with CodexBar, a helper app installed with VibeTV. Turn on the providers you use below. If one needs a sign-in, its row shows a Sign in button." above the provider search. The list, its order and every other text stay as approved above. "Choose AI providers" in setup keeps its intro unchanged in this pull request.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx` (a `showIntro` prop on the shared provider list), `apps/control-center/src/components/settings-screen.tsx`, `settings-screen.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a removed explanation paragraph in Settings needs no notice.
 
 ## 2026-10-16 — Usage: calm tiles, action tiles and no Check again (#644 follow-up)
 
