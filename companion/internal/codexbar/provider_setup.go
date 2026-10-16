@@ -109,8 +109,6 @@ type ProviderSetup struct {
 var runConfigBootstrapCommandFn = runConfigBootstrapCommand
 var configBootstrapMu sync.Mutex
 
-const ()
-
 // EnsureConfig selects an existing CodexBar config without modifying it. If
 // none exists on macOS, CodexBar renders and validates its default config.
 // Windows first-run selection is explicitly opt-in; all other settings and the

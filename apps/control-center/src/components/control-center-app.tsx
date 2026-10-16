@@ -22,18 +22,13 @@ import {
 } from "@/lib/ordered-theme";
 import {
   NO_THEME_UPGRADE,
-  ownThemePaths,
   resolveActiveLiveTheme,
   resolveActiveThemeUpgrade,
   resolveScreensaverUpgrade,
 } from "@/lib/active-theme-upgrade";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import { buildDeviceThemePack, pollThemeInstallJob } from "@/lib/theme-install";
-import {
-  rememberSentOwnThemePath,
-  sentOwnThemePaths,
-} from "@/lib/sent-own-theme-paths";
-import { loadUserThemes } from "@/lib/theme-studio-storage";
+import { rememberSentOwnThemePath } from "@/lib/sent-own-theme-paths";
 import type { ThemeCatalogResponse, ThemeProduct } from "@/lib/themes";
 import {
   markWhatsNewSeen,
@@ -56,7 +51,6 @@ import {
   repairLocalControlCenterRuntime,
   restartLocalControlCenterApp,
   shouldRedirectToLocalControlCenter,
-  shouldUseHostedSetupShell,
 } from "./control-center-runtime";
 import {
   automaticPoolForEnabledProviders,
@@ -107,7 +101,7 @@ import {
 } from "./device-recovery-gate";
 import { useCompanionRelease } from "./companion-installer-actions";
 import { LogsScreen } from "./logs-screen";
-import { useLatestDisplayFrame } from "./live-vibetv-preview";
+import { WithLatestDisplayFrame } from "./live-vibetv-preview";
 import { OverviewScreen } from "./overview-screen";
 import {
   PROVIDER_RECONCILE_WINDOW_MS,
@@ -123,7 +117,6 @@ import {
   copyForHost,
   detectCustomerPlatformFromBrowser,
   errorForHost,
-  type CustomerPlatform,
 } from "@/lib/customer-platform";
 import { MacAppDownloadScreen } from "./setup/mac-app-download-screen";
 import { SetupWelcomeScreen } from "./setup/setup-welcome-screen";
@@ -172,8 +165,12 @@ import {
   startUsageSurfacePolling,
   USAGE_REFRESH_PENDING_POLL_INTERVAL_MS,
 } from "./usage-surface-polling";
-
-const DEVICE_TARGET_STORAGE_KEY = "vibetv.controlCenter.deviceTarget";
+import { companionUnavailableError, connectionErrorForCustomer, isCompanionConnectionError, isCompanionMissingError, isConnectionRecoveryError, isLocalCompanionFetchFailureReason, isLocalNetworkAccessError, localControlCenterUnavailableError, localNetworkAccessError, localNetworkAccessNeedsUserAction, normalizeCaughtError, normalizeError, normalizeLocalControlCenterError, normalizeUsageError, pairingRejectionForDevice, readLocalNetworkAccessState, themeInstallErrorText } from "./control-center-errors";
+import { ThemeSetupDeviceIdentity, canReconnectLostDevice, deviceMatchesExpectedConnection, deviceMatchesThemeSetupIdentity, markDeviceDisconnected, mergeDeviceInfo, normalizeDeviceTarget, reconcileThemeSetupIdentity } from "./device-merge";
+import { forgetDeviceTarget, readInitialDeviceTarget, readLocalSetupPreviewStep, rememberDeviceTarget, savedThemePaths } from "./device-target-storage";
+import { FirmwareUpdateJob, FirmwareUpdateStatus, ThemeInstallJob, ThemeInstallResult, ThemeInstallStatus, clampProgress, currentFirmwareUpdate, customerInstallLogs, customerUpdateLogs, firmwareUpdateStatusFromJob, firmwareWrittenPercent, pollFirmwareUpdateJob, statusThemeInstallIsNews, takeStatusPath, themeInstallStatusFromJob } from "./update-jobs";
+import { getCustomerPlatformServerSnapshot, getRuntimeSurfaceServerSnapshot, getRuntimeSurfaceSnapshot, getWindowsWebViewServerSnapshot, isWindowsWebView, localControlCenterPathForTheme, subscribeRuntimeSurface } from "./runtime-surface";
+import { formatTime, recentEventsWith, usageRefreshEvent } from "./event-log";
 // What the Companion calls the VibeTV connected by Cable.
 const CABLE_DEVICE_TARGET = "cable://vibetv";
 const COMPANION_REQUEST_TIMEOUT_MS = 45_000;
@@ -209,20 +206,12 @@ const LAUNCHD_RECOVERY_GRACE_MS = 25_000;
 // working, reported failure, and then discarded the successful native result.
 const NATIVE_RUNTIME_REPAIR_TIMEOUT_MS = 120_000;
 const AUTOMATIC_USAGE_REPAIR_REARM_MS = 10 * 60_000;
-// The Help menu hands the last 20 of these to an AI along with the current
-// screen, so the log has to be at least that deep.
-const RECENT_EVENT_LIMIT = 20;
 const NATIVE_RUNTIME_REPAIR_RESULT_EVENT = "vibetv:runtime-repair-result";
 const NATIVE_CODEXBAR_REPAIR_RESULT_EVENT = "vibetv:codexbar-repair-result";
 const NATIVE_PROVIDER_DISPLAY_CHANGED_EVENT = "vibetv:provider-display-changed";
 
 type LocalNetworkRequestInit = RequestInit & {
   targetAddressSpace?: "loopback";
-};
-
-type ThemeSetupDeviceIdentity = {
-  deviceId: string;
-  target: string;
 };
 
 type SettingsResponse = {
@@ -233,14 +222,6 @@ type SettingsResponse = {
     standby?: StandbySettings;
   };
   device?: DeviceInfo;
-};
-
-type ThemeInstallResult = {
-  themeId: string;
-  packId: string;
-  name: string;
-  activePath: string;
-  themeRev: number;
 };
 
 type InstallResponse = {
@@ -262,64 +243,6 @@ type InstallableTheme = Pick<
   packBytes?: Uint8Array;
 };
 
-type ThemeInstallJob = {
-  id: string;
-  themeId?: string;
-  themeName?: string;
-  slot?: "live" | "screensaver";
-  phase: "installing" | "complete" | "error";
-  message?: string;
-  progress?: number;
-  startedAt?: string;
-  finishedAt?: string;
-  logs?: string[];
-  result?: ThemeInstallResult;
-  error?: ApiError;
-};
-
-type FirmwareUpdateResult = {
-  firmware?: string;
-  observedFirmware?: string;
-  target?: string;
-  deviceId?: string;
-  artifactValidated?: boolean;
-  uploadAccepted?: boolean;
-  helloVerified?: boolean;
-  healthVerified?: boolean;
-  streamVerified?: boolean;
-  renderVerified?: boolean;
-  renderSkipped?: string;
-};
-
-type FirmwareUpdateJob = {
-  id: string;
-  phase: "installing" | "complete" | "attention" | "error";
-  stage?: string;
-  outcome?: string;
-  retryPolicy?: "power_cycle" | "reconnect_cable" | "cable_required";
-  message?: string;
-  progress?: number;
-  startedAt?: string;
-  finishedAt?: string;
-  logs?: string[];
-  result?: FirmwareUpdateResult;
-  error?: ApiError;
-};
-
-type FirmwareUpdateStatus = {
-  phase: "installing" | "complete" | "attention" | "error";
-  stage?: string;
-  outcome?: string;
-  retryAllowed?: boolean;
-  startedAt: string;
-  finishedAt?: string;
-  message?: string;
-  progress?: number;
-  logs: string[];
-  result?: FirmwareUpdateResult;
-  error?: string;
-};
-
 type FirmwareUpdateResponse = {
   job?: FirmwareUpdateJob;
 };
@@ -329,33 +252,11 @@ type Props = {
   initialThemeId?: string;
 };
 
-type ThemeInstallStatus = {
-  phase: "installing" | "complete" | "error";
-  themeId: string;
-  title: string;
-  startedAt: string;
-  finishedAt?: string;
-  message?: string;
-  progress?: number;
-  logs: string[];
-  result?: ThemeInstallResult;
-  error?: string;
-  failure?: ApiError;
-};
-
-type RunCompanion = <T>(
-  path: string,
-  init?: RequestInit,
-  options?: { preserveLastError?: boolean; timeoutMs?: number },
-) => Promise<T>;
-
 type FirmwareCheckOptions = {
   board?: string;
   firmware?: string;
   signal?: AbortSignal;
 };
-
-type RuntimeSurface = "unknown" | "hosted-setup" | "local-control-center";
 
 export function connectionModeChoiceStatus(payload: {
   connectionMode?: string;
@@ -622,6 +523,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const providerDisplayRevisionRef = useRef(0);
   const providerDisplayWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
   const providerPreferencesReadRef = useRef<Promise<void> | null>(null);
+  const quietUsageReadRef = useRef<Promise<void> | null>(null);
   const providerPreferencesRevisionRef = useRef(0);
   const providerPreferenceWritesRef = useRef<Promise<void>>(Promise.resolve());
   const displayPreferencesRevisionRef = useRef(0);
@@ -760,6 +662,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       tone: "unknown",
     },
   ]);
+  // Event ids must stay unique while the log is full: the length of the list
+  // is 20 then, so two events in one millisecond would share an id (React key).
+  const eventIdRef = useRef(0);
 
   const selectedTheme = useMemo(
     () => catalog.themes.find((theme) => theme.themeId === selectedThemeId),
@@ -816,9 +721,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const addEvent = useCallback(
     (event: Omit<ControlCenterEvent, "id" | "at"> & { at?: string }) => {
+      eventIdRef.current += 1;
+      const id = String(eventIdRef.current);
       setEvents((current) =>
         recentEventsWith(current, {
-          id: `${Date.now()}-${current.length}`,
+          id,
           at: event.at || formatTime(),
           ...event,
         }),
@@ -3435,56 +3342,72 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, [catalog.themes, device, firmwareUpdateStatus, installTheme]);
 
   const refreshUsage = useCallback(
-    async (options?: { quiet?: boolean }) => {
+    (options?: { quiet?: boolean }) => {
       const quiet = Boolean(options?.quiet);
-      if (!quiet) {
-        setBusyAction("usage");
+      // Background polls share one read; a refresh the customer asked for
+      // always runs.
+      if (quiet && quietUsageReadRef.current) {
+        return quietUsageReadRef.current;
       }
-      try {
-        const payload = await runCompanion<UsageSnapshot>(
-          quiet ? "/v1/usage" : "/v1/usage?refresh=1",
-          undefined,
-          { preserveLastError: quiet },
-        );
-        setUsage(payload);
-        setUsageError(null);
-        setCompanionStatus("online");
+      const read = (async () => {
         if (!quiet) {
-          const refreshEvent = usageRefreshEvent(payload);
-          addEvent({
-            label: refreshEvent.label,
-            detail: refreshEvent.detail,
-            tone: refreshEvent.tone,
-          });
+          setBusyAction("usage");
         }
-      } catch (error) {
-        const normalized = normalizeUsageError(
-          normalizeCaughtError(error, "Usage needs attention."),
-        );
-        if (normalized.code === "usage_unavailable") {
-          setUsage(null);
+        try {
+          const payload = await runCompanion<UsageSnapshot>(
+            quiet ? "/v1/usage" : "/v1/usage?refresh=1",
+            undefined,
+            { preserveLastError: quiet },
+          );
+          setUsage(payload);
           setUsageError(null);
-          return;
+          setCompanionStatus("online");
+          if (!quiet) {
+            const refreshEvent = usageRefreshEvent(payload);
+            addEvent({
+              label: refreshEvent.label,
+              detail: refreshEvent.detail,
+              tone: refreshEvent.tone,
+            });
+          }
+        } catch (error) {
+          const normalized = normalizeUsageError(
+            normalizeCaughtError(error, "Usage needs attention."),
+          );
+          if (normalized.code === "usage_unavailable") {
+            setUsage(null);
+            setUsageError(null);
+            return;
+          }
+          if (isLocalNetworkAccessError(normalized)) {
+            markCompanionAccessBlocked();
+          } else if (isCompanionMissingError(normalized)) {
+            markCompanionUnavailable();
+          }
+          setUsageError(normalized);
+          if (!quiet) {
+            setLastError(normalized);
+            addEvent({
+              label: "Usage refresh needs attention",
+              detail: normalized.nextAction,
+              tone: "attention",
+            });
+          }
+        } finally {
+          if (!quiet) {
+            setBusyAction(null);
+          }
         }
-        if (isLocalNetworkAccessError(normalized)) {
-          markCompanionAccessBlocked();
-        } else if (isCompanionMissingError(normalized)) {
-          markCompanionUnavailable();
-        }
-        setUsageError(normalized);
-        if (!quiet) {
-          setLastError(normalized);
-          addEvent({
-            label: "Usage refresh needs attention",
-            detail: normalized.nextAction,
-            tone: "attention",
-          });
-        }
-      } finally {
-        if (!quiet) {
-          setBusyAction(null);
-        }
+      })();
+      if (quiet) {
+        quietUsageReadRef.current = read;
+        void read.finally(() => {
+          if (quietUsageReadRef.current === read) {
+            quietUsageReadRef.current = null;
+          }
+        });
       }
+      return read;
     },
     [
       addEvent,
@@ -4691,7 +4614,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         hasActiveDevice &&
         device?.paired !== false),
   );
-  const displayFrame = useLatestDisplayFrame(displaySessionActive);
   const startupDeviceCandidates =
     deviceCandidates.length > 0
       ? deviceCandidates
@@ -5532,134 +5454,141 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
     if (setupOwnsScreen) {
       return (
-        <SetupWizard
-          initialWiFiSetup={settingsWiFiSetup}
-          onConnectionComplete={finishConnectionChange}
-          aiFixPrompt={setupAiFixPrompt}
-          usageFailure={usageFailureHidden ? null : usageFailure}
-          onRepairUsageService={retryUsageService}
-          onDismissUsageFailure={() => setUsageFailureHidden(true)}
-          automaticPreviews={setupPreviews}
-          connectSteps={setupConnectSteps}
-          connectionMode={connectionMode}
-          connectionModeChoiceRequired={connectionModeChoiceRequired}
-          activeDeviceId={deviceRecoveryGateRef.current.preferredDeviceId}
-          device={device}
-          deviceCandidates={startupDeviceCandidates}
-          deviceSearchState={startupDeviceSearchState}
-          displayFrame={displayFrame}
-          displayMode={providerDisplay?.mode ?? "automatic"}
-          displayProviderId={providerDisplay?.providerIds?.[0] ?? null}
-          firmwareProgress={firmwareUpdateStatus?.progress}
-          firmwareWrittenPercent={
-            firmwareUpdateInProgress
-              ? firmwareWrittenPercent(firmwareUpdateStatus.logs)
-              : undefined
-          }
-          firmwareInstallLogs={
-            firmwareUpdateInProgress
-              ? firmwareUpdateStatus.logs.map((line) =>
-                  copyForHost(line, windowsHost),
+        <WithLatestDisplayFrame
+          active={displaySessionActive}
+          device={device?.deviceId || deviceTarget}
+        >
+          {(displayFrame) => (
+            <SetupWizard
+              initialWiFiSetup={settingsWiFiSetup}
+              onConnectionComplete={finishConnectionChange}
+              aiFixPrompt={setupAiFixPrompt}
+              usageFailure={usageFailureHidden ? null : usageFailure}
+              onRepairUsageService={retryUsageService}
+              onDismissUsageFailure={() => setUsageFailureHidden(true)}
+              automaticPreviews={setupPreviews}
+              connectSteps={setupConnectSteps}
+              connectionMode={connectionMode}
+              connectionModeChoiceRequired={connectionModeChoiceRequired}
+              activeDeviceId={deviceRecoveryGateRef.current.preferredDeviceId}
+              device={device}
+              deviceCandidates={startupDeviceCandidates}
+              deviceSearchState={startupDeviceSearchState}
+              displayFrame={displayFrame}
+              displayMode={providerDisplay?.mode ?? "automatic"}
+              displayProviderId={providerDisplay?.providerIds?.[0] ?? null}
+              firmwareProgress={firmwareUpdateStatus?.progress}
+              firmwareWrittenPercent={
+                firmwareUpdateInProgress
+                  ? firmwareWrittenPercent(firmwareUpdateStatus.logs)
+                  : undefined
+              }
+              firmwareInstallLogs={
+                firmwareUpdateInProgress
+                  ? firmwareUpdateStatus.logs.map((line) =>
+                      copyForHost(line, windowsHost),
+                    )
+                  : undefined
+              }
+              displayProviders={displayableProviders.map((item) => ({
+                id: item.providerId,
+                label: item.label,
+              }))}
+              installingTheme={themeInstallStatus?.phase === "installing"}
+              themeError={errorForHost(setupThemeError, windowsHost)}
+              themeErrorDismissible={themeInstallStatus?.phase === "error"}
+              onDismissThemeError={() => {
+                if (themeInstallStatus?.phase === "error") {
+                  setThemeInstallStatus(null);
+                }
+              }}
+              onRetryTheme={() => {
+                if (themeInstallStatus?.phase === "error") {
+                  void installTheme();
+                  return;
+                }
+                window.location.reload();
+              }}
+              themeRetryLabel={
+                setupThemeError?.code === "theme_catalog_unavailable"
+                  ? "Reload catalog"
+                  : undefined
+              }
+              onFindManualTarget={findManualTarget}
+              onConfigureWiFi={configureSetupWiFi}
+              onCreateSupportReport={loadSupportDiagnostics}
+              onFinished={finishSetup}
+              alreadySetUp={
+                !setupFinishedThisSession && setupCompletedFor(device?.deviceId)
+              }
+              onDisplayContinue={(selection) =>
+                updateProviderDisplay(
+                  selection.mode === "automatic"
+                    ? { ...selection, providerIds: enabledProviderIds }
+                    : selection,
+                  selection.mode === "automatic"
+                    ? enabledProviderIds[0] ?? ""
+                    : selection.providerIds[0] ?? "",
+                  true,
                 )
-              : undefined
-          }
-          displayProviders={displayableProviders.map((item) => ({
-            id: item.providerId,
-            label: item.label,
-          }))}
-          installingTheme={themeInstallStatus?.phase === "installing"}
-          themeError={errorForHost(setupThemeError, windowsHost)}
-          themeErrorDismissible={themeInstallStatus?.phase === "error"}
-          onDismissThemeError={() => {
-            if (themeInstallStatus?.phase === "error") {
-              setThemeInstallStatus(null);
-            }
-          }}
-          onRetryTheme={() => {
-            if (themeInstallStatus?.phase === "error") {
-              void installTheme();
-              return;
-            }
-            window.location.reload();
-          }}
-          themeRetryLabel={
-            setupThemeError?.code === "theme_catalog_unavailable"
-              ? "Reload catalog"
-              : undefined
-          }
-          onFindManualTarget={findManualTarget}
-          onConfigureWiFi={configureSetupWiFi}
-          onCreateSupportReport={loadSupportDiagnostics}
-          onFinished={finishSetup}
-          alreadySetUp={
-            !setupFinishedThisSession && setupCompletedFor(device?.deviceId)
-          }
-          onDisplayContinue={(selection) =>
-            updateProviderDisplay(
-              selection.mode === "automatic"
-                ? { ...selection, providerIds: enabledProviderIds }
-                : selection,
-              selection.mode === "automatic"
-                ? enabledProviderIds[0] ?? ""
-                : selection.providerIds[0] ?? "",
-              true,
-            )
-          }
-          onInstallTheme={() => {
-            setSetupThemeInstallRequested(true);
-            void installTheme();
-          }}
-          onProviderCheck={(provider) => void checkProvider(provider)}
-          onProviderOpenSignIn={
-            providerSignInEnabled
-              ? (provider) => void openProviderSignIn(provider)
-              : undefined
-          }
-          onProviderOpenSetupGuide={
-            providerSignInEnabled
-              ? () => void openProviderSetupGuide()
-              : undefined
-          }
-          onProviderToggle={(provider, enabled) =>
-            void updateProviderPreference(provider, enabled)
-          }
-          onProvidersContinue={completeProviderSetup}
-          pendingCheckIds={pendingProviderCheckIds}
-          pendingPreferenceIds={pendingPreferenceIds}
-          providersLoading={providersLoading}
-          onDismissProviderError={() => {
-            setProviderDisplayError(null);
-            setProviderPreferencesError(null);
-          }}
-          onRetryProviders={() => {
-            void refreshProviderPreferences();
-            void refreshProviderDisplay();
-          }}
-          searchError={
-            startupDeviceSearchState === "failed" && !needsRuntimeRecovery
-              ? errorForHost(lastError, windowsHost)
-              : null
-          }
-          providerError={errorForHost(
-            providerDisplayError || providerPreferencesError,
-            windowsHost,
+              }
+              onInstallTheme={() => {
+                setSetupThemeInstallRequested(true);
+                void installTheme();
+              }}
+              onProviderCheck={(provider) => void checkProvider(provider)}
+              onProviderOpenSignIn={
+                providerSignInEnabled
+                  ? (provider) => void openProviderSignIn(provider)
+                  : undefined
+              }
+              onProviderOpenSetupGuide={
+                providerSignInEnabled
+                  ? () => void openProviderSetupGuide()
+                  : undefined
+              }
+              onProviderToggle={(provider, enabled) =>
+                void updateProviderPreference(provider, enabled)
+              }
+              onProvidersContinue={completeProviderSetup}
+              pendingCheckIds={pendingProviderCheckIds}
+              pendingPreferenceIds={pendingPreferenceIds}
+              providersLoading={providersLoading}
+              onDismissProviderError={() => {
+                setProviderDisplayError(null);
+                setProviderPreferencesError(null);
+              }}
+              onRetryProviders={() => {
+                void refreshProviderPreferences();
+                void refreshProviderDisplay();
+              }}
+              searchError={
+                startupDeviceSearchState === "failed" && !needsRuntimeRecovery
+                  ? errorForHost(lastError, windowsHost)
+                  : null
+              }
+              providerError={errorForHost(
+                providerDisplayError || providerPreferencesError,
+                windowsHost,
+              )}
+              onSearchDevices={() => void searchAndConnect()}
+              onScanWiFiNetworks={scanSetupWiFiNetworks}
+              onSelectConnectionMode={selectSetupConnectionMode}
+              displaySavePending={pendingProviderDisplayId !== null}
+              onSelectTheme={(theme) => setSelectedThemeId(theme.id)}
+              providers={setupProviders}
+              selectedThemeId={selectedThemeId}
+              step={settingsWiFiSetup ? "device" : setupStep}
+              themeInstallLogs={(themeInstallStatus?.logs || []).map((line) =>
+                copyForHost(line, windowsHost),
+              )}
+              themes={setupThemes}
+              usage={usage}
+              welcomeLines={setupWelcomeLines}
+              windowsHost={windowsHost}
+            />
           )}
-          onSearchDevices={() => void searchAndConnect()}
-          onScanWiFiNetworks={scanSetupWiFiNetworks}
-          onSelectConnectionMode={selectSetupConnectionMode}
-          displaySavePending={pendingProviderDisplayId !== null}
-          onSelectTheme={(theme) => setSelectedThemeId(theme.id)}
-          providers={setupProviders}
-          selectedThemeId={selectedThemeId}
-          step={settingsWiFiSetup ? "device" : setupStep}
-          themeInstallLogs={(themeInstallStatus?.logs || []).map((line) =>
-            copyForHost(line, windowsHost),
-          )}
-          themes={setupThemes}
-          usage={usage}
-          welcomeLines={setupWelcomeLines}
-          windowsHost={windowsHost}
-        />
+        </WithLatestDisplayFrame>
       );
     }
 
@@ -5668,7 +5597,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         activeTab={activeShellTab}
         activeAppearanceSection={appearanceSection}
         disabledTabs={disabledTabs}
-        device={device}
         updateAvailable={anyUpdateAvailable}
         onAppearanceSectionChange={setAppearanceSection}
         onTabChange={(tab) => {
@@ -5679,15 +5607,22 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         }}
       >
         {activeShellTab === "overview" ? (
-          <OverviewScreen
-            companionVersion={companionInfo?.version}
-            companionStatus={companionStatus}
-            device={device}
-            displayFrame={displayFrame}
-            firmwareUpdateStatus={firmwareUpdateStatus}
-            usage={usage}
-            windowsHost={windowsHost}
-          />
+          <WithLatestDisplayFrame
+            active={displaySessionActive}
+            device={device?.deviceId || deviceTarget}
+          >
+            {(displayFrame) => (
+              <OverviewScreen
+                companionVersion={companionInfo?.version}
+                companionStatus={companionStatus}
+                device={device}
+                displayFrame={displayFrame}
+                firmwareUpdateStatus={firmwareUpdateStatus}
+                usage={usage}
+                windowsHost={windowsHost}
+              />
+            )}
+          </WithLatestDisplayFrame>
         ) : null}
 
         {activeShellTab === "usage" ? (
@@ -5767,9 +5702,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               appearanceSection === "screensavers"
                 ? setSelectedScreensaverId
                 : setSelectedThemeId
-            }
-            installEntry={
-              appearanceSection === "themes" && Boolean(initialThemeId)
             }
             requestedThemeId={
               appearanceSection === "themes" ? initialThemeId : undefined
@@ -5944,25 +5876,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 }
 
 /**
- * Recent activity, newest first. An entry that says the same as an earlier one
- * takes its place instead of standing beside it, so the Support page does not
- * list the same entry again after every other one (issues #548, #558). The
- * entry carries the time of the latest occurrence, so a failure that repeats
- * does not look like an old one.
- */
-export function recentEventsWith(
-  events: ControlCenterEvent[],
-  event: ControlCenterEvent,
-): ControlCenterEvent[] {
-  return [
-    event,
-    ...events.filter(
-      (earlier) => earlier.label !== event.label || earlier.detail !== event.detail,
-    ),
-  ].slice(0, RECENT_EVENT_LIMIT);
-}
-
-/**
  * What a saved display selection changed, for Recent activity: the provider
  * VibeTV now always shows, "" for Automatic, or null when neither the mode nor
  * that provider changed. Nothing read yet counts as Automatic, the default, so
@@ -5990,770 +5903,4 @@ export function setupThemeCatalogError(
     message: "Themes unavailable",
     nextAction: issue || "Reload the theme catalog, then try again.",
   };
-}
-
-function getRuntimeSurfaceSnapshot(): RuntimeSurface {
-  return shouldUseHostedSetupShell() ? "hosted-setup" : "local-control-center";
-}
-
-function getRuntimeSurfaceServerSnapshot(): RuntimeSurface {
-  return "unknown";
-}
-
-function getCustomerPlatformServerSnapshot(): CustomerPlatform {
-  return "unknown";
-}
-
-function isWindowsWebView(): boolean {
-  return typeof navigator !== "undefined" && /^win/i.test(navigator.platform);
-}
-
-function getWindowsWebViewServerSnapshot(): boolean {
-  return false;
-}
-
-function usageRefreshEvent(payload: UsageSnapshot): {
-  label: string;
-  detail: string;
-  tone: "ready" | "attention";
-} {
-  switch (payload.refresh?.state) {
-    case "refreshing":
-      return {
-        label: "Usage refresh started",
-        detail: "VibeTV is waiting for a new usage snapshot.",
-        tone: "attention",
-      };
-    case "unavailable":
-      return {
-        label: "Usage is still loading",
-        detail: "VibeTV will update automatically when usage is ready.",
-        tone: "attention",
-      };
-    default:
-      return {
-        label: "Usage refreshed",
-        detail: `${payload.providers?.length || 0} provider tiles loaded.`,
-        tone: payload.providers?.length ? "ready" : "attention",
-      };
-  }
-}
-
-function subscribeRuntimeSurface(onStoreChange: () => void) {
-  if (typeof window === "undefined") {
-    return () => undefined;
-  }
-  const timer = window.setTimeout(onStoreChange, 0);
-  return () => window.clearTimeout(timer);
-}
-
-function localControlCenterPathForTheme(themeId: string | undefined): string {
-  const cleanThemeId = themeId?.trim();
-  if (!cleanThemeId) {
-    return "/control-center";
-  }
-  return `/control-center/install/${encodeURIComponent(cleanThemeId)}`;
-}
-
-function normalizeError(error: unknown, status: number): ApiError {
-  if (error && typeof error === "object") {
-    const maybeError = error as Partial<ApiError>;
-    return {
-      code: maybeError.code || `HTTP_${status}`,
-      message: maybeError.message || "Request failed.",
-      nextAction: maybeError.nextAction || "Try again.",
-      ...(maybeError.device ? { device: maybeError.device } : {}),
-    };
-  }
-  return {
-    code: `HTTP_${status}`,
-    message: "Request failed.",
-    nextAction: "Try again.",
-  };
-}
-
-export async function pollFirmwareUpdateJob({
-  applyUpdateJob,
-  jobId,
-  runCompanion,
-}: {
-  applyUpdateJob: (job: FirmwareUpdateJob) => void;
-  jobId: string;
-  runCompanion: RunCompanion;
-}): Promise<FirmwareUpdateJob> {
-  for (let attempt = 0; attempt < 1200; attempt += 1) {
-    await delay(500);
-    const payload = await runCompanion<{ job: FirmwareUpdateJob }>(
-      `/v1/updates/install/status?jobId=${encodeURIComponent(jobId)}`,
-      undefined,
-      { preserveLastError: true },
-    );
-    applyUpdateJob(payload.job);
-    if (
-      payload.job.phase === "complete" ||
-      payload.job.phase === "attention" ||
-      payload.job.phase === "error"
-    ) {
-      return payload.job;
-    }
-    if (payload.job.phase !== "installing") {
-      throw {
-        code: "firmware_update_status_invalid",
-        message: "VibeTV returned an unknown update status.",
-        nextAction: "Keep VibeTV powered on, then create a support report.",
-      } satisfies ApiError;
-    }
-  }
-  throw {
-    code: "firmware_update_timeout",
-    message: "VibeTV update is taking longer than expected.",
-    nextAction: "Keep VibeTV powered on, then create a support report.",
-  } satisfies ApiError;
-}
-
-// The app's own latest version comes with the status and is repeated there for
-// six hours. After "Check for updates" the next status read asks for it again.
-// The flag waits for that read, because the click's own read is skipped while
-// another one is under way.
-function takeStatusPath(appUpdateCheckRequested: { current: boolean }): string {
-  const path = appUpdateCheckRequested.current
-    ? "/v1/status?checkAppUpdate=1"
-    : "/v1/status";
-  appUpdateCheckRequested.current = false;
-  return path;
-}
-
-// /v1/status names the latest install job on every read. A finished job is
-// news once: applied again, it replaced a later failure that never became a
-// job (the Mac App refused the theme file) with that older job's "Installed".
-function statusThemeInstallIsNews(
-  seen: { current: string },
-  job: ThemeInstallJob | undefined,
-): job is ThemeInstallJob {
-  if (!job) {
-    return false;
-  }
-  const key = `${job.id}:${job.phase}`;
-  const news = job.phase === "installing" || seen.current !== key;
-  seen.current = key;
-  return news;
-}
-
-function themeInstallStatusFromJob(
-  job: ThemeInstallJob,
-  themes: ThemeProduct[],
-  fallback: { startedAt?: string; themeId?: string; title?: string } = {},
-): ThemeInstallStatus {
-  const phase =
-    job.phase === "complete"
-      ? "complete"
-      : job.phase === "error"
-        ? "error"
-        : "installing";
-  const noun = job.slot === "screensaver" ? "Screensaver" : "Theme";
-  const themeId = job.result?.themeId || job.themeId || fallback.themeId || "";
-  const catalogTitle = themes.find((theme) => theme.themeId === themeId)?.title;
-  const title =
-    job.result?.name ||
-    job.themeName ||
-    fallback.title ||
-    catalogTitle ||
-    themeId ||
-    noun;
-  const logs = customerInstallLogs(job.logs, [
-    `Preparing ${noun.toLowerCase()} install.`,
-  ]);
-  const finished = phase === "complete" || phase === "error";
-  return {
-    phase,
-    themeId,
-    title,
-    startedAt: job.startedAt || fallback.startedAt || formatTime(),
-    finishedAt: finished ? job.finishedAt || formatTime() : undefined,
-    message: job.error?.nextAction || job.message || logs[logs.length - 1],
-    progress: clampProgress(job.progress),
-    logs,
-    result: job.result,
-    error: job.error ? themeInstallErrorText(job.error) : undefined,
-    failure: job.error,
-  };
-}
-
-function firmwareUpdateStatusFromJob(
-  job: FirmwareUpdateJob,
-  fallbackStartedAt = formatTime(),
-): FirmwareUpdateStatus {
-  const phase =
-    job.phase === "complete"
-      ? "complete"
-      : job.phase === "attention"
-        ? "attention"
-        : job.phase === "error"
-          ? "error"
-          : "installing";
-  const logs = customerUpdateLogs(job.logs);
-  const finished =
-    phase === "complete" || phase === "attention" || phase === "error";
-  return {
-    phase,
-    stage: job.stage,
-    outcome: job.outcome,
-    retryAllowed: job.retryPolicy !== "power_cycle",
-    startedAt: job.startedAt || fallbackStartedAt,
-    finishedAt: finished ? job.finishedAt || formatTime() : undefined,
-    message:
-      job.error?.nextAction ||
-      job.message ||
-      logs[logs.length - 1] ||
-      "Preparing VibeTV update.",
-    progress: clampProgress(job.progress),
-    logs,
-    result: job.result,
-    error: job.error?.nextAction,
-  };
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
-
-function currentFirmwareUpdate(firmware: string): FirmwareUpdateInfo {
-  return {
-    checkedAt: new Date().toISOString(),
-    installedFirmware: firmware,
-    latestFirmware: firmware,
-    updateAvailable: false,
-    status: "current",
-    message: "Firmware is up to date.",
-  };
-}
-
-function customerInstallLogs(
-  logs: string[] | undefined,
-  fallback: string[] = [],
-): string[] {
-  const cleaned = (logs || [])
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .filter((line, index, all) => all.indexOf(line) === index);
-  return cleaned.length > 0 ? cleaned : fallback;
-}
-
-function themeInstallErrorText(error: ApiError): string {
-  const message = error.message?.trim();
-  const nextAction = error.nextAction?.trim();
-  if (!message) {
-    return nextAction || "The install failed. Try again.";
-  }
-  if (!nextAction || nextAction === message) {
-    return message;
-  }
-  return `${message} ${nextAction}`;
-}
-
-function customerUpdateLogs(
-  logs: string[] | undefined,
-  fallback: string[] = ["Preparing VibeTV update."],
-): string[] {
-  const cleaned = (logs || [])
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .filter((line, index, all) => all.indexOf(line) === index);
-  return cleaned.length > 0 ? cleaned : fallback;
-}
-
-function clampProgress(value: number | undefined): number {
-  if (typeof value !== "number" || Number.isNaN(value)) {
-    return 5;
-  }
-  return Math.max(5, Math.min(100, Math.round(value)));
-}
-
-/** The share the Cable rescue reported as really written, from its log. */
-function firmwareWrittenPercent(logs: string[] = []): number | undefined {
-  for (let index = logs.length - 1; index >= 0; index -= 1) {
-    const match = /^Updating VibeTV: (\d{1,3})%\.$/.exec(logs[index]);
-    if (match) {
-      return Number(match[1]);
-    }
-  }
-  return undefined;
-}
-
-function normalizeCaughtError(
-  error: unknown,
-  fallbackMessage: string,
-): ApiError {
-  if (error && typeof error === "object" && "code" in error) {
-    return error as ApiError;
-  }
-  if (error instanceof Error) {
-    if (isCompanionConnectionError(error)) {
-      return companionUnavailableError();
-    }
-    return {
-      code: "CLIENT_ERROR",
-      message: fallbackMessage,
-      nextAction: error.message,
-    };
-  }
-  return {
-    code: "CLIENT_ERROR",
-    message: fallbackMessage,
-    nextAction: "Run setup again, then connect VibeTV.",
-  };
-}
-
-function connectionErrorForCustomer(error: ApiError): ApiError {
-  if (error.code === "legacy_pairing_recovery_required") {
-    return error;
-  }
-  if (
-    error.code === "pairing_token_rejected" ||
-    error.code === "pairing_window_closed"
-  ) {
-    return {
-      code: "connect_failed",
-      message: "VibeTV could not connect.",
-      nextAction: "Press Connect again. If it still fails, create a report.",
-    };
-  }
-  if (error.code === "pairing_rate_limited") {
-    return {
-      code: "connect_temporarily_unavailable",
-      message: "VibeTV is temporarily unavailable.",
-      nextAction: "Wait one minute, then press Connect again.",
-    };
-  }
-  return error;
-}
-
-function pairingRejectionForDevice(
-  device: DeviceInfo | null | undefined,
-): ApiError | null {
-  if (
-    device?.active !== true ||
-    device.stream?.errorCode !== "pairing_token_rejected"
-  ) {
-    return null;
-  }
-  if (device.firmware === "1.0.38") {
-    return {
-      code: "legacy_pairing_recovery_required",
-      message: "This VibeTV uses an older recovery method.",
-      nextAction:
-        "Follow the recovery steps in Control Center, then press Connect.",
-    };
-  }
-  return connectionErrorForCustomer({
-    code: "pairing_token_rejected",
-    message: "VibeTV could not connect.",
-    nextAction: "Press Connect again.",
-  });
-}
-
-function isConnectionRecoveryError(error?: ApiError | null): boolean {
-  return (
-    error?.code === "legacy_pairing_recovery_required" ||
-    error?.code === "connect_failed" ||
-    error?.code === "connect_temporarily_unavailable" ||
-    error?.code === "pairing_window_closed" ||
-    error?.code === "pairing_token_rejected" ||
-    error?.code === "pairing_rate_limited"
-  );
-}
-
-function normalizeUsageError(error: ApiError): ApiError {
-  if (error.code === "HTTP_404") {
-    return {
-      code: "MAC_APP_UPDATE_REQUIRED",
-      message: "Mac App update needed.",
-      nextAction: "Run setup again, then refresh usage.",
-    };
-  }
-  return error;
-}
-
-function localControlCenterUnavailableError(): ApiError {
-  return {
-    code: "LOCAL_CONTROL_CENTER_UNAVAILABLE",
-    message: "Mac App update needed.",
-    nextAction:
-      "Update the Mac App or run setup again, then open Control Center.",
-  };
-}
-
-async function normalizeLocalControlCenterError(
-  error: unknown,
-): Promise<ApiError> {
-  if (error && typeof error === "object" && "code" in error) {
-    return error as ApiError;
-  }
-  if (error instanceof Error && isCompanionConnectionError(error)) {
-    const accessState = await readLocalNetworkAccessState();
-    if (localNetworkAccessNeedsUserAction(accessState)) {
-      return localNetworkAccessError(accessState);
-    }
-    return companionUnavailableError();
-  }
-  return localControlCenterUnavailableError();
-}
-
-function companionUnavailableError(): ApiError {
-  return {
-    code: "COMPANION_UNREACHABLE",
-    message: "Mac App did not answer.",
-    nextAction:
-      "Quit VibeTV Control Center, then open it again from Applications. If it still does not answer, replace it with the latest Mac App from app.vibetv.shop.",
-  };
-}
-
-function isCompanionConnectionError(error: Error): boolean {
-  return /failed to fetch|fetch failed|load failed|networkerror|connection refused|err_connection_refused|couldn'?t connect/i.test(
-    error.message,
-  );
-}
-
-function isLocalCompanionFetchFailureReason(reason: unknown): boolean {
-  if (reason instanceof Error) {
-    return isCompanionConnectionError(reason);
-  }
-  return /failed to fetch|fetch failed|load failed|networkerror|connection refused|err_connection_refused|couldn'?t connect/i.test(
-    String(reason),
-  );
-}
-
-function isCompanionMissingError(error: ApiError): boolean {
-  return error.code === "COMPANION_UNREACHABLE";
-}
-
-function isLocalNetworkAccessError(error?: ApiError | null): boolean {
-  return error?.code === "LOCAL_NETWORK_ACCESS_REQUIRED";
-}
-
-function localNetworkAccessNeedsUserAction(
-  state: PermissionState | "unsupported",
-): boolean {
-  return state === "prompt" || state === "denied";
-}
-
-function localNetworkAccessError(
-  state: PermissionState | "unsupported",
-): ApiError {
-  if (state === "denied") {
-    return {
-      code: "LOCAL_NETWORK_ACCESS_REQUIRED",
-      message: "Local Control Center is blocked.",
-      nextAction: "Open the local Control Center again, then retry.",
-    };
-  }
-  return {
-    code: "LOCAL_NETWORK_ACCESS_REQUIRED",
-    message: "Local Control Center could not be reached.",
-    nextAction: "Open the local Control Center again, then retry.",
-  };
-}
-
-async function readLocalNetworkAccessState(): Promise<
-  PermissionState | "unsupported"
-> {
-  if (typeof navigator === "undefined" || !navigator.permissions?.query) {
-    return "unsupported";
-  }
-  const permissionNames = ["loopback-network", "local-network-access"];
-  for (const name of permissionNames) {
-    try {
-      const status = await navigator.permissions.query({
-        name: name as unknown as PermissionName,
-      });
-      return status.state;
-    } catch {
-      // Chrome versions disagree on the permission name. Try the next one.
-    }
-  }
-  return "unsupported";
-}
-
-export function mergeDeviceInfo(
-  current: DeviceInfo | null,
-  next: DeviceInfo,
-): DeviceInfo {
-  if (!current) {
-    return next;
-  }
-
-  const currentTarget = normalizeDeviceTarget(current.target || "");
-  const nextTarget = normalizeDeviceTarget(next.target || "");
-  if (currentTarget && nextTarget && currentTarget !== nextTarget) {
-    return next;
-  }
-
-  return {
-    ...current,
-    ...next,
-    active: next.active ?? current.active,
-    board: next.board ?? current.board,
-    firmware: next.firmware ?? current.firmware,
-    activeTheme: next.activeTheme ?? current.activeTheme,
-    capabilities: mergeDeviceCapabilities(
-      current.capabilities,
-      next.capabilities,
-    ),
-    display: mergeDeviceDisplay(current.display, next.display),
-    health: next.health ?? current.health,
-    stream: mergeDeviceStream(current.stream, next.stream),
-  };
-}
-
-// A stream that is restarting reports no error for a moment. Reading that quiet
-// sample as "the incident is over" ended recovery mid-repair, dropped the
-// customer into Overview, and opened a fresh incident three seconds later when
-// the error came back. An incident ends on evidence that the device draws
-// again — a healthy stream or a different error — never on one sample that
-// simply says nothing.
-function mergeDeviceStream(
-  current: DeviceInfo["stream"],
-  next: DeviceInfo["stream"],
-): DeviceInfo["stream"] {
-  if (!next) {
-    return current;
-  }
-  if (
-    current?.errorCode === "provider_setup_required" &&
-    !next.errorCode &&
-    !next.healthy
-  ) {
-    return { ...next, errorCode: current.errorCode };
-  }
-  return next;
-}
-
-function deviceIsConfigured(device: DeviceInfo | null | undefined): boolean {
-  return Boolean(device?.deviceId || (device?.target && device.paired));
-}
-
-function readThemeSetupIdentity(
-  device: DeviceInfo | null | undefined,
-): ThemeSetupDeviceIdentity {
-  return {
-    deviceId: device?.deviceId?.trim() || "",
-    target: normalizeDeviceTarget(device?.target || ""),
-  };
-}
-
-function deviceMatchesThemeSetupIdentity(
-  identity: ThemeSetupDeviceIdentity | null,
-  device: DeviceInfo | null | undefined,
-): boolean {
-  if (!identity || !device) {
-    return false;
-  }
-  const candidate = readThemeSetupIdentity(device);
-  if (identity.deviceId && candidate.deviceId) {
-    return identity.deviceId === candidate.deviceId;
-  }
-  return Boolean(
-    identity.target && candidate.target && identity.target === candidate.target,
-  );
-}
-
-function reconcileThemeSetupIdentity(
-  current: ThemeSetupDeviceIdentity | null,
-  device: DeviceInfo,
-): ThemeSetupDeviceIdentity | null {
-  const candidate = readThemeSetupIdentity(device);
-  const hasIdentity = Boolean(candidate.deviceId || candidate.target);
-  if (current && deviceMatchesThemeSetupIdentity(current, device)) {
-    if (deviceCompletedThemeSetup(device)) {
-      return null;
-    }
-    return {
-      deviceId: candidate.deviceId || current.deviceId,
-      target: candidate.target || current.target,
-    };
-  }
-  if (hasIdentity && deviceNeedsThemeSetup(device)) {
-    return candidate;
-  }
-  return null;
-}
-
-function markDeviceDisconnected(
-  current: DeviceInfo | null,
-  target = "",
-): DeviceInfo | null {
-  if (!current) {
-    return target ? { target, connected: false, ready: false } : null;
-  }
-  return {
-    ...current,
-    ...(target ? { target } : {}),
-    connected: false,
-    ready: false,
-    connectionState: deviceIsConfigured(current)
-      ? "reconnecting"
-      : current.connectionState,
-  };
-}
-
-function mergeDeviceDisplay(
-  current: DeviceInfo["display"],
-  next: DeviceInfo["display"],
-): DeviceInfo["display"] {
-  if (!current) {
-    return next;
-  }
-  if (!next) {
-    return current;
-  }
-  return {
-    ...current,
-    ...next,
-    themeSpec: next.themeSpec
-      ? { ...current.themeSpec, ...next.themeSpec }
-      : current.themeSpec,
-  };
-}
-
-function mergeDeviceCapabilities(
-  current: DeviceInfo["capabilities"],
-  next: DeviceInfo["capabilities"],
-): DeviceInfo["capabilities"] {
-  if (!current) {
-    return next;
-  }
-  if (!next) {
-    return current;
-  }
-  return {
-    ...current,
-    ...next,
-    auth: next.auth ? { ...current.auth, ...next.auth } : current.auth,
-    display: next.display
-      ? {
-          ...current.display,
-          ...next.display,
-          brightness: next.display.brightness
-            ? { ...current.display?.brightness, ...next.display.brightness }
-            : current.display?.brightness,
-        }
-      : current.display,
-    theme: next.theme ? { ...current.theme, ...next.theme } : current.theme,
-    transport: next.transport
-      ? { ...current.transport, ...next.transport }
-      : current.transport,
-  };
-}
-
-// The paths of the themes and screensavers the customer saved in this browser,
-// and of those sent to VibeTV from it: a theme that was edited and saved since
-// it was sent has another path now, but VibeTV still holds the file that was
-// sent. Theme Studio changes them without the app hearing of it, so they are
-// read where they are needed.
-function savedThemePaths(): string[] {
-  const saved = loadUserThemes();
-  return [
-    ...ownThemePaths(saved.ok ? saved.value.themes : saved.data?.themes || []),
-    ...sentOwnThemePaths(),
-  ];
-}
-
-function readInitialDeviceTarget(): string {
-  if (typeof window === "undefined") {
-    return "";
-  }
-  try {
-    const params = new URLSearchParams(window.location.search);
-    return normalizeDeviceTarget(
-      params.get("target") ||
-        window.localStorage.getItem(DEVICE_TARGET_STORAGE_KEY) ||
-        "",
-    );
-  } catch {
-    return "";
-  }
-}
-
-function readLocalSetupPreviewStep(): "mac-app" | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  const localHostnames = new Set(["localhost", "127.0.0.1", "::1"]);
-  if (!localHostnames.has(window.location.hostname)) {
-    return null;
-  }
-  try {
-    const params = new URLSearchParams(window.location.search);
-    return params.get("setupStep") === "mac-app" ? "mac-app" : null;
-  } catch {
-    return null;
-  }
-}
-
-function rememberDeviceTarget(target: string) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  const normalized = normalizeDeviceTarget(target);
-  if (!normalized) {
-    return;
-  }
-  try {
-    window.localStorage.setItem(DEVICE_TARGET_STORAGE_KEY, normalized);
-  } catch {
-    // localStorage may be unavailable in private or restricted browser contexts.
-  }
-}
-
-function forgetDeviceTarget() {
-  if (typeof window === "undefined") {
-    return;
-  }
-  try {
-    window.localStorage.removeItem(DEVICE_TARGET_STORAGE_KEY);
-  } catch {
-    // localStorage may be unavailable in private or restricted browser contexts.
-  }
-}
-
-// A lost VibeTV that the WiFi reconnect (`/v1/device/select`) can reach.
-function canReconnectLostDevice(candidate: DeviceCandidate): boolean {
-  return candidate.transport !== "cable" && Boolean(candidate.deviceId);
-}
-
-function normalizeDeviceTarget(target: string): string {
-  const trimmed = target.trim();
-  if (!trimmed) {
-    return "";
-  }
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
-    return trimmed;
-  }
-  return `http://${trimmed}`;
-}
-
-export function deviceMatchesExpectedConnection(
-  device: DeviceInfo | null | undefined,
-  expectedTarget?: string,
-  expectedDeviceId?: string,
-): device is DeviceInfo {
-  if (!device?.connected || !device.paired) {
-    return false;
-  }
-  const targetMatches =
-    !expectedTarget ||
-    (Boolean(device.target) &&
-      normalizeDeviceTarget(device.target || "") ===
-        normalizeDeviceTarget(expectedTarget));
-  const identityMatches =
-    !expectedDeviceId || device.deviceId === expectedDeviceId;
-  return targetMatches && identityMatches;
-}
-
-function formatTime(): string {
-  return new Intl.DateTimeFormat("de-DE", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(new Date());
 }

@@ -123,10 +123,6 @@ void setSpriteRenderError(const char* code, const char* assetPath) {
   // it must not bury a decode failure that is still selected: with two
   // animated sprites sharing one frame buffer, B running out of heap would
   // otherwise hide A's corrupt data behind ordinary memory pressure.
-  // A transient condition never proves anything about a different asset, so
-  // it must not bury a decode failure that is still selected: with two
-  // animated sprites sharing one frame buffer, B running out of heap would
-  // otherwise hide A's corrupt data behind ordinary memory pressure.
   if (lastSpriteErrorIsDecodeFailure && lastAnimatedSpriteError[0] != '\0') {
     return;
   }
@@ -1426,11 +1422,14 @@ bool TickThemeSpecGifs() {
   ThemeSpecSink sink(false, SpriteRenderMode::AnimatedOnly, true);
   cbaRenderJobInProgress = false;
   const unsigned long framesBefore = cbaCompletedFrames;
-  const bool ok = themespec::RenderCompiledThemeSpecAnimatedPrimitives(cachedThemeSpecScene, currentThemeSpecFrameData(), sink);
+  // One tick draws from one reading of the frame: nothing changes it while
+  // the tick runs, and building it formats the clock and date each time.
+  const auto frameData = currentThemeSpecFrameData();
+  const bool ok = themespec::RenderCompiledThemeSpecAnimatedPrimitives(cachedThemeSpecScene, frameData, sink);
   if (cbaCompletedFrames != framesBefore) {
     // A new sprite frame just covered whatever lies on top of the sprite.
     ThemeSpecSink over(false, SpriteRenderMode::StaticOnly);
-    themespec::RenderCompiledThemeSpecOverAnimatedPrimitives(cachedThemeSpecScene, currentThemeSpecFrameData(), over);
+    themespec::RenderCompiledThemeSpecOverAnimatedPrimitives(cachedThemeSpecScene, frameData, over);
   }
   nextThemeSpecAnimatedTickAtMs = now +
       (cbaRenderJobInProgress ? kThemeSpecAnimatedResumeTickMs : kThemeSpecAnimatedTickMs);

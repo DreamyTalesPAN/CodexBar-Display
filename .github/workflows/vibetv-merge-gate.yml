@@ -22,6 +22,7 @@ jobs:
       github.ref == 'refs/heads/main' &&
       (github.actor == github.repository_owner || github.actor == 'marcus7989')
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: read
@@ -235,6 +236,7 @@ jobs:
   resolve-baselines:
     needs: resolve-pr
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -313,6 +315,7 @@ jobs:
     if: always()
     needs: [resolve-pr, guest-test]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       statuses: write
     steps:
