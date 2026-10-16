@@ -7302,6 +7302,12 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the busy computer entries above; nothing else changes.
 - Scope: the merge of main (with #615 and #620) into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
+## 2026-10-16 — Approval record: newest marker after the squash merges of #628 and #619
+
+- User approval: Paul approved the wording and behaviour of the busy computer dialog, the VibeTV label and the last good values for #628 on 2026-10-15 (entries above). Marcus gave the click tests "628 OK" and "619 OK" on 2026-10-16. This entry records these approvals after the squash merges and adds no wording and no new visible behaviour.
+- Approved customer-visible result: as recorded in the entries above; nothing else changes.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
 
 ## 2026-10-15 — Setup waits for every switched-on provider, Automatic rotates every 2 s (#627, #631)
 
