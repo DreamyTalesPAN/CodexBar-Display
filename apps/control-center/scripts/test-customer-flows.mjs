@@ -7234,6 +7234,11 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  // Claude needs a new sign-in, so the provider overlay opens over every page;
+  // the customer closes it first (Not now), then the test navigates.
+  const claudeOverlay = page.getByRole("dialog", { name: "Claude needs a new sign-in" });
+  await claudeOverlay.waitFor({ timeout: 10_000 });
+  await claudeOverlay.getByRole("button", { name: "Not now" }).click();
   await clickNavigation(page, "Usage");
   assert(
     (await page.getByRole("heading", { name: "AI providers" }).count()) === 0,

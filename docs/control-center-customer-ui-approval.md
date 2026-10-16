@@ -7480,3 +7480,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: A failed sign-in start shows its message in the overlay's text; the companion's next-action sentence, which still says "then check again", is not shown there. No new element; no new wording of our own. Not seen by Paul yet. The same sentence still appears on the Settings page for a failed start; changing the companion's text is a separate change.
 - Scope: `provider-action-dialog.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Customer flow: the Claude overlay is closed before the Usage check (#669)
+
+- User approval: Paul chose on 2026-10-16 (via the review orchestrator) Claude Design page "Control Center Redesign" 644, "3A + 4A + 5B (weekly: number first), Paul 16.10." — the overlay of the entry above; this change only updates the customer flow test for it and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: Unchanged. The flow test waits for the "Claude needs a new sign-in" overlay and clicks "Not now" before it opens Usage, as the customer would.
+- Scope: `scripts/test-customer-flows.mjs` (one test), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — test change, no customer-visible change of its own
