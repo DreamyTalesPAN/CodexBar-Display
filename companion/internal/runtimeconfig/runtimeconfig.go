@@ -292,36 +292,6 @@ func restrictExistingConfigFilePermissions(path string) error {
 	return nil
 }
 
-// BeginDeviceSelection records the last committed configuration before a
-// candidate device is staged. If the Companion process exits before the
-// selection is committed, RecoverPendingDeviceSelection restores this exact
-// configuration on the next startup.
-func BeginDeviceSelection(home string, previous Config) error {
-	home = strings.TrimSpace(home)
-	if home == "" {
-		return errors.New("home directory is empty")
-	}
-	previous.Normalize()
-	path := deviceSelectionJournalPath(home)
-	if err := ensurePrivateConfigDir(filepath.Dir(path)); err != nil {
-		return fmt.Errorf("create config dir: %w", err)
-	}
-	payload, err := json.MarshalIndent(previous, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal device selection journal: %w", err)
-	}
-	payload = append(payload, '\n')
-	tmpPath := fmt.Sprintf("%s.tmp-%d", path, time.Now().UnixNano())
-	if err := os.WriteFile(tmpPath, payload, privateConfigFileMode); err != nil {
-		return fmt.Errorf("write device selection journal: %w", err)
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("replace device selection journal: %w", err)
-	}
-	return os.Chmod(path, privateConfigFileMode)
-}
-
 func CommitDeviceSelection(home string) error {
 	home = strings.TrimSpace(home)
 	if home == "" {
@@ -334,6 +304,11 @@ func CommitDeviceSelection(home string) error {
 	return nil
 }
 
+// RecoverPendingDeviceSelection restores the configuration a device-selection
+// journal holds. Releases v1.0.47 to v1.0.50 wrote that journal before staging
+// a candidate device; a companion stopped before the commit left it behind.
+// Nothing writes it any more, so this only finishes such an interrupted
+// selection once.
 func RecoverPendingDeviceSelection(home string) (bool, error) {
 	home = strings.TrimSpace(home)
 	if home == "" {

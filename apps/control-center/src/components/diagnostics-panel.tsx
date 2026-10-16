@@ -120,7 +120,7 @@ export function DiagnosticsPanel({
 }
 
 /** providerSetup.engine is authoritative; usageEngine fills what it lacks. */
-export function diagnosticsEngine(
+function diagnosticsEngine(
   diagnostics?: SupportDiagnostics | null,
 ): UsageEngineInfo | null {
   const engine = {
@@ -139,7 +139,7 @@ export function diagnosticsEngine(
   };
 }
 
-export function usageEngineTooOldText(engine: UsageEngineInfo): string {
+function usageEngineTooOldText(engine: UsageEngineInfo): string {
   const installed = engine.version ? "Usage engine " + engine.version : "The usage engine";
   const required = engine.minimumVersion
     ? " Version " + engine.minimumVersion + " or newer is required."

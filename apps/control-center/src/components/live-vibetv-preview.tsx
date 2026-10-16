@@ -15,6 +15,7 @@ import {
 import {
   companionRequestUrl,
   needsLoopbackTargetAddressSpace,
+  normalizeThemeSpecHash,
   themeRenderPackUrl,
 } from "./control-center-runtime";
 import { loadLocalThemeRenderPack } from "@/lib/local-theme-render-pack";
@@ -284,24 +285,52 @@ type SpriteRect = {
   color: string;
 };
 
-export function useLatestDisplayFrame(connected: boolean) {
+// The last frame seen and the VibeTV it came from, so a screen that mounts
+// again (tab switch) starts with it instead of an empty preview. It is only
+// reused for the same VibeTV: another one must never show the old screen.
+let lastDisplayFrame: { device: string; frame: DisplayFrameSnapshot | null } | null =
+  null;
+
+const DISPLAY_FRAME_POLL_MS = 1000;
+const DISPLAY_FRAME_TIMEOUT_MS = 5000;
+
+/**
+ * Polls the frame VibeTV shows, once a second while connected. Call it only in
+ * the screens that draw the preview: every answer re-renders the caller.
+ * One request at a time, each bounded; paused while the window is hidden.
+ */
+export function useLatestDisplayFrame(connected: boolean, device = "") {
   const [displayFrame, setDisplayFrame] = useState<DisplayFrameSnapshot | null>(
-    null,
+    () => (connected && lastDisplayFrame?.device === device ? lastDisplayFrame.frame : null),
   );
 
   useEffect(() => {
-    if (!connected) {
-      const timer = window.setTimeout(() => setDisplayFrame(null), 0);
-      return () => window.clearTimeout(timer);
+    let resetTimer = 0;
+    if (!connected || lastDisplayFrame?.device !== device) {
+      lastDisplayFrame = null;
+      resetTimer = window.setTimeout(() => setDisplayFrame(null), 0);
+      if (!connected) {
+        return () => window.clearTimeout(resetTimer);
+      }
     }
 
-    const controller = new AbortController();
+    let stopped = false;
+    let request: AbortController | null = null;
 
     const refreshDisplayFrame = async () => {
+      if (request || document.hidden) {
+        return;
+      }
+      const current = new AbortController();
+      request = current;
+      const timeout = window.setTimeout(
+        () => current.abort(),
+        DISPLAY_FRAME_TIMEOUT_MS,
+      );
       try {
         const requestInit: LocalDisplayFrameRequestInit = {
           cache: "no-store",
-          signal: controller.signal,
+          signal: current.signal,
         };
         const url = companionRequestUrl("/v1/display-frame/latest");
         if (needsLoopbackTargetAddressSpace(url)) {
@@ -309,28 +338,52 @@ export function useLatestDisplayFrame(connected: boolean) {
         }
         const response = await fetch(url, requestInit);
         const nextFrame = await parseLatestDisplayFrameResponse(response);
-        if (!nextFrame) {
-          setDisplayFrame(null);
-          return;
+        if (!stopped) {
+          lastDisplayFrame = { device, frame: nextFrame };
+          setDisplayFrame(nextFrame);
         }
-        setDisplayFrame(nextFrame);
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") {
-          return;
-        }
+      } catch {
+        // A failed or timed-out poll keeps the last frame; the next tick retries.
+      } finally {
+        window.clearTimeout(timeout);
+        request = null;
+      }
+    };
+
+    const refreshWhenVisible = () => {
+      if (!document.hidden) {
+        void refreshDisplayFrame();
       }
     };
 
     void refreshDisplayFrame();
-    const timer = window.setInterval(refreshDisplayFrame, 1000);
+    const timer = window.setInterval(refreshDisplayFrame, DISPLAY_FRAME_POLL_MS);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
 
     return () => {
-      controller.abort();
+      stopped = true;
+      window.clearTimeout(resetTimer);
+      request?.abort();
       window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
-  }, [connected]);
+  }, [connected, device]);
 
   return displayFrame;
+}
+
+/** Renders `children` with the latest frame; only this subtree re-renders per poll. */
+export function WithLatestDisplayFrame({
+  active,
+  device,
+  children,
+}: {
+  active: boolean;
+  /** Identity of the selected VibeTV; a cached frame is only reused for it. */
+  device: string;
+  children: (displayFrame: DisplayFrameSnapshot | null) => ReactNode;
+}) {
+  return children(useLatestDisplayFrame(active, device));
 }
 
 export async function parseLatestDisplayFrameResponse(
@@ -561,7 +614,7 @@ const RECONNECT_FRAME_GRACE_MS = 120_000;
 // match the device's active revision yet.
 const THEME_PACK_RETRY_MS = 5_000;
 
-export function frameFreshForReconnect(
+function frameFreshForReconnect(
   displayFrame: DisplayFrameSnapshot | null | undefined,
 ): boolean {
   const savedAt = displayFrame?.savedAt;
@@ -1437,11 +1490,6 @@ function normalizeThemeAlias(theme: string | undefined): string {
   return DEVICE_THEME_ALIASES[normalized] || normalized;
 }
 
-function normalizeThemeSpecHash(value: string | undefined): string {
-  const hash = (value || "").trim().toLowerCase();
-  return /^[a-f0-9]{8}$/.test(hash) ? hash : "";
-}
-
 function renderPackSpecHash(pack: ThemeRenderPack): string {
   return normalizeThemeSpecHash(pack.specHash);
 }
@@ -1649,7 +1697,7 @@ function slotCountdownFor(
 
 // Mirrors the firmware's FormatTokenCount digit for digit (truncated
 // hundredths, never rounded) so catalog previews and the device agree.
-export function formatTokenCount(value: number): string {
+function formatTokenCount(value: number): string {
   if (!Number.isFinite(value) || value < 0) {
     value = 0;
   }

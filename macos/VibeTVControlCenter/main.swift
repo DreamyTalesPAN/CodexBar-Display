@@ -22,6 +22,10 @@ private let installThemeURLHost = "install-theme"
 private let restartControlCenterURLHost = "restart-control-center"
 private let repairRuntimeURLHost = "repair-runtime"
 private let checkForUpdatesURLHost = "check-for-updates"
+// The window's own prompt when the background service reports a newer Mac
+// App (#570): a background Sparkle check, which shows a dialog only when
+// Sparkle finds that update itself, never "You're up to date".
+private let checkForUpdatesInBackgroundURLHost = "check-for-updates-in-background"
 private let repairCodexBarURLHost = "repair-codexbar"
 private let finishCodexBarRecoveryURLHost = "finish-codexbar-recovery"
 private let openCodexBarURLHost = "open-codexbar"
@@ -119,6 +123,21 @@ func controlCenterPath(for url: URL) -> String? {
         return "control-center/install/\(themeID)"
     }
     return isOpenControlCenterURL(url) ? "control-center" : nil
+}
+
+func isCheckForUpdatesInBackgroundURL(_ url: URL) -> Bool {
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          components.scheme?.lowercased() == controlCenterURLScheme,
+          components.host?.lowercased() == checkForUpdatesInBackgroundURLHost,
+          components.user == nil,
+          components.password == nil,
+          components.port == nil,
+          components.query == nil,
+          components.fragment == nil,
+          components.path.isEmpty || components.path == "/" else {
+        return false
+    }
+    return true
 }
 
 func isCheckForUpdatesURL(_ url: URL) -> Bool {
@@ -236,6 +255,7 @@ enum NativeControlCenterAction: Equatable {
     case restartControlCenter
     case repairRuntime
     case checkForUpdates
+    case checkForUpdatesInBackground
     case repairCodexBar
     case finishCodexBarRecovery
     case openCodexBar
@@ -251,6 +271,9 @@ func nativeControlCenterAction(for url: URL) -> NativeControlCenterAction? {
     }
     if isCheckForUpdatesURL(url) {
         return .checkForUpdates
+    }
+    if isCheckForUpdatesInBackgroundURL(url) {
+        return .checkForUpdatesInBackground
     }
     if isRepairCodexBarURL(url) {
         return .repairCodexBar
@@ -1892,6 +1915,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private let runtimeService = SMAppService.agent(plistName: runtimeLaunchAgentPlistName)
     private var urlRouter = ControlCenterURLRouter()
     private var reloadAttempts = 0
+    private var webContentTerminations: [Date] = []
     private var scheduledReload: Task<Void, Never>?
     private var preparationTask: Task<Void, Never>?
     private var closePreparationInFlight = false
@@ -1931,6 +1955,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         case waiting, installing, abandoned, done
     }
     private var launchUpdateCheck = LaunchUpdateCheck.done
+    // The window's own update prompt came while the launch check still ran;
+    // it runs as soon as that check is done (#570).
+    private var backgroundUpdateCheckPending = false
+    // Set while the probing check from the window's update prompt runs (#570).
+    private var updateInformationProbe = false
+    // A probe asked for while another Sparkle session still finished; it runs
+    // when that cycle ends, because Sparkle ignores a probe meanwhile (#570).
+    private var updateInformationProbePending = false
+    // The probe found an update, or the customer asked for the visible check
+    // while it ran; that check follows when the probe's cycle ends.
+    private var updateInformationProbeFound = false
     private var launchUpdateTurnedDown = false
     // Creating the controller starts Sparkle, which may show an overdue
     // scheduled check at once. A launch check skipped for a running VibeTV
@@ -2059,10 +2094,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 updater.automaticallyDownloadsUpdates = false
                 if launchUpdateTurnedDown {
                     // The feed answered after the limit. Offer that update in
-                    // Sparkle's dialog now instead of dropping it for a day.
+                    // Sparkle's dialog now instead of dropping it for a day,
+                    // through the probe below: Sparkle's background check may
+                    // hold a found update back (#570).
                     launchUpdateTurnedDown = false
-                    updater.checkForUpdatesInBackground()
+                    backgroundUpdateCheckPending = true
                 }
+            }
+            if backgroundUpdateCheckPending {
+                backgroundUpdateCheckPending = false
+                checkForUpdatesInBackground()
             }
         }
         if previous != .abandoned {
@@ -2077,6 +2118,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
         if urls.contains(where: isCheckForUpdatesURL) {
             checkForUpdates()
+            return
+        }
+        // The window's quiet prompt (#570) can arrive here too, like the
+        // visible check above; without this it would be dropped.
+        if urls.contains(where: isCheckForUpdatesInBackgroundURL) {
+            checkForUpdatesInBackground()
             return
         }
         if urls.contains(where: isRepairCodexBarURL) {
@@ -2919,6 +2966,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         _ = applicationShouldHandleReopen(NSApp, hasVisibleWindows: false)
     }
 
+    private func checkForUpdatesInBackground() {
+        guard !installationRequired else {
+            return
+        }
+#if canImport(Sparkle)
+        // While the launch check runs it owns updates (and installs without a
+        // dialog); a background check now could restart the app mid-setup.
+        guard launchUpdateCheck == .done else {
+            backgroundUpdateCheckPending = true
+            return
+        }
+        updaterStarted = true
+        let updater = updaterController.updater
+        guard !updater.sessionInProgress else {
+            updateInformationProbePending = true
+            return
+        }
+        // A probing check only reports whether an update exists, and Sparkle's
+        // background check may hold a found update back (gentle reminders)
+        // without any alert. The delegate starts the visible check when the
+        // probe finds an update, so a customer sees the update, never
+        // "You're up to date" mid-setup (#570).
+        updateInformationProbe = true
+        updater.checkForUpdateInformation()
+#endif
+    }
+
     @objc private func checkForUpdates() {
         guard !installationRequired else {
             presentInstallationRequiredAlert()
@@ -2926,6 +3000,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
 #if canImport(Sparkle)
         updaterStarted = true
+        if updateInformationProbe && updaterController.updater.sessionInProgress {
+            // Sparkle rejects a visible check while the window's probe runs;
+            // the probe's cycle end starts it (#570).
+            updateInformationProbeFound = true
+            return
+        }
         updaterController.checkForUpdates(nil)
 #else
         let alert = NSAlert()
@@ -5254,6 +5334,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         error: Error?
     ) {
         finishLaunchUpdateCheck(timedOut: false)
+        if updateCheck == .updateInformation {
+            updateInformationProbe = false
+            if updateInformationProbeFound {
+                updateInformationProbeFound = false
+                // The probe's session has ended: show Sparkle's dialog now.
+                // Started here, before returning, Sparkle schedules no next
+                // check that would take the session first (#570).
+                updater.checkForUpdates()
+                return
+            }
+        }
+        if updateInformationProbePending {
+            // The session that blocked the window's probe has ended (#570).
+            updateInformationProbePending = false
+            DispatchQueue.main.async {
+                self.checkForUpdatesInBackground()
+            }
+        }
     }
 #endif
 
@@ -5284,6 +5382,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 beginRuntimeRepair()
             case .checkForUpdates:
                 checkForUpdates()
+            case .checkForUpdatesInBackground:
+                checkForUpdatesInBackground()
             case .repairCodexBar:
                 beginCodexBarRepair(hasJavaScriptOwner: true)
             case .finishCodexBarRecovery:
@@ -5472,8 +5572,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         controlCenterRoute.didLoad()
     }
 
+    // WebKit ends the page's process under memory pressure or when it
+    // crashes. The window then stays blank and the page stops polling, so a
+    // setup in progress looks frozen (#616). Load the Control Center again.
+    // A page that crashes again right after every load would otherwise be
+    // respawned forever: at most five in five minutes, through the bounded
+    // and delayed scheduleReload.
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        let now = Date()
+        webContentTerminations = webContentTerminations.filter {
+            now.timeIntervalSince($0) < 300
+        } + [now]
+        guard webContentTerminations.count <= 5 else {
+            NSLog("VibeTV Control Center web content process ended %d times in 5 minutes; not loading the page again", webContentTerminations.count)
+            return
+        }
+        NSLog("VibeTV Control Center web content process ended; loading the Control Center again")
+        activeNavigation = nil
+        scheduleReload()
+    }
+
     private func scheduleReload() {
         guard reloadAttempts < 20, scheduledReload == nil else {
+            if scheduledReload == nil {
+                NSLog("VibeTV Control Center stopped retrying the Control Center page after %d attempts", reloadAttempts)
+            }
             return
         }
         reloadAttempts += 1
@@ -5500,7 +5623,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 }
 
 #if canImport(Sparkle)
-extension AppDelegate: SPUUpdaterDelegate {}
+extension AppDelegate: SPUUpdaterDelegate {
+    func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
+        // Sparkle drops a visible check started while the probe's session
+        // still runs; didFinishUpdateCycleFor starts it once that ended.
+        if updateInformationProbe {
+            updateInformationProbeFound = true
+        }
+    }
+
+    func updaterDidNotFindUpdate(_ updater: SPUUpdater) {
+        updateInformationProbe = false
+    }
+
+    func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
+        updateInformationProbe = false
+    }
+}
 #endif
 
 #if VIBETV_CONTROL_CENTER_TESTING
