@@ -548,6 +548,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // Last standby settings the device confirmed (loaded or saved). A failed
   // save rolls back to this, never to the in-flight slider value.
   const lastSavedStandbyRef = useRef<StandbySettings | null>(null);
+  // The VibeTV the settings on screen belong to (see mergeDevice).
+  const settingsDeviceIdRef = useRef<string | undefined>(undefined);
   const setupGenerationRef = useRef(0);
   const deviceSearchAttemptRef = useRef(0);
   // A VibeTV on firmware from before USB-C support is offered as the VibeTV
@@ -623,6 +625,22 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   const mergeDevice = useCallback((next: DeviceInfo) => {
+    // The screensaver values belong to one VibeTV. When another one is
+    // connected they go, a read still on its way for the first one no longer
+    // counts (readSettings) and the next read starts anew, so both Show
+    // screensaver switches stay closed until the new VibeTV's own setting is
+    // read: a click would send the first VibeTV's time and brightness to it
+    // (Codex review of #645).
+    const deviceId = next.deviceId?.trim();
+    if (deviceId && deviceId !== settingsDeviceIdRef.current) {
+      if (settingsDeviceIdRef.current) {
+        standbyDirtyRef.current = null;
+        lastSavedStandbyRef.current = null;
+        settingsReadRef.current = null;
+        setStandby(null);
+      }
+      settingsDeviceIdRef.current = deviceId;
+    }
     if (deviceIsReady(next)) {
       didRunAutomaticDeviceSearch.current = false;
       setLastError((current) => isConnectionRecoveryError(current) ? null : current);
@@ -995,6 +1013,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     const writes = deviceSettingWritesRef.current;
     const brightnessWrites = writes.brightness;
     const standbyWrites = writes.standby;
+    const settingsDeviceId = settingsDeviceIdRef.current;
     setBusyAction("settings");
     try {
       const payload = await runCompanion<SettingsResponse>("/v1/settings");
@@ -1011,7 +1030,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       if (
         standbyDirtyRef.current === null &&
-        writes.standby === standbyWrites
+        writes.standby === standbyWrites &&
+        (!settingsDeviceId || settingsDeviceIdRef.current === settingsDeviceId)
       ) {
         lastSavedStandbyRef.current = payload.settings?.standby ?? null;
         setStandby(payload.settings?.standby ?? null);

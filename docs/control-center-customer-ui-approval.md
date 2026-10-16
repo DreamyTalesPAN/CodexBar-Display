@@ -7336,3 +7336,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as approved in the #643 entry above ("The Settings switch stays closed until VibeTV's own setting is read"). When the Mac App is connected to another VibeTV, the first one's screensaver values are dropped, so both Show screensaver switches stay closed (and the Screensavers block stays hidden, as on first load) until the new VibeTV's own setting is read.
 - Scope: `control-center-app.tsx`, its display preferences test and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — review fix, no customer-visible change of its own
+
+## 2026-10-16 — #643: Codex review fix, a late read of the first VibeTV no longer counts
+
+- User approval: Codex review fix, no new wording; not seen by Paul. It applies the rule approved in the #643 entries above.
+- Approved customer-visible result: as in "Codex review fix, screensaver values belong to one VibeTV" above. A settings read still on its way for the first VibeTV when another one is connected no longer puts the first one's screensaver values back; the switch stays closed until the new VibeTV's own setting is read.
+- Scope: `control-center-app.tsx`, its display preferences test and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — review fix, no customer-visible change of its own
