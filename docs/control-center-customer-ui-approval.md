@@ -7308,3 +7308,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the entries above; nothing else changes.
 - Scope: this approval record only. Pull request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — Boxes on Appearance › Themes use the design-system radius
+
+- User approval: Paul ordered on 2026-10-16 (via the review orchestrator) that boxes, cards and dialogs use the design-system radius token; a pure design-system correction, no new approval needed; he will see before/after in his test.
+- Approved customer-visible result: On Appearance › Themes, the "Continue your unsaved theme" box (Discard/Resume) and the "Theme is not available" notice get the card radius (`--radius-card`, 0.75rem) that Card and Alert already use, instead of square corners. Layout, colors, wording and buttons stay the same. A sweep of `apps/control-center/src` found no other box, card, banner, dialog or panel without a radius or with a hard-coded one; theme render previews and the VibeTV device mockup stay as they are.
+- Scope: `RecoveryCard` and `MissingRequestedThemeNotice` in `apps/control-center/src/components/theme-library-screen.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a design-system correction of two boxes

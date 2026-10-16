@@ -872,7 +872,7 @@ function RecoveryCard({
   title: string;
 }) {
   return (
-    <div className="mb-6 grid gap-4 border border-border bg-card p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+    <div className="mb-6 grid gap-4 rounded-[var(--radius-card)] border border-border bg-card p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
       <div className="min-w-0">
         <div className="text-base font-bold text-[#1B1B1B]">
           {title}
@@ -1001,7 +1001,7 @@ function MissingRequestedThemeNotice({
   }
 
   return (
-    <div className="mb-6 flex gap-3 border border-border bg-card p-4 text-sm text-muted-foreground">
+    <div className="mb-6 flex gap-3 rounded-[var(--radius-card)] border border-border bg-card p-4 text-sm text-muted-foreground">
       <Library
         className="mt-0.5 shrink-0 text-[#5E7200]"
         size={18}
