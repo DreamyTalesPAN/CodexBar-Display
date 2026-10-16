@@ -3702,6 +3702,72 @@ func TestUsageWaitsForEveryProviderTokenResult(t *testing.T) {
 	}
 }
 
+func TestNeverReadProviderInventsNoNumbersInRemainingMode(t *testing.T) {
+	now := time.Date(2026, 10, 16, 9, 0, 0, 0, time.UTC)
+	usage := daemon.PersistedUsage{
+		SavedAt: now,
+		Providers: []daemon.ProviderUsageSnapshot{
+			{
+				Provider: "claude",
+				Frame:    protocol.Frame{Provider: "claude", Label: "claude", UsageUnavailable: true},
+				Meta:     codexbar.ProviderUsageMeta{Cost: &codexbar.ProviderCostUsage{Last30DaysTokens: 90}},
+				// Token history only: no reading ever, so no Collected time.
+				TokenStatsCollectedAt: now,
+			},
+			{
+				// A failed first reading: NoReading marks the time of that failure.
+				Provider:    "gemini",
+				Frame:       protocol.Frame{Provider: "gemini", Label: "gemini", UsageUnavailable: true},
+				CollectedAt: now,
+				NoReading:   true,
+			},
+		},
+	}
+
+	resp := usageResponseForDisplayMode(usageResponseFromPersisted(now, usage), false)
+	if len(resp.Providers) != 2 || resp.UsageMode != "remaining" {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
+	labels := map[string]string{"claude": "Claude", "gemini": "Gemini"}
+	for _, provider := range resp.Providers {
+		if provider.Label != labels[provider.ID] || provider.Session != 0 || provider.Weekly != 0 ||
+			!provider.UsageUnavailable || !provider.SessionUnavailable || !provider.WeeklyUnavailable ||
+			provider.UsageMode != "remaining" {
+			t.Fatalf("never-read provider must show unknown, not an invented 100%%: %+v", provider)
+		}
+	}
+}
+
+func TestReadProviderStillFlipsInRemainingMode(t *testing.T) {
+	now := time.Date(2026, 10, 16, 9, 0, 0, 0, time.UTC)
+	usage := daemon.PersistedUsage{
+		SavedAt: now,
+		Providers: []daemon.ProviderUsageSnapshot{
+			{
+				Provider:    "codex",
+				Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Session: 30, Weekly: 40, UsageMode: "used"},
+				CollectedAt: now,
+			},
+			{
+				// A stale reading keeps its real numbers and still flips.
+				Provider:    "cursor",
+				Frame:       protocol.Frame{Provider: "cursor", Label: "Cursor", Session: 30, UsageMode: "used", UsageUnavailable: true},
+				CollectedAt: now.Add(-time.Hour),
+				Stale:       true,
+			},
+		},
+	}
+
+	resp := usageResponseForDisplayMode(usageResponseFromPersisted(now, usage), false)
+	codex, cursor := resp.Providers[0], resp.Providers[1]
+	if codex.Session != 70 || codex.Weekly != 60 || codex.UsageMode != "remaining" {
+		t.Fatalf("read provider was not flipped to remaining: %+v", codex)
+	}
+	if cursor.Session != 70 || cursor.UsageMode != "remaining" {
+		t.Fatalf("stale reading was not flipped to remaining: %+v", cursor)
+	}
+}
+
 func TestDisplayFrameLatestReturnsPersistedLastGoodFrame(t *testing.T) {
 	t.Setenv(displayStreamOutLogEnv, filepath.Join(t.TempDir(), "missing.log"))
 	server := newTestServer(t, runtimeconfig.Config{})

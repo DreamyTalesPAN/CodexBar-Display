@@ -83,6 +83,10 @@ type usageProviderInfo struct {
 	TokenStatsCollectedAt time.Time                `json:"-"`
 	Pace                  []usagePaceInfo          `json:"pace,omitempty"`
 	UsageOverTime         []usageOverTimePointInfo `json:"usageOverTime,omitempty"`
+
+	// NeverRead: no usage reading has ever arrived for this provider. Its
+	// zeros are unknown, not used, so a display mode change must not flip them.
+	NeverRead bool `json:"-"`
 }
 
 type usageWindowInfo struct {
@@ -523,9 +527,15 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 	if id == "" {
 		return usageProviderInfo{}, false
 	}
+	neverRead := snapshot.NoReading || snapshot.CollectedAt.IsZero()
+	label := frame.Label
+	if neverRead && strings.EqualFold(strings.TrimSpace(label), id) {
+		// The collector names a provider it has not read yet by its bare id.
+		label = ""
+	}
 	return usageProviderInfo{
 		ID:                    id,
-		Label:                 usageProviderLabel(id, frame.Label),
+		Label:                 usageProviderLabel(id, label),
 		Source:                strings.TrimSpace(snapshot.Source),
 		Session:               frame.Session,
 		Weekly:                frame.Weekly,
@@ -551,6 +561,7 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 		TokenStatsCollectedAt: snapshot.TokenStatsCollectedAt,
 		Pace:                  usagePaceFromMeta(snapshot.Meta),
 		UsageOverTime:         usageOverTimeFromMeta(snapshot.Meta),
+		NeverRead:             neverRead,
 	}, true
 }
 
@@ -820,7 +831,7 @@ func usageResponseForDisplayMode(resp usageResponse, showUsed bool) usageRespons
 
 func usageProviderForDisplayMode(provider usageProviderInfo, targetMode string) usageProviderInfo {
 	currentMode := usageModeOrDefault(provider.UsageMode)
-	if currentMode != targetMode {
+	if currentMode != targetMode && !provider.NeverRead {
 		provider.Session = 100 - clampUsagePercent(provider.Session)
 		provider.Weekly = 100 - clampUsagePercent(provider.Weekly)
 		for i := range provider.Windows {
