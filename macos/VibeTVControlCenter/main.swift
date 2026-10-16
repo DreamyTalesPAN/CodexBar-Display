@@ -2120,6 +2120,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             checkForUpdates()
             return
         }
+        // The window's quiet prompt (#570) can arrive here too, like the
+        // visible check above; without this it would be dropped.
+        if urls.contains(where: isCheckForUpdatesInBackgroundURL) {
+            checkForUpdatesInBackground()
+            return
+        }
         if urls.contains(where: isRepairCodexBarURL) {
             beginCodexBarRepair(hasJavaScriptOwner: false)
             return
