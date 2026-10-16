@@ -918,17 +918,14 @@ fn load(app: AppHandle, present: bool) -> bool {
         present_window(&app);
     }
     let result = prepare_runtime(&app);
+    // Which window the navigation below went to: one built later (the old
+    // window was closed and released meanwhile) still shows the start page.
+    let mut navigated = 0;
     match &result {
         Ok(origin) => {
             *shell.runtime_origin.lock().unwrap() = origin.clone();
-            if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
-                let pending = shell.pending_theme.lock().unwrap();
-                let path = pending
-                    .as_ref()
-                    .map(|theme_id| format!("/control-center/install/{theme_id}"))
-                    .unwrap_or_else(|| "/control-center".to_string());
-                let _ = window.navigate(origin.join(&path).expect("validated local path"));
-            }
+            navigated = shell.windows_created.load(Ordering::SeqCst);
+            navigate_to_control_center(&app, origin);
         }
         Err(error) => {
             log(error);
@@ -936,11 +933,29 @@ fn load(app: AppHandle, present: bool) -> bool {
         }
     }
     *shell.preparing.lock().unwrap() = false;
-    if result.is_ok() {
+    if let Ok(origin) = &result {
+        // A replacement built while this load ran skipped its own load
+        // (preparing was set); point it at the Control Center now.
+        if shell.windows_created.load(Ordering::SeqCst) != navigated {
+            navigate_to_control_center(&app, origin);
+        }
         // A second link may have arrived while the first navigation held the queue.
         navigate_to_pending_theme(&app, false);
     }
     result.is_ok()
+}
+
+fn navigate_to_control_center(app: &AppHandle, origin: &Url) {
+    let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
+        return;
+    };
+    let shell = app.state::<Shell>();
+    let pending = shell.pending_theme.lock().unwrap();
+    let path = pending
+        .as_ref()
+        .map(|theme_id| format!("/control-center/install/{theme_id}"))
+        .unwrap_or_else(|| "/control-center".to_string());
+    let _ = window.navigate(origin.join(&path).expect("validated local path"));
 }
 
 fn prepare_runtime(app: &AppHandle) -> Result<Url, String> {
