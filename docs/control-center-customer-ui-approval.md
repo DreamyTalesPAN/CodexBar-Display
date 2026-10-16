@@ -7302,3 +7302,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the busy computer entries above; nothing else changes.
 - Scope: the merge of main (with #615 and #620) into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — Windows Claude usage follows the Claude Code login (#630, follow-up to #650)
+
+- User approval: Marcus, 16.10.2026, Abstimmungschat (question 36, answer "ja"), for this package. This entry stands for the merge of main into `codex/pin-win-codexbar-vibetv11`, as the #619 entries do, and changes no UI file.
+- Approved customer-visible result: On Windows, Claude usage on VibeTV follows the account that Claude Code is signed in to, also when Firefox is signed in to a second claude.ai account. Only Claude's account source changes; no text, control or screen changes.
+- Scope: `docs/windows-shell.md`, `scripts/fetch-win-codexbar.ps1` (pinned Win-CodexBar v0.60.3-vibetv.11), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
