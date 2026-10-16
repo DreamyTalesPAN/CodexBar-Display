@@ -22,9 +22,8 @@ import {
   SetupWizardTitle,
 } from "./setup-wizard-screen";
 
-/** How long the Automatic tile rests on one provider before moving on. */
-// Short enough that the rotation reads as a rotation without waiting on it.
-const ROTATION_HOLD_MS = 1000;
+/** How long the Automatic tile rests on one provider before moving on (#631). */
+export const ROTATION_HOLD_MS = 2000;
 
 /** One AI provider that is switched on for this Mac. */
 export type SetupDisplayModeProvider = {
@@ -266,21 +265,30 @@ function rotationFrames(
 /**
  * Which provider the Automatic tile is on. It starts held on the first one, so
  * server output and a reduced-motion Mac render the same still tile; on such a
- * Mac the card's own description is what says the mode rotates.
+ * Mac the card's own description is what says the mode rotates. It also holds
+ * while the page is hidden: nobody sees it move, and the timer would keep a
+ * minimised window busy.
  */
 function useProviderRotation(count: number): { index: number } {
   const [animated, setAnimated] = useState(false);
+  const [visible, setVisible] = useState(true);
   const [index, setIndex] = useState(0);
 
   useEffect(() => {
     const query = window.matchMedia("(prefers-reduced-motion: reduce)");
     const sync = () => setAnimated(!query.matches);
+    const syncVisible = () => setVisible(document.visibilityState !== "hidden");
     sync();
+    syncVisible();
     query.addEventListener("change", sync);
-    return () => query.removeEventListener("change", sync);
+    document.addEventListener("visibilitychange", syncVisible);
+    return () => {
+      query.removeEventListener("change", sync);
+      document.removeEventListener("visibilitychange", syncVisible);
+    };
   }, []);
 
-  const moving = animated && count > 1;
+  const moving = animated && visible && count > 1;
 
   useEffect(() => {
     if (!moving) return;
