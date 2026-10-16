@@ -7530,3 +7530,15 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: unchanged; Brightness and the Settings screensaver switch stay as in the entries above. While another VibeTV's settings are still unknown, Brightness stays disabled, as the screensaver switch does.
 - Scope: `control-center-app.tsx`, its display preferences test. Pull-request branch only, not merge or release.
 - What's new: none — review fix, no customer-visible change of its own
+
+## 2026-10-16 — #674: approval marker after merging #645 and main (no visible change)
+
+
+
+- User approval: Merge of the stacked base (#645) and main for the hardware run; no visible change of its own; not seen by Paul. The UI review gate cannot read a clean merge commit as approval marker, so this entry stands for that merge. No new wording.
+
+- Approved customer-visible result: as approved in the #663 entry above (no visible change); nothing else changes.
+
+- Scope: the merge of the #645 branch and main into this branch and this approval record. Pull request branch only, not merge or release.
+
+- What's new: none — no customer-visible change of its own
