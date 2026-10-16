@@ -1960,6 +1960,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var backgroundUpdateCheckPending = false
     // Set while the probing check from the window's update prompt runs (#570).
     private var updateInformationProbe = false
+    // A probe asked for while another Sparkle session still finished; it runs
+    // when that cycle ends, because Sparkle ignores a probe meanwhile (#570).
+    private var updateInformationProbePending = false
     private var launchUpdateTurnedDown = false
     // Creating the controller starts Sparkle, which may show an overdue
     // scheduled check at once. A launch check skipped for a running VibeTV
@@ -2966,13 +2969,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             return
         }
         updaterStarted = true
+        let updater = updaterController.updater
+        guard !updater.sessionInProgress else {
+            updateInformationProbePending = true
+            return
+        }
         // A probing check only reports whether an update exists, and Sparkle's
         // background check may hold a found update back (gentle reminders)
         // without any alert. The delegate starts the visible check when the
         // probe finds an update, so a customer sees the update, never
         // "You're up to date" mid-setup (#570).
         updateInformationProbe = true
-        updaterController.updater.checkForUpdateInformation()
+        updater.checkForUpdateInformation()
 #endif
     }
 
@@ -5311,6 +5319,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         error: Error?
     ) {
         finishLaunchUpdateCheck(timedOut: false)
+        if updateCheck == .updateInformation {
+            updateInformationProbe = false
+        }
+        if updateInformationProbePending {
+            // The session that blocked the window's probe has ended (#570).
+            updateInformationProbePending = false
+            DispatchQueue.main.async {
+                self.checkForUpdatesInBackground()
+            }
+        }
     }
 #endif
 
