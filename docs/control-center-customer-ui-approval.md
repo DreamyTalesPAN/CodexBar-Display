@@ -7416,3 +7416,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: unchanged; the Settings screensaver switch, its line and all copy stay as in the entries above.
 - Scope: `control-center-app.tsx`, the late-read test in `control-center-app.display-preferences.test.tsx` and the settings fixtures in `control-center-app.screensaver-install.test.tsx`, `control-center-app.custom-theme-install.test.tsx`, `control-center-app.screensaver-setting.test.tsx`. Pull-request branch only, not merge or release.
 - What's new: none — refactor and test fixtures, no customer-visible change
+
+## 2026-10-16 — #663: Same device-switch reset as #645 for display brightness (no visible change)
+
+- User approval: none needed, no visible change. Same device-switch reset as #645 for display brightness (#663); no new wording; not seen by Paul.
+- Approved customer-visible result: unchanged; Brightness and the Settings screensaver switch stay as in the entries above. While another VibeTV's settings are still unknown, Brightness stays disabled, as the screensaver switch does.
+- Scope: `control-center-app.tsx`, its display preferences test. Pull-request branch only, not merge or release.
+- What's new: none — review fix, no customer-visible change of its own

@@ -770,6 +770,8 @@ it("keeps Show screensaver focused while it is saved", async () => {
 // the switch.
 const screensaverSwitch = () =>
   screen.getByRole("switch", { name: "Show screensaver" });
+const brightnessSlider = () => screen.getByRole("slider", { name: "Brightness" });
+const brightnessDisabled = () => brightnessSlider().hasAttribute("data-disabled");
 const openSettings = async (window: ReturnType<typeof startWindow>) => {
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   await window.wait(1);
@@ -883,6 +885,84 @@ it("keeps Show screensaver closed when a read for the first VibeTV answers after
   await window.wait(1);
   expect(screensaverSwitch().hasAttribute("disabled")).toBe(false);
   expect(screensaverSwitch().getAttribute("aria-checked")).toBe("true");
+  expect(window.settingsWrites()).toEqual([]);
+});
+
+// Issue #663: the brightness of the VibeTV before must not stay on screen, or a
+// change would send it to the VibeTV connected now.
+it("drops Brightness when another VibeTV is connected until its own value is read", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  await openSettings(window);
+  expect(brightnessSlider().getAttribute("aria-valuenow")).toBe("20");
+  expect(brightnessDisabled()).toBe(false);
+
+  let answer = () => {};
+  window.companion.holdSettingsRead = new Promise<void>((resolve) => {
+    answer = resolve;
+  });
+  window.companion.settings = { ...window.companion.settings, display: { brightnessPercent: 60 } };
+  window.companion.device = { ...device, deviceId: "16198106", target: "http://192.168.178.183" };
+  await window.wait(30);
+  expect(brightnessDisabled()).toBe(true);
+  expect(brightnessSlider().getAttribute("aria-valuenow")).not.toBe("20");
+
+  answer();
+  await window.wait(1);
+  expect(brightnessDisabled()).toBe(false);
+  expect(brightnessSlider().getAttribute("aria-valuenow")).toBe("60");
+  expect(window.settingsWrites()).toEqual([]);
+});
+
+it("keeps Brightness dropped when a read for the first VibeTV answers after another one is connected", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  await openSettings(window);
+  const hold = () => {
+    let answer = () => {};
+    const held = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    return { held, answer };
+  };
+  const other = { ...device, deviceId: "16198106", target: "http://192.168.178.183" };
+
+  // The Mac App is connected to another VibeTV; the status that says so is on
+  // its way...
+  const status = hold();
+  window.companion.holdStatus = status.held;
+  window.companion.device = other;
+  await window.wait(5);
+  window.companion.holdStatus = null;
+
+  // ...while a read of the first VibeTV's settings is on its way. Its answer
+  // is held and carries the first VibeTV's brightness.
+  const firstRead = hold();
+  window.companion.holdSettingsRead = firstRead.held;
+  await openScreensavers(window);
+  await openSettings(window);
+  // The read of the new VibeTV, issued once the status is in, is held too.
+  window.companion.settings = { ...window.companion.settings, display: { brightnessPercent: 60 } };
+  const secondRead = hold();
+  window.companion.holdSettingsRead = secondRead.held;
+  status.answer();
+  await window.wait(1);
+  expect(brightnessDisabled()).toBe(true);
+
+  // The first VibeTV's answer arrives late and is ignored: Brightness stays
+  // dropped until the new VibeTV's own read arrives.
+  window.companion.settingsAnswerDevice = device;
+  firstRead.answer();
+  await window.wait(1);
+  window.companion.settingsAnswerDevice = null;
+  expect(brightnessDisabled()).toBe(true);
+  expect(brightnessSlider().getAttribute("aria-valuenow")).not.toBe("20");
+
+  // The new VibeTV's own answer is applied.
+  secondRead.answer();
+  await window.wait(1);
+  expect(brightnessDisabled()).toBe(false);
+  expect(brightnessSlider().getAttribute("aria-valuenow")).toBe("60");
   expect(window.settingsWrites()).toEqual([]);
 });
 

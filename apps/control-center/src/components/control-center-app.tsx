@@ -624,26 +624,29 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     companionStatus === "online" && companionInstallationMode === "legacy",
   );
 
-  // The screensaver values of the VibeTV on screen: unsaved and saved ones,
-  // and the shown setting. Dropped when the VibeTV they belong to goes.
-  const resetStandbySettings = useCallback(() => {
+  // The settings on screen that belong to one VibeTV: Brightness, and the
+  // screensaver values with the shown setting. Unsaved and saved values alike
+  // are dropped when that VibeTV goes.
+  const resetDeviceSettings = useCallback(() => {
+    brightnessDirtyRef.current = null;
+    setBrightness(null);
     standbyDirtyRef.current = null;
     lastSavedStandbyRef.current = null;
     setStandby(null);
   }, []);
 
   const mergeDevice = useCallback((next: DeviceInfo) => {
-    // The screensaver values belong to one VibeTV. When another one is
+    // The settings on screen belong to one VibeTV. When another one is
     // connected they go, a read still on its way for the first one no longer
-    // counts (readSettings) and the next read starts anew, so the Show
-    // screensaver switch stays closed until the new VibeTV's own setting is
-    // read: a click would send the first VibeTV's time and brightness to it
-    // (Codex review of #645).
+    // counts (readSettings) and the next read starts anew, so Brightness and
+    // the Show screensaver switch stay closed until the new VibeTV's own
+    // settings are read: a click would send the first VibeTV's values to it
+    // (Codex review of #645, issue #663).
     const deviceId = next.deviceId?.trim();
     if (deviceId && deviceId !== settingsDeviceIdRef.current) {
       if (settingsDeviceIdRef.current) {
         settingsReadRef.current = null;
-        resetStandbySettings();
+        resetDeviceSettings();
       }
       settingsDeviceIdRef.current = deviceId;
     }
@@ -664,7 +667,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         ),
       };
     });
-  }, [resetStandbySettings]);
+  }, [resetDeviceSettings]);
 
   useEffect(() => {
     providerPreferencesRef.current = providerPreferences;
@@ -1025,18 +1028,22 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (setupGeneration !== setupGenerationRef.current) {
         return;
       }
+      // An answer that names another VibeTV than the one on screen is old: its
+      // values are not for the VibeTV connected now (see mergeDevice).
+      const sameDevice = payload.device?.deviceId === settingsDeviceIdRef.current;
       const loadedBrightness =
         payload.settings?.display?.brightnessPercent ?? null;
       if (
+        sameDevice &&
         brightnessDirtyRef.current === null &&
         writes.brightness === brightnessWrites
       ) {
         setBrightness(loadedBrightness);
       }
       if (
+        sameDevice &&
         standbyDirtyRef.current === null &&
-        writes.standby === standbyWrites &&
-        payload.device?.deviceId === settingsDeviceIdRef.current
+        writes.standby === standbyWrites
       ) {
         lastSavedStandbyRef.current = payload.settings?.standby ?? null;
         setStandby(payload.settings?.standby ?? null);
@@ -2051,9 +2058,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setConnectionModeChoiceRequired(
         payload.connectionModeChoiceRequired !== false,
       );
-      brightnessDirtyRef.current = null;
-      setBrightness(null);
-      resetStandbySettings();
+      resetDeviceSettings();
       setLastInstall(undefined);
       setThemeInstallStatus(null);
       setSupportDiagnostics(null);
@@ -2135,7 +2140,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     addEvent,
     markCompanionAccessBlocked,
     markCompanionUnavailable,
-    resetStandbySettings,
+    resetDeviceSettings,
     runCompanion,
     setDeviceRecoveryGate,
   ]);
