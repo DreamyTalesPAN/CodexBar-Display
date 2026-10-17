@@ -588,20 +588,44 @@ func exactProviderReadinessFromOutput(providerID string, raw []byte, commandErr,
 // their real switch state, and every switched-off provider appears as its own
 // row. An engine-level failure (timeout, config error, engine error) keeps the
 // bare stand-in -- an inventory read is no more trustworthy than the usage call
-// that just failed. A ready provider skips the extra call entirely.
+// that just failed. A ready provider skips the extra call, unless a row that is
+// not ready still lacks CodexBar's name; then the call only names those rows.
 func providersWithSwitchState(ctx context.Context, bin string, providers []ProviderReadiness) []ProviderReadiness {
 	standIn := len(providers) == 1 && providers[0].ID == "codexbar"
 	if standIn && providers[0].Status != ProviderNotConfigured {
 		return providers
 	}
+	ready, named := false, true
 	for _, provider := range providers {
 		if provider.Status == ProviderReady {
-			return providers
+			ready = true
+		} else if provider.ID != "codexbar" && !providerNameKnown(provider.ID) {
+			named = false
 		}
+	}
+	if ready && named {
+		return providers
 	}
 	raw, runErr := readProviderInventory(ctx, 5*time.Second, bin, runUsageCommandFn)
 	inventory, parseErr := parseProviderSettings(raw)
 	if runErr != nil || parseErr != nil || len(inventory) == 0 {
+		return providers
+	}
+	if ready {
+		// A ready provider keeps the answer as it is: the inventory only names
+		// the rows that are not ready, and adds no switched-off rows.
+		for i := range providers {
+			if providers[i].Status == ProviderReady || providers[i].ID == "codexbar" {
+				continue
+			}
+			for j := range inventory {
+				if inventory[j].ID == providers[i].ID {
+					providers[i].Label = inventory[j].Label
+					break
+				}
+			}
+			providers[i].Detail = providerResultWithSignIn(providers[i].ID, providers[i].Status, providers[i].SignInURL).Detail
+		}
 		return providers
 	}
 	settingByID := make(map[string]*ProviderSetting, len(inventory))
@@ -924,6 +948,14 @@ func rememberProviderDisplayName(id, label string) {
 	providerDisplayNames[id] = label
 }
 
+// providerNameKnown reports whether CodexBar's inventory has named the provider.
+func providerNameKnown(id string) bool {
+	providerDisplayNamesMu.Lock()
+	defer providerDisplayNamesMu.Unlock()
+	_, ok := providerDisplayNames[id]
+	return ok
+}
+
 // providerDisplayName is the label a provider's sentences use: CodexBar's
 // display name from the last inventory, else the Companion's own short name.
 func providerDisplayName(id string) string {
@@ -997,7 +1029,9 @@ func providerResultWithSignIn(id, status, signInURL string) ProviderReadiness {
 		result.Detail = "The usage engine is too old and needs a repair."
 		result.NextAction = "Repair the usage engine, then check again."
 	case ProviderNotConfigured:
-		result.Detail = "No usable AI provider is configured yet."
+		// The popup's sentence for this state (setup_required). The usage
+		// engine row keeps the setup-level sentence (engineRowDetail).
+		result.Detail = providerSignInSentence(id, label)
 		result.NextAction = "Open provider setup and connect an AI provider."
 	default:
 		result.Detail = providerCouldNotReadSentence(label)

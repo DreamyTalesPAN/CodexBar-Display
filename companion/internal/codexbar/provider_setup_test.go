@@ -1111,3 +1111,42 @@ func TestAggregateRowSentenceUsesTheInventoryLabel(t *testing.T) {
 		t.Fatalf("aggregate row = %+v", rows)
 	}
 }
+
+// A provider row that is not configured says the popup's sentence for the same
+// state (setup_required: sign in). The setup-level sentence stays on the usage
+// engine row only.
+func TestNotConfiguredProviderRowSaysThePopupSentence(t *testing.T) {
+	if got := providerResult("claude", ProviderNotConfigured).Detail; got != "Sign in to Claude so VibeTV can read its usage." {
+		t.Fatalf("claude not configured: %q", got)
+	}
+	if got := providerResult("gemini", ProviderNotConfigured).Detail; got != "VibeTV reads Gemini usage from Gemini's own app, so make sure it is installed and signed in on this computer." {
+		t.Fatalf("gemini not configured: %q", got)
+	}
+	if got := providerResult("codexbar", ProviderNotConfigured).Detail; got != "No usable AI provider is configured yet." {
+		t.Fatalf("engine row not configured: %q", got)
+	}
+}
+
+// A ready provider skips the inventory call, but a failing row built before any
+// inventory read must still name the provider as the inventory does. The ready
+// answer must not gain the switched-off provider rows the inventory lists.
+func TestMixedAggregateRowNamesTheProviderWithoutAddingRows(t *testing.T) {
+	forgetName := func() {
+		providerDisplayNamesMu.Lock()
+		defer providerDisplayNamesMu.Unlock()
+		delete(providerDisplayNames, "openai")
+	}
+	forgetName()
+	t.Cleanup(forgetName)
+	original := runUsageCommandFn
+	t.Cleanup(func() { runUsageCommandFn = original })
+	runUsageCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte(`[{"provider":"openai","displayName":"OpenAI API","enabled":true},{"provider":"gemini","displayName":"Gemini","enabled":false}]`), nil
+	}
+	rows := providersWithSwitchState(context.Background(), "codexbar-bin",
+		[]ProviderReadiness{providerResult("codex", ProviderReady), providerResult("openai", ProviderAuthRequired)})
+	if len(rows) != 2 || rows[0].Status != ProviderReady || rows[1].ID != "openai" || rows[1].Label != "OpenAI API" ||
+		rows[1].Detail != "VibeTV reads OpenAI API usage from OpenAI API's own app, so make sure it is installed and signed in on this computer." {
+		t.Fatalf("mixed aggregate rows = %+v", rows)
+	}
+}
