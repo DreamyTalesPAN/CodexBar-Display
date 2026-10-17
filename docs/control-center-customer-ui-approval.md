@@ -7467,3 +7467,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-17 — #591: a switched-on Copilot names the GitHub sign-in, not an own app
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #591); look unchanged except: the provider popup for a switched-on GitHub Copilot that CodexBar cannot read changes from "VibeTV reads GitHub Copilot usage from GitHub Copilot's own app, so make sure it is installed and signed in on this computer." → "Sign in to GitHub Copilot so VibeTV can read its usage." No button is added or removed ("Open setup guide" beside "OK" stays as it is).
+- Approved customer-visible result: provider popup for a switched-on GitHub Copilot that CodexBar cannot read: "VibeTV reads GitHub Copilot usage from GitHub Copilot's own app, so make sure it is installed and signed in on this computer." → "Sign in to GitHub Copilot so VibeTV can read its usage." Same title, same buttons; nothing else changes.
+- Scope: the sentence in `setupProviderDialogSentence` in `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its tests, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the wording is the existing sign-in sentence of the other providers, filled in with the provider name
+
+## 2026-10-17 — #591 Codex fix: the Copilot sentence names GitHub when CodexBar says "Copilot"
+
+- User approval: pending — Paul reviews this PR; the sentence is the one of the entry above, the fix only makes it hold for the name CodexBar 0.75.0 sends ("Copilot"). Not seen by Paul.
+- Approved customer-visible result: none beyond the entry above: "Sign in to GitHub Copilot so VibeTV can read its usage." instead of "Sign in to Copilot ..." for that name.
+- Scope: `setupProviderDialogSentence` in `apps/control-center/src/components/setup/setup-providers-screen.tsx` and its test. Pull request branch only, not merge or release.
+- What's new: none — a Codex review fix to the wording already approved above
