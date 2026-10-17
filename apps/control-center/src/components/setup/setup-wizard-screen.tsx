@@ -96,7 +96,7 @@ export function SetupWizardTitle({
   return (
     <h1
       className={cn(
-        "text-[28px] leading-[1.15] font-semibold tracking-[-0.01em] outline-none",
+        "mt-2 text-[32px] leading-tight font-black tracking-[-0.04em] outline-none",
         className,
       )}
       ref={ref}
@@ -115,6 +115,6 @@ export function SetupWizardSubtitle({
   className?: string;
 }) {
   return (
-    <p className={cn("text-[13px] text-muted-foreground", className)}>{children}</p>
+    <p className={cn("text-sm text-muted-foreground", className)}>{children}</p>
   );
 }
