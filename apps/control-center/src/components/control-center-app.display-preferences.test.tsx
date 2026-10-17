@@ -865,7 +865,7 @@ it("enters a changed display mode, provider switching and provider under Recent 
   fireEvent.click(screen.getByRole("button", { name: "Support" }));
   await window.wait(1);
   const entries = within(
-    screen.getByText("Recent activity").closest('[data-slot="card"]') as HTMLElement,
+    screen.getByText("Recent activity").closest("section") as HTMLElement,
   )
     .getAllByRole("listitem")
     .map((entry) => entry.textContent?.replace(/\d\d:\d\d:\d\d$/, ""));

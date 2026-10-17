@@ -1,36 +1,17 @@
 "use client";
 
 import {
-  Activity,
   AlertTriangle,
-  Clock,
   RefreshCw,
 } from "lucide-react";
+import type { ReactNode } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
 import {
   Item,
   ItemContent,
   ItemDescription,
   ItemGroup,
-  ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
@@ -106,178 +87,178 @@ export function LogsScreen({
     copyForHost(formatCustomerSupportText(value), windowsHost);
 
   return (
-    <div className="mx-auto grid max-w-[1180px] gap-4 py-6">
-      <div className="grid items-stretch gap-4 lg:grid-cols-2">
-        <Card size="sm">
-          <CardHeader>
-            <CardTitle asChild><h2>Connected VibeTV</h2></CardTitle>
-            <CardDescription>
-              {deviceConnected
-                ? copyForHost(
-                    "The VibeTV currently controlled by this Mac.",
-                    windowsHost,
-                  )
-                : "No VibeTV is currently connected."}
-            </CardDescription>
-            <CardAction>
-              <Badge variant={deviceConnected ? "default" : "outline"}>
-                {deviceConnected ? "Connected" : "Not connected"}
-              </Badge>
-            </CardAction>
-          </CardHeader>
-          <CardContent className="flex-1">
-            <dl className="grid gap-2 sm:grid-cols-2">
-              <SupportFact
-                label="Device"
-                value={device?.deviceId || device?.board || "Not available"}
-              />
-              {/* A VibeTV on the cable has no address (issue #558). */}
-              {deviceUsesCable(device) ? (
-                <SupportFact label="Connection" value="USB-C cable" />
-              ) : (
-                <SupportFact
-                  label="Address"
-                  value={formatDeviceAddress(device?.target)}
-                />
-              )}
-              <SupportFact
-                label="Firmware"
-                value={device?.firmware || "Not available"}
-              />
-              <SupportFact
-                label="Active theme"
-                value={activeThemeLabel(themes, device)}
-              />
-              {wifi ? (
-                <SupportFact
-                  label="WiFi signal"
-                  value={wifi.weak ? `Weak (${wifi.rssi} dBm)` : `${wifi.rssi} dBm`}
-                />
-              ) : null}
-            </dl>
-          </CardContent>
-          {onRunSetupAgain ? (
-            <CardFooter className="justify-end">
-              <Button
-                className="w-full sm:w-auto"
-                disabled={Boolean(busyAction)}
-                onClick={onRunSetupAgain}
-                type="button"
-                variant="outline"
-              >
-                {busyAction === "reset-setup" ? (
-                  <Spinner data-icon="inline-start" />
-                ) : (
-                  <RefreshCw data-icon="inline-start" aria-hidden />
-                )}
-                {busyAction === "reset-setup" ? "Resetting setup" : "Run setup again"}
-              </Button>
-            </CardFooter>
-          ) : null}
-        </Card>
-
-        <Card size="sm">
-          <CardHeader>
-            <CardTitle asChild><h2>Support report</h2></CardTitle>
-            <CardDescription>
-              Create a diagnostic file when support asks for it.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-1 items-center">
-            <SupportReportActions
-              creating={supportReportBusy}
-              diagnostics={diagnostics}
-              onCreate={onLoadDiagnostics}
-              windowsHost={windowsHost}
-            />
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card size="sm">
-        <CardHeader>
-          <CardTitle asChild><h2>Diagnostics</h2></CardTitle>
-        </CardHeader>
-        <CardContent>
-          <DiagnosticsPanel
-            diagnostics={diagnostics}
-            onRepairUsageEngine={onRepairUsageEngine}
-            onRun={onLoadDiagnostics}
-            repairing={repairingUsageEngine}
-            running={supportReportBusy}
-            windowsHost={windowsHost}
+    <div className="mx-auto grid max-w-[1180px] py-6">
+      <SupportSection
+        description={
+          deviceConnected
+            ? copyForHost(
+                "The VibeTV currently controlled by this Mac.",
+                windowsHost,
+              )
+            : "No VibeTV is currently connected."
+        }
+        title="Connected VibeTV"
+      >
+        <dl className="grid">
+          <SupportFact
+            label="Status"
+            value={deviceConnected ? "Connected" : "Not connected"}
           />
-        </CardContent>
-      </Card>
-
-      <Card size="sm">
-        <CardHeader>
-          <CardTitle asChild><h2>Setup log</h2></CardTitle>
-        </CardHeader>
-        <CardContent>
-          <SetupEventLog windowsHost={windowsHost} />
-        </CardContent>
-      </Card>
-
-      <Card size="sm">
-        <CardHeader>
-          <CardTitle asChild><h2>Recent activity</h2></CardTitle>
-          <CardDescription>Connection and setup changes from this session.</CardDescription>
-          {onRefresh ? (
-            <CardAction>
-              <Button disabled={busyAction === "logs"} onClick={onRefresh} size="sm" variant="outline">
-                {busyAction === "logs" ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" aria-hidden />}
-                {busyAction === "logs" ? "Refreshing" : "Refresh"}
-              </Button>
-            </CardAction>
-          ) : null}
-        </CardHeader>
-        <CardContent className="grid gap-4">
-          {lastError ? (
-            <Alert>
-              <AlertTriangle aria-hidden />
-              <AlertTitle>{supportText(lastError.message)}</AlertTitle>
-              <AlertDescription>{supportText(lastError.nextAction)}</AlertDescription>
-            </Alert>
-          ) : null}
-          {events.length ? (
-            <div className="max-h-[320px] overflow-y-auto rounded-lg border">
-              <ItemGroup className="gap-0 divide-y">
-                {events.map((event) => (
-                  <Item className="rounded-none border-0" key={event.id} role="listitem" size="sm">
-                    <ItemMedia variant="icon"><Activity aria-hidden /></ItemMedia>
-                    <ItemContent>
-                      <ItemTitle>{supportText(event.label)}</ItemTitle>
-                      {event.detail ? <ItemDescription className="line-clamp-none break-words">{supportText(event.detail)}</ItemDescription> : null}
-                    </ItemContent>
-                    <div className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-                      <Clock size={14} aria-hidden />
-                      <span>{event.timestamp || "Session"}</span>
-                    </div>
-                  </Item>
-                ))}
-              </ItemGroup>
-            </div>
+          <SupportFact
+            label="Device"
+            value={device?.deviceId || device?.board || "Not available"}
+          />
+          {/* A VibeTV on the cable has no address (issue #558). */}
+          {deviceUsesCable(device) ? (
+            <SupportFact label="Connection" value="USB-C cable" />
           ) : (
-            <Empty className="bg-muted/50 py-6">
-              <EmptyHeader>
-                <EmptyMedia variant="icon"><Activity aria-hidden /></EmptyMedia>
-                <EmptyTitle>No recent activity</EmptyTitle>
-                <EmptyDescription>Connection activity will appear here.</EmptyDescription>
-              </EmptyHeader>
-            </Empty>
+            <SupportFact
+              label="Address"
+              value={formatDeviceAddress(device?.target)}
+            />
           )}
-        </CardContent>
-      </Card>
+          <SupportFact
+            label="Firmware"
+            value={device?.firmware || "Not available"}
+          />
+          <SupportFact
+            label="Active theme"
+            value={activeThemeLabel(themes, device)}
+          />
+          {wifi ? (
+            <SupportFact
+              label="WiFi signal"
+              value={wifi.weak ? `Weak (${wifi.rssi} dBm)` : `${wifi.rssi} dBm`}
+            />
+          ) : null}
+        </dl>
+        {onRunSetupAgain ? (
+          <div>
+            <Button
+              className="w-full sm:w-auto"
+              disabled={Boolean(busyAction)}
+              onClick={onRunSetupAgain}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {busyAction === "reset-setup" ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <RefreshCw data-icon="inline-start" aria-hidden />
+              )}
+              {busyAction === "reset-setup" ? "Resetting setup" : "Run setup again"}
+            </Button>
+          </div>
+        ) : null}
+      </SupportSection>
+
+      <SupportSection
+        description="Create a diagnostic file when support asks for it."
+        title="Support report"
+      >
+        <SupportReportActions
+          creating={supportReportBusy}
+          diagnostics={diagnostics}
+          onCreate={onLoadDiagnostics}
+          size="sm"
+          windowsHost={windowsHost}
+        />
+      </SupportSection>
+
+      <SupportSection title="Diagnostics">
+        <DiagnosticsPanel
+          diagnostics={diagnostics}
+          onRepairUsageEngine={onRepairUsageEngine}
+          onRun={onLoadDiagnostics}
+          repairing={repairingUsageEngine}
+          running={supportReportBusy}
+          windowsHost={windowsHost}
+        />
+      </SupportSection>
+
+      <SupportSection title="Setup log">
+        <SetupEventLog windowsHost={windowsHost} />
+      </SupportSection>
+
+      <SupportSection
+        description="Connection and setup changes from this session."
+        title="Recent activity"
+      >
+        {lastError ? (
+          <Alert>
+            <AlertTriangle aria-hidden />
+            <AlertTitle>{supportText(lastError.message)}</AlertTitle>
+            <AlertDescription>{supportText(lastError.nextAction)}</AlertDescription>
+          </Alert>
+        ) : null}
+        {events.length ? (
+          <div className="max-h-[320px] overflow-y-auto">
+            <ItemGroup className="gap-0 divide-y">
+              {events.map((event) => (
+                <Item className="rounded-none border-0 px-0" key={event.id} role="listitem" size="sm">
+                  <ItemContent>
+                    <ItemTitle>{supportText(event.label)}</ItemTitle>
+                    {event.detail ? <ItemDescription className="line-clamp-none break-words">{supportText(event.detail)}</ItemDescription> : null}
+                  </ItemContent>
+                  <span className="shrink-0 self-start text-sm text-muted-foreground">
+                    {event.timestamp || "Session"}
+                  </span>
+                </Item>
+              ))}
+            </ItemGroup>
+          </div>
+        ) : (
+          <div className="grid gap-1">
+            <p className="text-sm font-semibold">No recent activity</p>
+            <p className="text-sm text-muted-foreground">Connection activity will appear here.</p>
+          </div>
+        )}
+        {onRefresh ? (
+          <div>
+            <Button
+              className="h-auto px-0"
+              disabled={busyAction === "logs"}
+              onClick={onRefresh}
+              size="sm"
+              variant="link"
+            >
+              {busyAction === "logs" ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" aria-hidden />}
+              {busyAction === "logs" ? "Refreshing" : "Refresh"}
+            </Button>
+          </div>
+        ) : null}
+      </SupportSection>
     </div>
+  );
+}
+
+/** One Support section: the heading and its note on the left, the content on the right, a divider above. */
+function SupportSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="grid gap-4 border-t py-8 first:border-t-0 first:pt-0 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-10">
+      <div className="grid content-start gap-1">
+        <h2 className="text-sm font-semibold">{title}</h2>
+        {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
+      </div>
+      <div className="grid min-w-0 content-start gap-4">{children}</div>
+    </section>
   );
 }
 
 function SupportFact({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded-lg bg-muted/50 p-3">
-      <dt className="text-xs font-semibold uppercase text-muted-foreground">{label}</dt>
-      <dd className="mt-1 break-words text-sm font-medium">{value}</dd>
+    <div className="grid min-w-0 grid-cols-[minmax(0,180px)_minmax(0,1fr)] gap-4 border-b py-2.5 text-sm last:border-b-0">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="break-words">{value}</dd>
     </div>
   );
 }

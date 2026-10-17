@@ -7568,3 +7568,16 @@ issue scope, or release permission never implies UI permission.
 - Visible text: none changed.
 - Scope: `apps/control-center/src/components/setup/setup-device-card.tsx` (uses the shared `SelectionDot`), `setup-selectable-card.tsx` (removes the now unused `SelectionCheck`), `setup-device-screen.test.tsx`.
 - What's new: none — the same round mark as the connection cards of step 4.
+## 2026-10-17 — Support page in the calm look, variant A (#713)
+
+- User approval: pending — Paul reviews this PR (calm redesign Support, variant A, #713); look: sections with the heading on the left and the content on the right, divided by lines instead of boxes; facts and checks as rows; Create report in lime, Refresh as an underlined link under the activity list.
+- Approved customer-visible result: Support page, variant A of the calm redesign (`ui/calm/updates-support/support-A.png`). Texts stay the same. The "Connected" badge becomes a Status row ("Connected" or "Not connected"). Connected VibeTV, Support report, Diagnostics, Setup log and Recent activity are sections with the heading and its note on the left, the content on the right, a line between sections. Fact rows have a line between them and no tiles. Diagnostic checks are one row each: name, detail, status. The support report buttons and Run diagnostics are smaller; Create report or Create again is the lime button. Refresh moves under the activity list as an underlined link. The Setup log keeps its frame until the setup area PR. Updates is not changed.
+- Scope: `apps/control-center/src/components/logs-screen.tsx`, `diagnostics-panel.tsx`, `support-report-actions.tsx`, its test `diagnostics-panel.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — look only, no new capability
+
+## 2026-10-17 — Support page calm look: narrow-width follow-up to Codex review (#713, #750)
+
+- User approval: pending — Paul reviews this PR (calm redesign Support, variant A, #713); look: at desktop widths unchanged from the entry above; below 1024px the sections stack (heading above content), and below 1280px each diagnostic check stacks as name, detail, status instead of three columns.
+- Approved customer-visible result: the same as the entry above at desktop widths. On narrow windows the section label no longer sits beside its content and the diagnostic checks no longer squeeze the detail text into a narrow column. Texts, buttons and behaviour unchanged.
+- Scope: `apps/control-center/src/components/logs-screen.tsx`, `diagnostics-panel.tsx`, the test `control-center-app.display-preferences.test.tsx` (Recent activity scope is now the section, not the card) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — layout breakpoints only, no new capability

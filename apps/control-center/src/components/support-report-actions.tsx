@@ -16,6 +16,8 @@ import {
 type Props = {
   align?: "start" | "center";
   createLabel?: string;
+  /** Button height: "sm" for the Support page's quieter row. */
+  size?: "default" | "sm";
   creating?: boolean;
   diagnostics?: SupportDiagnostics | null;
   emphasis?: "primary" | "secondary";
@@ -31,6 +33,7 @@ export function SupportReportActions({
   diagnostics,
   emphasis = "primary",
   onCreate,
+  size = "default",
   windowsHost = false,
 }: Props) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
@@ -111,7 +114,7 @@ export function SupportReportActions({
           <Button
             className="w-full sm:w-auto"
             disabled
-            type="button"
+            size={size} type="button"
             variant={createButtonVariant}
           >
             <Spinner data-icon="inline-start" />
@@ -122,7 +125,7 @@ export function SupportReportActions({
             <Button
               className="w-full sm:w-auto"
               onClick={copyDiagnostics}
-              type="button"
+              size={size} type="button"
               variant="outline"
             >
               <Clipboard data-icon="inline-start" aria-hidden />
@@ -131,7 +134,7 @@ export function SupportReportActions({
             <Button
               className="w-full sm:w-auto"
               onClick={downloadDiagnostics}
-              type="button"
+              size={size} type="button"
               variant="outline"
             >
               <Download data-icon="inline-start" aria-hidden />
@@ -142,7 +145,7 @@ export function SupportReportActions({
                 className="w-full sm:w-auto"
                 disabled={creating}
                 onClick={createDiagnostics}
-                type="button"
+                size={size} type="button"
                 variant={createButtonVariant}
               >
                 <RefreshCw data-icon="inline-start" aria-hidden />
@@ -155,7 +158,7 @@ export function SupportReportActions({
             className="w-full sm:w-auto"
             disabled={creating}
             onClick={createDiagnostics}
-            type="button"
+            size={size} type="button"
             variant={createButtonVariant}
           >
             <FileText data-icon="inline-start" aria-hidden />
