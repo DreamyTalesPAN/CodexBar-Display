@@ -7675,3 +7675,10 @@ issue scope, or release permission never implies UI permission.
   - Notices under ← and the Send reason line: unchanged.
 - Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, `apps/control-center/src/components/theme-studio/editable-theme-preview.tsx`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — look only, no new wording
+
+## 2026-10-17 — Calm Theme Studio, variant A (#713): Codex review fix, bubble stays content-sized
+
+- User approval: none needed for this entry; it is a Codex review fix (P2) to the sent-message bubble of the entry above: a finished message is a compact bubble on the right, as in the approved picture, not a bar across the chat. Not seen by Paul; the entry above stays pending.
+- Approved customer-visible result: as in the entry above; the sent bubble keeps its width to its text (up to 88% of the chat column) and sits on the right.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and this record. Pull request branch only, not merge or release.
+- What's new: none — refinement of the entry above

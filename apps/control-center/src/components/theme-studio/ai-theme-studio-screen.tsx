@@ -128,7 +128,7 @@ function planningContext(document: ThemeStudioDocument, selected: number[] = [])
 // The customer's turn: its reference images as small thumbnails inside the same bubble, left of the text.
 function userTurn(text: string | null, images: { name: string; data: string }[] = []) {
   return (
-    <div className="ml-8 flex items-center gap-2.5 self-end rounded-xl bg-muted px-3 py-2">
+    <div className="ml-auto flex w-fit max-w-[88%] items-center gap-2.5 rounded-xl bg-muted px-3 py-2">
       {images.map((image, i) => (
         <span key={i} role="img" aria-label={image.name} title={image.name} className="size-8 shrink-0 rounded-md bg-cover bg-center" style={{ backgroundImage: `url(data:image/png;base64,${image.data})` }} />
       ))}
