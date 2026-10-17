@@ -7479,3 +7479,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the same as in the entry above, except for the case in the "before" line of this entry; the earlier entry's words "came after a finished update" are not exact any more, since no times are compared. Wording, buttons and layout stay the same.
 - Scope: `apps/control-center/src/components/updates-screen.tsx`, its test, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — same removed notice as in the entry above, no new capability
+
+## 2026-10-17 — #687 review fix: a failed firmware check hides "Update complete" only when it is newer than the update
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #687, Codex review); look unchanged except: a failed firmware check that was recorded before the finished update → before: the "Update complete" notice is removed (as in the entry above); after: the "Update complete" notice stays and "Update check failed" is shown under it. A failed check recorded after the update still removes the notice.
+- Approved customer-visible result: wording, buttons and layout stay the same. The notice hides only when the failed check is newer than the finished update. Live completions now store their finish as an exact instant, so this order is known for them too.
+- Scope: `apps/control-center/src/components/updates-screen.tsx` and its test, `apps/control-center/src/components/control-center-app.tsx` (firmware finish times), `apps/control-center/src/components/update-jobs.ts` (firmware status fallback), this approval record. Pull request branch only, not merge or release.
+- What's new: none — ordering fix only, no new capability

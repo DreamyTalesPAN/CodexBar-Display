@@ -3009,7 +3009,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           phase: "attention",
           outcome: "firmware_current_theme_attention",
           startedAt,
-          finishedAt: formatTime(),
+          finishedAt: new Date().toISOString(),
           message,
           progress: 100,
           logs: customerUpdateLogs([...initialLogs, message]),
@@ -3024,7 +3024,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setFirmwareUpdateStatus({
         phase: "complete",
         startedAt,
-        finishedAt: formatTime(),
+        finishedAt: new Date().toISOString(),
         message: "Update complete.",
         progress: 100,
         logs: customerUpdateLogs([...initialLogs, "Update complete."]),
@@ -3093,7 +3093,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       if (finishedJob.phase === "attention") {
         const logs = customerUpdateLogs(finishedJob.logs, initialLogs);
-        const finishedAt = formatTime();
+        const finishedAt = new Date().toISOString();
         setFirmwareUpdateStatus({
           phase: "attention",
           stage: finishedJob.stage,
@@ -3119,7 +3119,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           detail:
             finishedJob.message ||
             "The firmware is current, but the connection or picture still needs repair.",
-          at: finishedAt,
           tone: "attention",
         });
         lastFirmwareErrorRef.current = {
@@ -3133,7 +3132,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         return false;
       }
       const logs = customerUpdateLogs(finishedJob.logs, initialLogs);
-      const finishedAt = formatTime();
+      const finishedAt = new Date().toISOString();
       const installedFirmware = finishedJob.result?.firmware?.trim() || "";
       if (installedFirmware) {
         setDevice((current) =>
@@ -3184,7 +3183,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         addEvent({
           label: "VibeTV update needs attention",
           detail: message,
-          at: finishedAt,
           tone: "attention",
         });
         return true;
@@ -3209,7 +3207,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           addEvent({
             label: "VibeTV update needs attention",
             detail: message,
-            at: finishedAt,
             tone: "attention",
           });
           return true;
@@ -3229,7 +3226,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             phase: "attention",
             outcome: "firmware_current_theme_attention",
             startedAt,
-            finishedAt: formatTime(),
+            finishedAt: new Date().toISOString(),
             message,
             progress: 100,
             logs: customerUpdateLogs([...logs, message]),
@@ -3246,7 +3243,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setFirmwareUpdateStatus({
         phase: "complete",
         startedAt,
-        finishedAt: formatTime(),
+        finishedAt: new Date().toISOString(),
         message: "Update complete.",
         progress: 100,
         logs: customerUpdateLogs([...completedLogs, "Update complete."]),
@@ -3272,7 +3269,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setFirmwareUpdateStatus({
         phase: "error",
         startedAt,
-        finishedAt: formatTime(),
+        finishedAt: new Date().toISOString(),
         message: normalized.nextAction,
         progress: 100,
         logs: [...initialLogs, normalized.message, normalized.nextAction],
@@ -3330,7 +3327,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         phase: "attention",
         outcome: "firmware_current_theme_attention",
         startedAt,
-        finishedAt: formatTime(),
+        finishedAt: new Date().toISOString(),
         message,
         progress: 100,
         logs: customerUpdateLogs([...logs, message]),
@@ -3341,7 +3338,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setFirmwareUpdateStatus({
       phase: "complete",
       startedAt,
-      finishedAt: formatTime(),
+      finishedAt: new Date().toISOString(),
       message: "Update complete.",
       progress: 100,
       logs: customerUpdateLogs([...logs, "Update complete."]),
