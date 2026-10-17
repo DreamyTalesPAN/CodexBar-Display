@@ -238,6 +238,7 @@ describe("Theme Studio send reason", () => {
     expect(reason?.textContent).toBe("Add at least one visual element.");
     const header = document.querySelector("header") as HTMLElement;
     expect(header.nextElementSibling?.contains(reason)).toBe(true);
+    expect(reason?.getAttribute("role")).toBe("status");
     expect(tooltipOf(sendButton())?.getAttribute("title")).toBe("Add at least one visual element.");
     expect(sendButton().hasAttribute("title")).toBe(false);
     expect(sendButton().getAttribute("aria-describedby")).toBe("send-blocked-reason");

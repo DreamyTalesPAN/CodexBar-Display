@@ -1110,7 +1110,7 @@ export function AIThemeStudioScreen({
         {notices.length || sendBlockedReason ? (
           <div className="flex flex-col gap-1 pt-3">
             {notices.map((text, i) => <p key={i} role="status" className="text-sm text-muted-foreground [overflow-wrap:anywhere]">{text}</p>)}
-            {sendBlockedReason ? <p id="send-blocked-reason" className="text-sm text-muted-foreground [overflow-wrap:anywhere]">{sendBlockedReason}</p> : null}
+            {sendBlockedReason ? <p id="send-blocked-reason" role="status" className="text-sm text-muted-foreground [overflow-wrap:anywhere]">{sendBlockedReason}</p> : null}
           </div>
         ) : null}
           <main className="flex min-h-0 flex-1 flex-col gap-6 pt-2 lg:flex-row">
