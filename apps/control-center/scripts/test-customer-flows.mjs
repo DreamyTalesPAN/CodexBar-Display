@@ -1051,7 +1051,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testOverviewSeparatesMacAppAndFirmwareVersions(
+    await testOverviewShowsOnlyTheVibeTV(
       browser,
       appContext.appUrl,
     );
@@ -9885,7 +9885,7 @@ async function testSavedAddressReconnectsReadOnly(browser, appUrl) {
   await page.close();
 }
 
-async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
+async function testOverviewShowsOnlyTheVibeTV(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
   });
@@ -9956,10 +9956,15 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByText("VibeTV is connected").waitFor({ timeout: 10_000 });
-  await page.getByText("Mac App").waitFor({ timeout: 10_000 });
-  await page.getByText("Online 1.0.33").waitFor({ timeout: 10_000 });
-  await page.getByText("VibeTV firmware").waitFor({ timeout: 10_000 });
-  await page.getByText("1.0.32").waitFor({ timeout: 10_000 });
+  // The calm Overview shows only the VibeTV: no Mac App or firmware tiles (#713).
+  assert(
+    (await page.getByText("Mac App", { exact: true }).count()) === 0,
+    "Overview must not show a Mac App tile",
+  );
+  assert(
+    (await page.getByText("VibeTV firmware", { exact: true }).count()) === 0,
+    "Overview must not show a firmware tile",
+  );
   await page
     .getByRole("img", {
       name: /Rendered VibeTV theme synthwave showing Codex, Weekly 0% used, Codex Spark Weekly 63% used/,

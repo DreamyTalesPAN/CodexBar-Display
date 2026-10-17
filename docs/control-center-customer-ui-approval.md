@@ -7553,3 +7553,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: on Windows without a GPU the Overview shows the flat VibeTV preview (no 3D case). No text changes.
 - Scope: `apps/control-center/src/components/vibetv-3d-support.ts`, `apps/control-center/src/components/vibetv-3d-support.test.ts`, and this approval record. Codex review fix on PR #755 only; not merge or release.
 - What's new: none — no new content
+
+## 2026-10-18 — Customer flow: Overview check no longer waits for the removed tiles (#755)
+
+- User approval: none needed — no visible change; the Overview is unchanged (calm Overview, #713). This entry records a customer-flow script fix: the Overview check asserts that the Mac App and firmware tiles are absent instead of waiting for them, after CI failed on the removed tiles.
+- Approved customer-visible result: none. The test script changes what it waits for, not what the customer sees.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
