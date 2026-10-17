@@ -7481,3 +7481,20 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the entry above. When the Settings column is narrower than the label column plus the control, the control moves below its label instead of being squeezed or clipped. The setup explanations wrap the same way. Brightness shows "Loading" or "Not supported" in full. No new text, button or dialog.
 - Scope: `apps/control-center/src/components/settings-screen.tsx` (wrap and width classes only), `apps/control-center/scripts/test-customer-flows.mjs` (the Settings wait now uses the "Brightness" heading), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — a layout fix of the same Settings page needs no notice.
+## 2026-10-17 — Appearance (calm redesign A): Themes and Screensavers as cards
+- User approval: Paul 17.10. approved Appearance A; Themes per themes-A2-oneRow with Install as lime primary at the right edge after Edit; status texts in the Install slot (#713).
+- Approved customer-visible result: On Appearance › Themes and Appearance › Screensavers each theme or screensaver is a card, up to three in a row, with its picture on top and its name below, in 13 px semibold. The page title is 28 px semibold. On a row, Edit is an underlined text link, Delete (own themes only) is an underlined text link instead of a red button, and Install is the lime primary button at the right edge. A row with nothing to install shows its status in the same slot as text, `Installed` with a check mark, or the same disabled reason as before. Words unchanged. Not as in the picture: on Screensavers, Edit stays on the name row (the picture puts it below); the install progress keeps its progress bar and notice (no process-step list yet); an update keeps the word `Update` on the button (the picture shows `Update needed`); the notice `Screensaver is turned off` with the switch stays as it is (#645 is still open).
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (row layout, buttons, title size, picture size) and its test `theme-library-screen.test.tsx` (the label matcher allows the check mark before the label), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — layout and button variants only, no new words
+
+## 2026-10-17 — Appearance cards: three columns from 1280 px, card corner radius (Codex review fix on #754)
+- User approval: Not separately approved by Paul; a fix of two findings of the Codex review of #754 on the entry above, which Paul approved. Paul will see it in his Windows test.
+- Approved customer-visible result: On Appearance › Themes and Appearance › Screensavers the cards are in three columns only from 1280 px wide (before: from 1024 px), in two columns from 640 px, and in one below that. On a narrow card the name and the row's buttons stack instead of overlapping. The card corners use the card radius token (0.75 rem), as the other cards do (before: 0.875 rem). Words, buttons and states are unchanged.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (grid breakpoint, row wrapping, card radius) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — layout breakpoint and corner radius only
+
+## 2026-10-17 — Appearance cards: name wraps above the row's buttons at narrow widths (Codex review fix on #754)
+- User approval: Not separately approved by Paul; a fix of a Codex review finding on the entry above, which Paul approved. Paul will see it in his Windows test.
+- Approved customer-visible result: On Appearance › Themes and Appearance › Screensavers, at a narrow card width the name, and its Custom mark, get at least 11 rem, and the row's buttons move to a line of their own below the name instead of covering it (before: the name could shrink to a few pixels). Words, buttons and states are unchanged.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (minimum width of the name) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — layout only, no new words
