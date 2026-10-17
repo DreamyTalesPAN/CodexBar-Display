@@ -7587,3 +7587,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the Theme Studio AI row in Settings shows only its status ("Connected" / "Not connected") and its key button, under the section label "Theme Studio AI". The key dialog keeps its title.
 - Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx` (the row), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — refinement of #638
+
+## 2026-10-17 — #551: a disabled "Send to VibeTV" says why
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #551); look unchanged except: the reason line and tooltip described in the next line.
+- Approved customer-visible result: pending — before: with an empty design, or a design that breaks a VibeTV limit, "Send to VibeTV" is off and nothing says why (the chat alert shows the reason only once an element exists). After: the same sentence as that chat alert appears under ← in the notice line (grey, same size as the other notices) and as the button's tooltip; empty design: "Add at least one visual element." Busy, saving and sending show no reason.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the sentences already exist in the app; the notice line and tooltip are the only new places
