@@ -1340,7 +1340,7 @@ function InlineInstallProgress({
       text,
       tone: "done" as const,
     })),
-    { id: `${status.logs.length}-${detail}`, text: detail },
+    { id: `${status.logs.length - 1}-${detail}`, text: detail },
   ];
   return (
     <div className="flex flex-col gap-3" ref={noticeRef} role="status" aria-live="polite">

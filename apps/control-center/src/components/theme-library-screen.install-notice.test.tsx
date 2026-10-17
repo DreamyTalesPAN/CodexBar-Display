@@ -103,6 +103,20 @@ it("shows the install steps as the setup log, finished ones paler", () => {
   expect(steps?.querySelector("[class*=vibetv-caret-blink]")).toBeNull();
 });
 
+it("keeps a step's line when it turns finished, so it does not fly in again", () => {
+  const view = render(list({ ...install, logs: ["Preparing theme install.", "Uploading theme files.", "Checking VibeTV."] }));
+  const before = screen.getByText("> Checking VibeTV.");
+
+  view.rerender(
+    list({
+      ...install,
+      logs: ["Preparing theme install.", "Uploading theme files.", "Checking VibeTV.", "Preparing theme files."],
+    }),
+  );
+
+  expect(screen.getByText("> Checking VibeTV.")).toBe(before);
+});
+
 // Seen in the Windows app (#579): the notice already read "Installed" while
 // the row's button said "Wait" for about two seconds, because the app reads
 // VibeTV's settings after an install and the button followed that read.
