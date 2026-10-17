@@ -185,23 +185,40 @@ func fetchDashboardUsage(ctx context.Context, providerIDs []string, fetch func(c
 
 var engineInventory engineAnswer[[]byte]
 
+// inventorySettingsPath is the settings file the inventory is built from:
+// Win-CodexBar's settings.json on Windows, and on the Mac the CodexBar config
+// the CLI is pointed at (the path commandEnvironment passes as CODEXBAR_CONFIG).
+func inventorySettingsPath(ctx context.Context) string {
+	if runtime.GOOS == "windows" {
+		return windowsSettingsPath()
+	}
+	if path := configPathFromContext(ctx); path != "" {
+		return path
+	}
+	path, _ := macConfigPath("")
+	return path
+}
+
 // readProviderInventory runs the inventory command with the caller's runner.
-// Where engine answers are reused (Windows, reuseEngineAnswers) it returns
-// the last answer instead for as long as the CLI and its settings.json are
-// unchanged, for the life of the engine process: Win-CodexBar 0.60.3 builds
-// the inventory from those two files and nothing else. Every write to
-// settings.json moves its stamp, the CLI's own on a provider switch included,
-// and SetProviderEnabled forgets the answer as well. Only an answer that
-// parses is kept. Win-CodexBar answers with its default switches, Claude and
-// Codex on, and exit code 0 when it cannot read settings.json; such an answer
-// stays until settings.json changes or the engine restarts (#555: a minute
-// limit read the inventory again every minute with the window open).
+// Where engine answers are reused (reuseEngineAnswers) it returns the last
+// answer instead for as long as the CLI and its settings file are unchanged,
+// for the life of the engine process: Win-CodexBar 0.60.3 builds the inventory
+// from those two files and nothing else. On the Mac the same rule uses the
+// CodexBar config the CLI reads (CODEXBAR_CONFIG); that the Mac CLI takes its
+// inventory from that file alone is not yet checked on a Mac.
+// Every write to the settings file moves its stamp, the CLI's own on a
+// provider switch included, and SetProviderEnabled forgets the answer as well.
+// Only an answer that parses is kept. Win-CodexBar answers with its default
+// switches, Claude and Codex on, and exit code 0 when it cannot read
+// settings.json; such an answer stays until settings.json changes or the
+// engine restarts (#555: a minute limit read the inventory again every minute
+// with the window open).
 //
 // The check of one named provider -- "Check again" on its row, and the check
 // after it was switched on -- does not come through here; it always asks the
 // CLI (probeProviderSetup).
 func readProviderInventory(ctx context.Context, timeout time.Duration, bin string, run func(context.Context, time.Duration, string, ...string) ([]byte, error)) ([]byte, error) {
-	stamp := engineStamp(bin, windowsSettingsPath())
+	stamp := engineStamp(bin, inventorySettingsPath(ctx))
 	if raw, ok := engineInventory.load(stamp, 0); ok {
 		return raw, nil
 	}
@@ -529,6 +546,13 @@ func fetchProviderInventory(ctx context.Context) ([]ProviderSetting, string, err
 		return nil, "", providerSettingsError(ProviderSettingsErrorUnavailable, err)
 	}
 	return settings, bin, nil
+}
+
+// ForgetProviderInventory drops the kept inventory, so the next read asks
+// CodexBar again. The Control Center sends fresh=1 once when a provider list
+// opens; that is how a plugin installed or removed while the engine ran shows.
+func ForgetProviderInventory() {
+	engineInventory.store("", nil)
 }
 
 // SetProviderEnabled validates the exact provider ID against CodexBar's live

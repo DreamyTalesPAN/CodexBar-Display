@@ -3427,7 +3427,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   const refreshProviderPreferences = useCallback(
-    (options?: { quiet?: boolean }) => {
+    (options?: { quiet?: boolean; fresh?: boolean }) => {
       if (providerPreferencesReadRef.current) {
         return providerPreferencesReadRef.current;
       }
@@ -3448,7 +3448,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         try {
           const payload = await runCompanion<{
             items: PreferenceDescriptor[];
-          }>("/v1/preferences?section=providers", undefined, {
+          }>(`/v1/preferences?section=providers${options?.fresh ? "&fresh=1" : ""}`, undefined, {
             preserveLastError: Boolean(options?.quiet),
           });
           if (
@@ -5013,7 +5013,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
     const timer = window.setTimeout(() => {
       void Promise.all([
-        refreshProviderPreferences({ quiet: true }),
+        // fresh=1 only when a provider list opens; polls do not send it.
+        refreshProviderPreferences({ quiet: true, fresh: true }),
         refreshProviderDisplay({ quiet: true }),
       ]);
       if (activeShellTab === "settings") {

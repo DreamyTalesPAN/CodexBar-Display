@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"regexp"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -94,15 +93,12 @@ func (v looseVersion) Compare(other looseVersion) int {
 
 var looseVersionPattern = regexp.MustCompile(`\bv?([0-9]+)\.([0-9]+)(?:\.([0-9]+))?\b`)
 
-// reuseEngineAnswers is true on Windows. There every poll started a new CLI
-// process only to hear the CLI's version and the provider inventory again
-// (#555). Neither answer can change unless a file does, so each is kept for
-// as long as engineStamp of its files stays the same. The Mac is left as it
-// is: its app-managed CLI is not run for its version at all
-// (installedVersion), and which files its inventory is built from has only
-// been checked for Win-CodexBar (readProviderInventory). A variable so the
-// Windows path is testable on the Mac.
-var reuseEngineAnswers = runtime.GOOS == "windows"
+// reuseEngineAnswers keeps the CLI's version and the provider inventory for as
+// long as engineStamp of their files stays the same. Every poll used to start a
+// new CLI process only to hear them again (#555), on Windows and on the Mac
+// alike. Neither answer can change unless a file does. A variable so tests can
+// switch the reuse off.
+var reuseEngineAnswers = true
 
 // engineStampSettle is how long a file must have been left alone before an
 // answer read from it is kept. A second write inside one step of the file

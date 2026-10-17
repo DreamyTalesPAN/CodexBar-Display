@@ -7467,3 +7467,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-17 — Provider list asks for a fresh inventory once when it opens (#555, PR #700)
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #555); look unchanged except: none.
+- Approved customer-visible result: none. The provider list looks and behaves as before; it shows a plugin installed or removed while the engine ran after the list is opened, instead of at the next restart.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (the request that loads the provider list when Settings or the provider setup opens sends `fresh=1` once; polls do not), three `control-center-app.*.test.tsx` files whose request matcher now also accepts the `&fresh=1` suffix, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a fix of a reported defect, no visible change
