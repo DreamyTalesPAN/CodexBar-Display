@@ -794,6 +794,20 @@ describe("UsageScreen", () => {
       expect(html).not.toContain("Runs out in");
       expect(html).toContain('aria-label="Updating"');
     });
+
+    it("ages the runs-out countdown from the snapshot time and drops it once none is left", () => {
+      const html = renderUsage(null, {
+        ...usage,
+        providers: [
+          {
+            ...usage.providers[0],
+            collectedAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
+            windows: [{ ...weekly, willLastToReset: false, etaSeconds: 3600 }],
+          },
+        ],
+      });
+      expect(html).not.toContain("Runs out in");
+    });
   });
 
   // Healthy and not stale while token history is still counting: the resets

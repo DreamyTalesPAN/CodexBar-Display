@@ -679,9 +679,9 @@ type UsageLine = {
 };
 
 // Shown only when CodexBar says the window will not last to its reset.
-function runsOutText(window: UsageWindowInfo): string | null {
-  return window.willLastToReset === false && finiteNumber(window.etaSeconds) && window.etaSeconds > 0
-    ? `Runs out in ${formatResetCountdown(window.etaSeconds)}`
+function runsOutText(window: UsageWindowInfo, etaLeft: number): string | null {
+  return window.willLastToReset === false && etaLeft > 0
+    ? `Runs out in ${formatResetCountdown(etaLeft)}`
     : null;
 }
 
@@ -705,7 +705,12 @@ function usageLines(
       label: window.label.toLowerCase(),
       percent: clampPercent(window.usedPercent),
       resetText: resetText(window.resetSecs),
-      runsOutText: quiet ? null : runsOutText(window),
+      runsOutText: quiet
+        ? null
+        : runsOutText(
+            window,
+            remainingResetSecs(window.etaSeconds, provider.collectedAt, now),
+          ),
       unavailable: laneUnavailable(window.usedPercent),
     }));
   }
