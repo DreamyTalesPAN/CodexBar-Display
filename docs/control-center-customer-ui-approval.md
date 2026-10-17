@@ -7778,3 +7778,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the token chart as described in the pending entry above: each provider's line runs unbroken, and a day on which a provider used no tokens sits on the zero line, with 0 in the tooltip. Nothing beyond that entry.
 - Scope: this approval record only; no code change in this entry. Pull request branch only, not merge or release.
 - What's new: none — approval record
+
+## 2026-10-17 — Usage head in variant A: "Last 30 days", legend and icon Refresh, chart without card (stacked on #680)
+
+- User approval: Usage head r6 variant A, Paul 17.10. (via the communicator; picture review-1016/ui/644/r6-usage-head/variant-A.png); he has not yet seen this build.
+- Approved customer-visible result: Usage opens with a left-aligned head. Small muted text "Last 30 days" on the left; on the right the provider names, each with a small dot in its chart colour (Claude in ink, Codex in olive), and an icon-only Refresh button. The button keeps its behaviour: while a refresh runs it shows a spinner and is closed. Below: the 30-day total in 28 px semibold, followed by a small muted "tokens", and the total in words in small muted text. The token chart runs the full width without a card and without a title: thin lines, a very light fill, three values on the left axis and the dates below, all in small muted text. Before → after: "Total tokens in the last 30 days" (heading) → "Last 30 days"; "Tokens used over time" (card title) → removed; "Refresh token usage" with its text (card button) → an icon-only button named "Refresh". No other wording.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (head and chart only; the tiles are not touched), the selectors of `scripts/test-customer-flows.mjs` that follow these labels, and this approval record. Stacked on #680 (→ #669); pull request branch only, not merge or release.
+- What's new: none — layout and colour change only, no new notice
