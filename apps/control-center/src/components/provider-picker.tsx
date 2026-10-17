@@ -25,7 +25,6 @@ export type ProviderPickerProps = {
   preferencesError?: ApiError | null;
   pendingCheckIds: Set<string>;
   pendingPreferenceIds: Set<string>;
-  onCheck: (item: PreferenceDescriptor) => void | Promise<void>;
   /** Opens the provider's browser sign-in page through the companion. */
   onOpenSignIn?: (item: PreferenceDescriptor) => void | Promise<void>;
   /** Opens the customer setup guide in the default browser. */
