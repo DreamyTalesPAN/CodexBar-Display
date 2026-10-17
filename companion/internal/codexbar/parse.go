@@ -211,6 +211,11 @@ func parseProviderUsageMeta(payload map[string]any) ProviderUsageMeta {
 
 // parseProviderSpend reads CodexBar's extra-usage cap. A missing cap, a cap of
 // zero and a cap without currency are all "no cap": nothing is shown.
+// finiteAmount rejects NaN and Inf, which strconv accepts and JSON cannot encode.
+func finiteAmount(v float64) bool {
+	return !math.IsNaN(v) && !math.IsInf(v, 0)
+}
+
 func parseProviderSpend(payload map[string]any) (ProviderSpend, bool) {
 	costAny, ok := getPath(payload, "usage.providerCost")
 	if !ok {
@@ -223,7 +228,7 @@ func parseProviderSpend(payload map[string]any) (ProviderSpend, bool) {
 	limit, ok := floatAtPaths(costMap, "limit")
 	currency := strings.TrimSpace(firstString(costMap, "currencyCode"))
 	used, usedOK := floatAtPaths(costMap, "used")
-	if !ok || limit <= 0 || currency == "" || !usedOK {
+	if !ok || !usedOK || currency == "" || !finiteAmount(limit) || !finiteAmount(used) || limit <= 0 {
 		return ProviderSpend{}, false
 	}
 	return ProviderSpend{
