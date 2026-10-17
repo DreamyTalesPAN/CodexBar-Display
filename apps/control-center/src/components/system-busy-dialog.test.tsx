@@ -75,3 +75,12 @@ it("a page dialog that opens in the same render keeps the focus", async () => {
       .contains(document.activeElement),
   ).toBe(true);
 });
+
+// The check runs in a microtask, before the browser paints: one microtask
+// after the render that mounted both, the notice is gone.
+it("takes the notice down before the next paint when a page dialog mounts with it", async () => {
+  const { rerender } = render(sameRender(false));
+  act(() => rerender(sameRender(true)));
+  await Promise.resolve();
+  expect(busy()).toBeNull();
+});

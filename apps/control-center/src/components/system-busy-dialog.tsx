@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import { flushSync } from "react-dom";
 import { SetupDialog } from "./setup/setup-dialog";
 
@@ -47,11 +47,12 @@ function otherDialogOpen(): boolean {
 
 function useOtherDialogOpen(): boolean {
   const [open, setOpen] = useState(otherDialogOpen);
-  useEffect(() => {
+  // A layout effect: the observer exists before the commit that mounts a page
+  // dialog in the same render, so it sees those mutations, and its check runs
+  // before the browser paints.
+  useLayoutEffect(() => {
     const check = () => setOpen(otherDialogOpen());
     check();
-    // Synchronous, so a dialog that mounted in the same render takes the
-    // notice down before the browser paints.
     const observer = new MutationObserver(() => flushSync(check));
     observer.observe(document.body, { childList: true, subtree: true });
     return () => observer.disconnect();

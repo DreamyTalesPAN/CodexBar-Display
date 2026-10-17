@@ -7474,3 +7474,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none on screen. The busy computer notice (wording and layout unchanged) no longer takes keyboard focus when it opens, and a page dialog that opens in the same moment keeps the focus and the notice is taken down before the screen repaints.
 - Scope: `apps/control-center/src/components/system-busy-dialog.tsx`, its test, `apps/control-center/src/components/setup/setup-dialog.tsx` (one optional prop, passed through) and this approval record. Pull request branch only, not merge or release.
 - What's new: none — a focus fix, no new capability
+
+## 2026-10-17 — #632 Codex fix: busy computer notice checks for other dialogs before paint
+
+- User approval: none needed for this entry; Codex review fix of #632, no visible change; not seen by Paul. The approval of the entry above still stands.
+- Approved customer-visible result: none on screen. The check that keeps the busy computer notice out of the way of a page dialog now runs before the screen repaints (observer set up in a layout effect).
+- Scope: `apps/control-center/src/components/system-busy-dialog.tsx`, its test and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a timing fix, no new capability
