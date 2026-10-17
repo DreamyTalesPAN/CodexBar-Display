@@ -198,12 +198,13 @@ describe("UsageScreen", () => {
     expect(loading).toContain("Token history is loading");
     expect(loading).toContain('role="status"');
     expect(loading).toContain('aria-live="polite"');
-    // Head label, one legend chip for the one provider, number, words line and chart.
+    // Head label, number, words line, chart and one legend chip (below the chart) for the one provider.
     expect(loading.match(/data-slot="skeleton"/g)).toHaveLength(5);
     expect(loading).not.toContain('data-slot="spinner"');
-    // Same chart wrapper as the finished panel, so the tiles below do not move.
-    expect(loading).toContain("relative mt-8 mb-10 min-h-64");
-    expect(renderUsage()).toContain("relative mt-8 mb-10 min-h-64");
+    // Same chart wrapper and legend row as the finished panel, so the tiles below do not move.
+    expect(loading).toContain("relative mt-8 min-h-96");
+    expect(renderUsage()).toContain("relative mt-8 min-h-96");
+    expect(loading.indexOf("relative mt-8 min-h-96")).toBeLessThan(loading.lastIndexOf("gap-[18px]"));
     // The skeleton shows no figures and no finished headings.
     expect(loading).not.toContain("Last 30 days");
     expect(loading).not.toContain("Tokens used over time");
@@ -322,6 +323,32 @@ describe("UsageScreen", () => {
     expect(html).toContain("<span>1,234</span>");
     expect(html).toContain(">tokens</span>");
     expect(html).toContain(">one thousand two hundred thirty-four</p>");
+  });
+
+  it("sets the 30-day total in the hero size and nothing else in the head", () => {
+    const html = renderUsage();
+
+    expect(html).toMatch(/<p class="text-hero [^"]*font-semibold[^"]*">/);
+    expect(html.match(/text-hero/g)).toHaveLength(1);
+  });
+
+  it("puts the provider legend below the chart, left-aligned, and keeps the Refresh icon in the head", () => {
+    const html = renderUsage(null, {
+      ...usage,
+      providers: [
+        { ...usage.providers[0], id: "claude", label: "Claude" },
+        usage.providers[0],
+      ],
+    });
+    const chart = html.indexOf('aria-label="Daily tokens used over time');
+    const legend = html.indexOf('data-testid="usage-legend"');
+    const head = html.indexOf(">Last 30 days</h2>");
+
+    expect(legend).toBeGreaterThan(chart);
+    expect(html.slice(legend, html.indexOf("</div>", legend))).toContain(">Claude</span>");
+    expect(html.slice(head, chart)).not.toContain("usage-legend");
+    expect(html.slice(head, chart)).toContain('aria-label="Refresh"');
+    expect(html.slice(legend, html.indexOf("</div>", legend))).not.toContain("Refresh");
   });
 
   it("draws the chart without a card title and gives each provider its own colour", () => {

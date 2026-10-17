@@ -7786,11 +7786,25 @@ issue scope, or release permission never implies UI permission.
 - Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (head and chart only; the tiles are not touched), the selectors of `scripts/test-customer-flows.mjs` that follow these labels, and this approval record. Stacked on #680 (→ #669); pull request branch only, not merge or release.
 - What's new: none — layout and colour change only, no new notice
 
+## 2026-10-17 — Usage head bigger: hero total, taller chart, legend below the chart (stacked on #714)
+
+- User approval: Paul 17.10. (tested build 7141): Usage head bigger (hero number, taller chart), legend below the chart. Look per his direction.
+- Approved customer-visible result: the 30-day total in Usage is set in a larger hero size (46 px, semibold, tight line height), the only text size beyond 28 px and 13 px. The token chart is taller (384 px instead of 256 px), still without card or title. The provider legend (colour dot and name) moves from the head line to below the chart, left-aligned under the x-axis. The Refresh icon stays top right on the "Last 30 days" line. Wording unchanged; no new control.
+- Scope: `usage-screen.tsx`, `usage-screen.test.tsx`, the hero token in `src/app/globals.css`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — size and position change only, no new notice
+
 ## 2026-10-17 — Usage: grey outline of the head and chart while the token history loads (#598, stacked on #714)
 
 - User approval: pending — Paul reviews this PR (fix of a reported defect, #598); look unchanged except: small spinner in the empty chart area → grey outline of the head and chart while loading.
 - Approved customer-visible result: none yet; pending Paul's review. Proposed: while the token history loads, the head ("Last 30 days" line, legend, number and words line) and the chart area are grey blocks at the heights of the finished graph, no spinner, no figures; the same look under reduced motion, without the pulse.
 - Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (loading state of the token history only), the loading assertions of `scripts/test-customer-flows.mjs`, and this approval record. Stacked on #714; pull request branch only, not merge or release.
+- What's new: none — loading state only, no new notice
+
+## 2026-10-17 — Usage: grey blocks follow the bigger head and the legend below the chart while the token history loads (#598, stacked on #714)
+
+- User approval: pending — Paul sees the grey loading blocks on the bigger head (#714); look unchanged except: hero-size block for the total, chart block 384 px instead of 256 px, legend chips below the chart instead of in the head line.
+- Approved customer-visible result: none yet; pending Paul's review. Proposed: while the token history loads, the grey blocks keep the layout of #714 (head line with the Refresh place, a block at the hero size for the total, the words line, a 384 px chart block, one legend chip per provider below it). No text change.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (loading block only), and this approval record. Stacked on #714; pull request branch only, not merge or release.
 - What's new: none — loading state only, no new notice
 
 ## 2026-10-17 — Usage: the token history notice opens as an overlay dialog, not a box at the top (stacked on #724)
