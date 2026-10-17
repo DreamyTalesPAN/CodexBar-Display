@@ -29,10 +29,8 @@ func serveFixtureServer(t *testing.T, dir string) *httptest.Server {
 		_, _ = w.Write(snapshot)
 	})
 	mux.HandleFunc(dashboardUsagePath, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.RawQuery != "" {
-			http.Error(w, "unexpected query", http.StatusBadRequest)
-			return
-		}
+		// Windows asks per provider (?provider=...); the answer is the whole
+		// list either way, as in newDashboardFetchTestServer.
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(usage)
 	})
