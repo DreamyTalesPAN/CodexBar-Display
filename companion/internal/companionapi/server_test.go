@@ -2302,6 +2302,42 @@ func TestDeviceRepairCableTargetNeedsCableMode(t *testing.T) {
 	}
 }
 
+func TestDeviceRepairForcePairRotatesCableToken(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: "stale-token"})
+	server.resolveCablePort = func(string, string) (string, error) {
+		return "/dev/mock-cable", nil
+	}
+	hello := cableHelloForTest("cable-a")
+	hello.Capabilities.Auth = &protocol.AuthCapabilities{}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return hello, nil
+	}
+	pairCalls := 0
+	server.pairCableDevice = func(_, deviceID string) (string, error) {
+		pairCalls++
+		if deviceID != "cable-a" {
+			t.Fatalf("wrong device paired: %s", deviceID)
+		}
+		return "fresh-token", nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/repair", strings.NewReader(`{"target":"cable://vibetv","forcePair":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK || pairCalls != 1 {
+		t.Fatalf("cable force-pair status=%d pairs=%d body=%s", rec.Code, pairCalls, rec.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeviceToken != "fresh-token" || cfg.ConnectionMode != "cable" || cfg.DeviceID != "cable-a" {
+		t.Fatalf("cable force-pair did not save the new token: mode=%q device=%q token=%q", cfg.ConnectionMode, cfg.DeviceID, cfg.DeviceToken)
+	}
+}
+
 func TestDeviceDiscoverAcceptsCableTarget(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a"})
 	server.resolveCablePort = func(_, expected string) (string, error) {

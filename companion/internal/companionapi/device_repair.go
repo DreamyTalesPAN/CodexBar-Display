@@ -117,10 +117,11 @@ func (s *Server) cableIdentityDevice(
 	return s.cableDeviceInfo(r.Context(), cfg, hello), true
 }
 
-// repairCableDevice: a Cable has no WiFi repair steps (IP search, token
-// pairing, render check). Repair on the Cable re-runs the identity check and
-// only answers for a Cable that is the active connection.
-func (s *Server) repairCableDevice(w http.ResponseWriter, r *http.Request, expectedDeviceID string) {
+// repairCableDevice: a Cable has no WiFi repair steps (IP search, WiFi token
+// pairing, render check). Repair on the Cable re-runs the Cable identity check
+// and only answers for a Cable that is the active connection. forcePair runs
+// the same Cable pairing as the connection choice and saves the new token.
+func (s *Server) repairCableDevice(w http.ResponseWriter, r *http.Request, expectedDeviceID string, forcePair bool) {
 	s.repairMu.Lock()
 	defer s.repairMu.Unlock()
 	cfg, err := s.config()
@@ -132,10 +133,34 @@ func (s *Server) repairCableDevice(w http.ResponseWriter, r *http.Request, expec
 		writeError(w, http.StatusConflict, "cable_setup_required", "VibeTV is not connected by Cable.", "Choose Cable for this VibeTV, then try again.")
 		return
 	}
-	device, ok := s.cableIdentityDevice(w, r, cfg, expectedDeviceID)
+	port, hello, ok := s.requireCableControlDevice(w, cfg)
 	if !ok {
 		return
 	}
+	if err := validateRepairIdentity(cfg, hello, true, expectedDeviceID); err != nil {
+		writeRepairError(w, err)
+		return
+	}
+	if forcePair && hello.Capabilities.Auth != nil {
+		token, err := s.pairCableDevice(port, hello.DeviceID)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, "cable_pairing_failed", "VibeTV could not pair through Cable.", "Keep VibeTV connected by Cable, then try again.")
+			return
+		}
+		cfg, err = s.updateConfig(func(current *runtimeconfig.Config) {
+			current.SetActiveDevice(runtimeconfig.KnownDevice{
+				DeviceID:    hello.DeviceID,
+				DeviceToken: token,
+			})
+			current.ConnectionMode = "cable"
+		})
+		if err != nil {
+			writeInternalError(w, err)
+			return
+		}
+	}
+	device := s.cableDeviceInfo(r.Context(), cfg, hello)
+	s.recordRepairResult(device)
 	writeJSON(w, http.StatusOK, deviceActionResponse{OK: true, Device: device})
 }
 
@@ -170,7 +195,7 @@ func (s *Server) handleDeviceRepair(w http.ResponseWriter, r *http.Request) {
 	target := strings.TrimSpace(req.Target)
 	expectedDeviceID := strings.TrimSpace(req.ExpectedDeviceID)
 	if isCableTarget(target) {
-		s.repairCableDevice(w, r, expectedDeviceID)
+		s.repairCableDevice(w, r, expectedDeviceID, req.ForcePair)
 		return
 	}
 	repairCtx, cancel := context.WithTimeout(r.Context(), repairRequestTimeout)
