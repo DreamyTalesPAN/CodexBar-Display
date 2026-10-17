@@ -7764,3 +7764,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Not yet seen by Paul. In Usage, each provider's line in the token chart runs unbroken from the first to the last day of the chart; a day on which a provider used no tokens sits on the zero line. Calendar days on which no provider used tokens keep their place on the time axis. Where the first and last reported day lie more than 400 days apart, every reported day is kept as it is, without filling in days. Totals and tooltip values of days with tokens are unchanged; a day without tokens shows 0 in the tooltip.
 - Scope: `usage-screen.tsx`, its test, and this approval record. Stacked on #669; pull request branch only, not merge or release.
 - What's new: none — a correction, nothing new to announce
+
+## 2026-10-17 — Usage: Paul approves the token chart without gaps (#579, carried from #603; refers to the pending entry of 2026-10-16)
+
+- User approval: Paul approved 17.10. (via the communicator): the token chart without gaps (days without tokens drawn at zero).
+- Approved customer-visible result: the token chart as described in the pending entry above: each provider's line runs unbroken, and a day on which a provider used no tokens sits on the zero line, with 0 in the tooltip. Nothing beyond that entry.
+- Scope: this approval record only; no code change in this entry. Pull request branch only, not merge or release.
+- What's new: none — approval record
