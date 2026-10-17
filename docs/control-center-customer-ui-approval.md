@@ -7580,3 +7580,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as approved in that entry. Cancelling gives the image back at once; a request that is cancelled but still finishing its last step no longer puts images back or clears the thumbnail of a newer request.
 - Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — status of the image hand-off in Theme Studio, not announced to customers
+
+## 2026-10-17 — #638: no second "Theme Studio AI" title in the Settings row
+
+- User approval: orchestrator decision relayed by the coordinator (the section label on the left already names the row, so the row's inner title is removed); Paul has not seen this yet.
+- Approved customer-visible result: the Theme Studio AI row in Settings shows only its status ("Connected" / "Not connected") and its key button, under the section label "Theme Studio AI". The key dialog keeps its title.
+- Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx` (the row), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — refinement of #638

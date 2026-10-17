@@ -346,6 +346,8 @@ describe("SettingsScreen standby controls", () => {
     const themeSection = html.slice(html.indexOf(">Theme Studio AI</h2>"), html.indexOf(">AI providers</h2>"));
 
     expect(themeSection).toContain("Add key");
+    // The section label already names the row; the row shows no second title.
+    expect(themeSection).not.toContain(">Theme Studio AI</p>");
     expect(themeSection).not.toContain("Search providers");
   });
 
