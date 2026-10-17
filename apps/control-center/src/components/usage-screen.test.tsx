@@ -62,8 +62,7 @@ describe("UsageScreen", () => {
       ...usage,
       providers: [...usage.providers, { id: "claude", label: "Claude", session: 0, weekly: 10, usageMode: "used" }],
     });
-    expect(html).toContain("Token history is unavailable");
-    expect(html).toContain("not available for every selected provider");
+    // The notice is a dialog over the page (usage-screen.warning-overlay.test.tsx).
     expect(html).not.toContain("Last 30 days");
     expect(html).toContain('aria-label="34% weekly used"');
     expect(html).toContain('aria-label="10% weekly used"');
@@ -101,34 +100,14 @@ describe("UsageScreen", () => {
     ).toBe(false);
   });
 
-  // Issue #558: with one provider on, "not available for every selected
-  // provider" read like an error about providers the customer does not have.
-  it("names the one provider that has no token history", () => {
-    const one = (windowsHost: boolean) =>
-      renderToStaticMarkup(
-        <UsageScreen
-          busyAction={null}
-          companionStatus="online"
-          usage={{ ...usage, providers: usage.providers.map((provider) => ({ ...provider, cost: undefined })) }}
-          windowsHost={windowsHost}
-        />,
-      );
-
-    expect(one(false)).toContain(
-      "No token history was found for Codex on this Mac. Your usage limits are shown below.",
-    );
-    expect(one(false)).not.toContain("every selected provider");
-    expect(one(true)).toContain("No token history was found for Codex on this computer.");
-  });
-
+  // The notice's sentences (issue #558: one provider names it, "every selected
+  // provider" only with several) are checked in usage-screen.warning-overlay.test.tsx.
   it("shows unavailable rather than zero or a spinner after a scan without history", () => {
     const html = renderUsage(null, {
       ...usage,
       tokenUsageReady: true,
       providers: usage.providers.map((provider) => ({ ...provider, cost: undefined })),
     });
-    expect(html).toContain("Token history is unavailable");
-    expect(html).toContain('aria-label="Refresh token usage"');
     expect(html).toContain('aria-label="34% weekly used"');
     expect(html).not.toContain("Token history is loading");
     expect(html).not.toContain("zero tokens");
@@ -151,7 +130,8 @@ describe("UsageScreen", () => {
     expect(html).not.toContain("No provider usage is available yet.");
   });
 
-  it("offers a generic retry for a real usage error", () => {
+  it("does not show a real usage error as a box on the page", () => {
+    // The error is a dialog over the page (usage-screen.error-overlay.test.tsx).
     const html = renderToStaticMarkup(
       <UsageScreen
         companionStatus="online"
@@ -165,8 +145,8 @@ describe("UsageScreen", () => {
       />,
     );
 
-    expect(html).toContain("Usage needs attention.");
-    expect(html).toContain("Try again</button>");
+    expect(html).not.toContain("Usage needs attention.");
+    expect(html).not.toContain("Try again</button>");
     expect(html).not.toContain("Loading usage");
     expect(html).not.toContain("CodexBar");
   });

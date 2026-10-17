@@ -42,6 +42,7 @@ import {
   remainingResetSecs,
 } from "@/lib/reset-countdown";
 import { isProviderItem, type ProviderItem } from "./provider-picker";
+import { SetupDialog } from "./setup/setup-dialog";
 import {
   providerRowHealthState,
   setupProviderOffersSignIn,
@@ -81,6 +82,14 @@ type UsageScreenProps = {
   providerActions?: Record<string, UsageProviderAction>;
   /** Providers that get no tile: switched off, unsupported, or without usage data. */
   hiddenProviderIds?: string[];
+  /** The owner keeps the token history notice closed until it clears (see the dialog below). */
+  tokenHistoryDismissed?: boolean;
+  onDismissTokenHistory?: () => void;
+  /** The owner keeps the usage error closed until it clears (see the dialog below). */
+  usageErrorDismissed?: boolean;
+  onDismissUsageError?: () => void;
+  /** Another centred dialog is open: the notice and the error wait for it. */
+  centredDialogOpen?: boolean;
 };
 
 export function UsageScreen({
@@ -92,6 +101,11 @@ export function UsageScreen({
   windowsHost = false,
   providerActions = {},
   hiddenProviderIds = [],
+  tokenHistoryDismissed = false,
+  onDismissTokenHistory,
+  usageErrorDismissed = false,
+  onDismissUsageError,
+  centredDialogOpen = false,
 }: UsageScreenProps) {
   const refreshing = busyAction === "usage";
   const providers = filterVisibleProviders(
@@ -130,14 +144,15 @@ export function UsageScreen({
   const shownProviders = providers.filter(
     (provider) => !hiddenProviderIds.includes(provider.id),
   );
-  const tokenHistoryUnavailable = usageTokenHistoryUnavailable(
-    usage && {
-      ...usage,
-      providers: usage.providers.filter(
-        (provider) => !hiddenProviderIds.includes(provider.id),
-      ),
-    },
-  );
+  const tokenHistoryUnavailable = usageTokenHistoryNotice(usage, hiddenProviderIds);
+  // A usage error is told first: the token history notice waits until it is closed.
+  const usageErrorDialogOpen =
+    Boolean(usageError) && !usageErrorDismissed && !centredDialogOpen;
+  const tokenHistoryDialogOpen =
+    tokenHistoryUnavailable &&
+    !tokenHistoryDismissed &&
+    !centredDialogOpen &&
+    !usageErrorDialogOpen;
   const hasUsableVisibleUsageContent =
     hasProviders || usageProvidersHaveTokenResult(providers);
   // An action tile is content: no loading state beside it.
@@ -166,28 +181,6 @@ export function UsageScreen({
   return (
     <div className="mx-auto max-w-[1180px]">
       <section className="py-10">
-        {usageError ? (
-          <Alert className="mb-6 bg-muted">
-            <AlertTriangle />
-            <AlertTitle>{usageError.message}</AlertTitle>
-            <AlertDescription className="grid justify-items-start gap-3">
-              <span>{usageError.nextAction}</span>
-              {onRefresh ? (
-                <Button
-                  aria-busy={refreshing}
-                  disabled={refreshing}
-                  onClick={onRefresh}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  {refreshing ? <Spinner /> : <RefreshCw aria-hidden />}
-                  {refreshing ? "Trying again" : "Try again"}
-                </Button>
-              ) : null}
-            </AlertDescription>
-          </Alert>
-        ) : null}
         {refreshNotice ? (
           <Alert className="mb-6 bg-muted">
             {refreshNotice.tone === "attention" ? <AlertTriangle /> : <Info />}
@@ -202,41 +195,8 @@ export function UsageScreen({
             loading
             windowsHost={windowsHost}
           />
-        ) : tokenHistoryUnavailable ? (
-          <Alert className="mb-6 bg-muted">
-            <Info />
-            <AlertTitle>Token history is unavailable</AlertTitle>
-            <AlertDescription className="grid justify-items-start gap-3">
-              <span>
-                {/* With one provider on there is no "every" (issue #558). */}
-                {shownProviders.length === 1
-                  ? copyForHost(
-                      `No token history was found for ${shownProviders[0].label || shownProviders[0].id} on this Mac. Your usage limits are shown below.`,
-                      windowsHost,
-                    )
-                  : "Complete local token history is not available for every selected provider. Available usage limits are shown below."}
-              </span>
-              {onRefresh ? (
-                <Button
-                  aria-label="Refresh token usage"
-                  aria-busy={refreshing || refreshPending}
-                  disabled={refreshing || refreshPending}
-                  onClick={onRefresh}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  {refreshing || refreshPending ? (
-                    <Spinner />
-                  ) : (
-                    <RefreshCw aria-hidden />
-                  )}
-                  {refreshing || refreshPending ? "Refreshing" : "Refresh"}
-                </Button>
-              ) : null}
-            </AlertDescription>
-          </Alert>
-        ) : tokenUsageReady && hasProviders ? (
+        ) : // The notice is a dialog over this page (below), not a box in it.
+        tokenHistoryUnavailable ? null : tokenUsageReady && hasProviders ? (
           <TokenUsageOverTimePanel
             onRefresh={onRefresh}
             providers={providers}
@@ -264,6 +224,71 @@ export function UsageScreen({
           />
         ) : null}
       </section>
+      {/* A page's own dialogs, not announcements: they do not use data-announcement. */}
+      {usageErrorDialogOpen && usageError ? (
+        <SetupDialog
+          description={usageError.nextAction}
+          icon={AlertTriangle}
+          onOpenChange={(open) => {
+            if (!open) onDismissUsageError?.();
+          }}
+          open
+          // The page behind stays usable: the tiles work under the error.
+          scrim={false}
+          primaryAction={{
+            label: "OK",
+            onSelect: () => onDismissUsageError?.(),
+          }}
+          secondaryAction={
+            onRefresh
+              ? {
+                  busy: refreshing,
+                  disabled: refreshing,
+                  label: refreshing ? "Trying again" : "Try again",
+                  onSelect: onRefresh,
+                }
+              : undefined
+          }
+          title={usageError.message}
+          tone="error"
+        />
+      ) : null}
+      {tokenHistoryDialogOpen ? (
+        <SetupDialog
+          description={
+            /* With one provider on there is no "every" (issue #558). */
+            shownProviders.length === 1
+              ? copyForHost(
+                  `No token history was found for ${shownProviders[0].label || shownProviders[0].id} on this Mac. Your usage limits are shown below.`,
+                  windowsHost,
+                )
+              : "Complete local token history is not available for every selected provider. Available usage limits are shown below."
+          }
+          icon={Info}
+          onOpenChange={(open) => {
+            if (!open) onDismissTokenHistory?.();
+          }}
+          open
+          // The page behind stays usable: the tiles work under the notice.
+          scrim={false}
+          primaryAction={{
+            label: "OK",
+            onSelect: () => onDismissTokenHistory?.(),
+          }}
+          secondaryAction={
+            onRefresh
+              ? {
+                  busy: refreshing || refreshPending,
+                  disabled: refreshing || refreshPending,
+                  label: refreshing || refreshPending ? "Refreshing" : "Refresh",
+                  onSelect: onRefresh,
+                }
+              : undefined
+          }
+          title="Token history is unavailable"
+          tone="neutral"
+        />
+      ) : null}
     </div>
   );
 }
@@ -966,6 +991,22 @@ export function usageTokenHistoryUnavailable(usage: UsageSnapshot | null): boole
   return (
     (usage?.tokenUsageReady === true || usageProvidersHaveTokenResult(providers)) &&
     providers.some((provider) => provider.cost == null)
+  );
+}
+
+// The Usage notice: a provider that is shown and has no token history. Hidden
+// providers do not count, so the notice and the tiles agree.
+export function usageTokenHistoryNotice(
+  usage: UsageSnapshot | null,
+  hiddenProviderIds: string[] = [],
+): boolean {
+  return usageTokenHistoryUnavailable(
+    usage && {
+      ...usage,
+      providers: usage.providers.filter(
+        (provider) => !hiddenProviderIds.includes(provider.id),
+      ),
+    },
   );
 }
 
