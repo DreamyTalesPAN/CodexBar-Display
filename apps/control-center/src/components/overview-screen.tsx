@@ -80,7 +80,11 @@ export function OverviewScreen({
         <div className="relative mt-6 flex w-full justify-center">
           {use3D ? (
             <div
-              className={threeReady ? "w-full" : "absolute inset-0 opacity-0"}
+              className={
+                threeReady
+                  ? "flex w-full justify-center"
+                  : "absolute inset-0 flex justify-center opacity-0"
+              }
             >
               <VibeTV3DPreview
                 className="aspect-[14/9] max-w-[900px]"

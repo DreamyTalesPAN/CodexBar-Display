@@ -7511,3 +7511,10 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/src/components/overview-screen.tsx`, `vibetv-3d-preview.tsx`, `vibetv-3d-support.ts` (new), their tests and `apps/control-center/scripts/test-customer-flows.mjs` (wait targets), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no new content
 
+## 2026-10-18 — Overview: 3D stage centered when it replaces the flat preview (#755)
+
+- User approval: none needed — the look is the approved picture overview-A2-center (17.10., #713); this entry records a Codex review fix that centers the 3D stage in its column.
+- Approved customer-visible result: none beyond the approved picture. The 3D VibeTV stays centered on wide windows when it replaces the flat preview.
+- Scope: `apps/control-center/src/components/overview-screen.tsx` (centering wrapper) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
