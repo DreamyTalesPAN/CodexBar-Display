@@ -7757,3 +7757,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No change. A healthy, fresh tile shows its reset time top-right and on each later window line while the token history is still counting, with no spinner. No new wording.
 - Scope: `usage-screen.test.tsx` (one new test), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — test only, no customer-visible change
+
+## 2026-10-17 — Usage: plan name and extra-usage cap from CodexBar (stacked on #669)
+
+- User approval: pending — Paul reviews this PR (plan name and extra-usage cap that CodexBar 0.75 sends, stacked on #669); look unchanged except: the tile header "Claude" becomes "Claude · Max 20x" (plan name, muted, only when CodexBar sends one), and a muted line "Extra usage €0 of €100 this month" joins the token totals at the bottom of a tile whose cap is above zero (only when CodexBar sends one).
+- Approved customer-visible result: Pending Paul's review. A Usage tile shows the plan name CodexBar reports after the provider name, and the monthly extra-usage cap CodexBar reports with its used amount, in CodexBar's currency. Nothing is shown when CodexBar sends neither. Windows shows no cap; the plan name appears where Win-CodexBar sends one.
+- Scope: `apps/control-center/src/components/usage-screen.tsx`, `control-center-types.ts`, `usage-screen.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the plan name and the cap are what CodexBar already reports, shown where the tile is

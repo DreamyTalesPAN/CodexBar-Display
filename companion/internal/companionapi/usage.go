@@ -79,6 +79,8 @@ type usageProviderInfo struct {
 	ResetCredits          *usageResetCreditsInfo   `json:"resetCredits,omitempty"`
 	Cost                  *usageCostInfo           `json:"cost,omitempty"`
 	CostSettled           bool                     `json:"costSettled,omitempty"`
+	Plan                  string                   `json:"plan,omitempty"`
+	Spend                 *usageSpendInfo          `json:"spend,omitempty"`
 	TokenUsageReady       bool                     `json:"-"`
 	TokenStatsCollectedAt time.Time                `json:"-"`
 	Pace                  []usagePaceInfo          `json:"pace,omitempty"`
@@ -122,6 +124,15 @@ type usageCostInfo struct {
 	Daily             []usageCostDayInfo `json:"daily,omitempty"`
 	// KnownZero: the engine finished a complete scan and found no usage.
 	KnownZero bool `json:"knownZero,omitempty"`
+}
+
+// usageSpendInfo is CodexBar's extra-usage cap for the provider, passed on as
+// CodexBar reports it. Period is CodexBar's own word for the cap.
+type usageSpendInfo struct {
+	Limit    float64 `json:"limit"`
+	Used     float64 `json:"used"`
+	Currency string  `json:"currency"`
+	Period   string  `json:"period,omitempty"`
 }
 
 type usageCostDayInfo struct {
@@ -547,6 +558,8 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 		ResetCredits:          usageResetCreditsFromMeta(snapshot.Meta),
 		Cost:                  usageCostFromMeta(snapshot.Meta),
 		CostSettled:           snapshot.TokenHistorySettled,
+		Plan:                  strings.TrimSpace(snapshot.Meta.Plan),
+		Spend:                 usageSpendFromMeta(snapshot.Meta),
 		TokenUsageReady:       !snapshot.TokenStatsCollectedAt.IsZero(),
 		TokenStatsCollectedAt: snapshot.TokenStatsCollectedAt,
 		Pace:                  usagePaceFromMeta(snapshot.Meta),
@@ -637,6 +650,18 @@ func usageResetCreditsFromMeta(meta codexbar.ProviderUsageMeta) *usageResetCredi
 		return nil
 	}
 	return &info
+}
+
+func usageSpendFromMeta(meta codexbar.ProviderUsageMeta) *usageSpendInfo {
+	if meta.Spend == nil {
+		return nil
+	}
+	return &usageSpendInfo{
+		Limit:    meta.Spend.Limit,
+		Used:     meta.Spend.Used,
+		Currency: meta.Spend.Currency,
+		Period:   meta.Spend.Period,
+	}
 }
 
 func usageCostFromMeta(meta codexbar.ProviderUsageMeta) *usageCostInfo {

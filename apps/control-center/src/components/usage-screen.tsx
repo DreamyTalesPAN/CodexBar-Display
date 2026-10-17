@@ -56,6 +56,7 @@ import type {
   UsageCostDay,
   UsageProviderInfo,
   UsageSnapshot,
+  UsageSpendInfo,
 } from "./control-center-types";
 
 /** A provider whose customer must act first; keyed by provider id. */
@@ -556,6 +557,7 @@ function UsageProviderTile({ provider }: { provider: UsageProviderInfo }) {
   return (
     <UsageTileFrame
       name={provider.label || provider.id}
+      plan={provider.plan}
       status={
         quiet ? (
           <Loader2
@@ -634,18 +636,25 @@ function UsageTileFrame({
   action,
   children,
   name,
+  plan,
   status,
 }: {
   action?: ReactNode;
   children: ReactNode;
   name: string;
+  plan?: string;
   status?: ReactNode;
 }) {
   return (
     <Card className="h-full min-h-[248px] [--card-spacing:--spacing(5)]">
       <CardHeader>
         <CardTitle className="flex flex-wrap items-baseline gap-x-2 break-words text-[13px] font-semibold">
-          {name}
+          <span>
+            {name}
+            {plan ? (
+              <span className="font-normal text-muted-foreground">{` · ${plan}`}</span>
+            ) : null}
+          </span>
           {action}
         </CardTitle>
         {status ? (
@@ -769,10 +778,33 @@ function UsageLineView({
   );
 }
 
+// CodexBar's extra-usage cap in its own currency. Nothing without a usable cap.
+function spendText(spend: UsageSpendInfo | undefined): string | null {
+  if (
+    !spend ||
+    !finiteNumber(spend.limit) ||
+    spend.limit <= 0 ||
+    !finiteNumber(spend.used) ||
+    !/^[A-Za-z]{3}$/.test(spend.currency)
+  ) {
+    return null;
+  }
+  const money = (value: number) =>
+    new Intl.NumberFormat("en-US", {
+      currency: spend.currency,
+      maximumFractionDigits: 2,
+      minimumFractionDigits: 0,
+      style: "currency",
+    }).format(value);
+  const period = /^monthly\b/i.test(spend.period ?? "") ? " this month" : "";
+  return `Extra usage ${money(spend.used)} of ${money(spend.limit)}${period}`;
+}
+
 function TokenRow({ provider }: { provider: UsageProviderInfo }) {
   const parts = [
     provider.totalTokens ? `${formatTokenCount(provider.totalTokens)} total` : null,
     provider.weekTokens ? `${formatTokenCount(provider.weekTokens)} this week` : null,
+    spendText(provider.spend),
   ].filter(Boolean);
 
   if (parts.length === 0) {

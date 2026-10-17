@@ -203,7 +203,35 @@ func parseProviderUsageMeta(payload map[string]any) ProviderUsageMeta {
 	if resetCredits, ok := parseProviderResetCredits(payload); ok {
 		meta.ResetCredits = &resetCredits
 	}
+	if spend, ok := parseProviderSpend(payload); ok {
+		meta.Spend = &spend
+	}
 	return meta
+}
+
+// parseProviderSpend reads CodexBar's extra-usage cap. A missing cap, a cap of
+// zero and a cap without currency are all "no cap": nothing is shown.
+func parseProviderSpend(payload map[string]any) (ProviderSpend, bool) {
+	costAny, ok := getPath(payload, "usage.providerCost")
+	if !ok {
+		return ProviderSpend{}, false
+	}
+	costMap, ok := costAny.(map[string]any)
+	if !ok {
+		return ProviderSpend{}, false
+	}
+	limit, ok := floatAtPaths(costMap, "limit")
+	currency := strings.TrimSpace(firstString(costMap, "currencyCode"))
+	if !ok || limit <= 0 || currency == "" {
+		return ProviderSpend{}, false
+	}
+	used, _ := floatAtPaths(costMap, "used")
+	return ProviderSpend{
+		Limit:    limit,
+		Used:     used,
+		Currency: currency,
+		Period:   strings.TrimSpace(firstString(costMap, "period")),
+	}, true
 }
 
 func parseUsageOverTime(payload map[string]any) []UsageOverTimePoint {
