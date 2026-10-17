@@ -2,8 +2,11 @@
 //
 // Errors are dialogs over the page, never inline text. The Support page used
 // to show its last error as an alert inside the Recent activity card; the same
-// sentences now open the setup error dialog and close with OK.
+// sentences now open the setup error dialog and close with OK. The dismissal
+// lives with the owner of the error (as in ControlCenterApp), so it survives
+// leaving and returning to Support, and a new failure opens the dialog again.
 
+import { useState } from "react";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import { LogsScreen } from "./logs-screen";
@@ -19,8 +22,23 @@ const failure = {
   nextAction: "Try again in a moment.",
 };
 
+// Stands in for ControlCenterApp: it owns the error and the dismissal, and
+// `shown` stands for leaving the Support tab (LogsScreen unmounts).
+function Support({ error, shown = true }: { error: typeof failure | null; shown?: boolean }) {
+  const [dismissed, setDismissed] = useState<typeof failure | null>(null);
+  if (!shown) return <p>Another tab</p>;
+  return (
+    <LogsScreen
+      device={device}
+      dismissedError={dismissed}
+      lastError={error}
+      onDismissError={() => setDismissed(error)}
+    />
+  );
+}
+
 it("shows the last error in a dialog over the page, not as text on the page", () => {
-  const { container } = render(<LogsScreen device={device} lastError={failure} />);
+  const { container } = render(<Support error={failure} />);
 
   const dialog = screen.getByRole("dialog");
   expect(within(dialog).getByText("Usage needs attention.")).toBeTruthy();
@@ -29,22 +47,30 @@ it("shows the last error in a dialog over the page, not as text on the page", ()
   expect(container.textContent).not.toContain("Try again in a moment.");
 });
 
-it("closes the error dialog with OK and does not reopen it for the same error", () => {
-  const { rerender } = render(<LogsScreen device={device} lastError={failure} />);
+it("closes the error dialog with OK and keeps it closed for the same error", () => {
+  const { rerender } = render(<Support error={failure} />);
 
   fireEvent.click(screen.getByRole("button", { name: "OK" }));
   expect(screen.queryByRole("dialog")).toBeNull();
 
-  // The page re-renders with the same error object or a copy of it.
-  rerender(<LogsScreen device={device} lastError={{ ...failure }} />);
+  rerender(<Support error={failure} />);
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
-it("shows the dialog again when the error clears and comes back", () => {
-  const { rerender } = render(<LogsScreen device={device} lastError={failure} />);
+it("keeps a dismissed error closed when Support is left and opened again", () => {
+  const { rerender } = render(<Support error={failure} />);
   fireEvent.click(screen.getByRole("button", { name: "OK" }));
 
-  rerender(<LogsScreen device={device} lastError={null} />);
-  rerender(<LogsScreen device={device} lastError={failure} />);
+  rerender(<Support error={failure} shown={false} />);
+  rerender(<Support error={failure} />);
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("opens the dialog again for a new failure with the same words", () => {
+  const { rerender } = render(<Support error={failure} />);
+  fireEvent.click(screen.getByRole("button", { name: "OK" }));
+
+  // A retry that fails again is a new error object.
+  rerender(<Support error={{ ...failure }} />);
   expect(screen.getByRole("dialog")).toBeTruthy();
 });

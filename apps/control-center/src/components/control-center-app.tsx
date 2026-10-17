@@ -456,6 +456,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, [busyAction]);
   const [supportReportBusy, setSupportReportBusy] = useState(false);
   const [lastError, setLastError] = useState<ApiError | null>(null);
+  // The Support error dialog closes per error object (issue: one error, one dialog).
+  const supportError = useMemo(
+    () => errorForHost(lastError, windowsHost),
+    [lastError, windowsHost],
+  );
+  const [dismissedSupportError, setDismissedSupportError] = useState<
+    typeof supportError
+  >(null);
   const [lastInstall, setLastInstall] = useState<InstallResponse["result"]>();
   const [themeInstallStatus, setThemeInstallStatus] =
     useState<ThemeInstallStatus | null>(null);
@@ -5790,7 +5798,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             themes={catalog.themes}
             diagnostics={supportDiagnostics}
             events={logs}
-            lastError={errorForHost(lastError, windowsHost)}
+            dismissedError={dismissedSupportError}
+            lastError={supportError}
+            onDismissError={() => setDismissedSupportError(supportError)}
             onLoadDiagnostics={loadSupportDiagnostics}
             onRefresh={checkCompanion}
             onRepairUsageEngine={retryUsageService}

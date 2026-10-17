@@ -7474,3 +7474,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: On Support, when the last action failed, the error is no longer an inline warning in the Recent activity card. It opens as a dialog over the page: the title is the error sentence (the same text as before), below it the next-step sentence (the same text as before), and one button "OK" that closes it (the X closes it too). The dialog does not come back for the same error on its own; a new occurrence of the error opens it again. Wording, colours and buttons of everything else stay the same.
 - Scope: `apps/control-center/src/components/logs-screen.tsx`, its new test `apps/control-center/src/components/logs-screen.error-overlay.test.tsx` and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — the same sentences in a dialog, no new capability
+
+## 2026-10-17 — Support error dialog: the app keeps the dismissal per error
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect: errors are dialogs over the page, not inline text; rule scan 1017, item 12); look unchanged except: the last error as an inline warning in the Recent activity card at the top of Support → the same sentences in an overlay dialog with "OK". Same wording as the entry above; this entry only moves where the dismissal is kept.
+- Approved customer-visible result: On Support, the last error opens as a dialog over the page (title = the error sentence, next-step sentence below, "OK" and the X close it), as in the entry above. It stays closed for the same error, also after leaving Support and coming back. A new failure, even with the same words, opens it again. Nothing else changes.
+- Scope: `apps/control-center/src/components/logs-screen.tsx`, `apps/control-center/src/components/control-center-app.tsx` (it keeps the dismissed error and passes it to Support), `apps/control-center/src/components/logs-screen.error-overlay.test.tsx` and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — the same sentences in a dialog, no new capability

@@ -6,7 +6,6 @@ import {
   Clock,
   RefreshCw,
 } from "lucide-react";
-import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -73,6 +72,9 @@ export type LogsScreenProps = {
     message: string;
     nextAction: string;
   } | null;
+  /** The error the owner has already dismissed; the same object stays closed. */
+  dismissedError?: LogsScreenProps["lastError"];
+  onDismissError?: () => void;
   onLoadDiagnostics?: () => void;
   onRefresh?: () => void;
   onRunSetupAgain?: () => void;
@@ -90,6 +92,8 @@ export function LogsScreen({
   themes = [],
   diagnostics,
   lastError,
+  dismissedError,
+  onDismissError,
   onLoadDiagnostics,
   onRefresh,
   onRunSetupAgain,
@@ -105,25 +109,19 @@ export function LogsScreen({
   const wifi = deviceConnected ? device?.health?.wifi : undefined;
   const supportText = (value: string) =>
     copyForHost(formatCustomerSupportText(value), windowsHost);
-  // The error dialog is shown once per error; the same error opens it again
-  // only after it has cleared (as theme-library-screen does per attempt).
-  const errorKey = lastError
-    ? `${lastError.message}\n${lastError.nextAction}`
-    : null;
-  const [dismissedErrorKey, setDismissedErrorKey] = useState<string | null>(null);
-  if (errorKey === null && dismissedErrorKey !== null) setDismissedErrorKey(null);
-
+  // One error object is one occurrence: the owner dismisses it, and a new
+  // failure (a new object, even with the same words) opens the dialog again.
   return (
     <div className="mx-auto grid max-w-[1180px] gap-4 py-6">
-      {lastError && errorKey !== dismissedErrorKey ? (
+      {lastError && lastError !== dismissedError ? (
         <SetupDialog
           description={supportText(lastError.nextAction)}
           icon={AlertTriangle}
           onOpenChange={(open) => {
-            if (!open) setDismissedErrorKey(errorKey);
+            if (!open) onDismissError?.();
           }}
           open
-          primaryAction={{ label: "OK", onSelect: () => setDismissedErrorKey(errorKey) }}
+          primaryAction={{ label: "OK", onSelect: () => onDismissError?.() }}
           title={supportText(lastError.message)}
         />
       ) : null}
