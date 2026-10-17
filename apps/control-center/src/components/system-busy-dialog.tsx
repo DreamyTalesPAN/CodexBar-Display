@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useLayoutEffect, useState } from "react";
+import { flushSync } from "react-dom";
 import { SetupDialog } from "./setup/setup-dialog";
 
 /**
@@ -46,10 +47,13 @@ function otherDialogOpen(): boolean {
 
 function useOtherDialogOpen(): boolean {
   const [open, setOpen] = useState(otherDialogOpen);
-  useEffect(() => {
+  // A layout effect: the observer exists before the commit that mounts a page
+  // dialog in the same render, so it sees those mutations, and its check runs
+  // before the browser paints.
+  useLayoutEffect(() => {
     const check = () => setOpen(otherDialogOpen());
     check();
-    const observer = new MutationObserver(check);
+    const observer = new MutationObserver(() => flushSync(check));
     observer.observe(document.body, { childList: true, subtree: true });
     return () => observer.disconnect();
   }, []);
@@ -72,7 +76,9 @@ export function SystemBusyDialog({ onClose }: { onClose: () => void }) {
       open
       primaryAction={{ label: systemBusyCopy.action, onSelect: onClose }}
       // An announcement over whatever the customer is doing: the app behind
-      // it keeps working.
+      // it keeps working, and the customer's own dialog keeps the focus when
+      // both open together (#632).
+      onOpenAutoFocus={(event) => event.preventDefault()}
       scrim={false}
       showCloseButton={false}
       title={systemBusyCopy.title}
