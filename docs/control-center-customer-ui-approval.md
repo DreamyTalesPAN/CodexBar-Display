@@ -7851,6 +7851,50 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
 - Approved customer-visible result: none beyond the entries above; this record restates the merge of the #724 branch and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-17 — Approval record: the skeleton head merged into this branch (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the skeleton head and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-17 — Usage loading blocks: the grey legend blocks wrap on a narrow screen like the legend (Codex review on #724)
+
+- User approval: pending — Paul reviews this PR (fix of a Codex finding on #724); look unchanged on a wide screen. On a narrow screen (about 390 px) with five or more providers, the grey legend blocks now wrap onto a second row instead of being clipped, as the loaded legend does.
+- Approved customer-visible result: none beyond the loading blocks of the entry above. Only the grey legend row changes: it wraps like the loaded legend and keeps its height on one line. No text, no other layout.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (loading legend row only), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — loading state only, no new notice
+
+## 2026-10-18 — Usage loading blocks: each grey legend chip keeps the legend's line height when it wraps (Codex review on #724)
+
+- User approval: pending — Paul reviews this PR (fix of a Codex finding on #724); look unchanged. The grey legend blocks keep the height of the loaded legend row when they wrap on a narrow screen, so the tiles below do not jump when the legend arrives.
+- Approved customer-visible result: none beyond the loading blocks of the entries above. Only the height of the grey legend row changes (one line of the legend's height per row); no text, no other layout.
+- Scope: `usage-screen.tsx` (loading legend row only), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — loading state only, no new notice
+
+## 2026-10-17 — Approval record: the #724 loading-legend fix merged into this branch (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the #724 head and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-18 — Approval record: the skeleton head merged into this branch (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the skeleton head and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-18 — Codex review fix on #745: Tab leaves the token history notice for the page (no visible change)
+
+- User approval: pending — Paul reviews this PR; Codex review fix, no visible change; not seen by Paul. Keyboard Tab from the last control of the notice moves to the page behind it instead of wrapping inside the notice.
+- Approved customer-visible result: none. Focus order only; nothing looks different.
+- Scope: `setup/setup-dialog.tsx` (non-modal dialogs, scrim off) and `usage-screen.warning-overlay.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — focus fix only, no new notice
 
 ## 2026-10-17 — Usage: a usage error opens as an overlay dialog, not a box at the top (stacked on #745)
 
@@ -7880,32 +7924,6 @@ issue scope, or release permission never implies UI permission.
 - Scope: this approval record only. Pull request branch only, not merge or release.
 - What's new: none — approval record only
 
-## 2026-10-17 — Approval record: the skeleton head merged into this branch (no visible change of its own)
-
-- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
-- Approved customer-visible result: none beyond the entries above; this record restates the merge of the skeleton head and changes no screen.
-- Scope: this approval record only. Pull request branch only, not merge or release.
-- What's new: none — approval record only
-
-## 2026-10-17 — Usage loading blocks: the grey legend blocks wrap on a narrow screen like the legend (Codex review on #724)
-
-- User approval: pending — Paul reviews this PR (fix of a Codex finding on #724); look unchanged on a wide screen. On a narrow screen (about 390 px) with five or more providers, the grey legend blocks now wrap onto a second row instead of being clipped, as the loaded legend does.
-- Approved customer-visible result: none beyond the loading blocks of the entry above. Only the grey legend row changes: it wraps like the loaded legend and keeps its height on one line. No text, no other layout.
-- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (loading legend row only), and this approval record. Pull request branch only, not merge or release.
-- What's new: none — loading state only, no new notice
-
-## 2026-10-18 — Usage loading blocks: each grey legend chip keeps the legend's line height when it wraps (Codex review on #724)
-
-- User approval: pending — Paul reviews this PR (fix of a Codex finding on #724); look unchanged. The grey legend blocks keep the height of the loaded legend row when they wrap on a narrow screen, so the tiles below do not jump when the legend arrives.
-- Approved customer-visible result: none beyond the loading blocks of the entries above. Only the height of the grey legend row changes (one line of the legend's height per row); no text, no other layout.
-- Scope: `usage-screen.tsx` (loading legend row only), and this approval record. Pull request branch only, not merge or release.
-- What's new: none — loading state only, no new notice
-
-## 2026-10-17 — Approval record: the #724 loading-legend fix merged into this branch (no visible change of its own)
-
-- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
-- Approved customer-visible result: none beyond the entries above; this record restates the merge of the #724 head and changes no screen.
-
 ## 2026-10-17 — Approval record: the #745 head merged into the stack again (no visible change of its own)
 
 - User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
@@ -7924,13 +7942,6 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
 - Approved customer-visible result: none beyond the entries above; this record only moves the merge record of the entry above onto a commit of its own.
-- Scope: this approval record only. Pull request branch only, not merge or release.
-- What's new: none — approval record only
-
-## 2026-10-18 — Approval record: the skeleton head merged into this branch (no visible change of its own)
-
-- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
-- Approved customer-visible result: none beyond the entries above; this record restates the merge of the skeleton head and changes no screen.
 - Scope: this approval record only. Pull request branch only, not merge or release.
 - What's new: none — approval record only
 

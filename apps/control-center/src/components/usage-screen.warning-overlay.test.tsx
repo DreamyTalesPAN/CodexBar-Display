@@ -116,3 +116,17 @@ it("says every selected provider only when several are shown", () => {
   const dialog = screen.getByRole("dialog", { name: title });
   expect(within(dialog).getByText(/not available for every selected provider/)).toBeTruthy();
 });
+
+// Radix would wrap Tab from the last control of the notice back to its first.
+// The page behind is usable, so Tab from the last control moves to the page.
+it("lets Tab leave the notice for the page behind it", () => {
+  render(<UsageScreen companionStatus="online" onRefresh={vi.fn()} usage={usage} />);
+
+  const dialog = screen.getByRole("dialog", { name: title });
+  const last = within(dialog).getByRole("button", { name: "Close" });
+  last.focus();
+  const notPrevented = fireEvent.keyDown(last, { key: "Tab" });
+
+  expect(notPrevented).toBe(false);
+  expect(dialog.contains(document.activeElement)).toBe(false);
+});
