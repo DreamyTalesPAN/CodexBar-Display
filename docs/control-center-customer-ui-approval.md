@@ -7886,3 +7886,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none beyond the entries above; this record restates the merge of the skeleton head and changes no screen.
 - Scope: this approval record only. Pull request branch only, not merge or release.
 - What's new: none — approval record only
+
+## 2026-10-17 — Approval record: the #745 head merged into the stack again (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the current #745 head and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
