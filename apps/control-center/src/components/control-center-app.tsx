@@ -725,16 +725,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, []);
 
   const addEvent = useCallback(
-    (event: Omit<ControlCenterEvent, "id" | "at"> & { at?: string }) => {
+    (event: Omit<ControlCenterEvent, "id" | "at">) => {
       eventIdRef.current += 1;
       const id = String(eventIdRef.current);
-      setEvents((current) =>
-        recentEventsWith(current, {
-          id,
-          at: event.at || formatTime(),
-          ...event,
-        }),
-      );
+      // The time is the moment the entry is written. A time taken before an
+      // await would list an older time above newer entries (issue #548).
+      const at = formatTime();
+      setEvents((current) => recentEventsWith(current, { id, at, ...event }));
     },
     [],
   );
@@ -1352,7 +1349,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         if (setupGeneration !== setupGenerationRef.current) {
           return;
         }
-        const checkedAt = formatTime();
         const wasMissing = companionStatus === "missing";
         setCompanionStatus("online");
         setCompanionInfo(payload.companion || null);
@@ -1450,7 +1446,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             detail: payload.device?.target
               ? "Mac App is ready."
               : "VibeTV still needs to be connected.",
-            at: checkedAt,
             tone: "ready",
           });
         }
@@ -2490,7 +2485,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       addEvent({
         label: `${noun} install started`,
         detail: `${theme.title} is being installed on VibeTV.`,
-        at: startedAt,
         tone: "unknown",
       });
       try {
@@ -2999,7 +2993,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       addEvent({
         label: "VibeTV update started",
         detail: "VibeTV is being updated.",
-        at: startedAt,
         tone: "unknown",
       });
       if (!(await installTheme(activeThemeUpgrade.theme))) {
@@ -3050,7 +3043,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     addEvent({
       label: "VibeTV update started",
       detail: "VibeTV is being updated.",
-      at: startedAt,
       tone: "unknown",
     });
     try {
@@ -3119,7 +3111,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           detail:
             finishedJob.message ||
             "The firmware is current, but the connection or picture still needs repair.",
-          at: finishedAt,
           tone: "attention",
         });
         lastFirmwareErrorRef.current = {
@@ -3184,7 +3175,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         addEvent({
           label: "VibeTV update needs attention",
           detail: message,
-          at: finishedAt,
           tone: "attention",
         });
         return true;
@@ -3209,7 +3199,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           addEvent({
             label: "VibeTV update needs attention",
             detail: message,
-            at: finishedAt,
             tone: "attention",
           });
           return true;
