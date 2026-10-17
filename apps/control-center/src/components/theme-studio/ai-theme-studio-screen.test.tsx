@@ -227,6 +227,8 @@ describe("Theme Studio header", () => {
 describe("Theme Studio send reason", () => {
   const sendButton = () => screen.getByRole("button", { name: "Send to VibeTV" });
   const reasonLine = () => document.getElementById("send-blocked-reason");
+  // The tooltip sits on the wrapper: a disabled button takes no hover.
+  const tooltipOf = (button: HTMLElement) => button.parentElement;
 
   it("says why an empty design cannot be sent, under the toolbar and on the button", () => {
     render(<AIThemeStudioScreen />);
@@ -236,7 +238,8 @@ describe("Theme Studio send reason", () => {
     expect(reason?.textContent).toBe("Add at least one visual element.");
     const header = document.querySelector("header") as HTMLElement;
     expect(header.nextElementSibling?.contains(reason)).toBe(true);
-    expect(sendButton().getAttribute("title")).toBe("Add at least one visual element.");
+    expect(tooltipOf(sendButton())?.getAttribute("title")).toBe("Add at least one visual element.");
+    expect(sendButton().hasAttribute("title")).toBe(false);
     expect(sendButton().getAttribute("aria-describedby")).toBe("send-blocked-reason");
   });
 
@@ -249,7 +252,7 @@ describe("Theme Studio send reason", () => {
     expect(reason).toBeTruthy();
     expect(reason).not.toBe("Add at least one visual element.");
     expect(screen.getByRole("alert").textContent).toBe(`This design needs an adjustment before saving. ${reason}`);
-    expect(sendButton().getAttribute("title")).toBe(reason);
+    expect(tooltipOf(sendButton())?.getAttribute("title")).toBe(reason);
   });
 
   it("gives no reason while an install is running", () => {
@@ -257,7 +260,7 @@ describe("Theme Studio send reason", () => {
 
     expect(sendButton().hasAttribute("disabled")).toBe(true);
     expect(reasonLine()).toBeNull();
-    expect(sendButton().hasAttribute("title")).toBe(false);
+    expect(tooltipOf(sendButton())?.hasAttribute("title")).toBe(false);
   });
 
   it("gives no reason while the design is being sent", async () => {
@@ -269,7 +272,7 @@ describe("Theme Studio send reason", () => {
 
     await screen.findByRole("button", { name: "Sending…" });
     expect(reasonLine()).toBeNull();
-    expect(screen.getByRole("button", { name: "Sending…" }).hasAttribute("title")).toBe(false);
+    expect(tooltipOf(screen.getByRole("button", { name: "Sending…" }))?.hasAttribute("title")).toBe(false);
   });
 
   it("gives no reason when a valid design can be sent", async () => {
@@ -279,6 +282,6 @@ describe("Theme Studio send reason", () => {
 
     expect(sendButton().hasAttribute("disabled")).toBe(false);
     expect(reasonLine()).toBeNull();
-    expect(sendButton().hasAttribute("title")).toBe(false);
+    expect(tooltipOf(sendButton())?.hasAttribute("title")).toBe(false);
   });
 });

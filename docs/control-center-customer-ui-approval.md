@@ -7594,3 +7594,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: pending — before: with an empty design, or a design that breaks a VibeTV limit, "Send to VibeTV" is off and nothing says why (the chat alert shows the reason only once an element exists). After: the same sentence as that chat alert appears under ← in the notice line (grey, same size as the other notices) and as the button's tooltip; empty design: "Add at least one visual element." Busy, saving and sending show no reason.
 - Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — the sentences already exist in the app; the notice line and tooltip are the only new places
+
+## 2026-10-17 — #551: the tooltip of a disabled Send sits on a hoverable wrapper (Codex review fix, no new wording)
+
+- User approval: Codex review fix that implements the approved rule of "#551: a disabled "Send to VibeTV" says why" (the tooltip must actually show on hover); no new wording; not seen by Paul.
+- Approved customer-visible result: as approved in that entry. The reason line is unchanged; the tooltip now comes from a wrapper around the button, because a disabled button takes no hover.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — refinement of #551

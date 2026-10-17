@@ -1098,10 +1098,13 @@ export function AIThemeStudioScreen({
             >
               Save
             </Button>
-            <Button disabled={locked || sendNeedsFix} title={sendBlockedReason || undefined} aria-describedby={sendBlockedReason ? "send-blocked-reason" : undefined} onClick={() => void send()}>
-              {sending ? <Spinner /> : null}
-              {sending ? "Sending…" : transferJob ? "Check transfer" : "Send to VibeTV"}
-            </Button>
+            {/* A disabled button takes no pointer events, so the tooltip sits on this wrapper. */}
+            <span title={sendBlockedReason || undefined} className="inline-flex">
+              <Button disabled={locked || sendNeedsFix} aria-describedby={sendBlockedReason ? "send-blocked-reason" : undefined} onClick={() => void send()}>
+                {sending ? <Spinner /> : null}
+                {sending ? "Sending…" : transferJob ? "Check transfer" : "Send to VibeTV"}
+              </Button>
+            </span>
           </div>
         </header>
         {notices.length || sendBlockedReason ? (
