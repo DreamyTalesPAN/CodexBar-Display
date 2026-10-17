@@ -2713,7 +2713,8 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
     await page
       .getByRole("heading", { name: "VibeTV is connected" })
       .waitFor({ timeout: 10_000 });
-    await page.getByText("Live", { exact: true }).waitFor({ timeout: 10_000 });
+    // The Overview shows the live VibeTV in 3D (calm Overview, #713).
+    await page.getByRole("group", { name: /Interactive VibeTV preview/ }).waitFor({ timeout: 10_000 });
     assert(
       (await page.getByText("AI provider", { exact: true }).count()) === 0,
       "Overview must not guess or show an AI provider",
@@ -3430,7 +3431,7 @@ async function testRunningCompanionOutageKeepsControlCenterOpen(
   await recovery.waitFor({ state: "detached", timeout: 10_000 });
 
   await clickNavigation(page, "Overview");
-  await page.getByText("Not reachable", { exact: true }).waitFor({
+  await page.getByRole("heading", { name: "VibeTV status", exact: true }).waitFor({
     timeout: 12_000,
   });
   await clickNavigation(page, "Usage");
@@ -3888,9 +3889,10 @@ async function testEnteredControlCenterOpensPairingRecovery(browser, appUrl) {
   await page.getByRole("navigation", { name: "Control Center" }).waitFor({
     timeout: 15_000,
   });
+  // The Overview has no status tiles any more (calm Overview, #713); the
+  // not-connected state is its heading.
   await page
-    .getByText("Not connected", { exact: true })
-    .first()
+    .getByRole("heading", { name: "VibeTV status", exact: true })
     .waitFor({ timeout: 20_000 });
   assert(
     selectRequests.length === 0,
@@ -6096,7 +6098,8 @@ async function testLocalOverviewRecoversWhenDeviceBecomesReady(
   await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
     timeout: 10_000,
   });
-  await page.getByText("Live", { exact: true }).waitFor({
+  // The Overview shows the live VibeTV in 3D (calm Overview, #713).
+  await page.getByRole("group", { name: /Interactive VibeTV preview/ }).waitFor({
     timeout: 12_000,
   });
   assert(
