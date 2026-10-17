@@ -7618,3 +7618,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Setup Wizard status logs (welcome, providers, device, theme install): before: a blinking caret block at the end of the log while work runs; after: none. Lines, box, fade-in and everything else unchanged.
 - Scope: `apps/control-center/src/components/process-steps.tsx`, `apps/control-center/src/components/setup/setup-log.tsx` (caret and `running` prop removed), the four wizard callers that passed `running` (setup-welcome-screen, setup-providers-screen, setup-theme-screen, setup-device-screen), their tests, and this record. Pull request branch only, not merge or release.
 - What's new: none — removes a visual element; no new copy
+
+## 2026-10-17 — Theme Studio AI line uses the shared process-steps look
+
+- User approval: pending — Paul reviews this PR (Paul's rule of 17.10.2026: process steps look the same everywhere); he has not yet seen this build.
+- Approved customer-visible result: look unchanged — the Theme Studio AI line now uses the shared ProcessSteps component (Paul's rule 17.10.). Before → after: none; the "> word" line, its fade-in per word and its word order stay as they are.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` (the AI working line, local styles removed) and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no visible change
