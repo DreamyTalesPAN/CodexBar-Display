@@ -204,7 +204,7 @@ describe("UsageScreen", () => {
     // Same chart wrapper and legend row as the finished panel, so the tiles below do not move.
     expect(loading).toContain("relative mt-8 min-h-96");
     expect(renderUsage()).toContain("relative mt-8 min-h-96");
-    expect(loading.indexOf("relative mt-8 min-h-96")).toBeLessThan(loading.lastIndexOf("gap-[18px]"));
+    expect(loading.indexOf("relative mt-8 min-h-96")).toBeLessThan(loading.lastIndexOf("gap-x-[18px]"));
     // The skeleton shows no figures and no finished headings.
     expect(loading).not.toContain("Last 30 days");
     expect(loading).not.toContain("Tokens used over time");
