@@ -7792,3 +7792,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the 30-day total in Usage is set in a larger hero size (46 px, semibold, tight line height), the only text size beyond 28 px and 13 px. The token chart is taller (384 px instead of 256 px), still without card or title. The provider legend (colour dot and name) moves from the head line to below the chart, left-aligned under the x-axis. The Refresh icon stays top right on the "Last 30 days" line. Wording unchanged; no new control.
 - Scope: `usage-screen.tsx`, `usage-screen.test.tsx`, the hero token in `src/app/globals.css`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — size and position change only, no new notice
+
+## 2026-10-17 — Usage chart colours follow the provider, not the order of the response (Codex review on #714)
+
+- User approval: pending — Paul reviews this PR (fix of a Codex finding on #714); look unchanged: Claude keeps the ink dot and line, Codex the olive, as in the entry above. Nothing else.
+- Approved customer-visible result: none beyond the colours of the entry above: Claude in ink, Codex in olive. When the response lists Codex first, the colours had swapped before; now they stay with the provider. In the usual order nothing changes.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (chart colour assignment only), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — colour fix only, no new notice
