@@ -1278,7 +1278,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setThemeInstallStatus({
           ...initialStatus,
           phase: "error",
-          finishedAt: formatTime(),
+          finishedAt: new Date().toISOString(),
           message: normalized.nextAction,
           progress: 100,
           logs: [
@@ -2469,7 +2469,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           startedAt,
           finishedAt:
             phase === "complete" || phase === "error"
-              ? formatTime()
+              ? new Date().toISOString()
               : undefined,
           message: job.message || logs[logs.length - 1],
           progress: clampProgress(job.progress),
@@ -2568,7 +2568,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           } satisfies ApiError;
         }
         setLastInstall(result);
-        const finishedAt = formatTime();
+        const finishedAt = new Date().toISOString();
         setThemeInstallStatus({
           phase: "complete",
           themeId: theme.themeId,
@@ -2615,7 +2615,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           themeId: theme.themeId,
           title: theme.title,
           startedAt,
-          finishedAt: formatTime(),
+          finishedAt: new Date().toISOString(),
           message: normalized.nextAction,
           progress: 100,
           logs: [...initialLogs, normalized.message, normalized.nextAction],
