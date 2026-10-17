@@ -685,6 +685,13 @@ function runsOutText(window: UsageWindowInfo, etaLeft: number): string | null {
     : null;
 }
 
+// The two generic lanes keep their lowercase wording; any other window shows
+// the label CodexBar delivered, as it is ("Fable only" stays "Fable only").
+function windowLabel(label: string): string {
+  const generic = label.trim().toLowerCase();
+  return generic === "session" || generic === "weekly" ? generic : label;
+}
+
 function usageLines(
   provider: UsageProviderInfo,
   now: Date,
@@ -702,7 +709,7 @@ function usageLines(
   if (provider.windows?.length) {
     return provider.windows.map((window) => ({
       key: window.id,
-      label: window.label.toLowerCase(),
+      label: windowLabel(window.label),
       percent: clampPercent(window.usedPercent),
       resetText: resetText(window.resetSecs),
       runsOutText: quiet

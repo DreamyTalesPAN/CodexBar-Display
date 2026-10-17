@@ -7827,3 +7827,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: As in the entry above, a red "Runs out in …" line under a window's bar only when CodexBar says that window will not last to its reset. Its duration counts down from when the reading was taken and the line goes away when the time is up. No new wording.
 - Scope: `usage-screen.tsx` (runs-out countdown) and its test, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — review fix, no new notice
+
+## 2026-10-17 — Usage: named windows keep CodexBar's label, e.g. "Fable only" (#669)
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, found on the Mac with #669); look unchanged except: "100% fable only remaining" → "100% Fable only remaining"; session and weekly stay as they are.
+- Approved customer-visible result: pending — a named CodexBar window keeps its label as delivered ("100% Fable only remaining"); session and weekly keep their lowercase wording ("45% session used", "26% weekly used"). No new wording.
+- Scope: `usage-screen.tsx` (label of named CodexBar windows), `usage-screen.test.tsx` (label expectations and one new test), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — label fix only, no new notice
