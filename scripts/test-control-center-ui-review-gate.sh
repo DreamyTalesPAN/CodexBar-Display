@@ -25,6 +25,14 @@ assert_contains() {
     || die "expected output to contain: ${needle}"
 }
 
+assert_not_contains() {
+  local haystack="$1"
+  local needle="$2"
+  if printf '%s\n' "$haystack" | grep -F "$needle" >/dev/null; then
+    die "expected output not to contain: ${needle}"
+  fi
+}
+
 WHATS_NEW_NONE="- What's new: none — nothing a customer would look for"
 
 # The second argument is the entry's "What's new" line; empty leaves it out.
@@ -35,6 +43,15 @@ approval_entry() {
     "$label" "$label"
   [[ -z "$whats_new" ]] || printf '%s\n' "$whats_new"
 }
+
+# An entry that waits for Paul's yes in the PR review: the gate passes with a notice.
+pending_approval_entry() {
+  local label="$1"
+  printf '\n## %s\n\n- User approval: pending — Paul reviews this PR (test).\n- Approved customer-visible result: %s\n%s\n' \
+    "$label" "$label" "$WHATS_NEW_NONE"
+}
+
+PENDING_NOTICE="UI approval pending: Paul's yes in the PR review is required before merge"
 
 setup_repo() {
   local repo="$1"
@@ -287,6 +304,68 @@ test_pull_request_merge_commit_uses_pr_head() {
   assert_contains "$output" "Review head: ${feature_head}"
 }
 
+# A pending newest entry passes and prints the notice on the console.
+test_pending_approval_passes_with_notice() {
+  local repo="${TMP_ROOT}/pending-approval"
+  setup_repo "$repo"
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Change customer-facing UI"
+  pending_approval_entry "Pending overview" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" add docs/control-center-customer-ui-approval.md
+  git -C "$repo" commit -q -m "Pending approval for overview"
+
+  local output
+  output="$(run_gate "$repo")" || {
+    printf '%s\n' "$output" >&2
+    die "expected pending UI approval to pass the gate"
+  }
+  assert_contains "$output" "Control Center UI review gate: ok"
+  assert_contains "$output" "$PENDING_NOTICE"
+}
+
+# In CI the same notice becomes an annotation and a job summary line.
+test_pending_approval_notice_reaches_ci_summary() {
+  local repo="${TMP_ROOT}/pending-ci"
+  setup_repo "$repo"
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Change customer-facing UI"
+  pending_approval_entry "Pending overview" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" add docs/control-center-customer-ui-approval.md
+  git -C "$repo" commit -q -m "Pending approval for overview"
+
+  local summary="${TMP_ROOT}/pending-ci-summary.md"
+  : > "$summary"
+  local output
+  output="$(
+    cd "$repo"
+    GITHUB_ACTIONS=true \
+      GITHUB_EVENT_NAME=pull_request \
+      GITHUB_STEP_SUMMARY="$summary" \
+      node "$GATE" 2>&1
+  )" || {
+    printf '%s\n' "$output" >&2
+    die "expected pending UI approval to pass the gate in CI"
+  }
+  assert_contains "$output" "Control Center UI review gate: ok"
+  assert_contains "$output" "::notice title=Control Center UI approval pending::${PENDING_NOTICE}"
+  assert_contains "$(cat "$summary")" "$PENDING_NOTICE"
+}
+
+# A given approval prints no pending notice, so nothing changes for it.
+test_given_approval_prints_no_pending_notice() {
+  local repo="${TMP_ROOT}/given-approval"
+  approve_ui_change_with "$repo" "$WHATS_NEW_NONE"
+  local output
+  output="$(run_gate "$repo")" || {
+    printf '%s\n' "$output" >&2
+    die "expected given UI approval to pass the gate"
+  }
+  assert_contains "$output" "Control Center UI review gate: ok"
+  assert_not_contains "$output" "UI approval pending"
+}
+
 test_non_ui_commits_do_not_block
 test_ui_change_blocks_immediately
 test_working_tree_ui_change_blocks_immediately
@@ -301,5 +380,8 @@ test_whats_new_entry_id_is_named_by_one_approval_only
 test_every_added_entry_needs_its_whats_new_line
 test_every_added_entry_needs_its_approval_lines
 test_pull_request_merge_commit_uses_pr_head
+test_pending_approval_passes_with_notice
+test_pending_approval_notice_reaches_ci_summary
+test_given_approval_prints_no_pending_notice
 
 printf 'control-center UI review gate tests passed\n'

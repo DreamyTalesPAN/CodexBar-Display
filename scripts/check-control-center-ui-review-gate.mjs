@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
 
 const repoRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
   encoding: "utf8",
@@ -19,6 +19,10 @@ const APPROVAL_PREFIXES = [
 // backticks, or "none — <reason>".
 const WHATS_NEW_PREFIX = "- What's new:";
 const WHATS_NEW_FILE = "apps/control-center/src/lib/whats-new.ts";
+// A newest entry whose "User approval:" line starts with "pending" passes the
+// gate, but the notice keeps Paul's yes in the PR review visible.
+const PENDING_APPROVAL_NOTICE =
+  "UI approval pending: Paul's yes in the PR review is required before merge";
 
 const uiFilePatterns = [
   /^apps\/control-center\/src\/components\//,
@@ -79,6 +83,10 @@ if (due) {
     console.error(`error: ${message}`);
   }
   process.exit(1);
+}
+
+if (newestApprovalPending()) {
+  printPendingApprovalNotice();
 }
 
 function analysisHeadRef() {
@@ -192,6 +200,32 @@ function whatsNewIds() {
 
 function isUiFile(file) {
   return uiFilePatterns.some((pattern) => pattern.test(file));
+}
+
+// The newest entry is the last "## " block of the approval record.
+function newestApprovalPending() {
+  let entries;
+  try {
+    entries = readFileSync(APPROVAL_FILE, "utf8")
+      .split(/^(?=## )/m)
+      .filter((entry) => entry.startsWith("## "));
+  } catch {
+    return false;
+  }
+  const newest = entries[entries.length - 1] || "";
+  const approvalLine = lines(newest).find((line) => line.startsWith("- User approval:"));
+  return Boolean(approvalLine) && /^- User approval:\s*pending\b/.test(approvalLine);
+}
+
+function printPendingApprovalNotice() {
+  console.log(PENDING_APPROVAL_NOTICE);
+  if (process.env["GITHUB_ACTIONS"]) {
+    console.log(`::notice title=Control Center UI approval pending::${PENDING_APPROVAL_NOTICE}`);
+    const summary = process.env["GITHUB_STEP_SUMMARY"];
+    if (summary) {
+      appendFileSync(summary, `### Control Center UI approval pending\n\n${PENDING_APPROVAL_NOTICE}.\n\n`);
+    }
+  }
 }
 
 function printSummary({
