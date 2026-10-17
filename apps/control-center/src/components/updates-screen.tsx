@@ -160,9 +160,18 @@ export function UpdatesScreen({
       firmwareUpdate.status !== "check_failed" &&
       !updateAvailable,
   );
-  const visibleUpdateStatus = staleFirmwareFailure
-    ? undefined
-    : statusForHost(updateStatus, windowsHost);
+  const firmwareCheckFailed = firmwareUpdate?.status === "check_failed";
+  // A failed firmware check replaces a finished update's notice, so "Update
+  // complete" never stays below "Update check failed". The completion time
+  // is not comparable here (live completions store a localized clock time),
+  // so the check is not ordered against it.
+  const failedCheckReplacesCompletion = Boolean(
+    firmwareUpdateCompleted && firmwareCheckFailed,
+  );
+  const visibleUpdateStatus =
+    staleFirmwareFailure || failedCheckReplacesCompletion
+      ? undefined
+      : statusForHost(updateStatus, windowsHost);
   const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
   const nativeMacUpdateReady = Boolean(
     macAppUpdateAvailable && companionInfo?.app?.installedInApplications,
@@ -200,7 +209,6 @@ export function UpdatesScreen({
     macAppRunning &&
     (companionRelease?.status === "check_failed" ||
       companionRelease?.dmgDownloadStatus === "check_failed");
-  const firmwareCheckFailed = firmwareUpdate?.status === "check_failed";
   const companionInstalled =
     companionStatus === "missing"
       ? "Not running"
@@ -547,7 +555,7 @@ function InlineUpdateProgress({
         "Preparing VibeTV update.";
   return (
     <div className="flex flex-col gap-3" role="status" aria-live="polite">
-      <Progress aria-label={title} value={progress} />
+      {complete ? null : <Progress aria-label={title} value={progress} />}
       <Alert>
         {complete || attention ? (
           <ShieldCheck aria-hidden />
