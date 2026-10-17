@@ -7467,3 +7467,21 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-17 — Companion colours stay exact when a backdrop is added
+- User approval: pending — Paul reviews this PR (fix of a reported defect, PR #422 review finding); look unchanged except: companion colours stay exact when a backdrop is added.
+- Approved customer-visible result: none yet; the device copy of an AI companion keeps its own colours when the picture behind it has many colours. Before: a companion with more than 8 colours could lose the extra ones to the picture on the device. After: up to 18 companion colours keep their exact palette entries and the picture keeps at least 8. Layout, colours of the picture and wording stay the same.
+- Scope: `encodeAIThemeCBA1` palette reservation in `apps/control-center/src/lib/ai-theme.ts` and its test in `apps/control-center/src/lib/ai-theme-document.test.ts`. Pull request branch only, not merge or release.
+- What's new: none — a fix of a reported defect; no new text, no new screen
+
+## 2026-10-17 — Companion colours: picture keeps its slots (review fix)
+- User approval: pending — Paul reviews this PR (review fix of the same defect, PR #422 finding); look unchanged except: companion colours stay exact when a backdrop is added, and the picture behind a companion keeps its own colours.
+- Approved customer-visible result: none beyond the entry above; this only changes which palette slots the picture may use when a companion already uses many colours.
+- Scope: `encodeAIThemeCBA1` in `apps/control-center/src/lib/ai-theme.ts` and its test in `apps/control-center/src/lib/ai-theme-document.test.ts`. Pull request branch only, not merge or release.
+- What's new: none — a fix of a reported defect; no new text, no new screen
+
+## 2026-10-17 — Companion colours: free palette slots go to the companion (review fix 2)
+- User approval: pending — Paul reviews this PR (review fix of the same defect, PR #422 finding); look unchanged except: companion colours stay exact when a backdrop is added, also when the picture has only a few colours.
+- Approved customer-visible result: none beyond the entries above; this only changes which palette slots are used when a companion has many colours.
+- Scope: `encodeAIThemeCBA1` in `apps/control-center/src/lib/ai-theme.ts` and its test in `apps/control-center/src/lib/ai-theme-document.test.ts`. Pull request branch only, not merge or release.
+- What's new: none — a fix of a reported defect; no new text, no new screen
