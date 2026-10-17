@@ -52,7 +52,8 @@ export function useProviderActionDismissal(
 ): [
   { id: string; action: UsageProviderAction; error: ApiError | null } | null,
   () => void,
-  (id: string, state: string, error: ApiError | null, rearm: boolean) => void,
+  (id: string, state: string, error: ApiError | null, rearm: boolean, signIn: object) => void,
+  (id: string) => object,
 ] {
   const entries = Object.entries(actions);
   const signature = entries.map(([id, action]) => actionKey(id, action)).join("\n");
@@ -62,13 +63,21 @@ export function useProviderActionDismissal(
     checking,
     dismissed: new Set<string>(),
     failures: new Map<string, ApiError>(),
+    // The latest sign-in start per provider (#679). Only its reply counts.
+    signIns: new Map<string, object>(),
   });
-  let { dismissed, failures } = memory;
+  let { dismissed, failures, signIns } = memory;
   if (memory.signature !== signature || memory.checking !== checking) {
     // The set of actions changed: keep what is still there, and what is still
     // being checked (a checking read is not a healthy result).
     const current = new Set(signature ? signature.split("\n") : []);
     const held = new Set(checkingIds);
+    // A provider that left its action forgets its sign-in: a reply for it
+    // after its return must not reopen or clear the new incident.
+    const ids = new Set(entries.map(([id]) => id));
+    signIns = new Map(
+      [...memory.signIns].filter(([id]) => ids.has(id) || held.has(id)),
+    );
     dismissed = new Set(
       [...dismissed].filter(
         (key) => current.has(key) || held.has(key.split(":")[0]),
@@ -79,7 +88,7 @@ export function useProviderActionDismissal(
         ([key]) => current.has(key) || held.has(key.split(":")[0]),
       ),
     );
-    setMemory({ signature, checking, dismissed, failures });
+    setMemory({ signature, checking, dismissed, failures, signIns });
   }
   let shown: [string, UsageProviderAction] | undefined = entries.find(
     ([id, action]) => !dismissed.has(actionKey(id, action)),
@@ -110,9 +119,19 @@ export function useProviderActionDismissal(
   };
   // rearm: the sign-in was started from the overlay or a Usage tile, so a failure
   // reopens the overlay; one started in Settings shows there and stays put.
-  const reportSignIn = (id: string, state: string, error: ApiError | null, rearm: boolean) => {
+  const reportSignIn = (
+    id: string,
+    state: string,
+    error: ApiError | null,
+    rearm: boolean,
+    signIn: object,
+  ) => {
     const key = `${id}:${state}`;
     setMemory((previous) => {
+      // A reply from a superseded sign-in must not reopen or clear the newer one.
+      if (previous.signIns.get(id) !== signIn) {
+        return previous;
+      }
       // A reply that comes after its action ended must not revive it.
       if (
         error &&
@@ -135,6 +154,15 @@ export function useProviderActionDismissal(
       return { ...previous, dismissed: dismissedNow, failures: failuresNow };
     });
   };
+  // A sign-in start: the provider's latest sign-in is this one, from now on.
+  const startSignIn = (id: string) => {
+    const signIn: object = {};
+    setMemory((previous) => ({
+      ...previous,
+      signIns: new Map(previous.signIns).set(id, signIn),
+    }));
+    return signIn;
+  };
   return [
     shown
       ? {
@@ -145,6 +173,7 @@ export function useProviderActionDismissal(
       : null,
     dismiss,
     reportSignIn,
+    startSignIn,
   ];
 }
 
