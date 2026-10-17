@@ -683,10 +683,11 @@ export function encodeAIThemeCBA1(
     }
     colors.push(frameColors);
   }
-  // Leave room for the artwork baked behind transparent companions. Reserving
-  // all 26 companion colors forces every background pixel into that palette,
+  // Companion colors keep their exact palette entries, up to 18 of them. The
+  // artwork baked behind transparent companions keeps at least 8 slots: reserving
+  // all 26 companion colors would force every background pixel into that palette,
   // producing a differently colored rectangle around an otherwise correct pet.
-  const reserved = [...new Set(priorityColors)].filter((color) => counts.has(color)).slice(0, 8);
+  const reserved = [...new Set(priorityColors)].filter((color) => counts.has(color)).slice(0, MAX_COLORS - 8);
   const palette = [...reserved, ...Array.from(counts.entries())
     .sort((a, b) => b[1] - a[1])
     .map(([color]) => color)
