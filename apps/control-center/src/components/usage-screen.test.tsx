@@ -475,12 +475,37 @@ describe("UsageScreen", () => {
     });
 
     expect(html).toContain('aria-label="57% 7-day quota used"');
-    expect(html).toContain('aria-label="12% codex spark weekly used"');
+    expect(html).toContain('aria-label="12% Codex Spark Weekly used"');
     expect(html.indexOf('aria-label="57% 7-day quota used"')).toBeLessThan(
-      html.indexOf('aria-label="12% codex spark weekly used"'),
+      html.indexOf('aria-label="12% Codex Spark Weekly used"'),
     );
     expect(html).not.toContain("Session:");
     expect(html).not.toContain("Session: 0%");
+  });
+
+  // CodexBar's own window label stays as delivered; only the generic lanes are lowercase.
+  it("keeps a named CodexBar window label as delivered and lowercases only session and weekly", () => {
+    const html = renderUsage(null, {
+      ...usage,
+      providers: [
+        {
+          ...usage.providers[0],
+          session: 94,
+          weekly: 91,
+          usageMode: "remaining",
+          windows: [
+            { id: "session", label: "Session", usedPercent: 94 },
+            { id: "weekly", label: "Weekly", usedPercent: 91 },
+            { id: "fable", label: "Fable only", usedPercent: 100 },
+          ],
+        },
+      ],
+    });
+
+    expect(html).toContain('aria-label="94% session remaining"');
+    expect(html).toContain('aria-label="91% weekly remaining"');
+    expect(html).toContain('aria-label="100% Fable only remaining"');
+    expect(html).not.toContain("fable only remaining");
   });
 
   it("does not invent normalized lanes for legacy custom windows", () => {
@@ -502,7 +527,7 @@ describe("UsageScreen", () => {
       ],
     });
 
-    expect(html).toContain('aria-label="23% custom quota used"');
+    expect(html).toContain('aria-label="23% Custom quota used"');
     expect(html).not.toContain("Session:");
     expect(html).not.toContain("Weekly:");
   });

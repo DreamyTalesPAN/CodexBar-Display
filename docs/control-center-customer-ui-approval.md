@@ -7757,3 +7757,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No change. A healthy, fresh tile shows its reset time top-right and on each later window line while the token history is still counting, with no spinner. No new wording.
 - Scope: `usage-screen.test.tsx` (one new test), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — test only, no customer-visible change
+
+## 2026-10-17 — Usage: named windows keep CodexBar's label, e.g. "Fable only" (#669)
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, found on the Mac with #669); look unchanged except: "100% fable only remaining" → "100% Fable only remaining"; session and weekly stay as they are.
+- Approved customer-visible result: pending — a named CodexBar window keeps its label as delivered ("100% Fable only remaining"); session and weekly keep their lowercase wording ("45% session used", "26% weekly used"). No new wording.
+- Scope: `usage-screen.tsx` (label of named CodexBar windows), `usage-screen.test.tsx` (label expectations and one new test), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — label fix only, no new notice
