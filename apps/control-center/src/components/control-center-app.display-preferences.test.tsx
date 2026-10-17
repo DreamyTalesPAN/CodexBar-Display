@@ -880,13 +880,14 @@ it("lists Recent activity newest first with the time each entry was written", as
   fireEvent.click(screen.getByRole("button", { name: "Support" }));
   await window.wait(1);
 
-  const times = within(
+  const entries = within(
     screen.getByText("Recent activity").closest('[data-slot="card"]') as HTMLElement,
-  )
-    .getAllByRole("listitem")
-    .map((entry) => entry.textContent?.match(/\d\d:\d\d:\d\d$/)?.[0])
-    .filter((time): time is string => Boolean(time));
+  ).getAllByRole("listitem");
+  // The session start keeps its marker "Session" and stays last.
+  expect(entries.at(-1)?.textContent).toMatch(/Session$/);
+  const times = entries.slice(0, -1).map((entry) => entry.textContent?.match(/\d\d:\d\d:\d\d$/)?.[0]);
   expect(times.length).toBeGreaterThanOrEqual(2);
+  expect(times.every((time) => time !== undefined)).toBe(true);
   expect(times).toEqual([...times].sort().reverse());
 });
 
