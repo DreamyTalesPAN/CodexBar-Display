@@ -72,8 +72,7 @@ export type LogsScreenProps = {
     message: string;
     nextAction: string;
   } | null;
-  /** The error the owner has already dismissed; the same object stays closed. */
-  dismissedError?: LogsScreenProps["lastError"];
+  /** The owner shows only errors it has not had closed yet. */
   onDismissError?: () => void;
   onLoadDiagnostics?: () => void;
   onRefresh?: () => void;
@@ -92,7 +91,6 @@ export function LogsScreen({
   themes = [],
   diagnostics,
   lastError,
-  dismissedError,
   onDismissError,
   onLoadDiagnostics,
   onRefresh,
@@ -113,7 +111,7 @@ export function LogsScreen({
   // failure (a new object, even with the same words) opens the dialog again.
   return (
     <div className="mx-auto grid max-w-[1180px] gap-4 py-6">
-      {lastError && lastError !== dismissedError ? (
+      {lastError ? (
         <SetupDialog
           description={supportText(lastError.nextAction)}
           icon={AlertTriangle}

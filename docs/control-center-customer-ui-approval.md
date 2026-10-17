@@ -7495,3 +7495,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: On Support, the last error is shown as its dialog only when no other centred dialog is open. The text of every dialog is unchanged. When the other dialog closes, the Support error shows, unless it was already dismissed. Nothing else changes.
 - Scope: `apps/control-center/src/components/control-center-app.tsx` (the condition for what Support receives) and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no new capability, the same dialogs in a fixed order
+
+## 2026-10-17 — An error closed once stays closed on Support and in Settings
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect: an error closed on Support came back on Settings; Codex review on #743); look unchanged except: an error closed with "OK" on Support no longer opens again when Settings is opened, and the Settings error dialog is not shown for an error that was already closed.
+- Approved customer-visible result: An error dialog closed with "OK" (or the X) stays closed on every page for that same error. A new failure, even with the same words, opens it again. The text and buttons of the dialogs are unchanged. Nothing else changes.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (the dismissed error, kept once for Support and Settings), `apps/control-center/src/components/logs-screen.tsx` (reports the dismissal, no own state), `apps/control-center/src/components/logs-screen.error-overlay.test.tsx` and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no new capability, the same dialogs

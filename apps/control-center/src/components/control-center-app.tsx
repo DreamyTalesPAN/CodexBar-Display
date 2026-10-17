@@ -456,14 +456,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, [busyAction]);
   const [supportReportBusy, setSupportReportBusy] = useState(false);
   const [lastError, setLastError] = useState<ApiError | null>(null);
-  // The Support error dialog closes per error object (issue: one error, one dialog).
+  // One error object is one occurrence. Once a surface has closed it, no
+  // surface shows it again (Support and Settings alike).
+  const [dismissedError, setDismissedError] = useState<ApiError | null>(null);
+  const shownError = lastError && lastError !== dismissedError ? lastError : null;
   const supportError = useMemo(
-    () => errorForHost(lastError, windowsHost),
-    [lastError, windowsHost],
+    () => errorForHost(shownError, windowsHost),
+    [shownError, windowsHost],
   );
-  const [dismissedSupportError, setDismissedSupportError] = useState<
-    typeof supportError
-  >(null);
   const [lastInstall, setLastInstall] = useState<InstallResponse["result"]>();
   const [themeInstallStatus, setThemeInstallStatus] =
     useState<ThemeInstallStatus | null>(null);
@@ -5683,9 +5683,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         {activeShellTab === "settings" ? (
           <SettingsScreen
             actionError={
-              lostDevicePickerOpen ? null : errorForHost(lastError, windowsHost)
+              lostDevicePickerOpen ? null : errorForHost(shownError, windowsHost)
             }
             onDismissError={() => {
+              setDismissedError(lastError);
               setLastError(null);
               setProviderDisplayError(null);
               setProviderPreferencesError(null);
@@ -5807,9 +5808,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             themes={catalog.themes}
             diagnostics={supportDiagnostics}
             events={logs}
-            dismissedError={dismissedSupportError}
             lastError={centredDialogOpen ? null : supportError}
-            onDismissError={() => setDismissedSupportError(supportError)}
+            onDismissError={() => setDismissedError(lastError)}
             onLoadDiagnostics={loadSupportDiagnostics}
             onRefresh={checkCompanion}
             onRepairUsageEngine={retryUsageService}

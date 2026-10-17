@@ -2,13 +2,11 @@
 //
 // Errors are dialogs over the page, never inline text. The Support page used
 // to show its last error as an alert inside the Recent activity card; the same
-// sentences now open the setup error dialog and close with OK. The dismissal
-// lives with the owner of the error (as in ControlCenterApp), so it survives
-// leaving and returning to Support, and a new failure opens the dialog again.
+// sentences now open the setup error dialog and close with OK. Whether an
+// error is still shown is decided by ControlCenterApp, which owns the error.
 
-import { useState } from "react";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { LogsScreen } from "./logs-screen";
 
 afterEach(() => {
@@ -22,23 +20,8 @@ const failure = {
   nextAction: "Try again in a moment.",
 };
 
-// Stands in for ControlCenterApp: it owns the error and the dismissal, and
-// `shown` stands for leaving the Support tab (LogsScreen unmounts).
-function Support({ error, shown = true }: { error: typeof failure | null; shown?: boolean }) {
-  const [dismissed, setDismissed] = useState<typeof failure | null>(null);
-  if (!shown) return <p>Another tab</p>;
-  return (
-    <LogsScreen
-      device={device}
-      dismissedError={dismissed}
-      lastError={error}
-      onDismissError={() => setDismissed(error)}
-    />
-  );
-}
-
 it("shows the last error in a dialog over the page, not as text on the page", () => {
-  const { container } = render(<Support error={failure} />);
+  const { container } = render(<LogsScreen device={device} lastError={failure} />);
 
   const dialog = screen.getByRole("dialog");
   expect(within(dialog).getByText("Usage needs attention.")).toBeTruthy();
@@ -47,30 +30,15 @@ it("shows the last error in a dialog over the page, not as text on the page", ()
   expect(container.textContent).not.toContain("Try again in a moment.");
 });
 
-it("closes the error dialog with OK and keeps it closed for the same error", () => {
-  const { rerender } = render(<Support error={failure} />);
+it("reports the dismissal to its owner when OK closes the dialog", () => {
+  const onDismissError = vi.fn();
+  render(<LogsScreen device={device} lastError={failure} onDismissError={onDismissError} />);
 
   fireEvent.click(screen.getByRole("button", { name: "OK" }));
-  expect(screen.queryByRole("dialog")).toBeNull();
-
-  rerender(<Support error={failure} />);
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(onDismissError).toHaveBeenCalledTimes(1);
 });
 
-it("keeps a dismissed error closed when Support is left and opened again", () => {
-  const { rerender } = render(<Support error={failure} />);
-  fireEvent.click(screen.getByRole("button", { name: "OK" }));
-
-  rerender(<Support error={failure} shown={false} />);
-  rerender(<Support error={failure} />);
+it("shows no dialog when the owner has no error to show", () => {
+  render(<LogsScreen device={device} lastError={null} />);
   expect(screen.queryByRole("dialog")).toBeNull();
-});
-
-it("opens the dialog again for a new failure with the same words", () => {
-  const { rerender } = render(<Support error={failure} />);
-  fireEvent.click(screen.getByRole("button", { name: "OK" }));
-
-  // A retry that fails again is a new error object.
-  rerender(<Support error={{ ...failure }} />);
-  expect(screen.getByRole("dialog")).toBeTruthy();
 });
