@@ -7467,3 +7467,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-17 — #579 (found in #698): provider shortcut line keeps two lines under Display mode
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #579); look unchanged except: under Settings › Display mode the shortcut line ("Press … in any app to show the next provider. …") always has room for two lines. Before: the space followed the text, one line in Manual or before usage is read and two lines in Automatic with usage, so switching made the page below jump by one line. After: the same text, same wording, same place, and no jump; in Manual and before usage is read there is one blank line more under the line.
+- Approved customer-visible result: the text of the shortcut line stays exactly as in the #424, #558 entries above (Ctrl+Alt+Shift+P / ⌃⌥⌘P, "This switches to Manual.", "This needs two providers with usage.", "not available" sentence); only the reserved height changes as described above. A browser, which names no shortcut, shows no line and reserves nothing.
+- Scope: `apps/control-center/src/components/settings-screen.tsx`, its test `apps/control-center/src/components/settings-screen.test.tsx` and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — layout only, no new text or capability
