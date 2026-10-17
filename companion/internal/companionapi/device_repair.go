@@ -122,8 +122,12 @@ func (s *Server) cableIdentityDevice(
 // and only answers for a Cable that is the active connection. forcePair runs
 // the same Cable pairing as the connection choice and saves the new token.
 func (s *Server) repairCableDevice(w http.ResponseWriter, r *http.Request, expectedDeviceID string, forcePair bool) {
-	s.repairMu.Lock()
-	defer s.repairMu.Unlock()
+	s.firmwareUpdateStartMu.Lock()
+	defer s.firmwareUpdateStartMu.Unlock()
+	if s.rejectBusyDevice(w, "Wait for the update to finish, then repair the connection again.") {
+		return
+	}
+	defer s.holdDeviceForMaintenance()()
 	cfg, err := s.config()
 	if err != nil {
 		writeInternalError(w, err)
@@ -161,6 +165,26 @@ func (s *Server) repairCableDevice(w http.ResponseWriter, r *http.Request, expec
 	}
 	device := s.cableDeviceInfo(r.Context(), cfg, hello)
 	s.recordRepairResult(device)
+	writeJSON(w, http.StatusOK, deviceActionResponse{OK: true, Device: device})
+}
+
+// discoverCableDevice answers for the saved Cable VibeTV. It takes the same
+// firmware-update gate as search, so a queued update never shares the port.
+func (s *Server) discoverCableDevice(w http.ResponseWriter, r *http.Request) {
+	s.firmwareUpdateStartMu.Lock()
+	defer s.firmwareUpdateStartMu.Unlock()
+	if s.rejectBusyDevice(w, "Wait for the update to finish, then search again.") {
+		return
+	}
+	cfg, err := s.config()
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	device, ok := s.cableIdentityDevice(w, r, cfg, "")
+	if !ok {
+		return
+	}
 	writeJSON(w, http.StatusOK, deviceActionResponse{OK: true, Device: device})
 }
 

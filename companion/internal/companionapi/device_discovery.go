@@ -86,20 +86,16 @@ func (s *Server) handleDeviceDiscover(w http.ResponseWriter, r *http.Request) {
 	if !decodeOptionalJSON(w, r, &req) {
 		return
 	}
+	if isCableTarget(strings.TrimSpace(req.Target)) {
+		// Read-only, like search: the Cable is not a WiFi target to persist.
+		s.discoverCableDevice(w, r)
+		return
+	}
 	s.repairMu.Lock()
 	defer s.repairMu.Unlock()
 	cfg, err := s.config()
 	if err != nil {
 		writeInternalError(w, err)
-		return
-	}
-	if isCableTarget(strings.TrimSpace(req.Target)) {
-		// Read-only, like search: the Cable is not a WiFi target to persist.
-		device, ok := s.cableIdentityDevice(w, r, cfg, "")
-		if !ok {
-			return
-		}
-		writeJSON(w, http.StatusOK, deviceActionResponse{OK: true, Device: device})
 		return
 	}
 	if strings.TrimSpace(req.Target) == "" &&
