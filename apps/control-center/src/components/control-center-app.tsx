@@ -5204,6 +5204,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       id !== "provider-shortcut" ||
       nativeProviderShortcut(navigator.userAgent) !== "unavailable",
   );
+  // The centred dialogs of the arbitration below win over the Support error:
+  // it waits for them, so two centred dialogs never stack.
+  const centredDialogOpen =
+    (needsRuntimeRecovery && !runtimeRecoveryHidden) ||
+    lostDevicePickerOpen ||
+    (usageFailure && !usageFailureHidden) ||
+    systemBusyOpen ||
+    setupAgainRequested ||
+    whatsNewEntries.length > 0;
   // Opened from Updates and taken away by something else, or by the window
   // moving to another page, the notice does not come back by itself: what
   // follows may be a dialog this condition does not know, as the one Updates
@@ -5799,14 +5808,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             diagnostics={supportDiagnostics}
             events={logs}
             dismissedError={dismissedSupportError}
-            // The runtime repair and the lost-VibeTV picker are centred dialogs
-            // that win over this one (see the arbitration below); two stacked
-            // dialogs leave the lower one's buttons unreachable.
-            lastError={
-              (needsRuntimeRecovery && !runtimeRecoveryHidden) || lostDevicePickerOpen
-                ? null
-                : supportError
-            }
+            lastError={centredDialogOpen ? null : supportError}
             onDismissError={() => setDismissedSupportError(supportError)}
             onLoadDiagnostics={loadSupportDiagnostics}
             onRefresh={checkCompanion}

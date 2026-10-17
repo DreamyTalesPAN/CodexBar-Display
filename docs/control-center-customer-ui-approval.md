@@ -7488,3 +7488,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: On Support, while the runtime repair dialog or the lost-VibeTV picker is open, the last error is not shown as a second dialog. The text of both dialogs is unchanged. Once that dialog is closed, the Support error dialog shows, as in the entries above, unless it was already dismissed. Nothing else changes.
 - Scope: `apps/control-center/src/components/control-center-app.tsx` (the condition for what Support receives) and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no new capability, the same dialogs in a fixed order
+
+## 2026-10-17 — Support error dialog waits for every centred dialog
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect: centred dialogs stacked on Support, the lower one's buttons unreachable; Codex review on #743); look unchanged except: while the runtime repair, the lost-VibeTV picker, the usage repair dialog, the system busy dialog, "Run setup again?" or What's new is open, the Support error dialog waits and is not shown on top of them.
+- Approved customer-visible result: On Support, the last error is shown as its dialog only when no other centred dialog is open. The text of every dialog is unchanged. When the other dialog closes, the Support error shows, unless it was already dismissed. Nothing else changes.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (the condition for what Support receives) and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no new capability, the same dialogs in a fixed order
