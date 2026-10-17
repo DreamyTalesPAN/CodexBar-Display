@@ -347,7 +347,7 @@ function usageRefreshNotice(
 // Stands in for TokenUsageOverTimePanel while its token history loads (issue
 // #598): the same blocks at the same heights, grey and without figures, so the
 // tiles below do not move when the graph arrives. One legend chip per provider,
-// as the chart will show. Under reduced motion the blocks stand still.
+// below the chart as the chart will show. Under reduced motion the blocks stand still.
 function TokenUsageSkeleton({ providerCount }: { providerCount: number }) {
   return (
     <div aria-live="polite" data-testid="token-history-loading" role="status">
@@ -357,30 +357,29 @@ function TokenUsageSkeleton({ providerCount }: { providerCount: number }) {
         <section>
           <div className="flex h-8 items-center justify-between gap-4">
             <Skeleton className="h-3.5 w-20 motion-reduce:animate-none" />
-            <div className="flex shrink-0 items-center gap-3.5">
-              <div className="flex items-center gap-[18px]">
-                {Array.from({ length: providerCount }, (_, index) => (
-                  <Skeleton
-                    className="h-3.5 w-14 motion-reduce:animate-none"
-                    key={index}
-                  />
-                ))}
-              </div>
-              {/* The Refresh button's place. */}
-              <div className="size-8 shrink-0" />
-            </div>
+            {/* The Refresh button's place. */}
+            <div className="size-8 shrink-0" />
           </div>
           <div className="mt-3.5">
-            <div className="flex h-[30.8px] items-center">
-              <Skeleton className="h-6 w-44 max-w-full motion-reduce:animate-none" />
+            {/* The hero size's line box: 46 px at line height 1.05. */}
+            <div className="flex h-[48.3px] items-center">
+              <Skeleton className="h-9 w-56 max-w-full motion-reduce:animate-none" />
             </div>
             <div className="mt-2 flex h-[19.5px] items-center">
               <Skeleton className="h-3.5 w-52 max-w-full motion-reduce:animate-none" />
             </div>
           </div>
         </section>
-        <div className="relative mt-8 mb-10 min-h-64">
-          <Skeleton className="h-64 w-full motion-reduce:animate-none" />
+        <div className="relative mt-8 min-h-96">
+          <Skeleton className="h-96 w-full motion-reduce:animate-none" />
+        </div>
+        <div className="mt-4 mb-10 flex h-[19.5px] items-center gap-[18px]">
+          {Array.from({ length: providerCount }, (_, index) => (
+            <Skeleton
+              className="h-3.5 w-14 motion-reduce:animate-none"
+              key={index}
+            />
+          ))}
         </div>
       </div>
     </div>
@@ -444,35 +443,21 @@ function TokenUsageOverTimePanel({
               </Badge>
             ) : null}
           </div>
-          <div className="flex shrink-0 items-center gap-3.5">
-            <div className="flex flex-wrap items-center justify-end gap-x-[18px] gap-y-1 text-[13px] text-muted-foreground">
-              {series.map((item) => (
-                <span className="inline-flex items-center" key={item.dataKey}>
-                  <i
-                    aria-hidden
-                    className="mr-[7px] inline-block size-2 rounded-full"
-                    style={{ background: item.color }}
-                  />
-                  {item.label}
-                </span>
-              ))}
-            </div>
-            <Button
-              aria-busy={refreshing}
-              aria-label="Refresh"
-              className="size-8 text-muted-foreground"
-              disabled={refreshing || !onRefresh}
-              onClick={() => onRefresh?.()}
-              size="icon"
-              type="button"
-              variant="ghost"
-            >
-              {refreshing ? <Spinner /> : <RefreshCw aria-hidden />}
-            </Button>
-          </div>
+          <Button
+            aria-busy={refreshing}
+            aria-label="Refresh"
+            className="size-8 shrink-0 text-muted-foreground"
+            disabled={refreshing || !onRefresh}
+            onClick={() => onRefresh?.()}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            {refreshing ? <Spinner /> : <RefreshCw aria-hidden />}
+          </Button>
         </div>
         <div className="mt-3.5">
-          <p className="break-words text-[28px] leading-[1.1] font-semibold tracking-[-0.01em] text-foreground tabular-nums">
+          <p className="text-hero break-words font-semibold text-foreground tabular-nums">
             <span>{formatFullTokenCount(last30DaysTokens)}</span>
             <span className="ml-1.5 text-[13px] font-normal tracking-normal text-muted-foreground">
               tokens
@@ -484,12 +469,12 @@ function TokenUsageOverTimePanel({
         </div>
       </section>
 
-      <div className="relative mt-8 mb-10 min-h-64">
+      <div className="relative mt-8 min-h-96">
         <ChartContainer
           aria-hidden={!hasCurrentData}
           aria-label={`Daily tokens used over time for ${providerNames.join(", ")}`}
           className={cn(
-            "h-64 w-full overflow-hidden transition-opacity",
+            "h-96 w-full overflow-hidden transition-opacity",
             !hasCurrentData && "pointer-events-none opacity-25 grayscale",
           )}
           config={chartConfig}
@@ -565,6 +550,21 @@ function TokenUsageOverTimePanel({
             </EmptyHeader>
           </Empty>
         ) : null}
+      </div>
+      <div
+        className="mt-4 mb-10 flex flex-wrap items-center gap-x-[18px] gap-y-1 text-[13px] text-muted-foreground"
+        data-testid="usage-legend"
+      >
+        {series.map((item) => (
+          <span className="inline-flex items-center" key={item.dataKey}>
+            <i
+              aria-hidden
+              className="mr-[7px] inline-block size-2 rounded-full"
+              style={{ background: item.color }}
+            />
+            {item.label}
+          </span>
+        ))}
       </div>
     </>
   );
