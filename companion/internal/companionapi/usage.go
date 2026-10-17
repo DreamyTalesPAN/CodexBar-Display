@@ -339,7 +339,8 @@ func usageHasFreshSnapshotAfter(usage daemon.PersistedUsage, requestedAt, now ti
 		if provider.Stale || provider.CollectedAt.IsZero() {
 			return false
 		}
-		if provider.CollectedAt.Before(requestedAt) && now.Sub(provider.CollectedAt) > usageRefreshFreshWithin {
+		// A NoReading snapshot is a failed attempt, not usage: it cannot end the refresh by age.
+		if provider.CollectedAt.Before(requestedAt) && (provider.NoReading || now.Sub(provider.CollectedAt) > usageRefreshFreshWithin) {
 			return false
 		}
 	}

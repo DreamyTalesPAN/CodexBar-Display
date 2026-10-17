@@ -3358,6 +3358,38 @@ func TestUsageManualRefreshReportsFreshForNewCollectorSnapshot(t *testing.T) {
 	}
 }
 
+// A failed attempt recorded shortly before the click is not a reading, so it
+// must not end the refresh by age (#579).
+func TestUsageManualRefreshKeepsRefreshingForRecentNoReadingSnapshot(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.wakeDisplayStream = func() {}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         now,
+			CurrentProvider: "codex",
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:    "codex",
+				Frame:       protocol.Frame{Provider: "codex", Label: "Codex", UsageMode: "used"},
+				CollectedAt: now.Add(-15 * time.Second),
+				NoReading:   true,
+			}},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
+
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if rec.Code != http.StatusOK || got.Refresh.State != "refreshing" {
+		t.Fatalf("recent NoReading snapshot must not end manual refresh, status=%d got %+v", rec.Code, got.Refresh)
+	}
+}
+
 // A second click on Refresh while the first is still waiting must not move the
 // request: the reading that answers the first click would otherwise count as
 // too old, and the wait would start again (#579).
