@@ -1333,7 +1333,7 @@ function InlineInstallProgress({
   const title = complete ? "Installed" : "Installing";
   return (
     <div className="flex flex-col gap-3" ref={noticeRef} role="status" aria-live="polite">
-      <Progress aria-label={title} className={complete ? "" : "animate-pulse"} value={clampProgress(complete ? 100 : status.progress)} />
+      {complete ? null : <Progress aria-label={title} className="animate-pulse" value={clampProgress(status.progress)} />}
       <Alert>
         {complete ? <ShieldCheck aria-hidden /> : <Spinner />}
         <AlertTitle>{title}</AlertTitle>

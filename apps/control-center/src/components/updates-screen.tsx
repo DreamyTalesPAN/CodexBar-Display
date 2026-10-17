@@ -160,9 +160,23 @@ export function UpdatesScreen({
       firmwareUpdate.status !== "check_failed" &&
       !updateAvailable,
   );
-  const visibleUpdateStatus = staleFirmwareFailure
-    ? undefined
-    : statusForHost(updateStatus, windowsHost);
+  const firmwareCheckFailed = firmwareUpdate?.status === "check_failed";
+  // A failed firmware check that came after a finished update replaces that
+  // update's notice, so "Update complete" never sits below "Update check
+  // failed". A check that is provably older than the update keeps it.
+  const completedAt = Date.parse(updateStatus?.finishedAt ?? "");
+  const checkedAt = Date.parse(firmwareUpdate?.checkedAt ?? "");
+  const checkPredatesCompletion =
+    Number.isFinite(completedAt) &&
+    Number.isFinite(checkedAt) &&
+    checkedAt < completedAt;
+  const failedCheckReplacesCompletion = Boolean(
+    firmwareUpdateCompleted && firmwareCheckFailed && !checkPredatesCompletion,
+  );
+  const visibleUpdateStatus =
+    staleFirmwareFailure || failedCheckReplacesCompletion
+      ? undefined
+      : statusForHost(updateStatus, windowsHost);
   const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
   const nativeMacUpdateReady = Boolean(
     macAppUpdateAvailable && companionInfo?.app?.installedInApplications,
@@ -200,7 +214,6 @@ export function UpdatesScreen({
     macAppRunning &&
     (companionRelease?.status === "check_failed" ||
       companionRelease?.dmgDownloadStatus === "check_failed");
-  const firmwareCheckFailed = firmwareUpdate?.status === "check_failed";
   const companionInstalled =
     companionStatus === "missing"
       ? "Not running"
@@ -547,7 +560,7 @@ function InlineUpdateProgress({
         "Preparing VibeTV update.";
   return (
     <div className="flex flex-col gap-3" role="status" aria-live="polite">
-      <Progress aria-label={title} value={progress} />
+      {complete ? null : <Progress aria-label={title} value={progress} />}
       <Alert>
         {complete || attention ? (
           <ShieldCheck aria-hidden />

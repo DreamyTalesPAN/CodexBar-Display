@@ -7467,3 +7467,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-17 — Finished update and theme notices: no progress bar; a failed firmware check replaces "Update complete" (#579)
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #579); look unchanged except: the progress bar above "Update complete" (Updates) and above "Installed" (Appearance › Themes) is removed once the install has finished → no bar; the "Update complete" notice is removed when a firmware check fails after that update, the heading "Update check failed" stays alone.
+- Approved customer-visible result: a finished install shows its notice without the dark progress line; while the install runs, the bar stays as before. A failed firmware check that came after a finished update no longer leaves "Update complete" below "Update check failed". Wording, buttons and layout stay the same.
+- Scope: `apps/control-center/src/components/updates-screen.tsx` (finished-update notice and failed-check replacement), `apps/control-center/src/components/theme-library-screen.tsx` (theme install notice), their tests and this approval record. Pull request branch only, not merge or release.
+- What's new: none — removed progress line and a stale notice, no new capability

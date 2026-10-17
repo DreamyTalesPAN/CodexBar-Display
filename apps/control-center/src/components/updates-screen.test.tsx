@@ -573,3 +573,72 @@ describe("UpdatesScreen Mac-App-first gate", () => {
     });
   });
 });
+
+// Issue #579 (Windows and Mac, 2026-10-13): a finished install kept its
+// progress bar as a dark line above "Update complete". A finished install has
+// no progress left to show.
+describe("UpdatesScreen finished update notice", () => {
+  const completedUpdate = {
+    phase: "complete" as const,
+    startedAt: "2026-10-13T10:01:00Z",
+    finishedAt: "2026-10-13T10:05:00Z",
+    logs: [],
+    result: { firmware: "1.0.41" },
+  };
+  const props = {
+    companionStatus: "online" as const,
+    device: { connected: true, board: "esp8266-smalltv-st7789", firmware: "1.0.41" },
+    firmwareUpdate: {
+      checkedAt: "2026-10-13T10:05:30Z",
+      installedFirmware: "1.0.41",
+      latestFirmware: "1.0.41",
+      updateAvailable: false,
+      status: "current" as const,
+    },
+  };
+
+  it("shows Update complete without a progress bar", () => {
+    render(<UpdatesScreen {...props} updateStatus={completedUpdate} />);
+
+    expect(screen.getByText("Update complete")).toBeTruthy();
+    expect(screen.queryByRole("progressbar")).toBeNull();
+  });
+
+  // Issue #579: after a failed check the earlier "Update complete" stayed below
+  // "Update check failed". A failed check that came after the update replaces
+  // that notice.
+  it("replaces Update complete with a failed firmware check that came after it", () => {
+    render(
+      <UpdatesScreen
+        {...props}
+        firmwareUpdate={{
+          checkedAt: "2026-10-13T11:00:00Z",
+          installedFirmware: "1.0.41",
+          updateAvailable: false,
+          status: "check_failed",
+        }}
+        updateStatus={completedUpdate}
+      />,
+    );
+
+    expect(screen.getByText("Update check failed")).toBeTruthy();
+    expect(screen.queryByText("Update complete")).toBeNull();
+  });
+
+  it("keeps Update complete when the failed check is older than the update", () => {
+    render(
+      <UpdatesScreen
+        {...props}
+        firmwareUpdate={{
+          checkedAt: "2026-10-13T09:00:00Z",
+          installedFirmware: "1.0.40",
+          updateAvailable: false,
+          status: "check_failed",
+        }}
+        updateStatus={completedUpdate}
+      />,
+    );
+
+    expect(screen.getByText("Update complete")).toBeTruthy();
+  });
+});
