@@ -552,22 +552,16 @@ function UsageProviderTile({ provider }: { provider: UsageProviderInfo }) {
   // Stale or unavailable is decided by the Mac App; the tile only shows the flags.
   const quiet = Boolean(provider.stale || provider.usageUnavailable);
   const lines = usageLines(provider, now, quiet);
-  const sessionReset = lines[0]?.resetText;
+  // The Updating spinner takes the place of the first line's reset, on that line.
+  const spinner = quiet ? (
+    <Loader2
+      aria-label="Updating"
+      className="size-3.5 animate-spin text-muted-foreground"
+      role="img"
+    />
+  ) : null;
   return (
-    <UsageTileFrame
-      name={provider.label || provider.id}
-      status={
-        quiet ? (
-          <Loader2
-            aria-label="Updating"
-            className="size-3.5 animate-spin text-muted-foreground"
-            role="img"
-          />
-        ) : sessionReset ? (
-          <span className="text-muted-foreground">{sessionReset}</span>
-        ) : null
-      }
-    >
+    <UsageTileFrame name={provider.label || provider.id}>
       {usageHasNumbers(provider) ? (
         <div className="grid gap-4">
           {lines.map((line, index) => (
@@ -576,11 +570,12 @@ function UsageProviderTile({ provider }: { provider: UsageProviderInfo }) {
               key={line.key}
               line={line}
               mode={provider.usageMode}
+              status={index === 0 ? spinner : null}
             />
           ))}
         </div>
       ) : (
-        <UsageSkeleton />
+        <UsageSkeleton status={spinner} />
       )}
       <UsageMetaGrid provider={provider} />
       <TokenRow provider={provider} />
@@ -633,12 +628,10 @@ function UsageTileFrame({
   action,
   children,
   name,
-  status,
 }: {
   action?: ReactNode;
   children: ReactNode;
   name: string;
-  status?: ReactNode;
 }) {
   return (
     <Card className="h-full min-h-[248px] [--card-spacing:--spacing(5)]">
@@ -647,9 +640,6 @@ function UsageTileFrame({
           {name}
           {action}
         </CardTitle>
-        {status ? (
-          <CardAction className="text-[13px]">{status}</CardAction>
-        ) : null}
       </CardHeader>
       <CardContent className="flex flex-1 flex-col">{children}</CardContent>
     </Card>
@@ -657,17 +647,22 @@ function UsageTileFrame({
 }
 
 // Stands in for numbers that are not there. Shape only, no text.
-function UsageSkeleton() {
+function UsageSkeleton({ status }: { status?: ReactNode }) {
   return (
-    <div aria-hidden className="grid gap-3">
-      <Skeleton className="h-7 w-24" />
-      <Skeleton className="h-1.5 w-full" />
-      <div className="flex justify-between">
-        <Skeleton className="h-3 w-24" />
-        <Skeleton className="h-3 w-20" />
+    <div className="grid gap-3">
+      <div className="flex items-baseline justify-between gap-4">
+        <Skeleton aria-hidden className="h-7 w-24" />
+        {status}
       </div>
-      <Skeleton className="h-1.5 w-full" />
-      <Skeleton className="h-3 w-40" />
+      <div aria-hidden className="grid gap-3">
+        <Skeleton className="h-1.5 w-full" />
+        <div className="flex justify-between">
+          <Skeleton className="h-3 w-24" />
+          <Skeleton className="h-3 w-20" />
+        </div>
+        <Skeleton className="h-1.5 w-full" />
+        <Skeleton className="h-3 w-40" />
+      </div>
     </div>
   );
 }
@@ -729,24 +724,33 @@ function usageLines(
   ];
 }
 
-// The first line starts with the big number; its reset sits in the tile header.
+// Each lane's reset sits right-aligned on its own line. The first line (the big
+// number) also takes the Updating spinner in that place while the tile is quiet.
 function UsageLineView({
   index,
   line,
   mode,
+  status,
 }: {
   index: number;
   line: UsageLine;
   mode?: string;
+  status?: ReactNode;
 }) {
+  const right = line.resetText ? (
+    <span className="shrink-0 text-muted-foreground">{line.resetText}</span>
+  ) : (
+    status
+  );
   if (line.unavailable) {
     return (
       <div className="grid gap-2">
-        <span className="sr-only">{`${line.label} usage unavailable`}</span>
-        <div aria-hidden className="grid gap-2">
-          <Skeleton className="h-3 w-24" />
-          <Skeleton className="h-1.5 w-full" />
+        <div className="flex items-baseline justify-between gap-4">
+          <span className="sr-only">{`${line.label} usage unavailable`}</span>
+          <Skeleton aria-hidden className="h-3 w-24" />
+          {right}
         </div>
+        <Skeleton aria-hidden className="h-1.5 w-full" />
       </div>
     );
   }
@@ -754,21 +758,19 @@ function UsageLineView({
   const text = `${line.percent}% ${line.label} ${modeLabel}`;
   return (
     <div className="grid gap-2">
-      {index === 0 ? (
-        <p className="text-[13px] text-muted-foreground">
-          <span className="text-[28px] leading-none font-semibold text-foreground">
-            {line.percent}%
-          </span>{" "}
-          {line.label} {modeLabel}
-        </p>
-      ) : (
-        <div className="flex items-baseline justify-between gap-4 text-[13px] text-foreground">
+      <div className="flex items-baseline justify-between gap-4 text-[13px] text-foreground">
+        {index === 0 ? (
+          <span className="text-muted-foreground">
+            <span className="text-[28px] leading-none font-semibold text-foreground">
+              {line.percent}%
+            </span>{" "}
+            {line.label} {modeLabel}
+          </span>
+        ) : (
           <span>{text}</span>
-          {line.resetText ? (
-            <span className="shrink-0 text-muted-foreground">{line.resetText}</span>
-          ) : null}
-        </div>
-      )}
+        )}
+        {right}
+      </div>
       <Progress aria-label={text} className="h-1.5" value={line.percent} />
     </div>
   );
@@ -786,7 +788,7 @@ function TokenRow({ provider }: { provider: UsageProviderInfo }) {
 
   return (
     <p className="mt-auto pt-5 text-[13px] text-muted-foreground">
-      {parts.join(" · ")}
+      Tokens: {parts.join(" · ")}
     </p>
   );
 }
