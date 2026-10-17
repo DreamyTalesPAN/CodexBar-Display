@@ -7895,3 +7895,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none. Focus order only; nothing looks different.
 - Scope: `setup/setup-dialog.tsx` (non-modal dialogs, scrim off) and `usage-screen.warning-overlay.test.tsx`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — focus fix only, no new notice
+
+## 2026-10-18 — Codex review fix on #745: Tab skips the focus guards Radix adds around a notice (no visible change)
+
+- User approval: pending — Paul reviews this PR; Codex review fix, no visible change; not seen by Paul. Keyboard Tab from the notice reaches the page control, not an invisible focus guard.
+- Approved customer-visible result: none. Focus order only; nothing looks different.
+- Scope: `setup/setup-dialog.tsx` (non-modal dialogs, scrim off) and `usage-screen.warning-overlay.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — focus fix only, no new notice
