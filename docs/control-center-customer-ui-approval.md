@@ -7467,3 +7467,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-17 — Accessibility baseline: axe checks for Theme Studio, the replace question and the busy notice (#214)
+
+- User approval: pending — Paul reviews this PR (accessibility baseline, #214); look unchanged.
+- Approved customer-visible result: none. Every screen and dialog looks unchanged; only tests and `docs/control-center-accessibility.md` change.
+- Scope: `apps/control-center/src/components/system-busy-dialog.test.tsx`, the new `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.test.tsx` and `replace-draft-dialog.test.tsx`, `docs/control-center-accessibility.md` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — tests and documentation only
