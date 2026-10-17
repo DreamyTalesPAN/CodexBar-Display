@@ -949,9 +949,10 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 		if strings.TrimSpace(frame.Provider) == "" {
 			frame.Provider = key
 		}
-		if strings.TrimSpace(frame.Label) == "" {
-			// Empty stays empty: the Companion API then names it like a
-			// reading does, never with the raw provider id.
+		if label := strings.TrimSpace(frame.Label); label == "" || label == key {
+			// Empty, or a raw id left by an older build's placeholder, takes the
+			// inventory name. Without one it stays empty and the Companion API
+			// names it like a reading does.
 			frame.Label = c.inventoryLabels[key]
 		}
 		frame.SessionTokens = stats.SessionTokens
