@@ -7573,3 +7573,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: when a design request is sent, its reference image leaves the input box and shows as a small rounded thumbnail (40 px, no caption, no new colours) above the customer's message text in the chat; the input box is empty while the request runs. If the request fails, the image goes back into the input box. The image is sent with the request, as before.
 - Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, the optional `images` field on the chat turn type in `apps/control-center/src/lib/ai-theme.ts` (kept out of the history sent to the AI), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — refinements of #638
+
+## 2026-10-17 — #638: a cancelled request cannot take the image back (Codex review fix, no new wording)
+
+- User approval: Codex review fix that implements the approved rule of "#638: the sent image moves into the message" (the image returns to the input box when the request fails or is cancelled); no new wording; not seen by Paul.
+- Approved customer-visible result: as approved in that entry. Cancelling gives the image back at once; a request that is cancelled but still finishing its last step no longer puts images back or clears the thumbnail of a newer request.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — status of the image hand-off in Theme Studio, not announced to customers

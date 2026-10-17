@@ -867,9 +867,11 @@ export function AIThemeStudioScreen({
         );
       }
     } finally {
-      if (!replied) setAttachments(images);
-      setAskingImages([]);
+      // Only the request that still owns the editor puts its images back; a
+      // cancelled one has already handed them back in cancel().
       if (request.current === controller) {
+        if (!replied) setAttachments(images);
+        setAskingImages([]);
         request.current = null;
         setBusy(false);
         setAsking(null);
@@ -880,6 +882,8 @@ export function AIThemeStudioScreen({
   function cancel() {
     request.current?.abort();
     request.current = null;
+    setAttachments(askingImages);
+    setAskingImages([]);
     setBusy(false);
     setAsking(null);
     progressTo([]);

@@ -170,6 +170,18 @@ describe("Theme Studio reference images", () => {
     expect(within(log).getByText("A tiny office at dusk")).toBeTruthy();
   });
 
+  it("gives the image back to the composer when the customer cancels", async () => {
+    stubImageDecoding();
+    vi.mocked(planAIThemeLayout).mockReturnValue(new Promise(() => {}));
+    render(<AIThemeStudioScreen />);
+    await attachPicture();
+    await sendIdea();
+    await waitFor(() => expect(vi.mocked(planAIThemeLayout)).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(document.querySelector('[aria-label="Attached reference images"]')).not.toBeNull();
+  });
+
   it("gives the image back to the composer when the request fails", async () => {
     stubImageDecoding();
     vi.mocked(planAIThemeLayout).mockRejectedValue(new Error("The request failed."));
