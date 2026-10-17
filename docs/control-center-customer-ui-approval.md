@@ -7834,3 +7834,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: On Usage, the provider's action dialog is shown first, as before, and the token history notice is not shown on top of it. Once that dialog is closed, the notice shows, unless it was already closed. The text of both dialogs is unchanged. Before → after: the notice over the provider's action dialog → the provider's action dialog alone, the notice after it. Nothing else changes.
 - Scope: `apps/control-center/src/components/control-center-app.tsx` (the condition the notice waits for) and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no new capability, the same dialogs in a fixed order
+
+## 2026-10-17 — Approval record: #724 merged into the stack (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the #724 branch and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
