@@ -440,6 +440,9 @@ export type UsageProviderInfo = {
   usageUnavailable?: boolean;
   sessionUnavailable?: boolean;
   weeklyUnavailable?: boolean;
+  sessionRetained?: boolean;
+  weeklyRetained?: boolean;
+  windowsRetained?: boolean;
   collectedAt?: string;
   activityObservedAt?: string;
   windows?: UsageWindowInfo[];

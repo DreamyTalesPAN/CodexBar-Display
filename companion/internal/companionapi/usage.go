@@ -71,6 +71,9 @@ type usageProviderInfo struct {
 	UsageUnavailable      bool                     `json:"usageUnavailable,omitempty"`
 	SessionUnavailable    bool                     `json:"sessionUnavailable,omitempty"`
 	WeeklyUnavailable     bool                     `json:"weeklyUnavailable,omitempty"`
+	SessionRetained       bool                     `json:"sessionRetained,omitempty"`
+	WeeklyRetained        bool                     `json:"weeklyRetained,omitempty"`
+	WindowsRetained       bool                     `json:"windowsRetained,omitempty"`
 	CollectedAt           string                   `json:"collectedAt,omitempty"`
 	ActivityObservedAt    string                   `json:"activityObservedAt,omitempty"`
 	Windows               []usageWindowInfo        `json:"windows,omitempty"`
@@ -523,6 +526,9 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 	if id == "" {
 		return usageProviderInfo{}, false
 	}
+	// A stale reading that still has its numbers: its lanes are real unless
+	// the source flagged them. A cleared or never-read reading is not retained.
+	retained := snapshot.Stale && !snapshot.NoReading && !snapshot.CollectedAt.IsZero() && !frame.UsageUnavailable
 	return usageProviderInfo{
 		ID:                    id,
 		Label:                 usageProviderLabel(id, frame.Label),
@@ -539,9 +545,12 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 		UsageUnavailable:      snapshot.Stale || (frame.UsageUnavailable && len(snapshot.Meta.Windows) == 0),
 		SessionUnavailable:    snapshot.Stale || frame.UsageUnavailable || frame.SessionUnavailable,
 		WeeklyUnavailable:     snapshot.Stale || frame.UsageUnavailable || frame.WeeklyUnavailable,
+		SessionRetained:       retained && !frame.SessionUnavailable,
+		WeeklyRetained:        retained && !frame.WeeklyUnavailable,
 		CollectedAt:           formatOptionalTime(snapshot.CollectedAt),
 		ActivityObservedAt:    formatOptionalTime(snapshot.ActivityObservedAt),
 		Windows:               usageWindowsFromMeta(snapshot.Meta),
+		WindowsRetained:       retained,
 		Status:                usageStatusFromMeta(snapshot.Meta),
 		Credits:               usageCreditsFromMeta(snapshot.Meta),
 		ResetCredits:          usageResetCreditsFromMeta(snapshot.Meta),
