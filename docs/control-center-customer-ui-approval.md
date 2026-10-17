@@ -7467,3 +7467,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-17 — The Mac App update prompt has a test (#566)
+
+- User approval: none needed for this entry; it adds a test file only and changes no screen, copy or behaviour; not seen by Paul.
+- Approved customer-visible result: none. The Mac App's own update prompt (once per offered version, during setup, not during a firmware update, in a browser or in the hosted setup) stays as it is; the new test pins that behaviour.
+- Scope: `apps/control-center/src/components/control-center-app.mac-update-prompt.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — test only, no customer-visible change
