@@ -61,6 +61,35 @@ func TestCompanionThemeRegistryMatchesProtocolSchemaEnum(t *testing.T) {
 	}
 }
 
+func TestNormalizeMapsNamesAndStandardAlias(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "classic name", input: "classic", want: Classic},
+		{name: "crt name", input: "crt", want: CRT},
+		{name: "mini name", input: "mini", want: Mini},
+		{name: "upper case is folded", input: "CRT", want: CRT},
+		{name: "surrounding whitespace is trimmed", input: "  Mini\t", want: Mini},
+		{name: "standard alias maps to classic", input: "standard", want: Classic},
+		{name: "standard alias is case and space insensitive", input: " Standard ", want: Classic},
+		{name: "unknown name is rejected", input: "neon", want: ""},
+		{name: "near miss is rejected", input: "classicc", want: ""},
+		{name: "inner whitespace is not removed", input: "c r t", want: ""},
+		{name: "empty string is rejected", input: "", want: ""},
+		{name: "whitespace only is rejected", input: "   ", want: ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := Normalize(tc.input); got != tc.want {
+				t.Fatalf("Normalize(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
 func loadProtocolThemeRegistry(t *testing.T) protocolThemeRegistry {
 	t.Helper()
 	path := filepath.Join(repoRoot(t), "protocol", "theme_registry.json")
