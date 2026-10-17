@@ -75,6 +75,7 @@ export function DiagnosticsPanel({
           className="w-full sm:w-auto"
           disabled={running || !onRun}
           onClick={onRun}
+          size="sm"
           type="button"
           variant="outline"
         >
@@ -103,7 +104,7 @@ export function DiagnosticsPanel({
             />
           ) : null}
           {checks.length ? (
-            <ul aria-label="Diagnostic checks" className="grid gap-2">
+            <ul aria-label="Diagnostic checks" className="grid">
               {checks.map((check, index) => (
                 <CheckRow
                   check={check}
@@ -158,7 +159,7 @@ function UsageEngineBlock({
 }) {
   const tooOld = engine.status === "engine_incompatible";
   return (
-    <section aria-label="Usage engine" className="grid gap-3 rounded-lg border p-3">
+    <section aria-label="Usage engine" className="grid gap-3">
       <h3 className="text-sm font-semibold">Usage engine</h3>
       {tooOld ? (
         <div className="grid gap-2">
@@ -186,7 +187,7 @@ function UsageEngineBlock({
           )}
         </div>
       ) : null}
-      <dl className="grid gap-2 sm:grid-cols-2">
+      <dl className="grid">
         <Fact label="Status" value={ENGINE_STATUS[engine.status ?? ""] ?? humanize(engine.status)} />
         <Fact label="Version" value={engine.version} />
         <Fact label="Required version" value={engine.minimumVersion} />
@@ -203,25 +204,25 @@ function CheckRow({ check, windowsHost }: { check: Check; windowsHost: boolean }
   const cable =
     check.name === "device_target" && /^cable:/i.test(check.detail ?? "");
   return (
-    <li className="grid gap-1 rounded-lg border p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-sm font-medium">
-          {cable
-            ? "Connection"
-            : hostText(CHECK_LABELS[check.name] ?? humanize(check.name))}
-        </span>
-        <StatusLine icon={state} text={CHECK_STATE_TEXT[state]} />
+    <li className="grid gap-1 border-b py-3 last:border-b-0 sm:grid-cols-[180px_minmax(0,1fr)_auto] sm:gap-x-4">
+      <span className="text-sm font-semibold">
+        {cable
+          ? "Connection"
+          : hostText(CHECK_LABELS[check.name] ?? humanize(check.name))}
+      </span>
+      <div className="grid min-w-0 gap-1">
+        {check.detail ? (
+          <p className="break-words text-sm">
+            {cable ? "USB-C cable" : hostText(formatCustomerSupportText(check.detail))}
+          </p>
+        ) : null}
+        {state !== "pass" && check.nextAction ? (
+          <p className="break-words text-sm">
+            {hostText(formatCustomerSupportText(check.nextAction))}
+          </p>
+        ) : null}
       </div>
-      {check.detail ? (
-        <p className="break-words text-sm text-muted-foreground">
-          {cable ? "USB-C cable" : hostText(formatCustomerSupportText(check.detail))}
-        </p>
-      ) : null}
-      {state !== "pass" && check.nextAction ? (
-        <p className="break-words text-sm">
-          {hostText(formatCustomerSupportText(check.nextAction))}
-        </p>
-      ) : null}
+      <StatusLine icon={state} text={CHECK_STATE_TEXT[state]} />
     </li>
   );
 }
@@ -257,9 +258,9 @@ function StatusLine({ icon, text }: { icon: CheckState; text: string }) {
 
 function Fact({ label, value }: { label: string; value?: string }) {
   return (
-    <div className="min-w-0 rounded-lg bg-muted/50 p-3">
-      <dt className="text-xs font-semibold uppercase text-muted-foreground">{label}</dt>
-      <dd className="mt-1 break-words text-sm font-medium">{value || "Not available"}</dd>
+    <div className="grid min-w-0 grid-cols-[minmax(0,180px)_minmax(0,1fr)] gap-4 border-b py-2.5 text-sm last:border-b-0">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="break-words">{value || "Not available"}</dd>
     </div>
   );
 }

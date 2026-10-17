@@ -7467,3 +7467,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-17 — Support page in the calm look, variant A (#713)
+
+- User approval: pending — Paul reviews this PR (calm redesign Support, variant A, #713); look: sections with the heading on the left and the content on the right, divided by lines instead of boxes; facts and checks as rows; Create report in lime, Refresh as an underlined link under the activity list.
+- Approved customer-visible result: Support page, variant A of the calm redesign (`ui/calm/updates-support/support-A.png`). Texts stay the same. The "Connected" badge becomes a Status row ("Connected" or "Not connected"). Connected VibeTV, Support report, Diagnostics, Setup log and Recent activity are sections with the heading and its note on the left, the content on the right, a line between sections. Fact rows have a line between them and no tiles. Diagnostic checks are one row each: name, detail, status. The support report buttons and Run diagnostics are smaller; Create report or Create again is the lime button. Refresh moves under the activity list as an underlined link. The Setup log keeps its frame until the setup area PR. Updates is not changed.
+- Scope: `apps/control-center/src/components/logs-screen.tsx`, `diagnostics-panel.tsx`, `support-report-actions.tsx`, its test `diagnostics-panel.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — look only, no new capability
