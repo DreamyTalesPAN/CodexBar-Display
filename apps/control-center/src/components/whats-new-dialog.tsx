@@ -38,7 +38,7 @@ export function WhatsNewDialog({
         aria-describedby={undefined}
         // In a short window only the list scrolls: the title stays on top and
         // `Got it`, which has the focus, stays in view below it.
-        className="flex max-h-[calc(100dvh-2rem)] flex-col sm:max-w-lg"
+        className="flex max-h-[calc(100dvh-2rem)] flex-col"
         onOpenAutoFocus={(event) => {
           // Enter closes the notice. The first control would open Settings.
           event.preventDefault();

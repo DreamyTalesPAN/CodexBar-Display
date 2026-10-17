@@ -801,7 +801,7 @@ export function ThemeLibraryScreen({
         <Dialog open onOpenChange={(open) => !open && setPreviewTheme(null)}>
           <DialogContent
             aria-describedby="theme-library-example-data"
-            className="max-h-[calc(100dvh-2rem)] max-w-[640px] overflow-y-auto sm:max-w-[640px]"
+            className="max-h-[calc(100dvh-2rem)] overflow-y-auto"
           >
             <DialogHeader>
               <DialogTitle className="truncate">{previewTheme.title}</DialogTitle>
@@ -914,7 +914,7 @@ function DeleteThemeDialog({
   const say = (text: string) => wordsForUsage(text, themeDocumentUsage(theme.document));
   return (
     <AlertDialog open onOpenChange={(open) => !open && onCancel()}>
-      <AlertDialogContent className="sm:max-w-[520px]">
+      <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Delete {theme.document.packName}?</AlertDialogTitle>
           <AlertDialogDescription>

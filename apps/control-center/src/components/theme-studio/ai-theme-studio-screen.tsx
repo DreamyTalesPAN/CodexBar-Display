@@ -1899,7 +1899,7 @@ export function AIThemeStudioScreen({
           {connecting ? null : (
             <DialogFooter>
               <Button onClick={closePanel} variant="ghost">
-                Not now
+                {panel === "setup" ? "Not now" : "Close"}
               </Button>
             </DialogFooter>
           )}
