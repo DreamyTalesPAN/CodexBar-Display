@@ -2162,6 +2162,89 @@ func TestDeviceSelectRejectsIdentitySwapBeforePairing(t *testing.T) {
 	}
 }
 
+func TestDeviceSelectAcceptsCableTarget(t *testing.T) {
+	wifi := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("Cable select must not probe a remembered WiFi target")
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer wifi.Close()
+	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "wifi", DeviceID: "cable-a", DeviceTarget: wifi.URL})
+	server.resolveCablePort = func(_, expected string) (string, error) {
+		if expected != "cable-a" {
+			t.Fatalf("wrong device: %s", expected)
+		}
+		return "/dev/mock-cable", nil
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return cableHelloForTest("cable-a"), nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/select", strings.NewReader(`{"target":"cable://vibetv"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	var got deviceActionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != http.StatusOK || !got.OK || got.Device.Target != cableDeviceTarget || got.Device.DeviceID != "cable-a" {
+		t.Fatalf("cable select status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != "cable" || cfg.DeviceID != "cable-a" {
+		t.Fatalf("cable select did not switch the connection: mode=%q device=%q", cfg.ConnectionMode, cfg.DeviceID)
+	}
+}
+
+func TestDeviceSelectWiFiTargetStillUsesWiFiPath(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.resolveCablePort = func(string, string) (string, error) {
+		t.Error("WiFi select must not touch the Cable port")
+		return "", errors.New("unexpected cable lookup")
+	}
+	server.client.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, syscall.ECONNREFUSED
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/select", strings.NewReader(`{"target":"http://192.0.2.10"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), `"device_not_found"`) {
+		t.Fatalf("WiFi select status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDeviceSelectRejectsGarbageTargetWith400(t *testing.T) {
+	for _, target := range []string{
+		"ftp://192.0.2.10",
+		"http://192.0.2.10/setup",
+		"http://192.0.2.10?token=pair-token",
+		"cable://vibetv/extra",
+	} {
+		t.Run(target, func(t *testing.T) {
+			server := newTestServer(t, runtimeconfig.Config{})
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/v1/device/select", strings.NewReader(`{"target":`+strconv.Quote(target)+`}`))
+			req.Header.Set("Content-Type", "application/json")
+			server.Handler().ServeHTTP(rec, req)
+
+			var got errorResponse
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			if rec.Code != http.StatusBadRequest || got.OK || got.Error.Code != "invalid_device_target" {
+				t.Fatalf("garbage target status=%d body=%s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestDeviceSelectMapsLockedFirmware1038ToLegacyRecovery(t *testing.T) {
 	const deviceID = "legacy-device"
 	var pairCalls atomic.Int32
