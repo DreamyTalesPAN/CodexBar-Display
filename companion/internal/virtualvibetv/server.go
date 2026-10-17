@@ -595,7 +595,7 @@ func (s *Server) handleThemeActive(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Unlock()
 	if !ok {
-		s.respond(w, r, http.StatusNotFound, "theme not found", "theme activation missing asset")
+		s.respond(w, r, http.StatusNotFound, "theme file not found", "theme activation missing asset")
 		return
 	}
 	if refusal != "" {

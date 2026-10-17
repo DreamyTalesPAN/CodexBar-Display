@@ -325,6 +325,36 @@ func TestFrameRefusesMoreThanOneLine(t *testing.T) {
 	}
 }
 
+// The firmware answers 404 with the text 'theme file not found' when the file of
+// a /themes/ path is not on the device (readStoredThemeSpec and handleThemeActive
+// in main.cpp, #354).
+func TestThemeActivationAnswersMissingFileLikeFirmware(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.RebootUnavailableRequests = 0
+	running, err := Start(cfg)
+	if err != nil {
+		t.Fatalf("start virtual VibeTV: %v", err)
+	}
+	t.Cleanup(func() { _ = running.Close() })
+	req, err := http.NewRequest(http.MethodPost, running.HTTPURL+"/theme/active", strings.NewReader(`{"path":"/themes/u/missing.json"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-VibeTV-Token", cfg.PairingToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	answer, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusNotFound || strings.TrimSpace(string(answer)) != "theme file not found" {
+		t.Fatalf("missing theme: status %d %q, want 404 %q", resp.StatusCode, answer, "theme file not found")
+	}
+}
+
 // Like the ESP8266, activation refuses a stored spec above 4,096 bytes or 32
 // primitives and a request body above 160 bytes (#354).
 func TestThemeActivationLimitBoundaries(t *testing.T) {
