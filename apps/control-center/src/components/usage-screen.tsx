@@ -614,15 +614,14 @@ function UsageActionLink({ label, name, onAction }: UsageActionView) {
   );
 }
 
-// A stale reading keeps its last good numbers, and the API flags its lanes
-// unavailable too. A cleared or never-read stale provider is all zeros and
-// must not show as "0% used", so only a non-zero stale reading counts.
+// A stale reading keeps its last good numbers. The Companion says which lanes
+// are such a retained reading, a real 0 included; a cleared or never-read lane
+// is not, so it never shows as "0% used".
 function usageRetainedNumbers(provider: UsageProviderInfo): boolean {
-  return (
-    Boolean(provider.stale) &&
-    (provider.session > 0 ||
-      provider.weekly > 0 ||
-      (provider.windows || []).some((window) => window.usedPercent > 0))
+  return Boolean(
+    provider.sessionRetained ||
+      provider.weeklyRetained ||
+      provider.windowsRetained,
   );
 }
 
@@ -690,22 +689,28 @@ function usageLines(
     const left = remainingResetSecs(resetSecs, provider.collectedAt, now);
     return !quiet && left ? formatReset(left) : null;
   };
-  // A stale reading is flagged unavailable on every lane, yet keeps its last
-  // good numbers. A zero there may be a cleared reading, so it is never shown
-  // as "0% used": the lane shows the placeholder instead.
-  const laneUnavailable = (value: number, flag?: boolean) =>
-    provider.stale ? value === 0 : Boolean(flag);
+  // A stale reading is flagged unavailable on every lane. Only a lane the
+  // Companion marks as retained shows its number; any other lane is a
+  // placeholder.
+  const laneUnavailable = (retained?: boolean, flag?: boolean) =>
+    provider.stale ? !retained : Boolean(flag);
   if (provider.windows?.length) {
     return provider.windows.map((window) => ({
       key: window.id,
       label: window.label.toLowerCase(),
       percent: clampPercent(window.usedPercent),
       resetText: resetText(window.resetSecs),
-      unavailable: laneUnavailable(window.usedPercent),
+      unavailable: laneUnavailable(provider.windowsRetained),
     }));
   }
-  const session = laneUnavailable(provider.session, provider.sessionUnavailable);
-  const weekly = laneUnavailable(provider.weekly, provider.weeklyUnavailable);
+  const session = laneUnavailable(
+    provider.sessionRetained,
+    provider.sessionUnavailable,
+  );
+  const weekly = laneUnavailable(
+    provider.weeklyRetained,
+    provider.weeklyUnavailable,
+  );
   return [
     {
       key: "session",

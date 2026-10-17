@@ -7757,3 +7757,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No change. A healthy, fresh tile shows its reset time top-right and on each later window line while the token history is still counting, with no spinner. No new wording.
 - Scope: `usage-screen.test.tsx` (one new test), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — test only, no customer-visible change
+
+## 2026-10-17 — Usage: a stale reading shows its real 0% lane (#670)
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #670); look unchanged except: a stale reading's real 0% lane shows its number ("0% session used", "0% weekly used") with the Updating spinner, where it showed placeholder bars before; this is the quiet error look 5b as approved on 2026-10-16.
+- Approved customer-visible result: On Usage, a stale reading shows a real 0% lane as its number ("0% session used", "0% weekly used") with the Updating spinner, as in look 5b; a lane without a reading stays placeholder bars. No new wording.
+- Scope: `usage-screen.tsx` and its test, `control-center-types.ts` (three optional retained flags), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the same copy as before; only the zero lane is now a number
