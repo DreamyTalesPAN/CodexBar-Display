@@ -265,7 +265,7 @@ func initializeConfigFile(path, bin string) (bool, error) {
 		"json",
 	)
 	if err != nil {
-		return false, fmt.Errorf("render CodexBar default config: %w", err)
+		return false, fmt.Errorf("render CodexBar default config: %w", engineRunError{err})
 	}
 	if !json.Valid(raw) {
 		return false, errors.New("CodexBar default config is not valid JSON")
@@ -282,7 +282,7 @@ func initializeConfigFile(path, bin string) (bool, error) {
 		"--format",
 		"json",
 	); err != nil {
-		return false, fmt.Errorf("validate CodexBar default config: %w", err)
+		return false, fmt.Errorf("validate CodexBar default config: %w", engineRunError{err})
 	}
 	// A hard link publishes without replacing a config another process may
 	// have created while CodexBar was rendering its defaults.
@@ -294,6 +294,14 @@ func initializeConfigFile(path, bin string) (bool, error) {
 	}
 	return true, nil
 }
+
+// engineRunError marks a failed run of CodexBar while it renders or checks the
+// first config, as opposed to a failure to write the config file.
+type engineRunError struct{ err error }
+
+func (e engineRunError) Error() string { return e.err.Error() }
+
+func (e engineRunError) Unwrap() error { return e.err }
 
 func runConfigBootstrapCommand(
 	ctx context.Context,
@@ -409,14 +417,16 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 	result.Engine.ConfigPath = configPath
 	result.Engine.Writable = configErr == nil
 	if configErr != nil {
-		// The first config is rendered by CodexBar itself under a time limit.
-		// Running out of it on a busy computer says nothing about the settings.
-		status := ProviderConfigError
-		if cutShort(configErr) {
-			status = ProviderTimeout
+		// The first config is rendered by CodexBar itself. A CodexBar run that
+		// fails takes the inventory's rule (#527); only a file that cannot be
+		// written or read is a settings error.
+		status, detail := ProviderConfigError, configErr.Error()
+		var run engineRunError
+		if errors.As(configErr, &run) {
+			status, detail = engineFailure(nil, run.err, nil)
 		}
 		row := providerResult("codexbar", status)
-		row.Cause = "config bootstrap: " + configErr.Error()
+		row.Cause = "config bootstrap: " + detail
 		result.Engine.Status = status
 		result.Providers = []ProviderReadiness{row}
 		return result
@@ -529,16 +539,22 @@ func cutShort(err error) bool {
 // A call that was cut short, could not start or answered anything else is not
 // a settings error -- every such failure used to be reported as one.
 func inventoryFailure(raw []byte, runErr, parseErr error) (status, cause string) {
+	status, detail := engineFailure(raw, runErr, parseErr)
+	return status, "inventory: " + detail
+}
+
+// engineFailure is the one rule for a CodexBar call that gave no usable answer.
+func engineFailure(raw []byte, runErr, parseErr error) (status, detail string) {
 	if message := engineSettingsError(raw, runErr); message != "" {
-		return ProviderConfigError, "inventory: " + message
+		return ProviderConfigError, message
 	}
 	if cutShort(runErr) {
-		return ProviderTimeout, "inventory: " + runErr.Error()
+		return ProviderTimeout, runErr.Error()
 	}
 	if runErr == nil {
 		runErr = parseErr
 	}
-	return ProviderEngineError, "inventory: " + commandErrorDetail(runErr)
+	return ProviderEngineError, commandErrorDetail(runErr)
 }
 
 // engineSettingsError returns CodexBar's own settings failure, or "".
