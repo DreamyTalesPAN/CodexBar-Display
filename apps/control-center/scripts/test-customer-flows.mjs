@@ -6267,8 +6267,8 @@ async function testWindowsAppDoesNotSpeakOfAMac(browser, appUrl) {
   await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
     timeout: 10_000,
   });
+  // The calm Overview has no "App" tile any more (#713); the heading above is the wait.
   const main = page.getByRole("main");
-  await main.getByText("App", { exact: true }).first().waitFor();
   assert(
     !(await main.innerText()).includes("Mac"),
     "The Windows Overview must not name a Mac",

@@ -7532,3 +7532,10 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/control-center-app.tsx` (one condition), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no new content
 
+## 2026-10-18 — Overview: Windows flow waits for the heading, not the removed app tile (#755)
+
+- User approval: none needed — no visible change; this entry records a customer-flow script fix: the Windows Overview check waits for the "VibeTV is connected" heading instead of the removed "App" status tile. The check that the Overview does not name a Mac stays.
+- Approved customer-visible result: none. The test script changes what it waits for, not what the customer sees.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
