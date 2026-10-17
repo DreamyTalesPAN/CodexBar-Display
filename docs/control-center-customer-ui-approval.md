@@ -7479,3 +7479,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none beyond the entry above; this only changes which palette slots the picture may use when a companion already uses many colours.
 - Scope: `encodeAIThemeCBA1` in `apps/control-center/src/lib/ai-theme.ts` and its test in `apps/control-center/src/lib/ai-theme-document.test.ts`. Pull request branch only, not merge or release.
 - What's new: none — a fix of a reported defect; no new text, no new screen
+
+## 2026-10-17 — Companion colours: free palette slots go to the companion (review fix 2)
+- User approval: pending — Paul reviews this PR (review fix of the same defect, PR #422 finding); look unchanged except: companion colours stay exact when a backdrop is added, also when the picture has only a few colours.
+- Approved customer-visible result: none beyond the entries above; this only changes which palette slots are used when a companion has many colours.
+- Scope: `encodeAIThemeCBA1` in `apps/control-center/src/lib/ai-theme.ts` and its test in `apps/control-center/src/lib/ai-theme-document.test.ts`. Pull request branch only, not merge or release.
+- What's new: none — a fix of a reported defect; no new text, no new screen

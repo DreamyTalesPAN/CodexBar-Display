@@ -688,11 +688,11 @@ export function encodeAIThemeCBA1(
   // all 26 companion colors would force every background pixel into that palette,
   // producing a differently colored rectangle around an otherwise correct pet.
   const companionColors = new Set(priorityColors);
-  const reserved = [...companionColors].filter((color) => counts.has(color)).slice(0, MAX_COLORS - 8);
-  const palette = [...reserved, ...Array.from(counts.entries())
-    .sort((a, b) => b[1] - a[1])
-    .map(([color]) => color)
-    .filter((color) => !companionColors.has(color))].slice(0, MAX_COLORS);
+  const byFrequency = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).map(([color]) => color);
+  const companion = [...companionColors].filter((color) => counts.has(color));
+  const reserved = companion.slice(0, MAX_COLORS - 8);
+  const picture = byFrequency.filter((color) => !companionColors.has(color)).slice(0, MAX_COLORS - reserved.length);
+  const palette = [...reserved, ...picture, ...companion.slice(reserved.length)].slice(0, MAX_COLORS);
   if (palette.length === 0) palette.push("#FFFFFF");
   const rows = colors.flatMap((frame) =>
     Array.from({ length: height }, (_, y) => {
