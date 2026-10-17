@@ -1,13 +1,24 @@
 "use client";
 
+import dynamic from "next/dynamic";
+import { useEffect, useState } from "react";
 import type {
   CompanionStatus,
   DeviceInfo,
   UsageSnapshot,
 } from "./control-center-types";
 import { deviceIsCustomerConnected } from "./control-center-types";
-import type { DisplayFrameSnapshot } from "./live-vibetv-preview";
-import { VibeTV3DPreview } from "./vibetv-3d-preview";
+import {
+  LiveVibeTVPreview,
+  type DisplayFrameSnapshot,
+} from "./live-vibetv-preview";
+import { hardwareWebGLAvailable } from "./vibetv-3d-support";
+
+// three.js and the model are their own chunk, loaded only on Overview.
+const VibeTV3DPreview = dynamic(
+  () => import("./vibetv-3d-preview").then((module) => module.VibeTV3DPreview),
+  { ssr: false },
+);
 
 type OverviewScreenProps = {
   companionVersion?: string;
@@ -39,6 +50,18 @@ export function OverviewScreen({
   const updateOwnedDisconnect = Boolean(
     !connected && firmwareUpdateStatus?.phase === "installing",
   );
+  // The heading and the flat live preview come first. The 3D case starts after
+  // the first paint, only on a hardware WebGL, and replaces the flat preview
+  // once its model is on screen.
+  const [use3D, setUse3D] = useState(false);
+  const [threeReady, setThreeReady] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => setUse3D(hardwareWebGLAvailable()),
+      0,
+    );
+    return () => window.clearTimeout(timer);
+  }, []);
 
   return (
     <div className="mx-auto max-w-[1180px] py-4">
@@ -54,14 +77,29 @@ export function OverviewScreen({
               : "VibeTV status"}
         </h2>
 
-        <div className="mt-6 flex w-full justify-center">
-          <VibeTV3DPreview
-            className="aspect-[14/9] max-w-[900px]"
-            device={device}
-            displayFrame={displayFrame}
-            updateOwnedDisconnect={updateOwnedDisconnect}
-            usage={usage || null}
-          />
+        <div className="relative mt-6 flex w-full justify-center">
+          {use3D ? (
+            <div
+              className={threeReady ? "w-full" : "absolute inset-0 opacity-0"}
+            >
+              <VibeTV3DPreview
+                className="aspect-[14/9] max-w-[900px]"
+                device={device}
+                displayFrame={displayFrame}
+                onReady={() => setThreeReady(true)}
+                updateOwnedDisconnect={updateOwnedDisconnect}
+                usage={usage || null}
+              />
+            </div>
+          ) : null}
+          {threeReady ? null : (
+            <LiveVibeTVPreview
+              device={device}
+              displayFrame={displayFrame}
+              updateOwnedDisconnect={updateOwnedDisconnect}
+              usage={usage || null}
+            />
+          )}
         </div>
       </section>
 

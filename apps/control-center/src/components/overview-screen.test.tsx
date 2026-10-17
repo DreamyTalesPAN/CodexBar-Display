@@ -35,7 +35,6 @@ describe("OverviewScreen", () => {
     );
 
     expect(html).toContain("VibeTV is connected");
-    expect(html).toContain('aria-label="Interactive VibeTV preview. Drag to rotate."');
     // The former tiles and the badge are gone.
     for (const removed of [
       "Mac App",

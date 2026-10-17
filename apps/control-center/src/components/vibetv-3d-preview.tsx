@@ -31,6 +31,8 @@ type VibeTV3DPreviewProps = {
   className?: string;
   device: DeviceInfo | null;
   displayFrame: DisplayFrameSnapshot | null;
+  /** Called once the model is on screen; the caller then drops its flat preview. */
+  onReady?: () => void;
   updateOwnedDisconnect?: boolean;
   usage: UsageSnapshot | null;
 };
@@ -73,6 +75,7 @@ export function VibeTV3DPreview({
   className,
   device,
   displayFrame,
+  onReady,
   updateOwnedDisconnect = false,
   usage,
 }: VibeTV3DPreviewProps) {
@@ -130,7 +133,7 @@ export function VibeTV3DPreview({
     const key = new DirectionalLight(0xffffff, 1.6);
     key.position.set(2.5 * U, 4 * U, 3 * U);
     key.castShadow = true;
-    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.mapSize.set(1024, 1024);
     key.shadow.radius = 6;
     Object.assign(key.shadow.camera, { left: -2 * U, right: 2 * U, top: 2 * U, bottom: -2 * U });
     scene.add(key, new HemisphereLight(0xffffff, 0xdedede, 0.6));
@@ -239,6 +242,7 @@ export function VibeTV3DPreview({
         screenPivot.add(screen);
         dirty = true;
         setScreenHost(host);
+        onReady?.();
       },
       undefined,
       () => { if (!disposed) setModelFailed(true); },
@@ -261,8 +265,9 @@ export function VibeTV3DPreview({
     };
   }, [modelFailed]);
 
+  // Without WebGL the caller keeps its flat live preview on screen.
   if (modelFailed) {
-    return <LiveVibeTVPreview device={device} displayFrame={displayFrame} updateOwnedDisconnect={updateOwnedDisconnect} usage={usage} />;
+    return null;
   }
 
   return (

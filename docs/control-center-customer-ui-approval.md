@@ -7504,3 +7504,10 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no new content
 
+## 2026-10-18 — Overview: 3D case loads after first paint, flat preview otherwise (#755)
+
+- User approval: none needed — the look is unchanged from the approved picture overview-A2-center (17.10., #713). This entry records the coordinator's loading order: the heading and the flat live preview render first; the 3D case is a separate chunk, starts after the first paint, and only on a hardware WebGL (software renderers and missing WebGL keep the flat preview); its shadow map is 1024.
+- Approved customer-visible result: none beyond the approved picture. The 3D VibeTV replaces the flat preview a moment after the page opens, on machines with a real GPU.
+- Scope: `apps/control-center/src/components/overview-screen.tsx`, `vibetv-3d-preview.tsx`, `vibetv-3d-support.ts` (new), their tests and `apps/control-center/scripts/test-customer-flows.mjs` (wait targets), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+

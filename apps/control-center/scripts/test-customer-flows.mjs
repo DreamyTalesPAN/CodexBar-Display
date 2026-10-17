@@ -2713,8 +2713,8 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
     await page
       .getByRole("heading", { name: "VibeTV is connected" })
       .waitFor({ timeout: 10_000 });
-    // The Overview shows the live VibeTV in 3D (calm Overview, #713).
-    await page.getByRole("group", { name: /Interactive VibeTV preview/ }).waitFor({ timeout: 10_000 });
+    // The Overview shows the live VibeTV; without a hardware GPU it is the flat preview (#713).
+    await page.getByLabel("VibeTV live preview is offline").waitFor({ state: "detached", timeout: 10_000 });
     assert(
       (await page.getByText("AI provider", { exact: true }).count()) === 0,
       "Overview must not guess or show an AI provider",
@@ -6108,8 +6108,9 @@ async function testLocalOverviewRecoversWhenDeviceBecomesReady(
     "expected the ready status response to be served",
     15_000,
   );
-  // The Overview shows the live VibeTV in 3D (calm Overview, #713).
-  await page.getByRole("group", { name: /Interactive VibeTV preview/ }).waitFor({
+  // The Overview shows the live VibeTV (calm Overview, #713): no offline placeholder.
+  await page.getByLabel("VibeTV live preview is offline").waitFor({
+    state: "detached",
     timeout: 12_000,
   });
   assert(
