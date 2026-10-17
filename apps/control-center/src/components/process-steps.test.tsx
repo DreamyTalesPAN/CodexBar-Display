@@ -59,21 +59,12 @@ describe("ProcessSteps", () => {
     expect(html).not.toContain("text-muted-foreground");
   });
 
-  it("draws no cursor block of its own", () => {
-    const html = renderToStaticMarkup(<ProcessSteps steps={steps} />);
+  it("draws no cursor block, in either variant", () => {
+    for (const variant of ["list", "single"] as const) {
+      const html = renderToStaticMarkup(<ProcessSteps steps={steps} variant={variant} />);
 
-    expect(html).not.toContain("vibetv-caret-blink");
-    expect(html).not.toContain("bg-foreground");
-  });
-
-  it("draws a trailing node only after the current step, when one is passed", () => {
-    const html = renderToStaticMarkup(
-      <ProcessSteps steps={steps} trailing={<i data-testid="trail" />} />,
-    );
-
-    expect(html.match(/data-testid="trail"/g)).toHaveLength(1);
-    expect(html.indexOf('data-testid="trail"')).toBeGreaterThan(
-      html.indexOf("Uploading theme files."),
-    );
+      expect(html).not.toContain("vibetv-caret-blink");
+      expect(html).not.toContain("bg-foreground");
+    }
   });
 });

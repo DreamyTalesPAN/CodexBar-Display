@@ -9,8 +9,6 @@ export type SetupLogLine = ProcessStep;
 type SetupLogProps = {
   className?: string;
   lines: SetupLogLine[];
-  /** Renders the blinking caret after the last line while work is in flight. */
-  running?: boolean;
 };
 
 /**
@@ -21,7 +19,7 @@ type SetupLogProps = {
  * New lines append at the bottom for the same reason: the box is a fixed size
  * and only the log inside it scrolls. The lines themselves are ProcessSteps.
  */
-export function SetupLog({ className, lines, running = false }: SetupLogProps) {
+export function SetupLog({ className, lines }: SetupLogProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -29,7 +27,7 @@ export function SetupLog({ className, lines, running = false }: SetupLogProps) {
     if (node) {
       node.scrollTop = node.scrollHeight;
     }
-  }, [lines, running]);
+  }, [lines]);
 
   return (
     <div
@@ -46,19 +44,7 @@ export function SetupLog({ className, lines, running = false }: SetupLogProps) {
       )}
       ref={scrollRef}
     >
-      <ProcessSteps
-        steps={lines}
-        trailing={running ? <SetupLogCaret /> : null}
-      />
+      <ProcessSteps steps={lines} />
     </div>
-  );
-}
-
-function SetupLogCaret() {
-  return (
-    <span
-      aria-hidden
-      className="inline-block h-[14px] w-[8px] shrink-0 bg-foreground [animation:vibetv-caret-blink_1.1s_step-end_infinite]"
-    />
   );
 }

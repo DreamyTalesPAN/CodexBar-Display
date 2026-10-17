@@ -7492,3 +7492,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the entry above; nothing else changes.
 - Scope: `apps/control-center/src/components/control-center-app.screensaver-install.test.tsx` and this record. Pull request branch only, not merge or release.
 - What's new: none — same steps, a test expectation only
+
+## 2026-10-17 — Setup Wizard log: no blinking caret
+
+- User approval: Paul's rule of 2026-10-17 (no cursor block anywhere in process steps), decided on the #712 review and relayed by the communicator; he has not yet seen this build. It supersedes the statement in the entry above that the Setup Wizard log keeps its caret.
+- Approved customer-visible result: Setup Wizard status logs (welcome, providers, device, theme install): before: a blinking caret block at the end of the log while work runs; after: none. Lines, box, fade-in and everything else unchanged.
+- Scope: `apps/control-center/src/components/process-steps.tsx`, `apps/control-center/src/components/setup/setup-log.tsx` (caret and `running` prop removed), the four wizard callers that passed `running` (setup-welcome-screen, setup-providers-screen, setup-theme-screen, setup-device-screen), their tests, and this record. Pull request branch only, not merge or release.
+- What's new: none — removes a visual element; no new copy

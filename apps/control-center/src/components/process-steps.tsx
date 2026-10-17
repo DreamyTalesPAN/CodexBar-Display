@@ -1,6 +1,5 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { SETUP_REVEAL } from "./setup/setup-reveal";
 
@@ -16,11 +15,6 @@ type ProcessStepsProps = {
   /** "list" shows every step, "single" only the current (last) one. */
   variant?: "list" | "single";
   steps: ProcessStep[];
-  /**
-   * Rendered after the current step's text. Only the Setup Wizard's log passes
-   * something here (its caret), so nothing else draws a cursor block.
-   */
-  trailing?: ReactNode;
 };
 
 /**
@@ -34,7 +28,6 @@ export function ProcessSteps({
   className,
   steps,
   variant = "list",
-  trailing = null,
 }: ProcessStepsProps) {
   const visible = variant === "single" ? steps.slice(-1) : steps;
   return (
@@ -43,23 +36,19 @@ export function ProcessSteps({
       data-slot="process-steps"
       data-variant={variant}
     >
-      {visible.map((step) => {
-        const current = step === steps[steps.length - 1];
-        return (
-          <div
-            className={cn(
-              "flex items-center gap-2",
-              SETUP_REVEAL,
-              step.tone === "error" ? "text-destructive" : "text-muted-foreground",
-              step.tone === "done" && "opacity-55",
-            )}
-            key={step.id}
-          >
-            <span>&gt; {step.text}</span>
-            {current ? trailing : null}
-          </div>
-        );
-      })}
+      {visible.map((step) => (
+        <div
+          className={cn(
+            "flex items-center gap-2",
+            SETUP_REVEAL,
+            step.tone === "error" ? "text-destructive" : "text-muted-foreground",
+            step.tone === "done" && "opacity-55",
+          )}
+          key={step.id}
+        >
+          <span>&gt; {step.text}</span>
+        </div>
+      ))}
     </div>
   );
 }

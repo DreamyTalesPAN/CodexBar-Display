@@ -44,7 +44,7 @@ export function SetupWelcomeScreen({
         Welcome to
       </p>
       <ControlCenterBrand variant="hero" />
-      <SetupLog className="mt-3" lines={lines} running />
+      <SetupLog className="mt-3" lines={lines} />
       {onEnterAddressManually ? (
         <Button
           className="text-foreground"
