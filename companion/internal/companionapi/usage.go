@@ -94,6 +94,10 @@ type usageWindowInfo struct {
 	UsedPercent   int    `json:"usedPercent"`
 	ResetSec      int64  `json:"resetSecs,omitempty"`
 	WindowMinutes int    `json:"windowMinutes,omitempty"`
+	// Both come from CodexBar's pace for this window and are absent when it
+	// sends none. Nothing here is computed.
+	WillLastToReset *bool `json:"willLastToReset,omitempty"`
+	ETASeconds      int64 `json:"etaSeconds,omitempty"`
 }
 
 type usageStatusInfo struct {
@@ -593,18 +597,43 @@ func usageWindowsFromMeta(meta codexbar.ProviderUsageMeta) []usageWindowInfo {
 		if id == "" || label == "" {
 			continue
 		}
-		out = append(out, usageWindowInfo{
+		info := usageWindowInfo{
 			ID:            id,
 			Label:         label,
 			UsedPercent:   clampUsagePercent(window.UsedPercent),
 			ResetSec:      window.ResetSec,
 			WindowMinutes: window.WindowMinutes,
-		})
+		}
+		if pace, ok := paceForWindow(meta.Pace, id); ok {
+			willLast := pace.WillLastToReset
+			info.WillLastToReset = &willLast
+			info.ETASeconds = pace.ETASeconds
+		}
+		out = append(out, info)
 	}
 	if len(out) == 0 {
 		return nil
 	}
 	return out
+}
+
+// CodexBar keys its pace by rate window: "primary" is the session window and
+// "secondary" the weekly one. The dashboard path names the same windows
+// "session" and "weekly".
+func paceForWindow(pace []codexbar.ProviderPace, windowID string) (codexbar.ProviderPace, bool) {
+	key := windowID
+	switch windowID {
+	case "session":
+		key = "primary"
+	case "weekly":
+		key = "secondary"
+	}
+	for _, item := range pace {
+		if item.Window == key {
+			return item, true
+		}
+	}
+	return codexbar.ProviderPace{}, false
 }
 
 func usageStatusFromMeta(meta codexbar.ProviderUsageMeta) *usageStatusInfo {
