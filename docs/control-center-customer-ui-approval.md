@@ -7785,3 +7785,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Usage opens with a left-aligned head. Small muted text "Last 30 days" on the left; on the right the provider names, each with a small dot in its chart colour (Claude in ink, Codex in olive), and an icon-only Refresh button. The button keeps its behaviour: while a refresh runs it shows a spinner and is closed. Below: the 30-day total in 28 px semibold, followed by a small muted "tokens", and the total in words in small muted text. The token chart runs the full width without a card and without a title: thin lines, a very light fill, three values on the left axis and the dates below, all in small muted text. Before → after: "Total tokens in the last 30 days" (heading) → "Last 30 days"; "Tokens used over time" (card title) → removed; "Refresh token usage" with its text (card button) → an icon-only button named "Refresh". No other wording.
 - Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (head and chart only; the tiles are not touched), the selectors of `scripts/test-customer-flows.mjs` that follow these labels, and this approval record. Stacked on #680 (→ #669); pull request branch only, not merge or release.
 - What's new: none — layout and colour change only, no new notice
+
+## 2026-10-17 — Usage: a stale reading shows its real 0% lane (#670)
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #670); look unchanged except: a stale reading's real 0% lane shows its number ("0% session used", "0% weekly used") with the Updating spinner, where it showed placeholder bars before; this is the quiet error look 5b as approved on 2026-10-16.
+- Approved customer-visible result: On Usage, a stale reading shows a real 0% lane as its number ("0% session used", "0% weekly used") with the Updating spinner, as in look 5b; a lane without a reading stays placeholder bars. No new wording.
+- Scope: `usage-screen.tsx` and its test, `control-center-types.ts` (three optional retained flags), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the same copy as before; only the zero lane is now a number
+
+## 2026-10-17 — Usage: a provider whose only reading is a retained 0% stays visible (#670)
+
+- User approval: Codex review fix, no new look; not seen by Paul. It makes the approved #670 result hold for one case the review found: a provider whose stale reading is all 0% and that has no token or cost data.
+- Approved customer-visible result: As in the #670 entry above, that provider's tile stays on Usage and shows its real 0% lanes ("0% session used", "0% weekly used") with the Updating spinner. Before this fix the tile was hidden. No new wording.
+- Scope: `usage-screen.tsx` (provider visibility counts a retained reading) and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix, no new notice
