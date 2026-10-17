@@ -615,8 +615,10 @@ artifacts and logs land in `~/.vibetv-selftest/runs/<timestamp>/`.
 This is the firmware/Companion tool. For the full **customer** rehearsal that
 also drives the Mac App update through Sparkle, use
 `scripts/vibetv-rehearse-warm-start.sh` / `vibetv-rehearse-cold-start.sh`;
-those need a signed candidate and one manual Sparkle "Install Update" click (a
-native macOS dialog that cannot be scripted headlessly).
+those need a signed candidate. While the public Mac App predates the launch update
+(#561) they need one manual Sparkle "Install Update" click (a native macOS dialog
+that cannot be scripted headlessly); after that the Mac App installs at launch and
+the run facts record `macAppLaunchUpdate`.
 
 Pass `--main` to rehearse what a release would ship: it resolves the release
 candidate built from the current `main` tip and refuses to run when there is
