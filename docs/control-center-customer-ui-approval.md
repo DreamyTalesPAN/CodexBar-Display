@@ -7467,3 +7467,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-17 — Small fixes from the rule check: Try again, sentence case, no red for past failures
+
+- User approval: pending — Paul reviews this PR (fix from the rule check of 17.10., no issue); look unchanged except: Updates, the button for a failed Mac App check reads "Try again" (before: "Check again"); setup heading "Display Mode" reads "Display mode" (before: "Display Mode"); a past "Failed" step in the setup log is in the normal text colour (before: red).
+- Approved customer-visible result: On Updates, the button that retries a failed Mac App check reads "Try again" (before: "Check again"); its placement and behaviour are unchanged. On setup's display step the heading reads "Display mode" (before: "Display Mode"). In the setup log (Logs and the Help menu), a step that failed in the past shows its "Failed" word, message and next-step line in the normal text colour (before: red). Nothing else changes.
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/setup/setup-display-mode-screen.tsx`, `apps/control-center/src/components/setup-event-log.tsx`, their tests, `apps/control-center/scripts/test-customer-flows.mjs` (button name only) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — sentence case and one colour, no new copy
