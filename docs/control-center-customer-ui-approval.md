@@ -7764,3 +7764,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: The token line reads "Tokens: 12.7B total · 5.2B this week". A tile's reset is no longer top right next to the provider name: it sits right-aligned on the first line of the tile, on the line with the big percent ("86% session remaining"; for a weekly-first provider such as Codex, on "71% weekly remaining"). The header holds only the name. The Updating spinner takes that place while the tile is quiet. No other wording.
 - Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (tile layout, token line, tests), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — label and layout change only, no new notice
+
+## 2026-10-17 — Usage: named windows keep CodexBar's label, e.g. "Fable only" (#669)
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, found on the Mac with #669); look unchanged except: "100% fable only remaining" → "100% Fable only remaining"; session and weekly stay as they are.
+- Approved customer-visible result: pending — a named CodexBar window keeps its label as delivered ("100% Fable only remaining"); session and weekly keep their lowercase wording ("45% session used", "26% weekly used"). No new wording.
+- Scope: `usage-screen.tsx` (label of named CodexBar windows), `usage-screen.test.tsx` (label expectations and one new test), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — label fix only, no new notice
