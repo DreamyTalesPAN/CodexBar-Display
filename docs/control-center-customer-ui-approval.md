@@ -7848,3 +7848,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: As in the "Tokens:" entry above, with this PR's plan name in the tile header and the cap line under the Tokens line, as in the entry before it. No new wording.
 - Scope: `apps/control-center/src/components/usage-screen.tsx` (merge of #669 into this PR), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — the same tiles as above, no new notice
+## 2026-10-17 — Usage: grey outline of the head and chart while the token history loads (#598, stacked on #714)
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #598); look unchanged except: small spinner in the empty chart area → grey outline of the head and chart while loading.
+- Approved customer-visible result: none yet; pending Paul's review. Proposed: while the token history loads, the head ("Last 30 days" line, legend, number and words line) and the chart area are grey blocks at the heights of the finished graph, no spinner, no figures; the same look under reduced motion, without the pulse.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (loading state of the token history only), the loading assertions of `scripts/test-customer-flows.mjs`, and this approval record. Stacked on #714; pull request branch only, not merge or release.
+- What's new: none — loading state only, no new notice

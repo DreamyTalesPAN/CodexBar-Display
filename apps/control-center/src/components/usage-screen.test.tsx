@@ -190,10 +190,9 @@ describe("UsageScreen", () => {
 
     expect(html).toContain("Token history is loading");
     expect(html).toContain('data-testid="token-history-loading"');
-    expect(html).toContain('data-slot="card"');
-    expect(html).toContain("min-h-[294px]");
-    expect(html).toContain("items-center justify-center");
-    expect(html).toContain('data-slot="spinner"');
+    expect(html).toContain('data-slot="skeleton"');
+    expect(html).not.toContain("min-h-[294px]");
+    expect(html).not.toContain('data-slot="spinner"');
     expect(html).toContain("Codex");
     expect(html).toContain('aria-label="12% session used"');
     expect(html).toContain('aria-label="34% weekly used"');
@@ -202,6 +201,49 @@ describe("UsageScreen", () => {
     expect(html).not.toContain("Loading usage");
     expect(html).not.toContain("Last 30 days");
     expect(html).not.toContain("Tokens used over time");
+  });
+
+  it("draws the finished head and chart as grey blocks while token history loads, without a spinner", async () => {
+    const loadingSnapshot: UsageSnapshot = {
+      ...usage,
+      tokenUsageReady: false,
+      providers: usage.providers.map((provider) => ({ ...provider, cost: undefined })),
+    };
+    const html = renderUsage(null, loadingSnapshot);
+
+    // The loading block sits above the provider list (<ol>).
+    const loading = html.slice(
+      html.lastIndexOf("<div", html.indexOf('data-testid="token-history-loading"')),
+      html.indexOf("<ol"),
+    );
+    expect(loading).toContain("Token history is loading");
+    expect(loading).toContain('role="status"');
+    expect(loading).toContain('aria-live="polite"');
+    // Head label, one legend chip for the one provider, number, words line and chart.
+    expect(loading.match(/data-slot="skeleton"/g)).toHaveLength(5);
+    expect(loading).not.toContain('data-slot="spinner"');
+    // Same chart wrapper as the finished panel, so the tiles below do not move.
+    expect(loading).toContain("relative mt-8 mb-10 min-h-64");
+    expect(renderUsage()).toContain("relative mt-8 mb-10 min-h-64");
+    // The skeleton shows no figures and no finished headings.
+    expect(loading).not.toContain("Last 30 days");
+    expect(loading).not.toContain("Tokens used over time");
+    expect(loading).not.toContain("1,234");
+    await expectNoAxeViolations(html);
+  });
+
+  it("stops the skeleton pulse under reduced motion", () => {
+    const html = renderUsage(null, {
+      ...usage,
+      tokenUsageReady: false,
+      providers: usage.providers.map((provider) => ({ ...provider, cost: undefined })),
+    });
+
+    const blocks = html.match(/<div[^>]*data-slot="skeleton"[^>]*>/g) ?? [];
+    expect(blocks).toHaveLength(5);
+    for (const block of blocks) {
+      expect(block).toContain("motion-reduce:animate-none");
+    }
   });
 
   it("shows a growing token total immediately and marks it as still counting", () => {
