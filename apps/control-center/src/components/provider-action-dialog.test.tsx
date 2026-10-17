@@ -353,3 +353,25 @@ it("a reply from before the provider left does not show for its return", async (
   expect(dialog("Claude needs a new sign-in")).not.toBeNull();
   expect(dialog("Claude needs a new sign-in")?.textContent).not.toContain("Could not open Claude.");
 });
+
+it("a sign-in left while its provider was checking is forgotten once the check is healthy", async () => {
+  let hook!: SignInHook;
+  function Checking({ actions, checking }: { actions: Record<string, UsageProviderAction>; checking: string[] }) {
+    const result = useProviderActionDismissal(actions, false, checking);
+    useEffect(() => {
+      hook = result;
+    });
+    const [shown, dismiss] = result;
+    return shown ? (
+      <ProviderActionDialog action={shown.action} error={shown.error} onDismiss={dismiss} />
+    ) : null;
+  }
+  const { rerender } = render(<Checking actions={claude()} checking={[]} />);
+  const before = hook[3]("claude");
+  await act(async () => rerender(<Checking actions={{}} checking={["claude"]} />));
+  await act(async () => rerender(<Checking actions={{}} checking={[]} />));
+  await act(async () => rerender(<Checking actions={claude()} checking={[]} />));
+  act(() => hook[2]("claude", "auth_required", signInFailure, true, before));
+  expect(dialog("Claude needs a new sign-in")).not.toBeNull();
+  expect(dialog("Claude needs a new sign-in")?.textContent).not.toContain("Could not open Claude.");
+});

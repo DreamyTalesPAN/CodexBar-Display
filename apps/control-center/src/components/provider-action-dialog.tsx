@@ -74,11 +74,10 @@ export function useProviderActionDismissal(
     const held = new Set(checkingIds);
     // A provider that left its action forgets its sign-in: a reply for it
     // after its return must not reopen or clear the new incident.
-    signIns = new Map(memory.signIns);
-    for (const key of memory.signature ? memory.signature.split("\n") : []) {
-      const id = key.split(":")[0];
-      if (!current.has(key) && !held.has(id)) signIns.delete(id);
-    }
+    const ids = new Set(entries.map(([id]) => id));
+    signIns = new Map(
+      [...memory.signIns].filter(([id]) => ids.has(id) || held.has(id)),
+    );
     dismissed = new Set(
       [...dismissed].filter(
         (key) => current.has(key) || held.has(key.split(":")[0]),
