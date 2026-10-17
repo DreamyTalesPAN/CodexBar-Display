@@ -7474,3 +7474,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Settings reads top to bottom as Display mode, Brightness, Screensaver, Connection, Setup, AI providers. Section names sit in a fixed left column, controls on the right. Connection is a list of two radio rows (USB-C, WiFi) with their descriptions instead of two cards. Screensaver rows show the name on the left (Show screensaver, Show after, Brightness in screensaver) and the control beside it. Setup shows each button beside its line. Text before → after: the section heading "Display" becomes "Brightness" (the brightness slider is the only control in it); no other text changes.
 - Scope: `apps/control-center/src/components/settings-screen.tsx` (layout and classes only, same controls, same behaviour), `settings-screen.test.tsx` (pinned section order, headings and row order updated; behaviour assertions unchanged), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — a re-arranged Settings page with the same settings needs no notice.
+
+## 2026-10-17 — Settings calm redesign, rows wrap at narrow widths (#713)
+
+- User approval: pending — Paul reviews this PR (calm redesign Settings, variant A, #713); look: unchanged from the entry above, except that label-and-control rows wrap below their label on a narrow Settings track, and brightness status text ("Loading", "Not supported") keeps its natural width.
+- Approved customer-visible result: as in the entry above. When the Settings column is narrower than the label column plus the control, the control moves below its label instead of being squeezed or clipped. The setup explanations wrap the same way. Brightness shows "Loading" or "Not supported" in full. No new text, button or dialog.
+- Scope: `apps/control-center/src/components/settings-screen.tsx` (wrap and width classes only), `apps/control-center/scripts/test-customer-flows.mjs` (the Settings wait now uses the "Brightness" heading), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a layout fix of the same Settings page needs no notice.

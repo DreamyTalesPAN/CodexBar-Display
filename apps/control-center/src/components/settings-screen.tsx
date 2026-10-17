@@ -763,7 +763,7 @@ function BrightnessControl({
         />
       </div>
       <output
-        className="w-10 shrink-0 text-right text-sm tabular-nums text-muted-foreground"
+        className="min-w-10 shrink-0 text-right text-sm tabular-nums text-muted-foreground"
         htmlFor={id}
       >
         {valueLabel}
