@@ -244,7 +244,7 @@ function SupportSection({
   children: ReactNode;
 }) {
   return (
-    <section className="grid gap-4 border-t py-8 first:border-t-0 first:pt-0 sm:grid-cols-[240px_minmax(0,1fr)] sm:gap-10">
+    <section className="grid gap-4 border-t py-8 first:border-t-0 first:pt-0 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-10">
       <div className="grid content-start gap-1">
         <h2 className="text-sm font-semibold">{title}</h2>
         {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}

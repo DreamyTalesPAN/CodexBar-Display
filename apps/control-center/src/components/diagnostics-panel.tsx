@@ -204,7 +204,7 @@ function CheckRow({ check, windowsHost }: { check: Check; windowsHost: boolean }
   const cable =
     check.name === "device_target" && /^cable:/i.test(check.detail ?? "");
   return (
-    <li className="grid gap-1 border-b py-3 last:border-b-0 sm:grid-cols-[180px_minmax(0,1fr)_auto] sm:gap-x-4">
+    <li className="grid gap-1 border-b py-3 last:border-b-0 xl:grid-cols-[180px_minmax(0,1fr)_auto] xl:gap-x-4">
       <span className="text-sm font-semibold">
         {cable
           ? "Connection"
