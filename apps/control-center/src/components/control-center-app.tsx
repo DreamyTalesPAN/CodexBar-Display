@@ -501,8 +501,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     useState<ApiError | null>(null);
   // Reports a sign-in start to the provider overlay (set once it is rendered).
   const providerActionReportRef = useRef<
-    ((id: string, state: string, error: ApiError | null, rearm: boolean) => void) | null
+    ((id: string, state: string, error: ApiError | null, rearm: boolean, signIn: object) => void) | null
   >(null);
+  const providerActionStartRef = useRef<((id: string) => object) | null>(null);
   const [providerDisplay, setProviderDisplay] =
     useState<ProviderDisplaySelection | null>(null);
   const providerDisplayRef = useRef<ProviderDisplaySelection | null>(null);
@@ -3699,6 +3700,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         return;
       }
       const signInState = item.health ? providerRowHealthState(item.health) : "";
+      const signIn = providerActionStartRef.current?.(item.providerId ?? "") ?? {};
       // On the Mac the app reads the browser sign-in the background check
       // cannot read. It starts here, inside the customer's click: WebKit
       // hands a vibetv:// link to the app only then.
@@ -3711,7 +3713,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           { method: "POST" },
         );
         setProviderPreferencesError(null);
-        providerActionReportRef.current?.(item.providerId ?? "", signInState, null, fromOverlay);
+        providerActionReportRef.current?.(item.providerId ?? "", signInState, null, fromOverlay, signIn);
       } catch (error) {
         const failure = normalizeCaughtError(
           error,
@@ -3722,7 +3724,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         if (!fromOverlay) {
           setProviderPreferencesError(failure);
         }
-        providerActionReportRef.current?.(item.providerId ?? "", signInState, failure, fromOverlay);
+        providerActionReportRef.current?.(item.providerId ?? "", signInState, failure, fromOverlay, signIn);
         return;
       }
       const followUps = providerSignInFollowUpsRef.current;
@@ -4807,7 +4809,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   useEffect(() => {
     forgetResolvedProviderIssues((providerPreferences || []).filter(isProviderItem));
   }, [providerPreferences]);
-  const [providerActionShown, dismissProviderAction, reportProviderSignIn] =
+  const [providerActionShown, dismissProviderAction, reportProviderSignIn, startProviderSignIn] =
     useProviderActionDismissal(
       providerActions,
       activeTab === "settings",
@@ -4815,6 +4817,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     );
   useEffect(() => {
     providerActionReportRef.current = reportProviderSignIn;
+    providerActionStartRef.current = startProviderSignIn;
   });
   const providerPickerProps = {
     usage,

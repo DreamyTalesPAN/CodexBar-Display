@@ -7757,3 +7757,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No change. A healthy, fresh tile shows its reset time top-right and on each later window line while the token history is still counting, with no spinner. No new wording.
 - Scope: `usage-screen.test.tsx` (one new test), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — test only, no customer-visible change
+
+## 2026-10-17 — Sign-in replies: a superseded sign-in no longer reopens or clears the provider overlay (#679)
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #679); look unchanged except: none.
+- Approved customer-visible result: look unchanged. Only a rare race changes: a sign-in reply that arrives after a newer sign-in started, or after the provider left and came back, no longer reopens the overlay or clears the newer failure. No wording or layout change.
+- Scope: `control-center-app.tsx` (sign-in start and reply pass a sign-in token), `provider-action-dialog.tsx` and its test, and this approval record. Pull request branch only, not merge or release. Stacked on #669.
+- What's new: none — fix of a reported defect, no customer-visible change of its own

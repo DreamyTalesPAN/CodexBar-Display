@@ -4,6 +4,7 @@
 // while the provider stays in that state, and it comes back once it was healthy
 // and broke again.
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { useEffect } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import {
@@ -135,7 +136,7 @@ it("comes before the busy notice: the notice waits for it, not the other way rou
 });
 
 function ReportingOverlay({ actions }: { actions: Record<string, UsageProviderAction> }) {
-  const [shown, dismiss, report] = useProviderActionDismissal(actions);
+  const [shown, dismiss, report, start] = useProviderActionDismissal(actions);
   return (
     <div>
       <button
@@ -145,6 +146,7 @@ function ReportingOverlay({ actions }: { actions: Record<string, UsageProviderAc
             "auth_required",
             { code: "x", message: "Could not open Claude.", nextAction: "Try again later." },
             true,
+            start("claude"),
           )
         }
         type="button"
@@ -158,6 +160,7 @@ function ReportingOverlay({ actions }: { actions: Record<string, UsageProviderAc
             "auth_required",
             { code: "x", message: "Could not open Claude.", nextAction: "Try again later." },
             false,
+            start("claude"),
           )
         }
         type="button"
@@ -243,11 +246,11 @@ it("a checking read does not end a dismissal; only a healthy result does", async
 
 it("a failed sign-in is kept while its provider is checking", async () => {
   function Reporting({ actions, checking }: { actions: Record<string, UsageProviderAction>; checking: string[] }) {
-    const [shown, dismiss, report] = useProviderActionDismissal(actions, false, checking);
+    const [shown, dismiss, report, start] = useProviderActionDismissal(actions, false, checking);
     return (
       <div>
         <button
-          onClick={() => report("claude", "auth_required", { code: "x", message: "Could not open Claude.", nextAction: "" }, true)}
+          onClick={() => report("claude", "auth_required", { code: "x", message: "Could not open Claude.", nextAction: "" }, true, start("claude"))}
           type="button"
         >
           report
@@ -275,11 +278,11 @@ it("a healthy result after a checking read ends the dismissal", async () => {
 
 it("a failure shown before a checking read is still there when the need returns", async () => {
   function Reporting({ actions, checking }: { actions: Record<string, UsageProviderAction>; checking: string[] }) {
-    const [shown, dismiss, report] = useProviderActionDismissal(actions, false, checking);
+    const [shown, dismiss, report, start] = useProviderActionDismissal(actions, false, checking);
     return (
       <div>
         <button
-          onClick={() => report("claude", "auth_required", { code: "x", message: "Could not open Claude.", nextAction: "" }, true)}
+          onClick={() => report("claude", "auth_required", { code: "x", message: "Could not open Claude.", nextAction: "" }, true, start("claude"))}
           type="button"
         >
           report
@@ -294,4 +297,59 @@ it("a failure shown before a checking read is still there when the need returns"
   await act(async () => rerender(<Reporting actions={{}} checking={["claude"]} />));
   await act(async () => rerender(<Reporting actions={claude()} checking={["claude"]} />));
   expect(dialog("Claude needs a new sign-in")?.textContent).toContain("Could not open Claude.");
+});
+
+// A sign-in reply counts only for the latest sign-in of its provider (#679): a
+// reply from a superseded one does not reopen or clear the newer one.
+type SignInHook = ReturnType<typeof useProviderActionDismissal>;
+
+function GenerationOverlay({
+  actions,
+  onHook,
+}: {
+  actions: Record<string, UsageProviderAction>;
+  onHook: (hook: SignInHook) => void;
+}) {
+  const result = useProviderActionDismissal(actions);
+  useEffect(() => onHook(result));
+  const [shown, dismiss] = result;
+  return shown ? (
+    <ProviderActionDialog action={shown.action} error={shown.error} onDismiss={dismiss} />
+  ) : null;
+}
+
+const signInFailure = { code: "x", message: "Could not open Claude.", nextAction: "" };
+
+it("an older failure does not reopen the overlay after a newer sign-in started", () => {
+  let hook!: SignInHook;
+  render(<GenerationOverlay actions={claude()} onHook={(value) => { hook = value; }} />);
+  const older = hook[3]("claude");
+  hook[3]("claude");
+  fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+  act(() => hook[2]("claude", "auth_required", signInFailure, true, older));
+  expect(dialog("Claude needs a new sign-in")).toBeNull();
+});
+
+it("an older success does not clear a newer failure", () => {
+  let hook!: SignInHook;
+  render(<GenerationOverlay actions={claude()} onHook={(value) => { hook = value; }} />);
+  const older = hook[3]("claude");
+  const newer = hook[3]("claude");
+  act(() => hook[2]("claude", "auth_required", signInFailure, true, newer));
+  act(() => hook[2]("claude", "auth_required", null, true, older));
+  expect(dialog("Claude needs a new sign-in")?.textContent).toContain("Could not open Claude.");
+});
+
+it("a reply from before the provider left does not show for its return", async () => {
+  let hook!: SignInHook;
+  const onHook = (value: SignInHook) => {
+    hook = value;
+  };
+  const { rerender } = render(<GenerationOverlay actions={claude()} onHook={onHook} />);
+  const before = hook[3]("claude");
+  await act(async () => rerender(<GenerationOverlay actions={{}} onHook={onHook} />));
+  await act(async () => rerender(<GenerationOverlay actions={claude()} onHook={onHook} />));
+  act(() => hook[2]("claude", "auth_required", signInFailure, true, before));
+  expect(dialog("Claude needs a new sign-in")).not.toBeNull();
+  expect(dialog("Claude needs a new sign-in")?.textContent).not.toContain("Could not open Claude.");
 });
