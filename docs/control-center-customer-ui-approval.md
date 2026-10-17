@@ -7546,3 +7546,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the flat preview is replaced by the 3D case as soon as its model is drawn, also when VibeTV has no live frame. Screen readers get only the visible preview (the hidden 3D is aria-hidden and inert until it is shown). No other text changes.
 - Scope: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/vibetv-3d-preview.tsx`, `apps/control-center/src/components/overview-screen.test.tsx`, `apps/control-center/scripts/test-customer-flows.mjs` (provider-state flow waits for the rendered theme instead of the offline placeholder disappearing), and this approval record. Codex review fixes on PR #755 only; not merge or release.
 - What's new: none — no new content
+
+## 2026-10-18 — Overview: Windows Basic Render Driver keeps the flat preview (#755)
+
+- User approval: pending — Paul reviews this PR. Before: on a Windows machine whose WebGL is the Microsoft Basic Render Driver (WARP, no GPU), the 3D VibeTV case could start. After: that machine keeps the flat preview, as already designed for software renderers.
+- Approved customer-visible result: on Windows without a GPU the Overview shows the flat VibeTV preview (no 3D case). No text changes.
+- Scope: `apps/control-center/src/components/vibetv-3d-support.ts`, `apps/control-center/src/components/vibetv-3d-support.test.ts`, and this approval record. Codex review fix on PR #755 only; not merge or release.
+- What's new: none — no new content

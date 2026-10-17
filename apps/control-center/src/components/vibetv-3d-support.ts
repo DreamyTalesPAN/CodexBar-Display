@@ -13,7 +13,8 @@ export function hardwareWebGLAvailable(): boolean {
       ? String(gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL))
       : "";
     (gl.getExtension("WEBGL_lose_context") as WEBGL_lose_context | null)?.loseContext();
-    return !/swiftshader|llvmpipe|software/i.test(renderer);
+    // Windows WebView2 without a GPU reports the Basic Render Driver (WARP).
+    return !/swiftshader|llvmpipe|software|basic render driver|\bwarp\b/i.test(renderer);
   } catch {
     return false;
   }

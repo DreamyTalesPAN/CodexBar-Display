@@ -29,6 +29,13 @@ describe("hardwareWebGLAvailable", () => {
     expect(hardwareWebGLAvailable()).toBe(false);
   });
 
+  it("is false on the Windows Basic Render Driver (WARP)", () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+      fakeContext("Microsoft Basic Render Driver") as never,
+    );
+    expect(hardwareWebGLAvailable()).toBe(false);
+  });
+
   it("is false without a WebGL context", () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
     expect(hardwareWebGLAvailable()).toBe(false);
