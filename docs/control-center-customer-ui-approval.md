@@ -7793,6 +7793,13 @@ issue scope, or release permission never implies UI permission.
 - Scope: `usage-screen.tsx`, `usage-screen.test.tsx`, the hero token in `src/app/globals.css`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — size and position change only, no new notice
 
+## 2026-10-17 — Usage chart colours follow the provider, not the order of the response (Codex review on #714)
+
+- User approval: pending — Paul reviews this PR (fix of a Codex finding on #714); look unchanged: Claude keeps the ink dot and line, Codex the olive, as in the entry above. Nothing else.
+- Approved customer-visible result: none beyond the colours of the entry above: Claude in ink, Codex in olive. When the response lists Codex first, the colours had swapped before; now they stay with the provider. In the usual order nothing changes.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (chart colour assignment only), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — colour fix only, no new notice
+
 ## 2026-10-17 — Usage: grey outline of the head and chart while the token history loads (#598, stacked on #714)
 
 - User approval: pending — Paul reviews this PR (fix of a reported defect, #598); look unchanged except: small spinner in the empty chart area → grey outline of the head and chart while loading.
@@ -7828,6 +7835,11 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/src/components/control-center-app.tsx` (the condition the notice waits for) and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no new capability, the same dialogs in a fixed order
 
+## 2026-10-17 — Approval record: #724 merged into the stack (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the #724 branch and changes no screen.
+
 ## 2026-10-17 — Usage: a usage error opens as an overlay dialog, not a box at the top (stacked on #745)
 
 - User approval: pending — Paul reviews this PR (fix of a reported defect: errors are dialogs over the page, not inline text at the top; the follow-up named in #745); look unchanged except: on Usage, the box at the top of the page with the usage error title, its sentence and "Try again" → the same title, sentence and "Try again" in an overlay dialog with "OK" (and the X) to close it.
@@ -7839,5 +7851,12 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
 - Approved customer-visible result: none beyond the entries above; this record restates the merge of the #745 branch and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-17 — Approval record: the #745 head merged into the stack again (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the current #745 head and changes no screen.
 - Scope: this approval record only. Pull request branch only, not merge or release.
 - What's new: none — approval record only

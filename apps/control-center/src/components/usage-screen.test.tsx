@@ -375,6 +375,19 @@ describe("UsageScreen", () => {
     expect(series.map((item) => item.color)).toEqual(["var(--chart-1)", "var(--chart-2)"]);
   });
 
+  it("keeps Claude in ink and Codex in olive when the response lists Codex first", () => {
+    const codex = { ...usage.providers[0], id: "codex", label: "Codex" };
+    const { series } = buildProviderTokenChart([
+      { provider: codex, days: [{ day: "2026-10-01", totalTokens: 7 }] },
+      { provider: { ...codex, id: "claude", label: "Claude" }, days: [{ day: "2026-10-01", totalTokens: 5 }] },
+    ] as Parameters<typeof buildProviderTokenChart>[0]);
+
+    expect(series.map((item) => [item.label, item.color])).toEqual([
+      ["Codex", "var(--chart-2)"],
+      ["Claude", "var(--chart-1)"],
+    ]);
+  });
+
   it("shows a small Refreshing mark by the token total while a manual refresh waits, and no notice", () => {
     const html = renderToStaticMarkup(
       <UsageScreen

@@ -1087,8 +1087,13 @@ export function buildProviderTokenChart(
     provider: UsageProviderInfo;
   }>,
 ) {
+  // Claude keeps the ink and Codex the olive, whatever order the response lists them in.
+  const colorById: Record<string, string> = {
+    claude: usageProviderChartColors[0],
+    codex: usageProviderChartColors[1],
+  };
   const series = providerHistories.map(({ provider }, index) => ({
-    color: usageProviderChartColors[index % usageProviderChartColors.length],
+    color: colorById[provider.id] ?? usageProviderChartColors[index % usageProviderChartColors.length],
     dataKey: `provider${index + 1}`,
     label: provider.label || provider.id,
   }));
