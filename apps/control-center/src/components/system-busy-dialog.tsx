@@ -1,7 +1,7 @@
 "use client";
 
-import { useLayoutEffect, useState } from "react";
-import { flushSync } from "react-dom";
+import { useState } from "react";
+import { useWaitsForPageDialog } from "./announcement-gate";
 import { SetupDialog } from "./setup/setup-dialog";
 
 /**
@@ -29,44 +29,16 @@ export function useSystemBusyDismissal(
 }
 
 /**
- * Whether a dialog other than this one is open. The busy dialog leaves the
- * page usable, so a page's own dialog (Run setup again, a theme preview, a
- * factory reset, a delete confirmation) can open under it, or be open when it
- * comes; it waits for that one instead of covering it, and returns once it is
- * closed. The first answer is read before the first render, so the busy dialog
- * never mounts over a dialog that was already open.
+ * The computer is too starved for the usage engine to answer (#606). An
+ * announcement: it waits while a page dialog is open (#632).
  */
-function otherDialogOpen(): boolean {
-  return (
-    typeof document !== "undefined" &&
-    Array.from(
-      document.querySelectorAll('[role="dialog"], [role="alertdialog"]'),
-    ).some((dialog) => !dialog.textContent?.includes(systemBusyCopy.title))
-  );
-}
-
-function useOtherDialogOpen(): boolean {
-  const [open, setOpen] = useState(otherDialogOpen);
-  // A layout effect: the observer exists before the commit that mounts a page
-  // dialog in the same render, so it sees those mutations, and its check runs
-  // before the browser paints.
-  useLayoutEffect(() => {
-    const check = () => setOpen(otherDialogOpen());
-    check();
-    const observer = new MutationObserver(() => flushSync(check));
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, []);
-  return open;
-}
-
-/** The computer is too starved for the usage engine to answer (#606). */
 export function SystemBusyDialog({ onClose }: { onClose: () => void }) {
-  if (useOtherDialogOpen()) {
+  if (useWaitsForPageDialog()) {
     return null;
   }
   return (
     <SetupDialog
+      announcement
       description={systemBusyCopy.description}
       onOpenChange={(open) => {
         if (!open) {

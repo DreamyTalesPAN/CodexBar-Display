@@ -7481,3 +7481,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none on screen. The check that keeps the busy computer notice out of the way of a page dialog now runs before the screen repaints (observer set up in a layout effect).
 - Scope: `apps/control-center/src/components/system-busy-dialog.tsx`, its test and this approval record. Pull request branch only, not merge or release.
 - What's new: none — a timing fix, no new capability
+
+## 2026-10-17 — #632: an announcement waits while a page dialog is open
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #632); look unchanged except: an announcement (the busy computer notice, the AI usage notice, What's new) no longer appears on top of an open page dialog; it appears after that dialog closes. Wording, layout and buttons unchanged.
+- Approved customer-visible result: the busy computer notice, the AI usage notice and What's new wait while a page dialog is open (Run setup again?, a firmware failure, a theme preview, a factory reset, a delete confirmation) and show after it closes. A page dialog that opens in the same moment keeps the keyboard focus.
+- Scope: `apps/control-center/src/components/announcement-gate.ts` (new, one shared rule), `announcement-gate.test.tsx` (new), `system-busy-dialog.tsx`, `setup/setup-usage-dialog.tsx`, `whats-new-dialog.tsx`, `setup/setup-dialog.tsx` (one optional `announcement` prop, marks the dialog) and this approval record. Pull request branch only, not merge or release. Stacked on #692.
+- What's new: none — no new capability; the same notices, later.
