@@ -7951,3 +7951,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none beyond the entries above; this record restates the merge of the current #745 head and changes no screen.
 - Scope: this approval record only. Pull request branch only, not merge or release.
 - What's new: none — approval record only
+
+## 2026-10-18 — Codex review fix on #746: after OK on a usage error with no usage yet, the page shows its empty state, not a blank page
+
+- User approval: pending — Paul reviews this PR (fix of a Codex finding on #746); look unchanged except: when a usage error has no usage data behind it and the customer presses OK, the page shows the existing empty state ("No provider usage is available yet." / "Manage providers in Settings, then refresh usage.") instead of a blank page.
+- Approved customer-visible result: none beyond the existing empty state. No new text; the blank page after OK is replaced by the empty state that Usage already shows without an error.
+- Scope: `apps/control-center/src/components/usage-screen.tsx` (one condition) and `usage-screen.error-overlay.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the same empty state, no new notice
