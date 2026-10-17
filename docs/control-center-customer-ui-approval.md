@@ -7888,3 +7888,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none beyond the entries above; this record restates the merge of the skeleton head and changes no screen.
 - Scope: this approval record only. Pull request branch only, not merge or release.
 - What's new: none — approval record only
+
+## 2026-10-18 — Codex review fix on #745: Tab leaves the token history notice for the page (no visible change)
+
+- User approval: pending — Paul reviews this PR; Codex review fix, no visible change; not seen by Paul. Keyboard Tab from the last control of the notice moves to the page behind it instead of wrapping inside the notice.
+- Approved customer-visible result: none. Focus order only; nothing looks different.
+- Scope: `setup/setup-dialog.tsx` (non-modal dialogs, scrim off) and `usage-screen.warning-overlay.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — focus fix only, no new notice
