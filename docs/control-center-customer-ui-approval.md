@@ -7467,3 +7467,13 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-17 — Lime text on light surfaces becomes the design-system olive
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect: his test of #645 found a lime link on light grey, "das kann man nicht lesen"); look unchanged except: "TV" of the hero wordmark on the welcome and Mac App download screens lime #CCFF00 → olive #506600; hover colour of "Choose screensaver" (Settings › Screensaver) lime #CCFF00 → olive #506600, the link stays dark and underlined; hover colour of links in field, item and empty descriptions and of the link badge lime #CCFF00 → olive #506600 (no such link is on screen today, so no visible change there).
+
+- Approved customer-visible result: Draft, to be confirmed by Paul. On the welcome and Mac App download screens the wordmark reads "VIBE" in ink and "TV" in olive (was lime). Hovering "Choose screensaver" in Settings turns the link olive (was lime). Nothing else changes.
+
+- Scope: `apps/control-center/src/components/control-center-brand.tsx`, `settings-screen.tsx`, `ui/field.tsx`, `ui/item.tsx`, `ui/empty.tsx`, `ui/badge.tsx`, their tests (`control-center-brand.test.tsx`, `settings-screen.test.tsx`, `ui/light-surface-links.test.tsx`) and this approval record. Pull-request branch only, not merge or release.
+
+- What's new: none — colour of existing text only, no new wording or control
