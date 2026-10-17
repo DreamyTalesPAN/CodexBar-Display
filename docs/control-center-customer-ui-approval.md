@@ -7793,6 +7793,13 @@ issue scope, or release permission never implies UI permission.
 - Scope: `usage-screen.tsx`, `usage-screen.test.tsx`, the hero token in `src/app/globals.css`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — size and position change only, no new notice
 
+## 2026-10-17 — Usage chart colours follow the provider, not the order of the response (Codex review on #714)
+
+- User approval: pending — Paul reviews this PR (fix of a Codex finding on #714); look unchanged: Claude keeps the ink dot and line, Codex the olive, as in the entry above. Nothing else.
+- Approved customer-visible result: none beyond the colours of the entry above: Claude in ink, Codex in olive. When the response lists Codex first, the colours had swapped before; now they stay with the provider. In the usual order nothing changes.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (chart colour assignment only), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — colour fix only, no new notice
+
 ## 2026-10-17 — Usage: grey outline of the head and chart while the token history loads (#598, stacked on #714)
 
 - User approval: pending — Paul reviews this PR (fix of a reported defect, #598); look unchanged except: small spinner in the empty chart area → grey outline of the head and chart while loading.
