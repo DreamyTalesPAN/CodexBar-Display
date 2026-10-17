@@ -7467,3 +7467,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-17 — Appearance (calm redesign A): Themes and Screensavers as cards
+- User approval: Paul 17.10. approved Appearance A; Themes per themes-A2-oneRow with Install as lime primary at the right edge after Edit; status texts in the Install slot (#713).
+- Approved customer-visible result: On Appearance › Themes and Appearance › Screensavers each theme or screensaver is a card, up to three in a row, with its picture on top and its name below, in 13 px semibold. The page title is 28 px semibold. On a row, Edit is an underlined text link, Delete (own themes only) is an underlined text link instead of a red button, and Install is the lime primary button at the right edge. A row with nothing to install shows its status in the same slot as text, `Installed` with a check mark, or the same disabled reason as before. Words unchanged. Not as in the picture: on Screensavers, Edit stays on the name row (the picture puts it below); the install progress keeps its progress bar and notice (no process-step list yet); an update keeps the word `Update` on the button (the picture shows `Update needed`); the notice `Screensaver is turned off` with the switch stays as it is (#645 is still open).
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (row layout, buttons, title size, picture size) and its test `theme-library-screen.test.tsx` (the label matcher allows the check mark before the label), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — layout and button variants only, no new words

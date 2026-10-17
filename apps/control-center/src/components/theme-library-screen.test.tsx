@@ -317,8 +317,9 @@ describe("ThemeLibraryScreen Appearance sections", () => {
           usage={usage}
         />,
       );
+    // A finished install's label may come after its check icon.
     const button = (html: string, title: string) =>
-      html.match(new RegExp(`<button[^>]*title="${title}"[^>]*>([^<]*)<`));
+      html.match(new RegExp(`<button[^>]*title="${title}"[^>]*>(?:<svg[\\s\\S]*?</svg>)?([^<]*)<`));
 
     const live = button(render("live", earlier), "Update Live Theme");
     expect(live?.[1]).toBe("Update");
