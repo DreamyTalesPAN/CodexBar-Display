@@ -7764,3 +7764,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: The token line reads "Tokens: 12.7B total · 5.2B this week". A tile's reset is no longer top right next to the provider name: it sits right-aligned on the first line of the tile, on the line with the big percent ("86% session remaining"; for a weekly-first provider such as Codex, on "71% weekly remaining"). The header holds only the name. The Updating spinner takes that place while the tile is quiet. No other wording.
 - Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (tile layout, token line, tests), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — label and layout change only, no new notice
+
+## 2026-10-17 — Sign-in replies: a superseded sign-in no longer reopens or clears the provider overlay (#679)
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #679); look unchanged except: none.
+- Approved customer-visible result: look unchanged. Only a rare race changes: a sign-in reply that arrives after a newer sign-in started, or after the provider left and came back, no longer reopens the overlay or clears the newer failure. No wording or layout change.
+- Scope: `control-center-app.tsx` (sign-in start and reply pass a sign-in token), `provider-action-dialog.tsx` and its test, and this approval record. Pull request branch only, not merge or release. Stacked on #669.
+- What's new: none — fix of a reported defect, no customer-visible change of its own
+
+## 2026-10-17 — Sign-in replies: a sign-in left during a check is forgotten once the check is healthy (#679)
+
+- User approval: Codex review fix, no visible change; not seen by Paul. This follow-up applies one Codex review finding on the sign-in token and changes no wording or layout.
+- Approved customer-visible result: No change. A late sign-in reply for a provider that was healthy in between (after its check ended) no longer reopens its overlay, as the #679 entry above describes. No new wording.
+- Scope: `provider-action-dialog.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix, no customer-visible change of its own
