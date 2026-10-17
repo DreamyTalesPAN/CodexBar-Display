@@ -325,6 +325,30 @@ func TestFrameRefusesMoreThanOneLine(t *testing.T) {
 	}
 }
 
+// The firmware refuses a theme path outside /themes/ with 400 'invalid theme
+// path', even when a file of that name is on the device (readStoredThemeSpec in
+// main.cpp, #354).
+func TestThemeActivationRefusesPathOutsideThemes(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.RebootUnavailableRequests = 0
+	running, err := Start(cfg)
+	if err != nil {
+		t.Fatalf("start virtual VibeTV: %v", err)
+	}
+	t.Cleanup(func() { _ = running.Close() })
+	const spec = `{"id":"a","rev":1,"p":[{"t":"r","w":1,"h":1}]}`
+	for _, path := range []string{"/mini.json", "/themes-old/a.json"} {
+		status, answer := activateStoredTheme(t, running, path, spec, `{"path":"`+path+`"}`)
+		if status != http.StatusBadRequest || !strings.Contains(answer, "invalid theme path") {
+			t.Fatalf("%s: status %d %q, want 400 invalid theme path", path, status, answer)
+		}
+	}
+	status, answer := activateStoredTheme(t, running, "/themes/u/ok.json", spec, `{"path":"/themes/u/ok.json"}`)
+	if status != http.StatusOK {
+		t.Fatalf("/themes/ path: status %d %q, want 200", status, answer)
+	}
+}
+
 // The firmware answers 404 with the text 'theme file not found' when the file of
 // a /themes/ path is not on the device (readStoredThemeSpec and handleThemeActive
 // in main.cpp, #354).

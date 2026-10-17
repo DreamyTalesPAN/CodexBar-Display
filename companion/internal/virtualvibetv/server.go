@@ -578,6 +578,12 @@ func (s *Server) handleThemeActive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := cleanAssetPath(request.Path)
+	// readStoredThemeSpec in the firmware refuses any path outside /themes/
+	// before it looks for the file.
+	if !strings.HasPrefix(path, "/themes/") {
+		s.respond(w, r, http.StatusBadRequest, "invalid theme path", "theme activation path outside /themes/")
+		return
+	}
 	s.mu.Lock()
 	data, ok := s.assets[path]
 	refusal := storedThemeRefusal(data)
@@ -624,8 +630,7 @@ func (s *Server) handleThemeActive(w http.ResponseWriter, r *http.Request) {
 // filtered first pass does not reach the error, takes single quotes and unquoted
 // keys, and refuses more than 10 nested levels. Strings that are invalid UTF-8 or
 // hold a lone surrogate escape are counted as Go decodes them, which may differ
-// from the bytes ArduinoJson stores. The GIF and sprite asset rules do not cut a
-// path at a NUL as the firmware does.
+// from the bytes ArduinoJson stores.
 func storedThemeRefusal(spec []byte) string {
 	if len(bytes.TrimSpace(spec)) == 0 || len(spec) > maxStoredThemeSpecBytes {
 		return "theme file too large"
