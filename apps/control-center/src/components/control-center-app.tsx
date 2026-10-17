@@ -5185,6 +5185,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     activeShellTab === "overview" &&
     vibetvNotFound(device) &&
     !vibetvNotFoundDismissed &&
+    !setupAgainRequested &&
     !setupOwnsScreen &&
     !firmwareUpdateInProgress &&
     !needsRuntimeRecovery &&

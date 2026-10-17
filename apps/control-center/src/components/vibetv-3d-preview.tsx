@@ -153,7 +153,8 @@ export function VibeTV3DPreview({
     controls.minAzimuthAngle = -1.2;
     controls.maxAzimuthAngle = 1.2;
     controls.rotateSpeed = 0.6;
-    let touchedAt = 0;
+    // Counted from mount: the first frame of a new Overview must not sway.
+    let touchedAt = performance.now();
     let dragging = false;
     controls.addEventListener("start", () => { dragging = true; });
     controls.addEventListener("end", () => {

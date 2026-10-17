@@ -7490,3 +7490,10 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/src/components/control-center-app.tsx` (one condition in the dialog order) and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no new content
 
+## 2026-10-17 — Overview: Codex review fixes for the setup confirmation and the sway delay (#755)
+
+- User approval: none needed — no visible change; this entry records two Codex review fixes. The not-found dialog also waits while the "Run setup again?" confirmation is open, and the 3D preview starts its 2.5 s sway delay when it mounts instead of on the first frame.
+- Approved customer-visible result: none. Only one dialog shows at a time, and a freshly opened Overview starts still for 2.5 s before it sways.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (one condition) and `apps/control-center/src/components/vibetv-3d-preview.tsx` (one timer start), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
