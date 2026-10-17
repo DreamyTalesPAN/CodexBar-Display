@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchAIThemeCapabilities, generateAIThemeConcept, planAIThemeLayout } from "@/lib/ai-theme";
+import { buildAIThemeCandidate, fetchAIThemeCapabilities, generateAIThemeConcept, planAIThemeLayout } from "@/lib/ai-theme";
 import { AIThemeStudioScreen } from "./ai-theme-studio-screen";
 
 vi.mock("@/components/ui/sidebar", () => ({
@@ -94,6 +94,29 @@ describe("Theme Studio progress line", () => {
     await waitFor(() => expect(statusLines()[0]?.textContent).toBe("> Getting the paint ready…"));
     expect(statusLines()).toHaveLength(1);
     expect(DRAWING).toContain(statusLines()[0].textContent?.replace(/^> /, ""));
+  });
+
+  // A first-time design has no companion yet: the motion word comes once the
+  // new concept has a companion that moves.
+  it("adds the motion word once the new concept has a companion that moves", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.mocked(planAIThemeLayout).mockResolvedValue({ mode: "scene", edits: [], notes: "" } as unknown as Awaited<ReturnType<typeof planAIThemeLayout>>);
+      vi.mocked(generateAIThemeConcept).mockResolvedValue({ companions: [{ id: "pet-1", x: 10, y: 10, size: 32, fps: 4 }] } as unknown as Awaited<ReturnType<typeof generateAIThemeConcept>>);
+      vi.mocked(buildAIThemeCandidate).mockReturnValue(new Promise(() => {}));
+      render(<AIThemeStudioScreen />);
+      await sendIdea();
+      await waitFor(() => expect(vi.mocked(buildAIThemeCandidate)).toHaveBeenCalled());
+
+      let seen = false;
+      for (let i = 0; i < 10 && !seen; i++) {
+        act(() => { vi.advanceTimersByTime(2500); });
+        seen = statusLines()[0]?.textContent === "> Teaching it to move…";
+      }
+      expect(seen).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("has no seconds counter", async () => {

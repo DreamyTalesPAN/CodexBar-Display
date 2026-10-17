@@ -7559,3 +7559,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: (1) the text "Built-in example loaded — no AI request or charge. Click the flame to move it, or describe your changes below." is removed. (2) The AI status line ("> Cleaning the brushes…") has no black cursor block at its end; only the text and its fly-in remain. (3) All Theme Studio notices (saved, exported, sent, cancelled, element added, and the other notices of that kind) show in one place at the top left, directly under the back arrow, instead of at the bottom or the top right; errors stay where they were. (4) Settings: "Theme Studio AI" is its own section with its name on the left, directly above "AI providers"; "AI providers" stays the last section. The other sections already had their name on the left and are unchanged.
 - Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, `apps/control-center/src/components/settings-screen.tsx` and its test, one export-notice assertion in `apps/control-center/scripts/test-customer-flows.mjs`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — refinements of #638
+
+## 2026-10-17 — #638: "Teaching it to move…" for a design's first companion (Codex review fix, no new wording)
+
+- User approval: Codex review fix that implements the approved rule of "#638: Theme Studio progress line, toolbar V1 and OpenAI key in Settings" (the word shows only with a companion that moves); no new wording; not seen by Paul.
+- Approved customer-visible result: as approved in that entry. The motion word is now also chosen once the new concept is known, so a first-time design whose new companion moves shows it during the sprite build; the word list itself is unchanged.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — status word of Theme Studio, not announced to customers

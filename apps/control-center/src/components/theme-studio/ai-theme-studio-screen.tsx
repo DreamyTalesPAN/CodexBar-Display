@@ -800,6 +800,9 @@ export function AIThemeStudioScreen({
         },
         controller.signal,
       );
+      // A companion this request creates is known only now, so the motion word
+      // is chosen again for the sprite build (Codex review of #638).
+      progressTo(DRAWING_WORDS((concept.companions ?? []).some((p) => p.fps > 0)));
       const candidate = await buildAIThemeCandidate(concept);
       if (request.current !== controller || controller.signal.aborted) return;
       let next = applyAIThemeCandidate(base, candidate, "auto");
