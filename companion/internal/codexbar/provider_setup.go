@@ -906,6 +906,31 @@ func ProviderSignInStartable(id string) bool {
 // apps/control-center/src/components/setup/setup-providers-screen.tsx: the
 // shared fixture provider-setup-sentences.json pins both sides.
 
+// providerDisplayNames holds the display names CodexBar gave in its last
+// inventory: the labels the Control Center shows for each provider. The
+// inventory parsers fill it; providerDisplayName reads it.
+var (
+	providerDisplayNamesMu sync.Mutex
+	providerDisplayNames   = map[string]string{}
+)
+
+func rememberProviderDisplayName(id, label string) {
+	providerDisplayNamesMu.Lock()
+	defer providerDisplayNamesMu.Unlock()
+	providerDisplayNames[id] = label
+}
+
+// providerDisplayName is the label a provider's sentences use: CodexBar's
+// display name from the last inventory, else the Companion's own short name.
+func providerDisplayName(id string) string {
+	providerDisplayNamesMu.Lock()
+	defer providerDisplayNamesMu.Unlock()
+	if name, ok := providerDisplayNames[id]; ok {
+		return name
+	}
+	return humanLabel(id)
+}
+
 // providerSignInSentence is the signed-out sentence of a provider.
 func providerSignInSentence(id, label string) string {
 	if ProviderSignInStartable(id) {
@@ -924,7 +949,7 @@ func providerResult(id, status string) ProviderReadiness {
 }
 
 func providerResultWithSignIn(id, status, signInURL string) ProviderReadiness {
-	label := humanLabel(id)
+	label := providerDisplayName(id)
 	if id == "codexbar" {
 		label = "Usage service"
 	}
@@ -974,7 +999,45 @@ func providerResultWithSignIn(id, status, signInURL string) ProviderReadiness {
 		result.Detail = providerCouldNotReadSentence(label)
 		result.NextAction = "Check this provider, then try again."
 	}
+	if id == "codexbar" {
+		// The engine row is not a provider: it keeps the sentences it had.
+		result.Detail = engineRowDetail(status, label, signInURL)
+	}
 	return result
+}
+
+// engineRowDetail is the usage service's own sentence per status, as it was
+// before the provider sentences were shared with the Control Center popup.
+func engineRowDetail(status, label, signInURL string) string {
+	switch status {
+	case ProviderReady:
+		return "Usage data is available."
+	case ProviderAuthRequired:
+		return "This provider needs an active sign-in."
+	case ProviderBrowserSignInRequired:
+		return label + " usage needs a signed-in " + signInHost(signInURL) + " session in your browser."
+	case ProviderPermissionRequired:
+		if providerCopyGOOS == "windows" {
+			return "Windows blocked access required by this provider."
+		}
+		return "macOS blocked access required by this provider."
+	case ProviderUnsupported:
+		return label + " no longer supports this account."
+	case ProviderNoUsageAvailable:
+		return "This account does not expose usage data."
+	case ProviderTimeout:
+		return "The provider check timed out."
+	case ProviderRateLimited:
+		return label + " received too many usage checks and is pausing them for a few minutes."
+	case ProviderConfigError:
+		return "The usage service could not save or read its provider settings."
+	case ProviderEngineIncompatible:
+		return "The usage engine is too old."
+	case ProviderNotConfigured:
+		return "No usable AI provider is configured yet."
+	default:
+		return "The usage service could not read this provider."
+	}
 }
 
 // BrowserSignInGuidance is the customer sentence for a provider that needs a

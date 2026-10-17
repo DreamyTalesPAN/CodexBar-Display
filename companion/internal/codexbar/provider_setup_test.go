@@ -1050,3 +1050,40 @@ func TestSetupLogSentencesMatchThePopupFixture(t *testing.T) {
 		}
 	}
 }
+
+// The provider's sentences name it as CodexBar's inventory does (the label the
+// Control Center shows); an id the inventory never named keeps the short name.
+func TestProviderDisplayNameComesFromTheInventory(t *testing.T) {
+	t.Cleanup(func() {
+		providerDisplayNamesMu.Lock()
+		defer providerDisplayNamesMu.Unlock()
+		delete(providerDisplayNames, "openai")
+	})
+	if _, err := parseProviderSettings([]byte(`[{"provider":"openai","displayName":"OpenAI API","enabled":true}]`)); err != nil {
+		t.Fatal(err)
+	}
+	if got := providerDisplayName("openai"); got != "OpenAI API" {
+		t.Fatalf("display name = %q, want OpenAI API", got)
+	}
+	row := providerResult("openai", ProviderAuthRequired)
+	if row.Label != "OpenAI API" || row.Detail != "VibeTV reads OpenAI API usage from OpenAI API's own app, so make sure it is installed and signed in on this computer." {
+		t.Fatalf("openai row = %+v", row)
+	}
+	if got := providerDisplayName("widgetx"); got != "Widgetx" {
+		t.Fatalf("unknown id label = %q, want humanLabel Widgetx", got)
+	}
+}
+
+// The usage service row is not a provider: its sentences stay as they were.
+func TestEngineRowKeepsItsSentences(t *testing.T) {
+	for status, want := range map[string]string{
+		ProviderTimeout:            "The provider check timed out.",
+		ProviderConfigError:        "The usage service could not save or read its provider settings.",
+		ProviderEngineIncompatible: "The usage engine is too old.",
+		ProviderEngineError:        "The usage service could not read this provider.",
+	} {
+		if got := providerResult("codexbar", status).Detail; got != want {
+			t.Fatalf("codexbar %s: %q, want %q", status, got, want)
+		}
+	}
+}
