@@ -1194,7 +1194,7 @@ function ThemeListItem({
           <ThemePreview onPack={setPublishedPack} theme={item} />
         </Button>
       </ItemMedia>
-      <ItemContent className="min-w-0 flex-1">
+      <ItemContent className="min-w-[11rem] flex-1">
         <ItemTitle className="text-[13px] font-semibold">{item.title}</ItemTitle>
         {isCustom ? (
           <Badge variant="secondary">Custom</Badge>

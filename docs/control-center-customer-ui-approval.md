@@ -7479,3 +7479,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: On Appearance › Themes and Appearance › Screensavers the cards are in three columns only from 1280 px wide (before: from 1024 px), in two columns from 640 px, and in one below that. On a narrow card the name and the row's buttons stack instead of overlapping. The card corners use the card radius token (0.75 rem), as the other cards do (before: 0.875 rem). Words, buttons and states are unchanged.
 - Scope: `apps/control-center/src/components/theme-library-screen.tsx` (grid breakpoint, row wrapping, card radius) and this approval record. Pull request branch only, not merge or release.
 - What's new: none — layout breakpoint and corner radius only
+
+## 2026-10-17 — Appearance cards: name wraps above the row's buttons at narrow widths (Codex review fix on #754)
+- User approval: Not separately approved by Paul; a fix of a Codex review finding on the entry above, which Paul approved. Paul will see it in his Windows test.
+- Approved customer-visible result: On Appearance › Themes and Appearance › Screensavers, at a narrow card width the name, and its Custom mark, get at least 11 rem, and the row's buttons move to a line of their own below the name instead of covering it (before: the name could shrink to a few pixels). Words, buttons and states are unchanged.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (minimum width of the name) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — layout only, no new words
