@@ -6,7 +6,7 @@ import {
   Clock,
   RefreshCw,
 } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -51,6 +51,7 @@ import {
 } from "./control-center-types";
 import { formatCustomerSupportText } from "./customer-support-text";
 import { DiagnosticsPanel } from "./diagnostics-panel";
+import { SetupDialog } from "./setup/setup-dialog";
 import { SetupEventLog } from "./setup-event-log";
 import { SupportReportActions } from "./support-report-actions";
 
@@ -104,9 +105,28 @@ export function LogsScreen({
   const wifi = deviceConnected ? device?.health?.wifi : undefined;
   const supportText = (value: string) =>
     copyForHost(formatCustomerSupportText(value), windowsHost);
+  // The error dialog is shown once per error; the same error opens it again
+  // only after it has cleared (as theme-library-screen does per attempt).
+  const errorKey = lastError
+    ? `${lastError.message}\n${lastError.nextAction}`
+    : null;
+  const [dismissedErrorKey, setDismissedErrorKey] = useState<string | null>(null);
+  if (errorKey === null && dismissedErrorKey !== null) setDismissedErrorKey(null);
 
   return (
     <div className="mx-auto grid max-w-[1180px] gap-4 py-6">
+      {lastError && errorKey !== dismissedErrorKey ? (
+        <SetupDialog
+          description={supportText(lastError.nextAction)}
+          icon={AlertTriangle}
+          onOpenChange={(open) => {
+            if (!open) setDismissedErrorKey(errorKey);
+          }}
+          open
+          primaryAction={{ label: "OK", onSelect: () => setDismissedErrorKey(errorKey) }}
+          title={supportText(lastError.message)}
+        />
+      ) : null}
       <div className="grid items-stretch gap-4 lg:grid-cols-2">
         <Card size="sm">
           <CardHeader>
@@ -233,13 +253,6 @@ export function LogsScreen({
           ) : null}
         </CardHeader>
         <CardContent className="grid gap-4">
-          {lastError ? (
-            <Alert>
-              <AlertTriangle aria-hidden />
-              <AlertTitle>{supportText(lastError.message)}</AlertTitle>
-              <AlertDescription>{supportText(lastError.nextAction)}</AlertDescription>
-            </Alert>
-          ) : null}
           {events.length ? (
             <div className="max-h-[320px] overflow-y-auto rounded-lg border">
               <ItemGroup className="gap-0 divide-y">
