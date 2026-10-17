@@ -7483,3 +7483,10 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/src/components/vibetv-not-found-dialog.tsx` (new), `overview-screen.tsx` (dialog removed from the page), `control-center-app.tsx` (dialog in the app dialog order), the tests for them, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — the fix changes no new content
 
+## 2026-10-17 — Overview: What's New waits for the Run setup again confirmation (#755)
+
+- User approval: none needed — no visible change; this entry records a Codex review fix that keeps What's New behind the existing "Run setup again?" confirmation, which was already shown.
+- Approved customer-visible result: none. What's New no longer opens while the "Run setup again?" confirmation is open, so only one dialog shows at a time.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (one condition in the dialog order) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+

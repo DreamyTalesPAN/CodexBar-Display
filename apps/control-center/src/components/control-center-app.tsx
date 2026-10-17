@@ -5192,6 +5192,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     !(usageFailure && !usageFailureHidden);
   const somethingElseAsks =
     vibetvNotFoundOpen ||
+    setupAgainRequested ||
     setupOwnsScreen ||
     firmwareUpdateInProgress ||
     needsRuntimeRecovery ||
