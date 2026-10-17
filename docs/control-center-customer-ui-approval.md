@@ -7518,3 +7518,10 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/src/components/overview-screen.tsx` (centering wrapper) and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no new content
 
+## 2026-10-18 — Overview: flat preview stays until the 3D screen has its theme (#755)
+
+- User approval: none needed — no visible change beyond the approved picture overview-A2-center (17.10., #713); this entry records a Codex review fix that keeps the flat preview on screen until the 3D screen has drawn its theme, so the handover does not show "Loading preview".
+- Approved customer-visible result: none. The handover from the flat preview to the 3D VibeTV no longer passes through a loading state.
+- Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+

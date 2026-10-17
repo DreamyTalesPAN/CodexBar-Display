@@ -31,7 +31,7 @@ type VibeTV3DPreviewProps = {
   className?: string;
   device: DeviceInfo | null;
   displayFrame: DisplayFrameSnapshot | null;
-  /** Called once the model is on screen; the caller then drops its flat preview. */
+  /** Called once the 3D screen has its theme; the caller then drops its flat preview. */
   onReady?: () => void;
   updateOwnedDisconnect?: boolean;
   usage: UsageSnapshot | null;
@@ -242,7 +242,6 @@ export function VibeTV3DPreview({
         screenPivot.add(screen);
         dirty = true;
         setScreenHost(host);
-        onReady?.();
       },
       undefined,
       () => { if (!disposed) setModelFailed(true); },
@@ -288,6 +287,7 @@ export function VibeTV3DPreview({
         <LiveVibeTVPreview
           device={device}
           displayFrame={displayFrame}
+          onPreviewReady={onReady}
           screenOnly
           updateOwnedDisconnect={updateOwnedDisconnect}
           usage={usage}
