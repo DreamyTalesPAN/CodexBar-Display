@@ -553,7 +553,7 @@ if environment.get("VIBETV_MAC_APP_BUILD") != "146":
 with open(sys.argv[3], encoding="utf-8") as f:
     source = f.read()
 
-prepare_start = source.index("private func prepareCompanion()")
+prepare_start = source.index("private func prepareCompanion(")
 prepare_end = source.index(
     "private func ensureBundledRuntimeServiceRegistered()",
     prepare_start,
@@ -823,7 +823,7 @@ status_start = preparation_method.find("presentInstallationStatus(")
 preflight_call = preparation_method.find("await self?.performLocalNetworkPrivacyPreflight()")
 preparation_task = preparation_method.find("preparationTask = Task")
 prepare_runtime = preparation_method.find(
-    "let outcome = await self.prepareCompanion()"
+    "let outcome = await self.prepareCompanion(fromStartScreen: true)"
 )
 native_case = preparation_method.find("case .nativeRuntimeReady:", prepare_runtime)
 webview_after_verify = preparation_method.find("self.presentControlCenter()", native_case)
@@ -900,7 +900,7 @@ if not (
     raise SystemExit(
         "native app must stop legacy writers, register, pass local runtime health, migrate old apps, then persist"
     )
-prepare_start = source.find("private func prepareCompanion() async")
+prepare_start = source.find("private func prepareCompanion(fromStartScreen: Bool = false) async")
 prepare_end = source.find("private func ensureBundledRuntimeServiceRegistered()", prepare_start)
 prepare_method = source[prepare_start:prepare_end]
 if "/v1/device/repair" in prepare_method or "prepareExistingDeviceConnection" in prepare_method:
@@ -935,7 +935,7 @@ if (
         "native CodexBar bootstrap must prepare only the private pinned CLI"
     )
 launch_start = bootstrap_end
-launch_end = source.find("private func prepareCompanion() async", launch_start)
+launch_end = source.find("private func prepareCompanion(fromStartScreen: Bool = false) async", launch_start)
 launch_method = source[launch_start:launch_end]
 for required_launch_behavior in [
     "withBundleIdentifier: codexBarBundleIdentifier",
@@ -979,7 +979,7 @@ if (
     )
 repair_restart = prepare_method.find("if codexBarRepairRestartRequired")
 repair_stop = prepare_method.find("await unregisterBundledRuntimeService()", repair_restart)
-codexbar_publish = prepare_method.find("guard bootstrapCodexBar()")
+codexbar_publish = prepare_method.find("var codexBarPrepared = bootstrapCodexBar()")
 if not (0 <= repair_restart < repair_stop < codexbar_publish):
     raise SystemExit(
         "native CodexBar repair must stop the managed runtime before replacing its private payload"
