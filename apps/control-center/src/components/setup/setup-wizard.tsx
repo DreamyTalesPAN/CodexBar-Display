@@ -730,6 +730,7 @@ export function SetupWizard(props: SetupWizardProps) {
           candidates={visibleCandidates}
           connecting={connecting}
           connectPhase={connect.state.phase}
+          firmwarePercent={props.firmwareWrittenPercent}
           logLines={connectLogLines(connect.state, props.firmwareWrittenPercent)}
           onConnect={startConnect}
           onBack={

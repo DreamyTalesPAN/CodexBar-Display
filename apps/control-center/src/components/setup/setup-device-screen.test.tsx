@@ -190,6 +190,53 @@ describe("SetupDeviceScreen while the scan is still running", () => {
   });
 });
 
+// Calm Setup Wizard variant B (pictures B-04 and B-08, #713).
+describe("SetupDeviceScreen connection method and firmware progress", () => {
+  const cableCandidate: DeviceCandidate = {
+    target: "cable://vibetv",
+    deviceId: "5804508",
+    transport: "cable",
+  };
+
+  it("puts the round check mark on the selected connection method only", () => {
+    const html = render({ candidates: [cableCandidate], showModeChoice: true, showCandidates: false });
+    const cards = [...html.matchAll(/<button[^>]*aria-label="(Cable|WiFi)"[^>]*>([\s\S]*?)<\/button>/g)];
+
+    expect(cards).toHaveLength(2);
+    const marked = cards.filter((card) => card[2].includes('data-selected="true"'));
+    expect(marked).toHaveLength(1);
+    expect(marked[0][0]).toContain('data-state="on"');
+  });
+
+  it("shows the firmware progress bar with the percent the update reports", () => {
+    const html = render({
+      connecting: true,
+      connectPhase: "updating-firmware",
+      firmwarePercent: 42,
+      logLines: [{ id: "updating", text: "updating firmware · 42% — keep VibeTV powered on" }],
+    });
+
+    expect(html).toContain('role="progressbar"');
+    expect(html).toContain('aria-valuenow="42"');
+  });
+
+  it("hides the progress bar when no real percent exists", () => {
+    const html = render({
+      connecting: true,
+      connectPhase: "updating-firmware",
+      logLines: [{ id: "updating", text: "updating firmware — keep VibeTV powered on" }],
+    });
+
+    expect(html).not.toContain('role="progressbar"');
+  });
+
+  it("hides the progress bar outside the firmware update", () => {
+    const html = render({ connecting: true, connectPhase: "checking-firmware", firmwarePercent: 42 });
+
+    expect(html).not.toContain('role="progressbar"');
+  });
+});
+
 describe("SetupDeviceScreen accessibility", () => {
   it("has no violations with found devices, the connection choice, the WiFi form and while connecting", async () => {
     await expectNoAxeViolations(render());

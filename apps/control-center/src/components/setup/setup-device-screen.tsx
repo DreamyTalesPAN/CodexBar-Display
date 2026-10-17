@@ -25,7 +25,8 @@ import type {
 import { candidateKey, type SetupTransport } from "./setup-connection";
 import { SetupDeviceCard } from "./setup-device-card";
 import { SetupCableHelpDialog } from "./setup-device-dialogs";
-import { selectedItemClass } from "./setup-selectable-card";
+import { SelectionDot, selectedItemClass } from "./setup-selectable-card";
+import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import type { ConnectPhase } from "./setup-connect-log";
 import { SetupLog, type SetupLogLine } from "./setup-log";
@@ -41,6 +42,8 @@ type SetupDeviceScreenProps = {
   connecting?: boolean;
   /** Names the work in flight, so the button reports it instead of "Connecting" throughout. */
   connectPhase?: ConnectPhase;
+  /** Share of the firmware really written, from the update's own log; no bar without it. */
+  firmwarePercent?: number;
   logLines: SetupLogLine[];
   aiFixPrompt?: () => string;
   onConnect: () => void;
@@ -74,6 +77,7 @@ export function SetupDeviceScreen({
   candidates,
   connecting = false,
   connectPhase,
+  firmwarePercent,
   logLines,
   aiFixPrompt,
   onConnect,
@@ -213,8 +217,13 @@ export function SetupDeviceScreen({
                   key={mode}
                   value={mode}
                 >
-                  <Icon aria-hidden />
-                  <span className="font-semibold">{mode === "cable" ? "Cable" : "WiFi"}</span>
+                  <span className="flex w-full items-center gap-2">
+                    <Icon aria-hidden />
+                    <span className="font-semibold">{mode === "cable" ? "Cable" : "WiFi"}</span>
+                    <span className="ml-auto">
+                      <SelectionDot selected={connectionChoice === mode} />
+                    </span>
+                  </span>
                   <span className="text-[13px] leading-relaxed font-normal text-muted-foreground">
                     {mode === "cable"
                       ? "Fastest and most reliable. VibeTV needs no network access."
@@ -452,26 +461,31 @@ export function SetupDeviceScreen({
       ) : null}
 
       {!showModeChoice ? (
-        <SetupLog
-          className="mt-8"
-          lines={
-            waitingForWiFi && wifiCredentialsSent
-              ? [
-                  {
-                    id: "wifi-sent",
-                    text: "WiFi details sent over cable",
-                    tone: "done",
-                  },
-                  {
-                    id: "wifi-wait",
-                    text: "waiting for VibeTV on the network",
-                  },
-                  ...logLines,
-                ]
-              : logLines
-          }
-          running={connecting || wifiBusy}
-        />
+        <>
+          <SetupLog
+            className="mt-8"
+            lines={
+              waitingForWiFi && wifiCredentialsSent
+                ? [
+                    {
+                      id: "wifi-sent",
+                      text: "WiFi details sent over cable",
+                      tone: "done",
+                    },
+                    {
+                      id: "wifi-wait",
+                      text: "waiting for VibeTV on the network",
+                    },
+                    ...logLines,
+                  ]
+                : logLines
+            }
+            running={connecting || wifiBusy}
+          />
+          {connectPhase === "updating-firmware" && firmwarePercent !== undefined ? (
+            <Progress aria-hidden className="mt-4" value={firmwarePercent} />
+          ) : null}
+        </>
       ) : null}
     </SetupWizardScreen>
   );
