@@ -182,7 +182,7 @@ export function SetupProviderRow({
             mistake must be switchable off without signing in first (#647). */}
         <Switch
           aria-label={label}
-          className="h-5 w-[34px]"
+          className="data-[size=default]:h-5! data-[size=default]:w-[34px]!"
           checked={enabled}
           disabled={saving}
           onCheckedChange={onToggle}
