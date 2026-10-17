@@ -377,11 +377,14 @@ uint8_t clampBrightnessPercent(int value) {
   return codexbar_display::esp8266::device_settings::ClampBrightnessPercent(value);
 }
 
+bool screensaverOwnsDisplay();
+
 // Single place that decides how bright the panel is, so entering standby,
-// waking up and editing either brightness value all go through one path.
+// waking up, showing a screensaver preview and editing either brightness value
+// all go through one path.
 void applyDeviceSettings() {
   if (renderer.SupportsBrightnessControl()) {
-    renderer.ApplyBrightnessPercent(standbyState.active
+    renderer.ApplyBrightnessPercent(screensaverOwnsDisplay()
                                         ? deviceSettings.standby.brightnessPercent
                                         : deviceSettings.brightnessPercent);
   }
@@ -3817,6 +3820,12 @@ void maintainScreensaverPreview() {
     } else {
       restoreScreensaverPreviewLiveTheme();
     }
+  }
+  // Show and Restore change who owns the display, so the brightness follows
+  // them: the screensaver brightness while the preview is up, the normal one
+  // again once it hands the screen back.
+  if (action != screensaver_preview::Action::None) {
+    applyDeviceSettings();
   }
 #endif
 }
