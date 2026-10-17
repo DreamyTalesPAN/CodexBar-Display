@@ -116,3 +116,43 @@ it("says every selected provider only when several are shown", () => {
   const dialog = screen.getByRole("dialog", { name: title });
   expect(within(dialog).getByText(/not available for every selected provider/)).toBeTruthy();
 });
+
+// Radix would wrap Tab from the last control of the notice back to its first.
+// The page behind is usable, so Tab from the last control moves to the page.
+it("lets Tab leave the notice for the page behind it", () => {
+  const control = document.createElement("button");
+  control.textContent = "Page control";
+  document.body.prepend(control);
+  render(<UsageScreen companionStatus="online" onRefresh={vi.fn()} usage={usage} />);
+
+  const dialog = screen.getByRole("dialog", { name: title });
+  const last = within(dialog).getByRole("button", { name: "Close" });
+  last.focus();
+  const notPrevented = fireEvent.keyDown(last, { key: "Tab" });
+
+  expect(notPrevented).toBe(false);
+  expect(document.activeElement).toBe(control);
+  control.remove();
+});
+
+// Radix's invisible focus guards are tabbable too, but they are not page
+// controls: Tab must land on the page control behind them.
+it("does not stop Tab on Radix's focus guards", () => {
+  const control = document.createElement("button");
+  control.textContent = "Page control";
+  document.body.prepend(control);
+  const guard = document.createElement("span");
+  guard.setAttribute("data-radix-focus-guard", "");
+  guard.tabIndex = 0;
+  document.body.prepend(guard);
+  render(<UsageScreen companionStatus="online" onRefresh={vi.fn()} usage={usage} />);
+
+  const dialog = screen.getByRole("dialog", { name: title });
+  const last = within(dialog).getByRole("button", { name: "Close" });
+  last.focus();
+  fireEvent.keyDown(last, { key: "Tab" });
+
+  expect(document.activeElement).toBe(control);
+  guard.remove();
+  control.remove();
+});
