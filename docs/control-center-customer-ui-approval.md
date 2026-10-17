@@ -7467,3 +7467,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-17 — #591: a switched-on Copilot names the GitHub sign-in, not an own app
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #591); look unchanged except: the provider popup for a switched-on GitHub Copilot that CodexBar cannot read changes from "VibeTV reads GitHub Copilot usage from GitHub Copilot's own app, so make sure it is installed and signed in on this computer." → "Sign in to GitHub Copilot so VibeTV can read its usage." No button is added or removed ("Open setup guide" beside "OK" stays as it is).
+- Approved customer-visible result: provider popup for a switched-on GitHub Copilot that CodexBar cannot read: "VibeTV reads GitHub Copilot usage from GitHub Copilot's own app, so make sure it is installed and signed in on this computer." → "Sign in to GitHub Copilot so VibeTV can read its usage." Same title, same buttons; nothing else changes.
+- Scope: the sentence in `setupProviderDialogSentence` in `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its tests, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the wording is the existing sign-in sentence of the other providers, filled in with the provider name

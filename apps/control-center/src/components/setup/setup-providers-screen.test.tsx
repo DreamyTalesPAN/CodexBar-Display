@@ -172,7 +172,7 @@ describe("SetupProvidersScreen", () => {
     const { rerender } = renderDom(<SetupProvidersScreen {...props} />);
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
     expect(within(screen.getByRole("dialog")).getByText(
-      "VibeTV reads GitHub Copilot usage from GitHub Copilot's own app, so make sure it is installed and signed in on this computer.",
+      "Sign in to GitHub Copilot so VibeTV can read its usage.",
     )).toBeTruthy();
     expect(screen.queryByText(failed.health.reported)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "OK" }));
@@ -411,10 +411,25 @@ describe("SetupProvidersScreen", () => {
     ]);
   });
 
+  // Copilot has no app of its own: CodexBar reads it with a GitHub sign-in,
+  // so the sentence names that sign-in. Every other provider that has no
+  // sign-in in the app keeps the own-app sentence (#591).
+  it("names the GitHub sign-in for Copilot and keeps the own-app sentence for other providers", () => {
+    const copilotSignedOut = provider({ providerId: "copilot", label: "GitHub Copilot",
+      health: "setup_required", message: "No available fetch strategy for copilot." });
+    const openaiSignedOut = provider({ providerId: "openai", label: "OpenAI",
+      health: "setup_required", message: "No available fetch strategy for openai." });
+    expect(setupProviderDialogSentence(copilotSignedOut))
+      .toBe("Sign in to GitHub Copilot so VibeTV can read its usage.");
+    expect(setupProviderDialogSentence(openaiSignedOut)).toBe(
+      "VibeTV reads OpenAI usage from OpenAI's own app, so make sure it is installed and signed in on this computer.",
+    );
+  });
+
   // A signed-out provider the app cannot sign in says what the customer has
-  // to do (its own app, installed and signed in) and offers the setup guide
-  // as its signal action beside OK.
-  it("tells a signed-out provider without a sign-in to use its own app", () => {
+  // to do and offers the setup guide as its signal action beside OK. Copilot
+  // has no own app: its sentence names the GitHub sign-in (#591).
+  it("tells a signed-out Copilot to sign in to GitHub Copilot, and keeps the setup guide beside OK", () => {
     const onOpenSetupGuide = vi.fn();
     const failed = { ...copilot, value: true,
       health: { ...copilot.health, reported: "No available fetch strategy for copilot." } };
@@ -424,7 +439,7 @@ describe("SetupProvidersScreen", () => {
       pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
     const dialog = within(screen.getByRole("dialog"));
     expect(dialog.getByText(
-      "VibeTV reads GitHub Copilot usage from GitHub Copilot's own app, so make sure it is installed and signed in on this computer.",
+      "Sign in to GitHub Copilot so VibeTV can read its usage.",
     )).toBeTruthy();
     expect(dialog.queryByText("No available fetch strategy for copilot.")).toBeNull();
     expect(dialog.queryByRole("button", { name: /Copy provider message/ })).toBeNull();
@@ -444,7 +459,7 @@ describe("SetupProvidersScreen", () => {
     for (const [item, guide, sentence] of [
       [claudeSignedOut, vi.fn(), "Sign in to Claude so VibeTV can read its usage."],
       [timedOut, vi.fn(), "GitHub Copilot did not answer in time, and VibeTV tries again by itself."],
-      [signedOut, undefined, "VibeTV reads GitHub Copilot usage from GitHub Copilot's own app, so make sure it is installed and signed in on this computer."],
+      [signedOut, undefined, "Sign in to GitHub Copilot so VibeTV can read its usage."],
     ] as const) {
       const { unmount } = renderDom(<SetupProvidersScreen usage={usage} providers={[item]}
         onOpenSetupGuide={guide} onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
