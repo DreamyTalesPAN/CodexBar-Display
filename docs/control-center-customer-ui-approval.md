@@ -7467,3 +7467,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-17 — Theme install finish time stored as an ISO instant
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, found in review of #693); look unchanged except: none.
+- Approved customer-visible result: none — the theme install finish time is stored as an ISO instant instead of a clock time; nothing on screen changes, the event log keeps its clock time.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (theme install status finish times), `apps/control-center/src/components/update-jobs.ts` (theme status fallback), the new test `update-jobs.test.ts`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — internal time format only, nothing new to show
