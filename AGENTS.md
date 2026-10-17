@@ -41,7 +41,7 @@ the customer sees. A message can point at an action that does not exist in the
 UI, and only the rendered screen shows that.
 
 - `scripts/vibetv-rehearse-cold-start.sh` -- wipes every VibeTV and CodexBar trace from this Mac, then installs the Mac App and firmware from the candidate under test. No update path: the "unboxed today, already on the new build" state.
-- `scripts/vibetv-rehearse-warm-start.sh` -- restores today's public customer state (current public Mac App + released firmware), then publishes the candidate so both updates appear in the Updates tab. You drive the visible customer flow yourself: Mac App through Sparkle first, then firmware.
+- `scripts/vibetv-rehearse-warm-start.sh` -- restores today's public customer state (current public Mac App + released firmware), then publishes the candidate so both updates appear in the Updates tab. You drive the visible customer flow yourself: Mac App first, then firmware. While the public Mac App predates the launch update (#561), the Mac App goes through Sparkle's "Install Update" click; once the public Mac App has it, the Mac App installs the candidate at launch with no dialog, and the run facts record `macAppLaunchUpdate`.
 - Shared logic lives in `scripts/lib/vibetv-rehearsal.sh`. Both take `--main`, `--pr <number>`, `--run-id`, `--device-target`, `--companion-override`, `--keep-codexbar`, `--restore`, `--yes`; warm start also takes `--skip-firmware-baseline`.
 - A VibeTV on the USB cable has no address: pass `--device-target cable://vibetv`. Firmware then goes over the cable with this Mac's pairing, so cold start flashes before the purge.
 
@@ -171,7 +171,7 @@ Known traps, all paid for on the bench:
 - A merge-gate run reports `main` as its head branch and main's tip as its head SHA, because the workflow is dispatched from `main` -- but it builds the **pull request head** it was given. Only `candidate-manifest.json`'s `sourceSha` says what a candidate actually contains. Passing `--main` or `--pr` makes the scripts check that themselves; `--run-id` alone rehearses whatever that run happened to build.
 - Only `CODEX Prepare and Release VibeTV` builds an exact `main` SHA. The merge gate cannot: it takes a `pr_number` and resolves an open pull request head.
 - Quit the app and detach all images before a run; `hdiutil attach` fails transiently while a volume of the same name is still mounted. Check for foreign listeners with `lsof -nP -iTCP:47832 -sTCP:LISTEN`.
-- Warm start needs one manual Sparkle "Install Update" click. That is a native macOS dialog and cannot be scripted headlessly.
+- Warm start needs one manual Sparkle "Install Update" click only while the public Mac App predates the launch update (#561). That is a native macOS dialog and cannot be scripted headlessly. With a baseline that has the launch update, the run facts must show `macAppLaunchUpdate installed`; `not-installed` is a failure to report.
 
 `scripts/vibetv-hw-selftest.sh` is the firmware/Companion bench tool and does not
 replace this. `scripts/test-companion-coldwarm-e2e.sh` is the cold/warm
