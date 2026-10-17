@@ -50,6 +50,10 @@ function renderUsage(
   );
 }
 
+function refreshButtonTag(html: string): string {
+  return html.match(/<button[^>]*aria-label="Refresh"[^>]*>/)?.[0] ?? "";
+}
+
 describe("UsageScreen", () => {
   afterEach(cleanup);
 
@@ -60,7 +64,7 @@ describe("UsageScreen", () => {
     });
     expect(html).toContain("Token history is unavailable");
     expect(html).toContain("not available for every selected provider");
-    expect(html).not.toContain("Total tokens in the last 30 days");
+    expect(html).not.toContain("Last 30 days");
     expect(html).toContain('aria-label="34% weekly used"');
     expect(html).toContain('aria-label="10% weekly used"');
   });
@@ -128,7 +132,7 @@ describe("UsageScreen", () => {
     expect(html).toContain('aria-label="34% weekly used"');
     expect(html).not.toContain("Token history is loading");
     expect(html).not.toContain("zero tokens");
-    expect(html).not.toContain("Total tokens in the last 30 days");
+    expect(html).not.toContain("Last 30 days");
   });
 
   it("shows a simple loading state while the first usage snapshot is pending", () => {
@@ -196,7 +200,7 @@ describe("UsageScreen", () => {
     expect(html).not.toContain("AI providers");
     expect(html).not.toContain('aria-label="Disable Codex"');
     expect(html).not.toContain("Loading usage");
-    expect(html).not.toContain("Total tokens in the last 30 days");
+    expect(html).not.toContain("Last 30 days");
     expect(html).not.toContain("Tokens used over time");
   });
 
@@ -212,11 +216,11 @@ describe("UsageScreen", () => {
       />,
     );
 
-    expect(html).toContain("Total tokens in the last 30 days");
+    expect(html).toContain("Last 30 days");
     expect(html).toContain('data-testid="token-history-updating"');
     expect(html).toContain("Still counting");
     expect(html.indexOf('data-testid="token-history-updating"')).toBeLessThan(
-      html.indexOf("Total tokens in the last 30 days"),
+      html.indexOf("1,234"),
     );
     expect(html).not.toContain('data-testid="token-history-loading"');
   });
@@ -233,7 +237,7 @@ describe("UsageScreen", () => {
       />,
     );
 
-    expect(html).toContain("Total tokens in the last 30 days");
+    expect(html).toContain("Last 30 days");
     expect(html).not.toContain('data-testid="token-history-updating"');
     expect(html).not.toContain("Still counting");
   });
@@ -258,7 +262,7 @@ describe("UsageScreen", () => {
       />,
     );
 
-    expect(html).toContain("zero tokens");
+    expect(html).toContain("zero</p>");
     expect(html).toContain("No data");
     expect(html).not.toContain("Loading usage");
   });
@@ -271,21 +275,55 @@ describe("UsageScreen", () => {
     expect(html).not.toContain("Enable a provider below");
   });
 
-  it("shows a dedicated token usage refresh action", () => {
+  it("shows a dedicated token usage refresh action as an icon button", () => {
     const html = renderUsage();
+    const refresh = refreshButtonTag(html);
 
-    expect(html).toContain('aria-label="Refresh token usage"');
-    expect(html).toContain("Refresh</button>");
-    expect(html).not.toContain('aria-label="Refresh token usage" aria-busy="true"');
+    expect(refresh).toContain('aria-label="Refresh"');
+    expect(refresh).not.toContain('aria-busy="true"');
+    expect(refresh).not.toContain(' disabled=""');
+    expect(html).not.toContain("Refresh token usage");
   });
 
-  it("disables the token usage refresh action while usage reloads", () => {
+  it("keeps the Refresh icon button in its pending state while usage reloads", () => {
     const html = renderUsage("usage");
+    const refresh = refreshButtonTag(html);
 
-    expect(html).toContain('aria-busy="true"');
-    expect(html).toContain("disabled");
+    expect(refresh).toContain('aria-busy="true"');
+    expect(refresh).toContain("disabled");
     expect(html).toContain('data-slot="spinner"');
-    expect(html).toContain("Refreshing</button>");
+  });
+
+  it("shows the 30-day head: label, total with its unit, and the words line", () => {
+    const html = renderUsage();
+
+    expect(html).toContain(">Last 30 days</h2>");
+    expect(html).toContain("<span>1,234</span>");
+    expect(html).toContain(">tokens</span>");
+    expect(html).toContain(">one thousand two hundred thirty-four</p>");
+  });
+
+  it("draws the chart without a card title and gives each provider its own colour", () => {
+    const html = renderUsage(null, {
+      ...usage,
+      providers: [
+        { ...usage.providers[0], id: "claude", label: "Claude" },
+        usage.providers[0],
+      ],
+    });
+
+    expect(html).not.toContain("Tokens used over time");
+    expect(html).toContain("background:var(--chart-1)");
+    expect(html).toContain("background:var(--chart-2)");
+  });
+
+  it("gives Claude and Codex different chart colours in the chart config", () => {
+    const { series } = buildProviderTokenChart([
+      { provider: { ...usage.providers[0], id: "claude", label: "Claude" }, days: [{ day: "2026-10-01", totalTokens: 5 }] },
+      { provider: usage.providers[0], days: [{ day: "2026-10-01", totalTokens: 7 }] },
+    ] as Parameters<typeof buildProviderTokenChart>[0]);
+
+    expect(series.map((item) => item.color)).toEqual(["var(--chart-1)", "var(--chart-2)"]);
   });
 
   it("shows a small Refreshing mark by the token total while a manual refresh waits, and no notice", () => {
@@ -322,8 +360,8 @@ describe("UsageScreen", () => {
       },
     });
 
-    expect(html).toContain("Total tokens in the last 30 days");
-    expect(html).toContain("Tokens used over time");
+    expect(html).toContain("Last 30 days");
+    expect(html).toContain('aria-label="Daily tokens used over time for Codex"');
     expect(html).toContain("Codex");
     expect(html).not.toContain("Usage is still loading");
   });
@@ -366,7 +404,7 @@ describe("UsageScreen", () => {
 
     expect(html).toContain("Usage is still loading");
     expect(html).toContain("No provider usage is available yet.");
-    expect(html).not.toContain("Total tokens in the last 30 days");
+    expect(html).not.toContain("Last 30 days");
   });
 
   it("clears the global loading banner when usable data arrives later", () => {
@@ -386,7 +424,7 @@ describe("UsageScreen", () => {
     });
 
     expect(pending).toContain("Usage is still loading");
-    expect(recovered).toContain("Total tokens in the last 30 days");
+    expect(recovered).toContain("Last 30 days");
     expect(recovered).toContain("Codex");
     expect(recovered).not.toContain("Usage is still loading");
   });
@@ -446,7 +484,7 @@ describe("UsageScreen", () => {
       />,
     );
 
-    expect(html).toContain("Total tokens in the last 30 days");
+    expect(html).toContain("Last 30 days");
     expect(html).toContain("Tokens: 56 total · 34 this week");
     expect(html).toContain('aria-label="Updating"');
     expect(html).not.toContain("??");
@@ -901,7 +939,8 @@ describe("UsageScreen", () => {
       />,
     );
     expect(html).not.toContain("session used");
-    expect(html).not.toContain(">Codex<");
+    // No tile list: the provider gets no tile (its name may still stand in the chart legend).
+    expect(html).not.toContain("<ol");
   });
 
   it("opens Settings for every action where the Companion cannot start a sign-in", () => {
