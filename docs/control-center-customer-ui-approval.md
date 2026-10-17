@@ -7491,3 +7491,11 @@ issue scope, or release permission never implies UI permission.
 - Visible text: none changed.
 - Scope: `apps/control-center/src/components/setup/setup-provider-row.tsx` (switch size classes only).
 - What's new: none — layout only.
+
+## 2026-10-17 — Calm redesign Setup Wizard steps 9–17, switch thumb fix (#713, Codex review on #751)
+
+- User approval: pending — Paul reviews this PR (calm redesign Setup Wizard steps 9–17, variant B, #713); look: provider switches 34×20 with the thumb at the right edge when on (before this fix the thumb was about 3px short of the edge).
+- Approved customer-visible result: none yet; this is the look Paul picked as variant B and is waiting for his review of this PR.
+- Visible text: none changed.
+- Scope: `apps/control-center/src/components/setup/setup-provider-row.tsx` (switch classes only).
+- What's new: none — layout only.
