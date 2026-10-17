@@ -7552,3 +7552,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as approved in that entry. A companion that does not move (fps 0) no longer adds the word; a companion that moves still does. No other wording, layout or control changes.
 - Scope: `hasMovingCompanion` in `apps/control-center/src/lib/ai-theme.ts`, its use in `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, its test in `apps/control-center/src/lib/ai-companions.test.ts`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — status word of Theme Studio, not announced to customers
+
+## 2026-10-17 — #638: four refinements after Paul's Mac test
+
+- User approval: Paul tested #638 on 2026-10-17 and asked for these four changes (via the communicator); he has not yet seen this build.
+- Approved customer-visible result: (1) the text "Built-in example loaded — no AI request or charge. Click the flame to move it, or describe your changes below." is removed. (2) The AI status line ("> Cleaning the brushes…") has no black cursor block at its end; only the text and its fly-in remain. (3) All Theme Studio notices (saved, exported, sent, cancelled, element added, and the other notices of that kind) show in one place at the top left, directly under the back arrow, instead of at the bottom or the top right; errors stay where they were. (4) Settings: "Theme Studio AI" is its own section with its name on the left, directly above "AI providers"; "AI providers" stays the last section. The other sections already had their name on the left and are unchanged.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, `apps/control-center/src/components/settings-screen.tsx` and its test, one export-notice assertion in `apps/control-center/scripts/test-customer-flows.mjs`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — refinements of #638

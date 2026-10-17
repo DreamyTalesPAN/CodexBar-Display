@@ -563,6 +563,12 @@ export function SettingsScreen({
 
       <ItemSeparator className="my-0" />
 
+      <SettingsSection title="Theme Studio AI">
+        <ThemeStudioKeyRow />
+      </SettingsSection>
+
+      <ItemSeparator className="my-0" />
+
       <SettingsSection title="AI providers">
         <ProviderList
           onCheckAgain={(provider) => void providerPicker.onCheck(provider)}
@@ -585,7 +591,6 @@ export function SettingsScreen({
           providers={providers}
           showIntro={false}
         />
-        <ThemeStudioKeyRow />
       </SettingsSection>
     </div>
   );

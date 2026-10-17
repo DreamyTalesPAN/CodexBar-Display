@@ -262,6 +262,9 @@ export function AIThemeStudioScreen({
         : undefined;
   const locked = busy || sending || saving || installStatus?.phase === "installing";
   const canCancel = busy && !loadingSample;
+  // Every notice of the editor (saved, exported, sent, cancelled) shows in one
+  // place under the toolbar, not at the bottom of the chat column.
+  const notices = [visibleInstallStatus ? copyForHost(visibleInstallStatus.error || visibleInstallStatus.message || "Sending…", windowsHost) : transferStatus, busy ? "" : status].filter(Boolean);
   // Connecting needs the consent box ticked, so a saved key is that consent
   // (#633); Disconnect removes both.
   const aiReady = configured === true;
@@ -496,9 +499,6 @@ export function AIThemeStudioScreen({
       if (validateThemeSpec(spec, assets, next.usage).errors.length)
         throw new Error("Invalid sample");
       requestLoad({ document: next });
-      setStatus(
-        "Built-in example loaded — no AI request or charge. Click the flame to move it, or describe your changes below.",
-      );
     } catch {
       setError("The built-in sample could not be loaded.");
     } finally {
@@ -1069,7 +1069,11 @@ export function AIThemeStudioScreen({
             </Button>
           </div>
         </header>
-        {visibleInstallStatus ? <p role="status" className="pt-3 text-right text-sm text-muted-foreground">{copyForHost(visibleInstallStatus.error || visibleInstallStatus.message || "Sending…", windowsHost)}</p> : transferStatus ? <p role="status" className="pt-3 text-right text-sm text-muted-foreground">{transferStatus}</p> : null}
+        {notices.length ? (
+          <div className="flex flex-col gap-1 pt-3">
+            {notices.map((text, i) => <p key={i} role="status" className="text-sm text-muted-foreground [overflow-wrap:anywhere]">{text}</p>)}
+          </div>
+        ) : null}
           <main className="flex min-h-0 flex-1 flex-col gap-6 pt-2 lg:flex-row">
             <div className="min-h-0 min-w-0 flex-1 lg:overflow-y-auto">
             <div
@@ -1448,9 +1452,8 @@ export function AIThemeStudioScreen({
                   <p className="ml-8 self-end whitespace-pre-wrap rounded-xl bg-muted px-3 py-2 text-sm [overflow-wrap:anywhere]">{asking}</p>
                   {progress.words.length ? (
                     <div aria-hidden className="font-mono text-[13px] leading-6">
-                      <div key={progress.at} className={cn("flex items-center gap-2 text-muted-foreground", SETUP_REVEAL)}>
+                      <div key={progress.at} className={cn("text-muted-foreground", SETUP_REVEAL)}>
                         <span>&gt; {progress.words[progress.at % progress.words.length]}</span>
-                        <span className="inline-block h-[14px] w-[8px] shrink-0 bg-foreground [animation:vibetv-caret-blink_1.1s_step-end_infinite]" />
                       </div>
                     </div>
                   ) : null}
@@ -1569,11 +1572,6 @@ export function AIThemeStudioScreen({
               </div>
             </section>
             <div className="mt-3 w-full space-y-3">
-              {status && !busy ? (
-                <p role="status" className="text-sm text-muted-foreground [overflow-wrap:anywhere]">
-                  {status}
-                </p>
-              ) : null}
               {error ? (
                 <p id="ai-theme-error" role="alert" className="text-sm text-destructive [overflow-wrap:anywhere]">
                   {error}

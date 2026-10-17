@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchAIThemeCapabilities, generateAIThemeConcept, planAIThemeLayout } from "@/lib/ai-theme";
@@ -78,6 +79,8 @@ describe("Theme Studio progress line", () => {
     await waitFor(() => expect(statusLines()).toHaveLength(1));
     expect(PLANNING).toContain(statusLines()[0].textContent?.replace(/^> /, ""));
     expect(statusLines()[0].textContent).toBe("> Understanding your idea…");
+    // No black cursor block after the words any more.
+    expect(document.querySelector('[class*="vibetv-caret-blink"]')).toBeNull();
 
     // Within the planning step the word swaps after 2.5 s, still one line.
     await waitFor(() => expect(statusLines()[0].textContent).not.toBe("> Understanding your idea…"), { timeout: 4000 });
@@ -101,6 +104,29 @@ describe("Theme Studio progress line", () => {
     await new Promise((r) => setTimeout(r, 1200));
     expect(screen.queryByText(/^\d+ s$/)).toBeNull();
     expect(document.querySelector(".animate-bounce")).toBeNull();
+  });
+});
+
+describe("Theme Studio notices", () => {
+  it("shows a notice under the toolbar, not at the bottom of the chat column", async () => {
+    render(<AIThemeStudioScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Add manually" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Text/ }));
+
+    const notice = await screen.findByText("Element added. Select it on the display to make it yours.");
+    const header = document.querySelector("header") as HTMLElement;
+    expect(header.nextElementSibling?.contains(notice)).toBe(true);
+    expect(screen.getByRole("region", { name: "AI creation" }).contains(notice)).toBe(false);
+  });
+});
+
+describe("Theme Studio example copy", () => {
+  // The built-in example loads without a status line; the sample button is
+  // not reachable in jsdom (it fetches the render pack).
+  it("no longer announces the built-in example with a notice", () => {
+    const source = readFileSync("src/components/theme-studio/ai-theme-studio-screen.tsx", "utf8");
+    expect(source).not.toContain("Built-in example loaded");
+    expect(source).not.toContain("Click the flame to move it");
   });
 });
 
