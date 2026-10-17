@@ -439,8 +439,9 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 		result.Providers = []ProviderReadiness{row}
 		if exactProvider != "" && exactProvider != "codexbar" {
 			// "Check again" on one provider must update that provider's row too.
+			// The provider's own row says the popup sentence; the version
+			// detail stays on the usage service row.
 			exact := providerResult(exactProvider, ProviderEngineIncompatible)
-			exact.Detail = row.Detail
 			result.Providers = append(result.Providers, exact)
 		}
 		return result
