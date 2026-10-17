@@ -932,7 +932,7 @@ func TestProviderDiagnosticsNeverRecommendFixConnection(t *testing.T) {
 		return displayStreamInfo{Running: true, ErrorCode: "provider_setup_required", Detail: "No provider is ready."}
 	}
 	// Exercise the pure diagnostic mapping without relying on an actual device.
-	check := providerDiagnosticCheck(setupFixture(codexbar.ProviderAuthRequired))
+	check := providerDiagnosticCheck(setupFixture(codexbar.ProviderAuthRequired), true)
 	if strings.Contains(strings.ToLower(check.NextAction), "fix connection") || check.ErrorCode != codexbar.ProviderAuthRequired {
 		t.Fatalf("unexpected provider diagnostic: %+v", check)
 	}
@@ -959,7 +959,7 @@ func TestProviderDiagnosticsReportEveryFailingProvider(t *testing.T) {
 	ready := providerDiagnosticCheck(codexbar.ProviderSetup{
 		Status:    codexbar.ProviderReady,
 		Providers: []codexbar.ProviderReadiness{working, throttled, off, signedOut},
-	})
+	}, true)
 	if ready.Status != "pass" {
 		t.Fatalf("a working provider keeps the check passing: %+v", ready)
 	}
@@ -975,12 +975,40 @@ func TestProviderDiagnosticsReportEveryFailingProvider(t *testing.T) {
 	failing := providerDiagnosticCheck(codexbar.ProviderSetup{
 		Status:    "setup_required",
 		Providers: []codexbar.ProviderReadiness{signedOut, throttled},
-	})
+	}, true)
 	if failing.ErrorCode != codexbar.ProviderAuthRequired || !strings.HasPrefix(failing.Detail, "Sign in to Gemini.") {
 		t.Fatalf("first provider stays the headline: %+v", failing)
 	}
 	if !strings.Contains(failing.Detail, "Claude: "+throttled.Detail) || !strings.Contains(failing.Detail, "Retrying in about 198s") {
 		t.Fatalf("second failing provider missing from the report: %s", failing.Detail)
+	}
+}
+
+// The setup log is read by the customer: a failing provider's line carries
+// the fixed sentence of its state, never CodexBar's own text. The support
+// report keeps that text (#500). Paul, 16.10.; #579.
+func TestProviderSetupLogShowsTheFixedSentenceNotTheEngine(t *testing.T) {
+	const engine = "No available fetch strategy for openai."
+	server := newTestServer(t, runtimeconfig.Config{})
+	setup := codexbar.ProviderSetup{
+		Status: "setup_required",
+		Providers: []codexbar.ProviderReadiness{{
+			ID: "openai", Label: "OpenAI API", Status: codexbar.ProviderEngineError,
+			Detail: "The usage service could not read this provider.", NextAction: "Check this provider, then try again.",
+			Reported: engine,
+		}},
+	}
+	server.recordProviderSetupEvents(setup, "openai", "OpenAI API")
+	got := getSetupLog(t, server).Events
+	if len(got) != 1 || got[0].Status != "failed" ||
+		got[0].Message != "OpenAI API: The usage service could not read this provider." {
+		t.Fatalf("setup log = %+v", got)
+	}
+	if strings.Contains(got[0].Message, "fetch strategy") {
+		t.Fatalf("setup log shows the engine's own sentence: %q", got[0].Message)
+	}
+	if report := providerDiagnosticCheck(setup, true).Detail; !strings.Contains(report, engine) {
+		t.Fatalf("support report misses the engine sentence: %s", report)
 	}
 }
 

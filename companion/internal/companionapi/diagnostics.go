@@ -102,7 +102,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			Detail: "Companion API is running.",
 		},
 		usageEngineDiagnosticCheck(providerSetup.Engine),
-		providerDiagnosticCheck(providerSetup),
+		providerDiagnosticCheck(providerSetup, true),
 	}
 	if discoveryResult != nil {
 		discovery = <-discoveryResult
