@@ -56,6 +56,11 @@ describe("SetupEventList", () => {
     expect(rows()[1]).toContain("Repeated 3 times");
   });
 
+  it("shows a past failed step in the normal text colour, not red", () => {
+    render(<SetupEventList log={log} />);
+    expect(screen.getByText("Failed").parentElement?.className).not.toContain("text-destructive");
+  });
+
   it("never shows the engine's product name", () => {
     render(<SetupEventList log={log} />);
     expect(document.body.textContent).not.toMatch(/codexbar/i);
