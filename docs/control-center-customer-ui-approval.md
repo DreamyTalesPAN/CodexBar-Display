@@ -7848,12 +7848,45 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: As in the "Tokens:" entry above, with this PR's plan name in the tile header and the cap line under the Tokens line, as in the entry before it. No new wording.
 - Scope: `apps/control-center/src/components/usage-screen.tsx` (merge of #669 into this PR), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — the same tiles as above, no new notice
+## 2026-10-17 — Usage head bigger: hero total, taller chart, legend below the chart (stacked on #714)
+
+- User approval: Paul 17.10. (tested build 7141): Usage head bigger (hero number, taller chart), legend below the chart. Look per his direction.
+- Approved customer-visible result: the 30-day total in Usage is set in a larger hero size (46 px, semibold, tight line height), the only text size beyond 28 px and 13 px. The token chart is taller (384 px instead of 256 px), still without card or title. The provider legend (colour dot and name) moves from the head line to below the chart, left-aligned under the x-axis. The Refresh icon stays top right on the "Last 30 days" line. Wording unchanged; no new control.
+- Scope: `usage-screen.tsx`, `usage-screen.test.tsx`, the hero token in `src/app/globals.css`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — size and position change only, no new notice
+
+## 2026-10-17 — Usage chart colours follow the provider, not the order of the response (Codex review on #714)
+
+- User approval: pending — Paul reviews this PR (fix of a Codex finding on #714); look unchanged: Claude keeps the ink dot and line, Codex the olive, as in the entry above. Nothing else.
+- Approved customer-visible result: none beyond the colours of the entry above: Claude in ink, Codex in olive. When the response lists Codex first, the colours had swapped before; now they stay with the provider. In the usual order nothing changes.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (chart colour assignment only), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — colour fix only, no new notice
+
+## 2026-10-17 — Usage chart: another provider never takes the colour of Claude or Codex (Codex review on #714)
+
+- User approval: pending — Paul reviews this PR (fix of a second Codex finding on #714); look unchanged: Claude keeps the ink dot and line, Codex the olive, as in the entries above.
+- Approved customer-visible result: none beyond the colours of the entries above. A provider other than Claude and Codex (for example Gemini) now takes one of the three colours left (chart-3 to chart-5) instead of the colour of Codex or Claude, which it could share before. Claude and Codex are unchanged.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (chart colour assignment only), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — colour fix only, no new notice
+
 ## 2026-10-17 — Usage: grey outline of the head and chart while the token history loads (#598, stacked on #714)
 
 - User approval: pending — Paul reviews this PR (fix of a reported defect, #598); look unchanged except: small spinner in the empty chart area → grey outline of the head and chart while loading.
 - Approved customer-visible result: none yet; pending Paul's review. Proposed: while the token history loads, the head ("Last 30 days" line, legend, number and words line) and the chart area are grey blocks at the heights of the finished graph, no spinner, no figures; the same look under reduced motion, without the pulse.
 - Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (loading state of the token history only), the loading assertions of `scripts/test-customer-flows.mjs`, and this approval record. Stacked on #714; pull request branch only, not merge or release.
 - What's new: none — loading state only, no new notice
+
+## 2026-10-17 — Usage: grey blocks follow the bigger head and the legend below the chart while the token history loads (#598, stacked on #714)
+
+- User approval: pending — Paul sees the grey loading blocks on the bigger head (#714); look unchanged except: hero-size block for the total, chart block 384 px instead of 256 px, legend chips below the chart instead of in the head line.
+- Approved customer-visible result: none yet; pending Paul's review. Proposed: while the token history loads, the grey blocks keep the layout of #714 (head line with the Refresh place, a block at the hero size for the total, the words line, a 384 px chart block, one legend chip per provider below it). No text change.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (loading block only), and this approval record. Stacked on #714; pull request branch only, not merge or release.
+- What's new: none — loading state only, no new notice
+
+## 2026-10-17 — Approval record: the #714 colour fixes merged into the skeleton (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the #714 colour fixes and changes no screen.
 
 ## 2026-10-17 — Usage: the token history notice opens as an overlay dialog, not a box at the top (stacked on #724)
 
@@ -7876,9 +7909,96 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/src/components/control-center-app.tsx` (the condition the notice waits for) and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no new capability, the same dialogs in a fixed order
 
+## 2026-10-17 — Approval record: #724 merged into the stack (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the #724 branch and changes no screen.
+
 ## 2026-10-17 — Usage: a usage error opens as an overlay dialog, not a box at the top (stacked on #745)
 
 - User approval: pending — Paul reviews this PR (fix of a reported defect: errors are dialogs over the page, not inline text at the top; the follow-up named in #745); look unchanged except: on Usage, the box at the top of the page with the usage error title, its sentence and "Try again" → the same title, sentence and "Try again" in an overlay dialog with "OK" (and the X) to close it.
 - Approved customer-visible result: On Usage, when a usage refresh fails, the error is a dialog over the page instead of a box at its top. Its title and sentence are the same as before. Its buttons are "Try again" (it reads "Trying again" and is closed while a refresh runs) and "OK"; "OK" or the X closes it. Closed, it stays closed while the error stands, and it comes back only after the error has cleared and happens again. It waits while another centred dialog is open (runtime repair, lost VibeTV picker, usage failure, system busy, Run setup again?, What's new), and the token history notice waits until it is closed. The tiles stay usable under it. Before → after: the box at the top with the title, the sentence and "Try again" → the same title, sentence and "Try again" in an overlay dialog with "OK". Nothing else changes.
 - Scope: `apps/control-center/src/components/usage-screen.tsx`, `apps/control-center/src/components/control-center-app.tsx` (the dismissal, the wait and the reset), the tests `usage-screen.error-overlay.test.tsx` (new) and `usage-screen.test.tsx`, and this approval record. Stacked on #745; pull request branch only, not merge or release.
 - What's new: none — the same sentences in a dialog, no new capability
+
+## 2026-10-17 — Approval record: #745 merged into the stack (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the #745 branch and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-17 — Approval record: the #745 head merged into the stack again (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the current #745 head and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-17 — Approval record: the merge record above, on its own commit (no visible change)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record only moves the merge record of the entry above onto a commit of its own.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-17 — Approval record: the skeleton head merged into this branch (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the skeleton head and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-17 — Usage loading blocks: the grey legend blocks wrap on a narrow screen like the legend (Codex review on #724)
+
+- User approval: pending — Paul reviews this PR (fix of a Codex finding on #724); look unchanged on a wide screen. On a narrow screen (about 390 px) with five or more providers, the grey legend blocks now wrap onto a second row instead of being clipped, as the loaded legend does.
+- Approved customer-visible result: none beyond the loading blocks of the entry above. Only the grey legend row changes: it wraps like the loaded legend and keeps its height on one line. No text, no other layout.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (loading legend row only), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — loading state only, no new notice
+
+## 2026-10-18 — Usage loading blocks: each grey legend chip keeps the legend's line height when it wraps (Codex review on #724)
+
+- User approval: pending — Paul reviews this PR (fix of a Codex finding on #724); look unchanged. The grey legend blocks keep the height of the loaded legend row when they wrap on a narrow screen, so the tiles below do not jump when the legend arrives.
+- Approved customer-visible result: none beyond the loading blocks of the entries above. Only the height of the grey legend row changes (one line of the legend's height per row); no text, no other layout.
+- Scope: `usage-screen.tsx` (loading legend row only), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — loading state only, no new notice
+
+## 2026-10-17 — Approval record: the #724 loading-legend fix merged into this branch (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the #724 head and changes no screen.
+
+## 2026-10-17 — Approval record: the #745 head merged into the stack again (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the current #745 head and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-17 — Approval record: the #745 head with the #724 loading-legend fix merged into the stack (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the current #745 head and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-17 — Approval record: the merge record above, on its own commit (no visible change)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record only moves the merge record of the entry above onto a commit of its own.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-18 — Approval record: the skeleton head merged into this branch (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the skeleton head and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-18 — Approval record: the #745 head with the loading-legend fixes merged into the stack (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the current #745 head and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
