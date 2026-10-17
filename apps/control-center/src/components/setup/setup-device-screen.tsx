@@ -463,7 +463,6 @@ export function SetupDeviceScreen({
                 ]
               : logLines
           }
-          running={connecting || wifiBusy}
         />
       ) : null}
     </SetupWizardScreen>

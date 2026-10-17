@@ -81,8 +81,12 @@ describe("Theme Studio progress line", () => {
     await waitFor(() => expect(statusLines()).toHaveLength(1));
     expect(PLANNING).toContain(statusLines()[0].textContent?.replace(/^> /, ""));
     expect(statusLines()[0].textContent).toBe("> Understanding your idea…");
-    // No black cursor block after the words any more.
+    // The line is the shared ProcessSteps component, single variant, and has no cursor block.
+    const processSteps = document.querySelector('[data-slot="process-steps"]');
+    expect(processSteps?.getAttribute("data-variant")).toBe("single");
+    expect(processSteps?.querySelectorAll(":scope > div")).toHaveLength(1);
     expect(document.querySelector('[class*="vibetv-caret-blink"]')).toBeNull();
+    expect(document.querySelector('[class*="caret"]')).toBeNull();
 
     // Within the planning step the word swaps after 2.5 s, still one line.
     await waitFor(() => expect(statusLines()[0].textContent).not.toBe("> Understanding your idea…"), { timeout: 4000 });
