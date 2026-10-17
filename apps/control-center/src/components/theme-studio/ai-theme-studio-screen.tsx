@@ -36,6 +36,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -1576,8 +1577,7 @@ export function AIThemeStudioScreen({
         }}
       >
         <DialogContent
-          className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md"
-          showCloseButton={!connecting}
+          className="max-h-[calc(100dvh-2rem)] overflow-y-auto"
           onEscapeKeyDown={(event) => {
             if (connecting) event.preventDefault();
           }}
@@ -1896,6 +1896,7 @@ export function AIThemeStudioScreen({
               )}
             </div>
           ) : null}
+          <DialogFooter showCloseButton={!connecting} />
         </DialogContent>
       </Dialog>
       <input
@@ -1943,17 +1944,14 @@ export function AIThemeStudioScreen({
               continue.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-3">
+          <DialogFooter>
             <Button
-              variant="outline"
-              className="h-12 w-full"
+              variant="ghost"
               onClick={() => { setPending(undefined); setLeaving(false); }}
             >
               Keep editing
             </Button>
             <Button
-              variant="destructive"
-              className="h-12 w-full"
               onClick={() => {
                 // Discarding is final: the draft must not be offered again later.
                 clearThemeStudioRecovery();
@@ -1964,7 +1962,7 @@ export function AIThemeStudioScreen({
             >
               Discard and continue
             </Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

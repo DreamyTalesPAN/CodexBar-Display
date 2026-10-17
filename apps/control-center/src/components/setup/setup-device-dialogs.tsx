@@ -90,6 +90,7 @@ function SetupAddressDialogForm({
         label: "Cancel",
         onSelect: () => onOpenChange(false),
       }}
+      showCloseButton={false}
       title="Enter IP address"
       tone="neutral"
     >

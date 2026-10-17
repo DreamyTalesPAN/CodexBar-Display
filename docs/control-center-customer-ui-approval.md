@@ -7467,3 +7467,18 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-17 — Calm redesign of all dialogs, variant A with lime primary (#713)
+- User approval: pending — Paul reviews this PR (calm redesign dialogs, variant A with lime primary, #713); look: 28 px title, 13 px text, 440 px wide, no close X, every primary button lime, ghost secondary.
+- Approved customer-visible result: Every dialog in the Control Center (setup, provider, firmware, recovery, system busy, What's new, Theme Studio, Theme library, Settings) gets the same look.
+  - The X in the top right is gone. Where a dialog had no other visible way out, a ghost "Close" button is the first footer button. Dialogs that already have one (Cancel, Keep WiFi, OK, Hide, Got it, Not now) keep it and get no extra Close.
+  - Title 28 px semibold, text 13 px, 440 px wide, 32 px padding, 14 px corners, footer right-aligned with no grey band.
+  - Secondary buttons are ghost text buttons (were outlined); button labels 13 px.
+  - Every primary button is lime. Reset (factory settings), Delete local copy, Replace and Discard and continue were black or red and are now lime.
+  - "Keep your changes?" (Theme Studio): the two stacked full-width buttons are now a footer with Keep editing (ghost) and Discard and continue (lime).
+  - "Claude needs a new sign-in" (provider): ghost "Not now" beside "Sign in to <Provider>" (was: X only).
+  - Theme preview (Theme library): footer "Close" button (was X only).
+  - Create with AI (Theme Studio): footer "Close" button, hidden while connecting as the X was.
+  - Texts and button order of every dialog stay as they were, apart from the added "Close" and "Not now" above.
+- Scope: `apps/control-center/src/components/ui/dialog.tsx`, `ui/alert-dialog.tsx`, `setup/setup-dialog.tsx`, `setup/setup-device-dialogs.tsx`, `setup/setup-provider-dialogs.tsx`, `setup/setup-providers-screen.tsx` and its test, `setup/setup-recovery-dialogs.tsx`, `settings-screen.tsx`, `whats-new-dialog.tsx`, `theme-library-screen.tsx`, `theme-studio/ai-theme-studio-screen.tsx`, `theme-studio/replace-draft-dialog.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a look change of existing dialogs, no new capability

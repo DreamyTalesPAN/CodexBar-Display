@@ -34,6 +34,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -802,15 +803,16 @@ export function ThemeLibraryScreen({
             className="max-h-[calc(100dvh-2rem)] max-w-[640px] overflow-y-auto sm:max-w-[640px]"
           >
             <DialogHeader>
-              <DialogTitle className="truncate text-2xl font-black">{previewTheme.title}</DialogTitle>
+              <DialogTitle className="truncate">{previewTheme.title}</DialogTitle>
             </DialogHeader>
             <p
-              className="-mt-2 text-sm text-muted-foreground"
+              className="-mt-3 text-[13px] text-muted-foreground"
               id="theme-library-example-data"
             >
               Example data · This is a catalog preview, not live VibeTV data.
             </p>
             <ThemePreview large theme={previewTheme} />
+            <DialogFooter showCloseButton />
           </DialogContent>
         </Dialog>
       ) : null}
@@ -929,7 +931,6 @@ function DeleteThemeDialog({
                 event.preventDefault();
               }
             }}
-            variant="destructive"
           >
             Delete local copy
           </AlertDialogAction>

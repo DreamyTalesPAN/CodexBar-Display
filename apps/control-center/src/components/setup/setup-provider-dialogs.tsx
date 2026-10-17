@@ -51,7 +51,7 @@ export function SetupStepFailedDialog({
             }
           : { label: "OK", onSelect: () => onOpenChange(false) }
       }
-      showCloseButton={dismissible}
+      showCloseButton={dismissible && Boolean(onRetry)}
       title={visibleError.message}
     />
   );

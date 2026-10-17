@@ -44,7 +44,6 @@ export function WhatsNewDialog({
           event.preventDefault();
           gotIt.current?.focus();
         }}
-        showCloseButton={false}
       >
         <DialogHeader className="gap-1">
           {appVersion ? (
@@ -52,7 +51,7 @@ export function WhatsNewDialog({
               Version {appVersion}
             </p>
           ) : null}
-          <DialogTitle className="text-xl font-bold">What&apos;s new</DialogTitle>
+          <DialogTitle>What&apos;s new</DialogTitle>
         </DialogHeader>
         <ul className="-mr-2 flex min-h-0 flex-col gap-4 overflow-y-auto pr-2">
           {entries.map((entry) => (
@@ -64,8 +63,8 @@ export function WhatsNewDialog({
                 <entry.icon className="size-[18px]" />
               </div>
               <div className="flex flex-col items-start gap-0.5">
-                <h3 className="text-[15px] leading-5 font-semibold">{entry.title}</h3>
-                <p className="text-sm text-muted-foreground">
+                <h3 className="text-[13px] leading-5 font-semibold">{entry.title}</h3>
+                <p className="text-[13px] text-muted-foreground">
                   <EntryBody body={entry.body} windowsHost={windowsHost} />
                 </p>
                 {entry.theme || entry.inSettings ? (
@@ -88,7 +87,7 @@ export function WhatsNewDialog({
           ))}
         </ul>
         <DialogFooter className="flex-col sm:items-center sm:justify-between">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-[13px] text-muted-foreground">
             You can read this again under Updates.
           </p>
           <Button onClick={onClose} ref={gotIt} type="button">

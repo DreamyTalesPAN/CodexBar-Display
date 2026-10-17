@@ -42,6 +42,7 @@ export function SetupRecoveryDialogs({
         open={phase === "repairing"}
         primaryAction={{ label: "Hide", onSelect: onHide }}
         scrim={false}
+        showCloseButton={false}
         title="Repairing VibeTV Control Center"
         tone="neutral"
       />
