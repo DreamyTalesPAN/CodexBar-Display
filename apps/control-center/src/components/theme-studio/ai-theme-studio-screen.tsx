@@ -1896,7 +1896,13 @@ export function AIThemeStudioScreen({
               )}
             </div>
           ) : null}
-          <DialogFooter showCloseButton={!connecting} />
+          {connecting ? null : (
+            <DialogFooter>
+              <Button onClick={closePanel} variant="ghost">
+                Not now
+              </Button>
+            </DialogFooter>
+          )}
         </DialogContent>
       </Dialog>
       <input

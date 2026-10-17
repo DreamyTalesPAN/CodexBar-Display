@@ -33,6 +33,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogFooter,
   DialogHeader,
@@ -812,7 +813,11 @@ export function ThemeLibraryScreen({
               Example data · This is a catalog preview, not live VibeTV data.
             </p>
             <ThemePreview large theme={previewTheme} />
-            <DialogFooter showCloseButton />
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button>Close</Button>
+              </DialogClose>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       ) : null}

@@ -40,8 +40,9 @@ type SetupDialogProps = {
    */
   scrim?: boolean;
   /**
-   * There is no close X. When true, a visible "Close" (ghost) is the first
-   * footer button. Pass false where another action already is the way out.
+   * There is no close X. When true and there is no secondary action, a
+   * visible "Close" (ghost) is the footer's secondary button. Otherwise the
+   * secondary action is the way out.
    */
   showCloseButton?: boolean;
   title: string;
@@ -109,7 +110,7 @@ export function SetupDialog({
           // "Sign in to Claude", are wider than the popup: the main action
           // moves to its own line instead of sticking out on the right.
           <DialogFooter className="sm:flex-wrap">
-            {showCloseButton ? (
+            {showCloseButton && !secondaryAction ? (
               <Button onClick={() => onOpenChange(false)} type="button" variant="ghost">
                 Close
               </Button>
