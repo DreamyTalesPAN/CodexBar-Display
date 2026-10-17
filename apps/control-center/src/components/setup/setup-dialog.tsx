@@ -44,7 +44,7 @@ type SetupDialogProps = {
 };
 
 const tabbable =
-  'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
+  'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"]):not([data-radix-focus-guard])';
 
 /**
  * Radix loops Tab inside every dialog, modal or not. A dialog that leaves the

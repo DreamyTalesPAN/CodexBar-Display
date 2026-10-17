@@ -7896,6 +7896,13 @@ issue scope, or release permission never implies UI permission.
 - Scope: `setup/setup-dialog.tsx` (non-modal dialogs, scrim off) and `usage-screen.warning-overlay.test.tsx`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — focus fix only, no new notice
 
+## 2026-10-18 — Codex review fix on #745: Tab skips the focus guards Radix adds around a notice (no visible change)
+
+- User approval: pending — Paul reviews this PR; Codex review fix, no visible change; not seen by Paul. Keyboard Tab from the notice reaches the page control, not an invisible focus guard.
+- Approved customer-visible result: none. Focus order only; nothing looks different.
+- Scope: `setup/setup-dialog.tsx` (non-modal dialogs, scrim off) and `usage-screen.warning-overlay.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — focus fix only, no new notice
+
 ## 2026-10-17 — Usage: a usage error opens as an overlay dialog, not a box at the top (stacked on #745)
 
 - User approval: pending — Paul reviews this PR (fix of a reported defect: errors are dialogs over the page, not inline text at the top; the follow-up named in #745); look unchanged except: on Usage, the box at the top of the page with the usage error title, its sentence and "Try again" → the same title, sentence and "Try again" in an overlay dialog with "OK" (and the X) to close it.
