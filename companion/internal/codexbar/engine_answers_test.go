@@ -305,3 +305,24 @@ func TestInventorySettingsPathIsTheConfigTheMacCLIReads(t *testing.T) {
 		t.Fatalf("inventory settings path = %q, want the config passed to the CLI %q", got, passed)
 	}
 }
+
+// The Control Center asks with fresh=1 when a provider list opens. That drops
+// the kept inventory once, so a plugin installed or removed while the engine
+// ran shows; the answer is kept again after that read.
+func TestForgetProviderInventoryMakesTheNextReadAskTheCLI(t *testing.T) {
+	settledEngine(t)
+	runs := stubEngineCommands(t, func() ([]byte, error) { return inventoryWithClaude(true), nil })
+	if _, err := FetchProviderInventory(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := FetchProviderInventory(context.Background()); err != nil || *runs != 1 {
+		t.Fatalf("a plain read must keep the answer: err=%v runs=%d", err, *runs)
+	}
+	ForgetProviderInventory()
+	if _, err := FetchProviderInventory(context.Background()); err != nil || *runs != 2 {
+		t.Fatalf("after ForgetProviderInventory the CLI must be asked again: err=%v runs=%d", err, *runs)
+	}
+	if _, err := FetchProviderInventory(context.Background()); err != nil || *runs != 2 {
+		t.Fatalf("the read after the forget is kept again: err=%v runs=%d", err, *runs)
+	}
+}

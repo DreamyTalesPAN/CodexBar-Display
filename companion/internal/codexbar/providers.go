@@ -548,6 +548,13 @@ func fetchProviderInventory(ctx context.Context) ([]ProviderSetting, string, err
 	return settings, bin, nil
 }
 
+// ForgetProviderInventory drops the kept inventory, so the next read asks
+// CodexBar again. The Control Center sends fresh=1 once when a provider list
+// opens; that is how a plugin installed or removed while the engine ran shows.
+func ForgetProviderInventory() {
+	engineInventory.store("", nil)
+}
+
 // SetProviderEnabled validates the exact provider ID against CodexBar's live
 // inventory before invoking the CLI with separate process arguments.
 func SetProviderEnabled(ctx context.Context, providerID string, enabled bool) error {
