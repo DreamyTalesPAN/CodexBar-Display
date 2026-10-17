@@ -7661,3 +7661,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: look unchanged — the Theme Studio AI line now uses the shared ProcessSteps component (Paul's rule 17.10.). Before → after: none; the "> word" line, its fade-in per word and its word order stay as they are.
 - Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` (the AI working line, local styles removed) and its test, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no visible change
+
+## 2026-10-17 — Calm Theme Studio, variant A (#713): look only
+
+- User approval: pending — Paul reviews this PR (calm redesign Theme Studio, variant A, #713); look: the design canvas is the one framed object, the chat has no frame or divider line, the File menu has no icons, sent images sit inside the message bubble.
+- Approved customer-visible result: same texts and behaviour; look only. Before → after:
+  - Design name in the header: 16 px → 28 px, semibold.
+  - File menu: icons removed from the five entries; the entries and their order stay.
+  - Design canvas: the frame loses its border and shadow, corners 16 px → 12 px, one thin ring.
+  - Chat: the vertical line between canvas and chat is removed; the gap between them is 48 px and the page starts 32 px under the header.
+  - Sent message with reference images: thumbnails 40 px above the text → 32 px thumbnails inside the same bubble, left of the text.
+  - Message composer: the shadow is removed; the border stays.
+  - Notices under ← and the Send reason line: unchanged.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, `apps/control-center/src/components/theme-studio/editable-theme-preview.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — look only, no new wording

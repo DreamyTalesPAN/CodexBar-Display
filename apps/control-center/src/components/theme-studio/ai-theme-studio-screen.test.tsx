@@ -211,7 +211,7 @@ describe("Theme Studio example copy", () => {
 });
 
 describe("Theme Studio header", () => {
-  it("puts a File menu with five icon entries in the header and removes the gear dialog", async () => {
+  it("puts a File menu with five text entries in the header and removes the gear dialog", async () => {
     render(<AIThemeStudioScreen />);
     expect(screen.queryByRole("button", { name: "Design settings" })).toBeNull();
 
@@ -220,7 +220,7 @@ describe("Theme Studio header", () => {
     const entries = ["New design", "Open saved design…", "Open design file…", "Download editable design", "Export theme pack"];
     for (const name of entries) {
       const item = await screen.findByRole("button", { name });
-      expect(item.querySelector("svg")).not.toBeNull();
+      expect(item.querySelector("svg")).toBeNull();
     }
     expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
     expect(screen.getByRole("button", { name: "Undo last edit" })).toBeTruthy();
