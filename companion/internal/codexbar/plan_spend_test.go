@@ -120,11 +120,13 @@ func TestPlanAndSpendOmittedOnWindowsCodexBar055(t *testing.T) {
 
 func TestProviderSpendOmittedWithoutCapOrCurrency(t *testing.T) {
 	cases := map[string]map[string]any{
-		"no cost":        {"usage": map[string]any{}},
-		"zero limit":     {"usage": map[string]any{"providerCost": map[string]any{"limit": 0.0, "used": 0.0, "currencyCode": "EUR"}}},
-		"no currency":    {"usage": map[string]any{"providerCost": map[string]any{"limit": 100.0, "used": 0.0}}},
-		"limit missing":  {"usage": map[string]any{"providerCost": map[string]any{"used": 0.0, "currencyCode": "EUR"}}},
-		"cost not a map": {"usage": map[string]any{"providerCost": "EUR 100"}},
+		"no cost":         {"usage": map[string]any{}},
+		"zero limit":      {"usage": map[string]any{"providerCost": map[string]any{"limit": 0.0, "used": 0.0, "currencyCode": "EUR"}}},
+		"no currency":     {"usage": map[string]any{"providerCost": map[string]any{"limit": 100.0, "used": 0.0}}},
+		"limit missing":   {"usage": map[string]any{"providerCost": map[string]any{"used": 0.0, "currencyCode": "EUR"}}},
+		"used missing":    {"usage": map[string]any{"providerCost": map[string]any{"limit": 100.0, "currencyCode": "EUR"}}},
+		"used unreadable": {"usage": map[string]any{"providerCost": map[string]any{"limit": 100.0, "used": "n/a", "currencyCode": "EUR"}}},
+		"cost not a map":  {"usage": map[string]any{"providerCost": "EUR 100"}},
 	}
 	for name, payload := range cases {
 		if spend, ok := parseProviderSpend(payload); ok {

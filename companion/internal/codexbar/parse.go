@@ -222,10 +222,10 @@ func parseProviderSpend(payload map[string]any) (ProviderSpend, bool) {
 	}
 	limit, ok := floatAtPaths(costMap, "limit")
 	currency := strings.TrimSpace(firstString(costMap, "currencyCode"))
-	if !ok || limit <= 0 || currency == "" {
+	used, usedOK := floatAtPaths(costMap, "used")
+	if !ok || limit <= 0 || currency == "" || !usedOK {
 		return ProviderSpend{}, false
 	}
-	used, _ := floatAtPaths(costMap, "used")
 	return ProviderSpend{
 		Limit:    limit,
 		Used:     used,
