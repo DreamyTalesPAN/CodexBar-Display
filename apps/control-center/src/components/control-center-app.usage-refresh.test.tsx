@@ -135,12 +135,12 @@ it("ends the Refreshing mark within seconds of the new values", async () => {
   await wait(10);
   fireEvent.click(screen.getByRole("button", { name: "Usage" }));
   await wait(1);
-  fireEvent.click(screen.getByRole("button", { name: "Refresh token usage" }));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   await wait(1);
-  // The Refresh button carries the spinner and "Refreshing" while it waits.
+  // The Refresh button of the notice dialog says "Refreshing" and is closed while it waits.
   expect(
-    screen.getByRole("button", { name: "Refresh token usage" }).getAttribute("aria-busy"),
-  ).toBe("true");
+    (screen.getByRole("button", { name: "Refreshing" }) as HTMLButtonElement).disabled,
+  ).toBe(true);
 
   // Only usage is read faster meanwhile. Each provider read past its 10 s
   // cache starts a scan in the usage engine.
@@ -151,6 +151,6 @@ it("ends the Refreshing mark within seconds of the new values", async () => {
   companion.refreshing = false;
   await wait(4);
   expect(
-    screen.getByRole("button", { name: "Refresh token usage" }).getAttribute("aria-busy"),
-  ).toBe("false");
+    (screen.getByRole("button", { name: "Refresh" }) as HTMLButtonElement).disabled,
+  ).toBe(false);
 });

@@ -168,6 +168,7 @@ import { UpdatesScreen } from "./updates-screen";
 import {
   UsageScreen,
   usageProviderActionsFor,
+  usageTokenHistoryNotice,
   usageTokenHistoryUnavailableOnVibeTV,
 } from "./usage-screen";
 import { WhatsNewDialog } from "./whats-new-dialog";
@@ -606,6 +607,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [runtimeRecoveryHidden, setRuntimeRecoveryHidden] = useState(false);
   // Hiding the usage dialog hides the announcement; the repair itself runs on.
   const [usageFailureHidden, setUsageFailureHidden] = useState(false);
+  // One token history notice is one occurrence: closed once, it stays closed
+  // on Usage until the notice has cleared (the reset is below).
+  const [usageHistoryDismissed, setUsageHistoryDismissed] = useState(false);
   // The computer is too starved for the usage engine to answer (#606).
   // Its start time keys the incident; null while there is none.
   const [systemBusySince, setSystemBusySince] = useState<string | null>(null);
@@ -5250,6 +5254,28 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       id !== "provider-shortcut" ||
       nativeProviderShortcut(navigator.userAgent) !== "unavailable",
   );
+  // The centred dialogs that the Usage notice waits for, so two never stack.
+  const centredDialogOpen =
+    (needsRuntimeRecovery && !runtimeRecoveryHidden) ||
+    lostDevicePickerOpen ||
+    (usageFailure && !usageFailureHidden) ||
+    systemBusyOpen ||
+    setupAgainRequested ||
+    whatsNewEntries.length > 0;
+  const tokenHistoryNoticeShown = usageTokenHistoryNotice(
+    usage,
+    hiddenUsageProviderIds,
+  );
+  // The reset happens while rendering, when the notice changes from shown to
+  // cleared (React's own pattern for state that follows a prop), not in an effect.
+  const [tokenHistoryNoticeWasShown, setTokenHistoryNoticeWasShown] =
+    useState(tokenHistoryNoticeShown);
+  if (tokenHistoryNoticeWasShown !== tokenHistoryNoticeShown) {
+    setTokenHistoryNoticeWasShown(tokenHistoryNoticeShown);
+    if (!tokenHistoryNoticeShown) {
+      setUsageHistoryDismissed(false);
+    }
+  }
   // Opened from Updates and taken away by something else, or by the window
   // moving to another page, the notice does not come back by itself: what
   // follows may be a dialog this condition does not know, as the one Updates
@@ -5711,7 +5737,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             companionStatus={companionStatus}
             onRefresh={() => refreshUsage()}
             providerActions={providerActions}
+            centredDialogOpen={centredDialogOpen}
             hiddenProviderIds={hiddenUsageProviderIds}
+            onDismissTokenHistory={() => setUsageHistoryDismissed(true)}
+            tokenHistoryDismissed={usageHistoryDismissed}
             usage={usage}
             usageError={errorForHost(usageError, windowsHost)}
             windowsHost={windowsHost}
