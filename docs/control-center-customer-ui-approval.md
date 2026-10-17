@@ -7581,3 +7581,88 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the same as the entry above at desktop widths. On narrow windows the section label no longer sits beside its content and the diagnostic checks no longer squeeze the detail text into a narrow column. Texts, buttons and behaviour unchanged.
 - Scope: `apps/control-center/src/components/logs-screen.tsx`, `diagnostics-panel.tsx`, the test `control-center-app.display-preferences.test.tsx` (Recent activity scope is now the section, not the card) and this approval record. Pull request branch only, not merge or release.
 - What's new: none — layout breakpoints only, no new capability
+## 2026-10-17 — Overview: centered 3D VibeTV, no tiles, not-found dialog (#713)
+
+- User approval: Paul 17.10. approved the picture overview-A2-center (3D VibeTV centered, no tiles, not-found dialog lime + Not now) (#713).
+- Approved customer-visible result: Overview shows only the VibeTV as a 3D model, centered, under the status line "VibeTV is connected" (or "VibeTV status", "VibeTV is restarting" as before). The Mac App, VibeTV, Display and firmware tiles and the "Connected" badge are removed. When VibeTV is not found, a dialog "We couldn't find your VibeTV" with "Check that VibeTV is plugged in and on the same WiFi as this Mac." (computer on Windows), the lime "Run setup again" and "Not now", and no close button, is shown over the page.
+- Scope: `apps/control-center/src/components/overview-screen.tsx`, `vibetv-3d-preview.tsx` (new, three.js case from #465), `live-vibetv-preview.tsx` (`screenOnly`), `control-center-app.tsx` (one callback), the `/models/` route in the companion, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the Overview look only; the 3D case is shipped as the look of this page
+
+
+## 2026-10-17 — Overview: Codex review fixes for the not-found dialog (#755)
+
+- User approval: none needed — the look is Paul's approved picture overview-A2-center (17.10., #713); this entry records the Codex fixes only, which change when the not-found dialog shows, not how it looks.
+- Approved customer-visible result: none beyond the approved picture. The not-found dialog is no longer shown during a firmware update, and it waits behind the other dialogs, like What's new does. Text, buttons and layout stay the same.
+- Scope: `apps/control-center/src/components/vibetv-not-found-dialog.tsx` (new), `overview-screen.tsx` (dialog removed from the page), `control-center-app.tsx` (dialog in the app dialog order), the tests for them, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the fix changes no new content
+
+## 2026-10-17 — Overview: What's New waits for the Run setup again confirmation (#755)
+
+- User approval: none needed — no visible change; this entry records a Codex review fix that keeps What's New behind the existing "Run setup again?" confirmation, which was already shown.
+- Approved customer-visible result: none. What's New no longer opens while the "Run setup again?" confirmation is open, so only one dialog shows at a time.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (one condition in the dialog order) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+## 2026-10-17 — Overview: Codex review fixes for the setup confirmation and the sway delay (#755)
+
+- User approval: none needed — no visible change; this entry records two Codex review fixes. The not-found dialog also waits while the "Run setup again?" confirmation is open, and the 3D preview starts its 2.5 s sway delay when it mounts instead of on the first frame.
+- Approved customer-visible result: none. Only one dialog shows at a time, and a freshly opened Overview starts still for 2.5 s before it sways.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (one condition) and `apps/control-center/src/components/vibetv-3d-preview.tsx` (one timer start), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+## 2026-10-18 — Overview: customer-flow checks follow the calm Overview (#755)
+
+- User approval: none needed — no visible change; this entry records the customer-flow script fix that replaces the removed status tiles with the 3D VibeTV group and the "VibeTV status" heading as the wait targets, and waits for the ready status poll before checking recovery.
+- Approved customer-visible result: none. The test script changes what the flows wait for, not what the customer sees.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+## 2026-10-18 — Overview: 3D case loads after first paint, flat preview otherwise (#755)
+
+- User approval: none needed — the look is unchanged from the approved picture overview-A2-center (17.10., #713). This entry records the coordinator's loading order: the heading and the flat live preview render first; the 3D case is a separate chunk, starts after the first paint, and only on a hardware WebGL (software renderers and missing WebGL keep the flat preview); its shadow map is 1024.
+- Approved customer-visible result: none beyond the approved picture. The 3D VibeTV replaces the flat preview a moment after the page opens, on machines with a real GPU.
+- Scope: `apps/control-center/src/components/overview-screen.tsx`, `vibetv-3d-preview.tsx`, `vibetv-3d-support.ts` (new), their tests and `apps/control-center/scripts/test-customer-flows.mjs` (wait targets), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+## 2026-10-18 — Overview: 3D stage centered when it replaces the flat preview (#755)
+
+- User approval: none needed — the look is the approved picture overview-A2-center (17.10., #713); this entry records a Codex review fix that centers the 3D stage in its column.
+- Approved customer-visible result: none beyond the approved picture. The 3D VibeTV stays centered on wide windows when it replaces the flat preview.
+- Scope: `apps/control-center/src/components/overview-screen.tsx` (centering wrapper) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+## 2026-10-18 — Overview: flat preview stays until the 3D screen has its theme (#755)
+
+- User approval: none needed — no visible change beyond the approved picture overview-A2-center (17.10., #713); this entry records a Codex review fix that keeps the flat preview on screen until the 3D screen has drawn its theme, so the handover does not show "Loading preview".
+- Approved customer-visible result: none. The handover from the flat preview to the 3D VibeTV no longer passes through a loading state.
+- Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+## 2026-10-18 — Overview: stable handover callback; not-found waits for the busy dialog (#755)
+
+- User approval: none needed — no visible change beyond the approved picture overview-A2-center (17.10., #713). This entry records two Codex review fixes: the 3D handover callback is stable, so the readiness timer is not restarted on each frame poll; and the not-found dialog waits while the system-busy dialog is open.
+- Approved customer-visible result: none. The 3D VibeTV replaces the flat preview as before; only one dialog shows at a time.
+- Scope: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/control-center-app.tsx` (one condition), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+## 2026-10-18 — Overview: Windows flow waits for the heading, not the removed app tile (#755)
+
+- User approval: none needed — no visible change; this entry records a customer-flow script fix: the Windows Overview check waits for the "VibeTV is connected" heading instead of the removed "App" status tile. The check that the Overview does not name a Mac stays.
+- Approved customer-visible result: none. The test script changes what it waits for, not what the customer sees.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+
+## 2026-10-18 — Overview: 3D case shows in disconnected states; hidden 3D is inert (#755)
+
+- User approval: pending — Paul reviews this PR. Before: when VibeTV is disconnected, restarting or waiting for usage, the Overview kept the flat preview. After: the 3D VibeTV case appears in those states too, with the existing offline placeholder ("Live preview paused" / "Reconnect VibeTV to continue") on its screen, as in picture overview-A2-center (Paul, 17.10.).
+- Approved customer-visible result: the flat preview is replaced by the 3D case as soon as its model is drawn, also when VibeTV has no live frame. Screen readers get only the visible preview (the hidden 3D is aria-hidden and inert until it is shown). No other text changes.
+- Scope: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/vibetv-3d-preview.tsx`, `apps/control-center/src/components/overview-screen.test.tsx`, `apps/control-center/scripts/test-customer-flows.mjs` (provider-state flow waits for the rendered theme instead of the offline placeholder disappearing), and this approval record. Codex review fixes on PR #755 only; not merge or release.
+- What's new: none — no new content
+
+## 2026-10-18 — Overview: Windows Basic Render Driver keeps the flat preview (#755)
+
+- User approval: pending — Paul reviews this PR. Before: on a Windows machine whose WebGL is the Microsoft Basic Render Driver (WARP, no GPU), the 3D VibeTV case could start. After: that machine keeps the flat preview, as already designed for software renderers.
+- Approved customer-visible result: on Windows without a GPU the Overview shows the flat VibeTV preview (no 3D case). No text changes.
+- Scope: `apps/control-center/src/components/vibetv-3d-support.ts`, `apps/control-center/src/components/vibetv-3d-support.test.ts`, and this approval record. Codex review fix on PR #755 only; not merge or release.
+- What's new: none — no new content
