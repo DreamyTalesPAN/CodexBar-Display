@@ -6081,10 +6081,14 @@ async function testLocalOverviewRecoversWhenDeviceBecomesReady(
   const installRequests = [];
   const repairRequests = [];
   const deviceReadRequests = [];
+  let statusPolls = 0;
   await routeCompanionOnline(page, installRequests, () => {}, {
     device: reachableUnreadyDevice,
     statusDeviceSequence: [reachableUnreadyDevice, companionDevice],
     onRequest: (pathname, method) => {
+      if (pathname === "/v1/status") {
+        statusPolls += 1;
+      }
       if (pathname === "/v1/device/repair" && method === "POST") {
         repairRequests.push(pathname);
       }
@@ -6098,6 +6102,12 @@ async function testLocalOverviewRecoversWhenDeviceBecomesReady(
   await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
     timeout: 10_000,
   });
+  // The heading shows before the ready status is polled: wait for that poll.
+  await waitForCondition(
+    () => statusPolls >= 2,
+    "expected the ready status response to be served",
+    15_000,
+  );
   // The Overview shows the live VibeTV in 3D (calm Overview, #713).
   await page.getByRole("group", { name: /Interactive VibeTV preview/ }).waitFor({
     timeout: 12_000,

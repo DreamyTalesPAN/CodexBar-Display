@@ -7497,3 +7497,10 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/src/components/control-center-app.tsx` (one condition) and `apps/control-center/src/components/vibetv-3d-preview.tsx` (one timer start), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no new content
 
+## 2026-10-18 — Overview: customer-flow checks follow the calm Overview (#755)
+
+- User approval: none needed — no visible change; this entry records the customer-flow script fix that replaces the removed status tiles with the 3D VibeTV group and the "VibeTV status" heading as the wait targets, and waits for the ready status poll before checking recovery.
+- Approved customer-visible result: none. The test script changes what the flows wait for, not what the customer sees.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
