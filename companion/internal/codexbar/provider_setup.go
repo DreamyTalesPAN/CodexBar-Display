@@ -623,6 +623,9 @@ func providersWithSwitchState(ctx context.Context, bin string, providers []Provi
 		} else if setting := settingByID[provider.ID]; setting != nil {
 			provider.Label = setting.Label
 			provider.Enabled = &setting.Enabled
+			// The row was built before this inventory was read: its sentence
+			// names the provider the way the inventory does now.
+			provider.Detail = providerResultWithSignIn(provider.ID, provider.Status, provider.SignInURL).Detail
 		}
 		reported[provider.ID] = struct{}{}
 		merged = append(merged, provider)

@@ -1087,3 +1087,27 @@ func TestEngineRowKeepsItsSentences(t *testing.T) {
 		}
 	}
 }
+
+// On a fresh Companion the usage call builds the row before the inventory is
+// read; the sentence must still name the provider as the inventory does.
+func TestAggregateRowSentenceUsesTheInventoryLabel(t *testing.T) {
+	t.Cleanup(func() {
+		providerDisplayNamesMu.Lock()
+		defer providerDisplayNamesMu.Unlock()
+		delete(providerDisplayNames, "openai")
+	})
+	providerDisplayNamesMu.Lock()
+	delete(providerDisplayNames, "openai")
+	providerDisplayNamesMu.Unlock()
+	original := runUsageCommandFn
+	t.Cleanup(func() { runUsageCommandFn = original })
+	runUsageCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte(`[{"provider":"openai","displayName":"OpenAI API","enabled":true}]`), nil
+	}
+	rows := providersWithSwitchState(context.Background(), "codexbar-bin",
+		[]ProviderReadiness{providerResult("openai", ProviderAuthRequired)})
+	if len(rows) != 1 || rows[0].Label != "OpenAI API" ||
+		rows[0].Detail != "VibeTV reads OpenAI API usage from OpenAI API's own app, so make sure it is installed and signed in on this computer." {
+		t.Fatalf("aggregate row = %+v", rows)
+	}
+}
