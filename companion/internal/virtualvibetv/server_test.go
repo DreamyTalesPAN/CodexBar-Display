@@ -668,6 +668,27 @@ func virtualHello(t *testing.T) protocol.DeviceHello {
 	return hello
 }
 
+// The firmware's hello lists the primitive types it compiles, in the order of
+// themeCapabilitiesJSON in firmware_esp8266/src/main.cpp; the virtual hello lists
+// the same ones (#354).
+func TestSupportedPrimitiveTypesMatchFirmware(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("..", "..", "..", "firmware_esp8266", "src", "main.cpp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	list := regexp.MustCompile(`supportedPrimitiveTypes\\":\[((?:\\"[a-z]+\\",?)+)\]`).FindSubmatch(source)
+	if list == nil {
+		t.Fatal("no supportedPrimitiveTypes list in the firmware source")
+	}
+	var want []string
+	for _, match := range regexp.MustCompile(`\\"([a-z]+)\\"`).FindAllSubmatch(list[1], -1) {
+		want = append(want, string(match[1]))
+	}
+	if got := virtualHello(t).Capabilities.Theme.SupportedPrimitiveTypes; !slices.Equal(got, want) {
+		t.Fatalf("supportedPrimitiveTypes: virtual=%v firmware=%v", got, want)
+	}
+}
+
 // Like the firmware, an upload that names an MD5 is stored only when its bytes
 // match it (#60); an upload without one is stored as before.
 func TestAssetUploadRefusesBytesThatDoNotMatchTheirHash(t *testing.T) {

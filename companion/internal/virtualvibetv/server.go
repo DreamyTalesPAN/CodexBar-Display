@@ -334,6 +334,7 @@ func (s *Server) handleHello(w http.ResponseWriter, r *http.Request) {
 				MaxThemeGifHeight:        80,
 				MaxThemeGifPixels:        80 * 80,
 				MaxThemeGifLzwBits:       11,
+				SupportedPrimitiveTypes:  []string{"text", "rect", "progress", "gif", "sprite", "pixels"},
 				BuiltinThemes:            []string{"mini-classic", "claude-creature"},
 			},
 			Transport: protocol.TransportCapabilities{Active: "wifi", Supported: []string{"usb", "wifi"}, Mode: "station"},
