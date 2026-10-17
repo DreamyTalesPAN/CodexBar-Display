@@ -65,7 +65,7 @@ export function SetupDeviceCard({
           </ItemDescription>
         </ItemContent>
         <ItemActions>
-          <SelectionCheck selected={selected} />
+          <SelectionCheck className="text-foreground" selected={selected} />
         </ItemActions>
       </button>
     </Item>

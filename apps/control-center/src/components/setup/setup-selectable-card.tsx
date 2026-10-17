@@ -22,12 +22,19 @@ export function selectedItemClass(selected: boolean): string {
  * Always rendered so picking a card cannot reflow the row it sits in; only its
  * opacity changes.
  */
-export function SelectionCheck({ selected }: { selected: boolean }) {
+export function SelectionCheck({
+  className,
+  selected,
+}: {
+  className?: string;
+  selected: boolean;
+}) {
   return (
     <Check
       aria-hidden
       className={cn(
-        "size-4 shrink-0 text-foreground transition-opacity duration-150",
+        "size-4 shrink-0 text-[var(--vibetv-support)] transition-opacity duration-150",
+        className,
         selected ? "opacity-100" : "opacity-0",
       )}
       data-selected={selected || undefined}
