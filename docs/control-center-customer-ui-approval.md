@@ -7525,3 +7525,10 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no new content
 
+## 2026-10-18 — Overview: stable handover callback; not-found waits for the busy dialog (#755)
+
+- User approval: none needed — no visible change beyond the approved picture overview-A2-center (17.10., #713). This entry records two Codex review fixes: the 3D handover callback is stable, so the readiness timer is not restarted on each frame poll; and the not-found dialog waits while the system-busy dialog is open.
+- Approved customer-visible result: none. The 3D VibeTV replaces the flat preview as before; only one dialog shows at a time.
+- Scope: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/control-center-app.tsx` (one condition), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+

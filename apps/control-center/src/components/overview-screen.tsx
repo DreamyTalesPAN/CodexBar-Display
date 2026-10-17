@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type {
   CompanionStatus,
   DeviceInfo,
@@ -55,6 +55,8 @@ export function OverviewScreen({
   // once its model is on screen.
   const [use3D, setUse3D] = useState(false);
   const [threeReady, setThreeReady] = useState(false);
+  // Stable, so the flat preview's handover timer is not restarted on each poll.
+  const onThreeReady = useCallback(() => setThreeReady(true), []);
   useEffect(() => {
     const timer = window.setTimeout(
       () => setUse3D(hardwareWebGLAvailable()),
@@ -90,7 +92,7 @@ export function OverviewScreen({
                 className="aspect-[14/9] max-w-[900px]"
                 device={device}
                 displayFrame={displayFrame}
-                onReady={() => setThreeReady(true)}
+                onReady={onThreeReady}
                 updateOwnedDisconnect={updateOwnedDisconnect}
                 usage={usage || null}
               />
