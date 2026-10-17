@@ -398,7 +398,7 @@ function TokenUsageSkeleton({ providerCount }: { providerCount: number }) {
         <div className="relative mt-8 min-h-96">
           <Skeleton className="h-96 w-full motion-reduce:animate-none" />
         </div>
-        <div className="mt-4 mb-10 flex h-[19.5px] items-center gap-[18px]">
+        <div className="mt-4 mb-10 flex min-h-[19.5px] flex-wrap items-center gap-x-[18px] gap-y-1">
           {Array.from({ length: providerCount }, (_, index) => (
             <Skeleton
               className="h-3.5 w-14 motion-reduce:animate-none"

@@ -7887,7 +7887,26 @@ issue scope, or release permission never implies UI permission.
 - Scope: this approval record only. Pull request branch only, not merge or release.
 - What's new: none — approval record only
 
+## 2026-10-17 — Usage loading blocks: the grey legend blocks wrap on a narrow screen like the legend (Codex review on #724)
+
+- User approval: pending — Paul reviews this PR (fix of a Codex finding on #724); look unchanged on a wide screen. On a narrow screen (about 390 px) with five or more providers, the grey legend blocks now wrap onto a second row instead of being clipped, as the loaded legend does.
+- Approved customer-visible result: none beyond the loading blocks of the entry above. Only the grey legend row changes: it wraps like the loaded legend and keeps its height on one line. No text, no other layout.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (loading legend row only), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — loading state only, no new notice
+
+## 2026-10-17 — Approval record: the #724 loading-legend fix merged into this branch (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the #724 head and changes no screen.
+
 ## 2026-10-17 — Approval record: the #745 head merged into the stack again (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the current #745 head and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-17 — Approval record: the #745 head with the #724 loading-legend fix merged into the stack (no visible change of its own)
 
 - User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
 - Approved customer-visible result: none beyond the entries above; this record restates the merge of the current #745 head and changes no screen.
