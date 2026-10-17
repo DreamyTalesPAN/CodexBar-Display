@@ -960,3 +960,58 @@ describe("UsageScreen", () => {
     expect(onSignIn).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("UsageScreen plan name and extra-usage cap", () => {
+  const claude = (extra: Partial<UsageSnapshot["providers"][number]>): UsageSnapshot => ({
+    ...usage,
+    providers: [
+      {
+        id: "claude",
+        label: "Claude",
+        session: 5,
+        weekly: 10,
+        usageMode: "used",
+        totalTokens: 1200000,
+        ...extra,
+      },
+    ],
+  });
+
+  it("shows the plan name after the provider name, muted", () => {
+    const html = renderUsage(null, claude({ plan: "Max 20x" }));
+    expect(html).toContain(" · Max 20x</span>");
+    expect(html).toContain("Claude");
+  });
+
+  it("shows no plan name when CodexBar sends none", () => {
+    const html = renderUsage(null, claude({}));
+    expect(html).not.toContain("Max 20x");
+  });
+
+  it("shows the monthly extra-usage cap in its currency", () => {
+    const html = renderUsage(
+      null,
+      claude({ spend: { limit: 100, used: 0, currency: "EUR", period: "Monthly cap" } }),
+    );
+    expect(html).toContain("Extra usage €0 of €100 this month");
+  });
+
+  it("formats a USD cap and omits a period other than monthly", () => {
+    const html = renderUsage(
+      null,
+      claude({ spend: { limit: 50, used: 12.5, currency: "USD", period: "Extra usage" } }),
+    );
+    expect(html).toContain("Extra usage $12.5 of $50");
+    expect(html).not.toContain("this month");
+  });
+
+  it("shows no extra-usage line without a cap above zero", () => {
+    expect(renderUsage(null, claude({}))).not.toContain("Extra usage");
+    expect(
+      renderUsage(null, claude({ spend: { limit: 0, used: 0, currency: "Credits", period: "Extra usage" } })),
+    ).not.toContain("Extra usage");
+    expect(
+      renderUsage(null, claude({ spend: { limit: 100, used: 0, currency: "Credits" } })),
+    ).not.toContain("Extra usage");
+  });
+});

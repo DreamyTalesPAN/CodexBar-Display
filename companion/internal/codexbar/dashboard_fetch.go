@@ -196,8 +196,12 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 			parsed.Meta.Windows = nil
 			parsed.Stale = true
 		}
-		out = append(out, parsed)
 		id := strings.ToLower(strings.TrimSpace(provider.ID))
+		parsed.Meta.Plan = strings.TrimSpace(provider.Identity.Plan)
+		if spend, ok := parseProviderSpend(usageItems[id]); ok && usageOK {
+			parsed.Meta.Spend = &spend
+		}
+		out = append(out, parsed)
 		if item, ok := serveUsageItem(provider, usageItems[id], !parsed.Frame.UsageUnavailable); ok {
 			readings[id] = item
 		}

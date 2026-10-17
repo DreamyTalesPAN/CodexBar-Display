@@ -56,6 +56,7 @@ import type {
   UsageCostDay,
   UsageProviderInfo,
   UsageSnapshot,
+  UsageSpendInfo,
 } from "./control-center-types";
 
 /** A provider whose customer must act first; keyed by provider id. */
@@ -561,7 +562,7 @@ function UsageProviderTile({ provider }: { provider: UsageProviderInfo }) {
     />
   ) : null;
   return (
-    <UsageTileFrame name={provider.label || provider.id}>
+    <UsageTileFrame name={provider.label || provider.id} plan={provider.plan}>
       {usageHasNumbers(provider) ? (
         <div className="grid gap-4">
           {lines.map((line, index) => (
@@ -629,16 +630,23 @@ function UsageTileFrame({
   action,
   children,
   name,
+  plan,
 }: {
   action?: ReactNode;
   children: ReactNode;
   name: string;
+  plan?: string;
 }) {
   return (
     <Card className="h-full min-h-[248px] [--card-spacing:--spacing(5)]">
       <CardHeader>
         <CardTitle className="flex flex-wrap items-baseline gap-x-2 break-words text-[13px] font-semibold">
-          {name}
+          <span>
+            {name}
+            {plan ? (
+              <span className="font-normal text-muted-foreground">{` · ${plan}`}</span>
+            ) : null}
+          </span>
           {action}
         </CardTitle>
       </CardHeader>
@@ -771,20 +779,44 @@ function UsageLineView({
   );
 }
 
+// CodexBar's extra-usage cap in its own currency. Nothing without a usable cap.
+function spendText(spend: UsageSpendInfo | undefined): string | null {
+  if (
+    !spend ||
+    !finiteNumber(spend.limit) ||
+    spend.limit <= 0 ||
+    !finiteNumber(spend.used) ||
+    !/^[A-Za-z]{3}$/.test(spend.currency)
+  ) {
+    return null;
+  }
+  const money = (value: number) =>
+    new Intl.NumberFormat("en-US", {
+      currency: spend.currency,
+      maximumFractionDigits: 2,
+      minimumFractionDigits: 0,
+      style: "currency",
+    }).format(value);
+  const period = /^monthly\b/i.test(spend.period ?? "") ? " this month" : "";
+  return `Extra usage ${money(spend.used)} of ${money(spend.limit)}${period}`;
+}
+
 function TokenRow({ provider }: { provider: UsageProviderInfo }) {
   const parts = [
     provider.totalTokens ? `${formatTokenCount(provider.totalTokens)} total` : null,
     provider.weekTokens ? `${formatTokenCount(provider.weekTokens)} this week` : null,
   ].filter(Boolean);
+  const spend = spendText(provider.spend);
 
-  if (parts.length === 0) {
+  if (parts.length === 0 && !spend) {
     return null;
   }
 
   return (
-    <p className="mt-auto pt-5 text-[13px] text-muted-foreground">
-      Tokens: {parts.join(" · ")}
-    </p>
+    <div className="mt-auto grid gap-1 pt-5 text-[13px] text-muted-foreground">
+      {parts.length > 0 ? <p>Tokens: {parts.join(" · ")}</p> : null}
+      {spend ? <p>{spend}</p> : null}
+    </div>
   );
 }
 

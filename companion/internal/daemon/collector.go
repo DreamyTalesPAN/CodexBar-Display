@@ -1192,6 +1192,7 @@ func snapshotWithUsageCleared(snapshot providerSnapshot) providerSnapshot {
 	meta.Windows = nil
 	meta.Credits = nil
 	meta.ResetCredits = nil
+	meta.Spend = nil
 	meta.Pace = nil
 	meta.OverTime = nil
 	snapshot.Meta = meta
