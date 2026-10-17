@@ -1,5 +1,7 @@
+// @vitest-environment jsdom
+import { cleanup, render, screen } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "@/test/axe";
 import type { PreferenceDescriptor, UsageSnapshot } from "./control-center-types";
 import {
@@ -48,6 +50,8 @@ function renderUsage(
 }
 
 describe("UsageScreen", () => {
+  afterEach(cleanup);
+
   it("does not present a partial provider sum as complete token history", () => {
     const html = renderUsage(null, {
       ...usage,
@@ -344,7 +348,7 @@ describe("UsageScreen", () => {
     });
 
     expect(html).toContain('aria-label="Updating"');
-    expect(html).toContain("5,600 total · 3,400 this week");
+    expect(html).toContain("Tokens: 5,600 total · 3,400 this week");
     expect(html).not.toContain("??");
     expect(html).not.toContain("Usage is still loading");
   });
@@ -442,7 +446,7 @@ describe("UsageScreen", () => {
     );
 
     expect(html).toContain("Total tokens in the last 30 days");
-    expect(html).toContain("56 total · 34 this week");
+    expect(html).toContain("Tokens: 56 total · 34 this week");
     expect(html).toContain('aria-label="Updating"');
     expect(html).not.toContain("??");
     expect(html).not.toContain("Provider is not responding right now.");
@@ -667,6 +671,103 @@ describe("UsageScreen", () => {
     });
     expect(html).toContain("Reset in");
     expect(html).not.toContain('aria-label="Updating"');
+  });
+
+  // The header holds only the name. Each reset sits right-aligned on its own
+  // lane row: the first (session or weekly) line for the big number, the
+  // later lines beside their bar.
+  it("puts each reset on its first lane row, not in the tile header", () => {
+    render(
+      <UsageScreen
+        companionStatus="online"
+        onRefresh={vi.fn()}
+        usage={{
+          ...usage,
+          providers: [
+            {
+              id: "claude",
+              label: "Claude",
+              session: 94,
+              weekly: 91,
+              resetSecs: 9469,
+              usageMode: "remaining",
+              stale: false,
+              windows: [
+                { id: "session", label: "Session", usedPercent: 94, resetSecs: 9469 },
+                { id: "weekly", label: "Weekly", usedPercent: 91, resetSecs: 95869 },
+              ],
+            },
+            {
+              id: "codex",
+              label: "Codex",
+              session: 0,
+              weekly: 71,
+              usageMode: "remaining",
+              stale: false,
+              windows: [{ id: "weekly", label: "Weekly", usedPercent: 71, resetSecs: 471073 }],
+            },
+          ],
+        }}
+      />,
+    );
+
+    const sessionReset = screen.getByText("Reset in 2h 37m");
+    const sessionRow = sessionReset.parentElement as HTMLElement;
+    expect(sessionRow.textContent).toBe("94% session remainingReset in 2h 37m");
+    expect(sessionRow.nextElementSibling?.getAttribute("aria-label")).toBe(
+      "94% session remaining",
+    );
+    expect(sessionReset.closest('[data-slot="card-header"]')).toBeNull();
+    expect(
+      sessionReset.closest('[data-slot="card"]')?.querySelector('[data-slot="card-header"]')
+        ?.textContent,
+    ).toBe("Claude");
+
+    const weeklyReset = screen.getByText("Reset in 1d 2h");
+    expect((weeklyReset.parentElement as HTMLElement).textContent).toBe(
+      "91% weekly remainingReset in 1d 2h",
+    );
+
+    const codexReset = screen.getByText("Reset in 5d 10h");
+    expect((codexReset.parentElement as HTMLElement).textContent).toBe(
+      "71% weekly remainingReset in 5d 10h",
+    );
+    expect(
+      codexReset.closest('[data-slot="card"]')?.querySelector('[data-slot="card-header"]')
+        ?.textContent,
+    ).toBe("Codex");
+  });
+
+  // The Updating spinner takes the first line's reset place, same line, right.
+  it("puts the Updating spinner on the first lane row and keeps it out of the header", () => {
+    render(
+      <UsageScreen
+        companionStatus="online"
+        onRefresh={vi.fn()}
+        usage={{
+          ...usage,
+          providers: [
+            {
+              ...usage.providers[0],
+              session: 45,
+              weekly: 26,
+              resetSecs: 3600,
+              stale: true,
+              usageUnavailable: true,
+              sessionUnavailable: true,
+              weeklyUnavailable: true,
+            },
+          ],
+        }}
+      />,
+    );
+
+    const spinner = screen.getByLabelText("Updating");
+    const row = spinner.parentElement as HTMLElement;
+    expect(row.textContent).toBe("45% session used");
+    expect(row.nextElementSibling?.getAttribute("aria-label")).toBe("45% session used");
+    expect(spinner.closest('[data-slot="card-header"]')).toBeNull();
+    expect(screen.queryByText(/Reset in/)).toBeNull();
   });
 
   // Healthy and not stale while token history is still counting: the resets
