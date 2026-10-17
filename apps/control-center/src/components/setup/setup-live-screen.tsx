@@ -56,12 +56,14 @@ export function SetupLiveScreen({
       windowsHost={windowsHost}
     >
       <SetupWizardTitle>Your VibeTV is live</SetupWizardTitle>
-      <LiveVibeTVPreview
-        device={device}
-        displayFrame={displayFrame}
-        onPreviewReady={onPreviewReady}
-        usage={usage}
-      />
+      <div className="mt-6 w-full">
+        <LiveVibeTVPreview
+          device={device}
+          displayFrame={displayFrame}
+          onPreviewReady={onPreviewReady}
+          usage={usage}
+        />
+      </div>
     </SetupWizardScreen>
   );
 }

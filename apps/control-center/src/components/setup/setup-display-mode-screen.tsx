@@ -15,7 +15,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { SETUP_REVEAL } from "./setup-reveal";
-import { SelectionCheck, selectedItemClass } from "./setup-selectable-card";
+import { SelectionDot, selectedItemClass } from "./setup-selectable-card";
 import {
   SetupWizardScreen,
   SetupWizardSubtitle,
@@ -103,7 +103,7 @@ export function SetupDisplayModeScreen({
       <DisplayModeChoice
         automaticPreview={automaticPreview}
         automaticPreviews={automaticPreviews}
-        className="mt-4"
+        className="mt-8"
         manualPreview={manualPreview}
         mode={mode}
         onSelectMode={onSelectMode}
@@ -130,7 +130,7 @@ export function SetupDisplayModeScreen({
           (mode === "fixed" &&
             !providers.some((provider) => provider.id === selectedProviderId))
         }
-        className="mt-4 w-full"
+        className="mt-6 h-11 w-full"
         onClick={onContinue}
         type="button"
       >
@@ -210,11 +210,14 @@ export function DisplayModeChoice({
 
       {mode === "fixed" ? (
         <div className={cn("flex w-full flex-col gap-2 text-left", SETUP_REVEAL)}>
-          <p className="text-sm font-semibold">Show this provider</p>
+          <p className="text-[13px] font-semibold">Show this provider</p>
           {providers.map((provider) => (
             <Item
               asChild
-              className={selectedItemClass(provider.id === selectedProviderId)}
+              className={cn(
+                selectedItemClass(provider.id === selectedProviderId),
+                "px-5 py-3",
+              )}
               key={provider.id}
               variant="outline"
             >
@@ -225,10 +228,10 @@ export function DisplayModeChoice({
                 type="button"
               >
                 <ItemContent>
-                  <ItemTitle>{provider.label}</ItemTitle>
+                  <ItemTitle className="font-semibold">{provider.label}</ItemTitle>
                 </ItemContent>
                 <ItemActions>
-                  <SelectionCheck selected={provider.id === selectedProviderId} />
+                  <SelectionDot selected={provider.id === selectedProviderId} />
                 </ItemActions>
               </button>
             </Item>
@@ -333,12 +336,12 @@ function ModeCard({
       >
         <ItemContent className="gap-0">
           {children}
-          <span className="flex flex-col gap-1.5 px-4 py-3.5">
-            <ItemTitle className="justify-between">
+          <span className="flex flex-col gap-1.5 px-5 py-4">
+            <ItemTitle className="justify-between font-semibold">
               <span>{title}</span>
-              <SelectionCheck selected={selected} />
+              <SelectionDot selected={selected} />
             </ItemTitle>
-            <ItemDescription className="line-clamp-none text-xs leading-[1.5]">
+            <ItemDescription className="line-clamp-none text-[13px] leading-[1.5]">
               {description}
             </ItemDescription>
           </span>

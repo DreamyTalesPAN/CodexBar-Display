@@ -47,7 +47,7 @@ export function SetupWizardScreen({
       <div
         className={cn(
           "my-auto flex w-full flex-col items-center gap-2 text-center",
-          contentWidth === "wide" ? "max-w-[464px]" : "max-w-[460px]",
+          contentWidth === "wide" ? "max-w-[640px]" : "max-w-[460px]",
         )}
       >
         {children}
