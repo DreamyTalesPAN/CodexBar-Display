@@ -5799,7 +5799,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             diagnostics={supportDiagnostics}
             events={logs}
             dismissedError={dismissedSupportError}
-            lastError={supportError}
+            // The runtime repair and the lost-VibeTV picker are centred dialogs
+            // that win over this one (see the arbitration below); two stacked
+            // dialogs leave the lower one's buttons unreachable.
+            lastError={
+              (needsRuntimeRecovery && !runtimeRecoveryHidden) || lostDevicePickerOpen
+                ? null
+                : supportError
+            }
             onDismissError={() => setDismissedSupportError(supportError)}
             onLoadDiagnostics={loadSupportDiagnostics}
             onRefresh={checkCompanion}
