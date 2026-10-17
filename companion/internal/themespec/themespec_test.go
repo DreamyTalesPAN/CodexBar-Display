@@ -1,8 +1,14 @@
 package themespec
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -1356,6 +1362,126 @@ func TestParseValidatesOnlyEffectiveFeatureAliases(t *testing.T) {
 			}
 			if tc.valid && string(raw) != string(installed) {
 				t.Fatal("changed installed JSON")
+			}
+		})
+	}
+}
+
+func TestLoadReadsEveryShippedThemePack(t *testing.T) {
+	root := filepath.Join("..", "..", "..", "theme-packs")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatalf("read theme packs: %v", err)
+	}
+	loaded := 0
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(root, entry.Name(), "theme.json")
+		want, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		spec, raw, err := Load(path)
+		if err != nil {
+			t.Fatalf("Load(%s): %v", path, err)
+		}
+		if spec.ThemeID != entry.Name() {
+			t.Fatalf("Load(%s) ThemeID = %q, want the pack id %q", path, spec.ThemeID, entry.Name())
+		}
+		if len(spec.Primitives) == 0 {
+			t.Fatalf("Load(%s) returned no primitives", path)
+		}
+		if !bytes.Equal(raw, want) {
+			t.Fatalf("Load(%s) raw bytes differ from the file; the installed spec must be uploaded unchanged", path)
+		}
+		loaded++
+	}
+	if loaded == 0 {
+		t.Fatal("no theme packs found under theme-packs/")
+	}
+}
+
+func TestLoadReportsMissingAndInvalidFiles(t *testing.T) {
+	dir := t.TempDir()
+
+	if _, _, err := Load(filepath.Join(dir, "missing.json")); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("missing file: got %v, want fs.ErrNotExist", err)
+	}
+
+	broken := filepath.Join(dir, "broken.json")
+	if err := os.WriteFile(broken, []byte(`{"v":`), 0o600); err != nil {
+		t.Fatalf("write broken spec: %v", err)
+	}
+	if _, _, err := Load(broken); err == nil || !strings.Contains(err.Error(), "parse theme spec") {
+		t.Fatalf("invalid JSON: got %v, want a parse theme spec error", err)
+	}
+}
+
+func TestExpandBindingMapsCompactAliasesToLongNames(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"l", "label"},
+		{"pr", "provider"},
+		{"s", "session"},
+		{"w", "weekly"},
+		{"r", "reset"},
+		{"us1l", "usageSlot1Label"},
+		{"us1p", "usageSlot1Percent"},
+		{"us1r", "usageSlot1Reset"},
+		{"us1a", "usageSlot1Available"},
+		{"us2l", "usageSlot2Label"},
+		{"us2p", "usageSlot2Percent"},
+		{"us2r", "usageSlot2Reset"},
+		{"us2a", "usageSlot2Available"},
+		{"pv1l", "providerSlot1Label"},
+		{"pv1p", "providerSlot1Percent"},
+		{"pv1r", "providerSlot1Reset"},
+		{"pv1a", "providerSlot1Available"},
+		{"pv2l", "providerSlot2Label"},
+		{"pv2p", "providerSlot2Percent"},
+		{"pv2r", "providerSlot2Reset"},
+		{"pv2a", "providerSlot2Available"},
+		{"u", "usageMode"},
+		{"act", "activity"},
+		{"st", "sessionTokens"},
+		{"wt", "weekTokens"},
+		{"tt", "totalTokens"},
+		{" act ", "activity"},
+		{"label", "label"},
+		{"usage.0.percent", "usage.0.percent"},
+		{"", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			if got := expandBinding(tc.in); got != tc.want {
+				t.Fatalf("expandBinding(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestUsageBindingIndexesFindsEveryWindowReference(t *testing.T) {
+	cases := []struct {
+		name  string
+		value string
+		want  []int
+	}{
+		{name: "single", value: "usage.0.percent", want: []int{0}},
+		{name: "inside text template", value: "{usage.3.reset}", want: []int{3}},
+		{name: "several references", value: "usage.1.percent usage.12.reset", want: []int{1, 12}},
+		{name: "missing trailing dot", value: "usage.2", want: nil},
+		{name: "no index", value: "usage.percent", want: nil},
+		{name: "compact slot is not a usage window", value: "usageSlot1Percent", want: nil},
+		{name: "empty", value: "", want: nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := usageBindingIndexes(tc.value); !slices.Equal(got, tc.want) {
+				t.Fatalf("usageBindingIndexes(%q) = %v, want %v", tc.value, got, tc.want)
 			}
 		})
 	}
