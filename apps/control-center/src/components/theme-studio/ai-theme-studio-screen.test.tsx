@@ -243,7 +243,7 @@ describe("Theme Studio send reason", () => {
     expect(sendButton().getAttribute("aria-describedby")).toBe("send-blocked-reason");
   });
 
-  it("shows the same sentence as the chat alert when the design breaks a limit", () => {
+  it("shows a design limit reason once, under the toolbar, not again in the chat alert", () => {
     const text = { ...createDesignElement("text", 1), text: "x".repeat(1100) };
     render(<AIThemeStudioScreen initialTheme={{ packName: "Long text", source: "custom", spec: { ...createBlankThemeSpec(), primitives: [text] } }} />);
 
@@ -251,7 +251,8 @@ describe("Theme Studio send reason", () => {
     const reason = reasonLine()?.textContent;
     expect(reason).toBeTruthy();
     expect(reason).not.toBe("Add at least one visual element.");
-    expect(screen.getByRole("alert").textContent).toBe(`This design needs an adjustment before saving. ${reason}`);
+    expect(screen.queryByText(/This design needs an adjustment/)).toBeNull();
+    expect(screen.getAllByText(reason as string)).toHaveLength(1);
     expect(tooltipOf(sendButton())?.getAttribute("title")).toBe(reason);
   });
 
@@ -261,6 +262,17 @@ describe("Theme Studio send reason", () => {
     expect(sendButton().hasAttribute("disabled")).toBe(true);
     expect(reasonLine()).toBeNull();
     expect(tooltipOf(sendButton())?.hasAttribute("title")).toBe(false);
+  });
+
+  it("keeps the chat alert while no reason line can show, so the reason is never lost", () => {
+    const text = { ...createDesignElement("text", 1), text: "x".repeat(1100) };
+    render(<AIThemeStudioScreen
+      initialTheme={{ packName: "Long text", source: "custom", spec: { ...createBlankThemeSpec(), primitives: [text] } }}
+      installStatus={{ phase: "installing", themeId: "other", title: "Other", startedAt: "10:00:00", logs: [] }}
+    />);
+
+    expect(reasonLine()).toBeNull();
+    expect(screen.getByRole("alert").textContent).toContain("This design needs an adjustment before saving.");
   });
 
   it("gives no reason while the design is being sent", async () => {

@@ -1614,8 +1614,9 @@ export function AIThemeStudioScreen({
                   {error}
                 </p>
               ) : null}
+              {/* The same reason already shows under the toolbar while Send is off (#551). */}
               {document.spec.primitives.length > 0 &&
-              validation.errors.length ? (
+              validation.errors.length && !sendBlockedReason ? (
                 <p role="alert" className="text-sm text-destructive">
                   This design needs an adjustment before saving.{" "}
                   {validation.errors[0]}

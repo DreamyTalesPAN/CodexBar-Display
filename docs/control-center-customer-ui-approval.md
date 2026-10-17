@@ -7601,3 +7601,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as approved in that entry. The reason line is unchanged; the tooltip now comes from a wrapper around the button, because a disabled button takes no hover.
 - Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — refinement of #551
+
+## 2026-10-17 — #551: a design limit reason shows once
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #551); look unchanged except: the chat alert "This design needs an adjustment before saving." is no longer shown for the same reason that the line under ← shows.
+- Approved customer-visible result: pending — before: with a design that breaks a limit, the reason sentence appeared twice (under ← while Send is off, and in the chat alert below the canvas). After: it appears once, under ← (with the tooltip on Send). While no line under ← can show (busy, saving, installing), the chat alert stays as before. Other chat errors are unchanged.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the same sentences as before, shown once
