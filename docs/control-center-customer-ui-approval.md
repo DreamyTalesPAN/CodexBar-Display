@@ -7485,3 +7485,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the entry above; nothing else changes.
 - Scope: `InlineInstallProgress` key in `apps/control-center/src/components/theme-library-screen.tsx`, its test, and this record. Pull request branch only, not merge or release.
 - What's new: none — same steps, one fix to the animation
+
+## 2026-10-17 — Test expectation follows the install steps look
+
+- User approval: none needed for this entry; it changes only a test expectation: the screensaver and theme install test now expects the install's first step as "> Preparing … install." (the entry above), as CI on the previous head showed. No visible change beyond the entry above; not seen by Paul.
+- Approved customer-visible result: as in the entry above; nothing else changes.
+- Scope: `apps/control-center/src/components/control-center-app.screensaver-install.test.tsx` and this record. Pull request branch only, not merge or release.
+- What's new: none — same steps, a test expectation only
