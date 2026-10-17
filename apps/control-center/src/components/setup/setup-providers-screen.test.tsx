@@ -11,6 +11,7 @@ import {
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "@/test/axe";
+import sharedSetupSentences from "./provider-setup-sentences.json";
 import type { PreferenceHealthState, UsageSnapshot } from "../control-center-types";
 import type { ProviderItem } from "../provider-picker";
 import {
@@ -362,6 +363,15 @@ describe("SetupProvidersScreen", () => {
     expect(setupProviderDialogSentence({ ...claudeOut,
       health: { ...claudeOut.health, state: "stale", signInState: "auth_required" } }))
       .toBe("Sign in to Claude so VibeTV can read its usage.");
+  });
+
+  // The setup log reads the same fixture (companion/internal/codexbar,
+  // provider_setup_sentences_test.go): one sentence per state on both sides.
+  it("says the shared fixture sentence per state, as the setup log does", () => {
+    for (const entry of sharedSetupSentences) {
+      const item = provider({ providerId: entry.providerId, label: entry.label, health: entry.state });
+      expect(setupProviderDialogSentence(item), entry.state).toBe(entry.sentence);
+    }
   });
 
   it("offers the sign-in on a stale row whose live check waits for one", () => {
