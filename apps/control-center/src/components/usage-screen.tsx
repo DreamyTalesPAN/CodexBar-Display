@@ -1004,7 +1004,7 @@ const usageProviderChartColors = [
   "var(--chart-5)",
 ] as const;
 
-function buildProviderTokenChart(
+export function buildProviderTokenChart(
   providerHistories: Array<{
     days: UsageCostDay[];
     provider: UsageProviderInfo;
@@ -1026,9 +1026,14 @@ function buildProviderTokenChart(
     }
   });
 
-  const chartData = [...rowsByDay.values()].sort((a, b) =>
-    String(a.day).localeCompare(String(b.day)),
-  );
+  // The token history lists only days with tokens. A day it leaves out is a
+  // day without tokens, not a hole in the data: drawn as a hole it broke a
+  // provider's line into pieces and squeezed the time axis (#579).
+  const days = [...rowsByDay.keys()].sort();
+  const chartData = (calendarDays(days[0], days[days.length - 1]) ?? days).map((day) => ({
+    ...Object.fromEntries(series.map((item) => [item.dataKey, 0])),
+    ...(rowsByDay.get(day) || { day }),
+  }));
   const chartConfig: ChartConfig = Object.fromEntries(
     series.map((item) => [
       item.dataKey,
@@ -1040,6 +1045,24 @@ function buildProviderTokenChart(
   );
 
   return { chartConfig, chartData, series };
+}
+
+/**
+ * Every calendar day from first to last (`YYYY-MM-DD`), both included, or
+ * null when the days cannot be read or lie further apart than a history can
+ * hold; the chart then keeps the reported days as they are.
+ */
+function calendarDays(first: string | undefined, last: string | undefined): string[] | null {
+  const start = Date.parse(`${first}T00:00:00Z`);
+  const end = Date.parse(`${last}T00:00:00Z`);
+  if (Number.isNaN(start) || Number.isNaN(end) || end - start > 400 * 86_400_000) {
+    return null;
+  }
+  const days: string[] = [];
+  for (let time = start; time <= end; time += 86_400_000) {
+    days.push(new Date(time).toISOString().slice(0, 10));
+  }
+  return days;
 }
 
 function clampPercent(value: number): number {

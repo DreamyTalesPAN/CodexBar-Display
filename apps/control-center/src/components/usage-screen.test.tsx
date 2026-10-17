@@ -9,6 +9,7 @@ import {
   usageProviderActionsFor,
   usageTokenHistoryUnavailable,
   usageTokenHistoryUnavailableOnVibeTV,
+  buildProviderTokenChart,
 } from "./usage-screen";
 
 const usage: UsageSnapshot = {
@@ -958,5 +959,48 @@ describe("UsageScreen", () => {
     expect(onOpenSettings).toHaveBeenCalledTimes(1);
     actions.cursor.onAction();
     expect(onSignIn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("token chart days (#579)", () => {
+  const provider = (id: string) => ({ id, label: id });
+  it("draws a day the history leaves out as a day without tokens", () => {
+    const { chartData } = buildProviderTokenChart([
+      { provider: provider("codex"), days: [
+        { day: "2026-09-16", totalTokens: 5 },
+        { day: "2026-09-17", totalTokens: 6 },
+        { day: "2026-09-20", totalTokens: 7 },
+      ] },
+      { provider: provider("claude"), days: [
+        { day: "2026-09-18", totalTokens: 9 },
+      ] },
+    ] as Parameters<typeof buildProviderTokenChart>[0]);
+    expect(chartData).toEqual([
+      { day: "2026-09-16", provider1: 5, provider2: 0 },
+      { day: "2026-09-17", provider1: 6, provider2: 0 },
+      { day: "2026-09-18", provider1: 0, provider2: 9 },
+      { day: "2026-09-19", provider1: 0, provider2: 0 },
+      { day: "2026-09-20", provider1: 7, provider2: 0 },
+    ]);
+  });
+
+  it("keeps every reported day when they lie too far apart to fill in", () => {
+    const { chartData } = buildProviderTokenChart([
+      { provider: provider("codex"), days: [
+        { day: "2024-01-01", totalTokens: 1 },
+        { day: "2024-06-01", totalTokens: 2 },
+        { day: "2026-01-01", totalTokens: 3 },
+      ] },
+    ] as Parameters<typeof buildProviderTokenChart>[0]);
+    expect(chartData.map((row) => row.day)).toEqual(["2024-01-01", "2024-06-01", "2026-01-01"]);
+  });
+
+  it("keeps a single day and an empty history as they are", () => {
+    expect(buildProviderTokenChart([
+      { provider: provider("codex"), days: [{ day: "2026-09-16", totalTokens: 5 }] },
+    ] as Parameters<typeof buildProviderTokenChart>[0]).chartData).toEqual([
+      { day: "2026-09-16", provider1: 5 },
+    ]);
+    expect(buildProviderTokenChart([]).chartData).toEqual([]);
   });
 });

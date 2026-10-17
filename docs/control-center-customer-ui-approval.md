@@ -7764,3 +7764,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: The token line reads "Tokens: 12.7B total · 5.2B this week". A tile's reset is no longer top right next to the provider name: it sits right-aligned on the first line of the tile, on the line with the big percent ("86% session remaining"; for a weekly-first provider such as Codex, on "71% weekly remaining"). The header holds only the name. The Updating spinner takes that place while the tile is quiet. No other wording.
 - Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (tile layout, token line, tests), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — label and layout change only, no new notice
+
+## 2026-10-16 — Usage: the token chart draws a day without tokens as zero, not as a gap (#579, carried from #603)
+
+- User approval: pending — Paul sees a before/after picture on 2026-10-17 (via the review orchestrator); carried from #603.
+- Approved customer-visible result: Not yet seen by Paul. In Usage, each provider's line in the token chart runs unbroken from the first to the last day of the chart; a day on which a provider used no tokens sits on the zero line. Calendar days on which no provider used tokens keep their place on the time axis. Where the first and last reported day lie more than 400 days apart, every reported day is kept as it is, without filling in days. Totals and tooltip values of days with tokens are unchanged; a day without tokens shows 0 in the tooltip.
+- Scope: `usage-screen.tsx`, its test, and this approval record. Stacked on #669; pull request branch only, not merge or release.
+- What's new: none — a correction, nothing new to announce
+
+## 2026-10-17 — Usage: Paul approves the token chart without gaps (#579, carried from #603; refers to the pending entry of 2026-10-16)
+
+- User approval: Paul approved 17.10. (via the communicator): the token chart without gaps (days without tokens drawn at zero).
+- Approved customer-visible result: the token chart as described in the pending entry above: each provider's line runs unbroken, and a day on which a provider used no tokens sits on the zero line, with 0 in the tooltip. Nothing beyond that entry.
+- Scope: this approval record only; no code change in this entry. Pull request branch only, not merge or release.
+- What's new: none — approval record
