@@ -76,17 +76,37 @@ func (s *Server) handleDeviceSelect(w http.ResponseWriter, r *http.Request) {
 	if !decodeOptionalJSON(w, r, &req) {
 		return
 	}
-	device, err := s.selectDevice(
-		r.Context(),
-		strings.TrimSpace(req.Target),
-		strings.TrimSpace(req.ExpectedDeviceID),
-	)
+	target := strings.TrimSpace(req.Target)
+	expectedDeviceID := strings.TrimSpace(req.ExpectedDeviceID)
+	// Exact match: publicTarget would strip credentials, query and fragment
+	// and let a malformed selector reach the Cable pairing flow.
+	if target == cableDeviceTarget {
+		s.selectCableDevice(w, r, expectedDeviceID)
+		return
+	}
+	device, err := s.selectDevice(r.Context(), target, expectedDeviceID)
 	if err != nil {
 		writeRepairError(w, err)
 		return
 	}
 	s.clearAmbiguousDeviceSelection()
 	writeJSON(w, http.StatusOK, deviceActionResponse{OK: true, Device: device})
+}
+
+// selectCableDevice connects the VibeTV on the Cable through the same switch
+// as the connection choice. It never goes through the WiFi repair flow.
+func (s *Server) selectCableDevice(w http.ResponseWriter, r *http.Request, expectedDeviceID string) {
+	s.firmwareUpdateStartMu.Lock()
+	defer s.firmwareUpdateStartMu.Unlock()
+	if s.rejectBusyDevice(w, "Wait for the update to finish, then select the VibeTV again.") {
+		return
+	}
+	device := s.selectConnectionMode(w, r, "cable", expectedDeviceID)
+	if device == nil {
+		return
+	}
+	s.clearAmbiguousDeviceSelection()
+	writeJSON(w, http.StatusOK, deviceActionResponse{OK: true, Device: *device})
 }
 
 func (s *Server) handleDeviceRepair(w http.ResponseWriter, r *http.Request) {
