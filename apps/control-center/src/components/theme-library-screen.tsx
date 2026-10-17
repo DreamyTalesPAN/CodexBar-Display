@@ -757,7 +757,7 @@ export function ThemeLibraryScreen({
               />
             ) : null}
 
-            <ItemGroup className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            <ItemGroup className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
               {libraryThemes.map((theme) => (
                 <ThemeListItem
                   busyAction={busyAction}
@@ -1178,12 +1178,12 @@ function ThemeListItem({
 
   return (
     <Item
-      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-3 rounded-xl p-4"
+      className="gap-3 rounded-[var(--radius-card)] p-4"
       id={item.kind === "published" ? catalogThemeRowId(item.themeId) : undefined}
       role="listitem"
       variant={item.themeId === displayThemeId ? "muted" : "outline"}
     >
-      <ItemMedia className="col-span-2 w-full">
+      <ItemMedia className="basis-full w-full">
         <Button
           aria-label={`Preview ${item.title}`}
           className="h-auto w-full justify-start p-0"
@@ -1194,7 +1194,7 @@ function ThemeListItem({
           <ThemePreview onPack={setPublishedPack} theme={item} />
         </Button>
       </ItemMedia>
-      <ItemContent className="min-w-0">
+      <ItemContent className="min-w-0 flex-1">
         <ItemTitle className="text-[13px] font-semibold">{item.title}</ItemTitle>
         {isCustom ? (
           <Badge variant="secondary">Custom</Badge>
@@ -1205,7 +1205,7 @@ function ThemeListItem({
           </ItemDescription>
         ) : null}
       </ItemContent>
-      <ItemActions className="flex items-center justify-end gap-3">
+      <ItemActions className="ml-auto flex items-center justify-end gap-3">
         <Button
           className="px-0"
           disabled={Boolean(loadingEditorRow)}
@@ -1255,7 +1255,7 @@ function ThemeListItem({
         </Button>
       </ItemActions>
       {visibleInstallStatus ? (
-        <ItemFooter className="col-span-2 block">
+        <ItemFooter className="basis-full block">
           <InlineInstallProgress
             canRetry={!disabled}
             // While Show screensaver is off VibeTV shows none, so "ready on
