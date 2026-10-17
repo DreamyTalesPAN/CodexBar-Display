@@ -1,10 +1,10 @@
 "use client";
 
-import { CircleArrowRight, Wifi } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
-import { Item, ItemSeparator } from "@/components/ui/item";
+import { ItemSeparator } from "@/components/ui/item";
+import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -14,7 +14,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { SetupStepFailedDialog } from "./setup/setup-provider-dialogs";
-import { selectedItemClass } from "./setup/setup-selectable-card";
 import {
   Select,
   SelectContent,
@@ -27,6 +26,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { installedScreensaver } from "@/lib/active-theme-upgrade";
 import { errorForHost } from "@/lib/customer-platform";
+import { cn } from "@/lib/utils";
 import { loadUserThemes } from "@/lib/theme-studio-storage";
 import type { ThemeProduct } from "@/lib/themes";
 import { PreferenceControl } from "./preference-control";
@@ -215,100 +215,6 @@ export function SettingsScreen({
         error={actionError ?? errorForHost(providerError, windowsHost)}
         onOpenChange={(open) => !open && onDismissError()}
       />
-      <SettingsSection title="Connection">
-        <div
-          aria-label="Connection mode"
-          aria-busy={busyAction === "connection-mode"}
-          className="grid grid-cols-2 gap-4"
-          role="group"
-        >
-          {([
-            { mode: "cable", label: "USB-C", description: `Requires a data cable connected to ${thisHost}.`, Icon: CircleArrowRight, supported: cableSupported },
-            { mode: "wifi", label: "WiFi", description: "No cable needed — VibeTV can sit anywhere on your desk.", Icon: Wifi, supported: wifiSupported },
-          ] as const).map(({ mode, label, description, Icon, supported }) => (
-            <Item
-              asChild
-              className={`${selectedItemClass(connectionMode === mode)} max-w-[224px] flex-col items-start gap-2 bg-card p-4 last:justify-self-end disabled:cursor-not-allowed disabled:opacity-50`}
-              key={mode}
-              variant="outline"
-            >
-              <button
-                aria-label={label}
-                aria-pressed={connectionMode === mode}
-                disabled={connectionModeDisabled || !supported}
-                onClick={() => {
-                  if (mode !== connectionMode) setRequestedMode(mode);
-                }}
-                type="button"
-              >
-                <Icon aria-hidden className="size-[18px]" />
-                <span className="text-sm font-semibold">{label}</span>
-                <span className="text-xs leading-normal text-muted-foreground">{description}</span>
-              </button>
-            </Item>
-          ))}
-        </div>
-        {requestedMode !== null ? <Dialog
-          open
-          onOpenChange={(open) => { if (!open) setRequestedMode(null); }}
-        >
-          <DialogContent showCloseButton={false}>
-            <DialogHeader>
-              <DialogTitle>{requestedMode === "cable" ? "Switch to USB-C?" : "Switch to WiFi?"}</DialogTitle>
-              <DialogDescription>
-                {requestedMode === "cable"
-                  ? `Connect VibeTV to ${thisHost} with a data cable. WiFi stays on until the app confirms the cable connection. Your saved network, themes, providers and brightness stay saved.`
-                  : "VibeTV connects to your saved WiFi network. If network details are needed, WiFi setup opens. Themes, providers and brightness stay saved."}
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button onClick={() => setRequestedMode(null)} type="button" variant="outline">
-                {requestedMode === "cable" ? "Keep WiFi" : "Keep USB-C"}
-              </Button>
-              <Button
-                disabled={connectionModeDisabled}
-                onClick={() => {
-                  if (requestedMode && requestedMode !== connectionMode) onConnectionModeChange(requestedMode);
-                  setRequestedMode(null);
-                }}
-                type="button"
-              >
-                {requestedMode === "cable" ? "Switch to USB-C" : "Switch to WiFi"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog> : null}
-      </SettingsSection>
-
-      <ItemSeparator className="my-0" />
-
-      <SettingsSection id="settings-display" title="Display">
-        <BrightnessControl
-          disabled={
-            !brightnessSupport ||
-            !deviceIsReady(device) ||
-            brightness == null ||
-            localActionBusy
-          }
-          id="vibetv-brightness"
-          label="Brightness"
-          max={maxBrightness}
-          min={minBrightness}
-          onSave={onSaveBrightness}
-          onValueChange={onBrightnessChange}
-          value={currentBrightness}
-          valueLabel={
-            !brightnessSupport
-              ? "Not supported"
-              : brightness == null
-                ? "Loading"
-                : `${brightness}%`
-          }
-        />
-      </SettingsSection>
-
-      <ItemSeparator className="my-0" />
-
       <SettingsSection id="settings-display-mode" title="Display mode">
         {providerPicker.displayNotice ? (
           <p className="text-sm text-muted-foreground" role="status">
@@ -393,11 +299,43 @@ export function SettingsScreen({
         ) : null}
       </SettingsSection>
 
+      <ItemSeparator className="my-0" />
+
+      <SettingsSection id="settings-display" title="Brightness">
+        <BrightnessControl
+          disabled={
+            !brightnessSupport ||
+            !deviceIsReady(device) ||
+            brightness == null ||
+            localActionBusy
+          }
+          id="vibetv-brightness"
+          label="Brightness"
+          labelled={false}
+          max={maxBrightness}
+          min={minBrightness}
+          onSave={onSaveBrightness}
+          onValueChange={onBrightnessChange}
+          value={currentBrightness}
+          valueLabel={
+            !brightnessSupport
+              ? "Not supported"
+              : brightness == null
+                ? "Loading"
+                : `${brightness}%`
+          }
+        />
+      </SettingsSection>
+
       {standbySupport ? (
         <>
           <ItemSeparator className="my-0" />
           <SettingsSection title="Screensaver">
-            <Field className="justify-start gap-3" orientation="horizontal">
+            <SettingRow
+              disabled={standbyToggleDisabled}
+              htmlFor="vibetv-standby"
+              label="Show screensaver"
+            >
               <Switch
                 aria-label="Show screensaver"
                 checked={standbyValues.enabled}
@@ -407,10 +345,12 @@ export function SettingsScreen({
                   onSaveStandby({ ...standbyValues, enabled })
                 }
               />
-              <FieldLabel htmlFor="vibetv-standby">Show screensaver</FieldLabel>
-            </Field>
-            <Field data-disabled={standbyDetailsDisabled} orientation="horizontal">
-              <FieldLabel htmlFor="vibetv-standby-timeout">Show after</FieldLabel>
+            </SettingRow>
+            <SettingRow
+              disabled={standbyDetailsDisabled}
+              htmlFor="vibetv-standby-timeout"
+              label="Show after"
+            >
               <Select
                 disabled={standbyDetailsDisabled}
                 onValueChange={(value) =>
@@ -421,7 +361,11 @@ export function SettingsScreen({
                 }
                 value={String(standbyValues.timeoutMinutes)}
               >
-                <SelectTrigger aria-label="Show after" id="vibetv-standby-timeout">
+                <SelectTrigger
+                  aria-label="Show after"
+                  className="w-full"
+                  id="vibetv-standby-timeout"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -433,11 +377,12 @@ export function SettingsScreen({
                   ))}
                 </SelectContent>
               </Select>
-            </Field>
+            </SettingRow>
             <BrightnessControl
               disabled={standbyDetailsDisabled}
               id="vibetv-standby-brightness"
               label="Brightness in screensaver"
+              labelled
               max={maxBrightness}
               min={minBrightness}
               onSave={(brightnessPercent) =>
@@ -447,30 +392,33 @@ export function SettingsScreen({
               value={standbyValues.brightnessPercent}
               valueLabel={`${standbyValues.brightnessPercent}%`}
             />
-            <div className="pt-1">
-              {screensaverLine ? (
-                <span className="mr-2 text-sm text-muted-foreground">
-                  {screensaverLine}
-                </span>
-              ) : null}
-              <a
-                aria-disabled={standbyDetailsDisabled}
-                className={
-                  standbyDetailsDisabled
-                    ? "pointer-events-none inline-block py-1 text-sm font-normal text-foreground underline underline-offset-4 opacity-50"
-                    : "inline-block py-1 text-sm font-normal text-foreground underline underline-offset-4 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                }
-                href="#screensavers"
-                onClick={(event) => {
-                  event.preventDefault();
-                  if (!standbyDetailsDisabled) {
-                    onChooseScreensaver();
+            <div className="flex items-center gap-4">
+              <span aria-hidden className="w-[190px] shrink-0" />
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2">
+                <a
+                  aria-disabled={standbyDetailsDisabled}
+                  className={
+                    standbyDetailsDisabled
+                      ? "pointer-events-none inline-block py-1 text-sm font-normal text-foreground underline underline-offset-4 opacity-50"
+                      : "inline-block py-1 text-sm font-normal text-foreground underline underline-offset-4 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                   }
-                }}
-                tabIndex={standbyDetailsDisabled ? -1 : undefined}
-              >
-                Choose screensaver
-              </a>
+                  href="#screensavers"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    if (!standbyDetailsDisabled) {
+                      onChooseScreensaver();
+                    }
+                  }}
+                  tabIndex={standbyDetailsDisabled ? -1 : undefined}
+                >
+                  Choose screensaver
+                </a>
+                {screensaverLine ? (
+                  <span className="text-sm text-muted-foreground">
+                    {screensaverLine}
+                  </span>
+                ) : null}
+              </div>
             </div>
           </SettingsSection>
         </>
@@ -478,53 +426,117 @@ export function SettingsScreen({
 
       <ItemSeparator className="my-0" />
 
+      <SettingsSection title="Connection">
+        <div
+          aria-label="Connection mode"
+          aria-busy={busyAction === "connection-mode"}
+          className="flex flex-col gap-4"
+          role="group"
+        >
+          {([
+            { mode: "cable", label: "USB-C", description: `Requires a data cable connected to ${thisHost}.`, supported: cableSupported },
+            { mode: "wifi", label: "WiFi", description: "No cable needed — VibeTV can sit anywhere on your desk.", supported: wifiSupported },
+          ] as const).map(({ mode, label, description, supported }) => (
+            <button
+              aria-label={label}
+              aria-pressed={connectionMode === mode}
+              className="grid w-full grid-cols-[16px_minmax(0,1fr)] items-start gap-3 rounded-md text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={connectionModeDisabled || !supported}
+              key={mode}
+              onClick={() => {
+                if (mode !== connectionMode) setRequestedMode(mode);
+              }}
+              type="button"
+            >
+              <RadioMark selected={connectionMode === mode} />
+              <span className="flex flex-col">
+                <span className="font-semibold">{label}</span>
+                <span className="text-muted-foreground">{description}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+        {requestedMode !== null ? <Dialog
+          open
+          onOpenChange={(open) => { if (!open) setRequestedMode(null); }}
+        >
+          <DialogContent showCloseButton={false}>
+            <DialogHeader>
+              <DialogTitle>{requestedMode === "cable" ? "Switch to USB-C?" : "Switch to WiFi?"}</DialogTitle>
+              <DialogDescription>
+                {requestedMode === "cable"
+                  ? `Connect VibeTV to ${thisHost} with a data cable. WiFi stays on until the app confirms the cable connection. Your saved network, themes, providers and brightness stay saved.`
+                  : "VibeTV connects to your saved WiFi network. If network details are needed, WiFi setup opens. Themes, providers and brightness stay saved."}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button onClick={() => setRequestedMode(null)} type="button" variant="outline">
+                {requestedMode === "cable" ? "Keep WiFi" : "Keep USB-C"}
+              </Button>
+              <Button
+                disabled={connectionModeDisabled}
+                onClick={() => {
+                  if (requestedMode && requestedMode !== connectionMode) onConnectionModeChange(requestedMode);
+                  setRequestedMode(null);
+                }}
+                type="button"
+              >
+                {requestedMode === "cable" ? "Switch to USB-C" : "Switch to WiFi"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog> : null}
+      </SettingsSection>
+
+      <ItemSeparator className="my-0" />
+
       <SettingsSection title="Setup">
-        {/* Side by side, each with its own line: one line beside both
+        {/* Each action sits beside its own line: one line beside both
             explained only the first (issue #579). */}
-        <div className="flex flex-wrap items-start gap-x-3 gap-y-4">
-          <div className="flex min-w-0 flex-1 basis-56 flex-col items-start gap-2">
+        <div className="grid grid-cols-[210px_minmax(0,1fr)] items-center gap-4">
+          <Button
+            aria-describedby="vibetv-run-setup-help"
+            className="justify-self-start"
+            disabled={localActionBusy}
+            onClick={onResetSetup}
+            type="button"
+            variant="outline"
+          >
+            {busyAction === "reset-setup" ? (
+              <Spinner data-icon="inline-start" />
+            ) : null}
+            <span>
+              {busyAction === "reset-setup" ? "Resetting" : "Run setup again"}
+            </span>
+          </Button>
+          <p className="text-sm text-muted-foreground" id="vibetv-run-setup-help">
+            Connect {thisHost} to another VibeTV.
+          </p>
+        </div>
+        {onEraseDevice && connectionMode === "cable" ? (
+          <div className="grid grid-cols-[210px_minmax(0,1fr)] items-center gap-4">
             <Button
-              aria-describedby="vibetv-run-setup-help"
-              disabled={localActionBusy}
-              onClick={onResetSetup}
+              aria-describedby="vibetv-factory-reset-help"
+              className="justify-self-start"
+              disabled={localActionBusy || !deviceIsCustomerConnected(device)}
+              onClick={() => setEraseRequested(true)}
               type="button"
               variant="outline"
             >
-              {busyAction === "reset-setup" ? (
+              {busyAction === "erase-device" ? (
                 <Spinner data-icon="inline-start" />
               ) : null}
               <span>
-                {busyAction === "reset-setup" ? "Resetting" : "Run setup again"}
+                {busyAction === "erase-device"
+                  ? "Resetting"
+                  : "Reset to factory settings"}
               </span>
             </Button>
-            <p className="text-sm text-muted-foreground" id="vibetv-run-setup-help">
-              Connect {thisHost} to another VibeTV.
+            <p className="text-sm text-muted-foreground" id="vibetv-factory-reset-help">
+              VibeTV forgets its WiFi details, pairing, settings and themes.
             </p>
           </div>
-          {onEraseDevice && connectionMode === "cable" ? (
-            <div className="flex min-w-0 flex-1 basis-56 flex-col items-start gap-2">
-              <Button
-                aria-describedby="vibetv-factory-reset-help"
-                disabled={localActionBusy || !deviceIsCustomerConnected(device)}
-                onClick={() => setEraseRequested(true)}
-                type="button"
-                variant="outline"
-              >
-                {busyAction === "erase-device" ? (
-                  <Spinner data-icon="inline-start" />
-                ) : null}
-                <span>
-                  {busyAction === "erase-device"
-                    ? "Resetting"
-                    : "Reset to factory settings"}
-                </span>
-              </Button>
-              <p className="text-sm text-muted-foreground" id="vibetv-factory-reset-help">
-                VibeTV forgets its WiFi details, pairing, settings and themes.
-              </p>
-            </div>
-          ) : null}
-        </div>
+        ) : null}
         {eraseRequested ? (
           <Dialog
             open
@@ -606,12 +618,61 @@ function SettingsSection({
   title: string;
 }) {
   return (
-    <section id={id} className="grid grid-cols-1 items-start gap-5 py-8 md:grid-cols-[minmax(0,240px)_minmax(0,1fr)] md:gap-10">
+    <section id={id} className="grid grid-cols-1 items-start gap-5 py-8 md:grid-cols-[minmax(0,240px)_minmax(0,560px)] md:gap-10">
       <div className="min-w-0">
-        <h2 className="text-base font-semibold">{title}</h2>
+        {/* Padded to the centre of the first control row. */}
+        <h2 className="pt-2 text-sm leading-5 font-semibold">{title}</h2>
       </div>
-      <div className="flex min-w-0 max-w-[520px] flex-col gap-4">{children}</div>
+      <div className="flex min-w-0 flex-col gap-5">{children}</div>
     </section>
+  );
+}
+
+/**
+ * One setting inside a section: its name in a fixed muted column, its control
+ * beside it. The control is passed in, so the name keeps its label association.
+ */
+function SettingRow({
+  children,
+  disabled = false,
+  htmlFor,
+  label,
+}: {
+  children: ReactNode;
+  disabled?: boolean;
+  htmlFor: string;
+  label: string;
+}) {
+  return (
+    <div className="flex items-center gap-4" data-disabled={disabled}>
+      <Label
+        className={cn(
+          "w-[190px] shrink-0 font-normal text-muted-foreground",
+          disabled && "opacity-50",
+        )}
+        htmlFor={htmlFor}
+      >
+        {label}
+      </Label>
+      <div className="flex min-w-0 flex-1 items-center">{children}</div>
+    </div>
+  );
+}
+
+/** The round mark of a Settings radio row: a ring, with a dot when chosen. */
+function RadioMark({ selected }: { selected: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "relative mt-0.5 block size-4 rounded-full border-[1.5px]",
+        selected ? "border-foreground" : "border-foreground/40",
+      )}
+    >
+      {selected ? (
+        <span className="absolute inset-[3px] rounded-full bg-foreground" />
+      ) : null}
+    </span>
   );
 }
 
@@ -641,6 +702,7 @@ function BrightnessControl({
   disabled,
   id,
   label,
+  labelled = true,
   max,
   min,
   onSave,
@@ -651,6 +713,8 @@ function BrightnessControl({
   disabled: boolean;
   id: string;
   label: string;
+  /** False when the section heading already names the control. */
+  labelled?: boolean;
   max: number;
   min: number;
   onSave: (value: number) => void;
@@ -659,22 +723,27 @@ function BrightnessControl({
   valueLabel: string;
 }) {
   return (
-    <Field data-disabled={disabled}>
-      {/*
-        The reading belongs beside its label, not on the thumb: following the
-        thumb cost a position calculation and put the number where the cursor
-        already is. Still an <output>, so it is still announced as it changes.
-      */}
-      <div className="flex items-baseline justify-between gap-3">
-        <FieldLabel htmlFor={id}>{label}</FieldLabel>
-        <output
-          className="font-mono text-sm tabular-nums text-muted-foreground"
+    <div className="flex items-center gap-4" data-disabled={disabled}>
+      {labelled ? (
+        <Label
+          className={cn(
+            "w-[190px] shrink-0 font-normal text-muted-foreground",
+            disabled && "opacity-50",
+          )}
           htmlFor={id}
         >
-          {valueLabel}
-        </output>
-      </div>
-      <div className={disabled ? "opacity-50" : undefined}>
+          {label}
+        </Label>
+      ) : (
+        <Label className="sr-only" htmlFor={id}>
+          {label}
+        </Label>
+      )}
+      {/*
+        The reading sits at the end of the row, as an <output>, so it is still
+        announced as it changes.
+      */}
+      <div className={cn("min-w-0 flex-1", disabled && "opacity-50")}>
         <Slider
           aria-label={label}
           disabled={disabled}
@@ -686,6 +755,12 @@ function BrightnessControl({
           value={[value]}
         />
       </div>
-    </Field>
+      <output
+        className="w-10 shrink-0 text-right text-sm tabular-nums text-muted-foreground"
+        htmlFor={id}
+      >
+        {valueLabel}
+      </output>
+    </div>
   );
 }

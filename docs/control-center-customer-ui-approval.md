@@ -7467,3 +7467,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-17 — Settings calm redesign, variant A (#713)
+
+- User approval: pending — Paul reviews this PR (calm redesign Settings, variant A, #713); look: Settings as in `settings-A.png`: each section has its name on the left and a divider, AI providers last.
+- Approved customer-visible result: Settings reads top to bottom as Display mode, Brightness, Screensaver, Connection, Setup, AI providers. Section names sit in a fixed left column, controls on the right. Connection is a list of two radio rows (USB-C, WiFi) with their descriptions instead of two cards. Screensaver rows show the name on the left (Show screensaver, Show after, Brightness in screensaver) and the control beside it. Setup shows each button beside its line. Text before → after: the section heading "Display" becomes "Brightness" (the brightness slider is the only control in it); no other text changes.
+- Scope: `apps/control-center/src/components/settings-screen.tsx` (layout and classes only, same controls, same behaviour), `settings-screen.test.tsx` (pinned section order, headings and row order updated; behaviour assertions unchanged), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a re-arranged Settings page with the same settings needs no notice.
