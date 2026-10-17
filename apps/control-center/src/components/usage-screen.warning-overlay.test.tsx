@@ -37,6 +37,18 @@ it("shows the notice as a dialog over the page, not as text on the page", () => 
   expect(screen.getByLabelText("34% weekly used")).toBeTruthy();
 });
 
+// The page behind the notice is not held: no scrim over the tiles, so they can
+// be pressed under it (the dialog default would swallow those clicks).
+it("leaves the page behind the notice unscrimmed and usable", () => {
+  const { container } = render(
+    <UsageScreen companionStatus="online" onRefresh={vi.fn()} usage={usage} />,
+  );
+
+  const scrim = container.querySelector('div[aria-hidden][class*="fixed"]');
+  expect(scrim).not.toBeNull();
+  expect(scrim?.className).toContain("pointer-events-none");
+});
+
 it("reports the close to its owner when OK is pressed", () => {
   const onDismissTokenHistory = vi.fn();
   render(
