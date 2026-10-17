@@ -387,6 +387,23 @@ describe("UsageScreen", () => {
     ]);
   });
 
+  it("never gives another provider the colour of Claude or Codex", () => {
+    const codex = { ...usage.providers[0], id: "codex", label: "Codex" };
+    const gemini = { ...codex, id: "gemini", label: "Gemini" };
+    const claude = { ...codex, id: "claude", label: "Claude" };
+    const { series } = buildProviderTokenChart([
+      { provider: codex, days: [{ day: "2026-10-01", totalTokens: 7 }] },
+      { provider: gemini, days: [{ day: "2026-10-01", totalTokens: 3 }] },
+    ] as Parameters<typeof buildProviderTokenChart>[0]);
+    const reversed = buildProviderTokenChart([
+      { provider: gemini, days: [{ day: "2026-10-01", totalTokens: 3 }] },
+      { provider: claude, days: [{ day: "2026-10-01", totalTokens: 5 }] },
+    ] as Parameters<typeof buildProviderTokenChart>[0]);
+
+    expect(series.map((item) => item.color)).toEqual(["var(--chart-2)", "var(--chart-3)"]);
+    expect(reversed.series.map((item) => item.color)).toEqual(["var(--chart-3)", "var(--chart-1)"]);
+  });
+
   it("shows a small Refreshing mark by the token total while a manual refresh waits, and no notice", () => {
     const html = renderToStaticMarkup(
       <UsageScreen

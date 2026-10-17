@@ -7800,6 +7800,13 @@ issue scope, or release permission never implies UI permission.
 - Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (chart colour assignment only), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — colour fix only, no new notice
 
+## 2026-10-17 — Usage chart: another provider never takes the colour of Claude or Codex (Codex review on #714)
+
+- User approval: pending — Paul reviews this PR (fix of a second Codex finding on #714); look unchanged: Claude keeps the ink dot and line, Codex the olive, as in the entries above.
+- Approved customer-visible result: none beyond the colours of the entries above. A provider other than Claude and Codex (for example Gemini) now takes one of the three colours left (chart-3 to chart-5) instead of the colour of Codex or Claude, which it could share before. Claude and Codex are unchanged.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (chart colour assignment only), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — colour fix only, no new notice
+
 ## 2026-10-17 — Usage: grey outline of the head and chart while the token history loads (#598, stacked on #714)
 
 - User approval: pending — Paul reviews this PR (fix of a reported defect, #598); look unchanged except: small spinner in the empty chart area → grey outline of the head and chart while loading.
@@ -7813,6 +7820,11 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; pending Paul's review. Proposed: while the token history loads, the grey blocks keep the layout of #714 (head line with the Refresh place, a block at the hero size for the total, the words line, a 384 px chart block, one legend chip per provider below it). No text change.
 - Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (loading block only), and this approval record. Stacked on #714; pull request branch only, not merge or release.
 - What's new: none — loading state only, no new notice
+
+## 2026-10-17 — Approval record: the #714 colour fixes merged into the skeleton (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the #714 colour fixes and changes no screen.
 
 ## 2026-10-17 — Usage: the token history notice opens as an overlay dialog, not a box at the top (stacked on #724)
 
