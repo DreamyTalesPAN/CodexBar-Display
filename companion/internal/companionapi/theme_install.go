@@ -122,7 +122,13 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 	if req.PackBytes != nil {
 		subject = fmt.Sprintf("%x", sha256.Sum256(req.PackBytes))
 	}
-	s.recordSetupEvent(setupEvent{Stage: stage, Status: "started", Message: installText(req.Slot, "Installing theme."), Subject: subject})
+	// The start line names the theme as Recent activity does; the name is the
+	// customer's own text and is not reworded for a screensaver.
+	started := installText(req.Slot, "Installing theme.")
+	if name := strings.TrimSpace(req.ThemeName); name != "" {
+		started = "Installing " + name + "."
+	}
+	s.recordSetupEvent(setupEvent{Stage: stage, Status: "started", Message: started, Subject: subject})
 	if !validRemoteThemePackURL(req.PackURL) || !validRemoteThemePackURL(req.CatalogURL) {
 		writeError(
 			w,
