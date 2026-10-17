@@ -631,6 +631,31 @@ describe("UsageScreen", () => {
     expect(html).toContain('aria-label="Updating"');
   });
 
+  it("keeps a non-current stale provider whose retained lanes are all 0% visible", () => {
+    const html = renderUsage(null, {
+      ...usage,
+      currentProvider: "codex",
+      providers: [
+        usage.providers[0],
+        {
+          id: "claude",
+          label: "Claude",
+          session: 0,
+          weekly: 0,
+          usageMode: "used",
+          stale: true,
+          usageUnavailable: true,
+          sessionUnavailable: true,
+          weeklyUnavailable: true,
+          sessionRetained: true,
+          weeklyRetained: true,
+        },
+      ],
+    });
+    expect(html).toContain("Claude");
+    expect(html).toContain('aria-label="0% session used"');
+  });
+
   it("shows a stale retained 0% window as a number", () => {
     const html = renderUsage(null, {
       ...usage,

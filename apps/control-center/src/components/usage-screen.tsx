@@ -914,6 +914,9 @@ function shouldShowProvider(
 }
 
 function providerHasUsage(provider: UsageProviderInfo): boolean {
+  if (usageRetainedNumbers(provider)) {
+    return true;
+  }
   if (provider.usageMode === "remaining") {
     return provider.session < 100 || provider.weekly < 100;
   }
