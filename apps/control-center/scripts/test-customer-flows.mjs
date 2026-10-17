@@ -1767,7 +1767,7 @@ async function testConnectFirmwareUpdateFailureOffersRetry(browser, appUrl) {
   // does nothing, because the connect sequence looks its candidate up in a
   // device list the successful connect already emptied. Encoding either
   // outcome here would freeze a defect into the suite.
-  await failure.getByRole("button", { name: "Close" }).click();
+  await failure.press("Escape");
   await failure.waitFor({ state: "detached", timeout: 10_000 });
   await waitForSetupDeviceStep(page);
   await page
@@ -3426,7 +3426,7 @@ async function testRunningCompanionOutageKeepsControlCenterOpen(
     "the recovery dialog must stay up while the customer keeps working",
   );
 
-  await recovery.getByRole("button", { name: "Close" }).click();
+  await recovery.press("Escape");
   await recovery.waitFor({ state: "detached", timeout: 10_000 });
 
   await clickNavigation(page, "Overview");
@@ -4689,7 +4689,7 @@ async function testDismissedUsageIncidentSurvivesProbeRefresh(browser, appUrl) {
   );
   await usageDialog.waitFor({ timeout: 10_000 });
 
-  await usageDialog.getByRole("button", { name: "Close" }).click();
+  await usageDialog.press("Escape");
   await usageDialog.waitFor({ state: "detached", timeout: 5_000 });
 
   // One probe refresh: a "checking" answer, then the same failing verdict.
@@ -6198,7 +6198,7 @@ async function testUsageServiceFailureAfterSetupOffersRecovery(
     .getByRole("button", { name: "Create support report" })
     .waitFor();
 
-  await usageDialog.getByRole("button", { name: "Close" }).click();
+  await usageDialog.press("Escape");
   await usageDialog.waitFor({ state: "detached", timeout: 10_000 });
   // Hiding the announcement must give the app back, not leave it behind a scrim.
   await clickNavigation(page, "Usage");
@@ -6269,7 +6269,7 @@ async function testWindowsAppDoesNotSpeakOfAMac(browser, appUrl) {
     !(await usageDialog.innerText()).includes("Mac"),
     "The Windows usage dialog must not name a Mac",
   );
-  await usageDialog.getByRole("button", { name: "Close" }).click();
+  await usageDialog.press("Escape");
   await usageDialog.waitFor({ state: "detached", timeout: 10_000 });
 
   for (const tab of ["Usage", "Settings", "Appearance", "Updates", "Support"]) {
@@ -10743,7 +10743,7 @@ async function testThemeInstallStatusStaysCustomerOnly(browser, appUrl) {
   );
   const popup = page.getByRole("dialog", { name: "Theme install failed.", exact: true });
   await captureMigrationScreenshot(page, "13-theme-install-error-popup.png");
-  await popup.getByRole("button", { name: "Close", exact: true }).click();
+  await popup.press("Escape");
   await page.waitForTimeout(250);
   assert(await popup.count() === 0, "Acknowledged theme failure must stay dismissed through polling");
   await page.getByRole("button", { name: "Try again", exact: true }).click();
@@ -10865,7 +10865,7 @@ async function testCustomerLogsStayCustomerOnly(browser, appUrl) {
     .getByRole("dialog", { name: "Theme install failed.", exact: true })
     .waitFor({ timeout: 10_000 });
 
-  await page.getByRole("dialog", { name: "Theme install failed.", exact: true }).getByRole("button", { name: "Close", exact: true }).click();
+  await page.getByRole("dialog", { name: "Theme install failed.", exact: true }).press("Escape");
   await clickNavigation(page, "Support");
   await page.getByRole("heading", { name: "Recent activity" }).waitFor({
     timeout: 10_000,
