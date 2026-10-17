@@ -1014,7 +1014,7 @@ export function AIThemeStudioScreen({
           <Input
             aria-label="Design name"
             title="Design name"
-            className="h-10 min-w-0 max-w-xs border-transparent bg-transparent px-2 text-[28px] leading-none font-semibold shadow-none hover:border-input focus-visible:border-ring"
+            className="h-10 min-w-0 max-w-xs border-transparent bg-transparent px-2 text-[28px] leading-none font-semibold md:text-[28px] shadow-none hover:border-input focus-visible:border-ring"
             value={document.packName}
             maxLength={48}
             disabled={locked}

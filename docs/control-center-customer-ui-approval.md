@@ -7682,3 +7682,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the entry above; the sent bubble keeps its width to its text (up to 88% of the chat column) and sits on the right.
 - Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and this record. Pull request branch only, not merge or release.
 - What's new: none — refinement of the entry above
+
+## 2026-10-17 — Calm Theme Studio, variant A (#713): Codex review fix, design name stays 28 px on desktop
+
+- User approval: none needed for this entry; it is a Codex review fix (P2) to the design name of the entry above: the shared input sets a smaller size from the desktop width up, which the name now overrides, so the name is 28 px at every width as in the approved picture. Not seen by Paul; the entry above stays pending.
+- Approved customer-visible result: as in the entry above; the design name is 28 px at desktop widths too.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and this record. Pull request branch only, not merge or release.
+- What's new: none — refinement of the entry above
