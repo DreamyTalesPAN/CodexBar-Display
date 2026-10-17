@@ -7764,3 +7764,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: The token line reads "Tokens: 12.7B total · 5.2B this week". A tile's reset is no longer top right next to the provider name: it sits right-aligned on the first line of the tile, on the line with the big percent ("86% session remaining"; for a weekly-first provider such as Codex, on "71% weekly remaining"). The header holds only the name. The Updating spinner takes that place while the tile is quiet. No other wording.
 - Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (tile layout, token line, tests), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — label and layout change only, no new notice
+
+## 2026-10-17 — Usage: "Runs out in" line when CodexBar says a window will not last (#210, #412)
+
+- User approval: pending — Paul reviews this PR (new line from CodexBar's pace, variant A: only when a limit runs out before its reset).
+- Approved customer-visible result: Under a window's bar a red line appears only when CodexBar says that window will not last to its reset: before → after: no line → "Runs out in 2d 15h" (the duration is CodexBar's remaining time, shown with the same format as "Reset in 1d 2h"). No line when CodexBar sends no pace, when the window will last to its reset, or on a stale, quiet or action tile. Nothing else changes.
+- Scope: `apps/control-center/src/components/control-center-types.ts`, `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the line is part of the Usage tile, not an announcement; a What's new entry needs Paul's own decision
+
+## 2026-10-17 — Usage: the "Runs out in" countdown runs from the snapshot time (#210, #412)
+
+- User approval: Codex review fix, no new look; not seen by Paul. It applies one review finding to the pending "Runs out in" line of the entry above: the countdown now starts from the time the reading was taken, as the reset countdown does, and the line disappears once no time is left.
+- Approved customer-visible result: As in the entry above, a red "Runs out in …" line under a window's bar only when CodexBar says that window will not last to its reset. Its duration counts down from when the reading was taken and the line goes away when the time is up. No new wording.
+- Scope: `usage-screen.tsx` (runs-out countdown) and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix, no new notice
