@@ -3,6 +3,7 @@ package codexbar
 import (
 	"context"
 	"errors"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -166,12 +167,44 @@ func TestProbeConfigBootstrapTimeoutIsNotSettingsError(t *testing.T) {
 		t.Fatalf("the cause must name its source: %q", got.Providers[0].Cause)
 	}
 
-	// A bootstrap CodexBar refused is still a settings error.
+	// A bootstrap CodexBar refused without naming a settings problem is an
+	// engine failure, like the inventory read (#527).
 	runConfigBootstrapCommandFn = func(context.Context, string, string, ...string) ([]byte, error) {
 		return nil, errors.New("exit status 1")
 	}
 	got = ProbeProviderSetupForProvider(context.Background(), t.TempDir(), "claude")
+	if got.Engine.Status != ProviderEngineError || got.Providers[0].Status != ProviderEngineError {
+		t.Fatalf("a refused config bootstrap without a settings message must be an engine error: %+v", got)
+	}
+
+	// CodexBar naming its own unreadable config is still a settings error.
+	runConfigBootstrapCommandFn = func(context.Context, string, string, ...string) ([]byte, error) {
+		return nil, &exec.ExitError{Stderr: []byte("Error: Failed to decode CodexBar config: broken")}
+	}
+	got = ProbeProviderSetupForProvider(context.Background(), t.TempDir(), "claude")
 	if got.Engine.Status != ProviderConfigError || got.Providers[0].Status != ProviderConfigError {
-		t.Fatalf("a refused config bootstrap must stay a settings error: %+v", got)
+		t.Fatalf("CodexBar's own settings error must stay a settings error: %+v", got)
+	}
+}
+
+// #527: a CodexBar that cannot be started for its first config dump is an
+// engine failure, the same as when the inventory read cannot start.
+func TestProbeConfigBootstrapThatCouldNotRunIsEngineError(t *testing.T) {
+	skipMacCLIContract(t)
+	originalBootstrap := runConfigBootstrapCommandFn
+	t.Cleanup(func() { runConfigBootstrapCommandFn = originalBootstrap })
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	writeExecutable(t, bin)
+	t.Setenv("CODEXBAR_BIN", bin)
+	t.Setenv("CODEXBAR_CONFIG", filepath.Join(t.TempDir(), "config.json"))
+	runConfigBootstrapCommandFn = func(context.Context, string, string, ...string) ([]byte, error) {
+		return nil, errors.New("fork/exec CodexBarCLI: resource temporarily unavailable")
+	}
+	got := ProbeProviderSetupForProvider(context.Background(), t.TempDir(), "claude")
+	if got.Engine.Status != ProviderEngineError || len(got.Providers) != 1 || got.Providers[0].Status != ProviderEngineError {
+		t.Fatalf("a CodexBar that could not run must end as engine error: %+v", got)
+	}
+	if !strings.Contains(got.Providers[0].Cause, "resource temporarily unavailable") {
+		t.Fatalf("the cause must keep the reason: %q", got.Providers[0].Cause)
 	}
 }
