@@ -31,7 +31,10 @@ type VibeTV3DPreviewProps = {
   className?: string;
   device: DeviceInfo | null;
   displayFrame: DisplayFrameSnapshot | null;
-  /** Called once the 3D screen has its theme; the caller then drops its flat preview. */
+  /**
+   * Called on the first frame with the model on screen, whether or not VibeTV
+   * has a live frame to show; the caller then drops its flat preview.
+   */
   onReady?: () => void;
   updateOwnedDisconnect?: boolean;
   usage: UsageSnapshot | null;
@@ -84,6 +87,11 @@ export function VibeTV3DPreview({
   const cssLayerRef = useRef<HTMLDivElement>(null);
   const [screenHost, setScreenHost] = useState<HTMLDivElement | null>(null);
   const [modelFailed, setModelFailed] = useState(false);
+  const onReadyRef = useRef(onReady);
+
+  useEffect(() => {
+    onReadyRef.current = onReady;
+  }, [onReady]);
 
   useEffect(() => {
     if (modelFailed) return;
@@ -158,6 +166,10 @@ export function VibeTV3DPreview({
     controls.rotateSpeed = 0.6;
     // Counted from mount: the first frame of a new Overview must not sway.
     let touchedAt = performance.now();
+    // Set once the model and its screen are in the scene; announced after the
+    // first frame that draws them.
+    let modelShown = false;
+    let announced = false;
     let dragging = false;
     controls.addEventListener("start", () => { dragging = true; });
     controls.addEventListener("end", () => {
@@ -185,6 +197,10 @@ export function VibeTV3DPreview({
         dirty = false;
         renderer.render(scene, camera);
         cssRenderer.render(cssScene, camera);
+        if (modelShown && !announced) {
+          announced = true;
+          onReadyRef.current?.();
+        }
       }
     };
 
@@ -240,6 +256,7 @@ export function VibeTV3DPreview({
         screen.rotation.x = GLASS_TILT;
         screen.scale.set(GLASS_WIDTH * MM / SCREEN_PX, GLASS_HEIGHT * MM / SCREEN_PX, 1);
         screenPivot.add(screen);
+        modelShown = true;
         dirty = true;
         setScreenHost(host);
       },
@@ -287,7 +304,6 @@ export function VibeTV3DPreview({
         <LiveVibeTVPreview
           device={device}
           displayFrame={displayFrame}
-          onPreviewReady={onReady}
           screenOnly
           updateOwnedDisconnect={updateOwnedDisconnect}
           usage={usage}

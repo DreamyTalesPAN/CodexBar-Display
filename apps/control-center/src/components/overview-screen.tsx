@@ -52,7 +52,8 @@ export function OverviewScreen({
   );
   // The heading and the flat live preview come first. The 3D case starts after
   // the first paint, only on a hardware WebGL, and replaces the flat preview
-  // once its model is on screen.
+  // once its model is on screen; the device screen inside shows the live
+  // state, or the offline placeholder when VibeTV has no live frame.
   const [use3D, setUse3D] = useState(false);
   const [threeReady, setThreeReady] = useState(false);
   // Stable, so the flat preview's handover timer is not restarted on each poll.
@@ -82,11 +83,15 @@ export function OverviewScreen({
         <div className="relative mt-6 flex w-full justify-center">
           {use3D ? (
             <div
+              // Until the 3D is revealed it is only drawn in the background:
+              // the flat preview is the one screen readers get.
+              aria-hidden={threeReady ? undefined : true}
               className={
                 threeReady
                   ? "flex w-full justify-center"
                   : "absolute inset-0 flex justify-center opacity-0"
               }
+              inert={threeReady ? undefined : true}
             >
               <VibeTV3DPreview
                 className="aspect-[14/9] max-w-[900px]"

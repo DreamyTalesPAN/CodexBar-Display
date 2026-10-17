@@ -2714,7 +2714,9 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       .getByRole("heading", { name: "VibeTV is connected" })
       .waitFor({ timeout: 10_000 });
     // The Overview shows the live VibeTV; without a hardware GPU it is the flat preview (#713).
-    await page.getByLabel("VibeTV live preview is offline").waitFor({ state: "detached", timeout: 10_000 });
+    // The rendered theme (its image label starts "Rendered VibeTV") is the proof: the
+    // loading state has no such image, so the checks below run after the preview drew.
+    await page.getByRole("img", { name: /^Rendered VibeTV / }).waitFor({ timeout: 15_000 });
     assert(
       (await page.getByText("AI provider", { exact: true }).count()) === 0,
       "Overview must not guess or show an AI provider",

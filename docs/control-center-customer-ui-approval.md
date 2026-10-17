@@ -7539,3 +7539,10 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no new content
 
+
+## 2026-10-18 — Overview: 3D case shows in disconnected states; hidden 3D is inert (#755)
+
+- User approval: pending — Paul reviews this PR. Before: when VibeTV is disconnected, restarting or waiting for usage, the Overview kept the flat preview. After: the 3D VibeTV case appears in those states too, with the existing offline placeholder ("Live preview paused" / "Reconnect VibeTV to continue") on its screen, as in picture overview-A2-center (Paul, 17.10.).
+- Approved customer-visible result: the flat preview is replaced by the 3D case as soon as its model is drawn, also when VibeTV has no live frame. Screen readers get only the visible preview (the hidden 3D is aria-hidden and inert until it is shown). No other text changes.
+- Scope: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/vibetv-3d-preview.tsx`, `apps/control-center/src/components/overview-screen.test.tsx`, `apps/control-center/scripts/test-customer-flows.mjs` (provider-state flow waits for the rendered theme instead of the offline placeholder disappearing), and this approval record. Codex review fixes on PR #755 only; not merge or release.
+- What's new: none — no new content
