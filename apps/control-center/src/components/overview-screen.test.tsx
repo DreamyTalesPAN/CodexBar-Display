@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "@/test/axe";
@@ -96,54 +96,6 @@ describe("OverviewScreen", () => {
     );
 
     expect(html).not.toContain("Change connection");
-  });
-
-  it("shows the not-found dialog with a lime primary, Not now and no close button", () => {
-    const onRunSetupAgain = vi.fn();
-    render(
-      <OverviewScreen
-        companionStatus="online"
-        device={{
-          active: true,
-          connected: false,
-          deviceId: "14799300",
-          paired: true,
-          ready: false,
-          stream: { errorCode: "device_not_found", healthy: false, running: true },
-        }}
-        onRunSetupAgain={onRunSetupAgain}
-      />,
-    );
-
-    const dialog = screen.getByRole("dialog", { name: "We couldn't find your VibeTV" });
-    expect(dialog.textContent).toContain(
-      "Check that VibeTV is plugged in and on the same WiFi as this Mac.",
-    );
-    expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Run setup again" }).className).toContain("bg-primary");
-    expect(screen.getByRole("button", { name: "Not now" }).className).not.toContain("bg-primary");
-
-    fireEvent.click(screen.getByRole("button", { name: "Run setup again" }));
-    expect(onRunSetupAgain).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("dialog", { name: "We couldn't find your VibeTV" })).toBeNull();
-  });
-
-  it("closes the not-found dialog with Not now", () => {
-    render(
-      <OverviewScreen
-        companionStatus="online"
-        device={{
-          active: true,
-          connected: false,
-          paired: true,
-          ready: false,
-          stream: { errorCode: "device_not_found", healthy: false, running: true },
-        }}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Not now" }));
-    expect(screen.queryByRole("dialog", { name: "We couldn't find your VibeTV" })).toBeNull();
   });
 
   it("falls back to the flat live preview when WebGL is unavailable", async () => {

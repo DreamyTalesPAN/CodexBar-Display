@@ -7475,3 +7475,11 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/src/components/overview-screen.tsx`, `vibetv-3d-preview.tsx` (new, three.js case from #465), `live-vibetv-preview.tsx` (`screenOnly`), `control-center-app.tsx` (one callback), the `/models/` route in the companion, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — the Overview look only; the 3D case is shipped as the look of this page
 
+
+## 2026-10-17 — Overview: Codex review fixes for the not-found dialog (#755)
+
+- User approval: none needed — the look is Paul's approved picture overview-A2-center (17.10., #713); this entry records the Codex fixes only, which change when the not-found dialog shows, not how it looks.
+- Approved customer-visible result: none beyond the approved picture. The not-found dialog is no longer shown during a firmware update, and it waits behind the other dialogs, like What's new does. Text, buttons and layout stay the same.
+- Scope: `apps/control-center/src/components/vibetv-not-found-dialog.tsx` (new), `overview-screen.tsx` (dialog removed from the page), `control-center-app.tsx` (dialog in the app dialog order), the tests for them, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the fix changes no new content
+

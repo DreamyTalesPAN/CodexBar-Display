@@ -1,14 +1,11 @@
 "use client";
 
-import { CircleAlert } from "lucide-react";
-import { useState } from "react";
 import type {
   CompanionStatus,
   DeviceInfo,
   UsageSnapshot,
 } from "./control-center-types";
 import { deviceIsCustomerConnected } from "./control-center-types";
-import { SetupDialog } from "./setup/setup-dialog";
 import type { DisplayFrameSnapshot } from "./live-vibetv-preview";
 import { VibeTV3DPreview } from "./vibetv-3d-preview";
 
@@ -21,8 +18,6 @@ type OverviewScreenProps = {
     phase?: string;
     stage?: string;
   } | null;
-  /** Opens the existing "Run setup again?" confirmation. */
-  onRunSetupAgain?: () => void;
   usage?: UsageSnapshot | null;
   /** The app runs on Windows; the wording says "computer" instead of "Mac". */
   windowsHost?: boolean;
@@ -38,18 +33,12 @@ export function OverviewScreen({
   device,
   displayFrame = null,
   firmwareUpdateStatus = null,
-  onRunSetupAgain,
   usage,
-  windowsHost = false,
 }: OverviewScreenProps) {
   const connected = deviceIsCustomerConnected(device);
   const updateOwnedDisconnect = Boolean(
     !connected && firmwareUpdateStatus?.phase === "installing",
   );
-  const notFound =
-    !connected && device?.stream?.errorCode === "device_not_found";
-  // "Not now" hides the dialog until this Overview is opened again.
-  const [notFoundDismissed, setNotFoundDismissed] = useState(false);
 
   return (
     <div className="mx-auto max-w-[1180px] py-4">
@@ -76,25 +65,6 @@ export function OverviewScreen({
         </div>
       </section>
 
-      <SetupDialog
-        description={`Check that VibeTV is plugged in and on the same WiFi as this ${windowsHost ? "computer" : "Mac"}.`}
-        icon={CircleAlert}
-        onOpenChange={() => setNotFoundDismissed(true)}
-        open={notFound && !notFoundDismissed}
-        primaryAction={{
-          label: "Run setup again",
-          onSelect: () => {
-            setNotFoundDismissed(true);
-            onRunSetupAgain?.();
-          },
-        }}
-        secondaryAction={{
-          label: "Not now",
-          onSelect: () => setNotFoundDismissed(true),
-        }}
-        showCloseButton={false}
-        title="We couldn't find your VibeTV"
-      />
     </div>
   );
 }
