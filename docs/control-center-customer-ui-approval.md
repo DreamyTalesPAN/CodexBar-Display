@@ -7467,3 +7467,11 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-17 — Overview: centered 3D VibeTV, no tiles, not-found dialog (#713)
+
+- User approval: Paul 17.10. approved the picture overview-A2-center (3D VibeTV centered, no tiles, not-found dialog lime + Not now) (#713).
+- Approved customer-visible result: Overview shows only the VibeTV as a 3D model, centered, under the status line "VibeTV is connected" (or "VibeTV status", "VibeTV is restarting" as before). The Mac App, VibeTV, Display and firmware tiles and the "Connected" badge are removed. When VibeTV is not found, a dialog "We couldn't find your VibeTV" with "Check that VibeTV is plugged in and on the same WiFi as this Mac." (computer on Windows), the lime "Run setup again" and "Not now", and no close button, is shown over the page.
+- Scope: `apps/control-center/src/components/overview-screen.tsx`, `vibetv-3d-preview.tsx` (new, three.js case from #465), `live-vibetv-preview.tsx` (`screenOnly`), `control-center-app.tsx` (one callback), the `/models/` route in the companion, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the Overview look only; the 3D case is shipped as the look of this page
+

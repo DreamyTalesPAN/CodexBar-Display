@@ -5645,6 +5645,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                 device={device}
                 displayFrame={displayFrame}
                 firmwareUpdateStatus={firmwareUpdateStatus}
+                onRunSetupAgain={() => setSetupAgainRequested(true)}
                 usage={usage}
                 windowsHost={windowsHost}
               />
