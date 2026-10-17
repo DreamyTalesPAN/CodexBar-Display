@@ -644,6 +644,57 @@ describe("UsageScreen", () => {
     expect(html).not.toContain('aria-label="Updating"');
   });
 
+  // CodexBar's pace: the line appears under the window only when CodexBar says
+  // the window will not last to its reset.
+  describe("runs-out line from CodexBar's pace", () => {
+    const weekly = { id: "weekly", label: "Weekly", usedPercent: 54, resetSecs: 500000 };
+
+    it("shows the runs-out line when CodexBar says the window will not last", () => {
+      const html = renderUsage(null, {
+        ...usage,
+        providers: [
+          {
+            ...usage.providers[0],
+            windows: [{ ...weekly, willLastToReset: false, etaSeconds: 230241 }],
+          },
+        ],
+      });
+      expect(html).toContain("Runs out in 2d 15h");
+      expect(html).toContain('class="text-[13px] text-destructive"');
+    });
+
+    it("shows no runs-out line when the window will last to its reset", () => {
+      const html = renderUsage(null, {
+        ...usage,
+        providers: [{ ...usage.providers[0], windows: [{ ...weekly, willLastToReset: true }] }],
+      });
+      expect(html).not.toContain("Runs out in");
+    });
+
+    it("shows no runs-out line without CodexBar's pace", () => {
+      const html = renderUsage(null, {
+        ...usage,
+        providers: [{ ...usage.providers[0], windows: [weekly] }],
+      });
+      expect(html).not.toContain("Runs out in");
+    });
+
+    it("shows no runs-out line on a stale tile", () => {
+      const html = renderUsage(null, {
+        ...usage,
+        providers: [
+          {
+            ...usage.providers[0],
+            stale: true,
+            windows: [{ ...weekly, willLastToReset: false, etaSeconds: 230241 }],
+          },
+        ],
+      });
+      expect(html).not.toContain("Runs out in");
+      expect(html).toContain('aria-label="Updating"');
+    });
+  });
+
   // Healthy and not stale while token history is still counting: the resets
   // stay, the spinner stays away, and each window shows its own reset.
   it("shows the resets of healthy, fresh tiles while token history still counts", () => {

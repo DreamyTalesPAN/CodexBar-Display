@@ -56,6 +56,7 @@ import type {
   UsageCostDay,
   UsageProviderInfo,
   UsageSnapshot,
+  UsageWindowInfo,
 } from "./control-center-types";
 
 /** A provider whose customer must act first; keyed by provider id. */
@@ -678,8 +679,16 @@ type UsageLine = {
   label: string;
   percent: number;
   resetText: string | null;
+  runsOutText: string | null;
   unavailable: boolean;
 };
+
+// Shown only when CodexBar says the window will not last to its reset.
+function runsOutText(window: UsageWindowInfo): string | null {
+  return window.willLastToReset === false && finiteNumber(window.etaSeconds) && window.etaSeconds > 0
+    ? `Runs out in ${formatResetCountdown(window.etaSeconds)}`
+    : null;
+}
 
 function usageLines(
   provider: UsageProviderInfo,
@@ -701,6 +710,7 @@ function usageLines(
       label: window.label.toLowerCase(),
       percent: clampPercent(window.usedPercent),
       resetText: resetText(window.resetSecs),
+      runsOutText: quiet ? null : runsOutText(window),
       unavailable: laneUnavailable(window.usedPercent),
     }));
   }
@@ -712,6 +722,7 @@ function usageLines(
       label: "session",
       percent: clampPercent(provider.session),
       resetText: session ? null : resetText(provider.resetSecs),
+      runsOutText: null,
       unavailable: session,
     },
     {
@@ -719,6 +730,7 @@ function usageLines(
       label: "weekly",
       percent: clampPercent(provider.weekly),
       resetText: weekly ? null : resetText(provider.resetSecs),
+      runsOutText: null,
       unavailable: weekly,
     },
   ];
@@ -765,6 +777,9 @@ function UsageLineView({
         </div>
       )}
       <Progress aria-label={text} className="h-1.5" value={line.percent} />
+      {line.runsOutText ? (
+        <p className="text-[13px] text-destructive">{line.runsOutText}</p>
+      ) : null}
     </div>
   );
 }

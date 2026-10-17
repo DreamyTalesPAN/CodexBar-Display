@@ -7757,3 +7757,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No change. A healthy, fresh tile shows its reset time top-right and on each later window line while the token history is still counting, with no spinner. No new wording.
 - Scope: `usage-screen.test.tsx` (one new test), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — test only, no customer-visible change
+
+## 2026-10-17 — Usage: "Runs out in" line when CodexBar says a window will not last (#210, #412)
+
+- User approval: pending — Paul reviews this PR (new line from CodexBar's pace, variant A: only when a limit runs out before its reset).
+- Approved customer-visible result: Under a window's bar a red line appears only when CodexBar says that window will not last to its reset: before → after: no line → "Runs out in 2d 15h" (the duration is CodexBar's remaining time, shown with the same format as "Reset in 1d 2h"). No line when CodexBar sends no pace, when the window will last to its reset, or on a stale, quiet or action tile. Nothing else changes.
+- Scope: `apps/control-center/src/components/control-center-types.ts`, `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the line is part of the Usage tile, not an announcement; a What's new entry needs Paul's own decision
