@@ -7467,3 +7467,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-17 — Setup log uses the popup sentence per provider state (stacked on #697)
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect found in the #697 review: one sentence per state in the setup log and the popup); look unchanged except: the setup log line of a failing provider now says the popup sentence of its state. Per state, before → after: signed out, own app "This provider needs an active sign-in." → "VibeTV reads <Label> usage from <Label>'s own app, so make sure it is installed and signed in on this computer." or "Sign in to <Label> so VibeTV can read its usage."; browser sign-in "<Label> usage needs a signed-in <host> session in your browser." → "Sign in to <Label> in your browser, then close the browser."; permission "macOS blocked access required by this provider." → "Allow access on this computer so VibeTV can read <Label> usage."; unsupported, no usage, timeout, rate limit, engine too old, unknown or config failure → the popup sentence of the same state. The popup itself is unchanged.
+- Approved customer-visible result: the setup log line of a failing provider says the same sentence as the Control Center popup for that state; the next-step line and the popup are unchanged.
+- Scope: `companion/internal/codexbar/provider_setup.go` (sentences of the setup log), the shared fixture `apps/control-center/src/components/setup/provider-setup-sentences.json` and the tests. Pull request branch only, not merge or release.
+- What's new: none — the setup log sentences only; the popup and the screen layout are unchanged.

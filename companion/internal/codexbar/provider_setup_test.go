@@ -1005,15 +1005,48 @@ func TestPermissionCopyNamesTheHostSystem(t *testing.T) {
 
 	providerCopyGOOS = "darwin"
 	mac := providerResult("claude", ProviderPermissionRequired)
-	if mac.Detail != "macOS blocked access required by this provider." ||
+	if mac.Detail != "Allow access on this computer so VibeTV can read Claude usage." ||
 		mac.NextAction != "Allow the requested macOS permission, then check again." {
 		t.Fatalf("macOS copy changed: %+v", mac)
 	}
 
 	providerCopyGOOS = "windows"
 	windows := providerResult("claude", ProviderPermissionRequired)
-	if windows.Detail != "Windows blocked access required by this provider." ||
+	if windows.Detail != "Allow access on this computer so VibeTV can read Claude usage." ||
 		windows.NextAction != "Allow the requested access, then check again." {
 		t.Fatalf("Windows copy = %+v", windows)
+	}
+}
+
+// The setup log and the Control Center popup say one sentence per state. The
+// shared fixture lists both: setup-providers-screen.test.tsx reads the same file.
+func TestSetupLogSentencesMatchThePopupFixture(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "apps", "control-center", "src", "components", "setup", "provider-setup-sentences.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entries []struct {
+		State      string `json:"state"`
+		ProviderID string `json:"providerId"`
+		Label      string `json:"label"`
+		Sentence   string `json:"sentence"`
+	}
+	if err := json.Unmarshal(raw, &entries); err != nil || len(entries) == 0 {
+		t.Fatalf("fixture unreadable or empty: %v", err)
+	}
+	for _, entry := range entries {
+		status := entry.State
+		if status == "unavailable" {
+			// The popup's default presentation; the engine's own default is
+			// the status every unknown answer maps to.
+			status = ProviderEngineError
+		}
+		row := providerResult(entry.ProviderID, status)
+		if row.Label != entry.Label {
+			t.Fatalf("%s: label %q, popup says %q", entry.State, row.Label, entry.Label)
+		}
+		if row.Detail != entry.Sentence {
+			t.Errorf("%s (%s): setup log says %q, popup says %q", entry.State, entry.ProviderID, row.Detail, entry.Sentence)
+		}
 	}
 }

@@ -883,6 +883,42 @@ func ProviderErrorKind(id, detail string) string {
 // permission to allow (#479). A variable so tests cover both hosts.
 var providerCopyGOOS = runtime.GOOS
 
+// signInStartableProviders are the providers whose sign-in the Companion starts
+// itself (companionapi/provider_sign_in_launch.go; a test there pins the list).
+// Their signed-out sentence offers the sign-in, every other provider's says
+// the app has to be signed in on this computer.
+var signInStartableProviders = []string{"codex", "claude", "cursor", "antigravity"}
+
+// SignInStartableProviderIDs lists the providers in signInStartableProviders.
+func SignInStartableProviderIDs() []string {
+	return slices.Clone(signInStartableProviders)
+}
+
+// ProviderSignInStartable reports whether the Companion starts the sign-in of
+// this provider.
+func ProviderSignInStartable(id string) bool {
+	return slices.Contains(signInStartableProviders, strings.ToLower(strings.TrimSpace(id)))
+}
+
+// The setup log and the Control Center popup say the same sentence for the
+// same state (Paul, 16.10.; the popup sentences of #642 are the source). Keep
+// these in step with setupProviderDialogSentence in
+// apps/control-center/src/components/setup/setup-providers-screen.tsx: the
+// shared fixture provider-setup-sentences.json pins both sides.
+
+// providerSignInSentence is the signed-out sentence of a provider.
+func providerSignInSentence(id, label string) string {
+	if ProviderSignInStartable(id) {
+		return "Sign in to " + label + " so VibeTV can read its usage."
+	}
+	return "VibeTV reads " + label + " usage from " + label + "'s own app, so make sure it is installed and signed in on this computer."
+}
+
+// providerCouldNotReadSentence is the sentence for a failure VibeTV retries by itself.
+func providerCouldNotReadSentence(label string) string {
+	return "VibeTV could not read " + label + " usage right now and tries again by itself."
+}
+
 func providerResult(id, status string) ProviderReadiness {
 	return providerResultWithSignIn(id, status, "")
 }
@@ -897,46 +933,45 @@ func providerResultWithSignIn(id, status, signInURL string) ProviderReadiness {
 	case ProviderReady:
 		result.Detail = "Usage data is available."
 	case ProviderAuthRequired:
-		result.Detail = "This provider needs an active sign-in."
+		result.Detail = providerSignInSentence(id, label)
 		result.NextAction = "Sign in to this provider, then check again."
 	case ProviderBrowserSignInRequired:
 		host := signInHost(signInURL)
-		result.Detail = label + " usage needs a signed-in " + host + " session in your browser."
+		result.Detail = "Sign in to " + label + " in your browser, then close the browser."
 		result.NextAction = "Sign in to " + host + " in your browser, close the browser, then check again."
 		result.SignInURL = signInURL
 	case ProviderPermissionRequired:
-		result.Detail = "macOS blocked access required by this provider."
+		result.Detail = "Allow access on this computer so VibeTV can read " + label + " usage."
 		result.NextAction = "Allow the requested macOS permission, then check again."
 		if providerCopyGOOS == "windows" {
-			result.Detail = "Windows blocked access required by this provider."
 			result.NextAction = "Allow the requested access, then check again."
 		}
 	case ProviderUnsupported:
 		// No sign-in wording: the account cannot use this provider at all, so
 		// the provider's own message carries the migration path and the row
 		// only says what the customer can still do here.
-		result.Detail = label + " no longer supports this account."
+		result.Detail = label + " no longer works with this account, so switch it off and use another provider."
 		result.NextAction = "Read the provider message, then switch this provider off and use another one."
 	case ProviderNoUsageAvailable:
-		result.Detail = "This account does not expose usage data."
+		result.Detail = "This " + label + " account has no usage yet."
 		result.NextAction = "Choose another provider that exposes usage limits."
 	case ProviderTimeout:
-		result.Detail = "The provider check timed out."
+		result.Detail = label + " did not answer in time, and VibeTV tries again by itself."
 		result.NextAction = "Confirm the provider sign-in, then check again."
 	case ProviderRateLimited:
-		result.Detail = label + " received too many usage checks and is pausing them for a few minutes."
+		result.Detail = "Nothing to fix: " + label + " is busy right now, and VibeTV tries again by itself."
 		result.NextAction = RateLimitedNextAction
 	case ProviderConfigError:
-		result.Detail = "The usage service could not save or read its provider settings."
+		result.Detail = providerCouldNotReadSentence(label)
 		result.NextAction = "Repair the usage service, then check again."
 	case ProviderEngineIncompatible:
-		result.Detail = "The usage engine is too old."
+		result.Detail = "The usage engine is too old and needs a repair."
 		result.NextAction = "Repair the usage engine, then check again."
 	case ProviderNotConfigured:
 		result.Detail = "No usable AI provider is configured yet."
 		result.NextAction = "Open provider setup and connect an AI provider."
 	default:
-		result.Detail = "The usage service could not read this provider."
+		result.Detail = providerCouldNotReadSentence(label)
 		result.NextAction = "Check this provider, then try again."
 	}
 	return result
