@@ -67,6 +67,10 @@ type setupEventLog struct {
 	// would erase its events (issue #581): this one records nothing and shows
 	// what is saved.
 	readOnly bool
+	// startedAt is when this runtime started. The restart entry carries it:
+	// it is written when the saved session is picked up, which is at the
+	// runtime's first event and can be minutes later.
+	startedAt time.Time
 }
 
 // openLocked makes sure a session exists: the saved one when this runtime has
@@ -122,8 +126,12 @@ func (l *setupEventLog) restoreLocked(now time.Time) bool {
 	for _, event := range saved.Events {
 		l.nextSeq = max(l.nextSeq, event.Seq)
 	}
+	at := now
+	if !l.startedAt.IsZero() {
+		at = l.startedAt
+	}
 	l.appendLocked(setupEvent{
-		At:      now.UTC().Format(time.RFC3339),
+		At:      at.UTC().Format(time.RFC3339),
 		Stage:   "service_restart",
 		Status:  "succeeded",
 		Message: "The Mac App's background service started again.",
