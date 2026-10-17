@@ -573,3 +573,24 @@ describe("UpdatesScreen Mac-App-first gate", () => {
     });
   });
 });
+
+describe("UpdatesScreen Mac App check that failed during migration", () => {
+  it("offers Try again, never Check again", () => {
+    render(
+      <UpdatesScreen
+        companionStatus="online"
+        companionRelease={{
+          checkedAt: "2026-10-17T10:00:00Z",
+          status: "check_failed",
+          updateAvailable: false,
+          message: "Mac App check failed.",
+        }}
+        device={{ connected: true, board: "esp8266-smalltv-st7789", firmware: "1.0.39" }}
+        onCheckUpdates={() => undefined}
+        requiresMacAppMigration
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Check again" })).toBeNull();
+  });
+});
