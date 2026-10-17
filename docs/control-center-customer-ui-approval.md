@@ -7481,3 +7481,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none. Clicking Appearance while it is open still toggles its submenu and now also scrolls the page to the top, as the other sidebar entries already do; no wording, layout or control changes.
 - Scope: `ShellNavButton` in `apps/control-center/src/components/control-center-shell.tsx`, its test in `control-center-shell.test.tsx`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — review fix, no customer-visible change
+
+## 2026-10-17 — #677: Paul approves the look of the small fixes (refers to the pending entry of 2026-10-16, "Small fixes from the 13.10. batch")
+
+- User approval: Paul approved 17.10. (via the communicator): "Create theme"/"Create screensaver", "Included with the app", the soft shadow beside the VibeTV photo. Functional test still open.
+- Approved customer-visible result: the three items named in the user approval above, as described in the pending entry: the create buttons read "Create theme" and "Create screensaver"; the engine source line reads "Included with the app"; the Overview image beside the VibeTV photo has the softer shadow that fades out. The slider and sidebar items of that pending entry are not named in this approval and stay open.
+- Scope: this approval record only; no code change in this entry. Pull request branch only, not merge or release.
+- What's new: none — approval record
