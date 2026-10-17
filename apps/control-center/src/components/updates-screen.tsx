@@ -161,17 +161,12 @@ export function UpdatesScreen({
       !updateAvailable,
   );
   const firmwareCheckFailed = firmwareUpdate?.status === "check_failed";
-  // A failed firmware check that came after a finished update replaces that
-  // update's notice, so "Update complete" never sits below "Update check
-  // failed". A check that is provably older than the update keeps it.
-  const completedAt = Date.parse(updateStatus?.finishedAt ?? "");
-  const checkedAt = Date.parse(firmwareUpdate?.checkedAt ?? "");
-  const checkPredatesCompletion =
-    Number.isFinite(completedAt) &&
-    Number.isFinite(checkedAt) &&
-    checkedAt < completedAt;
+  // A failed firmware check replaces a finished update's notice, so "Update
+  // complete" never stays below "Update check failed". The completion time
+  // is not comparable here (live completions store a localized clock time),
+  // so the check is not ordered against it.
   const failedCheckReplacesCompletion = Boolean(
-    firmwareUpdateCompleted && firmwareCheckFailed && !checkPredatesCompletion,
+    firmwareUpdateCompleted && firmwareCheckFailed,
   );
   const visibleUpdateStatus =
     staleFirmwareFailure || failedCheckReplacesCompletion

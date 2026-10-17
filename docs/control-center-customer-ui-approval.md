@@ -7473,3 +7473,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: a finished install shows its notice without the dark progress line; while the install runs, the bar stays as before. A failed firmware check that came after a finished update no longer leaves "Update complete" below "Update check failed". Wording, buttons and layout stay the same.
 - Scope: `apps/control-center/src/components/updates-screen.tsx` (finished-update notice and failed-check replacement), `apps/control-center/src/components/theme-library-screen.tsx` (theme install notice), their tests and this approval record. Pull request branch only, not merge or release.
 - What's new: none — removed progress line and a stale notice, no new capability
+
+## 2026-10-17 — #579 review fix: a failed firmware check replaces the finished-update notice without comparing times
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #579, Codex review); look unchanged from the entry above except: a failed firmware check now replaces the "Update complete" notice whenever that notice is shown, also when the check result is older than the update → before: that older failure left "Update complete" visible; after: the notice is removed and only "Update check failed" stays.
+- Approved customer-visible result: the same as in the entry above, except for the case in the "before" line of this entry; the earlier entry's words "came after a finished update" are not exact any more, since no times are compared. Wording, buttons and layout stay the same.
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — same removed notice as in the entry above, no new capability
