@@ -7800,6 +7800,13 @@ issue scope, or release permission never implies UI permission.
 - Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (chart colour assignment only), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — colour fix only, no new notice
 
+## 2026-10-17 — Usage chart: another provider never takes the colour of Claude or Codex (Codex review on #714)
+
+- User approval: pending — Paul reviews this PR (fix of a second Codex finding on #714); look unchanged: Claude keeps the ink dot and line, Codex the olive, as in the entries above.
+- Approved customer-visible result: none beyond the colours of the entries above. A provider other than Claude and Codex (for example Gemini) now takes one of the three colours left (chart-3 to chart-5) instead of the colour of Codex or Claude, which it could share before. Claude and Codex are unchanged.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (chart colour assignment only), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — colour fix only, no new notice
+
 ## 2026-10-17 — Usage: grey outline of the head and chart while the token history loads (#598, stacked on #714)
 
 - User approval: pending — Paul reviews this PR (fix of a reported defect, #598); look unchanged except: small spinner in the empty chart area → grey outline of the head and chart while loading.
