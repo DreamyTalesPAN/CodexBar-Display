@@ -403,6 +403,9 @@ type ProviderSetting struct {
 	// SignInURL is the browser page CodexBar named for a
 	// ProviderHealthBrowserSignIn provider; empty otherwise.
 	SignInURL string
+	// SortKey is CodexBar's own display order (display.sortKey in serve's
+	// snapshot); nil when CodexBar does not send one for this provider.
+	SortKey *int
 }
 
 type ProviderSettingsErrorKind string
@@ -533,6 +536,7 @@ func fetchProviderInventory(ctx context.Context) ([]ProviderSetting, string, err
 	if err != nil {
 		return nil, "", providerSettingsError(ProviderSettingsErrorUnavailable, err)
 	}
+	applyServeSortKeys(settings)
 	return settings, bin, nil
 }
 

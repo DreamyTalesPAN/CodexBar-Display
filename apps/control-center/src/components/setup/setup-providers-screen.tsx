@@ -634,19 +634,25 @@ const PRIORITY_PROVIDER_IDS = [
 ];
 
 /**
- * Priority providers first, then every other provider: switched-on ones
- * before switched-off ones. Each group keeps CodexBar's order.
+ * Providers with CodexBar's sortKey first, in that order. The rest keep the
+ * fixed order: priority providers first, then every other provider with
+ * switched-on ones before switched-off ones. Each group keeps CodexBar's order.
  */
 function setupProvidersInOrder(providers: ProviderItem[]): ProviderItem[] {
+  const ranked = providers
+    .filter((provider) => typeof provider.sortKey === "number")
+    .sort((left, right) => (left.sortKey ?? 0) - (right.sortKey ?? 0));
+  const unranked = providers.filter((provider) => typeof provider.sortKey !== "number");
   const idOf = (provider: ProviderItem) =>
     provider.providerId.trim().toLowerCase();
   const priority = PRIORITY_PROVIDER_IDS.flatMap((id) =>
-    providers.filter((provider) => idOf(provider) === id),
+    unranked.filter((provider) => idOf(provider) === id),
   );
-  const others = providers.filter(
+  const others = unranked.filter(
     (provider) => !PRIORITY_PROVIDER_IDS.includes(idOf(provider)),
   );
   return [
+    ...ranked,
     ...priority,
     ...others.filter((provider) => provider.value === true),
     ...others.filter((provider) => provider.value !== true),

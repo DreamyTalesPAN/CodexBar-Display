@@ -705,6 +705,48 @@ describe("SetupProvidersScreen", () => {
   // working can still carry a second one that is merely not signed in. Holding
   // the customer there closed the only step with no Back and no Skip, over a
   // provider the rotation would have skipped anyway.
+  it("follows CodexBar's sortKey when it sends one, and the fixed order without it", () => {
+    const onCodex = provider({ health: "healthy", label: "Codex", providerId: "codex" });
+    const offCursor = provider({
+      health: "disabled",
+      label: "Cursor",
+      providerId: "cursor",
+      value: false,
+    });
+    const offOpenAI = provider({
+      health: "disabled",
+      label: "OpenAI",
+      providerId: "openai",
+      value: false,
+    });
+    const orderOf = (providers: ProviderItem[]) => {
+      const html = render({ providers });
+      return ["Codex", "Claude Code", "Cursor", "OpenAI"]
+        .map((label) => ({ label, at: html.indexOf(`>${label}</`) }))
+        .sort((left, right) => left.at - right.at)
+        .map((entry) => entry.label);
+    };
+
+    // No sortKey anywhere (older engines, Windows fork): the fixed order.
+    expect(orderOf([offOpenAI, offCursor, claude, onCodex])).toEqual([
+      "Codex",
+      "Claude Code",
+      "Cursor",
+      "OpenAI",
+    ]);
+    // CodexBar's sortKey decides between the providers that carry one.
+    expect(
+      orderOf([offOpenAI, offCursor, { ...claude, sortKey: 10 }, { ...onCodex, sortKey: 40 }]),
+    ).toEqual(["Claude Code", "Codex", "Cursor", "OpenAI"]);
+    // A provider without a sortKey keeps its fixed place after the ranked ones.
+    expect(orderOf([offOpenAI, claude, offCursor, { ...onCodex, sortKey: 0 }])).toEqual([
+      "Codex",
+      "Claude Code",
+      "Cursor",
+      "OpenAI",
+    ]);
+  });
+
   it("continues on one working provider, whatever the others report", () => {
     const html = render({
       providers: [

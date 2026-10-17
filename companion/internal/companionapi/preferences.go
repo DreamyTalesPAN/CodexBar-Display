@@ -74,6 +74,9 @@ type preferenceDescriptor struct {
 	Writable           bool                   `json:"writable"`
 	SecretState        string                 `json:"secretState,omitempty"`
 	Health             *preferenceHealth      `json:"health,omitempty"`
+	// SortKey is CodexBar's own display order for a provider; absent when
+	// CodexBar does not send one.
+	SortKey *int `json:"sortKey,omitempty"`
 }
 
 type preferenceHealth struct {
@@ -860,6 +863,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			Label:          setting.Label,
 			Description:    providerDescription(setting.Label),
 			ProviderID:     setting.ID,
+			SortKey:        setting.SortKey,
 			Value:          setting.Enabled,
 			EffectiveValue: setting.Enabled,
 			Availability:   preferenceAvailability{State: "available"},

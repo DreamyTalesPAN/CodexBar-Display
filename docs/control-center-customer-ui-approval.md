@@ -7467,3 +7467,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-17 — #661: provider order follows CodexBar's sortKey when it sends one
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #661); look unchanged except: none. On the recorded bench lists the order stays as it is today: Codex, Claude Code, Cursor, Antigravity, OpenAI, Azure OpenAI, then the rest (Mac 0.75.0); Codex, Claude Code, Cursor, Antigravity, OpenAI API, Azure OpenAI, then the rest (Windows 0.55.0).
+- Approved customer-visible result: as recorded in the #653 entries above; no visible change on the recorded lists. A provider that CodexBar sends a sortKey for is placed by that key ahead of the fixed order.
+- Scope: `setup-providers-screen.tsx` and its test, `control-center-types.ts`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the order comes from CodexBar, no new screen text

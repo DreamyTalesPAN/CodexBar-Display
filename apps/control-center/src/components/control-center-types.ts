@@ -568,6 +568,8 @@ export type PreferenceDescriptor = {
   label: string;
   description?: string;
   providerId?: string;
+  /** CodexBar's own display order for a provider; absent when CodexBar sends none. */
+  sortKey?: number;
   value: PreferenceValue;
   effectiveValue: PreferenceValue;
   allowsDefault: boolean;

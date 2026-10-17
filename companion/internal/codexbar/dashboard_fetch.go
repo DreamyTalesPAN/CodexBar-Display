@@ -33,6 +33,9 @@ var serveUsage struct {
 	at     time.Time
 	maxAge time.Duration
 	items  map[string]json.RawMessage
+	// sortKeys is CodexBar's display.sortKey per provider from the same
+	// snapshot; only the providers the snapshot lists carry one.
+	sortKeys map[string]int
 	// forgotten counts forgetServeUsage, so that a read which began before a
 	// provider switch does not bring the earlier answer back after it.
 	forgotten int
@@ -95,8 +98,24 @@ func serveUsageAnswer(ctx context.Context, settings []ProviderSetting) ([]byte, 
 func forgetServeUsage() {
 	serveUsage.mu.Lock()
 	defer serveUsage.mu.Unlock()
-	serveUsage.at, serveUsage.items = time.Time{}, nil
+	serveUsage.at, serveUsage.items, serveUsage.sortKeys = time.Time{}, nil, nil
 	serveUsage.forgotten++
+}
+
+// applyServeSortKeys copies CodexBar's sortKey from serve's last snapshot onto
+// the provider inventory, while that snapshot is still current. A provider the
+// snapshot does not list keeps no sortKey.
+func applyServeSortKeys(settings []ProviderSetting) {
+	serveUsage.mu.Lock()
+	defer serveUsage.mu.Unlock()
+	if age := time.Since(serveUsage.at); age < 0 || age > serveUsage.maxAge {
+		return
+	}
+	for i := range settings {
+		if key, ok := serveUsage.sortKeys[settings[i].ID]; ok {
+			settings[i].SortKey = &key
+		}
+	}
 }
 
 // serveUsageItem is one provider's item of serve's answer. The item stands for
@@ -176,6 +195,12 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 	}
 	out := make([]ParsedFrame, 0, len(snapshot.Providers))
 	readings := make(map[string]json.RawMessage, len(snapshot.Providers))
+	sortKeys := make(map[string]int)
+	for _, provider := range snapshot.Providers {
+		if provider.Display != nil && provider.Display.SortKey != nil {
+			sortKeys[strings.ToLower(strings.TrimSpace(provider.ID))] = *provider.Display.SortKey
+		}
+	}
 	for _, provider := range snapshot.Providers {
 		usage, usageOK := dashboardusage.UsageForProvider(usageProviders, provider.ID)
 		parsed := parsedFrameFromDashboardProvider(
@@ -206,7 +231,7 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 	if serveUsage.forgotten == forgotten {
 		// Round(0) drops the monotonic reading: the age must count the time
 		// the computer slept.
-		serveUsage.at, serveUsage.maxAge, serveUsage.items = time.Now().Round(0), serveUsageMaxAge, readings
+		serveUsage.at, serveUsage.maxAge, serveUsage.items, serveUsage.sortKeys = time.Now().Round(0), serveUsageMaxAge, readings, sortKeys
 		if snapshot.GeneratedAt != nil {
 			serveUsage.at = *snapshot.GeneratedAt
 		}

@@ -467,3 +467,46 @@ func TestDashboardAggregateUsageRequestGivesUp(t *testing.T) {
 		t.Fatalf("the usage request waited %s for a silent serve", elapsed)
 	}
 }
+
+// CodexBar's serve snapshot carries display.sortKey for the providers it lists
+// (codex 0, claude 30 on Mac; Win-CodexBar sends the same key). The inventory
+// must carry that value unchanged and leave it off a provider the snapshot
+// does not name, so the client falls back to its own order for those.
+func TestDashboardSortKeyIsPassedThroughToProviderInventory(t *testing.T) {
+	t.Cleanup(forgetServeUsage)
+	generatedAt := time.Now().UTC().Format(time.RFC3339)
+	server := newDashboardFetchTestServer(t, fmt.Sprintf(`{
+	  "schemaVersion": 1,
+	  "generatedAt": %q,
+	  "staleAfterSeconds": 180,
+	  "providers": [
+	    {"id": "codex", "name": "Codex", "display": {"accentColor": "#49A3B0", "priority": "normal", "sortKey": 0},
+	     "windows": [{"kind": "weekly", "label": "Weekly", "usedPercent": 68, "resetAt": "2026-08-01T00:00:00Z"}], "error": null},
+	    {"id": "claude", "name": "Claude", "display": {"accentColor": "#CC7C5E", "priority": "normal", "sortKey": 30},
+	     "windows": [{"kind": "weekly", "label": "Weekly", "usedPercent": 27, "resetAt": "2026-08-01T00:00:00Z"}], "error": null}
+	  ]
+	}`, generatedAt))
+	defer server.Close()
+
+	if _, err := FetchDashboardProviders(context.Background(), dashboardFetchTestInfo(server), time.Now()); err != nil {
+		t.Fatalf("dashboard fetch failed: %v", err)
+	}
+	inventory := []ProviderSetting{{ID: "cursor"}, {ID: "claude"}, {ID: "codex"}}
+	applyServeSortKeys(inventory)
+	if inventory[0].SortKey != nil {
+		t.Fatalf("cursor is not in the snapshot and must carry no sortKey, got %d", *inventory[0].SortKey)
+	}
+	if inventory[1].SortKey == nil || *inventory[1].SortKey != 30 {
+		t.Fatalf("claude must carry CodexBar's sortKey 30, got %v", inventory[1].SortKey)
+	}
+	if inventory[2].SortKey == nil || *inventory[2].SortKey != 0 {
+		t.Fatalf("codex must carry CodexBar's sortKey 0, got %v", inventory[2].SortKey)
+	}
+
+	forgetServeUsage()
+	inventory = []ProviderSetting{{ID: "codex"}}
+	applyServeSortKeys(inventory)
+	if inventory[0].SortKey != nil {
+		t.Fatalf("a forgotten serve reading must not keep sortKey, got %d", *inventory[0].SortKey)
+	}
+}

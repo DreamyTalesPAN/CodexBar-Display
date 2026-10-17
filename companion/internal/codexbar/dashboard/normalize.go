@@ -25,6 +25,15 @@ type DashboardProvider struct {
 	Windows   []DashboardWindow `json:"windows"`
 	Error     json.RawMessage   `json:"error"`
 	UpdatedAt *time.Time        `json:"updatedAt"`
+	// Display is CodexBar's own display block. Older builds send none.
+	Display *DashboardDisplay `json:"display"`
+}
+
+// DashboardDisplay is the part of CodexBar's display block the Companion
+// passes on. SortKey is CodexBar's order for the provider list; nil when the
+// snapshot does not carry one.
+type DashboardDisplay struct {
+	SortKey *int `json:"sortKey"`
 }
 
 type DashboardWindow struct {
