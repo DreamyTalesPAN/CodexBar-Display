@@ -16,6 +16,8 @@ import { ThemeRenderPreview } from "../theme-render-preview";
 import { SetupLog, type SetupLogLine } from "./setup-log";
 import { SelectionDot, selectedItemClass } from "./setup-selectable-card";
 import {
+  CALM_SUBTITLE_CLASS,
+  CALM_TITLE_CLASS,
   SetupWizardScreen,
   SetupWizardSubtitle,
   SetupWizardTitle,
@@ -67,8 +69,8 @@ export function SetupThemeScreen({
       onCreateSupportReport={onCreateSupportReport}
       windowsHost={windowsHost}
     >
-      <SetupWizardTitle>Choose your theme</SetupWizardTitle>
-      <SetupWizardSubtitle>
+      <SetupWizardTitle className={CALM_TITLE_CLASS}>Choose your theme</SetupWizardTitle>
+      <SetupWizardSubtitle className={CALM_SUBTITLE_CLASS}>
         You can always switch themes later.
       </SetupWizardSubtitle>
 

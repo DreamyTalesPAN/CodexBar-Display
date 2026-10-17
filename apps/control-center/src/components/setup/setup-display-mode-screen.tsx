@@ -17,6 +17,8 @@ import {
 import { SETUP_REVEAL } from "./setup-reveal";
 import { SelectionDot, selectedItemClass } from "./setup-selectable-card";
 import {
+  CALM_SUBTITLE_CLASS,
+  CALM_TITLE_CLASS,
   SetupWizardScreen,
   SetupWizardSubtitle,
   SetupWizardTitle,
@@ -95,8 +97,8 @@ export function SetupDisplayModeScreen({
       onCreateSupportReport={onCreateSupportReport}
       windowsHost={windowsHost}
     >
-      <SetupWizardTitle>Display Mode</SetupWizardTitle>
-      <SetupWizardSubtitle>
+      <SetupWizardTitle className={CALM_TITLE_CLASS}>Display Mode</SetupWizardTitle>
+      <SetupWizardSubtitle className={CALM_SUBTITLE_CLASS}>
         Show one or multiple AI Providers. You can change this any time.
       </SetupWizardSubtitle>
 

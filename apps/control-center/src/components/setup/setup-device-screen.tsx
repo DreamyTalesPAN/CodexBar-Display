@@ -155,7 +155,9 @@ export function SetupDeviceScreen({
       onCreateSupportReport={onCreateSupportReport}
       windowsHost={windowsHost}
     >
-      <SetupWizardTitle>{title}</SetupWizardTitle>
+      <SetupWizardTitle className="mt-0 text-[28px] leading-[1.15] font-semibold tracking-[-0.01em]">
+        {title}
+      </SetupWizardTitle>
       {/*
         Once a VibeTV is being connected the count is no longer what the
         customer is waiting on -- the log below is. Reporting one there also
@@ -163,7 +165,7 @@ export function SetupDeviceScreen({
         during a connect, so the count was the only thing left to render.
       */}
       {connecting ? null : (
-        <SetupWizardSubtitle>
+        <SetupWizardSubtitle className="text-[13px]">
           {showModeChoice
             ? "You can change this later in Settings."
             : showWiFiForm

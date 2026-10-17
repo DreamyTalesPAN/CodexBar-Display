@@ -24,6 +24,8 @@ import { SetupProviderRow, setupProviderRowVariant } from "./setup-provider-row"
 import { SetupDialog } from "./setup-dialog";
 import { displayPreviewFor } from "./setup-display-previews";
 import {
+  CALM_SUBTITLE_CLASS,
+  CALM_TITLE_CLASS,
   SetupWizardScreen,
   SetupWizardSubtitle,
   SetupWizardTitle,
@@ -460,7 +462,7 @@ export function SetupProvidersScreen({
       onCreateSupportReport={onCreateSupportReport}
       windowsHost={windowsHost}
     >
-      <SetupWizardTitle>Choose AI providers</SetupWizardTitle>
+      <SetupWizardTitle className={CALM_TITLE_CLASS}>Choose AI providers</SetupWizardTitle>
 
       <ProviderList
         className="mt-4"
@@ -539,8 +541,8 @@ function SetupProvidersLoadingScreen({
       onCreateSupportReport={onCreateSupportReport}
       windowsHost={windowsHost}
     >
-      <SetupWizardTitle>Choose AI providers</SetupWizardTitle>
-      <SetupWizardSubtitle>
+      <SetupWizardTitle className={CALM_TITLE_CLASS}>Choose AI providers</SetupWizardTitle>
+      <SetupWizardSubtitle className={CALM_SUBTITLE_CLASS}>
         This can take up to 5 minutes. We&apos;re sorry.
       </SetupWizardSubtitle>
 
