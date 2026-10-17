@@ -152,8 +152,11 @@ export function setupProviderDialogSentence(
   const variant = setupProviderRowVariant(state);
   if (variant === "toggle" || variant === "checking") return null;
   if (variant === "sign_in") {
-    return setupProviderNeedsOwnApp(provider) &&
-      !GITHUB_SIGN_IN_PROVIDER_IDS.includes(provider.providerId.trim().toLowerCase())
+    // CodexBar's inventory names it "Copilot" (0.75.0), so name GitHub here.
+    if (GITHUB_SIGN_IN_PROVIDER_IDS.includes(provider.providerId.trim().toLowerCase())) {
+      return "Sign in to GitHub Copilot so VibeTV can read its usage.";
+    }
+    return setupProviderNeedsOwnApp(provider)
       ? `VibeTV reads ${label} usage from ${label}'s own app, so make sure it is installed and signed in on this computer.`
       : `Sign in to ${label} so VibeTV can read its usage.`;
   }

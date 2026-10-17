@@ -415,7 +415,8 @@ describe("SetupProvidersScreen", () => {
   // so the sentence names that sign-in. Every other provider that has no
   // sign-in in the app keeps the own-app sentence (#591).
   it("names the GitHub sign-in for Copilot and keeps the own-app sentence for other providers", () => {
-    const copilotSignedOut = provider({ providerId: "copilot", label: "GitHub Copilot",
+    // CodexBar 0.75.0 names the provider "Copilot" in its inventory.
+    const copilotSignedOut = provider({ providerId: "copilot", label: "Copilot",
       health: "setup_required", message: "No available fetch strategy for copilot." });
     const openaiSignedOut = provider({ providerId: "openai", label: "OpenAI",
       health: "setup_required", message: "No available fetch strategy for openai." });
