@@ -83,7 +83,10 @@ type UsageScreenProps = {
   /** The owner keeps the token history notice closed until it clears (see the dialog below). */
   tokenHistoryDismissed?: boolean;
   onDismissTokenHistory?: () => void;
-  /** Another centred dialog is open: the notice waits for it. */
+  /** The owner keeps the usage error closed until it clears (see the dialog below). */
+  usageErrorDismissed?: boolean;
+  onDismissUsageError?: () => void;
+  /** Another centred dialog is open: the notice and the error wait for it. */
   centredDialogOpen?: boolean;
 };
 
@@ -98,6 +101,8 @@ export function UsageScreen({
   hiddenProviderIds = [],
   tokenHistoryDismissed = false,
   onDismissTokenHistory,
+  usageErrorDismissed = false,
+  onDismissUsageError,
   centredDialogOpen = false,
 }: UsageScreenProps) {
   const refreshing = busyAction === "usage";
@@ -138,8 +143,14 @@ export function UsageScreen({
     (provider) => !hiddenProviderIds.includes(provider.id),
   );
   const tokenHistoryUnavailable = usageTokenHistoryNotice(usage, hiddenProviderIds);
+  // A usage error is told first: the token history notice waits until it is closed.
+  const usageErrorDialogOpen =
+    Boolean(usageError) && !usageErrorDismissed && !centredDialogOpen;
   const tokenHistoryDialogOpen =
-    tokenHistoryUnavailable && !tokenHistoryDismissed && !centredDialogOpen;
+    tokenHistoryUnavailable &&
+    !tokenHistoryDismissed &&
+    !centredDialogOpen &&
+    !usageErrorDialogOpen;
   const hasUsableVisibleUsageContent =
     hasProviders || usageProvidersHaveTokenResult(providers);
   // An action tile is content: no loading state beside it.
@@ -168,28 +179,6 @@ export function UsageScreen({
   return (
     <div className="mx-auto max-w-[1180px]">
       <section className="py-10">
-        {usageError ? (
-          <Alert className="mb-6 bg-muted">
-            <AlertTriangle />
-            <AlertTitle>{usageError.message}</AlertTitle>
-            <AlertDescription className="grid justify-items-start gap-3">
-              <span>{usageError.nextAction}</span>
-              {onRefresh ? (
-                <Button
-                  aria-busy={refreshing}
-                  disabled={refreshing}
-                  onClick={onRefresh}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  {refreshing ? <Spinner /> : <RefreshCw aria-hidden />}
-                  {refreshing ? "Trying again" : "Try again"}
-                </Button>
-              ) : null}
-            </AlertDescription>
-          </Alert>
-        ) : null}
         {refreshNotice ? (
           <Alert className="mb-6 bg-muted">
             {refreshNotice.tone === "attention" ? <AlertTriangle /> : <Info />}
@@ -233,7 +222,35 @@ export function UsageScreen({
           />
         ) : null}
       </section>
-      {/* A page's own dialog, not an announcement: it does not use data-announcement. */}
+      {/* A page's own dialogs, not announcements: they do not use data-announcement. */}
+      {usageErrorDialogOpen && usageError ? (
+        <SetupDialog
+          description={usageError.nextAction}
+          icon={AlertTriangle}
+          onOpenChange={(open) => {
+            if (!open) onDismissUsageError?.();
+          }}
+          open
+          // The page behind stays usable: the tiles work under the error.
+          scrim={false}
+          primaryAction={{
+            label: "OK",
+            onSelect: () => onDismissUsageError?.(),
+          }}
+          secondaryAction={
+            onRefresh
+              ? {
+                  busy: refreshing,
+                  disabled: refreshing,
+                  label: refreshing ? "Trying again" : "Try again",
+                  onSelect: onRefresh,
+                }
+              : undefined
+          }
+          title={usageError.message}
+          tone="error"
+        />
+      ) : null}
       {tokenHistoryDialogOpen ? (
         <SetupDialog
           description={
