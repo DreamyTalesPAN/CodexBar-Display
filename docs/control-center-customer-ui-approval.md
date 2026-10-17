@@ -7467,3 +7467,14 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-17 — Process steps look like the Setup Wizard log
+
+- User approval: Paul's design rule of 2026-10-17 (via the communicator): process steps look like the Setup Wizard status log everywhere (one component ProcessSteps, no cursor block); he has not yet seen this build.
+- Approved customer-visible result: Every list of running process steps uses the Setup Wizard's log look: one "> text" line per step, in the same mono type, each step fading in, finished steps paler, no blinking block. Changed places, before → after:
+  - Appearance › Themes and Screensavers, install box (`InlineInstallProgress` in `theme-library-screen.tsx`): before: "Installing", the current step as a sentence and earlier steps as small plain text; after: all steps as "> text" lines, finished ones paler. Title, progress bar and "Installed" unchanged.
+  - Updates, VibeTV firmware update (`InlineUpdateProgress` in `updates-screen.tsx`): before: the running step as a sentence in body text; after: the same step as one "> text" line. Title, progress bar, restart text, and the complete and attention messages unchanged.
+  - Setup Wizard status logs: no visible change; the component is extracted from them and keeps the blinking caret while work runs.
+  - Diagnostics: no running steps are listed, so nothing changes.
+- Scope: `apps/control-center/src/components/process-steps.tsx` (new), `apps/control-center/src/components/setup/setup-log.tsx`, `apps/control-center/src/components/theme-library-screen.tsx` (InlineInstallProgress), `apps/control-center/src/components/updates-screen.tsx` (InlineUpdateProgress), their tests, and this record. Pull request branch only, not merge or release.
+- What's new: none — the same steps, shown in the setup log look
