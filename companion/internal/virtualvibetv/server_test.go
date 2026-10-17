@@ -282,8 +282,9 @@ func TestFrameLimitBoundary(t *testing.T) {
 	if got := frame(MaxFrameBytes); got != http.StatusOK {
 		t.Fatalf("frame of exactly %d bytes: status %d", MaxFrameBytes, got)
 	}
-	if got := frame(MaxFrameBytes + 1); got != http.StatusBadRequest {
-		t.Fatalf("frame of %d bytes: status %d, want 400", MaxFrameBytes+1, got)
+	// The firmware answers an oversized frame 413 (handleFrame in main.cpp).
+	if got := frame(MaxFrameBytes + 1); got != http.StatusRequestEntityTooLarge {
+		t.Fatalf("frame of %d bytes: status %d, want 413", MaxFrameBytes+1, got)
 	}
 }
 

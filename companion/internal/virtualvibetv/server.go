@@ -471,7 +471,21 @@ func (s *Server) handleFrame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, MaxFrameBytes+1))
-	if err != nil || len(body) == 0 || len(body) > MaxFrameBytes || !json.Valid(body) {
+	if err != nil {
+		s.respond(w, r, http.StatusBadRequest, "invalid frame", "invalid frame")
+		return
+	}
+	// The same answers as handleFrame in firmware_esp8266/src/main.cpp: 413 for
+	// a frame above the limit, 400 for an empty body.
+	if len(body) == 0 {
+		s.respond(w, r, http.StatusBadRequest, "empty frame body", "invalid frame")
+		return
+	}
+	if len(body) > MaxFrameBytes {
+		s.respond(w, r, http.StatusRequestEntityTooLarge, "frame body too large", "frame too large")
+		return
+	}
+	if !json.Valid(body) {
 		s.respond(w, r, http.StatusBadRequest, "invalid frame", "invalid frame")
 		return
 	}
