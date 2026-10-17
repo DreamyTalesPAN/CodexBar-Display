@@ -7523,3 +7523,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: unchanged; the Settings screensaver switch, its line and all copy stay as in the entries above.
 - Scope: `control-center-app.tsx`, the late-read test in `control-center-app.display-preferences.test.tsx` and the settings fixtures in `control-center-app.screensaver-install.test.tsx`, `control-center-app.custom-theme-install.test.tsx`, `control-center-app.screensaver-setting.test.tsx`. Pull-request branch only, not merge or release.
 - What's new: none — refactor and test fixtures, no customer-visible change
+
+## 2026-10-17 — #645: "Turn on in Settings" uses the Design System link colour
+
+- User approval: Paul's finding on 2026-10-17 while testing #645 (via the communicator): "Turn on in Settings" lime on grey unreadable → design-system link colour as in 645-A; he has not yet seen this build.
+- Approved customer-visible result: in the "Screensaver is off." line under Appearance › Screensavers, the link "Turn on in Settings" is the Design System link (the Button link variant): dark ink with an underline, olive on hover, instead of lime. Same text, same place, same action. Contrast (WCAG 2.x): rest 14.85:1 light, 7.98:1 dark; hover olive #506600 5.58:1 light, 1.44:1 dark. The dark hover fails 4.5:1 and is open, not approved as final until the orchestrator decides.
+- Scope: `theme-library-screen.tsx`, its test and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a colour fix of an existing link, not announced to customers

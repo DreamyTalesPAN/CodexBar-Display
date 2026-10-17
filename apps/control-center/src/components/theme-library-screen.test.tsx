@@ -471,6 +471,10 @@ describe("ThemeLibraryScreen Appearance sections", () => {
     // Sentence case, like every other button of the app.
     expect(html).toContain(">Turn on first<");
     expect(html).toContain(">Turn on in Settings</a>");
+    // The Design System link (dark ink, underline, olive on hover), not lime on grey.
+    const link = html.match(/<a class="([^"]*)"[^>]*>Turn on in Settings<\/a>/)?.[1] ?? "";
+    expect(link.split(" ")).toEqual(expect.arrayContaining(["text-foreground", "underline", "hover:text-[var(--vibetv-support)]"]));
+    expect(link).not.toContain("text-primary");
   });
 
   it("removes the warning without hiding the library when enabled", () => {
