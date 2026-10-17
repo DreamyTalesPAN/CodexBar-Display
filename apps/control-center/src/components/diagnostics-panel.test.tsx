@@ -91,7 +91,8 @@ describe("DiagnosticsPanel", () => {
     const engine = screen.getByRole("region", { name: "Usage engine" }).textContent;
     expect(engine).toContain("0.63.0");
     expect(engine).toContain("0.23.0");
-    expect(engine).toContain("Managed by VibeTV");
+    expect(engine).toContain("Included with the app");
+    expect(engine).not.toContain("Managed by VibeTV");
     // A path with the product name replaced is a path that does not exist.
     expect(engine).not.toContain("Location");
     expect(text).not.toContain("Application Support");
@@ -100,6 +101,7 @@ describe("DiagnosticsPanel", () => {
 
   it.each([
     ["bundled", "Included with the app"],
+    ["app_managed", "Included with the app"],
     ["override", "Custom location"],
     ["system", "Installed app"],
     ["path", "Command line install"],

@@ -7467,3 +7467,24 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-16 — Small fixes from the 13.10. batch, carried from #603 (#566, #579, #418)
+
+- User approval: Carried from the overnight batch of 13.10. (#603), which Paul's blanket approval for that night covered; not yet seen by him in this form.
+- Approved customer-visible result: Four visible changes. (1) Support, usage engine source: the source of the engine that comes with the Mac App now reads "Included with the app" instead of "Managed by VibeTV". (2) Appearance: the create buttons read "Create theme" and "Create screensaver" instead of "Create Theme" and "Create Screensaver". (3) A slider: a click right beside the round handle moves it there. (4) Sidebar: clicking the tab that is already open scrolls the page back to its top. The Overview image beside the VibeTV photo has a softer shadow that fades out instead of ending in a hard edge. The Mac App update prompt keeps its current behaviour and URLs; only its tests and a wrapper function are added. The Windows docs note (#418) is documentation only.
+- Scope: `apps/control-center/src/components/` (`control-center-app.tsx`, `control-center-runtime.ts`, `control-center-shell.tsx`, `diagnostics-panel.tsx`, `theme-library-screen.tsx`, `ui/slider.tsx`, their tests), `apps/control-center/public/images/vibetv-device-overview-cutout.png`, `apps/control-center/scripts/test-customer-flows.mjs` (expectations for the two button labels only), `docs/windows-shell.md`, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — small fixes; the only wording changes are the two create-button labels and the engine source line above
+
+## 2026-10-16 — #677: Codex review fix, the open Appearance entry starts over at the top (no visible change)
+
+- User approval: Codex review fix, no visible change; not seen by Paul.
+- Approved customer-visible result: none. Clicking Appearance while it is open still toggles its submenu and now also scrolls the page to the top, as the other sidebar entries already do; no wording, layout or control changes.
+- Scope: `ShellNavButton` in `apps/control-center/src/components/control-center-shell.tsx`, its test in `control-center-shell.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix, no customer-visible change
+
+## 2026-10-17 — #677: Paul approves the look of the small fixes (refers to the pending entry of 2026-10-16, "Small fixes from the 13.10. batch")
+
+- User approval: Paul approved 17.10. (via the communicator): "Create theme"/"Create screensaver", "Included with the app", the soft shadow beside the VibeTV photo. Functional test still open.
+- Approved customer-visible result: the three items named in the user approval above, as described in the pending entry: the create buttons read "Create theme" and "Create screensaver"; the engine source line reads "Included with the app"; the Overview image beside the VibeTV photo has the softer shadow that fades out. The slider and sidebar items of that pending entry are not named in this approval and stay open.
+- Scope: this approval record only; no code change in this entry. Pull request branch only, not merge or release.
+- What's new: none — approval record
