@@ -4240,7 +4240,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 registeredVersion: registeredRuntimeBundleVersion(),
                 currentVersion: currentRuntimeBundleVersion()
             ) {
+                if repairRequested {
+                    // A repair can arrive while a VibeTV update job runs inside
+                    // the runtime. Claim the update hold first, as the CodexBar
+                    // repair does, so stopping the runtime cannot cut that job.
+                    if await runtimeShouldDeferRepairForUpdate() {
+                        return .failed
+                    }
+                }
                 guard await unregisterBundledRuntimeService() else {
+                    if repairRequested {
+                        await runtimeReleaseUpdateHold()
+                    }
                     return .failed
                 }
                 return registerBundledRuntimeService()
