@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { flushSync } from "react-dom";
 import { SetupDialog } from "./setup/setup-dialog";
 
 /**
@@ -49,7 +50,9 @@ function useOtherDialogOpen(): boolean {
   useEffect(() => {
     const check = () => setOpen(otherDialogOpen());
     check();
-    const observer = new MutationObserver(check);
+    // Synchronous, so a dialog that mounted in the same render takes the
+    // notice down before the browser paints.
+    const observer = new MutationObserver(() => flushSync(check));
     observer.observe(document.body, { childList: true, subtree: true });
     return () => observer.disconnect();
   }, []);
@@ -72,7 +75,9 @@ export function SystemBusyDialog({ onClose }: { onClose: () => void }) {
       open
       primaryAction={{ label: systemBusyCopy.action, onSelect: onClose }}
       // An announcement over whatever the customer is doing: the app behind
-      // it keeps working.
+      // it keeps working, and the customer's own dialog keeps the focus when
+      // both open together (#632).
+      onOpenAutoFocus={(event) => event.preventDefault()}
       scrim={false}
       showCloseButton={false}
       title={systemBusyCopy.title}
