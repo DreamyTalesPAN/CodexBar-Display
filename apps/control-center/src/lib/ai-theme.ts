@@ -13,6 +13,8 @@ export type AIThemeMessage = {
   content: string;
   createdAt: string;
   role: "assistant" | "user";
+  /** Reference images the customer sent with this turn; shown, never sent as history. */
+  images?: { name: string; data: string }[];
 };
 export type AIThemeStyle = {
   animationMode: "four_frame" | "static" | "scene_loop";

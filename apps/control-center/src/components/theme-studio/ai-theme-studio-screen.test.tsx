@@ -143,6 +143,45 @@ describe("Theme Studio notices", () => {
   });
 });
 
+describe("Theme Studio reference images", () => {
+  function stubImageDecoding() {
+    globalThis.createImageBitmap = vi.fn(async () => ({ width: 10, height: 10, close: () => {} })) as unknown as typeof createImageBitmap;
+    HTMLCanvasElement.prototype.getContext = vi.fn(() => ({ drawImage: () => {} })) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.toDataURL = vi.fn(() => "data:image/png;base64,QUJD");
+  }
+  async function attachPicture() {
+    const input = document.querySelector('input[type="file"][accept="image/png,image/jpeg,image/webp"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(["x"], "IMG_2454.png", { type: "image/png" })] } });
+    await waitFor(() => expect(document.querySelector('[aria-label="Attached reference images"]')).not.toBeNull());
+  }
+
+  it("moves the sent image into the message, empties the composer and sends it with the request", async () => {
+    stubImageDecoding();
+    vi.mocked(planAIThemeLayout).mockReturnValue(new Promise(() => {}));
+    render(<AIThemeStudioScreen />);
+    await attachPicture();
+    await sendIdea();
+
+    await waitFor(() => expect(vi.mocked(planAIThemeLayout)).toHaveBeenCalled());
+    expect(vi.mocked(planAIThemeLayout).mock.calls[0][3]).toEqual(["QUJD"]);
+    expect(document.querySelector('[aria-label="Attached reference images"]')).toBeNull();
+    const log = screen.getByRole("log", { name: "Conversation" });
+    expect(within(log).getByRole("img", { name: "IMG_2454.png" })).toBeTruthy();
+    expect(within(log).getByText("A tiny office at dusk")).toBeTruthy();
+  });
+
+  it("gives the image back to the composer when the request fails", async () => {
+    stubImageDecoding();
+    vi.mocked(planAIThemeLayout).mockRejectedValue(new Error("The request failed."));
+    render(<AIThemeStudioScreen />);
+    await attachPicture();
+    await sendIdea();
+
+    await screen.findByText("The request failed.");
+    expect(document.querySelector('[aria-label="Attached reference images"]')).not.toBeNull();
+  });
+});
+
 describe("Theme Studio example copy", () => {
   // The built-in example loads without a status line; the sample button is
   // not reachable in jsdom (it fetches the render pack).

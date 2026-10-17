@@ -131,6 +131,22 @@ function planningContext(document: ThemeStudioDocument, selected: number[] = [])
   }));
 }
 
+// The customer's turn: its reference images as small thumbnails above the text.
+function userTurn(text: string | null, images: { name: string; data: string }[] = []) {
+  return (
+    <div className="ml-8 flex flex-col items-end gap-1.5 self-end">
+      {images.length ? (
+        <div className="flex flex-wrap justify-end gap-1.5">
+          {images.map((image, i) => (
+            <span key={i} role="img" aria-label={image.name} title={image.name} className="size-10 rounded-lg bg-cover bg-center" style={{ backgroundImage: `url(data:image/png;base64,${image.data})` }} />
+          ))}
+        </div>
+      ) : null}
+      <p className="whitespace-pre-wrap rounded-xl bg-muted px-3 py-2 text-sm [overflow-wrap:anywhere]">{text}</p>
+    </div>
+  );
+}
+
 // The status line while the AI works. Words only rotate inside the real step
 // they belong to, so a word never runs ahead of what the AI is doing.
 const PLANNING_WORDS = ["Understanding your idea…", "Sketching a plan…", "Picking a palette…"];
@@ -191,6 +207,8 @@ export function AIThemeStudioScreen({
   // The request the AI is working on: shown as the customer's message right
   // away, and added to the conversation for good once it has an answer.
   const [asking, setAsking] = useState<string | null>(null);
+  // The reference images of the request in progress, shown in its bubble.
+  const [askingImages, setAskingImages] = useState<{ name: string; data: string }[]>([]);
   // One status line shows the words of the step the AI is in; `at` counts the
   // swaps so each word flies in again.
   const [progress, setProgress] = useState<{ words: string[]; at: number }>({ words: [], at: 0 });
@@ -727,10 +745,17 @@ export function AIThemeStudioScreen({
     // A turn enters the conversation once it has an answer, so a failed or
     // cancelled request is not shown twice and not sent as an earlier turn.
     const asked = prompt;
+    // The images leave the composer with the request; they come back only if it fails.
+    const images = attachments;
+    setAttachments([]);
+    setAskingImages(images);
     setAsking(asked);
+    let replied = false;
     progressTo(PLANNING_WORDS);
-    const reply = (content: string) =>
-      setMessages((all) => [...all, ...([["user", asked], ["assistant", content]] as const).map(([role, text]) => ({ role, content: text.slice(0, 2000), createdAt: new Date().toISOString() }))].slice(-AI_THEME_LOCAL_HISTORY_LIMIT));
+    const reply = (content: string) => {
+      replied = true;
+      setMessages((all) => [...all, ...([["user", asked], ["assistant", content]] as const).map(([role, text]) => ({ role, content: text.slice(0, 2000), createdAt: new Date().toISOString(), ...(role === "user" && images.length ? { images } : {}) }))].slice(-AI_THEME_LOCAL_HISTORY_LIMIT));
+    };
     try {
       const capabilities = await fetchAIThemeCapabilities(controller.signal);
       if (
@@ -748,12 +773,11 @@ export function AIThemeStudioScreen({
       // for the helper too, so it can be redrawn like a generated one.
       const base = adoptPicture(document, selected);
       const context = planningContext(base, selected);
-      const layout = await planAIThemeLayout(prompt, context, controller.signal, attachments.map((image) => image.data), history);
+      const layout = await planAIThemeLayout(prompt, context, controller.signal, images.map((image) => image.data), history);
       if (request.current !== controller || controller.signal.aborted) return;
       if (layout.mode === "unsupported" || layout.mode === "answer") {
         reply(layout.notes);
         setPrompt("");
-        setAttachments([]);
         return;
       }
       if (layout.mode === "layout") {
@@ -765,7 +789,6 @@ export function AIThemeStudioScreen({
         dispatch({type:"update",document:next});
         setSelected([]);
         setPrompt("");
-        setAttachments([]);
         reply(layout.notes);
         return;
       }
@@ -777,7 +800,6 @@ export function AIThemeStudioScreen({
       })) {
         reply("I can redraw the main picture of this design, not a second image beside it. Select the main picture or nothing and ask again; the selected image stays as it is.");
         setPrompt("");
-        setAttachments([]);
         return;
       }
       // Only a companion that moves earns the motion word (Codex review of #638).
@@ -785,7 +807,7 @@ export function AIThemeStudioScreen({
       const concept = await generateAIThemeConcept(
         {
           prompt,
-          referenceImages: attachments.map((image) => image.data),
+          referenceImages: images.map((image) => image.data),
           history: [...history.slice(selected.length ? 1 - AI_THEME_TRANSMITTED_HISTORY_LIMIT : -AI_THEME_TRANSMITTED_HISTORY_LIMIT), ...(selected.length ? [{
             role: "user" as const,
             createdAt: new Date().toISOString(),
@@ -834,7 +856,6 @@ export function AIThemeStudioScreen({
       dispatch({ type: "update", document: next });
       setSelected([]);
       setPrompt("");
-      setAttachments([]);
       reply(concept.style.notes + added);
     } catch (e) {
       if (!controller.signal.aborted) {
@@ -846,6 +867,8 @@ export function AIThemeStudioScreen({
         );
       }
     } finally {
+      if (!replied) setAttachments(images);
+      setAskingImages([]);
       if (request.current === controller) {
         request.current = null;
         setBusy(false);
@@ -1437,11 +1460,9 @@ export function AIThemeStudioScreen({
             <div className="mx-auto flex min-h-0 w-full max-w-[680px] flex-col lg:w-[420px] lg:shrink-0 lg:overflow-y-auto lg:border-l lg:pl-6">
             <div className="flex min-h-24 flex-1 flex-col gap-3 overflow-y-auto pb-4" role="log" aria-label="Conversation">
               {messages.length || asking !== null ? messages.map((message, i) => (
-                <p
+                message.role === "user" ? <div key={i}>{userTurn(message.content, message.images)}</div> : <p
                   key={i}
-                  className={message.role === "user"
-                    ? "ml-8 self-end whitespace-pre-wrap rounded-xl bg-muted px-3 py-2 text-sm [overflow-wrap:anywhere]"
-                    : "mr-8 whitespace-pre-wrap text-sm [overflow-wrap:anywhere]"}
+                  className="mr-8 whitespace-pre-wrap text-sm [overflow-wrap:anywhere]"
                 >
                   {message.content}
                 </p>
@@ -1452,7 +1473,7 @@ export function AIThemeStudioScreen({
               )}
               {asking !== null ? (
                 <>
-                  <p className="ml-8 self-end whitespace-pre-wrap rounded-xl bg-muted px-3 py-2 text-sm [overflow-wrap:anywhere]">{asking}</p>
+                  {userTurn(asking, askingImages)}
                   {progress.words.length ? (
                     <div aria-hidden className="font-mono text-[13px] leading-6">
                       <div key={progress.at} className={cn("text-muted-foreground", SETUP_REVEAL)}>

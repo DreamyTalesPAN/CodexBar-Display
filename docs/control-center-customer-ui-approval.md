@@ -7566,3 +7566,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as approved in that entry. The motion word is now also chosen once the new concept is known, so a first-time design whose new companion moves shows it during the sprite build; the word list itself is unchanged.
 - Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — status word of Theme Studio, not announced to customers
+
+## 2026-10-17 — #638: the sent image moves into the message
+
+- User approval: Paul tested #638 on 2026-10-17 and sent a design request with a reference image; the text appeared in the chat, but the image stayed in the input box (fifth point, sent via the communicator); he has not yet seen this build.
+- Approved customer-visible result: when a design request is sent, its reference image leaves the input box and shows as a small rounded thumbnail (40 px, no caption, no new colours) above the customer's message text in the chat; the input box is empty while the request runs. If the request fails, the image goes back into the input box. The image is sent with the request, as before.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, the optional `images` field on the chat turn type in `apps/control-center/src/lib/ai-theme.ts` (kept out of the history sent to the AI), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — refinements of #638
