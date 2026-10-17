@@ -377,7 +377,13 @@ uint8_t clampBrightnessPercent(int value) {
   return codexbar_display::esp8266::device_settings::ClampBrightnessPercent(value);
 }
 
-bool screensaverOwnsDisplay();
+// The screensaver is not where an update is announced: screensavers have no
+// notice slot, so every phase toggle forced a full repaint of the whole
+// screensaver about every 1.5 s. Standby and the post-install preview both put
+// one on screen; the notice returns with the live theme.
+bool screensaverOwnsDisplay() {
+  return standbyState.active || screensaverPreviewState.showing;
+}
 
 // Single place that decides how bright the panel is, so entering standby,
 // waking up, showing a screensaver preview and editing either brightness value
@@ -976,14 +982,6 @@ void appendClockJSON(String& out) {
   out += "\",\"date\":\"";
   out += dateText;
   out += "\"},";
-}
-
-// The screensaver is not where an update is announced: screensavers have no
-// notice slot, so every phase toggle forced a full repaint of the whole
-// screensaver about every 1.5 s. Standby and the post-install preview both put
-// one on screen; the notice returns with the live theme.
-bool screensaverOwnsDisplay() {
-  return standbyState.active || screensaverPreviewState.showing;
 }
 
 void markFirmwareUpdateNoticeDirty() {
