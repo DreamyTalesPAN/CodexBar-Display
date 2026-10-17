@@ -19,18 +19,24 @@ export function selectedItemClass(selected: boolean): string {
 }
 
 /**
- * Always rendered so picking a card cannot reflow the row it sits in; only its
- * opacity changes.
+ * Round radio mark for the device, connection, display-mode and theme cards
+ * (variant B): an empty
+ * ring when not picked, an ink disc with a check when picked. Always rendered,
+ * so picking a card does not reflow it.
  */
-export function SelectionCheck({ selected }: { selected: boolean }) {
+export function SelectionDot({ selected }: { selected: boolean }) {
   return (
-    <Check
+    <span
       aria-hidden
       className={cn(
-        "size-4 shrink-0 text-[var(--vibetv-support)] transition-opacity duration-150",
-        selected ? "opacity-100" : "opacity-0",
+        "grid size-5 shrink-0 place-items-center rounded-full border transition-colors duration-150",
+        selected
+          ? "border-foreground bg-foreground text-background"
+          : "border-muted-foreground/50",
       )}
       data-selected={selected || undefined}
-    />
+    >
+      {selected ? <Check className="size-3" strokeWidth={3} /> : null}
+    </span>
   );
 }

@@ -40,11 +40,11 @@ export function SetupWelcomeScreen({
       onCreateSupportReport={onCreateSupportReport}
       windowsHost={windowsHost}
     >
-      <p className="text-xs font-semibold tracking-[0.3em] text-muted-foreground uppercase">
+      <p className="text-[13px] text-muted-foreground">
         Welcome to
       </p>
       <ControlCenterBrand variant="hero" />
-      <SetupLog className="mt-3" lines={lines} running />
+      <SetupLog className="mt-8" lines={lines} running />
       {onEnterAddressManually ? (
         <Button
           className="text-foreground"

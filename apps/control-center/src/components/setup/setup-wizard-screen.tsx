@@ -47,7 +47,7 @@ export function SetupWizardScreen({
       <div
         className={cn(
           "my-auto flex w-full flex-col items-center gap-2 text-center",
-          contentWidth === "wide" ? "max-w-[464px]" : "max-w-[460px]",
+          contentWidth === "wide" ? "max-w-[640px]" : "max-w-[460px]",
         )}
       >
         {children}
@@ -76,6 +76,11 @@ export function SetupWizardScreen({
     </main>
   );
 }
+
+/** Calm title and subtitle for the steps that picked variant B; the shared title stays as it is. */
+export const CALM_TITLE_CLASS =
+  "mt-0 text-[28px] leading-[1.15] font-semibold tracking-[-0.01em]";
+export const CALM_SUBTITLE_CLASS = "text-[13px]";
 
 export function SetupWizardTitle({
   children,

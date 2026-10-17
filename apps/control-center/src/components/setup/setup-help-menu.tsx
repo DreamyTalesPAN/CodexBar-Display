@@ -205,7 +205,7 @@ export function SetupHelpMenu({
         <div
           className={cn(
             "absolute right-0 bottom-11 flex w-58 flex-col gap-0.5 rounded-xl bg-card p-1.5 shadow-lg ring-1 ring-foreground/10",
-            showLog && "w-[min(420px,calc(100vw-2.5rem))]",
+            showLog && "w-[min(340px,calc(100vw-2.5rem))]",
             SETUP_REVEAL,
           )}
           id="setup-help-menu"
@@ -213,7 +213,7 @@ export function SetupHelpMenu({
         >
           {aiFixPrompt && outcome !== "prompt-copied" ? (
             <Button
-              className="w-full justify-start font-medium"
+              className="h-9 w-full justify-start font-semibold"
               onClick={() => void askAiToFix()}
               role="menuitem"
               size="sm"
@@ -233,7 +233,7 @@ export function SetupHelpMenu({
           ) : null}
           {onCreateSupportReport && !belongsToReport(outcome) ? (
             <Button
-              className="w-full justify-start font-medium"
+              className="h-9 w-full justify-start font-semibold"
               disabled={creating}
               onClick={() => void createSupportReport()}
               role="menuitem"
@@ -254,7 +254,7 @@ export function SetupHelpMenu({
           {setupLogAvailable ? (
             <Button
               aria-checked={showLog}
-              className="w-full justify-start font-medium"
+              className="h-9 w-full justify-start font-semibold"
               onClick={() => setShowLog((previous) => !previous)}
               role="menuitemcheckbox"
               size="sm"

@@ -140,7 +140,9 @@ export function SetupProviderRow({
       variant="outline"
     >
       <ItemContent>
-        <ItemTitle className={cn(unusable && "opacity-50")}>{label}</ItemTitle>
+        <ItemTitle className={cn("font-semibold", unusable && "opacity-50")}>
+          {label}
+        </ItemTitle>
       </ItemContent>
       <ItemActions>
         {signIn ? (
@@ -180,6 +182,7 @@ export function SetupProviderRow({
             mistake must be switchable off without signing in first (#647). */}
         <Switch
           aria-label={label}
+          className="data-[size=default]:h-5! data-[size=default]:w-[34px]! data-checked:[&_[data-slot=switch-thumb]]:translate-x-[16px]!"
           checked={enabled}
           disabled={saving}
           onCheckedChange={onToggle}
