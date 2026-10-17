@@ -214,7 +214,7 @@ export function UsageScreen({
               </li>
             ))}
           </ol>
-        ) : !usageLoading && !usageError ? (
+        ) : !usageLoading && (!usageError || usageErrorDismissed) ? (
           <UsageEmptyState
             companionStatus={companionStatus}
             loading={false}

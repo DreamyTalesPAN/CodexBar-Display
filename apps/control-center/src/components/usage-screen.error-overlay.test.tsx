@@ -160,3 +160,20 @@ it("shows the error alone when the token history notice also applies", () => {
   expect(screen.getAllByRole("dialog")).toHaveLength(1);
   expect(screen.getByRole("dialog", { name: usageError.message })).toBeTruthy();
 });
+
+// Without a snapshot there are no tiles. Once OK has closed the error, the page
+// says it has no usage yet instead of going blank with no way to retry.
+it("keeps an unavailable state on the page after OK closes the error", () => {
+  render(
+    <UsageScreen
+      companionStatus="online"
+      onRefresh={vi.fn()}
+      usage={null}
+      usageError={usageError}
+      usageErrorDismissed
+    />,
+  );
+
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.getByText("No provider usage is available yet.")).toBeTruthy();
+});
