@@ -7820,3 +7820,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; pending Paul's review. Proposed: while the token history loads, the grey blocks keep the layout of #714 (head line with the Refresh place, a block at the hero size for the total, the words line, a 384 px chart block, one legend chip per provider below it). No text change.
 - Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (loading block only), and this approval record. Stacked on #714; pull request branch only, not merge or release.
 - What's new: none — loading state only, no new notice
+
+## 2026-10-17 — Approval record: the #714 colour fixes merged into the skeleton (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the #714 colour fixes and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
