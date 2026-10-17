@@ -323,8 +323,7 @@ describe("SetupProvidersScreen", () => {
       ["auth_required", "VibeTV reads OpenAI usage from OpenAI's own app, so make sure it is installed and signed in on this computer."],
       ["setup_required", "VibeTV reads OpenAI usage from OpenAI's own app, so make sure it is installed and signed in on this computer."],
       ["browser_sign_in_required", "Sign in to OpenAI in your browser, then close the browser."],
-      ["permission_required", "Allow access on this computer so VibeTV can read OpenAI usage."],
-      ["unsupported", "OpenAI no longer works with this account, so switch it off and use another provider."],
+      ["unsupported","OpenAI no longer works with this account, so switch it off and use another provider."],
       ["no_usage_available", "This OpenAI account has no usage yet."],
       ["service_outage", "OpenAI has a service outage, and VibeTV tries again by itself."],
       ["stale", "VibeTV shows the last OpenAI reading until a new one arrives."],
@@ -362,6 +361,33 @@ describe("SetupProvidersScreen", () => {
     expect(setupProviderDialogSentence({ ...claudeOut,
       health: { ...claudeOut.health, state: "stale", signInState: "auth_required" } }))
       .toBe("Sign in to Claude so VibeTV can read its usage.");
+  });
+
+  // #602: a blocked provider's popup said only "Allow access on this computer".
+  // It now shows the usage engine's sentence when it sends one (it names the
+  // exact access), else the Companion's next step, and ends on OK.
+  it("tells a blocked provider what to allow: the engine's sentence, else the next step", () => {
+    const blocked = (fields: { nextAction?: string; reported?: string }) => {
+      const item = provider({ providerId: "cursor", label: "Cursor", health: "permission_required" });
+      return { ...item, health: { ...item.health, ...fields } };
+    };
+    expect(setupProviderDialogSentence(blocked({
+      nextAction: "Allow the required macOS access.",
+      reported: "Enable Full Disk Access for Cursor in System Settings.",
+    }))).toBe("Enable Full Disk Access for Cursor in System Settings.");
+    expect(setupProviderDialogSentence(blocked({ nextAction: "Allow the required macOS access." })))
+      .toBe("Allow the required macOS access.");
+    expect(setupProviderDialogSentence(blocked({})))
+      .toBe("Allow access on this computer so VibeTV can read Cursor usage.");
+
+    const item = blocked({ nextAction: "Allow the required macOS access." });
+    renderDom(<SetupProvidersScreen usage={usage} providers={[item]}
+      onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
+      pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("Allow the required macOS access.")).toBeTruthy();
+    expect(within(dialog).getAllByRole("button").map((button) => button.textContent))
+      .toEqual(["OK", "Close"]);
   });
 
   it("offers the sign-in on a stale row whose live check waits for one", () => {

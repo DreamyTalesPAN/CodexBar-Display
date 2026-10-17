@@ -19,6 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { SETUP_REVEAL } from "./setup-reveal";
 import type { ProviderItem } from "../provider-picker";
+import { hideUsageEngineName } from "../customer-support-text";
 import { SetupLog, type SetupLogLine } from "./setup-log";
 import { SetupProviderRow, setupProviderRowVariant } from "./setup-provider-row";
 import { SetupDialog } from "./setup-dialog";
@@ -137,6 +138,8 @@ function setupProviderNeedsOwnApp(
  * (Paul, 16.10.). Never the engine's own text and no status line beside it:
  * a customer cannot act on "No available fetch strategy". No "Check again"
  * either: the open window reads provider health again every 30 s by itself.
+ * The one exception is a blocked provider (#602): the engine's sentence names
+ * the access to allow, and the Companion's next step stands in when it sends none.
  */
 export function setupProviderDialogSentence(
   provider: Pick<ProviderItem, "health" | "label" | "providerId">,
@@ -154,7 +157,11 @@ export function setupProviderDialogSentence(
     return `Sign in to ${label} in your browser, then close the browser.`;
   }
   if (variant === "permission") {
-    return `Allow access on this computer so VibeTV can read ${label} usage.`;
+    // #602: the usage engine's sentence names the exact access when it sends
+    // one; otherwise the Companion's next step says what to allow.
+    const { nextAction, reported } = provider.health;
+    if (reported) return hideUsageEngineName(reported);
+    return nextAction || `Allow access on this computer so VibeTV can read ${label} usage.`;
   }
   if (variant === "unsupported") {
     return `${label} no longer works with this account, so switch it off and use another provider.`;

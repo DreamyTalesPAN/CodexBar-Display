@@ -7518,3 +7518,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the next-step sentences listed before → after in the pending entry above, with no "then check again" tail. The unchanged Diagnostics engine sentence named in that entry is not separately approved here.
 - Scope: this approval record only; no code change in this entry. Pull request branch only, not merge or release.
 - What's new: none — approval record
+
+## 2026-10-17 — Blocked provider popup says what to allow
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #602); look unchanged except: the popup for a provider whose access is blocked. Before: "Allow access on this computer so VibeTV can read Cursor usage." After: the usage engine's own sentence when it sends one (it names the exact access); otherwise the Companion's next step, "Allow the required macOS access." (Windows: "Allow the required access."). The popup keeps its single OK button; no Check again.
+- Approved customer-visible result: the popup for a blocked provider (state permission_required) shows the usage engine's own sentence when it sends one, otherwise the Companion's next step. Before → after: "Allow access on this computer so VibeTV can read Cursor usage." → "Allow the required macOS access." (Windows: "Allow the required access."), or the engine's sentence when it sends one. OK stays the only button.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test `setup-providers-screen.test.tsx` and this approval record. Pull request branch only, not merge or release. Stacked on #681: the next step sentence is #681's wording (on main it still reads "Allow the required macOS access, then check this provider.").
+- What's new: none — the popup shows sentences the usage engine and the Companion already send; no new capability
