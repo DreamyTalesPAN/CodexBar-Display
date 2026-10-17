@@ -361,3 +361,34 @@ func TestDecodeWiFiHelloNamesTheHelloWithoutCapabilities(t *testing.T) {
 		t.Fatalf("a complete hello must decode normalized: %+v %v", complete, err)
 	}
 }
+
+func TestDeviceHelloNormalizeLeavesCallerSlicesUnchanged(t *testing.T) {
+	features := []string{" THEME "}
+	themes := []string{" Dark "}
+	primitives := []string{" RECT "}
+	transport := []string{" WIFI "}
+	auth := &AuthCapabilities{TokenHeader: " X-Token ", PairingWindowSeconds: 30}
+	hello := DeviceHello{
+		Features: features,
+		Capabilities: CapabilityBlock{
+			Theme:     ThemeCapabilities{BuiltinThemes: themes, SupportedPrimitiveTypes: primitives},
+			Transport: TransportCapabilities{Supported: transport},
+			Auth:      auth,
+		},
+	}
+
+	normalized := hello.Normalize()
+
+	if normalized.Features[0] != "theme" || normalized.Capabilities.Theme.BuiltinThemes[0] != "dark" ||
+		normalized.Capabilities.Theme.SupportedPrimitiveTypes[0] != "rect" ||
+		normalized.Capabilities.Transport.Supported[0] != "wifi" || normalized.Capabilities.Auth.TokenHeader != "X-Token" {
+		t.Fatalf("normalized hello lost its trimmed values: %+v", normalized)
+	}
+	if features[0] != " THEME " || themes[0] != " Dark " || primitives[0] != " RECT " || transport[0] != " WIFI " {
+		t.Fatalf("Normalize wrote into the caller's slices: features=%q themes=%q primitives=%q transport=%q",
+			features, themes, primitives, transport)
+	}
+	if auth.TokenHeader != " X-Token " || auth.PairingWindowSeconds != 30 {
+		t.Fatalf("Normalize wrote into the caller's auth block: %+v", *auth)
+	}
+}
