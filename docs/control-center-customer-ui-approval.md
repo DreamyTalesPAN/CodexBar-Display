@@ -7758,6 +7758,13 @@ issue scope, or release permission never implies UI permission.
 - Scope: `usage-screen.test.tsx` (one new test), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — test only, no customer-visible change
 
+## 2026-10-17 — Usage tiles: "Tokens:" before the token line, session reset on the session line (#669)
+
+- User approval: Paul tested #669 on 2026-10-17 ("rest passt") and asked for these two changes (via the communicator): "Tokens:" before the token line; the session reset right-aligned on the session line; he has not yet seen this build.
+- Approved customer-visible result: The token line reads "Tokens: 12.7B total · 5.2B this week". A tile's reset is no longer top right next to the provider name: it sits right-aligned on the first line of the tile, on the line with the big percent ("86% session remaining"; for a weekly-first provider such as Codex, on "71% weekly remaining"). The header holds only the name. The Updating spinner takes that place while the tile is quiet. No other wording.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (tile layout, token line, tests), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — label and layout change only, no new notice
+
 ## 2026-10-17 — Usage: "Runs out in" line when CodexBar says a window will not last (#210, #412)
 
 - User approval: pending — Paul reviews this PR (new line from CodexBar's pace, variant A: only when a limit runs out before its reset).
