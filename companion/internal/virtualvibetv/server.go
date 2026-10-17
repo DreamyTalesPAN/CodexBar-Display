@@ -485,6 +485,17 @@ func (s *Server) handleFrame(w http.ResponseWriter, r *http.Request) {
 		s.respond(w, r, http.StatusRequestEntityTooLarge, "frame body too large", "frame too large")
 		return
 	}
+	// A frame is one line: the firmware trims the body, then refuses any line
+	// break left inside it.
+	body = bytes.TrimSpace(body)
+	if len(body) == 0 {
+		s.respond(w, r, http.StatusBadRequest, "empty frame body", "invalid frame")
+		return
+	}
+	if bytes.ContainsAny(body, "\r\n") {
+		s.respond(w, r, http.StatusBadRequest, "expected one newline-delimited JSON frame", "invalid frame")
+		return
+	}
 	if !json.Valid(body) {
 		s.respond(w, r, http.StatusBadRequest, "invalid frame", "invalid frame")
 		return

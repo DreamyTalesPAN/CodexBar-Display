@@ -288,6 +288,43 @@ func TestFrameLimitBoundary(t *testing.T) {
 	}
 }
 
+// The firmware takes a frame as one line: it trims the body, then refuses a
+// line break left inside it with 400 (handleFrame in main.cpp, #354).
+func TestFrameRefusesMoreThanOneLine(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.RebootUnavailableRequests = 0
+	running, err := Start(cfg)
+	if err != nil {
+		t.Fatalf("start virtual VibeTV: %v", err)
+	}
+	t.Cleanup(func() { _ = running.Close() })
+	for _, tt := range []struct {
+		name, body string
+		want       int
+	}{
+		{"one line", `{"v":2}`, http.StatusOK},
+		{"trailing line break is trimmed", "{\"v\":2}\n", http.StatusOK},
+		{"line break inside the frame", "{\n\"v\":2}", http.StatusBadRequest},
+		{"two frames", "{\"v\":2}\n{\"v\":2}", http.StatusBadRequest},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodPost, running.HTTPURL+"/frame", strings.NewReader(tt.body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("X-VibeTV-Token", cfg.PairingToken)
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = resp.Body.Close()
+			if resp.StatusCode != tt.want {
+				t.Fatalf("%q: status %d, want %d", tt.body, resp.StatusCode, tt.want)
+			}
+		})
+	}
+}
+
 // Like the ESP8266, activation refuses a stored spec above 4,096 bytes or 32
 // primitives and a request body above 160 bytes (#354).
 func TestThemeActivationLimitBoundaries(t *testing.T) {
