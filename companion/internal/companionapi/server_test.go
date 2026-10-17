@@ -2226,6 +2226,8 @@ func TestDeviceSelectRejectsGarbageTargetWith400(t *testing.T) {
 		"http://192.0.2.10/setup",
 		"http://192.0.2.10?token=pair-token",
 		"cable://vibetv/extra",
+		"cable://user:password@vibetv?token=x",
+		"cable://vibetv#fragment",
 	} {
 		t.Run(target, func(t *testing.T) {
 			server := newTestServer(t, runtimeconfig.Config{})

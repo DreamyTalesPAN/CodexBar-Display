@@ -78,7 +78,9 @@ func (s *Server) handleDeviceSelect(w http.ResponseWriter, r *http.Request) {
 	}
 	target := strings.TrimSpace(req.Target)
 	expectedDeviceID := strings.TrimSpace(req.ExpectedDeviceID)
-	if samePublicTarget(target, cableDeviceTarget) {
+	// Exact match: publicTarget would strip credentials, query and fragment
+	// and let a malformed selector reach the Cable pairing flow.
+	if target == cableDeviceTarget {
 		s.selectCableDevice(w, r, expectedDeviceID)
 		return
 	}
