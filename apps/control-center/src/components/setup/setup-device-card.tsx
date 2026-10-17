@@ -8,6 +8,7 @@ import {
   ItemDescription,
   ItemTitle,
 } from "@/components/ui/item";
+import Image from "next/image";
 import type { DeviceCandidate } from "../control-center-types";
 import { candidateAddress } from "../device-target-copy";
 import { SelectionCheck, selectedItemClass } from "./setup-selectable-card";
@@ -29,7 +30,7 @@ export function SetupDeviceCard({
   return (
     <Item
       asChild
-      className={cn(selectedItemClass(selected), "bg-card px-4 py-3.5")}
+      className={cn(selectedItemClass(selected), "bg-card py-3 pr-5 pl-3")}
       variant="outline"
     >
       <button
@@ -38,8 +39,15 @@ export function SetupDeviceCard({
         role="radio"
         type="button"
       >
+        <Image
+          alt=""
+          className="h-16 w-18 shrink-0 object-contain"
+          height={64}
+          src="/images/vibetv-device-overview-cutout.png"
+          width={72}
+        />
         <ItemContent>
-          <ItemTitle className="flex-wrap">
+          <ItemTitle className="flex-wrap font-semibold">
             <span className="whitespace-nowrap">
               VibeTV {candidate.deviceId || address}
             </span>
@@ -50,7 +58,7 @@ export function SetupDeviceCard({
               <Badge variant="secondary">Previously connected</Badge>
             ) : null}
           </ItemTitle>
-          <ItemDescription className="font-mono text-xs">
+          <ItemDescription className="text-[13px]">
             {cable ? "" : address}
             {!cable && candidate.firmware ? " · " : ""}
             {candidate.firmware ? `Firmware ${candidate.firmware}` : ""}

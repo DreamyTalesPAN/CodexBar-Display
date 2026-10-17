@@ -184,7 +184,7 @@ export function SetupDeviceScreen({
         <>
           <ToggleGroup
             aria-label="Connection method"
-            className="mt-4 grid w-full grid-cols-2 items-stretch gap-4"
+            className="mt-8 grid w-full grid-cols-2 items-stretch gap-4"
             disabled={connecting}
             onValueChange={(value) => {
               if (value === "cable" || value === "wifi")
@@ -206,19 +206,19 @@ export function SetupDeviceScreen({
                   aria-label={mode === "cable" ? "Cable" : "WiFi"}
                   className={cn(
                     selectedItemClass(connectionChoice === mode),
-                    "h-auto min-w-0 flex-col items-start justify-start gap-2 p-4 whitespace-normal bg-card data-[state=on]:bg-card",
+                    "h-auto min-w-0 flex-col items-start justify-start gap-2 p-5 whitespace-normal bg-card data-[state=on]:bg-card",
                   )}
                   key={mode}
                   value={mode}
                 >
                   <Icon aria-hidden />
-                  <span>{mode === "cable" ? "Cable" : "WiFi"}</span>
-                  <span className="text-xs leading-relaxed font-normal text-muted-foreground">
+                  <span className="font-semibold">{mode === "cable" ? "Cable" : "WiFi"}</span>
+                  <span className="text-[13px] leading-relaxed font-normal text-muted-foreground">
                     {mode === "cable"
                       ? "Fastest and most reliable. VibeTV needs no network access."
                       : "No cable on your desk — VibeTV can stand anywhere."}
                   </span>
-                  <span className="mt-auto flex items-center gap-2 pt-1 font-mono text-xs font-normal text-muted-foreground">
+                  <span className="mt-auto flex items-center gap-2 pt-1 text-[13px] font-normal text-muted-foreground">
                     <span
                       aria-hidden
                       className={cn(
@@ -235,7 +235,7 @@ export function SetupDeviceScreen({
             })}
           </ToggleGroup>
           <Button
-            className="mt-4 w-full"
+            className="mt-8 h-11 w-full"
             disabled={connecting}
             onClick={() => onChooseTransport(connectionChoice)}
             type="button"
@@ -246,13 +246,14 @@ export function SetupDeviceScreen({
       ) : null}
 
       {showWiFiForm ? (
-        <form className="mt-4 w-full text-left" onSubmit={submitWiFi}>
+        <form className="mt-8 w-full text-left" onSubmit={submitWiFi}>
           <FieldGroup className="gap-4">
             <Field>
               <FieldLabel htmlFor="setup-wifi-network">WiFi network</FieldLabel>
               {manualWiFiName ? (
                 <Input
                   autoComplete="off"
+                  className="h-11"
                   disabled={wifiScanning || wifiBusy}
                   id="setup-wifi-network"
                   maxLength={32}
@@ -272,7 +273,7 @@ export function SetupDeviceScreen({
                   }}
                   value={wifiName}
                 >
-                  <SelectTrigger className="w-full" id="setup-wifi-network">
+                  <SelectTrigger className="h-11 w-full" id="setup-wifi-network">
                     <SelectValue
                       placeholder={
                         wifiScanning
@@ -335,6 +336,7 @@ export function SetupDeviceScreen({
               </FieldLabel>
               <Input
                 autoComplete="current-password"
+                className="h-11"
                 disabled={wifiScanning || wifiBusy}
                 id="setup-wifi-password"
                 maxLength={64}
@@ -345,6 +347,7 @@ export function SetupDeviceScreen({
               />
             </Field>
             <Button
+              className="h-11 w-full"
               disabled={wifiScanning || wifiBusy || !wifiName.trim() || passwordMissing}
               type="submit"
             >
@@ -371,7 +374,7 @@ export function SetupDeviceScreen({
       {showCandidates ? (
         <ItemGroup
           aria-label={transport ? `VibeTVs found ${transport === "cable" ? "by Cable" : "on your WiFi"}` : "VibeTVs found"}
-          className="mt-4 gap-3"
+          className="mt-8 gap-2"
           role="radiogroup"
         >
           {candidates.map((candidate) => (
@@ -387,7 +390,7 @@ export function SetupDeviceScreen({
 
       {showCandidates ? (
         <Button
-          className="mt-4 w-full"
+          className="mt-8 h-11 w-full"
           disabled={connecting || !selectedTarget}
           onClick={onConnect}
           type="button"
@@ -402,35 +405,37 @@ export function SetupDeviceScreen({
         answered with nothing on a screen whose only remaining control was the
         address field. One standing control covers every way a scan can end.
       */}
-      {!showModeChoice &&
-      !connecting &&
-      !searching &&
-      (!wifiSetupPhase || waitingForWiFi) ? (
-        <Button
-          disabled={connecting}
-          onClick={onSearchAgain}
-          size="sm"
-          type="button"
-          variant="link"
-        >
-          Search again
-        </Button>
-      ) : null}
-      {!showModeChoice &&
-      !showWiFiForm &&
-      !connecting &&
-      transport !== "cable" &&
-      !wifiSetupPhase ? (
-        <Button
-          disabled={connecting}
-          onClick={onEnterAddressManually}
-          size="sm"
-          type="button"
-          variant="link"
-        >
-          Enter IP address manually
-        </Button>
-      ) : null}
+      <div className="mt-5 flex justify-center gap-6 empty:hidden">
+        {!showModeChoice &&
+        !connecting &&
+        !searching &&
+        (!wifiSetupPhase || waitingForWiFi) ? (
+          <Button
+            disabled={connecting}
+            onClick={onSearchAgain}
+            size="sm"
+            type="button"
+            variant="link"
+          >
+            Search again
+          </Button>
+        ) : null}
+        {!showModeChoice &&
+        !showWiFiForm &&
+        !connecting &&
+        transport !== "cable" &&
+        !wifiSetupPhase ? (
+          <Button
+            disabled={connecting}
+            onClick={onEnterAddressManually}
+            size="sm"
+            type="button"
+            variant="link"
+          >
+            Enter IP address manually
+          </Button>
+        ) : null}
+      </div>
 
       {alternativeTransport && !showWiFiForm ? (
         <Button
@@ -446,7 +451,7 @@ export function SetupDeviceScreen({
 
       {!showModeChoice ? (
         <SetupLog
-          className="mt-4"
+          className="mt-8"
           lines={
             waitingForWiFi && wifiCredentialsSent
               ? [

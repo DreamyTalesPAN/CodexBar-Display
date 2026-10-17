@@ -27,7 +27,7 @@ export function SelectionCheck({ selected }: { selected: boolean }) {
     <Check
       aria-hidden
       className={cn(
-        "size-4 shrink-0 text-[var(--vibetv-support)] transition-opacity duration-150",
+        "size-4 shrink-0 text-foreground transition-opacity duration-150",
         selected ? "opacity-100" : "opacity-0",
       )}
       data-selected={selected || undefined}
