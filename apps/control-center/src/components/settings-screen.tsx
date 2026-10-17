@@ -373,7 +373,10 @@ export function SettingsScreen({
           />
         ) : null}
         {providerShortcut ? (
-          <p className="text-sm text-muted-foreground">
+          // Two lines are always kept: the text wraps to one line (Manual, or
+          // usage not read yet) or two (Automatic with usage), and a change of
+          // lines moved the page below it (#579, #698).
+          <p className="min-h-[2lh] text-sm text-muted-foreground">
             {providerShortcut === "available"
               ? // What a press does now (issue #558): it moves between the
                 // providers Manual offers, so one of them leaves nothing to
