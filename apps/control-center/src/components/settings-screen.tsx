@@ -392,9 +392,9 @@ export function SettingsScreen({
               value={standbyValues.brightnessPercent}
               valueLabel={`${standbyValues.brightnessPercent}%`}
             />
-            <div className="flex items-center gap-4">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
               <span aria-hidden className="w-[190px] shrink-0" />
-              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2">
+              <div className="flex min-w-[160px] flex-1 flex-wrap items-center gap-x-2">
                 <a
                   aria-disabled={standbyDetailsDisabled}
                   className={
@@ -493,10 +493,10 @@ export function SettingsScreen({
       <SettingsSection title="Setup">
         {/* Each action sits beside its own line: one line beside both
             explained only the first (issue #579). */}
-        <div className="grid grid-cols-[210px_minmax(0,1fr)] items-center gap-4">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <Button
             aria-describedby="vibetv-run-setup-help"
-            className="justify-self-start"
+            className="shrink-0"
             disabled={localActionBusy}
             onClick={onResetSetup}
             type="button"
@@ -509,15 +509,15 @@ export function SettingsScreen({
               {busyAction === "reset-setup" ? "Resetting" : "Run setup again"}
             </span>
           </Button>
-          <p className="text-sm text-muted-foreground" id="vibetv-run-setup-help">
+          <p className="min-w-[160px] flex-1 text-sm text-muted-foreground" id="vibetv-run-setup-help">
             Connect {thisHost} to another VibeTV.
           </p>
         </div>
         {onEraseDevice && connectionMode === "cable" ? (
-          <div className="grid grid-cols-[210px_minmax(0,1fr)] items-center gap-4">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <Button
               aria-describedby="vibetv-factory-reset-help"
-              className="justify-self-start"
+              className="shrink-0"
               disabled={localActionBusy || !deviceIsCustomerConnected(device)}
               onClick={() => setEraseRequested(true)}
               type="button"
@@ -532,7 +532,7 @@ export function SettingsScreen({
                   : "Reset to factory settings"}
               </span>
             </Button>
-            <p className="text-sm text-muted-foreground" id="vibetv-factory-reset-help">
+            <p className="min-w-[160px] flex-1 text-sm text-muted-foreground" id="vibetv-factory-reset-help">
               VibeTV forgets its WiFi details, pairing, settings and themes.
             </p>
           </div>
@@ -644,7 +644,10 @@ function SettingRow({
   label: string;
 }) {
   return (
-    <div className="flex items-center gap-4" data-disabled={disabled}>
+    <div
+      className="flex flex-wrap items-center gap-x-4 gap-y-2"
+      data-disabled={disabled}
+    >
       <Label
         className={cn(
           "w-[190px] shrink-0 font-normal text-muted-foreground",
@@ -654,7 +657,7 @@ function SettingRow({
       >
         {label}
       </Label>
-      <div className="flex min-w-0 flex-1 items-center">{children}</div>
+      <div className="flex min-w-[160px] flex-1 items-center">{children}</div>
     </div>
   );
 }
@@ -723,7 +726,10 @@ function BrightnessControl({
   valueLabel: string;
 }) {
   return (
-    <div className="flex items-center gap-4" data-disabled={disabled}>
+    <div
+      className="flex flex-wrap items-center gap-x-4 gap-y-2"
+      data-disabled={disabled}
+    >
       {labelled ? (
         <Label
           className={cn(
@@ -743,7 +749,8 @@ function BrightnessControl({
         The reading sits at the end of the row, as an <output>, so it is still
         announced as it changes.
       */}
-      <div className={cn("min-w-0 flex-1", disabled && "opacity-50")}>
+      <div className="flex min-w-[200px] flex-1 items-center gap-4">
+      <div className={cn("min-w-[120px] flex-1", disabled && "opacity-50")}>
         <Slider
           aria-label={label}
           disabled={disabled}
@@ -761,6 +768,7 @@ function BrightnessControl({
       >
         {valueLabel}
       </output>
+      </div>
     </div>
   );
 }

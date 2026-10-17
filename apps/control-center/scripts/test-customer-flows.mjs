@@ -1979,7 +1979,7 @@ async function testConnectedUnreadyDeviceKeepsSettingsAvailable(
     "Settings must stay available while a connected VibeTV is temporarily not ready",
   );
   await settingsButton.click();
-  await page.getByRole("heading", { name: "Display", exact: true }).waitFor({
+  await page.getByRole("heading", { name: "Brightness", exact: true }).waitFor({
     timeout: 10_000,
   });
   await waitForCondition(
@@ -6739,7 +6739,7 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
     "expected settings refresh before opening Settings",
   );
   await clickNavigation(page, "Settings");
-  await page.getByRole("heading", { name: "Display", exact: true }).waitFor({
+  await page.getByRole("heading", { name: "Brightness", exact: true }).waitFor({
     timeout: 10_000,
   });
   await waitForCondition(
