@@ -5255,13 +5255,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       nativeProviderShortcut(navigator.userAgent) !== "unavailable",
   );
   // The centred dialogs that the Usage notice waits for, so two never stack.
+  // The provider's action dialog is rendered under the same condition as below.
   const centredDialogOpen =
     (needsRuntimeRecovery && !runtimeRecoveryHidden) ||
     lostDevicePickerOpen ||
     (usageFailure && !usageFailureHidden) ||
     systemBusyOpen ||
     setupAgainRequested ||
-    whatsNewEntries.length > 0;
+    whatsNewEntries.length > 0 ||
+    (Boolean(providerActionShown) &&
+      companionStatus === "online" &&
+      !setupOwnsScreen &&
+      activeShellTab !== "settings");
   const tokenHistoryNoticeShown = usageTokenHistoryNotice(
     usage,
     hiddenUsageProviderIds,

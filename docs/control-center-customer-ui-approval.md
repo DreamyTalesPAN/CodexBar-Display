@@ -7806,3 +7806,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: The Usage notice of the previous entry (same title, sentence, "Refresh" and "OK") no longer dims the page behind it. The tiles and the rest of Usage can be pressed under the notice; "OK" or the X closes it as before. Before → after: page behind the notice dimmed and not clickable → not dimmed and clickable. Nothing else changes.
 - Scope: `apps/control-center/src/components/usage-screen.tsx` (the notice's scrim), `apps/control-center/src/components/usage-screen.warning-overlay.test.tsx` (a test that the page behind is not held), and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no new capability, the same dialog without the dimming
+
+## 2026-10-17 — Usage notice: a provider's action dialog comes first (Codex review on #745)
+
+- User approval: pending — Paul reviews this PR (fix of a Codex finding on #745: the Usage notice could open over a provider's action dialog and hide it); look unchanged except: when a provider needs the customer on Usage (its action dialog), that dialog is shown alone, and the notice "Token history is unavailable" waits until it is closed.
+- Approved customer-visible result: On Usage, the provider's action dialog is shown first, as before, and the token history notice is not shown on top of it. Once that dialog is closed, the notice shows, unless it was already closed. The text of both dialogs is unchanged. Before → after: the notice over the provider's action dialog → the provider's action dialog alone, the notice after it. Nothing else changes.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (the condition the notice waits for) and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no new capability, the same dialogs in a fixed order
