@@ -85,7 +85,7 @@ if (due) {
   process.exit(1);
 }
 
-if (newestApprovalPending()) {
+if (pendingApprovalIntroduced()) {
   printPendingApprovalNotice();
 }
 
@@ -203,18 +203,46 @@ function isUiFile(file) {
 }
 
 // The newest entry is the last "## " block of the approval record.
-function newestApprovalPending() {
-  let entries;
+function newestApprovalEntry() {
   try {
-    entries = readFileSync(APPROVAL_FILE, "utf8")
+    const entries = readFileSync(APPROVAL_FILE, "utf8")
       .split(/^(?=## )/m)
       .filter((entry) => entry.startsWith("## "));
+    return entries[entries.length - 1] || "";
   } catch {
+    return "";
+  }
+}
+
+function newestApprovalPending() {
+  const approvalLine = lines(newestApprovalEntry()).find((line) =>
+    line.startsWith("- User approval:"),
+  );
+  return Boolean(approvalLine) && /^- User approval:\s*pending\b/.test(approvalLine);
+}
+
+// Only a change that adds the pending entry gets the notice. A later PR whose
+// base already holds it (main after the merge) stays quiet.
+function pendingApprovalIntroduced() {
+  if (!newestApprovalPending()) {
     return false;
   }
-  const newest = entries[entries.length - 1] || "";
-  const approvalLine = lines(newest).find((line) => line.startsWith("- User approval:"));
-  return Boolean(approvalLine) && /^- User approval:\s*pending\b/.test(approvalLine);
+  if (workingTreeApprovalChanged) {
+    return true;
+  }
+  const base = pullRequestBase();
+  if (!base) {
+    return false;
+  }
+  const newest = newestApprovalEntry().trim();
+  return !tryGit(["show", `${base}:${APPROVAL_FILE}`]).includes(newest);
+}
+
+function pullRequestBase() {
+  if (!/^pull_request/.test(process.env["GITHUB_EVENT_NAME"] || "")) {
+    return null;
+  }
+  return tryGit(["rev-parse", "--verify", "HEAD^1"]) || null;
 }
 
 function printPendingApprovalNotice() {
