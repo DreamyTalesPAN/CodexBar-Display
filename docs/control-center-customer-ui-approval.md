@@ -7467,3 +7467,300 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-16 — Usage: calm tiles, action tiles and no Check again (#644 follow-up)
+
+- User approval: Paul chose on 2026-10-16 (via the review orchestrator) Claude Design page "Control Center Redesign" 644, "3A + 4A + 5B (weekly: number first), Paul 16.10."; he has not yet seen this build.
+- Approved customer-visible result: Usage tiles use one font in two sizes and two weights, with only the normal text and muted text colours and ink bars. Each tile reads number first: "45% session used", "26% weekly used", and the totals line "41.8M total · 2.4M this week". No Stale pill, no status pill, no "??" and no "Check again". A tile with stale numbers keeps them and shows a small spinner where the reset time was; a tile without numbers shows a grey placeholder shape and the same spinner. A provider that needs the customer shows "Sign in needed", "Access needed" or "Setup needed" in red after its name, with the placeholder shape in place of its numbers; the link opens the sign-in or Settings.
+- Scope: `usage-screen.tsx` and its test, `control-center-app.tsx` (only the wiring of the action tiles), the two wording assertions in `scripts/test-customer-flows.mjs`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — visual calm of the Usage tiles, no new notice
+
+## 2026-10-16 — Usage tiles: Codex review fixes for stale numbers and sign-in actions (#669)
+
+- User approval: Paul chose the calm Usage tiles on 2026-10-16 (entry above, via the review orchestrator); this follow-up applies two Codex review findings and changes no wording.
+- Approved customer-visible result: A stale tile keeps its last good numbers with the small spinner where the reset time was, as in the approved frame 5B; a provider without numbers keeps the grey placeholder shape. "Sign in needed" runs the sign-in only where the Companion can start one; for other providers it opens Settings. No new element, no new wording; this fix is not seen by Paul yet.
+- Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the Usage tiles, no customer-visible change of its own
+
+## 2026-10-16 — Usage tiles: Codex review fixes for offline Mac App and setup sign-in (#669)
+
+- User approval: Paul chose the calm Usage tiles on 2026-10-16 (entry above, via the review orchestrator); this follow-up applies two Codex review findings and changes no wording.
+- Approved customer-visible result: While the Mac App is not reachable, no action tile is shown and the "Mac App needs setup." message stands alone. "Setup needed" starts the same sign-in as the setup row for the providers the Companion can sign in (Codex, Claude, Cursor, Antigravity) and opens Settings for the others. No new element, no new wording; this fix is not seen by Paul yet.
+- Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the Usage tiles, no customer-visible change of its own
+
+## 2026-10-16 — Usage tiles: a stale provider with a sign-in need keeps its numbers (#669)
+
+- User approval: none yet for this combination. The calm Usage tiles were approved by Paul on 2026-10-16 (entry above, via the review orchestrator); this follow-up applies a Codex review finding that the orchestrator must put to Paul before merge.
+- Approved customer-visible result: For a provider whose reading is stale and that needs sign-in, the tile shows its last good numbers with the red action link after the name, instead of the placeholder shape. Frame 5B shows the link only with the placeholder shape, so this combination is not yet approved. Wording stays the same; not seen by Paul yet.
+- Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the Usage tiles, no customer-visible change of its own
+
+## 2026-10-16 — Usage tiles: a cleared stale provider shows no 0% (#669)
+
+- User approval: Paul chose the calm Usage tiles on 2026-10-16 (entry above, via the review orchestrator); this follow-up applies a Codex review finding and changes no wording.
+- Approved customer-visible result: A stale provider with nothing retained (all zeros) shows the grey placeholder shape and the spinner, not "0% session used" or "0% weekly used". A stale provider with a non-zero last good reading shows it as in the entry above. No new element; not seen by Paul yet.
+- Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the Usage tiles, no customer-visible change of its own
+
+## 2026-10-16 — Usage tiles: a zero on a stale reading shows the placeholder (#669)
+
+- User approval: Paul chose the calm Usage tiles on 2026-10-16 (entry above, via the review orchestrator); this follow-up applies Codex review findings and changes no wording.
+- Approved customer-visible result: On a stale reading a lane with 0% shows the grey placeholder and the spinner, never "0% session used"; a lane with a non-zero value keeps its number, so a stale reading with one unavailable lane shows only the valid one. This also means a real 0% on a stale reading is not shown as a number. No new element; not seen by Paul yet.
+- Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the Usage tiles, no customer-visible change of its own
+
+## 2026-10-16 — Usage tiles: accessible name of the action link (#669)
+
+- User approval: Paul chose the calm Usage tiles on 2026-10-16 (entry above, via the review orchestrator); this follow-up applies a Codex review finding and changes no wording.
+- Approved customer-visible result: Unchanged. The action link keeps its visible wording ("Sign in needed", "Access needed", "Setup needed"); only its accessible name adds the provider, e.g. "Sign in needed for Claude". Not seen by Paul yet.
+- Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — accessible name only, no customer-visible change of its own
+
+## 2026-10-16 — Usage overlay for providers that need the customer, and no "Check again" (#669)
+
+- User approval: Paul chose on 2026-10-16 (via the review orchestrator) Claude Design page "Control Center Redesign" 644, "3A + 4A + 5B (weekly: number first), Paul 16.10." — part 2 (global overlay, frame 3A) and part 3 (no "Check again"); he has not yet seen this build.
+- Approved customer-visible result: On any page, one dialog at a time for an enabled provider that needs the customer. Sign-in: title "{Label} needs a new sign-in", text "VibeTV can't show {Label} until you sign in again.", buttons "Not now" and "Sign in to {Label}". Access: title "{Label} needs access", text "VibeTV can't show {Label} until you allow access on this computer.", buttons "Not now" and "Open AI providers". Setup: title "{Label} needs setup", text "VibeTV can't show {Label} until it is set up.", buttons "Not now" and "Set up {Label}". A failed sign-in start shows in the dialog's text. Once closed it stays closed until the provider is healthy and breaks again. Provider rows and the setup list no longer show "Check … again" buttons; the provider row's own messages say "VibeTV checks again by itself" in place of "then check again", and the setup's own-app notice no longer asks the customer to click Check again. A stale provider with sign-in shows an empty action tile, not its numbers.
+- Scope: `provider-action-dialog.tsx` (new) and its test, `system-busy-dialog.tsx` (shared helper), `usage-screen.tsx` and its test, `control-center-app.tsx`, the setup and settings provider list files and their tests, `provider-picker.tsx`, `setup-preview-gallery.tsx`, `scripts/test-customer-flows.mjs` (removed the Check-again expectations and the test that clicked it), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the overlay and the removed button are the approved screen, not a new release note
+
+## 2026-10-16 — Provider overlay: Settings-bound action closes it, nothing while the Mac App is offline (#669)
+
+- User approval: Paul chose on 2026-10-16 (via the review orchestrator) Claude Design page "Control Center Redesign" 644, "3A + 4A + 5B (weekly: number first), Paul 16.10." — the overlay of the entry above; this follow-up applies two Codex review findings and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: As in the overlay entry above. The primary button of "Open AI providers" and of a setup that opens Settings now closes the overlay in the same click, since Settings opens behind it. The overlay does not show while the Mac App is not reachable. Sign-in buttons keep the overlay open until the sign-in finishes. No new wording.
+- Scope: `provider-action-dialog.tsx` and its test, `usage-screen.tsx` (the action's Settings flag), `control-center-app.tsx` (the offline condition), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: priority with the busy notice, error only for its own provider (#669)
+
+- User approval: Paul chose on 2026-10-16 (via the review orchestrator) Claude Design page "Control Center Redesign" 644, "3A + 4A + 5B (weekly: number first), Paul 16.10." — the overlay of the entry above; this follow-up applies two Codex review findings and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: As in the overlay entries above. When both the busy computer notice and a provider overlay are due, the provider overlay shows first and the busy notice returns after it is closed (the busy notice already waits for any other dialog). A failed sign-in start shows in the dialog of that provider only; a failure of another request does not appear there. No new wording.
+- Scope: `provider-action-dialog.tsx` and its test, `system-busy-dialog.tsx` (the shared helper takes the titles it waits for), `control-center-app.tsx` (the failure per provider), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: not during setup, failure only for its own incident (#669)
+
+- User approval: Paul chose on 2026-10-16 (via the review orchestrator) Claude Design page "Control Center Redesign" 644, "3A + 4A + 5B (weekly: number first), Paul 16.10." — the overlay of the entry above; this follow-up applies two Codex review findings and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: As in the overlay entries above. The overlay does not appear while setup owns the screen, so its buttons never point at a page that is not there. A failed sign-in start shows in that provider's overlay only while that provider stays in the same state; it is cleared when the sign-in succeeds or the overlay is closed. No new wording.
+- Scope: `control-center-app.tsx` (overlay mount condition and the failure state), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: not on the Settings page, which lists the same provider (#669)
+
+- User approval: Paul chose on 2026-10-16 (via the review orchestrator) Claude Design page "Control Center Redesign" 644, "3A + 4A + 5B (weekly: number first), Paul 16.10." — the overlay of the entry above; this follow-up applies a Codex review finding and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: As in the overlay entries above, on every page except Settings. Settings already shows the same provider's message in its own dialog, so the customer sees one dialog for the provider, not two in a row. No new wording.
+- Scope: `control-center-app.tsx` (overlay mount condition), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: a failed sign-in from a Usage tile reopens it (#669)
+
+- User approval: Paul chose on 2026-10-16 (via the review orchestrator) Claude Design page "Control Center Redesign" 644, "3A + 4A + 5B (weekly: number first), Paul 16.10." — the overlay of the entry above; this follow-up applies two Codex review findings and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: As in the overlay entries above. When a sign-in start fails, the overlay of that provider opens again even after "Not now", and shows the failure in its text. The failure is cleared when the provider is healthy again, when the sign-in succeeds, or when the overlay is closed. No new element; no new wording.
+- Scope: `provider-action-dialog.tsx` and its test (the failure is kept with the action), `control-center-app.tsx` (reports the sign-in start), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: sign-in actions open Settings where sign-in is unavailable (#669)
+
+- User approval: Paul chose on 2026-10-16 (via the review orchestrator) Claude Design page "Control Center Redesign" 644, "3A + 4A + 5B (weekly: number first), Paul 16.10." — the overlay of the entry above; this follow-up applies a Codex review finding and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: Where the Companion cannot start a sign-in yet, "Sign in to {Label}" opens Settings and closes the overlay, instead of showing a sign-in that does nothing. No new wording.
+- Scope: `usage-screen.tsx` and its test, `control-center-app.tsx` (no fallback in the wiring), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: seen once when Settings opens, late failures ignored (#669)
+
+- User approval: Paul chose on 2026-10-16 (via the review orchestrator) Claude Design page "Control Center Redesign" 644, "3A + 4A + 5B (weekly: number first), Paul 16.10." — the overlay of the entry above; this follow-up applies two Codex review findings and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: As in the overlay entries above. Opening Settings counts the overlay as seen, so leaving Settings does not bring the same overlay back; Settings shows that provider's own dialog. A sign-in failure that arrives after its provider was already healthy again is not shown. No new wording.
+- Scope: `provider-action-dialog.tsx` and its test, `control-center-app.tsx` (tab change and the Settings action), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: a failure from Settings stays on Settings (#669)
+
+- User approval: Paul chose on 2026-10-16 (via the review orchestrator) Claude Design page "Control Center Redesign" 644, "3A + 4A + 5B (weekly: number first), Paul 16.10." — the overlay of the entry above; this follow-up applies a Codex review finding and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: A sign-in that fails when started from Settings is shown by the Settings page only, and is not repeated in the overlay after leaving Settings. A sign-in started from the overlay or a Usage tile reopens the overlay with the failure. No new wording.
+- Scope: `provider-action-dialog.tsx` and its test, `control-center-app.tsx` (the origin of a sign-in), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: a failed sign-in shows its message only (#669)
+
+- User approval: Paul chose on 2026-10-16 (via the review orchestrator) Claude Design page "Control Center Redesign" 644, "3A + 4A + 5B (weekly: number first), Paul 16.10." — the overlay of the entry above; this follow-up applies a Codex review finding and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: A failed sign-in start shows its message in the overlay's text; the companion's next-action sentence, which still says "then check again", is not shown there. No new element; no new wording of our own. Not seen by Paul yet. The same sentence still appears on the Settings page for a failed start; changing the companion's text is a separate change.
+- Scope: `provider-action-dialog.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Customer flow: the Claude overlay is closed before the Usage check (#669)
+
+- User approval: Paul chose on 2026-10-16 (via the review orchestrator) Claude Design page "Control Center Redesign" 644, "3A + 4A + 5B (weekly: number first), Paul 16.10." — the overlay of the entry above; this change only updates the customer flow test for it and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: Unchanged. The flow test waits for the "Claude needs a new sign-in" overlay and clicks "Not now" before it opens Usage, as the customer would.
+- Scope: `scripts/test-customer-flows.mjs` (one test), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — test change, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: seen once whenever Settings is the page (#669)
+
+- User approval: Paul chose on 2026-10-16 (via the review orchestrator) Claude Design page "Control Center Redesign" 644, "3A + 4A + 5B (weekly: number first), Paul 16.10." — the overlay of the entry above; this follow-up applies a Codex review finding and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: As in the overlay entries above. Whenever Settings is the page, however it was opened (the sidebar, a Usage action, or "Show me in Settings" from What's New), the overlay counts as seen and does not return when leaving Settings. No new wording.
+- Scope: `provider-action-dialog.tsx` and its test, `control-center-app.tsx` (the Settings state is passed to the hook), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: all seen on Settings in one update (#669)
+
+- User approval: Paul chose on 2026-10-16 (via the review orchestrator) Claude Design page "Control Center Redesign" 644, "3A + 4A + 5B (weekly: number first), Paul 16.10." — the overlay of the entry above; this follow-up applies a Codex review finding and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: As in the overlay entries above. Opening Settings marks every provider's overlay seen at once; with many providers the page no longer re-renders once per provider. No new wording.
+- Scope: `provider-action-dialog.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Usage tiles: an unavailable lane is announced to screen readers (#669)
+
+- User approval: Paul chose the calm Usage tiles on 2026-10-16 (entry above, via the review orchestrator); this follow-up applies a Codex review finding and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: Unchanged on screen. A screen reader now hears "session usage unavailable" for a lane that has no number, as well as the lane that has one. Not seen by Paul yet.
+- Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — accessible name only, no customer-visible change of its own
+
+## 2026-10-16 — Usage tiles: test for the screen-reader line (#669)
+
+- User approval: Paul chose the calm Usage tiles on 2026-10-16 (entry above, via the review orchestrator); this follow-up adds a test for the screen-reader line of the entry above and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: Unchanged. The test checks that a screen reader hears "session usage unavailable" for an unavailable lane.
+- Scope: `usage-screen.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — test change, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: provider health refreshed on every main page (#669)
+
+- User approval: Paul chose on 2026-10-16 (via the review orchestrator) Claude Design page "Control Center Redesign" 644, "3A + 4A + 5B (weekly: number first), Paul 16.10." — the overlay of the entry above, which is "on any page"; this follow-up applies a Codex review finding and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: As in the overlay entries above: the overlay appears on any main page when a provider needs the customer. The provider health and usage refresh now runs on every main page, not only Overview, Usage and Settings, so the overlay appears without a page change. No new wording.
+- Scope: `control-center-app.tsx` (the refresh condition of the usage surface), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — refresh cadence on other pages, no customer-visible change of its own
+
+## 2026-10-16 — Customer flow: the concurrent sign-in test closes both overlays first (#669)
+
+- User approval: Paul chose on 2026-10-16 (via the review orchestrator) Claude Design page "Control Center Redesign" 644, "3A + 4A + 5B (weekly: number first), Paul 16.10." — the overlay of the entry above; this change only updates the customer flow test for it and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: Unchanged. The flow test closes the "Codex" and "Claude" overlays with "Not now" before it navigates, as the customer would.
+- Scope: `scripts/test-customer-flows.mjs` (one test), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — test change, no customer-visible change of its own
+
+## 2026-10-16 — Provider rows: the seven looks of the states overview, quiet error 5b (#669)
+
+- User approval: Paul approved on 2026-10-16 (via the review orchestrator) "644 states overview, quiet error 5b, Paul 16.10." (states-overview.png); he has not yet seen this build.
+- Approved customer-visible result: On "Choose AI providers" and in Settings › AI providers the switch stays at the right in every look:
+  1. Switched on and OK: name and switch.
+  2. Switched on and CodexBar is fetching: name, a small spinner, switch.
+  3. Sign-in needed (not signed in, browser sign-in, or setup needed): name, red "Sign in needed" with an arrow, switch. Clicking starts the sign-in where the app can start it; otherwise it opens the provider's dialog.
+  4. Access missing (macOS): name, red "Allow access" with an arrow, switch. Clicking opens the provider's dialog.
+  5. Quiet error (stale, timed out, rate limited, unavailable, service outage, engine error, config error, unknown): name, a small muted spinner, switch. No text, no warning icon, no button.
+  6. Not supported or no usage data: name in muted text, "No usage data" in muted text, switch.
+  7. Switched off: name and switch off.
+  The warning icon and the round "Sign in to … ›" button are removed. The provider's dialog opens by itself only for looks 3 and 4, once; it never opens for looks 5 and 6.
+  On Usage: no tile for a provider that is switched off, unsupported, or without usage data. Quiet error keeps its last numbers with a small muted spinner in place of the reset time. The access action on a tile reads "Allow access"; the setup action reads "Sign in needed" and starts the sign-in like the row. The weekly line reads "26% weekly used".
+  The provider overlay (frame 3A) opens only for looks 3 and 4. A setup need uses the sign-in copy and its "Sign in to <Provider>" button.
+- Scope: `setup/setup-provider-row.tsx` and its test (the seven looks; the unused message helper removed), `setup/setup-providers-screen.tsx` and its test (the dialog opens by itself only for looks 3 and 4), `usage-screen.tsx` and its test (action labels, no tile for looks 6 and 7), `provider-action-dialog.tsx` and its test (setup need uses the sign-in copy), `control-center-app.tsx` (the hidden-tile list), `control-center-app.display-preferences.test.tsx`, `scripts/test-customer-flows.mjs` (the row names and the dialog expectation for looks 5 and 6), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the approved states overview, no new release note
+
+## 2026-10-16 — Usage: no loading line beside a provider action (#669)
+
+- User approval: Paul approved the Usage tiles and the provider looks on 2026-10-16 (entries above, via the review orchestrator); this follow-up applies a Codex review finding and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: While usage is still loading, a provider that needs the customer shows its action tile (as in the entries above) and not the "Loading usage" line beside it. No new wording.
+- Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the Usage tiles, no customer-visible change of its own
+
+## 2026-10-16 — Usage: token history from the visible providers only (#669)
+
+- User approval: Paul approved the Usage tiles and the provider looks on 2026-10-16 (entries above, via the review orchestrator); this follow-up applies a Codex review finding and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: A provider that gets no tile (switched off, unsupported, or without usage data) no longer makes the Usage page report "Token history is unavailable". No new wording.
+- Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the Usage tiles, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: a checking read keeps a dismissal (#669)
+
+- User approval: Paul chose the provider overlay on 2026-10-16 (entries above, via the review orchestrator); this follow-up applies a Codex review finding and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: A provider that is checked again (shown as checking) keeps a dismissed overlay closed; the overlay returns only when the provider is healthy again and breaks again. No new wording.
+- Scope: `provider-action-dialog.tsx` and its test, `control-center-app.tsx` (the checking providers), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: a failed sign-in is kept while the provider is checking (#669)
+
+- User approval: Paul chose the provider overlay on 2026-10-16 (entries above, via the review orchestrator); this follow-up applies a Codex review finding and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: A failed sign-in start stays shown for a provider that is being checked again, as in the entries above. No new wording.
+- Scope: `provider-action-dialog.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: a healthy result ends the dismissal after a check (#669)
+
+- User approval: Paul chose the provider overlay on 2026-10-16 (entries above, via the review orchestrator); this follow-up applies a Codex review finding and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: When a provider that was being checked is healthy, its closed overlay is closed for good until it breaks again; a need that returns after that shows the overlay again. No new wording.
+- Scope: `provider-action-dialog.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Customer flow: row locators use the sign-in names (#669)
+
+- User approval: Paul approved the provider looks on 2026-10-16 (entries above, via the review orchestrator); this change only updates customer flow test locators to the approved "Sign in needed for <Provider>" names and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: Unchanged.
+- Scope: `scripts/test-customer-flows.mjs` (three locators), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — test change, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: a shown failure is kept through a check (#669)
+
+- User approval: Paul chose the provider overlay on 2026-10-16 (entries above, via the review orchestrator); this follow-up applies a Codex review finding and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: A sign-in failure shown in the overlay stays there when the provider is checked again and its need returns. No new wording.
+- Scope: `provider-action-dialog.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Usage: no "still loading" notice beside an action tile (#669)
+
+- User approval: Paul approved the Usage tiles and the provider looks on 2026-10-16 (entries above, via the review orchestrator); this follow-up applies a Codex review finding and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: While usage is still loading, a provider that needs the customer shows its action tile and no "Usage is still loading" notice beside it. A real usage error is still shown. No new wording.
+- Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the Usage tiles, no customer-visible change of its own
+
+## 2026-10-16 — Customer flow: the Windows sign-in test closes the Claude overlay first (#669)
+
+- User approval: Paul approved the provider looks on 2026-10-16 (entries above, via the review orchestrator); this change only updates a customer flow test for the overlay and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: Unchanged. The flow closes the "Claude needs a new sign-in" overlay with "Not now" before it opens Settings.
+- Scope: `scripts/test-customer-flows.mjs` (one test), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — test change, no customer-visible change of its own
+
+## 2026-10-16 — Customer flows: close the provider overlays where a flow is not about them (#669)
+
+- User approval: Paul approved the provider looks on 2026-10-16 (entries above, via the review orchestrator); this change only updates customer flow tests for the overlay and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: Unchanged. Two flows that open with a sign-in or access need close its overlay with "Not now" before they navigate.
+- Scope: `scripts/test-customer-flows.mjs` (a helper and two calls), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — test change, no customer-visible change of its own
+
+## 2026-10-16 — Customer flows: overlay closed once the page has its preferences (#669)
+
+- User approval: Paul approved the provider looks on 2026-10-16 (entries above, via the review orchestrator); this change only updates customer flow tests and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: Unchanged.
+- Scope: `scripts/test-customer-flows.mjs` (the helper is called after the connected heading), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — test change, no customer-visible change of its own
+
+## 2026-10-16 — Usage: a sign-in failure from the overlay stays in its dialog (#669)
+
+- User approval: Paul approved the provider looks on 2026-10-16 (entries above, via the review orchestrator); this follow-up applies a Codex review finding and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: A sign-in that fails when started from the provider overlay or a Usage tile shows its message in that overlay only; Settings does not show it again. No new wording.
+- Scope: `control-center-app.tsx` (the Settings error is set only for Settings starts), `usage-screen.tsx` (hidden providers keep their token history), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix, no customer-visible change of its own
+
+## 2026-10-16 — Provider rows: a closed access message comes back after a healthy result (#669)
+
+- User approval: Paul approved the provider looks on 2026-10-16 (entries above, via the review orchestrator); this follow-up applies a Codex review finding and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: A closed access message for a provider returns when the cause comes back after the provider was healthy or switched off; while the cause stays, it stays closed. No new wording.
+- Scope: `setup/setup-providers-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix, no customer-visible change of its own
+
+## 2026-10-16 — Provider rows: closed messages are forgotten also while the list is hidden; token notice counts shown providers (#669)
+
+- User approval: Paul approved the provider looks on 2026-10-16 (entries above, via the review orchestrator); this follow-up applies Codex review findings and changes no wording; he has not yet seen this build.
+- Approved customer-visible result: A closed access message for a provider returns when the cause comes back after the provider was healthy or switched off, also when the provider list was not on screen in between. The Usage token-history notice names the one provider that is shown, when only one is. No new wording.
+- Scope: `setup/setup-providers-screen.tsx` and its test, `control-center-app.tsx` (the app-level reset on each preference read), `usage-screen.tsx` (the notice uses the shown providers), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fixes, no customer-visible change of its own
+
+## 2026-10-16 — Usage: test pins the reset times of healthy tiles while token history counts (#669)
+
+- User approval: Paul approved the Usage tiles on 2026-10-16 (entries above, via the review orchestrator); this entry adds a test only for the approved reset display and changes no wording or layout; he has not yet seen this build.
+- Approved customer-visible result: No change. A healthy, fresh tile shows its reset time top-right and on each later window line while the token history is still counting, with no spinner. No new wording.
+- Scope: `usage-screen.test.tsx` (one new test), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — test only, no customer-visible change
+
+## 2026-10-16 — Usage: the token chart draws a day without tokens as zero, not as a gap (#579, carried from #603)
+
+- User approval: pending — Paul sees a before/after picture on 2026-10-17 (via the review orchestrator); carried from #603.
+- Approved customer-visible result: Not yet seen by Paul. In Usage, each provider's line in the token chart runs unbroken from the first to the last day of the chart; a day on which a provider used no tokens sits on the zero line. Calendar days on which no provider used tokens keep their place on the time axis. Where the first and last reported day lie more than 400 days apart, every reported day is kept as it is, without filling in days. Totals and tooltip values of days with tokens are unchanged; a day without tokens shows 0 in the tooltip.
+- Scope: `usage-screen.tsx`, its test, and this approval record. Stacked on #669; pull request branch only, not merge or release.
+- What's new: none — a correction, nothing new to announce

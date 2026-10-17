@@ -1,196 +1,145 @@
-import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
-import {
-  SetupProviderRow,
-  setupProviderIssueMessage,
-  setupProviderRowVariant,
-} from "./setup-provider-row";
+// @vitest-environment jsdom
+//
+// The seven looks of a provider row (states overview 644, Paul 16.10.): the
+// switch stays at the right; a red action where the customer must act; a muted
+// spinner while CodexBar works or retries by itself; nothing else.
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { SetupProviderRow, setupProviderRowVariant } from "./setup-provider-row";
 
-function render(props: Partial<Parameters<typeof SetupProviderRow>[0]> = {}) {
-  return renderToStaticMarkup(
-    <SetupProviderRow enabled health="healthy" label="Claude Code"
-      onCheckAgain={vi.fn()} onToggle={vi.fn()} onShowIssue={vi.fn()} {...props} />,
+afterEach(cleanup);
+
+function row(props: Partial<Parameters<typeof SetupProviderRow>[0]> = {}) {
+  const onShowIssue = vi.fn();
+  const onToggle = vi.fn();
+  const utils = render(
+    <SetupProviderRow
+      enabled
+      health="healthy"
+      label="Claude"
+      onShowIssue={onShowIssue}
+      onToggle={onToggle}
+      {...props}
+    />,
   );
+  return { ...utils, onShowIssue, onToggle, item: utils.getByRole("listitem") };
 }
 
-describe("SetupProviderRow", () => {
-  it("shows ready and disabled providers without an error action", () => {
-    expect(render()).toContain('aria-checked="true"');
-    const off = render({ enabled: false, health: "auth_required" });
-    expect(off).toContain('aria-checked="false"');
-    expect(off).not.toContain("Show provider message");
+const switchOf = (item: HTMLElement) => within(item).getByRole("switch");
+
+describe("the seven provider row looks", () => {
+  it("1 · switched on and OK: name and switch only", () => {
+    const { item } = row({ label: "Codex", health: "healthy" });
+    expect(within(item).getByText("Codex")).toBeTruthy();
+    expect(switchOf(item).getAttribute("aria-checked")).toBe("true");
+    expect(item.querySelector('[data-slot="spinner"]')).toBeNull();
+    expect(within(item).queryByRole("button")).toBeNull();
   });
 
-  it.each(["checking", "auth_required", "setup_required", "permission_required", "timeout",
-    "no_usage_available", "service_outage", "unavailable", "config_error", "engine_error", "stale",
-    "unsupported"])(
-    "keeps the switch usable for %s", (health) => {
-      const html = render({ health });
-      expect(html).toContain('role="switch"');
-      expect(html).not.toMatch(/role="switch"[^>]*disabled=""/);
+  it("2 · switched on and CodexBar is fetching: a small spinner beside the switch", () => {
+    const { item } = row({ label: "Cursor", health: "checking" });
+    expect(item.querySelector('[data-slot="spinner"]')).not.toBeNull();
+    expect(within(item).queryByRole("button")).toBeNull();
+    expect(switchOf(item).getAttribute("aria-checked")).toBe("true");
+  });
+
+  it.each(["auth_required", "browser_sign_in_required", "setup_required"])(
+    "3 · %s: red 'Sign in needed' with an arrow, and the switch",
+    (health) => {
+      const onOpenSignIn = vi.fn();
+      const { item } = row({ health, onOpenSignIn });
+      const action = within(item).getByRole("button", { name: "Sign in needed for Claude" });
+      expect(action.textContent).toBe("Sign in needed");
+      expect(action.className).toContain("text-destructive");
+      expect(action.querySelector("svg")).not.toBeNull();
+      expect(switchOf(item)).toBeTruthy();
+      expect(item.querySelector('[data-slot="spinner"]')).toBeNull();
     },
   );
 
-  it("keeps error text in the popup and offers its opener plus retry", () => {
-    const html = render({ health: "auth_required" });
-    expect(html).toContain('aria-label="Show provider message for Claude Code"');
-    expect(html).toContain('aria-label="Check Claude Code again"');
-    expect(html).not.toContain("Sign in to Claude Code");
-    expect(html).not.toContain("Open CodexBar");
+  it("3 · clicking calls the sign-in when the app can start it", () => {
+    const onOpenSignIn = vi.fn();
+    const { item, onShowIssue } = row({ health: "auth_required", onOpenSignIn });
+    fireEvent.click(within(item).getByRole("button", { name: "Sign in needed for Claude" }));
+    expect(onOpenSignIn).toHaveBeenCalledTimes(1);
+    expect(onShowIssue).not.toHaveBeenCalled();
   });
 
-  it("offers one sign-in action beside the switch on either host", () => {
-    for (const health of ["auth_required", "setup_required", "browser_sign_in_required"]) {
-      const html = render({ health, onOpenSignIn: vi.fn() });
-      expect(html).toContain("Sign in to Claude Code");
-      expect(html).toContain("lucide-chevron-right");
-      expect(html).not.toContain("Show provider message");
-      expect(html).not.toContain("Check Claude Code again");
-      // Marcus, 15.10. (#647): the switch stays, so the provider can be
-      // switched off without signing in first.
-      expect(html).toContain('role="switch"');
-      expect(html).not.toMatch(/role="switch"[^>]*disabled=""/);
-      expect(html.match(/<button\b/g)).toHaveLength(2);
+  it("3 · without a sign-in the app can start, clicking opens the provider's dialog", () => {
+    const { item, onShowIssue } = row({ health: "setup_required" });
+    fireEvent.click(within(item).getByRole("button", { name: "Sign in needed for Claude" }));
+    expect(onShowIssue).toHaveBeenCalledTimes(1);
+  });
+
+  it("4 · permission missing: red 'Allow access' with an arrow; clicking opens the dialog", () => {
+    const onOpenSignIn = vi.fn();
+    const { item, onShowIssue } = row({ health: "permission_required", onOpenSignIn });
+    const action = within(item).getByRole("button", { name: "Allow access for Claude" });
+    expect(action.textContent).toBe("Allow access");
+    expect(action.className).toContain("text-destructive");
+    fireEvent.click(action);
+    expect(onShowIssue).toHaveBeenCalledTimes(1);
+    expect(onOpenSignIn).not.toHaveBeenCalled();
+  });
+
+  it.each(["stale", "timed_out", "rate_limited", "unavailable", "service_outage", "engine_error",
+    "engine_incompatible", "config_error", "unknown"])(
+    "5 · %s: a muted spinner, no text, no warning, no button",
+    (health) => {
+      const { item } = row({ health });
+      const spinner = item.querySelector('[data-slot="spinner"]');
+      expect(spinner).not.toBeNull();
+      expect(spinner?.getAttribute("class")).toContain("text-muted-foreground");
+      expect(within(item).queryByRole("button")).toBeNull();
+      // The only text is the screen-reader line; nothing visible beside the name.
+      expect(item.textContent).toBe("ClaudeUpdating Claude");
+    },
+  );
+
+  it.each(["unsupported", "no_usage_available"])(
+    "6 · %s: the name muted and 'No usage data', and the switch",
+    (health) => {
+      const { item } = row({ health });
+      expect(within(item).getByText("No usage data")).toBeTruthy();
+      expect(within(item).getByText("Claude").className).toContain("text-muted-foreground");
+      expect(within(item).queryByRole("button")).toBeNull();
+      expect(switchOf(item).getAttribute("aria-checked")).toBe("true");
+    },
+  );
+
+  it("7 · switched off: name and switch off, nothing else", () => {
+    const { item } = row({ enabled: false, health: "auth_required" });
+    expect(switchOf(item).getAttribute("aria-checked")).toBe("false");
+    expect(within(item).queryByRole("button")).toBeNull();
+    expect(item.textContent).toBe("Claude");
+  });
+
+  it("never shows the warning icon, the retry or the round chevron", () => {
+    for (const health of ["auth_required", "permission_required", "stale", "unsupported", "healthy"]) {
+      const { item, unmount } = row({ health });
+      expect(within(item).queryByRole("button", { name: /Show provider message/ })).toBeNull();
+      expect(within(item).queryByRole("button", { name: /again/ })).toBeNull();
+      expect(item.querySelector("svg.lucide-chevron-right")).toBeNull();
+      unmount();
     }
-    expect(render({ health: "auth_required" })).not.toContain("Sign in to Claude Code");
   });
 
-  it("keeps the single sign-in action available during its background check", () => {
-    const html = render({
-      health: "auth_required",
-      checking: true,
-      onOpenSignIn: vi.fn(),
-    });
-    expect(html).toContain("Sign in to Claude Code");
-    expect(html).not.toContain("lucide-loader-circle");
-    expect(html).toContain('role="switch"');
-  });
-
-  it("replaces retry with a spinner while the exact check runs", () => {
-    for (const health of ["checking", "unavailable", "no_usage_available", "service_outage"]) {
-      const html = render({ checking: true, health });
-      expect(html).toContain("lucide-loader-circle");
-      expect(html).not.toContain('aria-label="Check Claude Code again"');
+  it("keeps the switch usable in every look, and the row never opens a dialog itself", () => {
+    for (const health of ["healthy", "checking", "auth_required", "permission_required", "stale", "unsupported"]) {
+      const { item, onToggle, unmount } = row({ health });
+      expect(switchOf(item).hasAttribute("disabled")).toBe(false);
+      fireEvent.click(switchOf(item));
+      expect(onToggle).toHaveBeenCalledWith(false);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      unmount();
     }
   });
 
-  it("retains the bounded stale-reading presentation and switch", () => {
-    const html = render({ health: "stale" });
-    expect(html).toContain('aria-label="Show provider message for Claude Code"');
-    expect(html).not.toContain('aria-label="Check Claude Code again"');
+  it("maps every reported state onto one of the looks", () => {
+    expect(setupProviderRowVariant("auth_required")).toBe("sign_in");
+    expect(setupProviderRowVariant("permission_required")).toBe("permission");
+    expect(setupProviderRowVariant("stale")).toBe("stale");
+    expect(setupProviderRowVariant("unsupported")).toBe("unsupported");
+    expect(setupProviderRowVariant("no_usage_available")).toBe("no_usage");
   });
-
-  it.each(["no_usage_available", "service_outage"])("dims unusable %s without disabling it", (health) => {
-    const html = render({ health });
-    expect(html).toMatch(/data-slot="item-title"[^>]*opacity-50/);
-    expect(html).toContain('aria-label="Check Claude Code again"');
-  });
-});
-
-describe("provider popup guidance", () => {
-  // CodexBar's sentence for a throttled Claude lists the blocked browser
-  // import and the empty CLI screen too, which reads like a sign-in problem.
-  it("explains a throttled check instead of showing every failed source", () => {
-    expect(setupProviderIssueMessage({
-      health: "rate_limited", label: "Claude",
-      detail: "Claude is pausing usage checks.", nextAction: "Nothing to fix.",
-      reportedMessage: "Claude usage failed from all configured sources. Web: App-Bound Encryption ...",
-    })).toBe("Claude is pausing usage checks. Nothing to fix.");
-  });
-
-  it("explains a throttle behind a saved reading the same way", () => {
-    expect(setupProviderIssueMessage({
-      health: "stale", label: "Claude",
-      detail: "Claude is pausing usage checks.", nextAction: "Nothing to fix.",
-      reportedMessage: "Live usage is unavailable; ... Claude usage failed from all configured sources.",
-    })).toBe("Claude is pausing usage checks. Nothing to fix.");
-    expect(setupProviderIssueMessage({
-      health: "stale", label: "Claude",
-      detail: "Live usage is unavailable; the last successful reading is still saved.",
-      reportedMessage: "Live usage is unavailable; the last successful reading is still saved. Sign-in expired.",
-    })).toBe("Live usage is unavailable; the last successful reading is still saved. Sign-in expired.");
-  });
-
-  it("preserves the exact reported message before generic detail", () => {
-    const reportedMessage = "Codex connection failed: account authentication required to read rate limits";
-    expect(setupProviderIssueMessage({ health: "auth_required", label: "Codex",
-      detail: "Sign in required", reportedMessage })).toBe(reportedMessage);
-    expect(setupProviderIssueMessage({ health: "auth_required", label: "Codex",
-      detail: "This provider needs an active sign-in." })).toBe("This provider needs an active sign-in.");
-  });
-
-  it.each([
-    ["auth_required", "Sign in to Claude Code"],
-    ["permission_required", "Allow access on this computer"],
-    ["unsupported", "This provider no longer supports this account"],
-    ["no_usage_available", "No usage data on this account"],
-    ["service_outage", "Service outage — try again later"],
-    ["stale", "Live usage is unavailable"],
-    ["timeout", "Check timed out"],
-    ["config_error", "Check timed out"],
-    ["engine_error", "Check timed out"],
-    ["?", "Check timed out"],
-  ])("retains the existing generic guidance for %s", (health, message) => {
-    expect(setupProviderIssueMessage({ health, label: "Claude Code" })).toBe(message);
-  });
-
-  it.each(["healthy", "checking", "disabled"])("does not turn %s into an error", (health) => {
-    expect(setupProviderIssueMessage({ health, label: "Codex" })).toBeNull();
-  });
-
-  it("names an engine that is too old instead of a timed-out check", () => {
-    expect(setupProviderIssueMessage({ health: "engine_incompatible", label: "Codex" })).toBe(
-      "The usage engine is too old. Repair the usage engine, then check again.",
-    );
-    expect(render({ health: "engine_incompatible" })).toContain('aria-label="Check Claude Code again"');
-  });
-
-  it("keeps the engine's product name out of provider messages", () => {
-    expect(setupProviderIssueMessage({ health: "engine_incompatible", label: "Codex",
-      detail: "CodexBar 0.17.0 is too old. Version 0.23.0 or newer is required." })).toBe(
-      "Usage engine 0.17.0 is too old. Version 0.23.0 or newer is required.",
-    );
-  });
-});
-
-// Google ended Gemini CLI OAuth for consumer accounts. The stored credential
-// is still valid, so a sign-in button or a re-check would only repeat the
-// same refusal; the row must carry the provider's migration path instead.
-describe("a provider the account lost access to", () => {
-  const reportedMessage =
-    "Google no longer supports Gemini CLI OAuth for individual, AI Pro, or Ultra accounts. Enable Antigravity, sign in to Antigravity or run `agy`, then refresh.";
-
-  it("shows the migration message and no sign-in or re-check loop", () => {
-    const html = render({
-      health: "unsupported",
-      label: "Gemini",
-      onOpenSignIn: vi.fn(),
-    });
-    expect(html).toContain('aria-label="Show provider message for Gemini"');
-    // The two actions that cannot resolve it must not be offered.
-    expect(html).not.toContain("Sign in to Gemini");
-    expect(html).not.toContain('aria-label="Check Gemini again"');
-    // Switching it off is how the customer moves on, so it stays available.
-    expect(html).toContain('role="switch"');
-    expect(html).not.toMatch(/role="switch"[^>]*disabled=""/);
-  });
-
-  it("passes the upstream migration guidance through without the engine's name", () => {
-    expect(
-      setupProviderIssueMessage({
-        health: "unsupported",
-        label: "Gemini",
-        detail: "Gemini no longer supports this account.",
-        reportedMessage,
-      }),
-    ).toBe(
-      "Google no longer supports Gemini CLI OAuth for individual, AI Pro, or Ultra accounts. Enable Antigravity, sign in to Antigravity or run `agy`, then refresh.",
-    );
-  });
-});
-
-// A throttled check is nothing the customer can repair. It needs no case of
-// its own: the re-check presentation is what every unnamed state gets.
-it("gives a rate-limited provider the re-check presentation, not a sign-in", () => {
-  expect(setupProviderRowVariant("rate_limited")).toBe("timed_out");
 });

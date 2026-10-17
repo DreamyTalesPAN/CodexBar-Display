@@ -66,7 +66,7 @@ describe("provider preference polling", () => {
 
       return (
         <SetupProvidersScreen
-          onCheckAgain={retryProvider}
+
           onContinue={vi.fn()}
           onToggle={vi.fn()}
           pendingCheckIds={new Set<string>()}

@@ -1,11 +1,13 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "@/test/axe";
-import type { UsageSnapshot } from "./control-center-types";
+import type { PreferenceDescriptor, UsageSnapshot } from "./control-center-types";
 import {
   UsageScreen,
+  usageProviderActionsFor,
   usageTokenHistoryUnavailable,
   usageTokenHistoryUnavailableOnVibeTV,
+  buildProviderTokenChart,
 } from "./usage-screen";
 
 const usage: UsageSnapshot = {
@@ -55,8 +57,8 @@ describe("UsageScreen", () => {
     expect(html).toContain("Token history is unavailable");
     expect(html).toContain("not available for every selected provider");
     expect(html).not.toContain("Total tokens in the last 30 days");
-    expect(html).toContain("Weekly: 34% used");
-    expect(html).toContain("Weekly: 10% used");
+    expect(html).toContain('aria-label="34% weekly used"');
+    expect(html).toContain('aria-label="10% weekly used"');
   });
 
   it("says when the Usage notice stands", () => {
@@ -119,7 +121,7 @@ describe("UsageScreen", () => {
     });
     expect(html).toContain("Token history is unavailable");
     expect(html).toContain('aria-label="Refresh token usage"');
-    expect(html).toContain("Weekly: 34% used");
+    expect(html).toContain('aria-label="34% weekly used"');
     expect(html).not.toContain("Token history is loading");
     expect(html).not.toContain("zero tokens");
     expect(html).not.toContain("Total tokens in the last 30 days");
@@ -185,8 +187,8 @@ describe("UsageScreen", () => {
     expect(html).toContain("items-center justify-center");
     expect(html).toContain('data-slot="spinner"');
     expect(html).toContain("Codex");
-    expect(html).toContain("Session: 12% used");
-    expect(html).toContain("Weekly: 34% used");
+    expect(html).toContain('aria-label="12% session used"');
+    expect(html).toContain('aria-label="34% weekly used"');
     expect(html).not.toContain("AI providers");
     expect(html).not.toContain('aria-label="Disable Codex"');
     expect(html).not.toContain("Loading usage");
@@ -342,9 +344,9 @@ describe("UsageScreen", () => {
       })),
     });
 
-    expect(html).toContain("Usage limits are stale.");
-    expect(html).toContain("Session: ??");
-    expect(html).toContain("Token usage");
+    expect(html).toContain('aria-label="Updating"');
+    expect(html).toContain("5,600 total · 3,400 this week");
+    expect(html).not.toContain("??");
     expect(html).not.toContain("Usage is still loading");
   });
 
@@ -399,9 +401,9 @@ describe("UsageScreen", () => {
       ],
     });
 
-    expect(html).toContain("Session: ??");
-    expect(html).toContain("Weekly: ??");
-    expect(html).toContain("Usage limits unavailable.");
+    expect(html).toContain('aria-label="Updating"');
+    expect(html).not.toContain("??");
+    expect(html).not.toContain("session used");
     expect(html).not.toContain("Session: 0%");
     expect(html).not.toContain("Weekly: 0%");
     expect(html).not.toContain("Reset in");
@@ -441,10 +443,9 @@ describe("UsageScreen", () => {
     );
 
     expect(html).toContain("Total tokens in the last 30 days");
-    expect(html).toContain("Token usage");
-    expect(html).toContain("Session: ??");
-    expect(html).toContain("Weekly: ??");
-    expect(html).toContain("Usage limits are stale.");
+    expect(html).toContain("56 total · 34 this week");
+    expect(html).toContain('aria-label="Updating"');
+    expect(html).not.toContain("??");
     expect(html).not.toContain("Provider is not responding right now.");
     expect(html).not.toContain(">Unavailable<");
   });
@@ -474,10 +475,10 @@ describe("UsageScreen", () => {
       ],
     });
 
-    expect(html).toContain("7-day quota: 57% used");
-    expect(html).toContain("Codex Spark Weekly: 12% used");
-    expect(html.indexOf("7-day quota: 57% used")).toBeLessThan(
-      html.indexOf("Codex Spark Weekly: 12% used"),
+    expect(html).toContain('aria-label="57% 7-day quota used"');
+    expect(html).toContain('aria-label="12% codex spark weekly used"');
+    expect(html.indexOf('aria-label="57% 7-day quota used"')).toBeLessThan(
+      html.indexOf('aria-label="12% codex spark weekly used"'),
     );
     expect(html).not.toContain("Session:");
     expect(html).not.toContain("Session: 0%");
@@ -502,7 +503,7 @@ describe("UsageScreen", () => {
       ],
     });
 
-    expect(html).toContain("Custom quota: 23% used");
+    expect(html).toContain('aria-label="23% custom quota used"');
     expect(html).not.toContain("Session:");
     expect(html).not.toContain("Weekly:");
   });
@@ -520,10 +521,11 @@ describe("UsageScreen", () => {
       ],
     });
 
-    expect(html).toContain("Session: ??");
-    expect(html).toContain("Weekly: 57% used");
-    expect(html).not.toContain("Weekly: ??");
+    expect(html).not.toContain("??");
+    expect(html).toContain('aria-label="57% weekly used"');
     expect(html).not.toContain("Session: 0%");
+    expect(html).not.toContain("session used");
+    expect(html).toContain("session usage unavailable");
     // A screen reader hears the same: a percentage only for the lane that has one.
     expect(html.match(/aria-valuenow="\d+"/g)).toEqual(['aria-valuenow="57"']);
   });
@@ -538,5 +540,366 @@ describe("UsageScreen", () => {
       }),
     );
     await expectNoAxeViolations(renderUsage(null, { ...usage, providers: [] }));
+  });
+  it("shows the number the response delivered, used or remaining, number first", () => {
+    const html = renderUsage(null, {
+      ...usage,
+      providers: [{ ...usage.providers[0], session: 45, weekly: 26, usageMode: "remaining" }],
+    });
+    expect(html).toContain('aria-label="45% session remaining"');
+    expect(html).toContain('aria-label="26% weekly remaining"');
+    expect(html).toContain(">45%</span>");
+    expect(html).not.toContain("55% session");
+    expect(html).not.toContain("74% weekly");
+  });
+
+  it("keeps Stale pills, retry buttons and status pills off the Usage tiles", () => {
+    const html = renderUsage(null, {
+      ...usage,
+      providers: [{ ...usage.providers[0], stale: true, status: { description: "Degraded" } }],
+    });
+    expect(html).not.toContain("Stale");
+    expect(html).not.toContain("Check again");
+    expect(html).toContain('aria-label="Updating"');
+  });
+
+  it("swaps the reset time for the Updating spinner in a quiet tile and keeps its numbers", () => {
+    const html = renderUsage(null, {
+      ...usage,
+      providers: [{ ...usage.providers[0], stale: true, resetSecs: 3600 }],
+    });
+    expect(html).toContain('aria-label="Updating"');
+    expect(html).not.toContain("Reset in");
+    expect(html).toContain('aria-label="34% weekly used"');
+  });
+
+  it("keeps a stale provider's last good numbers visible with the Updating spinner", () => {
+    const html = renderUsage(null, {
+      ...usage,
+      providers: [
+        {
+          ...usage.providers[0],
+          session: 45,
+          weekly: 26,
+          resetSecs: 3600,
+          stale: true,
+          usageUnavailable: true,
+          sessionUnavailable: true,
+          weeklyUnavailable: true,
+        },
+      ],
+    });
+    expect(html).toContain('aria-label="45% session used"');
+    expect(html).toContain('aria-label="26% weekly used"');
+    expect(html).toContain('aria-label="Updating"');
+    expect(html).not.toContain("??");
+    expect(html).not.toContain("Reset in");
+  });
+
+  it("shows no 0% for a cleared stale provider with nothing retained", () => {
+    const html = renderUsage(null, {
+      ...usage,
+      providers: [
+        {
+          ...usage.providers[0],
+          session: 0,
+          weekly: 0,
+          stale: true,
+          usageUnavailable: true,
+          sessionUnavailable: true,
+          weeklyUnavailable: true,
+        },
+      ],
+    });
+    expect(html).not.toContain("0% session used");
+    expect(html).not.toContain("0% weekly used");
+    expect(html).toContain('aria-label="Updating"');
+  });
+
+  it("keeps a stale reading's non-zero lane and shows a zero lane as unavailable", () => {
+    const html = renderUsage(null, {
+      ...usage,
+      providers: [
+        {
+          ...usage.providers[0],
+          session: 0,
+          weekly: 58,
+          stale: true,
+          usageUnavailable: true,
+          sessionUnavailable: true,
+          weeklyUnavailable: true,
+        },
+      ],
+    });
+    expect(html).toContain('aria-label="58% weekly used"');
+    expect(html).not.toContain("0% session");
+    expect(html.match(/aria-valuenow="\d+"/g)).toEqual(['aria-valuenow="58"']);
+  });
+
+  it("shows a normal tile's reset time", () => {
+    const html = renderUsage(null, {
+      ...usage,
+      providers: [{ ...usage.providers[0], resetSecs: 3600 }],
+    });
+    expect(html).toContain("Reset in");
+    expect(html).not.toContain('aria-label="Updating"');
+  });
+
+  // Healthy and not stale while token history is still counting: the resets
+  // stay, the spinner stays away, and each window shows its own reset.
+  it("shows the resets of healthy, fresh tiles while token history still counts", () => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="online"
+        onRefresh={vi.fn()}
+        usage={{
+          ...usage,
+          tokenUsageReady: true,
+          tokenUsageUpdating: true,
+          providers: [
+            {
+              id: "claude",
+              label: "Claude",
+              session: 94,
+              weekly: 91,
+              resetSecs: 9469,
+              usageMode: "remaining",
+              stale: false,
+              windows: [
+                { id: "session", label: "Session", usedPercent: 94, resetSecs: 9469 },
+                { id: "weekly", label: "Weekly", usedPercent: 91, resetSecs: 95869 },
+                { id: "fable", label: "Fable only", usedPercent: 100 },
+              ],
+              cost: { daily: [{ day: "2026-10-16", totalTokens: 1234 }] },
+            },
+            {
+              id: "codex",
+              label: "Codex",
+              session: 0,
+              weekly: 71,
+              usageMode: "remaining",
+              stale: false,
+              windows: [{ id: "weekly", label: "Weekly", usedPercent: 71, resetSecs: 471073 }],
+              cost: { daily: [{ day: "2026-10-16", totalTokens: 1234 }] },
+            },
+          ],
+        }}
+      />,
+    );
+    expect(html).toContain('data-testid="token-history-updating"');
+    expect(html).not.toContain('aria-label="Updating"');
+    expect(html).toContain("Reset in 2h 37m");
+    expect(html).toContain("Reset in 1d 2h");
+    expect(html).toContain("Reset in 5d 10h");
+  });
+
+  it("leaves an action tile blank even when stale numbers exist", () => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="online"
+        providerActions={{
+          codex: { name: "Codex", state: "auth_required", label: "Sign in needed", onAction: vi.fn() },
+        }}
+        usage={{
+          ...usage,
+          providers: [{ ...usage.providers[0], session: 45, weekly: 26, stale: true, usageUnavailable: true }],
+        }}
+      />,
+    );
+    expect(html).toContain('aria-label="Sign in needed for Codex"');
+    expect(html).not.toContain("45%");
+    expect(html).not.toContain("26%");
+    expect(html).not.toContain('aria-label="Updating"');
+    expect(html).not.toContain("Reset in");
+  });
+
+  it("drops action tiles while the Mac App is not reachable", () => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="missing"
+        providerActions={{
+          claude: { name: "Claude", state: "auth_required", label: "Sign in needed", onAction: vi.fn() },
+        }}
+        usage={null}
+      />,
+    );
+    expect(html).not.toContain("Sign in needed");
+    expect(html).toContain("Mac App needs setup.");
+  });
+
+  it("shows action tiles in place of numbers, also for a provider with no usage entry", () => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="online"
+        providerActions={{
+          codex: { name: "Codex", state: "auth_required", label: "Sign in needed", onAction: vi.fn() },
+          claude: { name: "Claude", state: "auth_required", label: "Sign in needed", onAction: vi.fn() },
+        }}
+        usage={usage}
+      />,
+    );
+    expect(html.match(/Sign in needed<svg/g)).toHaveLength(2);
+    expect(html).toContain('aria-label="Sign in needed for Claude"');
+    expect(html).toContain("Claude");
+    expect(html).not.toContain("session used");
+    expect(html).not.toContain("??");
+    expect(html).not.toContain("Check again");
+  });
+
+  it("shows an action tile, not the loading state, while usage is still pending", () => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="online"
+        providerActions={{
+          claude: { name: "Claude", state: "auth_required", label: "Sign in needed", onAction: vi.fn() },
+        }}
+        usage={null}
+      />,
+    );
+    expect(html).toContain('aria-label="Sign in needed for Claude"');
+    expect(html).not.toContain("Loading usage");
+  });
+
+  it("does not report missing token history for a hidden provider", () => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="online"
+        hiddenProviderIds={["codex"]}
+        usage={{
+          ...usage,
+          providers: [
+            { ...usage.providers[0], cost: undefined },
+            { ...usage.providers[0], id: "claude", label: "Claude", cost: { daily: [{ day: "2026-07-22", totalTokens: 9 }] } },
+          ],
+        }}
+      />,
+    );
+    expect(html).not.toContain("Token history is unavailable");
+  });
+
+  it("shows no still-loading notice beside an action tile", () => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="online"
+        providerActions={{
+          claude: { name: "Claude", state: "auth_required", label: "Sign in needed", onAction: vi.fn() },
+        }}
+        usage={{ ok: true, refresh: { state: "unavailable" }, providers: [] }}
+      />,
+    );
+    expect(html).toContain('aria-label="Sign in needed for Claude"');
+    expect(html).not.toContain("Usage is still loading");
+  });
+
+  it("gives no tile to a hidden provider, even with a usage entry", () => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="online"
+        hiddenProviderIds={["codex"]}
+        usage={usage}
+      />,
+    );
+    expect(html).not.toContain("session used");
+    expect(html).not.toContain(">Codex<");
+  });
+
+  it("opens Settings for every action where the Companion cannot start a sign-in", () => {
+    const onOpenSettings = vi.fn();
+    const pref = {
+      id: "codexbar.providers.claude.enabled",
+      section: "providers",
+      type: "boolean",
+      providerId: "claude",
+      label: "Claude",
+      value: true,
+      health: { state: "auth_required", service: "unknown", message: "" },
+    } as unknown as PreferenceDescriptor;
+    const actions = usageProviderActionsFor([pref], { onOpenSettings });
+    expect(actions.claude.inSettings).toBe(true);
+    actions.claude.onAction();
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps each provider health to its action, and only for enabled providers", () => {
+    const onOpenSettings = vi.fn();
+    const onSignIn = vi.fn();
+    const pref = (providerId: string, state: string, value = true) =>
+      ({
+        id: `codexbar.providers.${providerId}.enabled`,
+        section: "providers",
+        type: "boolean",
+        providerId,
+        label: providerId.charAt(0).toUpperCase() + providerId.slice(1),
+        value,
+        health: { state, service: "unknown", message: "" },
+      }) as unknown as PreferenceDescriptor;
+    const actions = usageProviderActionsFor(
+      [
+        pref("claude", "auth_required"),
+        pref("gemini", "permission_required"),
+        pref("cursor", "setup_required"),
+        pref("copilot", "browser_sign_in_required"),
+        pref("codex", "healthy"),
+        pref("zai", "auth_required"),
+        pref("kiro", "auth_required", false),
+      ],
+      { onOpenSettings, onSignIn },
+    );
+    expect(Object.keys(actions)).toEqual(["claude", "gemini", "cursor", "copilot", "zai"]);
+    expect(actions.claude.label).toBe("Sign in needed");
+    expect(actions.gemini.label).toBe("Allow access");
+    expect(actions.cursor.label).toBe("Sign in needed");
+    expect(actions.copilot.label).toBe("Sign in needed");
+
+    actions.claude.onAction();
+    expect(onSignIn).toHaveBeenCalledWith(expect.objectContaining({ providerId: "claude" }));
+    // Zai has no sign-in the Companion can start, and Cursor's setup does: the setup row's rule.
+    actions.zai.onAction();
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
+    actions.cursor.onAction();
+    expect(onSignIn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("token chart days (#579)", () => {
+  const provider = (id: string) => ({ id, label: id });
+  it("draws a day the history leaves out as a day without tokens", () => {
+    const { chartData } = buildProviderTokenChart([
+      { provider: provider("codex"), days: [
+        { day: "2026-09-16", totalTokens: 5 },
+        { day: "2026-09-17", totalTokens: 6 },
+        { day: "2026-09-20", totalTokens: 7 },
+      ] },
+      { provider: provider("claude"), days: [
+        { day: "2026-09-18", totalTokens: 9 },
+      ] },
+    ] as Parameters<typeof buildProviderTokenChart>[0]);
+    expect(chartData).toEqual([
+      { day: "2026-09-16", provider1: 5, provider2: 0 },
+      { day: "2026-09-17", provider1: 6, provider2: 0 },
+      { day: "2026-09-18", provider1: 0, provider2: 9 },
+      { day: "2026-09-19", provider1: 0, provider2: 0 },
+      { day: "2026-09-20", provider1: 7, provider2: 0 },
+    ]);
+  });
+
+  it("keeps every reported day when they lie too far apart to fill in", () => {
+    const { chartData } = buildProviderTokenChart([
+      { provider: provider("codex"), days: [
+        { day: "2024-01-01", totalTokens: 1 },
+        { day: "2024-06-01", totalTokens: 2 },
+        { day: "2026-01-01", totalTokens: 3 },
+      ] },
+    ] as Parameters<typeof buildProviderTokenChart>[0]);
+    expect(chartData.map((row) => row.day)).toEqual(["2024-01-01", "2024-06-01", "2026-01-01"]);
+  });
+
+  it("keeps a single day and an empty history as they are", () => {
+    expect(buildProviderTokenChart([
+      { provider: provider("codex"), days: [{ day: "2026-09-16", totalTokens: 5 }] },
+    ] as Parameters<typeof buildProviderTokenChart>[0]).chartData).toEqual([
+      { day: "2026-09-16", provider1: 5 },
+    ]);
+    expect(buildProviderTokenChart([]).chartData).toEqual([]);
   });
 });
