@@ -7771,3 +7771,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Pending Paul's review. A Usage tile shows the plan name CodexBar reports after the provider name, and the monthly extra-usage cap CodexBar reports with its used amount, in CodexBar's currency. Nothing is shown when CodexBar sends neither. Windows shows no cap; the plan name appears where Win-CodexBar sends one.
 - Scope: `apps/control-center/src/components/usage-screen.tsx`, `control-center-types.ts`, `usage-screen.test.tsx`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — the plan name and the cap are what CodexBar already reports, shown where the tile is
+
+## 2026-10-17 — Usage: branch brought up to date with the #669 tile layout (#708)
+
+- User approval: pending — Paul reviews this PR; the tile layout is the one he approved in the "Tokens:" entry above, and this entry adds no look of its own.
+- Approved customer-visible result: As in the "Tokens:" entry above, with this PR's plan name in the tile header and the cap line under the Tokens line, as in the entry before it. No new wording.
+- Scope: `apps/control-center/src/components/usage-screen.tsx` (merge of #669 into this PR), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the same tiles as above, no new notice
