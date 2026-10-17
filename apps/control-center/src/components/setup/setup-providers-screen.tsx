@@ -548,7 +548,7 @@ function SetupProvidersLoadingScreen({
         This can take up to 5 minutes. We&apos;re sorry.
       </SetupWizardSubtitle>
 
-      <SetupLog className="mt-8" lines={lines} running />
+      <SetupLog className="mt-8" lines={lines} />
 
       <div className="relative w-full">
         <Search

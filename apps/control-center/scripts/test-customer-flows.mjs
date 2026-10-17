@@ -10477,8 +10477,8 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
     } }],
     onThemeInstallRequest: (request) => writes.push(request),
   });
-  let configured = false, verified = false, plans = 0;
-  await page.route("**/v1/ai-theme/**", (route) => {
+  let configured = false, verified = false, plans = 0, holdPlan = null;
+  await page.route("**/v1/ai-theme/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/capabilities")) return route.fulfill({ json: { enabled: true, providers: [{ id: "openai", configured, verificationRequired: configured && !verified }] } });
@@ -10487,6 +10487,7 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
     plans++;
     assert(verified, "Generation must wait for credential verification");
     assert(request.postDataJSON().layout.length > 0, "Native editing must pass the opened document to AI");
+    await holdPlan;
     return route.fulfill({ json: { mode: "layout", notes: "Updated", edits: [] } });
   });
   await page.goto("http://127.0.0.1:47832/control-center", { waitUntil: "domcontentloaded" });
@@ -10510,6 +10511,27 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("vibetv.controlCenter.userThemes")));
   assert(saved.themes.length === 1, "Native Save writes the app library");
   assert((saved.themes[0].document.usage || "live") === (screensaver ? "screensaver" : "live"));
+  if (!screensaver) {
+    // #582: the Mac App asks where to save; only a saved file is confirmed.
+    const finished = (fileName, saved) => page.evaluate(([fileName, saved]) => window.dispatchEvent(
+      new CustomEvent("vibetv:download-finished", { detail: { fileName, saved } })), [fileName, saved]);
+    const exported = page.getByText("Theme pack exported. No device was contacted.", { exact: true });
+    // The File menu closes after each pick, so every export opens it again.
+    const exportPack = async () => {
+      await page.getByRole("button", { name: "File", exact: true }).click();
+      return Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export theme pack", exact: true }).click()]);
+    };
+    const [cancelled] = await exportPack();
+    assert(!(await exported.isVisible()), "The export waits for the Mac save dialog");
+    await finished(cancelled.suggestedFilename(), false);
+    assert(!(await exported.isVisible()), "A cancelled Mac save dialog confirms no export");
+    const [kept] = await exportPack();
+    await finished(kept.suggestedFilename(), true);
+    await exported.waitFor();
+    // Notices sit under the toolbar, not at the bottom of the chat column.
+    assert((await page.locator("header + div").getByText("Theme pack exported. No device was contacted.", { exact: true }).count()) === 1, "The export notice sits under the Theme Studio toolbar");
+    await page.keyboard.press("Escape");
+  }
   await page.getByRole("button", { name: "Send to VibeTV", exact: true }).click();
   await page.getByText("Theme installed.", { exact: true }).waitFor();
   assert(writes.length === 1, "Native send uses one existing Companion install");
@@ -10524,7 +10546,7 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
   await page.getByRole("button", { name: screensaver ? "Create Screensaver" : "Create Theme", exact: true }).click();
   await page.getByLabel("Your idea", { exact: true }).waitFor();
   if (screensaver) {
-    await page.getByRole("button", { name: "Design settings", exact: true }).click();
+    await page.getByRole("button", { name: "File", exact: true }).click();
     await page.getByRole("button", { name: "New design", exact: true }).click();
     await page.getByRole("heading", { name: "Screensaver Studio", exact: true }).waitFor();
     await page.locator('input[accept="application/json,.json"]').setInputFiles({
@@ -10536,6 +10558,28 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
   await page.getByRole("button", { name: "Back to library", exact: true }).click();
   await page.getByRole("heading", { name: screensaver ? "Screensavers" : "Themes", exact: true }).waitFor();
   assert(await page.evaluate(() => JSON.parse(localStorage.getItem("vibetv.controlCenter.themeStudioDraft"))?.recovery?.document?.packName) === "Unsaved other design", "Opening a clean design preserves unrelated recovery");
+  if (!screensaver) {
+    // #633: a new session can lose the page's storage while the helper keeps
+    // the key; the first message still goes straight to the AI.
+    await page.evaluate(() => localStorage.removeItem("vibetv.aiTheme.consent"));
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await navigation.waitFor({ timeout: 20000 });
+    if (!(await navigation.getByRole("button", { name: "Themes", exact: true }).isVisible())) {
+      await navigation.getByRole("button", { name: "Appearance", exact: true }).click();
+    }
+    await navigation.getByRole("button", { name: "Themes", exact: true }).click();
+    await page.getByRole("button", { name: "Resume", exact: true }).click();
+    await page.getByLabel("Your idea", { exact: true }).fill("Make it red");
+    let release;
+    holdPlan = new Promise((resolve) => { release = resolve; });
+    await page.getByRole("button", { name: "Create", exact: true }).click();
+    // #634: the chat says which step is running.
+    await page.getByRole("status").filter({ hasText: "Understanding your idea…" }).waitFor();
+    assert(await page.getByRole("dialog").count() === 0, "A saved key asks for no consent again");
+    release();
+    await page.getByRole("log", { name: "Conversation", exact: true }).getByText("Updated", { exact: true }).waitFor();
+    assert(plans === 2, "The first message of a new session reaches the AI");
+  }
   assert(errors.length === 0, errors.join("\n"));
   await page.unrouteAll({ behavior: "ignoreErrors" });
   await page.close();

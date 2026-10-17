@@ -480,7 +480,6 @@ export function SetupDeviceScreen({
                   ]
                 : logLines
             }
-            running={connecting || wifiBusy}
           />
           {connectPhase === "updating-firmware" && firmwarePercent !== undefined ? (
             <Progress aria-hidden className="mt-4" value={firmwarePercent} />
