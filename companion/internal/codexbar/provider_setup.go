@@ -42,7 +42,7 @@ const (
 	ProviderTimeout          = "timeout"
 	// ProviderRateLimited: the provider's own usage endpoint refused this
 	// check for being too frequent. The sign-in is fine and nothing needs
-	// repairing, so the only correct advice is to wait and check again.
+	// repairing, so the only correct advice is to wait.
 	// Anthropic answers 429 during first-run setup, and routing that into
 	// engine_error told customers to repair a healthy usage service.
 	ProviderRateLimited = "rate_limited"
@@ -898,18 +898,18 @@ func providerResultWithSignIn(id, status, signInURL string) ProviderReadiness {
 		result.Detail = "Usage data is available."
 	case ProviderAuthRequired:
 		result.Detail = "This provider needs an active sign-in."
-		result.NextAction = "Sign in to this provider, then check again."
+		result.NextAction = "Sign in to this provider."
 	case ProviderBrowserSignInRequired:
 		host := signInHost(signInURL)
 		result.Detail = label + " usage needs a signed-in " + host + " session in your browser."
-		result.NextAction = "Sign in to " + host + " in your browser, close the browser, then check again."
+		result.NextAction = "Sign in to " + host + " in your browser, close the browser."
 		result.SignInURL = signInURL
 	case ProviderPermissionRequired:
 		result.Detail = "macOS blocked access required by this provider."
-		result.NextAction = "Allow the requested macOS permission, then check again."
+		result.NextAction = "Allow the requested macOS permission."
 		if providerCopyGOOS == "windows" {
 			result.Detail = "Windows blocked access required by this provider."
-			result.NextAction = "Allow the requested access, then check again."
+			result.NextAction = "Allow the requested access."
 		}
 	case ProviderUnsupported:
 		// No sign-in wording: the account cannot use this provider at all, so
@@ -922,22 +922,22 @@ func providerResultWithSignIn(id, status, signInURL string) ProviderReadiness {
 		result.NextAction = "Choose another provider that exposes usage limits."
 	case ProviderTimeout:
 		result.Detail = "The provider check timed out."
-		result.NextAction = "Confirm the provider sign-in, then check again."
+		result.NextAction = "Confirm the provider sign-in."
 	case ProviderRateLimited:
 		result.Detail = label + " received too many usage checks and is pausing them for a few minutes."
 		result.NextAction = RateLimitedNextAction
 	case ProviderConfigError:
 		result.Detail = "The usage service could not save or read its provider settings."
-		result.NextAction = "Repair the usage service, then check again."
+		result.NextAction = "Repair the usage service."
 	case ProviderEngineIncompatible:
 		result.Detail = "The usage engine is too old."
-		result.NextAction = "Repair the usage engine, then check again."
+		result.NextAction = "Repair the usage engine."
 	case ProviderNotConfigured:
 		result.Detail = "No usable AI provider is configured yet."
 		result.NextAction = "Open provider setup and connect an AI provider."
 	default:
 		result.Detail = "The usage service could not read this provider."
-		result.NextAction = "Check this provider, then try again."
+		result.NextAction = "Wait a moment."
 	}
 	return result
 }

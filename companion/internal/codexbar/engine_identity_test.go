@@ -51,7 +51,7 @@ func TestProbeProviderSetupSeparatesEngineVersionStates(t *testing.T) {
 			row := got.Providers[0]
 			if tc.status == ProviderEngineIncompatible {
 				if row.Detail != "Usage engine 0.17 is too old. Version 0.23 or newer is required." ||
-					row.NextAction != "Repair the usage engine, then check again." {
+					row.NextAction != "Repair the usage engine." {
 					t.Fatalf("unexpected incompatible copy: %+v", row)
 				}
 			}
