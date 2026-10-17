@@ -409,35 +409,21 @@ function TokenUsageOverTimePanel({
               </Badge>
             ) : null}
           </div>
-          <div className="flex shrink-0 items-center gap-3.5">
-            <div className="flex flex-wrap items-center justify-end gap-x-[18px] gap-y-1 text-[13px] text-muted-foreground">
-              {series.map((item) => (
-                <span className="inline-flex items-center" key={item.dataKey}>
-                  <i
-                    aria-hidden
-                    className="mr-[7px] inline-block size-2 rounded-full"
-                    style={{ background: item.color }}
-                  />
-                  {item.label}
-                </span>
-              ))}
-            </div>
-            <Button
-              aria-busy={refreshing}
-              aria-label="Refresh"
-              className="size-8 text-muted-foreground"
-              disabled={refreshing || !onRefresh}
-              onClick={() => onRefresh?.()}
-              size="icon"
-              type="button"
-              variant="ghost"
-            >
-              {refreshing ? <Spinner /> : <RefreshCw aria-hidden />}
-            </Button>
-          </div>
+          <Button
+            aria-busy={refreshing}
+            aria-label="Refresh"
+            className="size-8 shrink-0 text-muted-foreground"
+            disabled={refreshing || !onRefresh}
+            onClick={() => onRefresh?.()}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            {refreshing ? <Spinner /> : <RefreshCw aria-hidden />}
+          </Button>
         </div>
         <div className="mt-3.5">
-          <p className="break-words text-[28px] leading-[1.1] font-semibold tracking-[-0.01em] text-foreground tabular-nums">
+          <p className="text-hero break-words font-semibold text-foreground tabular-nums">
             <span>{formatFullTokenCount(last30DaysTokens)}</span>
             <span className="ml-1.5 text-[13px] font-normal tracking-normal text-muted-foreground">
               tokens
@@ -449,12 +435,12 @@ function TokenUsageOverTimePanel({
         </div>
       </section>
 
-      <div className="relative mt-8 mb-10 min-h-64">
+      <div className="relative mt-8 min-h-96">
         <ChartContainer
           aria-hidden={!hasCurrentData}
           aria-label={`Daily tokens used over time for ${providerNames.join(", ")}`}
           className={cn(
-            "h-64 w-full overflow-hidden transition-opacity",
+            "h-96 w-full overflow-hidden transition-opacity",
             !hasCurrentData && "pointer-events-none opacity-25 grayscale",
           )}
           config={chartConfig}
@@ -530,6 +516,21 @@ function TokenUsageOverTimePanel({
             </EmptyHeader>
           </Empty>
         ) : null}
+      </div>
+      <div
+        className="mt-4 mb-10 flex flex-wrap items-center gap-x-[18px] gap-y-1 text-[13px] text-muted-foreground"
+        data-testid="usage-legend"
+      >
+        {series.map((item) => (
+          <span className="inline-flex items-center" key={item.dataKey}>
+            <i
+              aria-hidden
+              className="mr-[7px] inline-block size-2 rounded-full"
+              style={{ background: item.color }}
+            />
+            {item.label}
+          </span>
+        ))}
       </div>
     </>
   );

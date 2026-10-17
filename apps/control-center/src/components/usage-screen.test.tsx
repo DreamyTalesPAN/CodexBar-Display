@@ -303,6 +303,32 @@ describe("UsageScreen", () => {
     expect(html).toContain(">one thousand two hundred thirty-four</p>");
   });
 
+  it("sets the 30-day total in the hero size and nothing else in the head", () => {
+    const html = renderUsage();
+
+    expect(html).toMatch(/<p class="text-hero [^"]*font-semibold[^"]*">/);
+    expect(html.match(/text-hero/g)).toHaveLength(1);
+  });
+
+  it("puts the provider legend below the chart, left-aligned, and keeps the Refresh icon in the head", () => {
+    const html = renderUsage(null, {
+      ...usage,
+      providers: [
+        { ...usage.providers[0], id: "claude", label: "Claude" },
+        usage.providers[0],
+      ],
+    });
+    const chart = html.indexOf('aria-label="Daily tokens used over time');
+    const legend = html.indexOf('data-testid="usage-legend"');
+    const head = html.indexOf(">Last 30 days</h2>");
+
+    expect(legend).toBeGreaterThan(chart);
+    expect(html.slice(legend, html.indexOf("</div>", legend))).toContain(">Claude</span>");
+    expect(html.slice(head, chart)).not.toContain("usage-legend");
+    expect(html.slice(head, chart)).toContain('aria-label="Refresh"');
+    expect(html.slice(legend, html.indexOf("</div>", legend))).not.toContain("Refresh");
+  });
+
   it("draws the chart without a card title and gives each provider its own colour", () => {
     const html = renderUsage(null, {
       ...usage,
