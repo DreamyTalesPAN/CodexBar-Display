@@ -7511,3 +7511,10 @@ issue scope, or release permission never implies UI permission.
   Not changed: the Diagnostics "Run diagnostics" wording and the engine sentence "Repair the usage engine, then check again." (see the entries above).
 - Scope: `companion/internal/codexbar/provider_setup.go`, `companion/internal/companionapi/preferences.go`, `companion/internal/companionapi/preferences_test.go`, `companion/internal/companionapi/provider_setup.go`, `companion/internal/companionapi/diagnostics.go`, `companion/internal/companionapi/setup_events_test.go`, `apps/control-center/src/lib/customer-platform.test.ts`, `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — copy only: the same next steps without the check tail, no new capability
+
+## 2026-10-17 — Paul approves the provider next steps without "then check again" (refers to the pending entry of 2026-10-16, "Remaining provider and diagnostics next steps drop the check tail")
+
+- User approval: Paul approved 17.10. (via the communicator): next-step sentences without "then check again". Functional test still open.
+- Approved customer-visible result: the next-step sentences listed before → after in the pending entry above, with no "then check again" tail. The unchanged Diagnostics engine sentence named in that entry is not separately approved here.
+- Scope: this approval record only; no code change in this entry. Pull request branch only, not merge or release.
+- What's new: none — approval record
