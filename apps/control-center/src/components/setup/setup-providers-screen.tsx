@@ -330,9 +330,11 @@ export function ProviderList({
               setupGuide();
             },
           } : { label: "OK", onSelect: dismissIssue }}
-          secondaryAction={!issueSignIn && setupGuide
-            ? { label: "OK", onSelect: dismissIssue }
-            : undefined}
+          secondaryAction={issueSignIn
+            ? { label: "Not now", onSelect: dismissIssue }
+            : setupGuide ? { label: "OK", onSelect: dismissIssue } : undefined}
+          // OK or Not now is the way out here (Paul, 16.10.: at most two actions).
+          showCloseButton={false}
         />
       ) : null}
       {showIntro ? (

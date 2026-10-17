@@ -7666,3 +7666,20 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: on Windows without a GPU the Overview shows the flat VibeTV preview (no 3D case). No text changes.
 - Scope: `apps/control-center/src/components/vibetv-3d-support.ts`, `apps/control-center/src/components/vibetv-3d-support.test.ts`, and this approval record. Codex review fix on PR #755 only; not merge or release.
 - What's new: none — no new content
+## 2026-10-17 — Calm redesign of all dialogs, variant A2 with lime primary (#713)
+- User approval: pending — Paul reviews this PR (calm redesign dialogs, variant A2 with lime primary, #713, after Codex review fixes and CI test updates); look: 28 px title, 13 px text, 440 px wide, no close X, every primary button lime, ghost secondary, a visible Close or Not now wherever no other button leaves the dialog.
+- Approved customer-visible result: Variant A2 (lime primary, no X, uniform 440 px after review; customer-flow scripts dismiss with Escape where the X was). Every dialog in the Control Center (setup, provider, firmware, recovery, system busy, What's new, Theme Studio, Theme library, Settings) gets the same look.
+  - The X in the top right is gone. A dialog whose only buttons are a primary action gets a ghost "Close" as its secondary button. Dialogs that already have a secondary action (Cancel, Keep WiFi, Enter IP manually, Create support report, Restart Control Center) keep only that. Info-only dialogs keep their single lime OK, Got it or Hide.
+  - Title 28 px semibold, text 13 px, 440 px wide, 32 px padding, 14 px corners, footer right-aligned with no grey band.
+  - Secondary buttons are ghost text buttons (were outlined); button labels 13 px.
+  - Every primary button is lime. Reset (factory settings), Delete local copy, Replace and Discard and continue were black or red and are now lime.
+  - "Keep your changes?" (Theme Studio): the two stacked full-width buttons are now a footer with Keep editing (ghost) and Discard and continue (lime).
+  - "Claude needs a new sign-in" (provider): ghost "Not now" beside "Sign in to <Provider>" (was: X only).
+  - "Your VibeTV is not reachable" (device picker): ghost "Not now" beside Connect (was: X only).
+  - Theme preview (Theme library): a lime "Close" button (was X only).
+  - Create with AI (Theme Studio): ghost "Not now" under the form, hidden while connecting as the X was.
+  - Kept as approved on 16.10.: the setup guide dialog keeps "OK" beside "Open setup guide" (the picture shows "Close").
+  - Texts of every dialog stay as they were, apart from the added "Close" and "Not now" above.
+  - Codex review fixes: the What's New, theme preview and delete dialogs keep the uniform 440 px width (their own wider widths are gone). The WiFi setup failed dialog keeps its single OK, no Close. Create with AI shows "Not now" on the setup panel and "Close" on the other panels.
+- Scope: `apps/control-center/src/components/ui/dialog.tsx`, `ui/alert-dialog.tsx`, `setup/setup-dialog.tsx`, `setup/setup-device-dialogs.tsx`, `setup/setup-provider-dialogs.tsx`, `setup/setup-providers-screen.tsx` and its test, `setup/setup-recovery-dialogs.tsx`, `setup/setup-wizard.test.tsx`, `setup/setup-device-dialogs.test.tsx`, `updates-screen.test.tsx`, `apps/control-center/scripts/test-customer-flows.mjs` (dismiss by Escape where the X was), `settings-screen.tsx`, `whats-new-dialog.tsx`, `theme-library-screen.tsx`, `theme-studio/ai-theme-studio-screen.tsx`, `theme-studio/replace-draft-dialog.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — look change of existing dialogs only (variant A2 after Codex review and CI test updates), no new capability

@@ -32,7 +32,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -798,18 +800,23 @@ export function ThemeLibraryScreen({
         <Dialog open onOpenChange={(open) => !open && setPreviewTheme(null)}>
           <DialogContent
             aria-describedby="theme-library-example-data"
-            className="max-h-[calc(100dvh-2rem)] max-w-[640px] overflow-y-auto sm:max-w-[640px]"
+            className="max-h-[calc(100dvh-2rem)] overflow-y-auto"
           >
             <DialogHeader>
-              <DialogTitle className="truncate text-2xl font-black">{previewTheme.title}</DialogTitle>
+              <DialogTitle className="truncate">{previewTheme.title}</DialogTitle>
             </DialogHeader>
             <p
-              className="-mt-2 text-sm text-muted-foreground"
+              className="-mt-3 text-[13px] text-muted-foreground"
               id="theme-library-example-data"
             >
               Example data · This is a catalog preview, not live VibeTV data.
             </p>
             <ThemePreview large theme={previewTheme} />
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button>Close</Button>
+              </DialogClose>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       ) : null}
@@ -906,7 +913,7 @@ function DeleteThemeDialog({
   const say = (text: string) => wordsForUsage(text, themeDocumentUsage(theme.document));
   return (
     <AlertDialog open onOpenChange={(open) => !open && onCancel()}>
-      <AlertDialogContent className="sm:max-w-[520px]">
+      <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Delete {theme.document.packName}?</AlertDialogTitle>
           <AlertDialogDescription>
@@ -928,7 +935,6 @@ function DeleteThemeDialog({
                 event.preventDefault();
               }
             }}
-            variant="destructive"
           >
             Delete local copy
           </AlertDialogAction>

@@ -56,7 +56,7 @@ describe("Setup WiFi recovery", () => {
     expect(dialog.textContent).not.toContain("VibeTV-Setup");
     expect(dialog.textContent).not.toContain("192.168.4.1");
     expect(dialog.textContent).not.toContain("phone");
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(
       screen.getByRole("button", { name: "How to connect VibeTV" }),

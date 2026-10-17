@@ -90,6 +90,7 @@ function SetupAddressDialogForm({
         label: "Cancel",
         onSelect: () => onOpenChange(false),
       }}
+      showCloseButton={false}
       title="Enter IP address"
       tone="neutral"
     >
@@ -345,6 +346,8 @@ export function SetupDevicePickerDialog({
         label: "Connect",
         onSelect: () => selected && onConnect(selected),
       }}
+      secondaryAction={{ label: "Not now", onSelect: () => onOpenChange(false) }}
+      showCloseButton={false}
       title={error?.message ?? "Choose your VibeTV"}
     >
       <ItemGroup aria-label="VibeTVs found" className="gap-3" role="radiogroup">
