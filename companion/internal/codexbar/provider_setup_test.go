@@ -1145,7 +1145,7 @@ func TestMixedAggregateRowNamesTheProviderWithoutAddingRows(t *testing.T) {
 	}
 	rows := providersWithSwitchState(context.Background(), "codexbar-bin",
 		[]ProviderReadiness{providerResult("codex", ProviderReady), providerResult("openai", ProviderAuthRequired)})
-	if len(rows) != 2 || rows[0].Status != ProviderReady || rows[1].ID != "openai" ||
+	if len(rows) != 2 || rows[0].Status != ProviderReady || rows[1].ID != "openai" || rows[1].Label != "OpenAI API" ||
 		rows[1].Detail != "VibeTV reads OpenAI API usage from OpenAI API's own app, so make sure it is installed and signed in on this computer." {
 		t.Fatalf("mixed aggregate rows = %+v", rows)
 	}

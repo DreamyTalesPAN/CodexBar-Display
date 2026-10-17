@@ -615,9 +615,16 @@ func providersWithSwitchState(ctx context.Context, bin string, providers []Provi
 		// A ready provider keeps the answer as it is: the inventory only names
 		// the rows that are not ready, and adds no switched-off rows.
 		for i := range providers {
-			if providers[i].Status != ProviderReady && providers[i].ID != "codexbar" {
-				providers[i].Detail = providerResultWithSignIn(providers[i].ID, providers[i].Status, providers[i].SignInURL).Detail
+			if providers[i].Status == ProviderReady || providers[i].ID == "codexbar" {
+				continue
 			}
+			for j := range inventory {
+				if inventory[j].ID == providers[i].ID {
+					providers[i].Label = inventory[j].Label
+					break
+				}
+			}
+			providers[i].Detail = providerResultWithSignIn(providers[i].ID, providers[i].Status, providers[i].SignInURL).Detail
 		}
 		return providers
 	}
