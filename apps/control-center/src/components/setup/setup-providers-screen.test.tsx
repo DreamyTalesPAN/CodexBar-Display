@@ -172,7 +172,7 @@ describe("SetupProvidersScreen", () => {
     const { rerender } = renderDom(<SetupProvidersScreen {...props} />);
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
     expect(within(screen.getByRole("dialog")).getByText(
-      "Sign in to GitHub Copilot so VibeTV can read its usage.",
+      "GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet.",
     )).toBeTruthy();
     expect(screen.queryByText(failed.health.reported)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "OK" }));
@@ -421,7 +421,7 @@ describe("SetupProvidersScreen", () => {
     const openaiSignedOut = provider({ providerId: "openai", label: "OpenAI",
       health: "setup_required", message: "No available fetch strategy for openai." });
     expect(setupProviderDialogSentence(copilotSignedOut))
-      .toBe("Sign in to GitHub Copilot so VibeTV can read its usage.");
+      .toBe("GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet.");
     expect(setupProviderDialogSentence(openaiSignedOut)).toBe(
       "VibeTV reads OpenAI usage from OpenAI's own app, so make sure it is installed and signed in on this computer.",
     );
@@ -430,7 +430,7 @@ describe("SetupProvidersScreen", () => {
   // A signed-out provider the app cannot sign in says what the customer has
   // to do and offers the setup guide as its signal action beside OK. Copilot
   // has no own app: its sentence names the GitHub sign-in (#591).
-  it("tells a signed-out Copilot to sign in to GitHub Copilot, and keeps the setup guide beside OK", () => {
+  it("tells a signed-out Copilot that its GitHub sign-in cannot start yet, and keeps the setup guide beside OK", () => {
     const onOpenSetupGuide = vi.fn();
     const failed = { ...copilot, value: true,
       health: { ...copilot.health, reported: "No available fetch strategy for copilot." } };
@@ -440,7 +440,7 @@ describe("SetupProvidersScreen", () => {
       pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
     const dialog = within(screen.getByRole("dialog"));
     expect(dialog.getByText(
-      "Sign in to GitHub Copilot so VibeTV can read its usage.",
+      "GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet.",
     )).toBeTruthy();
     expect(dialog.queryByText("No available fetch strategy for copilot.")).toBeNull();
     expect(dialog.queryByRole("button", { name: /Copy provider message/ })).toBeNull();
@@ -460,7 +460,7 @@ describe("SetupProvidersScreen", () => {
     for (const [item, guide, sentence] of [
       [claudeSignedOut, vi.fn(), "Sign in to Claude so VibeTV can read its usage."],
       [timedOut, vi.fn(), "GitHub Copilot did not answer in time, and VibeTV tries again by itself."],
-      [signedOut, undefined, "Sign in to GitHub Copilot so VibeTV can read its usage."],
+      [signedOut, undefined, "GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet."],
     ] as const) {
       const { unmount } = renderDom(<SetupProvidersScreen usage={usage} providers={[item]}
         onOpenSetupGuide={guide} onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}

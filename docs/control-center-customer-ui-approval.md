@@ -7481,3 +7481,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none beyond the entry above: "Sign in to GitHub Copilot so VibeTV can read its usage." instead of "Sign in to Copilot ..." for that name.
 - Scope: `setupProviderDialogSentence` in `apps/control-center/src/components/setup/setup-providers-screen.tsx` and its test. Pull request branch only, not merge or release.
 - What's new: none — a Codex review fix to the wording already approved above
+
+## 2026-10-18 — #591 option: the Copilot popup says VibeTV cannot start the GitHub sign-in yet
+
+- User approval: pending — Paul decides #591 (Copilot sentence: "GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet."); look: same popup, new sentence.
+- Approved customer-visible result: none yet. Option to decide, stacked on #740: the provider popup for a switched-on GitHub Copilot that CodexBar cannot read changes from "Sign in to GitHub Copilot so VibeTV can read its usage." → "GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet." Same title and buttons ("Open setup guide" beside "OK" stays as it is).
+- Scope: the sentence in `setupProviderDialogSentence` in `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its tests, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — wording only
