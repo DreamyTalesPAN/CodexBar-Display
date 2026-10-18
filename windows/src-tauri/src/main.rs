@@ -92,6 +92,9 @@ struct Shell {
     // Where the window was when a close released it; the next window goes
     // there. Process lifetime only.
     window_geometry: Mutex<Option<Remembered>>,
+    // Counts the releases by a close, so the startup load can tell that the
+    // customer closed the window while the update check ran.
+    releases: AtomicU64,
     shortcut_registered_changed: Condvar,
 }
 
@@ -227,6 +230,7 @@ fn main() {
             windows_created: AtomicU64::new(0),
             window_generation: AtomicU64::new(0),
             window_geometry: Mutex::new(None),
+            releases: AtomicU64::new(0),
             shortcut_registered_changed: Condvar::new(),
         })
         .setup(|app| {
@@ -259,9 +263,14 @@ fn main() {
                 queue_install_link(&handle, args[1].to_str());
             }
             std::thread::spawn(move || {
+                let releases_before = handle.state::<Shell>().releases.load(Ordering::SeqCst);
                 launch_update_check(&handle);
                 *handle.state::<Shell>().preparing.lock().unwrap() = false;
-                load(handle.clone(), visible);
+                // Closed while the update check ran: it stays closed until the
+                // tray opens it, as after any close.
+                let closed_meanwhile =
+                    handle.state::<Shell>().releases.load(Ordering::SeqCst) != releases_before;
+                load(handle.clone(), visible && !closed_meanwhile);
                 loop {
                     std::thread::sleep(IDLE_UPDATE_INTERVAL);
                     idle_update_check(&handle);
@@ -794,6 +803,7 @@ fn hide_after_flush(app: &AppHandle) {
             // Stored as count + 1, so a release before the first present
             // (count 0) is still told apart from "no release".
             shell.released_at.store(presented + 1, Ordering::SeqCst);
+            shell.releases.fetch_add(1, Ordering::SeqCst);
             let _ = window.destroy();
         }
     });
