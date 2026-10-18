@@ -51,6 +51,8 @@ type ControlCenterShellProps = {
   hiddenTabs?: ActiveTab[];
   headerAction?: ReactNode;
   updateAvailable?: boolean;
+  /** Theme Studio keeps its own header ("Appearance") instead of the sub-page name. */
+  themeStudioOpen?: boolean;
 };
 
 // Hover is a weaker tint than the active fill, so a hovered entry never
@@ -101,7 +103,16 @@ export function ControlCenterShell({
   hiddenTabs = [],
   headerAction,
   updateAvailable = false,
+  themeStudioOpen = false,
 }: ControlCenterShellProps) {
+  // On Appearance the page title is the open sub-page (one title, no second
+  // heading below it); the Studio keeps the "Appearance" title.
+  const pageTitle =
+    activeTab === "theme-library" && !themeStudioOpen
+      ? activeAppearanceSection === "screensavers"
+        ? "Screensavers"
+        : "Themes"
+      : NAV_ITEMS.find((item) => item.id === activeTab)?.label || "Overview";
   const disabledTabSet = new Set(disabledTabs);
   const isTabDisabled = (tab: ActiveTab) => disabledTabSet.has(tab);
   // The window scrolls, not the tab. A link far down one tab that opens
@@ -153,8 +164,7 @@ export function ControlCenterShell({
                 className="-m-1 size-7 shrink-0 p-0 text-muted-foreground hover:bg-transparent hover:text-foreground [&_svg]:size-5"
               />
               <h1 className="truncate text-[28px] leading-none font-semibold tracking-[-0.01em] text-foreground">
-                {NAV_ITEMS.find((item) => item.id === activeTab)?.label ||
-                  "Overview"}
+                {pageTitle}
               </h1>
             </div>
 

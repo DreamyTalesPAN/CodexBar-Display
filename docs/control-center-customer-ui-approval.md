@@ -7509,3 +7509,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the collapsed-sidebar entry of 2026-10-18 (#758): icons only in the icon-only sidebar, each entry as a centred pill. No new text, button or dialog.
 - Scope: `apps/control-center/src/components/control-center-shell.tsx`, its test `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — a centring class for the icon-only pills
+
+## 2026-10-18 — Calm shell: the page title is the open Appearance sub-page (#758)
+
+- User approval: pending — Paul reviews (one page title as in the approved Appearance A picture); look unchanged except: on Appearance the page title in the header row reads "Themes" or "Screensavers". Before: "Appearance"; after: the sub-page name. Theme Studio keeps "Appearance". Other pages unchanged.
+- Approved customer-visible result: as in the approved Appearance A picture (#713): one page title, the sub-page name, in the header row next to the sidebar toggle.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, its test `apps/control-center/src/components/control-center-shell.test.tsx`, `apps/control-center/src/components/theme-library-screen.tsx` (reports whether the Studio is open), `apps/control-center/src/components/control-center-app.tsx` (passes that flag to the shell) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the page title only

@@ -318,6 +318,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [appearanceSection, setAppearanceSection] = useState<AppearanceSection>(
     initialThemeIsScreensaver ? "screensavers" : "themes",
   );
+  const [themeStudioOpen, setThemeStudioOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>(
     initialThemeId ? "theme-library" : "overview",
   );
@@ -5624,6 +5625,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         activeTab={activeShellTab}
         activeAppearanceSection={appearanceSection}
         disabledTabs={disabledTabs}
+        themeStudioOpen={themeStudioOpen}
         updateAvailable={anyUpdateAvailable}
         onAppearanceSectionChange={setAppearanceSection}
         onTabChange={(tab) => {
@@ -5752,6 +5754,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               appearanceSection === "screensavers" ? "screensaver" : "live"
             }
             onSaveStandby={saveStandby}
+            onStudioOpenChange={setThemeStudioOpen}
             windowsHost={windowsHost}
           />
         ) : null}

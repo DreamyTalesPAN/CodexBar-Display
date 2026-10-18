@@ -203,6 +203,8 @@ export type ThemeLibraryScreenProps = {
   onInstallCustomTheme: (payload: ThemeStudioInstallPayload) => Promise<boolean>;
   onInstallTheme: (theme: ThemeProduct) => Promise<unknown> | void;
   onSaveStandby?: (value: StandbySettings) => Promise<void> | void;
+  /** Tells the shell whether the Theme Studio is open (it keeps its own title). */
+  onStudioOpenChange?: (open: boolean) => void;
   /** The app runs on Windows, where "Mac App" reads "app". */
   windowsHost?: boolean;
 };
@@ -227,6 +229,7 @@ export function ThemeLibraryScreen({
   onSelectTheme,
   onInstallTheme,
   onSaveStandby,
+  onStudioOpenChange,
   windowsHost = false,
 }: ThemeLibraryScreenProps) {
   const visibleThemes = themes.filter(
@@ -269,6 +272,12 @@ export function ThemeLibraryScreen({
   const [replacingRecovery, setReplacingRecovery] = useState<(() => void) | null>(null);
   const [editingTheme, setEditingTheme] =
     useState<ThemeStudioEditorTheme | null>(null);
+  // Reset to "library" when this screen goes away (the shell then shows the
+  // page title again).
+  useEffect(() => {
+    onStudioOpenChange?.(editingTheme !== null);
+    return () => onStudioOpenChange?.(false);
+  }, [editingTheme, onStudioOpenChange]);
   const [libraryError, setLibraryError] = useState("");
   const [storageWarning, setStorageWarning] = useState("");
   const [storageLocked, setStorageLocked] = useState(false);

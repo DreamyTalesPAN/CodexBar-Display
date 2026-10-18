@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "@/test/axe";
@@ -224,6 +225,32 @@ describe("ControlCenterShell", () => {
     const toggle = screen.getByRole("button", { name: "Open navigation" });
     expect(toggle.className).toContain("size-7");
     expect(toggle.className).toContain("-m-1");
+  });
+
+  // Windows click run 1018b, finding N9: the page title read "Appearance" and
+  // a second title "Themes" sat under it. The page title is the open
+  // sub-page; Theme Studio keeps its own header ("Appearance").
+  it("titles the Appearance page with the open sub-page name", () => {
+    vi.stubGlobal("matchMedia", () => ({
+      matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }));
+    const titleOf = (props: Partial<ComponentProps<typeof ControlCenterShell>>) => {
+      const { unmount } = render(
+        <TooltipProvider>
+          <ControlCenterShell activeTab="theme-library" onTabChange={vi.fn()} {...props}>
+            <div>Content</div>
+          </ControlCenterShell>
+        </TooltipProvider>,
+      );
+      const title = screen.getByRole("heading", { level: 1 }).textContent;
+      unmount();
+      return title;
+    };
+
+    expect(titleOf({ activeAppearanceSection: "themes" })).toBe("Themes");
+    expect(titleOf({ activeAppearanceSection: "screensavers" })).toBe("Screensavers");
+    expect(titleOf({ activeAppearanceSection: "themes", themeStudioOpen: true })).toBe("Appearance");
+    expect(titleOf({ activeTab: "overview" })).toBe("Overview");
   });
 
   it("has no accessibility violations with an update waiting", async () => {
