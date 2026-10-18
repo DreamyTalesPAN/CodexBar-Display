@@ -412,9 +412,8 @@ describe("ThemeLibraryScreen Appearance sections", () => {
   it("keeps the existing Themes list restricted to live packs", () => {
     const html = renderLibrary("live");
 
-    // The page title is the shell's header (Themes); no second title here.
-    expect(html).not.toMatch(/<h2[^>]*>Themes</);
-    expect(html).not.toContain(
+    expect(html).toContain(">Themes<");
+    expect(html).toContain(
       "Customize how your live usage screen looks while VibeTV is active.",
     );
     expect(html).toContain("Create Theme");
@@ -425,9 +424,8 @@ describe("ThemeLibraryScreen Appearance sections", () => {
   it("shows only screensaver packs and the screensaver create action", () => {
     const html = renderLibrary("screensaver");
 
-    // The page title is the shell's header (Screensavers); no second title here.
-    expect(html).not.toMatch(/<h2[^>]*>Screensavers</);
-    expect(html).not.toContain(
+    expect(html).toContain(">Screensavers<");
+    expect(html).toContain(
       "Choose what appears when VibeTV enters standby after being idle.",
     );
     expect(html).toContain("Create Screensaver");
