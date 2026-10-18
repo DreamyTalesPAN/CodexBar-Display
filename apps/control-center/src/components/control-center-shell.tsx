@@ -326,7 +326,7 @@ function ShellNavButton({
       type="button"
     >
       {item.icon}
-      <span className="min-w-0 truncate">{item.label}</span>
+      <span className="min-w-0 truncate group-data-[collapsible=icon]:sr-only">{item.label}</span>
       {collapsible ? (
         <ChevronDown className="ml-auto size-3.5! opacity-80 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-180" />
       ) : null}
