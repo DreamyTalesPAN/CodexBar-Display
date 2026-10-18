@@ -755,14 +755,14 @@ function UsageLineView({
     <div className="grid gap-2">
       <div className="flex items-baseline justify-between gap-4 text-[13px] text-foreground">
         {index === 0 ? (
-          <span className="text-muted-foreground">
+          <span className="whitespace-nowrap text-muted-foreground">
             <span className="text-[28px] leading-none font-semibold text-foreground">
               {line.percent}%
             </span>{" "}
             {line.label} {modeLabel}
           </span>
         ) : (
-          <span>{text}</span>
+          <span className="whitespace-nowrap">{text}</span>
         )}
         {right}
       </div>
@@ -805,7 +805,7 @@ function UsageMetaGrid({ provider }: { provider: UsageProviderInfo }) {
       {items.map(([label, value]) => (
         <div className="min-w-0" key={label}>
           <dt className="text-[13px] text-muted-foreground">{label}</dt>
-          <dd className="mt-1 break-words text-[13px] text-foreground">
+          <dd className="mt-1 break-words text-[13px] text-muted-foreground">
             {value}
           </dd>
         </div>

@@ -7764,3 +7764,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: The token line reads "Tokens: 12.7B total · 5.2B this week". A tile's reset is no longer top right next to the provider name: it sits right-aligned on the first line of the tile, on the line with the big percent ("86% session remaining"; for a weekly-first provider such as Codex, on "71% weekly remaining"). The header holds only the name. The Updating spinner takes that place while the tile is quiet. No other wording.
 - Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (tile layout, token line, tests), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — label and layout change only, no new notice
+
+## 2026-10-18 — Usage tiles: calm type 13 / 28 px, 400 / 600 (option, stacked on #669)
+
+- User approval: pending — Paul decides (Usage tiles in calm type; head unchanged)
+- Approved customer-visible result: none yet, pending Paul's decision. Proposed: tile titles 13 px / 600; the token line and the Status and Activity values 13 px / 400 in muted ink (the values were ink); a tile's main number 28 px / 600; a lane label such as "86% session remaining" stays on one line. No wording change. The Usage head above the tiles is unchanged.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (tile type, lane label, three tests), and this approval record. Option PR stacked on #669; not merged or released.
+- What's new: none — type and colour only, no new notice
