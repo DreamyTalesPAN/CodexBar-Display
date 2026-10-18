@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -55,6 +55,40 @@ describe("keyboard focus ring colour", () => {
   it("uses the light ink on the always-dark sidebar, in both themes", () => {
     expect(token(light, "sidebar-ring")).toBe(token(light, "sidebar-foreground"));
     expect(token(dark, "sidebar-ring")).toBe(token(dark, "sidebar-foreground"));
+  });
+
+  it("renders no focus ring at reduced opacity in any component", () => {
+    const componentsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "components");
+    const files: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (entry.name.endsWith(".tsx") && !entry.name.includes(".test.")) files.push(full);
+      }
+    };
+    walk(componentsDir);
+    // A focus variant (focus, focus-visible, focus-within, or has-[...focus...])
+    // with a ring colour that carries an opacity: the focus ring is drawn faint.
+    const faintFocus =
+      /^(?:focus|focus-visible|focus-within|has-\[[^\s"]*focus[^\s"]*\]|aria-invalid:focus-visible)[^\s"]*:ring-(?:ring|foreground|sidebar-ring|destructive)\/\d+$/;
+    // A bare ring colour with opacity, in a class string that sets a focus ring:
+    // the focus ring takes that colour, so it is faint too.
+    const faintBaseRing = /^ring-(?:ring|foreground|sidebar-ring|destructive)\/\d+$/;
+    const offenders: string[] = [];
+    for (const file of files) {
+      const text = readFileSync(file, "utf8");
+      for (const line of text.split("\n")) {
+        const tokens = line.split(/[\s"'`{}]+/).filter(Boolean);
+        for (const token of tokens) {
+          if (faintFocus.test(token)) offenders.push(`${path.basename(file)}: ${token}`);
+          if (line.includes("focus-visible:ring-") && faintBaseRing.test(token)) {
+            offenders.push(`${path.basename(file)}: ${token} (focus base)`);
+          }
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 
   it("keeps the sidebar ring at least 3:1 against the sidebar, in both themes", () => {
