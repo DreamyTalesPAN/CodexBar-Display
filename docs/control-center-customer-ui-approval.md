@@ -7488,3 +7488,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Support › Recent activity: the entry `Control Center opened` / `This session started.` shows its clock time instead of `Session`; no other text changes. Support › Setup log: the top edge of the box fades like the Setup wizard log, so no row is shown cut in half. No new text, screen, button or dialog.
 - Scope: `logs-screen.tsx`, `control-center-app.tsx` (the initial session entry only), `setup-event-log.tsx`, their tests `logs-screen.test.tsx`, `setup-event-log.test.tsx` and `control-center-app.display-preferences.test.tsx`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no new wording
+
+## 2026-10-18 — Support Setup log: the top fade only while older entries are above the view (#750, Codex review)
+
+- User approval: pending — Paul reviews this PR (Support page calm look, variant A, #750); look: at the oldest entry the Setup log's top row is shown whole, not faded; while older entries are scrolled out of view the top edge fades as in the entry above.
+- Approved customer-visible result: Support › Setup log: the fade at the top edge applies only while older entries are above the view. No new text, screen, button or dialog.
+- Scope: `setup-event-log.tsx`, its test `setup-event-log.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new wording
