@@ -7516,3 +7516,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the approved Appearance A picture (#713): one page title, the sub-page name, in the header row next to the sidebar toggle.
 - Scope: `apps/control-center/src/components/control-center-shell.tsx`, its test `apps/control-center/src/components/control-center-shell.test.tsx`, `apps/control-center/src/components/theme-library-screen.tsx` (reports whether the Studio is open), `apps/control-center/src/components/control-center-app.tsx` (passes that flag to the shell) and this approval record. Pull request branch only, not merge or release.
 - What's new: none — the page title only
+
+## 2026-10-18 — Codex review fix on the calm shell: whats-new test finds the page title as level-1 heading (#758)
+
+- User approval: pending — Paul reviews this PR (CI on a10c1af1: the whats-new test found two "Themes" headings); look unchanged except: none. Visible text, layout and controls are as in the entry above; only the test query changed.
+- Approved customer-visible result: as in the calm shell entry of 2026-10-18 (#758): one page title, the sub-page name, in the header row.
+- Scope: `apps/control-center/src/components/control-center-app.whats-new.test.tsx` (test query only) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a test query change without a visible change
