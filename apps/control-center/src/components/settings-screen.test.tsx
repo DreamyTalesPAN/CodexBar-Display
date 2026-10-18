@@ -426,6 +426,42 @@ describe("SettingsScreen standby controls", () => {
     );
   });
 
+  // Calm rule: the rest of the small text on Settings is 13 px too: section
+  // names (semibold), the notice above Display mode, the brightness reading
+  // and both help texts under Setup.
+  it("sets the remaining small Settings text at 13 px", () => {
+    const html = renderToStaticMarkup(
+      <SettingsScreen
+        automaticPreviews={[]}
+        brightness={70}
+        busyAction={null}
+        connectionMode="cable"
+        device={standbyDevice}
+        standby={savedStandby}
+        onBrightnessChange={vi.fn()}
+        onChooseScreensaver={vi.fn()}
+        onConnectionModeChange={vi.fn()}
+        onDismissError={vi.fn()}
+        onEraseDevice={vi.fn()}
+        onResetSetup={vi.fn()}
+        onSaveBrightness={vi.fn()}
+        onSaveStandby={vi.fn()}
+        onStandbyBrightnessChange={vi.fn()}
+        providerPicker={{
+          ...providerPicker,
+          displayNotice: "Codex is off, so VibeTV now switches automatically.",
+        }}
+      />,
+    );
+
+    expect(html).toMatch(/<h2 class="[^"]*text-\[13px\][^"]*">Display mode<\/h2>/);
+    expect(html).toMatch(/<h2 class="[^"]*text-\[13px\][^"]*">Connection<\/h2>/);
+    expect(html).toMatch(/<p [^>]*text-\[13px\][^>]*role="status">/);
+    expect(html).toMatch(/<output [^>]*text-\[13px\][^>]*>70%<\/output>/);
+    expect(html).toMatch(/<p [^>]*text-\[13px\][^>]*id="vibetv-run-setup-help">/);
+    expect(html).toMatch(/<p [^>]*text-\[13px\][^>]*id="vibetv-factory-reset-help">/);
+  });
+
   it("keeps Cable recovery available for an active offline WiFi binding", () => {
     const html = render(
       {
@@ -718,7 +754,7 @@ describe("SettingsScreen standby controls", () => {
     it("is named beside Choose screensaver while the screensaver is on", () => {
       // An older revision in the slot is still this screensaver.
       const named = block(true, { screensaverPath: "/themes/s/nc-2-cb6d64ba.json" });
-      expect(named).toMatch(/>Night Clock is installed\.<\/span>/);
+      expect(named).toMatch(/<span class="[^"]*text-\[13px\][^"]*">Night Clock is installed\.<\/span>/);
       expect(named).toMatch(link);
 
       // A screensaver neither the catalog nor this computer knows.
