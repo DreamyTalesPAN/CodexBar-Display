@@ -7939,3 +7939,9 @@ issue scope, or release permission never implies UI permission.
 - Visible text: none changed.
 - Scope: `apps/control-center/src/components/setup/mac-app-download-screen.tsx`, its test `mac-app-download-screen.test.tsx` (one look test), and this approval record. Stacked on #747. Pull-request branch only, not merge or release.
 - What's new: none — layout and type only, no new capability
+## 2026-10-18 — Calm Theme Studio, variant A (#749): AI key dialog follows calm rule 13
+
+- User approval: pending — Paul reviews this PR; look unchanged except: the AI key dialog (Settings › AI providers › Theme Studio AI) loses its X in the top-right corner and gets a visible "Close" button under the form, hidden while a key is being checked; the consent checkbox in the key form turns lime instead of browser blue (also in the Theme Studio setup panel, which uses the same form).
+- Approved customer-visible result: none yet; proposed exactly as in the line above. Before → after: X → no X; no close button → "Close" button; browser-blue checkbox → lime checkbox.
+- Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx` and its test, and this record. Pull request branch only, not merge or release.
+- What's new: none — look and close control only, no new feature.

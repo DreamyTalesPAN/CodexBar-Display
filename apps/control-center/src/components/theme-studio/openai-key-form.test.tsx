@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchAIThemeCapabilities } from "@/lib/ai-theme";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fetchAIThemeCapabilities, saveAIThemeCredential } from "@/lib/ai-theme";
 import { ThemeStudioKeyRow } from "./openai-key-form";
 
 vi.mock("@/lib/ai-theme", () => ({
@@ -21,7 +21,11 @@ function capabilities(configured: boolean) {
 describe("Theme Studio AI row in Settings", () => {
   beforeEach(() => {
     vi.mocked(fetchAIThemeCapabilities).mockReset();
+    // Consent is remembered in the browser; each test starts without it.
+    localStorage.removeItem("vibetv.aiTheme.consent");
   });
+  // A dialog left open by one test would otherwise show up in the next one.
+  afterEach(() => cleanup());
 
   it("shows Not connected and Add key when no OpenAI key is saved", async () => {
     vi.mocked(fetchAIThemeCapabilities).mockResolvedValue(capabilities(false));
@@ -45,5 +49,38 @@ describe("Theme Studio AI row in Settings", () => {
     await waitFor(() => expect(dialog.textContent).toContain("Replace OpenAI key"));
     expect(screen.getByRole("button", { name: "Disconnect OpenAI" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Update key" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("has no close X in the key dialog", async () => {
+    vi.mocked(fetchAIThemeCapabilities).mockResolvedValue(capabilities(false));
+    render(<ThemeStudioKeyRow />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add key" }));
+    const dialog = await screen.findByRole("dialog");
+    // The X is still in the markup, but this class hides it, so it is never shown.
+    expect(dialog.className).toContain("[&_[data-slot=dialog-close]]:hidden");
+  });
+
+  it("offers a visible Close in the footer, hidden while a key is being checked", async () => {
+    vi.mocked(fetchAIThemeCapabilities).mockResolvedValue(capabilities(false));
+    vi.mocked(saveAIThemeCredential).mockReturnValue(new Promise(() => {}));
+    render(<ThemeStudioKeyRow />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add key" }));
+    const dialog = await screen.findByRole("dialog");
+    const footerButton = () => dialog.querySelector('[data-slot="dialog-footer"] button');
+    expect(footerButton()?.textContent).toBe("Close");
+
+    fireEvent.change(screen.getByLabelText("OpenAI key"), { target: { value: "sk-test-key" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Update key" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Checking…" })).toBeTruthy());
+    expect(footerButton()).toBeNull();
+  });
+
+  it("draws the consent checkbox in the lime primary colour, not the browser blue", async () => {
+    vi.mocked(fetchAIThemeCapabilities).mockResolvedValue(capabilities(false));
+    render(<ThemeStudioKeyRow />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add key" }));
+    const checkbox = await screen.findByRole("checkbox");
+    expect(checkbox.className).toContain("accent-primary");
   });
 });
