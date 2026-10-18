@@ -7467,3 +7467,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-18 — Calm type: 13 px text in the shared buttons, cards, labels and inputs (#713)
+
+- User approval: pending — Paul reviews this PR (calm rules: sizes 28/13 and weights 400/600 in the shared UI parts, #713); look: buttons, cards, labels and inputs at 13 px.
+- Approved customer-visible result: none yet; waits for Paul's yes. Proposed: text in every button, card, card title, label, input, textarea, select and alert is 13 px (was 14 px; button sizes xs 12 px, sm 12.8 px and lg 16 px become 13 px too); card titles, labels and alert titles are 600 (was 500); inputs and textareas stay 16 px on phones and are 13 px from the tablet width up (was 14 px); select group labels 13 px (was 12 px). Words, layout and colours stay the same. Not changed: the Update buttons on the Updates tab (updates-screen.tsx, size lg, own class text-base font-bold, three places) keep 16 px until Paul decides.
+- Scope: `apps/control-center/src/app/globals.css` (theme token `--text-body`), `apps/control-center/src/lib/utils.ts` (the class merge keeps the token), `apps/control-center/src/components/ui/{button,card,label,input,textarea,select,alert}.tsx`, `apps/control-center/src/components/ui/calm-type.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — same words, one smaller size and two weights
