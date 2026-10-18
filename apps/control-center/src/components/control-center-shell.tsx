@@ -56,7 +56,7 @@ type ControlCenterShellProps = {
 // Hover is a weaker tint than the active fill, so a hovered entry never
 // reads as a second active one.
 const WEAK_HOVER =
-  "hover:bg-[color-mix(in_srgb,var(--sidebar-accent)_45%,transparent)]";
+  "hover:bg-sidebar-accent/45 data-open:hover:bg-sidebar-accent/45";
 
 const NAV_ITEMS: ShellNavItem[] = [
   {
@@ -369,7 +369,7 @@ function AppearanceNavButton({
   return (
     <SidebarMenuSubButton
       asChild
-      className="h-[34px] w-full text-[13px] data-active:bg-transparent! data-active:font-semibold data-active:text-sidebar-accent-foreground"
+      className={`h-[34px] w-full text-[13px] ${WEAK_HOVER} data-active:bg-transparent! data-active:font-semibold data-active:text-sidebar-accent-foreground`}
       isActive={active}
     >
       <button
