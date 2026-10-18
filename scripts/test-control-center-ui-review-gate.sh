@@ -396,6 +396,64 @@ test_given_approval_prints_no_pending_notice() {
   assert_not_contains "$output" "UI approval pending"
 }
 
+# An approval entry that names the UI file it covers in its own commit.
+approval_entry_scoped() {
+  local label="$1"
+  local path="$2"
+  printf '\n## %s\n\n- User approval: Explicit test approval.\n- Approved customer-visible result: %s\n- Scope: %s and this approval record.\n%s\n' \
+    "$label" "$label" "$path" "$WHATS_NEW_NONE"
+}
+
+# A UI change and an approval entry in one commit: the entry covers only the
+# UI files it names, so an unnamed UI file in that commit stays due.
+test_ui_change_in_approval_commit_needs_its_scope() {
+  local repo="${TMP_ROOT}/approval-commit-ui-unscoped"
+  setup_repo "$repo"
+  printf '\nexport const visibleLabel = "Install";\n' \
+    >> "$repo/apps/control-center/src/components/overview-screen.tsx"
+  approval_entry "Updated overview" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" add apps/control-center/src/components/overview-screen.tsx \
+    docs/control-center-customer-ui-approval.md
+  git -C "$repo" commit -q -m "Change overview and approve it"
+  expect_gate_due "$repo"
+}
+
+test_ui_change_in_approval_commit_passes_when_entry_names_it() {
+  local repo="${TMP_ROOT}/approval-commit-ui-scoped"
+  setup_repo "$repo"
+  printf '\nexport const visibleLabel = "Install";\n' \
+    >> "$repo/apps/control-center/src/components/overview-screen.tsx"
+  approval_entry_scoped "Updated overview" \
+    "apps/control-center/src/components/overview-screen.tsx" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" add apps/control-center/src/components/overview-screen.tsx \
+    docs/control-center-customer-ui-approval.md
+  git -C "$repo" commit -q -m "Change overview and approve it"
+  expect_gate_success "$repo"
+}
+
+# A merge commit that brings a UI change from the branch and carries the
+# approval entry: the entry must name the UI file, or the gate is due.
+test_merge_commit_with_approval_needs_scope_for_branch_ui() {
+  local repo="${TMP_ROOT}/merge-approval-ui"
+  setup_repo "$repo"
+  local base_branch
+  base_branch="$(git -C "$repo" symbolic-ref --short HEAD)"
+
+  git -C "$repo" checkout -q -b feature
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Change customer-facing UI"
+  git -C "$repo" checkout -q "$base_branch"
+  commit_file "$repo" "docs/base-follow-up.md" "Base follow-up non-ui change"
+  git -C "$repo" merge -q --no-ff --no-commit feature >/dev/null
+  approval_entry "Merged overview" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" add docs/control-center-customer-ui-approval.md
+  git -C "$repo" commit -q -m "Merge feature and approve it"
+  expect_gate_due "$repo"
+}
+
 test_non_ui_commits_do_not_block
 test_ui_change_blocks_immediately
 test_working_tree_ui_change_blocks_immediately
@@ -414,5 +472,8 @@ test_pending_approval_passes_with_notice
 test_pending_approval_notice_reaches_ci_summary
 test_pending_approval_already_on_base_prints_no_notice
 test_given_approval_prints_no_pending_notice
+test_ui_change_in_approval_commit_needs_its_scope
+test_ui_change_in_approval_commit_passes_when_entry_names_it
+test_merge_commit_with_approval_needs_scope_for_branch_ui
 
 printf 'control-center UI review gate tests passed\n'

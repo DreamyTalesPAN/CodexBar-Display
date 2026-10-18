@@ -49,7 +49,20 @@ const changedFiles = unique([
   ...changedFilesSince(approvalCommit, analysisRef),
   ...workingTreeChangedFiles,
 ]);
-const uiChangedFiles = changedFiles.filter(isUiFile);
+// The approval commit covers the UI files of the commits before it, not its own:
+// a UI file it changes itself counts unless the entry it adds names that file.
+const approvalCommitText = approvalCommit
+  ? addedApprovalText(commitDiff(approvalCommit))
+  : "";
+const unnamedApprovalCommitUiFiles = approvalCommit
+  ? approvalCommitChangedFiles(approvalCommit).filter(
+      (file) => isUiFile(file) && !approvalCommitText.includes(file),
+    )
+  : [];
+const uiChangedFiles = unique([
+  ...changedFiles.filter(isUiFile),
+  ...unnamedApprovalCommitUiFiles,
+]);
 const approvalCoversUi = workingTreeApprovalChanged && workingTreeApprovalValid;
 const unapprovedUiFiles = approvalCoversUi ? [] : uiChangedFiles;
 const invalidApprovalMarker =
@@ -110,6 +123,19 @@ function changedFilesSince(commit, ref) {
     return lines(git(["ls-tree", "-r", "--name-only", ref]));
   }
   return lines(git(["diff", "--name-only", `${commit}..${ref}`]));
+}
+
+// Files the approval commit changes itself, against its first parent (a merge
+// brings in the files of the merged branch this way).
+function approvalCommitChangedFiles(commit) {
+  return lines(tryGit(["diff", "--name-only", `${commit}^1`, commit]));
+}
+
+function addedApprovalText(diff) {
+  return lines(diff)
+    .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
+    .map((line) => line.slice(1))
+    .join("\n");
 }
 
 function changedFilesInWorkingTree() {
