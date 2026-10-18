@@ -7534,3 +7534,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: When two theme rows that share an id both show an install-failure dialog, the `Theme action failed` overlay (and the storage notice) waits until both are closed. Words, buttons and every other state are unchanged.
 - Scope: `apps/control-center/src/components/theme-library-screen.tsx` (each row reports its own install-failure dialog; the page keeps the list of open ones) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (one regression test), and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no visible change, the same dialogs wait for each other
+
+## 2026-10-18 — Themes: a companion-unreachable install failure does not hold back page errors (Codex review fix on #762)
+
+- User approval: Not separately approved by Paul; a Codex review fix (P2) on the entry above, which is pending for Paul. Not seen by Paul; the visible result is unchanged.
+- Approved customer-visible result: When a theme install fails because the VibeTV Companion is unreachable, that failure draws no dialog, as before, and it no longer holds back a `Theme action failed` overlay or the storage notice. Words, buttons and every other state are unchanged.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (the condition for an open install-failure dialog uses the same predicate as the dialog itself) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (one regression test), and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no visible change

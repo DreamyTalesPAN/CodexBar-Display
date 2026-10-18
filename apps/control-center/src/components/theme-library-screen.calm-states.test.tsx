@@ -310,3 +310,39 @@ it("an error waits while any of two shared-id install-failure dialogs is open", 
   fireEvent.click(within(failures[1]).getByRole("button", { name: "OK" }));
   expect(await screen.findByRole("dialog", { name: "Theme action failed" })).toBeTruthy();
 });
+
+// Codex review on #762: a companion-unreachable failure draws no dialog, so it
+// must not hold the page's errors back.
+it("an error is not held back by a companion-unreachable install failure", async () => {
+  const pending: Array<() => void> = [];
+  vi.stubGlobal(
+    "fetch",
+    () =>
+      new Promise((resolve) => {
+        pending.push(() => resolve({ ok: false }));
+      }),
+  );
+  renderLibrary({
+    themes: [drift],
+    installStatus: {
+      error: "The VibeTV Companion is not reachable.",
+      failure: {
+        code: "COMPANION_UNREACHABLE",
+        message: "VibeTV Companion is not reachable.",
+        nextAction: "Start VibeTV again.",
+      },
+      phase: "error",
+      startedAt: "2026-10-18T01:00:00Z",
+      themeId: "drift",
+    } as ThemeInstallStatus,
+  });
+  const driftRow = screen
+    .getAllByRole("listitem")
+    .find((row) => within(row).queryByText("Drift"))!;
+  fireEvent.click(within(driftRow).getByRole("button", { name: "Edit" }));
+
+  await act(async () => {
+    pending.forEach((release) => release());
+  });
+  expect(await screen.findByRole("dialog", { name: "Theme action failed" })).toBeTruthy();
+});

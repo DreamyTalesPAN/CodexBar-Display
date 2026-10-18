@@ -1329,7 +1329,12 @@ function InlineInstallProgress({
   usage: ThemeStudioUsage;
 }) {
   const [dismissedErrorAt, setDismissedErrorAt] = useState<string | null>(null);
-  const failureOpen = status.phase === "error" && dismissedErrorAt !== status.startedAt;
+  // The same condition SetupStepFailedDialog uses to draw nothing: dismissed,
+  // or a companion-unreachable failure, which has no dialog of its own.
+  const failureOpen =
+    status.phase === "error" &&
+    dismissedErrorAt !== status.startedAt &&
+    (status.failure?.code ?? "theme_install_failed") !== "COMPANION_UNREACHABLE";
   // The page's own notices wait while this dialog is open (Codex review on #762).
   useEffect(() => {
     onFailureOpenChange?.(failureOpen);
