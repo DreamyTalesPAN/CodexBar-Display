@@ -201,8 +201,13 @@ function workingTreeApprovalDiff() {
   ].join("\n");
 }
 
+// Against the first parent: a merge's combined diff would not show the entry
+// as "+" lines. A root commit has no parent and is shown on its own.
 function commitDiff(commit) {
-  return tryGit(["show", "--format=", "--unified=0", commit, "--", APPROVAL_FILE]);
+  const parent = tryGit(["rev-parse", "--verify", `${commit}^1`]);
+  return parent
+    ? tryGit(["diff", "--unified=0", parent, commit, "--", APPROVAL_FILE])
+    : tryGit(["show", "--format=", "--unified=0", commit, "--", APPROVAL_FILE]);
 }
 
 function untrackedFileContents(file) {

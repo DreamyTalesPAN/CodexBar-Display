@@ -542,6 +542,28 @@ test_path_outside_entry_does_not_name_ui_file() {
   expect_gate_due "$repo"
 }
 
+# A merge that brings a UI change from the branch and records a scoped approval
+# for it passes: the approval is read against the first parent, not as a combined diff.
+test_scoped_merge_approval_passes() {
+  local repo="${TMP_ROOT}/scoped-merge-approval"
+  setup_repo "$repo"
+  local base_branch
+  base_branch="$(git -C "$repo" symbolic-ref --short HEAD)"
+
+  git -C "$repo" checkout -q -b feature
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Feature customer-facing UI"
+  git -C "$repo" checkout -q "$base_branch"
+  commit_file "$repo" "docs/base-follow-up.md" "Base follow-up non-ui change"
+  git -C "$repo" merge -q --no-ff --no-commit feature >/dev/null 2>&1
+  approval_entry_scoped "Merged overview" \
+    "apps/control-center/src/components/overview-screen.tsx" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" add docs/control-center-customer-ui-approval.md
+  git -C "$repo" commit -q -m "Merge feature and record scoped approval"
+  expect_gate_success "$repo"
+}
+
 # An approval commit committed before the cutoff keeps the old rule: its own
 # unnamed UI file passes, as it did before the path rule.
 test_approval_commit_before_cutoff_keeps_old_rule() {
@@ -598,5 +620,6 @@ test_merged_parent_approval_is_judged_on_its_own_tree
 test_path_outside_entry_does_not_name_ui_file
 test_ui_file_renamed_out_of_ui_folders_is_due
 test_approval_commit_before_cutoff_keeps_old_rule
+test_scoped_merge_approval_passes
 
 printf 'control-center UI review gate tests passed\n'
