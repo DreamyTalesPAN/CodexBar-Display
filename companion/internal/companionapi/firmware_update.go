@@ -1248,7 +1248,7 @@ func firmwareUpdateErrorPayload(err error, retryPolicy string) apiError {
 		return apiError{
 			Code:       "firmware_update_cable_required",
 			Message:    "VibeTV installs updates only over the USB cable.",
-			NextAction: "Connect VibeTV to this Mac with the USB cable, then update again.",
+			NextAction: "Connect VibeTV to " + thisComputerInSentence() + " with the USB cable, then update again.",
 		}
 	}
 	return apiError{

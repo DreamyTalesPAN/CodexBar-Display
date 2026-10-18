@@ -185,6 +185,25 @@ func macAppNameInSentence() string {
 	return "Mac App"
 }
 
+// thisComputerName names the machine where a sentence starts with it: "This
+// computer" in the Windows app, "This Mac" on a Mac. The approved Windows
+// wording replaces "this Mac" with "this computer" (2026-09-23).
+func thisComputerName() string {
+	if providerCopyGOOS == "windows" {
+		return "This computer"
+	}
+	return "This Mac"
+}
+
+// thisComputerInSentence names the machine inside a sentence: "this computer"
+// in the Windows app, "this Mac" on a Mac.
+func thisComputerInSentence() string {
+	if providerCopyGOOS == "windows" {
+		return "this computer"
+	}
+	return "this Mac"
+}
+
 func macAppReleaseCheckDisabled() bool {
 	value := strings.TrimSpace(os.Getenv(macAppReleaseAPIEnvVar))
 	return value == "-" || strings.EqualFold(value, "off") || strings.EqualFold(value, "disabled")

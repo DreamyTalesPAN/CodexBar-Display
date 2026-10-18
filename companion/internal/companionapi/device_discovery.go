@@ -191,8 +191,8 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 				w,
 				http.StatusServiceUnavailable,
 				"network_unavailable",
-				"This Mac isn't connected to a WiFi network.",
-				"Turn on WiFi and connect this Mac to the WiFi your VibeTV uses, then search again.",
+				thisComputerName()+" isn't connected to a WiFi network.",
+				"Turn on WiFi and connect "+thisComputerInSentence()+" to the WiFi your VibeTV uses, then search again.",
 			)
 			return
 		}

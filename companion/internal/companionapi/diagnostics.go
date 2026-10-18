@@ -359,7 +359,7 @@ func discoveryDiagnosticCheck(discovery diagnosticsDiscovery) diagnosticCheck {
 			Status:     "attention",
 			Detail:     "No VibeTV answered the read-only WiFi search.",
 			ErrorCode:  "vibetv_not_found_on_wifi",
-			NextAction: "Keep VibeTV powered on and connected to the same WiFi as this Mac.",
+			NextAction: "Keep VibeTV powered on and connected to the same WiFi as " + thisComputerInSentence() + ".",
 		}
 	}
 	return diagnosticCheck{

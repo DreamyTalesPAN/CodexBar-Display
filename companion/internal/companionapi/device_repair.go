@@ -817,7 +817,7 @@ func writePairingError(w http.ResponseWriter, err error, firmware string) {
 			http.StatusConflict,
 			"cable_pairing_required",
 			"VibeTV pairs only over the USB cable.",
-			"Connect VibeTV to this Mac with the USB cable, then press Connect.",
+			"Connect VibeTV to "+thisComputerInSentence()+" with the USB cable, then press Connect.",
 		)
 	case http.StatusUnauthorized, http.StatusForbidden:
 		writeError(

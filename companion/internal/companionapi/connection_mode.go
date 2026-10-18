@@ -87,7 +87,7 @@ func (s *Server) handleDeviceFactoryReset(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) != "cable" || strings.TrimSpace(cfg.DeviceID) == "" {
-		writeError(w, http.StatusConflict, "factory_reset_cable_required", "VibeTV can only be erased over the USB cable.", "Connect VibeTV to this Mac with the USB cable, switch to USB-C in Settings, then try again.")
+		writeError(w, http.StatusConflict, "factory_reset_cable_required", "VibeTV can only be erased over the USB cable.", "Connect VibeTV to "+thisComputerInSentence()+" with the USB cable, switch to USB-C in Settings, then try again.")
 		return
 	}
 	port, hello, ok := s.requireCableControlDevice(w, cfg)
