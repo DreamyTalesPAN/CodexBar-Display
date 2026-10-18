@@ -14539,6 +14539,9 @@ func TestThemeInstallCompletesWhenRenderProofPrecedesStreamHealth(t *testing.T) 
 // the customer back to the Mac App without guessing whether the engine or an
 // account is the missing part.
 func TestReloadDisplayWithoutProviderReportsProviderSetup(t *testing.T) {
+	original := providerCopyGOOS
+	t.Cleanup(func() { providerCopyGOOS = original })
+	providerCopyGOOS = "darwin"
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
