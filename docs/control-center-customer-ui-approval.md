@@ -7703,3 +7703,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; proposed: the primary button of the AI key dialog (Settings › AI providers › Theme Studio AI) reads "Save key" when no key is stored and "Update key" when a key is stored. Before → after: "Update key" → "Save key" (no key stored); "Update key" unchanged (key stored). The setup flow ("Connect and continue") is unchanged.
 - Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx` and its test, and this record. Pull request branch only, not merge or release.
 - What's new: none — button wording only, no new feature.
+
+## 2026-10-18 — Calm Theme Studio, variant A (#749): Codex fix, saved key still checking says Update key
+
+- User approval: pending — Paul reviews (key dialog: "Update key" also while a saved key is still being checked; decided by the communicator 18.10.)
+- Approved customer-visible result: none yet; the same button wording as the entry above, now also for a saved key that still needs its check. Before → after: "Save key" → "Update key" (saved key, check still pending, new key typed). No other change.
+- Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx` and its test, and this record. Pull request branch only, not merge or release.
+- What's new: none — button wording only, no new feature.

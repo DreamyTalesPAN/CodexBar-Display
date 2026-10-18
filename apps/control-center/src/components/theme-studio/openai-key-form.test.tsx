@@ -76,6 +76,20 @@ describe("Theme Studio AI row in Settings", () => {
     expect(footerButton()).toBeNull();
   });
 
+  it("keeps Update key for a saved key that still needs its check", async () => {
+    vi.mocked(fetchAIThemeCapabilities).mockResolvedValue({
+      enabled: true,
+      providers: [{ id: "openai", configured: true, verificationRequired: true }],
+    } as unknown as Awaited<ReturnType<typeof fetchAIThemeCapabilities>>);
+    render(<ThemeStudioKeyRow />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add key" }));
+    await screen.findByRole("dialog");
+    fireEvent.change(await screen.findByLabelText("Replace OpenAI key"), { target: { value: "sk-new-key" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    expect(screen.getByRole("button", { name: "Update key" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Save key" })).toBeNull();
+  });
+
   it("says Save key in the key dialog when no key is stored", async () => {
     vi.mocked(fetchAIThemeCapabilities).mockResolvedValue(capabilities(false));
     render(<ThemeStudioKeyRow />);
