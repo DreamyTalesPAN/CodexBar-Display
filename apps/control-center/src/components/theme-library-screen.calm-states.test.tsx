@@ -181,3 +181,43 @@ it("an error waits while the preview dialog is open, then shows after it closes"
   const failed = await screen.findByRole("dialog", { name: "Theme action failed" });
   expect(within(failed).getByText("Theme could not be opened.")).toBeTruthy();
 });
+
+// Codex review on #762: a failed delete save must not discard an error that
+// another action queued while the delete dialog was open.
+it("a failed delete keeps an error that another action queued", async () => {
+  stored.ownThemes = [
+    {
+      id: "mine",
+      updatedAt: "2026-10-18T00:00:00Z",
+      document: { assets: {}, packName: "Mine", spec: createBlankThemeSpec() },
+    },
+  ];
+  stored.writeError = "Saved themes could not be written.";
+  const pending: Array<() => void> = [];
+  vi.stubGlobal(
+    "fetch",
+    () =>
+      new Promise((resolve) => {
+        pending.push(() => resolve({ ok: false }));
+      }),
+  );
+  renderLibrary({ themes: [drift] });
+
+  const driftRow = screen
+    .getAllByRole("listitem")
+    .find((row) => within(row).queryByText("Drift"))!;
+  fireEvent.click(within(driftRow).getByRole("button", { name: "Edit" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Delete Mine" }));
+  const deleteDialog = screen.getByRole("alertdialog", { name: "Delete Mine?" });
+
+  await act(async () => {
+    pending.forEach((release) => release());
+  });
+  fireEvent.click(within(deleteDialog).getByRole("button", { name: "Delete local copy" }));
+  expect(await within(deleteDialog).findByText("Saved themes could not be written.")).toBeTruthy();
+  expect(screen.queryByRole("dialog", { name: "Theme action failed" })).toBeNull();
+
+  fireEvent.click(within(deleteDialog).getByRole("button", { name: "Cancel" }));
+  const failed = await screen.findByRole("dialog", { name: "Theme action failed" });
+  expect(within(failed).getByText("Theme could not be opened.")).toBeTruthy();
+});

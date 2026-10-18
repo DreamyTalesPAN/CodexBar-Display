@@ -557,21 +557,27 @@ export function ThemeLibraryScreen({
     if (!deleteTheme) {
       return false;
     }
-    try {
-      persistUserThemes(userThemes.filter((theme) => theme.id !== deleteTheme.id));
-      setDeleteTheme(null);
-      setDeleteError("");
-      window.setTimeout(() => libraryHeadingRef.current?.focus(), 0);
-      return true;
-    } catch (error) {
-      // The delete dialog shows this failure itself; the page must not open a
-      // second overlay for it. Batched with the save's own error, so it is never shown.
-      setLibraryError("");
+    // The delete dialog reports its own failure. It does not go through
+    // persistUserThemes, which would publish a page-level error and could
+    // clear or duplicate one that belongs to another action.
+    if (storageLocked) {
       setDeleteError(
-        error instanceof Error ? error.message : say("Theme could not be deleted."),
+        storageWarning || say("Browser storage must be repaired before saving themes."),
       );
       return false;
     }
+    const result = writeUserThemes(
+      userThemes.filter((theme) => theme.id !== deleteTheme.id),
+    );
+    if (!result.ok) {
+      setDeleteError(result.error.message);
+      return false;
+    }
+    setUserThemes(result.value.themes);
+    setDeleteTheme(null);
+    setDeleteError("");
+    window.setTimeout(() => libraryHeadingRef.current?.focus(), 0);
+    return true;
   }
 
   function requestDeleteTheme(theme: UserThemeRecord) {
