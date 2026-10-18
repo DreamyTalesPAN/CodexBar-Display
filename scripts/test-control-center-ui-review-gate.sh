@@ -522,6 +522,22 @@ test_merged_parent_approval_is_judged_on_its_own_tree() {
   expect_gate_due "$repo"
 }
 
+# A path written outside an approval entry does not name the file.
+test_path_outside_entry_does_not_name_ui_file() {
+  local repo="${TMP_ROOT}/path-outside-entry"
+  setup_repo "$repo"
+  printf '\nexport const visibleLabel = "Install";\n' \
+    >> "$repo/apps/control-center/src/components/overview-screen.tsx"
+  printf '\n- Note: apps/control-center/src/components/overview-screen.tsx changed\n' \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  approval_entry "Updated overview" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" add apps/control-center/src/components/overview-screen.tsx \
+    docs/control-center-customer-ui-approval.md
+  git -C "$repo" commit -q -m "Change overview and approve it"
+  expect_gate_due "$repo"
+}
+
 test_non_ui_commits_do_not_block
 test_ui_change_blocks_immediately
 test_working_tree_ui_change_blocks_immediately
@@ -546,5 +562,6 @@ test_merge_commit_with_approval_needs_scope_for_branch_ui
 test_named_path_must_match_whole_file
 test_merge_of_approved_base_needs_no_rescope
 test_merged_parent_approval_is_judged_on_its_own_tree
+test_path_outside_entry_does_not_name_ui_file
 
 printf 'control-center UI review gate tests passed\n'

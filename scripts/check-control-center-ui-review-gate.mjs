@@ -160,10 +160,15 @@ function namesPath(text, file) {
   return new RegExp(`(^|[^\\w./-])${escaped}(?![\\w/-]|\\.\\w)`).test(text);
 }
 
+// The text of the entries the diff adds: only "## " blocks name a path.
 function addedApprovalText(diff) {
-  return lines(diff)
+  const added = lines(diff)
     .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
     .map((line) => line.slice(1))
+    .join("\n");
+  return added
+    .split(/^(?=## )/m)
+    .filter((block) => block.startsWith("## "))
     .join("\n");
 }
 
