@@ -7567,3 +7567,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet. Proposed for Paul's decision: when VibeTV is connected and reports a weak WiFi signal, the Overview shows a dialog "Weak WiFi signal" with "Move VibeTV closer to your router." and "Not now". When the Companion names a theme the VibeTV cannot draw, it shows "Theme not shown" with "VibeTV can't show this theme. Choose another theme." and "Not now". Neither dialog has a close button, and neither has a lime button, because the Overview performs no action for them. One notice at a time, and never while another dialog is open on the page; a closed notice stays closed until it goes away and comes back. The other former notices stay off the Overview (waiting for usage and the screensaver are shown by the 3D screen, the update by the sidebar and Updates, the firmware version by Support and Updates).
 - Scope: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/overview-screen.notices.test.tsx`, and this approval record. Option stacked on PR #755; not merge or release.
 - What's new: none — no new content
+
+## 2026-10-18 — Overview notices: the app keeps the closed state and the busy notice goes first (#772)
+
+- User approval: pending — Paul decides with the entry above (option for the lost Overview notices after #755); look unchanged: the same two dialogs with the same words and buttons. Codex review fixes on PR #772 only.
+- Approved customer-visible result: none beyond the entry above. A closed notice now stays closed when the customer switches tabs and comes back. When both notices are due, the theme notice shows once the WiFi notice is closed. Both notices wait while the low-memory notice is due, so the two never block each other.
+- Scope: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/overview-screen.notices.test.tsx`, `apps/control-center/src/components/control-center-app.tsx` (state and props for the Overview notice only), and this approval record. Option stacked on PR #755; not merge or release.
+- What's new: none — no new content
