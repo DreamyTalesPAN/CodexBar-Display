@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -20,21 +21,59 @@ const (
 	safePortMax = 32767
 )
 
+// reservedPorts holds every port handed out in this process, from reservation
+// until the owning test's cleanup. Parallel subtests (signed_in, signed_out)
+// otherwise could pick the port that the other one released while its device
+// is powered off.
+var (
+	reservedMu    sync.Mutex
+	reservedPorts = map[int]bool{}
+)
+
 // reserveNonEphemeralPort returns a listener on a free loopback port outside
-// the OS ephemeral ranges. The listener is closed at test cleanup, or earlier
-// by the caller before the real owner binds the port.
+// the OS ephemeral ranges. The caller may close it before the real owner binds
+// the port; the port stays reserved in this process until the test ends.
 func reserveNonEphemeralPort(t *testing.T) net.Listener {
 	t.Helper()
 	for range 200 {
 		port := safePortMin + rand.IntN(safePortMax-safePortMin+1)
-		l, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
-		if err == nil {
-			t.Cleanup(func() { _ = l.Close() })
-			return l
+		reservedMu.Lock()
+		if reservedPorts[port] {
+			reservedMu.Unlock()
+			continue
 		}
+		l, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+		if err != nil {
+			reservedMu.Unlock()
+			continue
+		}
+		reservedPorts[port] = true
+		reservedMu.Unlock()
+		t.Cleanup(func() {
+			_ = l.Close()
+			reservedMu.Lock()
+			delete(reservedPorts, port)
+			reservedMu.Unlock()
+		})
+		return l
 	}
 	t.Fatalf("no free loopback port in %d-%d", safePortMin, safePortMax)
 	return nil
+}
+
+// Regression for the parallel-subtest collision: a port released by one
+// reservation must not be handed out again while the test runs.
+func TestReservedPortsAreNotHandedOutTwice(t *testing.T) {
+	seen := map[int]bool{}
+	for range 300 {
+		l := reserveNonEphemeralPort(t)
+		port := l.Addr().(*net.TCPAddr).Port
+		_ = l.Close()
+		if seen[port] {
+			t.Fatalf("port %d handed out twice after its reservation was released", port)
+		}
+		seen[port] = true
+	}
 }
 
 func TestReservedPortsAvoidEphemeralRanges(t *testing.T) {
