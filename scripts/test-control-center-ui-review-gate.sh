@@ -454,6 +454,24 @@ test_merge_commit_with_approval_needs_scope_for_branch_ui() {
   expect_gate_due "$repo"
 }
 
+# A file whose path is a prefix of a named path is not named by that entry.
+test_named_path_must_match_whole_file() {
+  local repo="${TMP_ROOT}/named-path-prefix"
+  setup_repo "$repo"
+  printf 'export const short = 1;\n' \
+    > "$repo/apps/control-center/src/components/overview-screen.ts"
+  printf '\nexport const visibleLabel = "Install";\n' \
+    >> "$repo/apps/control-center/src/components/overview-screen.tsx"
+  approval_entry_scoped "Updated overview" \
+    "apps/control-center/src/components/overview-screen.tsx" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" add apps/control-center/src/components/overview-screen.ts \
+    apps/control-center/src/components/overview-screen.tsx \
+    docs/control-center-customer-ui-approval.md
+  git -C "$repo" commit -q -m "Change two overview files and approve one"
+  expect_gate_due "$repo"
+}
+
 test_non_ui_commits_do_not_block
 test_ui_change_blocks_immediately
 test_working_tree_ui_change_blocks_immediately
@@ -475,5 +493,6 @@ test_given_approval_prints_no_pending_notice
 test_ui_change_in_approval_commit_needs_its_scope
 test_ui_change_in_approval_commit_passes_when_entry_names_it
 test_merge_commit_with_approval_needs_scope_for_branch_ui
+test_named_path_must_match_whole_file
 
 printf 'control-center UI review gate tests passed\n'

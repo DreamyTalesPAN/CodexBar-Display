@@ -56,7 +56,7 @@ const approvalCommitText = approvalCommit
   : "";
 const unnamedApprovalCommitUiFiles = approvalCommit
   ? approvalCommitChangedFiles(approvalCommit).filter(
-      (file) => isUiFile(file) && !approvalCommitText.includes(file),
+      (file) => isUiFile(file) && !namesPath(approvalCommitText, file),
     )
   : [];
 const uiChangedFiles = unique([
@@ -129,6 +129,12 @@ function changedFilesSince(commit, ref) {
 // brings in the files of the merged branch this way).
 function approvalCommitChangedFiles(commit) {
   return lines(tryGit(["diff", "--name-only", `${commit}^1`, commit]));
+}
+
+// The path as a whole token: "widget.tsx" does not name "widget.ts".
+function namesPath(text, file) {
+  const escaped = file.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^\\w./-])${escaped}(?![\\w/-]|\\.\\w)`).test(text);
 }
 
 function addedApprovalText(diff) {
