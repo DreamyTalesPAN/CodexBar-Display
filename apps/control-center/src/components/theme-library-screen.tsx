@@ -67,7 +67,7 @@ import {
 import { compareSemVer, parseSemVer } from "@/lib/semver";
 import { sentOwnThemePaths } from "@/lib/sent-own-theme-paths";
 import { cn } from "@/lib/utils";
-import { statusForHost } from "@/lib/customer-platform";
+import { copyForHost, statusForHost } from "@/lib/customer-platform";
 import { isRemoteThemePackUrl } from "@/lib/theme-pack-url";
 import { catalogThemeRowId } from "@/lib/whats-new";
 import {
@@ -730,7 +730,7 @@ export function ThemeLibraryScreen({
           <Alert className="mb-5" variant="destructive">
             <Lock aria-hidden />
             <AlertTitle>{say("Theme action failed")}</AlertTitle>
-            <AlertDescription>{libraryError}</AlertDescription>
+            <AlertDescription>{copyForHost(libraryError, windowsHost)}</AlertDescription>
           </Alert>
         ) : null}
         {recovery && recoveryMatchesUsage ? (

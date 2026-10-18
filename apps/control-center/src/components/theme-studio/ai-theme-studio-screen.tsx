@@ -1555,7 +1555,7 @@ export function AIThemeStudioScreen({
               ) : null}
               {error ? (
                 <p id="ai-theme-error" role="alert" className="text-sm text-destructive [overflow-wrap:anywhere]">
-                  {error}
+                  {copyForHost(error, windowsHost)}
                 </p>
               ) : null}
               {document.spec.primitives.length > 0 &&
