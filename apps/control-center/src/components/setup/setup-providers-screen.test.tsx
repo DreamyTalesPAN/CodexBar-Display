@@ -659,6 +659,24 @@ describe("SetupProvidersScreen", () => {
     expect(html).toContain("Show more providers (4 left)");
   });
 
+  // Calm rule: a link is ink with an underline, like the other links in Settings.
+  it("shows the more-providers control as an underlined link", () => {
+    const many = Array.from({ length: 14 }, (_, index) =>
+      provider({
+        health: "healthy",
+        label: `Provider ${index}`,
+        providerId: `p${index}`,
+      }),
+    );
+    const html = render({ providers: many });
+    const control = html.match(/<button[^>]*>(?:(?!<\/button>)[\s\S])*Show more providers/)?.[0] ?? "";
+    const opening = control.slice(0, control.indexOf(">"));
+
+    expect(opening).toContain("underline");
+    expect(opening).toContain("font-normal");
+    expect(opening).not.toContain("font-semibold");
+  });
+
   it("does not offer more when everything already fits", () => {
     const html = render({ providers: [claude, copilot] });
 

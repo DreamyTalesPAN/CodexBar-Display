@@ -218,7 +218,7 @@ export function SettingsScreen({
       />
       <SettingsSection id="settings-display-mode" title="Display mode">
         {providerPicker.displayNotice ? (
-          <p className="text-sm text-muted-foreground" role="status">
+          <p className="text-[13px] text-muted-foreground" role="status">
             {providerPicker.displayNotice}
           </p>
         ) : null}
@@ -280,7 +280,7 @@ export function SettingsScreen({
           />
         ) : null}
         {providerShortcut ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-[13px] text-muted-foreground">
             {providerShortcut === "available"
               ? // What a press does now (issue #558): it moves between the
                 // providers Manual offers, so one of them leaves nothing to
@@ -415,7 +415,7 @@ export function SettingsScreen({
                   Choose screensaver
                 </a>
                 {screensaverLine ? (
-                  <span className="text-sm text-muted-foreground">
+                  <span className="text-[13px] text-muted-foreground">
                     {screensaverLine}
                   </span>
                 ) : null}
@@ -452,7 +452,7 @@ export function SettingsScreen({
               <RadioMark selected={connectionMode === mode} />
               <span className="flex flex-col">
                 <span className="font-semibold">{label}</span>
-                <span className="text-muted-foreground">{description}</span>
+                <span className="text-[13px] text-muted-foreground">{description}</span>
               </span>
             </button>
           ))}
@@ -510,7 +510,7 @@ export function SettingsScreen({
               {busyAction === "reset-setup" ? "Resetting" : "Run setup again"}
             </span>
           </Button>
-          <p className="min-w-[160px] flex-1 text-sm text-muted-foreground" id="vibetv-run-setup-help">
+          <p className="min-w-[160px] flex-1 text-[13px] text-muted-foreground" id="vibetv-run-setup-help">
             Connect {thisHost} to another VibeTV.
           </p>
         </div>
@@ -533,7 +533,7 @@ export function SettingsScreen({
                   : "Reset to factory settings"}
               </span>
             </Button>
-            <p className="min-w-[160px] flex-1 text-sm text-muted-foreground" id="vibetv-factory-reset-help">
+            <p className="min-w-[160px] flex-1 text-[13px] text-muted-foreground" id="vibetv-factory-reset-help">
               VibeTV forgets its WiFi details, pairing, settings and themes.
             </p>
           </div>
@@ -627,7 +627,7 @@ function SettingsSection({
     <section id={id} className="grid grid-cols-1 items-start gap-5 py-8 md:grid-cols-[minmax(0,240px)_minmax(0,560px)] md:gap-10">
       <div className="min-w-0">
         {/* Padded to the centre of the first control row. */}
-        <h2 className="pt-2 text-sm leading-5 font-semibold">{title}</h2>
+        <h2 className="pt-2 text-[13px] leading-5 font-semibold">{title}</h2>
       </div>
       <div className="flex min-w-0 flex-col gap-5">{children}</div>
     </section>
@@ -769,7 +769,7 @@ function BrightnessControl({
         />
       </div>
       <output
-        className="min-w-10 shrink-0 text-right text-sm tabular-nums text-muted-foreground"
+        className="min-w-10 shrink-0 text-right text-[13px] tabular-nums text-muted-foreground"
         htmlFor={id}
       >
         {valueLabel}

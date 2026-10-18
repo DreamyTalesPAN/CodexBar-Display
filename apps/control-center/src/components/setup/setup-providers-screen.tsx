@@ -415,11 +415,11 @@ export function ProviderList({
 
       {remaining > 0 ? (
         <Button
-          className="mt-3 self-center"
+          className="mt-3 self-center font-normal"
           onClick={() => setShown((count) => count + PROVIDER_PAGE_SIZE)}
           size="sm"
           type="button"
-          variant="ghost"
+          variant="link"
         >
           <span>{`Show more providers (${remaining} left)`}</span>
         </Button>
