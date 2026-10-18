@@ -524,6 +524,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const providerDisplayRevisionRef = useRef(0);
   const providerDisplayWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
   const providerPreferencesReadRef = useRef<Promise<void> | null>(null);
+  const providerPreferencesReadFreshRef = useRef(false);
   const quietUsageReadRef = useRef<Promise<void> | null>(null);
   const providerPreferencesRevisionRef = useRef(0);
   const providerPreferenceWritesRef = useRef<Promise<void>>(Promise.resolve());
@@ -3428,10 +3429,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const refreshProviderPreferences = useCallback(
     (options?: { quiet?: boolean; fresh?: boolean }) => {
-      if (providerPreferencesReadRef.current) {
-        return providerPreferencesReadRef.current;
+      const inFlight = providerPreferencesReadRef.current;
+      // A plain poll joins any read in flight. A fresh read joins only a fresh
+      // read; behind a plain one it waits for that read to settle and then asks
+      // CodexBar itself, so the plugin list it returns is the one shown.
+      if (inFlight && (!options?.fresh || providerPreferencesReadFreshRef.current)) {
+        return inFlight;
       }
-      const read = (async () => {
+      const readNow = async () => {
         // Start after older writes, then ignore the result if a newer write
         // begins beside this GET. Otherwise a pre-write snapshot can replace
         // the PATCH-confirmed row and feed the stale provider back into the
@@ -3472,8 +3477,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             normalizeCaughtError(error, "Provider settings need attention."),
           );
         }
-      })();
+      };
+      const read: Promise<void> = inFlight
+        ? inFlight.then(readNow, readNow)
+        : readNow();
       providerPreferencesReadRef.current = read;
+      providerPreferencesReadFreshRef.current = Boolean(options?.fresh);
       void read.finally(() => {
         if (providerPreferencesReadRef.current === read) {
           providerPreferencesReadRef.current = null;

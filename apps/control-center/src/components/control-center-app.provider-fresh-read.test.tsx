@@ -1,0 +1,177 @@
+// @vitest-environment jsdom
+//
+// PR #700 (Codex P1): a fresh=1 read of the provider list must not be joined
+// to a plain poll that is already in flight. Otherwise a plugin installed or
+// removed while the engine runs stays out of the list until a restart.
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { createElement } from "react";
+import { afterEach, expect, it, vi } from "vitest";
+
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { markWhatsNewSeen } from "@/lib/whats-new";
+import { ControlCenterApp } from "./control-center-app";
+
+const themeSpec = { active: true, path: "/themes/codex/spec-v7.json", hash: "hash-v7", renderOk: true };
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return { ok: status < 400, status, json: async () => body } as unknown as Response;
+}
+
+function provider(providerId: string, label: string) {
+  return {
+    id: `codexbar.providers.${providerId}.enabled`,
+    section: "providers",
+    owner: "codexbar",
+    type: "boolean",
+    label,
+    providerId,
+    value: true,
+    effectiveValue: true,
+    allowsDefault: false,
+    availability: { state: "available" },
+    health: { state: "healthy", service: "operational", message: "Provider is working." },
+    writeStrategy: "codexbar_command",
+    writable: true,
+  };
+}
+
+// The first provider read is held until the test releases it; it still lists
+// only Codex, as if the plugin had not been found yet. Reads with fresh=1 answer
+// at once with the list that includes Claude.
+async function openSettingsWithHeldPlainRead() {
+  const providerReads: string[] = [];
+  let releasePlainRead: () => void = () => {};
+  const plainRead = new Promise<void>((resolve) => {
+    releasePlainRead = resolve;
+  });
+  const companion = {
+    selection: { mode: "automatic", providerIds: ["codex", "claude"], configured: true, valid: true },
+  };
+  markWhatsNewSeen();
+  vi.useFakeTimers();
+  vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue("VibeTVControlCenter/1.2.3+45");
+  vi.stubGlobal("matchMedia", () => ({
+    matches: true,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/v1/status")) {
+        return jsonResponse({
+          ok: true,
+          companion: { version: "9.9.9", installationMode: "dmg" },
+          device: {
+            active: true,
+            connected: true,
+            paired: true,
+            ready: true,
+            connectionState: "ready",
+            deviceId: "16199235",
+            target: "cable://vibetv",
+            board: "esp8266",
+            firmware: "9999.0.524",
+            activeTheme: "codex",
+            display: { themeSpec },
+            health: { ok: true },
+          },
+        });
+      }
+      if (url.endsWith("/v1/display-frame/latest")) {
+        return jsonResponse({
+          ok: true,
+          deviceId: "16199235",
+          frame: {
+            v: 2,
+            provider: "codex",
+            label: "Codex",
+            usageSlots: [{ id: "weekly", label: "Weekly", percent: 29 }],
+          },
+        });
+      }
+      if (url.includes("/api/theme-pack/")) {
+        return jsonResponse({ themeId: "codex", spec: { p: [] }, specPath: themeSpec.path, specHash: themeSpec.hash, assets: {} });
+      }
+      if (url.includes("/v1/preferences?section=providers")) {
+        providerReads.push(url);
+        if (url.includes("fresh=1")) {
+          return jsonResponse({
+            ok: true,
+            items: [provider("codex", "Codex"), provider("claude", "Claude")],
+          });
+        }
+        await plainRead;
+        return jsonResponse({ ok: true, items: [provider("codex", "Codex")] });
+      }
+      if (url.endsWith("/v1/preferences?section=display")) {
+        return jsonResponse({ ok: true, items: [] });
+      }
+      if (url.endsWith("/v1/provider-display")) {
+        return jsonResponse({ ok: true, selection: companion.selection });
+      }
+      if (url.includes("/v1/usage")) {
+        return jsonResponse({
+          ok: true,
+          usageMode: "used",
+          providers: ["codex", "claude"].map((id) => ({
+            id, label: id, session: 12, weekly: 34, resetSecs: 0, usageMode: "used",
+          })),
+        });
+      }
+      return jsonResponse({ ok: false, error: { code: "HTTP_404" } }, 404);
+    }),
+  );
+  const view = render(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(ControlCenterApp, { catalog: { themes: [] } as never }),
+    ),
+  );
+  const wait = async (seconds: number) => {
+    for (let second = 0; second < seconds; second += 1) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+    }
+  };
+  await wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await wait(1);
+  return {
+    providerReads,
+    releasePlainRead,
+    text: () => view.container.ownerDocument.body.textContent || "",
+    wait,
+  };
+}
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
+
+it("a fresh provider read waits for a plain read in flight and then asks CodexBar again", async () => {
+  const settings = await openSettingsWithHeldPlainRead();
+  // Opening Settings starts a plain poll; the fresh read must not be joined to it.
+  expect(settings.providerReads.some((url) => url.includes("fresh=1"))).toBe(false);
+
+  // The held plain read finishes with the stale list; the fresh read follows.
+  settings.releasePlainRead();
+  await settings.wait(2);
+
+  expect(settings.providerReads.filter((url) => url.includes("fresh=1"))).toHaveLength(1);
+  expect(settings.text()).toContain("Claude");
+});
