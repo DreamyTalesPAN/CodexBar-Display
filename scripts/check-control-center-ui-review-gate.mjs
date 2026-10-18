@@ -148,7 +148,7 @@ function unapprovedUiFilesAt(ref) {
   if (!approval) {
     return since;
   }
-  if (!diffAddsApprovalEvidence(commitDiff(approval))) {
+  if (!diffAddsApprovalEvidence(commitDiff(approval), approval)) {
     return [...since, "approval marker without evidence"];
   }
   return unique([...since, ...uncoveredApprovalCommitUiFiles(approval)]);
@@ -201,7 +201,9 @@ function untrackedFileContents(file) {
   }
 }
 
-function diffAddsApprovalEvidence(diff) {
+// ref: the commit whose own tree the entry is judged against; null is the
+// working tree (the checked-out head).
+function diffAddsApprovalEvidence(diff, ref = null) {
   const addedLines = lines(diff)
     .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
     .map((line) => line.slice(1).trim());
@@ -218,12 +220,12 @@ function diffAddsApprovalEvidence(diff) {
         textLines.some((line) => line.startsWith(prefix)),
       ) &&
       whatsNewLines.length > 0 &&
-      whatsNewLines.every(namesWhatsNew)
+      whatsNewLines.every((line) => namesWhatsNew(line, ref))
     );
   });
 }
 
-function namesWhatsNew(line) {
+function namesWhatsNew(line, ref) {
   const value = line.slice(WHATS_NEW_PREFIX.length).trim();
   if (/^none\s*[—–-]\s*\S/.test(value)) {
     return true;
@@ -231,25 +233,33 @@ function namesWhatsNew(line) {
   const ids = [...value.matchAll(/`([^`]*)`/g)].map((match) => match[1]);
   return (
     ids.length > 0 &&
-    ids.every((id) => whatsNewIds().includes(id) && timesNamed(id) === 1)
+    ids.every((id) => whatsNewIds(ref).includes(id) && timesNamed(id, ref) === 1)
   );
 }
 
 // An entry is added to the list once, so one approval entry names it. A later
 // change cannot pass by naming an entry that is already there.
-function timesNamed(id) {
-  return lines(readFileSync(APPROVAL_FILE, "utf8")).filter(
+function timesNamed(id, ref) {
+  return lines(readRecordFile(APPROVAL_FILE, ref)).filter(
     (line) => line.trim().startsWith(WHATS_NEW_PREFIX) && line.includes(`\`${id}\``),
   ).length;
 }
 
-function whatsNewIds() {
+function whatsNewIds(ref) {
+  return [...readRecordFile(WHATS_NEW_FILE, ref).matchAll(/\bid: "([^"]+)"/g)].map(
+    (match) => match[1],
+  );
+}
+
+// A file as it is in ref, or in the working tree when ref is null.
+function readRecordFile(file, ref) {
+  if (ref) {
+    return tryGit(["show", `${ref}:${file}`]);
+  }
   try {
-    return [...readFileSync(WHATS_NEW_FILE, "utf8").matchAll(/\bid: "([^"]+)"/g)].map(
-      (match) => match[1],
-    );
+    return readFileSync(file, "utf8");
   } catch {
-    return [];
+    return "";
   }
 }
 

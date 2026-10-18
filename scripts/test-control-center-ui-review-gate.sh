@@ -498,6 +498,30 @@ test_merge_of_approved_base_needs_no_rescope() {
   expect_gate_success "$repo"
 }
 
+# The merged parent's approval is judged on that parent's own files: an entry
+# that names a What's New id only the other branch has does not cover anything.
+test_merged_parent_approval_is_judged_on_its_own_tree() {
+  local repo="${TMP_ROOT}/merged-parent-own-tree"
+  setup_repo "$repo"
+  local base_branch
+  base_branch="$(git -C "$repo" symbolic-ref --short HEAD)"
+
+  git -C "$repo" checkout -q -b feature
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Feature customer-facing UI"
+  commit_approval "$repo" "Feature overview" "- What's new: \`base-entry\`"
+
+  git -C "$repo" checkout -q "$base_branch"
+  commit_file "$repo" "apps/control-center/src/lib/whats-new.ts" \
+    'export const extra = { id: "base-entry" };'
+  git -C "$repo" merge -q --no-ff --no-commit feature >/dev/null 2>&1
+  approval_entry "Merged feature" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" add docs/control-center-customer-ui-approval.md
+  git -C "$repo" commit -q -m "Merge feature and record it"
+  expect_gate_due "$repo"
+}
+
 test_non_ui_commits_do_not_block
 test_ui_change_blocks_immediately
 test_working_tree_ui_change_blocks_immediately
@@ -521,5 +545,6 @@ test_ui_change_in_approval_commit_passes_when_entry_names_it
 test_merge_commit_with_approval_needs_scope_for_branch_ui
 test_named_path_must_match_whole_file
 test_merge_of_approved_base_needs_no_rescope
+test_merged_parent_approval_is_judged_on_its_own_tree
 
 printf 'control-center UI review gate tests passed\n'
