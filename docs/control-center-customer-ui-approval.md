@@ -7467,3 +7467,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-18 — Run diagnostics no longer opens the Support report card
+
+- User approval: pending — Paul reviews this fix (Run diagnostics no longer switches the Support report card to Copy/Download; approved 24.09. text "Create a diagnostic file when support asks for it." stays true); look: unchanged.
+- Approved customer-visible result: Support › Run diagnostics no longer changes the Support report card. After it the card still says "Create report"; before, it showed "Copy", "Download" and "Create again" without a click on "Create report". Run diagnostics no longer shows the card as "Creating report" either, and the card's Create report does not show Run diagnostics as running. Create report, Create again, all texts and the layout stay as they are; the diagnostics results still appear under Diagnostics.
+- Scope: `apps/control-center/src/components/control-center-app.tsx`, `apps/control-center/src/components/logs-screen.tsx`, the tests `logs-screen-support-report.test.tsx` and `control-center-app.support-report-card.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a fix of a reported defect, no new text or control.

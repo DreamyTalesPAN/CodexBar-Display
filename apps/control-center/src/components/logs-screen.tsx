@@ -66,19 +66,24 @@ export type LogsScreenProps = {
   device?: DeviceInfo | null;
   /** The catalog, to name the live theme while a screensaver is on screen. */
   themes?: ThemeProduct[];
+  /** The shared snapshot Run diagnostics collects; the card does not show it. */
   diagnostics?: SupportDiagnostics | null;
+  /** The report the Support report card created, if any. */
+  supportReport?: SupportDiagnostics | null;
   lastError?: {
     code: string;
     message: string;
     nextAction: string;
   } | null;
   onLoadDiagnostics?: () => void;
+  onCreateSupportReport?: () => void;
   onRefresh?: () => void;
   onRunSetupAgain?: () => void;
   onRepairUsageEngine?: () => void;
   repairingUsageEngine?: boolean;
   busyAction?: string | null;
   supportReportBusy?: boolean;
+  diagnosticsRunning?: boolean;
   /** The app runs on Windows, where "Mac App" reads "app". */
   windowsHost?: boolean;
 };
@@ -88,14 +93,17 @@ export function LogsScreen({
   device,
   themes = [],
   diagnostics,
+  supportReport,
   lastError,
   onLoadDiagnostics,
+  onCreateSupportReport,
   onRefresh,
   onRunSetupAgain,
   onRepairUsageEngine,
   repairingUsageEngine = false,
   busyAction,
   supportReportBusy = false,
+  diagnosticsRunning = false,
   windowsHost = false,
 }: LogsScreenProps) {
   const deviceConnected = deviceIsCustomerConnected(device);
@@ -186,8 +194,8 @@ export function LogsScreen({
           <CardContent className="flex flex-1 items-center">
             <SupportReportActions
               creating={supportReportBusy}
-              diagnostics={diagnostics}
-              onCreate={onLoadDiagnostics}
+              diagnostics={supportReport}
+              onCreate={onCreateSupportReport}
               windowsHost={windowsHost}
             />
           </CardContent>
@@ -204,7 +212,7 @@ export function LogsScreen({
             onRepairUsageEngine={onRepairUsageEngine}
             onRun={onLoadDiagnostics}
             repairing={repairingUsageEngine}
-            running={supportReportBusy}
+            running={diagnosticsRunning}
             windowsHost={windowsHost}
           />
         </CardContent>
