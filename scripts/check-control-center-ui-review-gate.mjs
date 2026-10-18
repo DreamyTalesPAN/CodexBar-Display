@@ -11,6 +11,11 @@ process.chdir(repoRoot);
 
 const APPROVAL_FILE = "docs/control-center-customer-ui-approval.md";
 const PRINCIPLES_FILE = "docs/control-center-ui-principles.md";
+// Approval commits committed after this moment must name the UI paths they
+// change. Older commits were checked before that rule existed and keep the old
+// behaviour, so open pull requests whose approval commits predate it do not
+// start failing with this change.
+const APPROVAL_COMMIT_PATH_RULE_SINCE = "2026-10-18T06:00:00Z";
 const APPROVAL_PREFIXES = [
   "- User approval:",
   "- Approved customer-visible result:",
@@ -123,11 +128,19 @@ function approvalCommitChangedFiles(commit) {
   return lines(tryGit(["diff", "--no-renames", "--name-only", `${commit}^1`, commit]));
 }
 
+function appliesPathRule(commit) {
+  const committedAt = Date.parse(tryGit(["log", "-1", "--format=%cI", commit]));
+  return committedAt >= Date.parse(APPROVAL_COMMIT_PATH_RULE_SINCE);
+}
+
 // UI files the approval commit changes itself that its entry does not cover.
 // A file a merge takes from its second parent is covered when that parent
 // passes the gate on its own (its approval history), so the merge record need
 // not name base UI that is already approved.
 function uncoveredApprovalCommitUiFiles(commit) {
+  if (!appliesPathRule(commit)) {
+    return [];
+  }
   const entryText = addedApprovalText(commitDiff(commit));
   const mergedParent = tryGit(["rev-parse", "--verify", `${commit}^2`]);
   return approvalCommitChangedFiles(commit)

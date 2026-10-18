@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Commits in these tests are made after APPROVAL_COMMIT_PATH_RULE_SINCE, so the
+# newest rule applies; the older-commit test sets its own date.
+export GIT_COMMITTER_DATE="2026-10-18T07:00:00Z"
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GATE="${ROOT}/scripts/check-control-center-ui-review-gate.mjs"
 TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-ui-review-gate-test.XXXXXX")"
@@ -538,6 +542,22 @@ test_path_outside_entry_does_not_name_ui_file() {
   expect_gate_due "$repo"
 }
 
+# An approval commit committed before the cutoff keeps the old rule: its own
+# unnamed UI file passes, as it did before the path rule.
+test_approval_commit_before_cutoff_keeps_old_rule() {
+  local repo="${TMP_ROOT}/approval-before-cutoff"
+  setup_repo "$repo"
+  printf '\nexport const visibleLabel = "Install";\n' \
+    >> "$repo/apps/control-center/src/components/overview-screen.tsx"
+  approval_entry "Updated overview" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" add apps/control-center/src/components/overview-screen.tsx \
+    docs/control-center-customer-ui-approval.md
+  GIT_COMMITTER_DATE="2026-10-17T07:00:00Z" \
+    git -C "$repo" commit -q -m "Change overview and approve it before the cutoff"
+  expect_gate_success "$repo"
+}
+
 # Moving a UI file out of the UI folders is a change to that UI file.
 test_ui_file_renamed_out_of_ui_folders_is_due() {
   local repo="${TMP_ROOT}/ui-renamed-away"
@@ -577,5 +597,6 @@ test_merge_of_approved_base_needs_no_rescope
 test_merged_parent_approval_is_judged_on_its_own_tree
 test_path_outside_entry_does_not_name_ui_file
 test_ui_file_renamed_out_of_ui_folders_is_due
+test_approval_commit_before_cutoff_keeps_old_rule
 
 printf 'control-center UI review gate tests passed\n'
