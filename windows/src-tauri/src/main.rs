@@ -425,22 +425,35 @@ struct WindowRect {
 }
 
 // Where the window was when a close released it, and whether it was maximized.
-type Remembered = (WindowRect, bool);
+// While maximized, the rectangle is the last normal one (Tauri only reports
+// the maximized bounds); None when the window was never restored.
+type Remembered = (Option<WindowRect>, bool);
 
 #[derive(Debug, PartialEq)]
 enum Placement {
     // First start: 1280x900, centred.
     Default,
-    Remembered { rect: WindowRect, maximized: bool },
+    Remembered { rect: Option<WindowRect>, maximized: bool },
 }
 
 fn choose_placement(remembered: Option<Remembered>, work_areas: &[WindowRect]) -> Placement {
     match remembered {
-        Some((rect, maximized)) if centre_on_a_work_area(rect, work_areas) => {
-            Placement::Remembered { rect, maximized }
+        Some((Some(rect), maximized)) if centre_on_a_work_area(rect, work_areas) => {
+            Placement::Remembered { rect: Some(rect), maximized }
         }
+        // Maximized, never restored: maximize again at the default size.
+        Some((None, true)) => Placement::Remembered { rect: None, maximized: true },
         // Nothing remembered, or the window was on a monitor that is gone.
         _ => Placement::Default,
+    }
+}
+
+// The rectangle and maximized state to keep for a window being released.
+fn remembered_for(current: WindowRect, maximized: bool, previous: Option<Remembered>) -> Remembered {
+    if maximized {
+        (previous.and_then(|(rect, _)| rect), true)
+    } else {
+        (Some(current), false)
     }
 }
 
@@ -459,20 +472,20 @@ fn centre_on_a_work_area(rect: WindowRect, work_areas: &[WindowRect]) -> bool {
 
 // Worker threads only: the getters wait for the event loop. None while
 // minimized, because its position says nothing about where it was used.
-fn window_geometry(window: &tauri::WebviewWindow) -> Option<Remembered> {
+fn window_geometry(window: &tauri::WebviewWindow, previous: Option<Remembered>) -> Option<Remembered> {
     if window.is_minimized().ok()? {
         return None;
     }
     let position = window.outer_position().ok()?;
     let size = window.inner_size().ok()?;
     let maximized = window.is_maximized().ok()?;
-    let rect = WindowRect {
+    let current = WindowRect {
         x: position.x,
         y: position.y,
         width: size.width,
         height: size.height,
     };
-    Some((rect, maximized))
+    Some(remembered_for(current, maximized, previous))
 }
 
 // Worker threads only (it asks for the monitors). The monitors are asked
@@ -538,8 +551,10 @@ fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tau
         })
         .build()?;
     if let Some((rect, maximized)) = remembered {
-        let _ = window.set_size(PhysicalSize::new(rect.width, rect.height));
-        let _ = window.set_position(PhysicalPosition::new(rect.x, rect.y));
+        if let Some(rect) = rect {
+            let _ = window.set_size(PhysicalSize::new(rect.width, rect.height));
+            let _ = window.set_position(PhysicalPosition::new(rect.x, rect.y));
+        }
         if maximized {
             let _ = window.maximize();
         }
@@ -806,7 +821,8 @@ fn hide_after_flush(app: &AppHandle) {
         let presented_now = shell.presentations.load(Ordering::SeqCst);
         if close_stands(presented, presented_now) {
             // Kept for the window built next; a minimized one keeps the last.
-            if let Some(geometry) = window_geometry(&window) {
+            let previous = *shell.window_geometry.lock().unwrap();
+            if let Some(geometry) = window_geometry(&window, previous) {
                 *shell.window_geometry.lock().unwrap() = Some(geometry);
             }
             // Stored as count + 1, so a release before the first present
@@ -1570,7 +1586,7 @@ fn show_message(message: &str) {
 mod tests {
     use super::{
         centre_on_a_work_area, choose_placement, clear_loaded_theme, close_stands, label_for_generation,
-        theme_id_from_deep_link, Placement, WindowRect,
+        theme_id_from_deep_link, Placement, WindowRect, remembered_for,
     };
     use url::Url;
 
@@ -1646,23 +1662,41 @@ mod tests {
         let screens = [rect(0, 0, 1920, 1040), rect(-1280, 0, 1280, 1000)];
         let placed = rect(100, 80, 1280, 900);
         assert_eq!(
-            choose_placement(Some((placed, false)), &screens),
-            Placement::Remembered { rect: placed, maximized: false }
+            choose_placement(Some((Some(placed), false)), &screens),
+            Placement::Remembered { rect: Some(placed), maximized: false }
         );
-        // Maximized is kept with the place.
+        // Maximized is kept with the restore rectangle.
         assert_eq!(
-            choose_placement(Some((rect(0, 0, 1920, 1040), true)), &screens),
-            Placement::Remembered { rect: rect(0, 0, 1920, 1040), maximized: true }
+            choose_placement(Some((Some(placed), true)), &screens),
+            Placement::Remembered { rect: Some(placed), maximized: true }
+        );
+        // Maximized, never restored: maximize again, no rectangle.
+        assert_eq!(
+            choose_placement(Some((None, true)), &screens),
+            Placement::Remembered { rect: None, maximized: true }
         );
         // Centre on the left monitor is still on a monitor.
         let left = rect(-900, 50, 1280, 900);
         assert!(centre_on_a_work_area(left, &screens));
         // Nothing remembered: first start default.
         assert_eq!(choose_placement(None, &screens), Placement::Default);
+        assert_eq!(choose_placement(Some((None, false)), &screens), Placement::Default);
         // The monitor it was on is unplugged: default, not off-screen.
         let unplugged = rect(3000, 200, 1280, 900);
-        assert_eq!(choose_placement(Some((unplugged, false)), &screens), Placement::Default);
+        assert_eq!(choose_placement(Some((Some(unplugged), false)), &screens), Placement::Default);
         // No monitor known at all: default.
-        assert_eq!(choose_placement(Some((placed, false)), &[]), Placement::Default);
+        assert_eq!(choose_placement(Some((Some(placed), false)), &[]), Placement::Default);
+    }
+
+    #[test]
+    fn a_maximized_window_keeps_its_last_normal_rectangle() {
+        let maximized_bounds = WindowRect { x: 0, y: 0, width: 1920, height: 1040 };
+        let normal = WindowRect { x: 100, y: 80, width: 1280, height: 900 };
+        // Restored earlier: that rectangle survives a close while maximized.
+        assert_eq!(remembered_for(maximized_bounds, true, Some((Some(normal), false))), (Some(normal), true));
+        // Never restored: no rectangle, only the maximized state.
+        assert_eq!(remembered_for(maximized_bounds, true, None), (None, true));
+        // Not maximized: the current rectangle is kept.
+        assert_eq!(remembered_for(normal, false, Some((None, true))), (Some(normal), false));
     }
 }
