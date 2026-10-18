@@ -85,6 +85,10 @@ struct Shell {
     // Counts the windows built; the Destroyed handler tells a replacement
     // that a present already built from the window that is going away.
     windows_created: AtomicU64,
+    // Raised when a window the runtime reported as built turns out to be
+    // missing (ensure_live_window). Tauri keeps such a label for the whole
+    // run, so the next window is built under a new one.
+    window_generation: AtomicU64,
     shortcut_registered_changed: Condvar,
 }
 
@@ -218,6 +222,7 @@ fn main() {
             window_creation: Mutex::new(()),
             shortcut_registered: Mutex::new(false),
             windows_created: AtomicU64::new(0),
+            window_generation: AtomicU64::new(0),
             shortcut_registered_changed: Condvar::new(),
         })
         .setup(|app| {
@@ -347,13 +352,12 @@ fn configure_tray(app: &AppHandle) -> tauri::Result<()> {
             // The bootstrap page lives on Tauri's own origin
             // (http://tauri.localhost), the runtime UI on the Companion's.
             let runtime_origin = app.state::<Shell>().runtime_origin.lock().unwrap().clone();
-            let runtime_loaded = app
-                .get_webview_window(WINDOW_LABEL)
+            let runtime_loaded = main_window(app)
                 .and_then(|window| window.url().ok())
                 .map(|url| url.origin() == runtime_origin.origin())
                 .unwrap_or(false);
             if runtime_loaded {
-                if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
+                if let Some(window) = main_window(app) {
                     let _ = window.reload();
                 }
                 present_window(app);
@@ -379,9 +383,27 @@ fn configure_tray(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+// The first window is "main"; after a failed build the next ones get a new
+// label, because Tauri keeps the label of a window that never existed.
+fn label_for_generation(generation: u64) -> String {
+    if generation == 0 {
+        WINDOW_LABEL.to_string()
+    } else {
+        format!("{WINDOW_LABEL}-{generation}")
+    }
+}
+
+fn main_label(app: &AppHandle) -> String {
+    label_for_generation(app.state::<Shell>().window_generation.load(Ordering::SeqCst))
+}
+
+fn main_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
+    app.get_webview_window(&main_label(app))
+}
+
 fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tauri::Result<()> {
     let actions = app.clone();
-    let window = WebviewWindowBuilder::new(app, WINDOW_LABEL, WebviewUrl::App("index.html".into()))
+    let window = WebviewWindowBuilder::new(app, main_label(app), WebviewUrl::App("index.html".into()))
         .title("VibeTV Control Center")
         .visible(visible)
         .inner_size(1280.0, 900.0)
@@ -435,7 +457,7 @@ fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tau
                     // show it. Compare only once the label is gone: a present
                     // after that creates its own window.
                     for _ in 0..40 {
-                        if handle.get_webview_window(WINDOW_LABEL).is_none() {
+                        if main_window(&handle).is_none() {
                             break;
                         }
                         std::thread::sleep(Duration::from_millis(25));
@@ -474,7 +496,7 @@ fn present_window(app: &AppHandle) {
             _ => {}
         }
     }
-    match app.get_webview_window(WINDOW_LABEL) {
+    match main_window(app) {
         Some(window) => {
             let _ = window.show();
             let _ = window.unminimize();
@@ -510,7 +532,7 @@ fn ensure_window(app: &AppHandle) -> bool {
             .unwrap();
     }
     let _creating = shell.window_creation.lock().unwrap();
-    if app.get_webview_window(WINDOW_LABEL).is_some() {
+    if main_window(app).is_some() {
         return true;
     }
     let provider_shortcut = app.state::<Shell>().provider_shortcut.load(Ordering::SeqCst);
@@ -521,6 +543,24 @@ fn ensure_window(app: &AppHandle) -> bool {
             false
         }
     }
+}
+
+// Worker threads only: is_visible waits for the event loop. create_window
+// reports success once Tauri has queued the build; a build that then fails on
+// the event loop leaves no window, so the check is whether one answers.
+// After a miss the next attempt uses a new label (see label_for_generation).
+fn ensure_live_window(app: &AppHandle) -> bool {
+    for _ in 0..2 {
+        if !ensure_window(app) {
+            return false;
+        }
+        if main_window(app).is_some_and(|window| window.is_visible().is_ok()) {
+            return true;
+        }
+        log("the main window was not built; the next attempt uses a new window");
+        app.state::<Shell>().window_generation.fetch_add(1, Ordering::SeqCst);
+    }
+    false
 }
 
 fn theme_id_from_deep_link(raw: &str) -> Option<&str> {
@@ -560,7 +600,7 @@ fn navigate_to_pending_theme(app: &AppHandle, link_just_opened: bool) -> bool {
     if !runtime_ready(app, &origin) {
         return false;
     }
-    let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
+    let Some(window) = main_window(app) else {
         return false;
     };
     if !window
@@ -621,7 +661,7 @@ fn acknowledge_loaded_theme(app: AppHandle, loaded: Url) {
 // WebView2 (its processes hold 100+ MB and the page would keep polling);
 // opening it from the tray creates the window again.
 fn hide_after_flush(app: &AppHandle) {
-    let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
+    let Some(window) = main_window(app) else {
         return;
     };
     let _ = window.eval("window.dispatchEvent(new Event('vibetv:native-window-will-close'))");
@@ -701,7 +741,7 @@ fn show_next_provider(app: &AppHandle) {
     {
         Ok(response) if response.status() == 200 => {
             // An open Settings page shows the display choice; it reads it again.
-            if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
+            if let Some(window) = main_window(app) {
                 let _ = window.eval("window.dispatchEvent(new Event('vibetv:provider-display-changed'))");
             }
         }
@@ -861,7 +901,7 @@ fn runtime_http() -> ureq::Agent {
 }
 
 fn dispatch_result(app: &AppHandle, event: &str, success: bool) {
-    if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
+    if let Some(window) = main_window(app) {
         let _ = window.eval(format!(
             "window.dispatchEvent(new CustomEvent('{event}', {{ detail: {{ success: {success} }} }}))"
         ));
@@ -878,7 +918,7 @@ fn show_updating(app: &AppHandle, version: &str) {
 }
 
 fn dispatch_status(app: &AppHandle, detail: serde_json::Value) {
-    if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
+    if let Some(window) = main_window(app) {
         let _ = window.eval(format!(
             "window.dispatchEvent(new CustomEvent('vibetv:shell-status', {{ detail: {detail} }}))"
         ));
@@ -898,7 +938,7 @@ fn load(app: AppHandle, present: bool) -> bool {
     // Before the preparing check: present_window below must find a window,
     // or it would hand the load to yet another thread. Without one (WebView2
     // failed to start) this attempt ends here; the next click tries again.
-    if present && !ensure_window(&app) {
+    if present && !ensure_live_window(&app) {
         return false;
     }
     let shell = app.state::<Shell>();
@@ -946,7 +986,7 @@ fn load(app: AppHandle, present: bool) -> bool {
 }
 
 fn navigate_to_control_center(app: &AppHandle, origin: &Url) {
-    let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
+    let Some(window) = main_window(app) else {
         return;
     };
     let shell = app.state::<Shell>();
@@ -1207,7 +1247,7 @@ fn idle_update_check(app: &AppHandle) {
 // window in the tray is free; a window closed while minimized is hidden and
 // still minimized, so the minimized state alone says nothing.
 fn window_in_use(app: &AppHandle) -> bool {
-    app.get_webview_window(WINDOW_LABEL)
+    main_window(app)
         .map(|window| window.is_visible().unwrap_or(true))
         .unwrap_or(false)
 }
@@ -1383,7 +1423,7 @@ fn show_message(message: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{clear_loaded_theme, theme_id_from_deep_link};
+    use super::{clear_loaded_theme, label_for_generation, theme_id_from_deep_link};
     use url::Url;
 
     #[test]
@@ -1434,5 +1474,14 @@ mod tests {
         pending = Some("clippy".to_string());
         assert!(clear_loaded_theme(&mut pending, &theme_page, &origin, true));
         assert_eq!(pending, None);
+    }
+
+    #[test]
+    fn window_after_a_failed_build_gets_a_label_tauri_has_not_seen() {
+        // The first window keeps "main"; a label that Tauri still holds from a
+        // failed build must never be handed out again.
+        assert_eq!(label_for_generation(0), "main");
+        assert_eq!(label_for_generation(1), "main-1");
+        assert_ne!(label_for_generation(1), label_for_generation(2));
     }
 }
