@@ -7972,3 +7972,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; Paul's yes is pending. Visible change: the page behind the token history notice is darkened like every other dialog (was: not darkened, tiles usable under it). Words and buttons unchanged.
 - Scope: `usage-screen.tsx` (token history notice: standard backdrop) and `usage-screen.warning-overlay.test.tsx`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — look change only, no new notice
+
+## 2026-10-18 — Usage error: the standard dialog darkening (visible change)
+
+- User approval: pending — Paul reviews (Usage notices use the standard dialog darkening, decided by the communicator 18.10.)
+- Approved customer-visible result: none yet; Paul's yes is pending. Visible change: the page behind the usage error dialog is darkened like every other dialog (was: not darkened, tiles usable under it). Words and buttons unchanged.
+- Scope: `usage-screen.tsx` (usage error: standard backdrop) and `usage-screen.error-overlay.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — look change only, no new notice

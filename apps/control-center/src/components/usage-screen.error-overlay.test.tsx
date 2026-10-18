@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
 // A usage error is a dialog over the Usage page, never a box at its top. Try
-// again and OK are its buttons; the page behind it stays usable. The owner keeps
+// again and OK are its buttons; the page behind it is darkened. The owner keeps
 // it closed until the error has cleared.
 
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -51,8 +51,9 @@ it("shows the error as a dialog over the page, not as text on the page", () => {
   expect(screen.getByLabelText("34% weekly used")).toBeTruthy();
 });
 
-// No scrim: the dialog holds nothing, so the tiles can be pressed under it.
-it("leaves the page behind the error unscrimmed and usable", () => {
+// The error uses the standard dialog backdrop, like every other dialog: the
+// screen behind is darkened and held, so nothing is pressed under the error.
+it("darkens and holds the page behind the error like every other dialog", () => {
   const { container } = render(
     <UsageScreen
       companionStatus="online"
@@ -64,7 +65,9 @@ it("leaves the page behind the error unscrimmed and usable", () => {
 
   const scrim = container.querySelector('div[aria-hidden][class*="fixed"]');
   expect(scrim).not.toBeNull();
-  expect(scrim?.className).toContain("pointer-events-none");
+  expect(scrim?.className).toContain("bg-black/10");
+  expect(scrim?.className).toContain("opacity-100");
+  expect(scrim?.className).not.toContain("pointer-events-none");
 });
 
 it("offers Try again, which runs the refresh", () => {

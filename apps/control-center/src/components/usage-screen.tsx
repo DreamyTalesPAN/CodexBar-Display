@@ -231,8 +231,6 @@ export function UsageScreen({
             if (!open) onDismissUsageError?.();
           }}
           open
-          // The page behind stays usable: the tiles work under the error.
-          scrim={false}
           primaryAction={{
             label: "OK",
             onSelect: () => onDismissUsageError?.(),
