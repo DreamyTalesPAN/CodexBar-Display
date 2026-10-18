@@ -7467,3 +7467,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-18 — Windows: Themes and Theme Studio errors use the Windows words
+- User approval: pending — Paul reviews this PR (fix of a reported defect: the Windows app showed a Companion error with the Mac wording on the Themes page and in Theme Studio); look unchanged except: on Windows only, "Mac App" reads "App" and "this Mac" reads "this computer" in the Themes error box and the Theme Studio error line; macOS unchanged.
+- Approved customer-visible result: In the Windows app only, an error on Appearance › Themes ("Theme action failed") and the error line of Theme Studio read the same wording as the rest of the Windows app (for example "App is restarting." instead of "Mac App is restarting."). Layout, buttons and macOS text stay the same.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx`, `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, their new tests `theme-library-screen.windows-copy.test.tsx` and `ai-theme-studio-screen.windows-copy.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — wording of an existing error line on Windows only
