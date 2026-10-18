@@ -229,6 +229,7 @@ export function SettingsScreen({
           }
           automaticPreview={automaticPreviews[0] ?? null}
           automaticPreviews={automaticPreviews}
+          ink
           manualPreview={
             automaticPreviews.find(
               (preview) =>
