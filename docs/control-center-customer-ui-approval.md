@@ -7902,3 +7902,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none. Focus order only; nothing looks different.
 - Scope: `setup/setup-dialog.tsx` (non-modal dialogs, scrim off) and `usage-screen.warning-overlay.test.tsx`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — focus fix only, no new notice
+
+## 2026-10-18 — Usage notices: the standard dialog darkening (visible change)
+
+- User approval: pending — Paul reviews (Usage notices use the standard dialog darkening, decided by the communicator 18.10.)
+- Approved customer-visible result: none yet; Paul's yes is pending. Visible change: the page behind the token history notice is darkened like every other dialog (was: not darkened, tiles usable under it). Words and buttons unchanged.
+- Scope: `usage-screen.tsx` (token history notice: standard backdrop) and `usage-screen.warning-overlay.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — look change only, no new notice
