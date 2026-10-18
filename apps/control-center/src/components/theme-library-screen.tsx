@@ -36,14 +36,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
 import { Field, FieldLabel } from "@/components/ui/field";
 import {
   Item,
@@ -56,6 +48,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Progress } from "@/components/ui/progress";
+import { SetupDialog } from "@/components/setup/setup-dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -270,6 +263,9 @@ export function ThemeLibraryScreen({
     useState<ThemeStudioEditorTheme | null>(null);
   const [libraryError, setLibraryError] = useState("");
   const [storageWarning, setStorageWarning] = useState("");
+  // The storage notice is shown until its OK or X; the storage itself stays
+  // locked, so the notice is kept here only as "closed for this message".
+  const [closedStorageWarning, setClosedStorageWarning] = useState("");
   const [storageLocked, setStorageLocked] = useState(false);
   const [deleteTheme, setDeleteTheme] = useState<UserThemeRecord | null>(null);
   const [deleteError, setDeleteError] = useState("");
@@ -718,20 +714,6 @@ export function ThemeLibraryScreen({
       ) : null}
 
       <section className="py-8">
-        {storageWarning ? (
-          <Alert className="mb-5">
-            <Lock aria-hidden />
-            <AlertTitle>{say("Theme storage needs attention")}</AlertTitle>
-            <AlertDescription>{storageWarning}</AlertDescription>
-          </Alert>
-        ) : null}
-        {libraryError ? (
-          <Alert className="mb-5" variant="destructive">
-            <Lock aria-hidden />
-            <AlertTitle>{say("Theme action failed")}</AlertTitle>
-            <AlertDescription>{libraryError}</AlertDescription>
-          </Alert>
-        ) : null}
         {recovery && recoveryMatchesUsage ? (
           <RecoveryCard
             // The theme that takes the draft's place is on its way.
@@ -812,6 +794,37 @@ export function ThemeLibraryScreen({
             <ThemePreview large theme={previewTheme} />
           </DialogContent>
         </Dialog>
+      ) : null}
+      {/* Errors are overlays over the page. OK or the X clears the error; the
+          next failure sets it again and opens the dialog again. */}
+      {libraryError ? (
+        <SetupDialog
+          description={libraryError}
+          icon={Lock}
+          onOpenChange={(open) => {
+            if (!open) setLibraryError("");
+          }}
+          open
+          primaryAction={{ label: "OK", onSelect: () => setLibraryError("") }}
+          title={say("Theme action failed")}
+          tone="neutral"
+        />
+      ) : null}
+      {storageWarning && storageWarning !== closedStorageWarning ? (
+        <SetupDialog
+          description={storageWarning}
+          icon={Lock}
+          onOpenChange={(open) => {
+            if (!open) setClosedStorageWarning(storageWarning);
+          }}
+          open
+          primaryAction={{
+            label: "OK",
+            onSelect: () => setClosedStorageWarning(storageWarning),
+          }}
+          title={say("Theme storage needs attention")}
+          tone="neutral"
+        />
       ) : null}
       {replacingRecovery && recovery ? (
         <ReplaceDraftDialog
@@ -949,19 +962,14 @@ function CatalogEmptyState({
   screensavers: boolean;
   storefrontConfigured: boolean;
 }) {
+  // A page state is text in the list area, not a framed card: frames are only
+  // around objects (calm rules 5 and 7).
   if (screensavers && !catalogIssue) {
     return (
-      <Empty className="border bg-card py-10">
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <Monitor aria-hidden />
-          </EmptyMedia>
-          <EmptyTitle>No screensavers yet</EmptyTitle>
-          <EmptyDescription>
-            Create a screensaver to add it to this list.
-          </EmptyDescription>
-        </EmptyHeader>
-      </Empty>
+      <div className="py-10 text-center text-[13px] text-muted-foreground">
+        <p className="font-semibold text-foreground">No screensavers yet</p>
+        <p className="mt-1">Create a screensaver to add it to this list.</p>
+      </div>
     );
   }
 
@@ -972,21 +980,16 @@ function CatalogEmptyState({
       : "Themes are not available from this page right now. Try again later.";
 
   return (
-    <Empty className="border bg-card py-10">
-      <EmptyHeader>
-        <EmptyMedia variant="icon">
-          <Lock aria-hidden />
-        </EmptyMedia>
-        <EmptyTitle>Themes unavailable</EmptyTitle>
-        <EmptyDescription>{detail}</EmptyDescription>
-      </EmptyHeader>
-      <EmptyContent>
-        <Button onClick={() => window.location.reload()} type="button">
-          <RefreshCw data-icon="inline-start" aria-hidden />
-          Reload catalog
-        </Button>
-      </EmptyContent>
-    </Empty>
+    <div className="grid justify-items-center gap-4 py-10 text-center text-[13px] text-muted-foreground">
+      <div>
+        <p className="font-semibold text-foreground">Themes unavailable</p>
+        <p className="mt-1">{detail}</p>
+      </div>
+      <Button onClick={() => window.location.reload()} type="button">
+        <RefreshCw data-icon="inline-start" aria-hidden />
+        Reload catalog
+      </Button>
+    </div>
   );
 }
 
