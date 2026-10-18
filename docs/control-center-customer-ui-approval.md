@@ -7481,3 +7481,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the entry above; hovering an inactive entry or a subentry shows the weaker tint, not the full olive fill. No other change.
 - Scope: `apps/control-center/src/components/control-center-shell.tsx` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — a hover correction of the calm shell
+
+## 2026-10-18 — Collapsed sidebar: icons only, no label letters beside them (#758)
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, Mac click run 7161, finding 1, #758); look unchanged except: with the sidebar collapsed to icons, the first letter of each nav label (for example "O", "U", "S") no longer shows beside its icon. Before: the letter shows beside the icon; after: icons only.
+- Approved customer-visible result: With the sidebar collapsed to icons, each nav entry shows only its icon, as the collapsed sidebar was meant to. The label stays in the page for screen readers and in the tooltip on hover. The expanded sidebar is unchanged. No new text, button or dialog.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, its test `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a hidden label, no new capability

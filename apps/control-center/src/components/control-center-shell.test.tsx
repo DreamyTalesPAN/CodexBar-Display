@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "@/test/axe";
@@ -86,6 +86,31 @@ describe("ControlCenterShell", () => {
     expect(html).not.toContain(">Updates<");
     expect(html).toContain(">Usage<");
     expect(html).toContain(">Support<");
+  });
+
+  // Mac click run 7161, finding 1: collapsed to icons, the first letter of
+  // each nav label still showed beside its icon. The label stays in the DOM
+  // for screen readers and is visually hidden in the icon-only sidebar.
+  it("hides the nav labels when the sidebar is collapsed to icons", () => {
+    vi.stubGlobal("matchMedia", () => ({
+      matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }));
+    const { container } = render(
+      <TooltipProvider>
+        <ControlCenterShell activeTab="overview" onTabChange={vi.fn()}>
+          <div>Overview content</div>
+        </ControlCenterShell>
+      </TooltipProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    expect(container.querySelector('[data-collapsible="icon"]')).not.toBeNull();
+
+    const nav = screen.getByRole("navigation", { name: "Control Center" });
+    for (const label of ["Overview", "Usage", "Settings", "Appearance", "Updates", "Support"]) {
+      expect(within(nav).getByText(label).className).toContain(
+        "group-data-[collapsible=icon]:sr-only",
+      );
+    }
   });
 
   it("has no accessibility violations with an update waiting", async () => {
