@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchAIThemeCapabilities, saveAIThemeCredential } from "@/lib/ai-theme";
-import { ThemeStudioKeyRow } from "./openai-key-form";
+import { OpenAIKeyForm, ThemeStudioKeyRow } from "./openai-key-form";
 
 vi.mock("@/lib/ai-theme", () => ({
   fetchAIThemeCapabilities: vi.fn(),
@@ -71,9 +71,42 @@ describe("Theme Studio AI row in Settings", () => {
 
     fireEvent.change(screen.getByLabelText("OpenAI key"), { target: { value: "sk-test-key" } });
     fireEvent.click(screen.getByRole("checkbox"));
-    fireEvent.click(screen.getByRole("button", { name: "Update key" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save key" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Checking…" })).toBeTruthy());
     expect(footerButton()).toBeNull();
+  });
+
+  it("says Save key in the key dialog when no key is stored", async () => {
+    vi.mocked(fetchAIThemeCapabilities).mockResolvedValue(capabilities(false));
+    render(<ThemeStudioKeyRow />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add key" }));
+    await screen.findByRole("dialog");
+    expect(screen.getByRole("button", { name: "Save key" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Update key" })).toBeNull();
+  });
+
+  it("says Update key in the key dialog once a key is stored", async () => {
+    vi.mocked(fetchAIThemeCapabilities).mockResolvedValue(capabilities(true));
+    render(<ThemeStudioKeyRow />);
+    fireEvent.click(await screen.findByRole("button", { name: "Change key" }));
+    await screen.findByRole("dialog");
+    expect(screen.getByRole("button", { name: "Update key" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Save key" })).toBeNull();
+  });
+
+  it("keeps Connect and continue in the setup flow when no key is stored", async () => {
+    vi.mocked(fetchAIThemeCapabilities).mockResolvedValue(capabilities(false));
+    render(
+      <OpenAIKeyForm
+        inSetup
+        onConnectingChange={() => {}}
+        onConnected={() => {}}
+        onDisconnected={() => {}}
+      />,
+    );
+    await screen.findByLabelText("OpenAI key");
+    expect(screen.getByRole("button", { name: "Connect and continue" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Save key" })).toBeNull();
   });
 
   it("draws the consent checkbox in the lime primary colour, not the browser blue", async () => {

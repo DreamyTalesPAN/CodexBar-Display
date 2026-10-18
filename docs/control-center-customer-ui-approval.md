@@ -7696,3 +7696,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; proposed exactly as in the line above. Before → after: X → no X; no close button → "Close" button; browser-blue checkbox → lime checkbox.
 - Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx` and its test, and this record. Pull request branch only, not merge or release.
 - What's new: none — look and close control only, no new feature.
+
+## 2026-10-18 — Calm Theme Studio, variant A (#749): key dialog says Save key without a stored key
+
+- User approval: pending — Paul reviews (key dialog: "Save key" without a stored key, "Update key" with one; decided by the communicator 18.10.)
+- Approved customer-visible result: none yet; proposed: the primary button of the AI key dialog (Settings › AI providers › Theme Studio AI) reads "Save key" when no key is stored and "Update key" when a key is stored. Before → after: "Update key" → "Save key" (no key stored); "Update key" unchanged (key stored). The setup flow ("Connect and continue") is unchanged.
+- Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx` and its test, and this record. Pull request branch only, not merge or release.
+- What's new: none — button wording only, no new feature.
