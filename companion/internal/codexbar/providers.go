@@ -222,10 +222,13 @@ func readProviderInventory(ctx context.Context, timeout time.Duration, bin strin
 	if raw, ok := engineInventory.load(stamp, 0); ok {
 		return raw, nil
 	}
+	// A forget during the run (fresh=1, a provider switch) outdates this
+	// answer: it must not be kept over the forget.
+	before := engineInventory.forgets()
 	raw, err := run(ctx, timeout, bin, providerInventoryArgs()...)
 	if stamp != "" && err == nil {
 		if _, parseErr := parseProviderSettings(raw); parseErr == nil {
-			engineInventory.store(stamp, raw)
+			engineInventory.storeUnlessForgotten(before, stamp, raw)
 		}
 	}
 	return raw, err

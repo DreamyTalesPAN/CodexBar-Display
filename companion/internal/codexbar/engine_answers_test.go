@@ -326,3 +326,36 @@ func TestForgetProviderInventoryMakesTheNextReadAskTheCLI(t *testing.T) {
 		t.Fatalf("the read after the forget is kept again: err=%v runs=%d", err, *runs)
 	}
 }
+
+// A read that began before a plugin change and ends after the fresh=1 forget
+// must not bring its old answer back (Codex review on #700).
+func TestInventoryReadStartedBeforeAForgetIsNotKept(t *testing.T) {
+	settledEngine(t)
+	started, release := make(chan struct{}), make(chan struct{})
+	pluginInstalled := false
+	runs := stubEngineCommands(t, func() ([]byte, error) {
+		if pluginInstalled {
+			return inventoryWithClaude(false), nil
+		}
+		close(started)
+		<-release
+		return inventoryWithClaude(true), nil
+	})
+	done := make(chan error, 1)
+	go func() {
+		_, err := FetchProviderInventory(context.Background())
+		done <- err
+	}()
+	<-started
+	pluginInstalled = true
+	ForgetProviderInventory()
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+
+	inventory, err := FetchProviderInventory(context.Background())
+	if err != nil || len(inventory) != 1 || inventory[0].Enabled || *runs != 2 {
+		t.Fatalf("the read after the forget must ask the CLI: inventory=%+v err=%v runs=%d", inventory, err, *runs)
+	}
+}

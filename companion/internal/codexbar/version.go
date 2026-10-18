@@ -139,6 +139,9 @@ type engineAnswer[T any] struct {
 	stamp string
 	at    time.Time
 	value T
+	// forgotten counts the forgets, so a read that began before one can tell
+	// its answer is out of date.
+	forgotten uint64
 }
 
 // load returns the answer kept for stamp unless it is older than maxAge.
@@ -153,7 +156,27 @@ func (a *engineAnswer[T]) load(stamp string, maxAge time.Duration) (T, bool) {
 func (a *engineAnswer[T]) store(stamp string, value T) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if stamp == "" {
+		a.forgotten++
+	}
 	a.stamp, a.at, a.value = stamp, time.Now(), value
+}
+
+// forgets is the number of forgets so far. Take it before a read starts.
+func (a *engineAnswer[T]) forgets() uint64 {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.forgotten
+}
+
+// storeUnlessForgotten keeps value for stamp only if nothing was forgotten
+// since forgets returned before.
+func (a *engineAnswer[T]) storeUnlessForgotten(before uint64, stamp string, value T) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.forgotten == before {
+		a.stamp, a.at, a.value = stamp, time.Now(), value
+	}
 }
 
 var engineVersion engineAnswer[looseVersion]

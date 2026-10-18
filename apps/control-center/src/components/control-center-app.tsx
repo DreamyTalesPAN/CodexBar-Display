@@ -528,6 +528,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // A visible provider list owes CodexBar one fresh read. It stays owed until
   // that read succeeds, so a failed one is retried by the next poll.
   const providerListFreshOwedRef = useRef(false);
+  // Counts the openings of the provider list. A fresh read satisfies only the
+  // opening it was sent for.
+  const providerListOpeningRef = useRef(0);
+  const providerPreferencesReadOpeningRef = useRef(0);
   const providerListShownRef = useRef(false);
   const quietUsageReadRef = useRef<Promise<void> | null>(null);
   const providerPreferencesRevisionRef = useRef(0);
@@ -3435,10 +3439,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     (options?: { quiet?: boolean; fresh?: boolean }) => {
       const inFlight = providerPreferencesReadRef.current;
       const fresh = Boolean(options?.fresh) || providerListFreshOwedRef.current;
+      const opening = providerListOpeningRef.current;
       // A plain poll joins any read in flight. A fresh read joins only a fresh
-      // read; behind a plain one it waits for that read to settle and then asks
-      // CodexBar itself, so the plugin list it returns is the one shown.
-      if (inFlight && (!fresh || providerPreferencesReadFreshRef.current)) {
+      // read sent for this opening of the list; behind a plain one, or one
+      // from an earlier opening, it waits for that read to settle and then
+      // asks CodexBar itself, so the plugin list it returns is the one shown.
+      if (
+        inFlight &&
+        (!fresh ||
+          (providerPreferencesReadFreshRef.current &&
+            providerPreferencesReadOpeningRef.current === opening))
+      ) {
         return inFlight;
       }
       const readNow = async () => {
@@ -3471,7 +3482,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           providerPreferencesRef.current = items;
           setProviderPreferences(items);
           setProviderPreferencesError(null);
-          if (fresh) {
+          if (fresh && opening === providerListOpeningRef.current) {
             providerListFreshOwedRef.current = false;
           }
         } catch (error) {
@@ -3491,6 +3502,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         : readNow();
       providerPreferencesReadRef.current = read;
       providerPreferencesReadFreshRef.current = fresh;
+      providerPreferencesReadOpeningRef.current = opening;
       void read.finally(() => {
         if (providerPreferencesReadRef.current === read) {
           providerPreferencesReadRef.current = null;
@@ -5149,6 +5161,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     providerListShownRef.current = providerListVisible;
     providerListFreshOwedRef.current = providerListVisible;
     if (providerListVisible) {
+      providerListOpeningRef.current += 1;
       void refreshProviderPreferences({ quiet: true });
     }
   }, [providerListVisible, refreshProviderPreferences]);
