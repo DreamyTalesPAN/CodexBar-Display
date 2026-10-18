@@ -267,8 +267,6 @@ export function UsageScreen({
             if (!open) onDismissTokenHistory?.();
           }}
           open
-          // The page behind stays usable: the tiles work under the notice.
-          scrim={false}
           primaryAction={{
             label: "OK",
             onSelect: () => onDismissTokenHistory?.(),
