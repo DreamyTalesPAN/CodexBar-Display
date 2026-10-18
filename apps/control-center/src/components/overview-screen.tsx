@@ -1,13 +1,14 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type {
   CompanionStatus,
   DeviceInfo,
   UsageSnapshot,
 } from "./control-center-types";
 import { deviceIsCustomerConnected } from "./control-center-types";
+import { SetupDialog } from "./setup/setup-dialog";
 import {
   LiveVibeTVPreview,
   type DisplayFrameSnapshot,
@@ -19,6 +20,22 @@ const VibeTV3DPreview = dynamic(
   () => import("./vibetv-3d-preview").then((module) => module.VibeTV3DPreview),
   { ssr: false },
 );
+
+type OverviewNotice = "weak-wifi" | "theme-not-shown";
+
+// The words the Overview tiles used before #755, unchanged.
+const NOTICE_COPY: Record<OverviewNotice, { description: string; title: string }> = {
+  "weak-wifi": {
+    description: "Move VibeTV closer to your router.",
+    title: "Weak WiFi signal",
+  },
+  "theme-not-shown": {
+    description: "VibeTV can't show this theme. Choose another theme.",
+    title: "Theme not shown",
+  },
+};
+
+const DIALOGS = '[role="dialog"], [role="alertdialog"]';
 
 type OverviewScreenProps = {
   companionVersion?: string;
@@ -64,6 +81,49 @@ export function OverviewScreen({
       0,
     );
     return () => window.clearTimeout(timer);
+  }, []);
+
+  // Issue #498: the Companion names a theme the VibeTV cannot draw.
+  // Issue #265: the Mac App names a WiFi signal too weak for reliable updates.
+  // Both are an overlay over the Overview, one at a time.
+  const notice: OverviewNotice | null =
+    connected && device?.health?.wifi?.weak === true
+      ? "weak-wifi"
+      : connected && device?.connectionState === "display_render_failed"
+        ? "theme-not-shown"
+        : null;
+  const [closedNotice, setClosedNotice] = useState<OverviewNotice | null>(null);
+  // Closed stays closed while the notice is there; once it is gone, a return
+  // is a new notice and opens again.
+  if (notice === null && closedNotice !== null) setClosedNotice(null);
+  const dismissNotice = () => {
+    if (notice) setClosedNotice(notice);
+  };
+  // The notice waits while another dialog is open on the page. Its own dialog
+  // is one of the open dialogs, so it is counted out with the ref. The first
+  // answer is read before the first render, so it never opens over a dialog
+  // that is already there.
+  const [otherDialogOpen, setOtherDialogOpen] = useState(
+    () =>
+      typeof document !== "undefined" &&
+      document.querySelectorAll(DIALOGS).length > 0,
+  );
+  const noticeOpen =
+    notice !== null && notice !== closedNotice && !otherDialogOpen;
+  const noticeOpenRef = useRef(false);
+  useLayoutEffect(() => {
+    noticeOpenRef.current = noticeOpen;
+  });
+  useLayoutEffect(() => {
+    const check = () =>
+      setOtherDialogOpen(
+        document.querySelectorAll(DIALOGS).length >
+          (noticeOpenRef.current ? 1 : 0),
+      );
+    check();
+    const observer = new MutationObserver(check);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
   }, []);
 
   return (
@@ -114,6 +174,18 @@ export function OverviewScreen({
         </div>
       </section>
 
+      {notice ? (
+        <SetupDialog
+          description={NOTICE_COPY[notice].description}
+          onOpenChange={(open) => {
+            if (!open) dismissNotice();
+          }}
+          open={noticeOpen}
+          secondaryAction={{ label: "Not now", onSelect: dismissNotice }}
+          showCloseButton={false}
+          title={NOTICE_COPY[notice].title}
+        />
+      ) : null}
     </div>
   );
 }

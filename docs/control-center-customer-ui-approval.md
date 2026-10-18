@@ -7560,3 +7560,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none. The test script changes what it waits for, not what the customer sees.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no new content
+
+## 2026-10-18 — Overview: weak WiFi and theme notices as overlay dialogs (option on #755)
+
+- User approval: pending — Paul decides which Overview notices come back after #755; this option: Weak WiFi signal and Theme not shown as overlays; look: same words, calm dialog.
+- Approved customer-visible result: none yet. Proposed for Paul's decision: when VibeTV is connected and reports a weak WiFi signal, the Overview shows a dialog "Weak WiFi signal" with "Move VibeTV closer to your router." and "Not now". When the Companion names a theme the VibeTV cannot draw, it shows "Theme not shown" with "VibeTV can't show this theme. Choose another theme." and "Not now". Neither dialog has a close button, and neither has a lime button, because the Overview performs no action for them. One notice at a time, and never while another dialog is open on the page; a closed notice stays closed until it goes away and comes back. The other former notices stay off the Overview (waiting for usage and the screensaver are shown by the 3D screen, the update by the sidebar and Updates, the firmware version by Support and Updates).
+- Scope: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/overview-screen.notices.test.tsx`, and this approval record. Option stacked on PR #755; not merge or release.
+- What's new: none — no new content
