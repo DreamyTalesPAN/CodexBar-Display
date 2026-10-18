@@ -7495,3 +7495,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the calm shell entry of 2026-10-18 (#713): nav entries 13 px, the Appearance chevron points down and turns up when open. The chevron stays in the expanded sidebar; in icon-only mode it is hidden because it is decorative. The sub-items use the same 13 px as the nav entries. No new text, button or dialog.
 - Scope: `apps/control-center/src/components/control-center-shell.tsx`, its test `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — a hidden decorative icon and a text size fix
+
+## 2026-10-18 — Codex review fixes on the calm shell: active entry keeps its fill on hover; sidebar toggle hit area (#758)
+
+- User approval: pending — Paul reviews this PR (Codex review on f9c14aa7, two P2 findings, #758); look unchanged except: hovering the current nav entry no longer shows the weaker tint, it keeps the full olive fill as the active entry does. Before: the current entry looked inactive while hovered; after: it looks active while hovered. The sidebar toggle above the page keeps its 20 px icon; only its clickable area grows from 20 px to 28 px, without moving the page title.
+- Approved customer-visible result: as in the calm shell entry of 2026-10-18 (#713): hovering an inactive entry shows the weaker tint, clearly weaker than the active entry; the active entry keeps its full fill. The sidebar toggle is a muted 20 px icon. No new text, button or dialog.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, its test `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a hover correction and a larger hit area without a visible size change

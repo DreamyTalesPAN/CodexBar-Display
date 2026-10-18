@@ -150,7 +150,7 @@ export function ControlCenterShell({
             <div className="flex min-w-0 items-center gap-3">
               <SidebarTrigger
                 aria-label="Open navigation"
-                className="size-5 shrink-0 p-0 text-muted-foreground hover:bg-transparent hover:text-foreground [&_svg]:size-5"
+                className="-m-1 size-7 shrink-0 p-0 text-muted-foreground hover:bg-transparent hover:text-foreground [&_svg]:size-5"
               />
               <h1 className="truncate text-[28px] leading-none font-semibold tracking-[-0.01em] text-foreground">
                 {NAV_ITEMS.find((item) => item.id === activeTab)?.label ||
@@ -311,7 +311,7 @@ function ShellNavButton({
   const button = (
     <SidebarMenuButton
       aria-current={active && current ? "page" : undefined}
-      className={`h-[34px] gap-2.5 rounded-[var(--radius-control)] px-2.5 text-[13px] font-normal text-sidebar-foreground opacity-[.72] hover:opacity-100 ${WEAK_HOVER} data-active:bg-sidebar-accent data-active:font-normal data-active:text-sidebar-accent-foreground data-active:opacity-100 group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-11! [&_svg]:size-4!`}
+      className={`h-[34px] gap-2.5 rounded-[var(--radius-control)] px-2.5 text-[13px] font-normal text-sidebar-foreground opacity-[.72] hover:opacity-100 ${active ? "" : WEAK_HOVER} data-active:bg-sidebar-accent data-active:font-normal data-active:text-sidebar-accent-foreground data-active:opacity-100 group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-11! [&_svg]:size-4!`}
       disabled={disabled}
       isActive={active}
       onClick={() => {
@@ -369,7 +369,7 @@ function AppearanceNavButton({
   return (
     <SidebarMenuSubButton
       asChild
-      className={`h-[34px] w-full text-[13px]! ${WEAK_HOVER} data-active:bg-transparent! data-active:font-semibold data-active:text-sidebar-accent-foreground`}
+      className={`h-[34px] w-full text-[13px]! ${active ? "" : WEAK_HOVER} data-active:bg-transparent! data-active:font-semibold data-active:text-sidebar-accent-foreground`}
       isActive={active}
     >
       <button

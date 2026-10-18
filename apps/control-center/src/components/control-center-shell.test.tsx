@@ -164,6 +164,48 @@ describe("ControlCenterShell", () => {
     }
   });
 
+  // Codex review on f9c14aa7 (P2): the weak hover tint also applied to the
+  // current page, so hovering it looked like an inactive entry. Only inactive
+  // entries get the weak tint; the active entry keeps its full fill.
+  it("keeps the active nav entry at its full fill on hover", () => {
+    vi.stubGlobal("matchMedia", () => ({
+      matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }));
+    render(
+      <TooltipProvider>
+        <ControlCenterShell activeTab="overview" onTabChange={vi.fn()}>
+          <div>Overview content</div>
+        </ControlCenterShell>
+      </TooltipProvider>,
+    );
+    const nav = screen.getByRole("navigation", { name: "Control Center" });
+    expect(within(nav).getByRole("button", { name: "Overview" }).className).not.toContain(
+      "hover:bg-sidebar-accent/45",
+    );
+    expect(within(nav).getByRole("button", { name: "Usage" }).className).toContain(
+      "hover:bg-sidebar-accent/45",
+    );
+  });
+
+  // Codex review on f9c14aa7 (P2): size-5 on the sidebar toggle shrank its
+  // hit target to 20 px. The button keeps a 28 px hit area; the negative
+  // margin keeps its layout footprint at 20 px, so the page title does not move.
+  it("keeps the sidebar toggle hit area at 28 px without moving the header", () => {
+    vi.stubGlobal("matchMedia", () => ({
+      matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }));
+    render(
+      <TooltipProvider>
+        <ControlCenterShell activeTab="overview" onTabChange={vi.fn()}>
+          <div>Overview content</div>
+        </ControlCenterShell>
+      </TooltipProvider>,
+    );
+    const toggle = screen.getByRole("button", { name: "Open navigation" });
+    expect(toggle.className).toContain("size-7");
+    expect(toggle.className).toContain("-m-1");
+  });
+
   it("has no accessibility violations with an update waiting", async () => {
     await expectNoAxeViolations(
       renderToStaticMarkup(
