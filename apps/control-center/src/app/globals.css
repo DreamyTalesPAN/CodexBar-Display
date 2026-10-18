@@ -46,7 +46,7 @@
   --sidebar-accent: #444933;
   --sidebar-accent-foreground: #EDEDED;
   --sidebar-border: #444933;
-  --sidebar-ring: #CCFF00;
+  --sidebar-ring: #EDEDED;
 }
 
 @theme inline {
@@ -186,7 +186,7 @@ textarea {
   --sidebar-accent: #444933;
   --sidebar-accent-foreground: #EDEDED;
   --sidebar-border: #444933;
-  --sidebar-ring: #CCFF00;
+  --sidebar-ring: #EDEDED;
 }
 
 @layer base {

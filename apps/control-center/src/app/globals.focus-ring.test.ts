@@ -51,4 +51,14 @@ describe("keyboard focus ring colour", () => {
     expect(contrast(token(light, "ring"), token(light, "background"))).toBeGreaterThanOrEqual(3);
     expect(contrast(token(dark, "ring"), token(dark, "background"))).toBeGreaterThanOrEqual(3);
   });
+
+  it("uses the light ink on the always-dark sidebar, in both themes", () => {
+    expect(token(light, "sidebar-ring")).toBe(token(light, "sidebar-foreground"));
+    expect(token(dark, "sidebar-ring")).toBe(token(dark, "sidebar-foreground"));
+  });
+
+  it("keeps the sidebar ring at least 3:1 against the sidebar, in both themes", () => {
+    expect(contrast(token(light, "sidebar-ring"), token(light, "sidebar"))).toBeGreaterThanOrEqual(3);
+    expect(contrast(token(dark, "sidebar-ring"), token(dark, "sidebar"))).toBeGreaterThanOrEqual(3);
+  });
 });
