@@ -279,6 +279,8 @@ export function ThemeLibraryScreen({
   const [previewTheme, setPreviewTheme] = useState<ThemeLibraryItem | null>(null);
   const recoveryMatchesUsage =
     (recovery ? themeDocumentUsage(recovery.document) : "live") === usage;
+  // A page notice waits while another dialog of this page is open.
+  const pageDialogOpenHere = Boolean(previewTheme || deleteTheme || replacingRecovery);
   const libraryThemes: ThemeLibraryItem[] = [
     ...userThemes
       .filter((custom) => themeDocumentUsage(custom.document) === usage)
@@ -799,8 +801,10 @@ export function ThemeLibraryScreen({
         </Dialog>
       ) : null}
       {/* Errors are overlays over the page. OK or the X clears the error; the
-          next failure sets it again and opens the dialog again. */}
-      {libraryError ? (
+          next failure sets it again and opens the dialog again. While another
+          dialog of this page is open, the error waits for it to close (Codex
+          review on #762: two overlays with two scrims otherwise). */}
+      {libraryError && !pageDialogOpenHere ? (
         <SetupDialog
           description={libraryError}
           icon={Lock}
@@ -813,7 +817,7 @@ export function ThemeLibraryScreen({
           tone="neutral"
         />
       ) : null}
-      {storageWarning && storageWarning !== closedStorageWarning ? (
+      {storageWarning && storageWarning !== closedStorageWarning && !pageDialogOpenHere ? (
         <SetupDialog
           description={storageWarning}
           icon={Lock}

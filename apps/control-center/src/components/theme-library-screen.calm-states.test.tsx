@@ -4,7 +4,7 @@
 // is an overlay dialog over the page, never an inline alert box; a page state
 // with nothing to show (no screensavers, no catalog) is text, not a framed card.
 
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { createBlankThemeSpec } from "@/lib/theme-studio";
 import type { ThemeProduct } from "@/lib/themes";
@@ -151,4 +151,33 @@ it("a failed delete shows its error in the delete dialog only", async () => {
   expect(await within(deleteDialog).findByText("Saved themes could not be written.")).toBeTruthy();
   expect(screen.queryByRole("dialog", { name: "Theme action failed" })).toBeNull();
   expect(screen.queryAllByRole("dialog")).toEqual([]);
+});
+
+// Codex review on #762: an action that fails while another dialog of the page
+// is open waits for that dialog, so two overlays never stack.
+it("an error waits while the preview dialog is open, then shows after it closes", async () => {
+  // Every request waits until the test releases it; the preview also fetches.
+  const pending: Array<() => void> = [];
+  vi.stubGlobal(
+    "fetch",
+    () =>
+      new Promise((resolve) => {
+        pending.push(() => resolve({ ok: false }));
+      }),
+  );
+  renderLibrary({ themes: [drift] });
+
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+  fireEvent.click(screen.getByRole("button", { name: "Preview Drift" }));
+  const preview = screen.getByRole("dialog", { name: "Drift" });
+
+  await act(async () => {
+    pending.forEach((release) => release());
+  });
+  expect(screen.queryByRole("dialog", { name: "Theme action failed" })).toBeNull();
+  expect(screen.getAllByRole("dialog")).toEqual([preview]);
+
+  fireEvent.click(within(preview).getByRole("button", { name: "Close" }));
+  const failed = await screen.findByRole("dialog", { name: "Theme action failed" });
+  expect(within(failed).getByText("Theme could not be opened.")).toBeTruthy();
 });
