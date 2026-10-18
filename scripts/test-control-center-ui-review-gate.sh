@@ -538,6 +538,19 @@ test_path_outside_entry_does_not_name_ui_file() {
   expect_gate_due "$repo"
 }
 
+# Moving a UI file out of the UI folders is a change to that UI file.
+test_ui_file_renamed_out_of_ui_folders_is_due() {
+  local repo="${TMP_ROOT}/ui-renamed-away"
+  setup_repo "$repo"
+  git -C "$repo" mv apps/control-center/src/components/overview-screen.tsx \
+    docs/overview-screen.md
+  approval_entry "Moved overview" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" add docs/control-center-customer-ui-approval.md
+  git -C "$repo" commit -q -m "Move overview out of the UI and approve it"
+  expect_gate_due "$repo"
+}
+
 test_non_ui_commits_do_not_block
 test_ui_change_blocks_immediately
 test_working_tree_ui_change_blocks_immediately
@@ -563,5 +576,6 @@ test_named_path_must_match_whole_file
 test_merge_of_approved_base_needs_no_rescope
 test_merged_parent_approval_is_judged_on_its_own_tree
 test_path_outside_entry_does_not_name_ui_file
+test_ui_file_renamed_out_of_ui_folders_is_due
 
 printf 'control-center UI review gate tests passed\n'

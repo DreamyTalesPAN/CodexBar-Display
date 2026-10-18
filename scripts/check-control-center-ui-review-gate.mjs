@@ -114,13 +114,13 @@ function changedFilesSince(commit, ref) {
   if (!commit) {
     return lines(git(["ls-tree", "-r", "--name-only", ref]));
   }
-  return lines(git(["diff", "--name-only", `${commit}..${ref}`]));
+  return lines(git(["diff", "--no-renames", "--name-only", `${commit}..${ref}`]));
 }
 
 // Files the approval commit changes itself, against its first parent (a merge
 // brings in the files of the merged branch this way).
 function approvalCommitChangedFiles(commit) {
-  return lines(tryGit(["diff", "--name-only", `${commit}^1`, commit]));
+  return lines(tryGit(["diff", "--no-renames", "--name-only", `${commit}^1`, commit]));
 }
 
 // UI files the approval commit changes itself that its entry does not cover.
@@ -137,7 +137,7 @@ function uncoveredApprovalCommitUiFiles(commit) {
 }
 
 function coveredByMergedParent(file, commit, parent) {
-  const changedSinceParent = lines(tryGit(["diff", "--name-only", parent, commit, "--", file]));
+  const changedSinceParent = lines(tryGit(["diff", "--no-renames", "--name-only", parent, commit, "--", file]));
   return changedSinceParent.length === 0 && unapprovedUiFilesAt(parent).length === 0;
 }
 
@@ -174,8 +174,8 @@ function addedApprovalText(diff) {
 
 function changedFilesInWorkingTree() {
   return unique([
-    ...lines(git(["diff", "--name-only"])),
-    ...lines(git(["diff", "--name-only", "--cached"])),
+    ...lines(git(["diff", "--no-renames", "--name-only"])),
+    ...lines(git(["diff", "--no-renames", "--name-only", "--cached"])),
     ...lines(git(["ls-files", "--others", "--exclude-standard"])),
   ]);
 }
