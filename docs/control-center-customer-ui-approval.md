@@ -7488,3 +7488,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: With the sidebar collapsed to icons, each nav entry shows only its icon, as the collapsed sidebar was meant to. The label stays in the page for screen readers and in the tooltip on hover. The expanded sidebar is unchanged. No new text, button or dialog.
 - Scope: `apps/control-center/src/components/control-center-shell.tsx`, its test `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — a hidden label, no new capability
+
+## 2026-10-18 — Collapsed sidebar: no Appearance chevron, sub-items at 13 px (#758)
+
+- User approval: pending — Paul reviews this PR (two findings from the Windows click run 1018b, notes N1 and N11, #758); look unchanged except: with the sidebar collapsed to icons, the small chevron beside the Appearance icon no longer shows; the "Themes" and "Screensavers" entries under Appearance go from 14 px to 13 px text, like the other nav entries. Before: the chevron sticks out of the active pill and the sub-items are 14 px; after: no chevron in icon-only mode, sub-items 13 px.
+- Approved customer-visible result: as in the calm shell entry of 2026-10-18 (#713): nav entries 13 px, the Appearance chevron points down and turns up when open. The chevron stays in the expanded sidebar; in icon-only mode it is hidden because it is decorative. The sub-items use the same 13 px as the nav entries. No new text, button or dialog.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, its test `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a hidden decorative icon and a text size fix

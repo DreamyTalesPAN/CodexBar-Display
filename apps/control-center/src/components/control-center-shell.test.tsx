@@ -113,6 +113,57 @@ describe("ControlCenterShell", () => {
     }
   });
 
+  // Windows click run 1018b, finding N1: collapsed to icons, the Appearance
+  // chevron still showed beside its icon, stuck out of the active pill and
+  // was cut by the sidebar edge. It is decorative, so the icon-only sidebar
+  // hides it.
+  it("hides the Appearance chevron when the sidebar is collapsed to icons", () => {
+    vi.stubGlobal("matchMedia", () => ({
+      matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }));
+    const { container } = render(
+      <TooltipProvider>
+        <ControlCenterShell activeTab="overview" onTabChange={vi.fn()}>
+          <div>Overview content</div>
+        </ControlCenterShell>
+      </TooltipProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    expect(container.querySelector('[data-collapsible="icon"]')).not.toBeNull();
+
+    const nav = screen.getByRole("navigation", { name: "Control Center" });
+    const chevron = within(nav).getByText("Appearance").closest("button")?.querySelector("svg.lucide-chevron-down");
+    expect(chevron).not.toBeNull();
+    expect(chevron?.getAttribute("class")).toContain(
+      "group-data-[collapsible=icon]:hidden",
+    );
+  });
+
+  // Windows click run 1018b, finding N11: the Themes and Screensavers
+  // sub-items rendered at 14 px while the calm rule sets nav entries at 13 px.
+  // The base sub-button class sets 14 px for md size, so the override must
+  // be important to win.
+  it("sets the Appearance sub-items at 13 px like the main nav entries", () => {
+    vi.stubGlobal("matchMedia", () => ({
+      matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }));
+    render(
+      <TooltipProvider>
+        <ControlCenterShell activeTab="overview" onTabChange={vi.fn()}>
+          <div>Overview content</div>
+        </ControlCenterShell>
+      </TooltipProvider>,
+    );
+
+    const nav = screen.getByRole("navigation", { name: "Control Center" });
+    fireEvent.click(within(nav).getByRole("button", { name: "Appearance" }));
+    for (const label of ["Themes", "Screensavers"]) {
+      expect(within(nav).getByRole("button", { name: label }).className).toContain(
+        "text-[13px]!",
+      );
+    }
+  });
+
   it("has no accessibility violations with an update waiting", async () => {
     await expectNoAxeViolations(
       renderToStaticMarkup(

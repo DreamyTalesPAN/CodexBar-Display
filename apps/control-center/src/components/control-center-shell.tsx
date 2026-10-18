@@ -328,7 +328,7 @@ function ShellNavButton({
       {item.icon}
       <span className="min-w-0 truncate group-data-[collapsible=icon]:sr-only">{item.label}</span>
       {collapsible ? (
-        <ChevronDown className="ml-auto size-3.5! opacity-80 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-180" />
+        <ChevronDown className="ml-auto size-3.5! opacity-80 transition-transform duration-200 group-data-[collapsible=icon]:hidden group-data-[state=open]/collapsible:rotate-180" />
       ) : null}
     </SidebarMenuButton>
   );
@@ -369,7 +369,7 @@ function AppearanceNavButton({
   return (
     <SidebarMenuSubButton
       asChild
-      className={`h-[34px] w-full text-[13px] ${WEAK_HOVER} data-active:bg-transparent! data-active:font-semibold data-active:text-sidebar-accent-foreground`}
+      className={`h-[34px] w-full text-[13px]! ${WEAK_HOVER} data-active:bg-transparent! data-active:font-semibold data-active:text-sidebar-accent-foreground`}
       isActive={active}
     >
       <button
