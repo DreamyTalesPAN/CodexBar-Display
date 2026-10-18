@@ -743,7 +743,10 @@ describe("UsageScreen", () => {
       />,
     );
 
-    expect(screen.getByText("20% weekly used").className).toContain("whitespace-nowrap");
+    const weeklyLabel = screen.getByText("20% weekly used");
+    expect(weeklyLabel.className).toContain("whitespace-nowrap");
+    // A reset that has no room beside the label moves under it, never clipped.
+    expect(weeklyLabel.parentElement?.className).toContain("flex-wrap");
   });
 
   // The header holds only the name. Each reset sits right-aligned on its own

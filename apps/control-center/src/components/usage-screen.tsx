@@ -753,7 +753,7 @@ function UsageLineView({
   const text = `${line.percent}% ${line.label} ${modeLabel}`;
   return (
     <div className="grid gap-2">
-      <div className="flex items-baseline justify-between gap-4 text-[13px] text-foreground">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-[13px] text-foreground">
         {index === 0 ? (
           <span className="whitespace-nowrap text-muted-foreground">
             <span className="text-[28px] leading-none font-semibold text-foreground">
