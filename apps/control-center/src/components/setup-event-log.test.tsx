@@ -49,6 +49,14 @@ describe("SetupEventList", () => {
     expect(items[0]).toMatch(/\d\d:\d\d:\d\d/);
   });
 
+  // The newest line sits at the bottom of a fixed box, so the row at the top
+  // is usually cut. The log fades that edge, as the setup wizard log does,
+  // instead of showing half a row.
+  it("fades the top edge of the log instead of showing a row cut in half", () => {
+    render(<SetupEventList log={log} />);
+    expect(screen.getByRole("list", { name: "Setup log" }).className).toContain("mask-image");
+  });
+
   it("shows compacted repeats as a count", () => {
     render(<SetupEventList log={log} />);
     expect(rows()[1]).toContain("3 times");

@@ -7481,3 +7481,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the same as the entry above at desktop widths. On narrow windows the section label no longer sits beside its content and the diagnostic checks no longer squeeze the detail text into a narrow column. Texts, buttons and behaviour unchanged.
 - Scope: `apps/control-center/src/components/logs-screen.tsx`, `diagnostics-panel.tsx`, the test `control-center-app.display-preferences.test.tsx` (Recent activity scope is now the section, not the card) and this approval record. Pull request branch only, not merge or release.
 - What's new: none — layout breakpoints only, no new capability
+
+## 2026-10-18 — Support: no placeholder in the Recent activity time column; Setup log fades its top edge (#750)
+
+- User approval: pending — Paul reviews this PR (Support page calm look, variant A, #750); look: the first Recent activity entry `Control Center opened` shows the time the app opened instead of the word `Session`, and the top edge of the Setup log fades instead of cutting a row in half.
+- Approved customer-visible result: Support › Recent activity: the entry `Control Center opened` / `This session started.` shows its clock time instead of `Session`; no other text changes. Support › Setup log: the top edge of the box fades like the Setup wizard log, so no row is shown cut in half. No new text, screen, button or dialog.
+- Scope: `logs-screen.tsx`, `control-center-app.tsx` (the initial session entry only), `setup-event-log.tsx`, their tests `logs-screen.test.tsx`, `setup-event-log.test.tsx` and `control-center-app.display-preferences.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new wording

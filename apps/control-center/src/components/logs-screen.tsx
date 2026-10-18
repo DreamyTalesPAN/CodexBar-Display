@@ -202,7 +202,7 @@ export function LogsScreen({
                     {event.detail ? <ItemDescription className="line-clamp-none break-words">{supportText(event.detail)}</ItemDescription> : null}
                   </ItemContent>
                   <span className="shrink-0 self-start text-sm text-muted-foreground">
-                    {event.timestamp || "Session"}
+                    {event.timestamp}
                   </span>
                 </Item>
               ))}

@@ -164,7 +164,7 @@ export function SetupEventList({
       <ol
         aria-label="Setup log"
         aria-live="polite"
-        className="max-h-[280px] overflow-y-auto rounded-lg border font-mono text-xs"
+        className="max-h-[280px] overflow-y-auto rounded-lg border font-mono text-xs [mask-image:linear-gradient(to_bottom,transparent,black_14px)]"
         onScroll={(event) => {
           const node = event.currentTarget;
           setFollowing(node.scrollHeight - node.scrollTop - node.clientHeight < 8);
