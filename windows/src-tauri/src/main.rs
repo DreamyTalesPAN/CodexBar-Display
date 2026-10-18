@@ -17,7 +17,7 @@ use serde::Deserialize;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
 use tauri::webview::PageLoadEvent;
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_updater::UpdaterExt;
 use url::Url;
@@ -89,6 +89,9 @@ struct Shell {
     // missing (ensure_live_window). Tauri keeps such a label for the whole
     // run, so the next window is built under a new one.
     window_generation: AtomicU64,
+    // Where the window was when a close released it; the next window goes
+    // there. Process lifetime only.
+    window_geometry: Mutex<Option<Remembered>>,
     shortcut_registered_changed: Condvar,
 }
 
@@ -223,6 +226,7 @@ fn main() {
             shortcut_registered: Mutex::new(false),
             windows_created: AtomicU64::new(0),
             window_generation: AtomicU64::new(0),
+            window_geometry: Mutex::new(None),
             shortcut_registered_changed: Condvar::new(),
         })
         .setup(|app| {
@@ -401,11 +405,100 @@ fn main_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
     app.get_webview_window(&main_label(app))
 }
 
+// Physical pixels, as Tauri reports them.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct WindowRect {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
+// Where the window was when a close released it, and whether it was maximized.
+type Remembered = (WindowRect, bool);
+
+#[derive(Debug, PartialEq)]
+enum Placement {
+    // First start: 1280x900, centred.
+    Default,
+    Remembered { rect: WindowRect, maximized: bool },
+}
+
+fn choose_placement(remembered: Option<Remembered>, work_areas: &[WindowRect]) -> Placement {
+    match remembered {
+        Some((rect, maximized)) if centre_on_a_work_area(rect, work_areas) => {
+            Placement::Remembered { rect, maximized }
+        }
+        // Nothing remembered, or the window was on a monitor that is gone.
+        _ => Placement::Default,
+    }
+}
+
+// The centre must lie on a monitor, so the window cannot open out of reach.
+fn centre_on_a_work_area(rect: WindowRect, work_areas: &[WindowRect]) -> bool {
+    let cx = i64::from(rect.x) + i64::from(rect.width) / 2;
+    let cy = i64::from(rect.y) + i64::from(rect.height) / 2;
+    work_areas.iter().any(|area| {
+        let (left, top) = (i64::from(area.x), i64::from(area.y));
+        cx >= left
+            && cx < left + i64::from(area.width)
+            && cy >= top
+            && cy < top + i64::from(area.height)
+    })
+}
+
+// Worker threads only: the getters wait for the event loop. None while
+// minimized, because its position says nothing about where it was used.
+fn window_geometry(window: &tauri::WebviewWindow) -> Option<Remembered> {
+    if window.is_minimized().ok()? {
+        return None;
+    }
+    let position = window.outer_position().ok()?;
+    let size = window.inner_size().ok()?;
+    let maximized = window.is_maximized().ok()?;
+    let rect = WindowRect {
+        x: position.x,
+        y: position.y,
+        width: size.width,
+        height: size.height,
+    };
+    Some((rect, maximized))
+}
+
+// Worker threads only (it asks for the monitors). The monitors are asked
+// only after a release, so the first start never waits for the event loop.
+fn placement_for(app: &AppHandle) -> Placement {
+    let Some(remembered) = *app.state::<Shell>().window_geometry.lock().unwrap() else {
+        return Placement::Default;
+    };
+    let work_areas: Vec<WindowRect> = app
+        .available_monitors()
+        .unwrap_or_default()
+        .iter()
+        .map(|monitor| {
+            let area = monitor.work_area();
+            WindowRect {
+                x: area.position.x,
+                y: area.position.y,
+                width: area.size.width,
+                height: area.size.height,
+            }
+        })
+        .collect();
+    choose_placement(Some(remembered), &work_areas)
+}
+
 fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tauri::Result<()> {
     let actions = app.clone();
+    let remembered = match placement_for(app) {
+        Placement::Remembered { rect, maximized } => Some((rect, maximized)),
+        Placement::Default => None,
+    };
     let window = WebviewWindowBuilder::new(app, main_label(app), WebviewUrl::App("index.html".into()))
         .title("VibeTV Control Center")
-        .visible(visible)
+        // A remembered place is set while the window is still hidden, so it
+        // does not jump from the default place.
+        .visible(visible && remembered.is_none())
         .inner_size(1280.0, 900.0)
         .min_inner_size(960.0, 640.0)
         // Issue #548: 1280x900 plus the title bar is taller than the space
@@ -434,6 +527,16 @@ fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tau
             }
         })
         .build()?;
+    if let Some((rect, maximized)) = remembered {
+        let _ = window.set_size(PhysicalSize::new(rect.width, rect.height));
+        let _ = window.set_position(PhysicalPosition::new(rect.x, rect.y));
+        if maximized {
+            let _ = window.maximize();
+        }
+        if visible {
+            let _ = window.show();
+        }
+    }
     app.state::<Shell>().windows_created.fetch_add(1, Ordering::SeqCst);
     let handle = app.clone();
     window.on_window_event(move |event| match event {
@@ -684,6 +787,10 @@ fn hide_after_flush(app: &AppHandle) {
         // Reopened from the tray or a second launch meanwhile: keep it open.
         let shell = handle.state::<Shell>();
         if shell.presentations.load(Ordering::SeqCst) == presented {
+            // Kept for the window built next; a minimized one keeps the last.
+            if let Some(geometry) = window_geometry(&window) {
+                *shell.window_geometry.lock().unwrap() = Some(geometry);
+            }
             // Stored as count + 1, so a release before the first present
             // (count 0) is still told apart from "no release".
             shell.released_at.store(presented + 1, Ordering::SeqCst);
@@ -1435,7 +1542,10 @@ fn show_message(message: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{clear_loaded_theme, label_for_generation, theme_id_from_deep_link};
+    use super::{
+        centre_on_a_work_area, choose_placement, clear_loaded_theme, label_for_generation,
+        theme_id_from_deep_link, Placement, WindowRect,
+    };
     use url::Url;
 
     #[test]
@@ -1495,5 +1605,32 @@ mod tests {
         assert_eq!(label_for_generation(0), "main");
         assert_eq!(label_for_generation(1), "main-1");
         assert_ne!(label_for_generation(1), label_for_generation(2));
+    }
+
+    #[test]
+    fn window_geometry_choice_remembered_default_or_off_screen() {
+        let rect = |x, y, width, height| WindowRect { x, y, width, height };
+        // Primary monitor at 0,0 and a second one to its left (negative x).
+        let screens = [rect(0, 0, 1920, 1040), rect(-1280, 0, 1280, 1000)];
+        let placed = rect(100, 80, 1280, 900);
+        assert_eq!(
+            choose_placement(Some((placed, false)), &screens),
+            Placement::Remembered { rect: placed, maximized: false }
+        );
+        // Maximized is kept with the place.
+        assert_eq!(
+            choose_placement(Some((rect(0, 0, 1920, 1040), true)), &screens),
+            Placement::Remembered { rect: rect(0, 0, 1920, 1040), maximized: true }
+        );
+        // Centre on the left monitor is still on a monitor.
+        let left = rect(-900, 50, 1280, 900);
+        assert!(centre_on_a_work_area(left, &screens));
+        // Nothing remembered: first start default.
+        assert_eq!(choose_placement(None, &screens), Placement::Default);
+        // The monitor it was on is unplugged: default, not off-screen.
+        let unplugged = rect(3000, 200, 1280, 900);
+        assert_eq!(choose_placement(Some((unplugged, false)), &screens), Placement::Default);
+        // No monitor known at all: default.
+        assert_eq!(choose_placement(Some((placed, false)), &[]), Placement::Default);
     }
 }
