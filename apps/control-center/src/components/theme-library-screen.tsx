@@ -11,8 +11,8 @@ import {
   ShieldCheck,
   Wifi,
 } from "lucide-react";
-import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ComponentProps, ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   AlertDescription,
@@ -199,6 +199,42 @@ export type ThemeLibraryScreenProps = {
   windowsHost?: boolean;
 };
 
+// One rule for the page's notices: a notice waits while any other dialog is
+// open in the document. Dialogs of this page's own notices are not "other".
+const OPEN_DIALOGS = '[role="dialog"], [role="alertdialog"]';
+let pageNoticesShown = 0;
+
+function otherDialogOpen(): boolean {
+  return (
+    typeof document !== "undefined" &&
+    document.querySelectorAll(OPEN_DIALOGS).length > pageNoticesShown
+  );
+}
+
+/** Whether another dialog is open right now, kept current while mounted. */
+function useOtherDialogOpen(): boolean {
+  const [open, setOpen] = useState(otherDialogOpen);
+  useLayoutEffect(() => {
+    const check = () => setOpen(otherDialogOpen());
+    check();
+    const observer = new MutationObserver(check);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
+  return open;
+}
+
+/** A page notice: an overlay over the page, counted by useOtherDialogOpen. */
+function PageNotice(props: ComponentProps<typeof SetupDialog>) {
+  useLayoutEffect(() => {
+    pageNoticesShown += 1;
+    return () => {
+      pageNoticesShown -= 1;
+    };
+  }, []);
+  return <SetupDialog {...props} />;
+}
+
 export function ThemeLibraryScreen({
   themes,
   usage = "live",
@@ -267,16 +303,6 @@ export function ThemeLibraryScreen({
   // locked, so the notice is kept here only as "closed for this message".
   const [closedStorageWarning, setClosedStorageWarning] = useState("");
   // The install-failure dialog of a row is a page dialog too; its row reports it.
-  // Every row whose install-failure dialog is open; rows can share a theme id.
-  const [installFailureRows, setInstallFailureRows] = useState<string[]>([]);
-  const installFailureOpen = installFailureRows.length > 0;
-  const reportInstallFailure = useCallback((rowId: string, open: boolean) => {
-    setInstallFailureRows((rows) =>
-      open
-        ? rows.includes(rowId) ? rows : [...rows, rowId]
-        : rows.includes(rowId) ? rows.filter((row) => row !== rowId) : rows,
-    );
-  }, []);
   const [storageLocked, setStorageLocked] = useState(false);
   const [deleteTheme, setDeleteTheme] = useState<UserThemeRecord | null>(null);
   const [deleteError, setDeleteError] = useState("");
@@ -291,9 +317,10 @@ export function ThemeLibraryScreen({
   const recoveryMatchesUsage =
     (recovery ? themeDocumentUsage(recovery.document) : "live") === usage;
   // A page notice waits while another dialog of this page is open.
-  const pageDialogOpenHere = Boolean(
-    previewTheme || deleteTheme || replacingRecovery || installFailureOpen,
-  );
+  // Page notices wait for any other open dialog (one generic rule, see
+  // useOtherDialogOpen) and never show together: an error wins over the
+  // storage notice.
+  const otherDialogOpen = useOtherDialogOpen();
   const libraryThemes: ThemeLibraryItem[] = [
     ...userThemes
       .filter((custom) => themeDocumentUsage(custom.document) === usage)
@@ -793,7 +820,6 @@ export function ThemeLibraryScreen({
                   themeInstallEnabled={themeInstallEnabled}
                   themeStorageLocked={storageLocked}
                   tokenHistoryUnavailable={tokenHistoryUnavailable}
-                  onInstallFailureOpenChange={reportInstallFailure}
                 />
               ))}
             </ItemGroup>
@@ -820,12 +846,10 @@ export function ThemeLibraryScreen({
           </DialogContent>
         </Dialog>
       ) : null}
-      {/* Errors are overlays over the page. OK or the X clears the error; the
-          next failure sets it again and opens the dialog again. While another
-          dialog of this page is open, the error waits for it to close (Codex
-          review on #762: two overlays with two scrims otherwise). */}
-      {libraryError && !pageDialogOpenHere ? (
-        <SetupDialog
+      {/* Errors are overlays over the page. OK or the X clears the error; an
+          error that arrives while another dialog is open waits for it. */}
+      {libraryError && !otherDialogOpen ? (
+        <PageNotice
           description={libraryError}
           icon={Lock}
           onOpenChange={(open) => {
@@ -837,8 +861,12 @@ export function ThemeLibraryScreen({
           tone="neutral"
         />
       ) : null}
-      {storageWarning && storageWarning !== closedStorageWarning && !pageDialogOpenHere ? (
-        <SetupDialog
+      {/* The storage notice shows after the error is closed, never with it. */}
+      {storageWarning &&
+      storageWarning !== closedStorageWarning &&
+      !libraryError &&
+      !otherDialogOpen ? (
+        <PageNotice
           description={storageWarning}
           icon={Lock}
           onOpenChange={(open) => {
@@ -1079,7 +1107,6 @@ function ThemeListItem({
   themeInstallEnabled,
   themeStorageLocked,
   tokenHistoryUnavailable,
-  onInstallFailureOpenChange,
 }: {
   busyAction: string | null;
   device: ThemeLibraryDeviceInfo | null;
@@ -1105,13 +1132,7 @@ function ThemeListItem({
   themeInstallEnabled: boolean;
   themeStorageLocked: boolean;
   tokenHistoryUnavailable: boolean;
-  onInstallFailureOpenChange?: (rowId: string, open: boolean) => void;
 }) {
-  const rowId = rowKey(item);
-  const reportFailureOpen = useCallback(
-    (open: boolean) => onInstallFailureOpenChange?.(rowId, open),
-    [onInstallFailureOpenChange, rowId],
-  );
   const theme = item.kind === "published" ? item.product : null;
   const isCustom = item.kind === "custom";
   // A catalog theme's elements are only known once its preview has loaded.
@@ -1295,7 +1316,6 @@ function ThemeListItem({
         <ItemFooter className="basis-full block">
           <InlineInstallProgress
             canRetry={!disabled}
-            onFailureOpenChange={reportFailureOpen}
             // While Show screensaver is off VibeTV shows none, so "ready on
             // VibeTV" said too much (issue #579): the sentence Settings uses.
             installedDetail={
@@ -1316,30 +1336,17 @@ function ThemeListItem({
 function InlineInstallProgress({
   canRetry,
   installedDetail,
-  onFailureOpenChange,
   onRetry,
   status,
   usage,
 }: {
   canRetry: boolean;
   installedDetail?: string;
-  onFailureOpenChange?: (open: boolean) => void;
   onRetry: () => void;
   status: ThemeInstallStatus;
   usage: ThemeStudioUsage;
 }) {
   const [dismissedErrorAt, setDismissedErrorAt] = useState<string | null>(null);
-  // The same condition SetupStepFailedDialog uses to draw nothing: dismissed,
-  // or a companion-unreachable failure, which has no dialog of its own.
-  const failureOpen =
-    status.phase === "error" &&
-    dismissedErrorAt !== status.startedAt &&
-    (status.failure?.code ?? "theme_install_failed") !== "COMPANION_UNREACHABLE";
-  // The page's own notices wait while this dialog is open (Codex review on #762).
-  useEffect(() => {
-    onFailureOpenChange?.(failureOpen);
-    return () => onFailureOpenChange?.(false);
-  }, [failureOpen, onFailureOpenChange]);
   // The notice of the last row opens below the edge of the window (issue
   // #579). When an install starts or ends, the page moves as far as it takes
   // to show it, and not at all when it is in view. A finished install found

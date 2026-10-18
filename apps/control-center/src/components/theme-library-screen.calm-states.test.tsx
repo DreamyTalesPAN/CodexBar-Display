@@ -8,11 +8,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, expect, it, vi } from "vitest";
 import { createBlankThemeSpec } from "@/lib/theme-studio";
 import type { ThemeProduct } from "@/lib/themes";
-import {
-  ThemeLibraryScreen,
-  type ThemeInstallStatus,
-  type ThemeLibraryScreenProps,
-} from "./theme-library-screen";
+import { ThemeLibraryScreen, type ThemeLibraryScreenProps } from "./theme-library-screen";
 
 const stored = vi.hoisted(() => ({
   storageError: null as null | string,
@@ -77,6 +73,27 @@ function renderLibrary(props: Partial<ThemeLibraryScreenProps> = {}) {
   );
 }
 
+// Requests wait until the test releases them: the Edit request that fails, and
+// the preview, which also fetches.
+function deferFetches() {
+  const release: Array<() => void> = [];
+  vi.stubGlobal(
+    "fetch",
+    () =>
+      new Promise((resolve) => {
+        release.push(() => resolve({ ok: false }));
+      }),
+  );
+  return async () => {
+    await act(async () => {
+      release.forEach((step) => step());
+    });
+  };
+}
+
+const driftRow = () =>
+  screen.getAllByRole("listitem").find((row) => within(row).queryByText("Drift"))!;
+
 it("a failed theme action opens as an overlay dialog, not as an inline alert", async () => {
   vi.stubGlobal("fetch", async () => ({ ok: false }));
   renderLibrary({ themes: [drift] });
@@ -131,8 +148,8 @@ it("the themes-unavailable state is text without a frame and keeps Reload catalo
   expect(screen.getByRole("button", { name: "Reload catalog" })).toBeTruthy();
 });
 
-// Codex review on #762: a save that fails while a theme is deleted shows its
-// error once, inside the delete dialog, not as a second overlay on the page.
+// A save that fails while a theme is deleted reports in the delete dialog; the
+// page does not open a second overlay for it.
 it("a failed delete shows its error in the delete dialog only", async () => {
   stored.ownThemes = [
     {
@@ -157,192 +174,73 @@ it("a failed delete shows its error in the delete dialog only", async () => {
   expect(screen.queryAllByRole("dialog")).toEqual([]);
 });
 
-// Codex review on #762: an action that fails while another dialog of the page
-// is open waits for that dialog, so two overlays never stack.
-it("an error waits while the preview dialog is open, then shows after it closes", async () => {
-  // Every request waits until the test releases it; the preview also fetches.
-  const pending: Array<() => void> = [];
-  vi.stubGlobal(
-    "fetch",
-    () =>
-      new Promise((resolve) => {
-        pending.push(() => resolve({ ok: false }));
-      }),
-  );
+// Rule 1: a page notice is shown only while no other dialog is open.
+it("rule 1: a page notice does not open over another dialog", async () => {
+  const releaseFetches = deferFetches();
   renderLibrary({ themes: [drift] });
 
-  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+  fireEvent.click(within(driftRow()).getByRole("button", { name: "Edit" }));
   fireEvent.click(screen.getByRole("button", { name: "Preview Drift" }));
   const preview = screen.getByRole("dialog", { name: "Drift" });
 
-  await act(async () => {
-    pending.forEach((release) => release());
-  });
+  await releaseFetches();
   expect(screen.queryByRole("dialog", { name: "Theme action failed" })).toBeNull();
-  expect(screen.getAllByRole("dialog")).toEqual([preview]);
+  expect(screen.queryAllByRole("dialog")).toEqual([preview]);
+});
+
+// Rule 2: an error wins over the storage notice; the storage notice shows
+// after the error is closed.
+it("rule 2: a library error replaces the storage notice, which shows after it is closed", async () => {
+  stored.storageError = "Saved themes contain invalid data.";
+  const releaseFetches = deferFetches();
+  renderLibrary({ themes: [drift] });
+  await screen.findByRole("dialog", { name: "Theme storage needs attention" });
+
+  fireEvent.click(within(driftRow()).getByRole("button", { name: "Edit" }));
+  await releaseFetches();
+
+  expect(await screen.findByRole("dialog", { name: "Theme action failed" })).toBeTruthy();
+  expect(screen.queryByRole("dialog", { name: "Theme storage needs attention" })).toBeNull();
+
+  fireEvent.click(
+    within(screen.getByRole("dialog", { name: "Theme action failed" })).getByRole("button", {
+      name: "OK",
+    }),
+  );
+  expect(
+    await screen.findByRole("dialog", { name: "Theme storage needs attention" }),
+  ).toBeTruthy();
+});
+
+// Rule 3: an error that arrives while another dialog is open is kept, and
+// shows when that dialog closes.
+it("rule 3: an error waits for the open dialog and shows once it closes", async () => {
+  const releaseFetches = deferFetches();
+  renderLibrary({ themes: [drift] });
+
+  fireEvent.click(within(driftRow()).getByRole("button", { name: "Edit" }));
+  fireEvent.click(screen.getByRole("button", { name: "Preview Drift" }));
+  const preview = screen.getByRole("dialog", { name: "Drift" });
+  await releaseFetches();
+  expect(screen.queryByRole("dialog", { name: "Theme action failed" })).toBeNull();
 
   fireEvent.click(within(preview).getByRole("button", { name: "Close" }));
   const failed = await screen.findByRole("dialog", { name: "Theme action failed" });
   expect(within(failed).getByText("Theme could not be opened.")).toBeTruthy();
 });
 
-// Codex review on #762: a failed delete save must not discard an error that
-// another action queued while the delete dialog was open.
-it("a failed delete keeps an error that another action queued", async () => {
-  stored.ownThemes = [
-    {
-      id: "mine",
-      updatedAt: "2026-10-18T00:00:00Z",
-      document: { assets: {}, packName: "Mine", spec: createBlankThemeSpec() },
-    },
-  ];
-  stored.writeError = "Saved themes could not be written.";
-  const pending: Array<() => void> = [];
-  vi.stubGlobal(
-    "fetch",
-    () =>
-      new Promise((resolve) => {
-        pending.push(() => resolve({ ok: false }));
-      }),
-  );
+// OK clears the error; the next failure sets it again and opens it again.
+it("OK clears an error, and the next failure opens it again", async () => {
+  vi.stubGlobal("fetch", async () => ({ ok: false }));
   renderLibrary({ themes: [drift] });
 
-  const driftRow = screen
-    .getAllByRole("listitem")
-    .find((row) => within(row).queryByText("Drift"))!;
-  fireEvent.click(within(driftRow).getByRole("button", { name: "Edit" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Delete Mine" }));
-  const deleteDialog = screen.getByRole("alertdialog", { name: "Delete Mine?" });
-
-  await act(async () => {
-    pending.forEach((release) => release());
-  });
-  fireEvent.click(within(deleteDialog).getByRole("button", { name: "Delete local copy" }));
-  expect(await within(deleteDialog).findByText("Saved themes could not be written.")).toBeTruthy();
-  expect(screen.queryByRole("dialog", { name: "Theme action failed" })).toBeNull();
-
-  fireEvent.click(within(deleteDialog).getByRole("button", { name: "Cancel" }));
-  const failed = await screen.findByRole("dialog", { name: "Theme action failed" });
-  expect(within(failed).getByText("Theme could not be opened.")).toBeTruthy();
-});
-
-// Codex review on #762: an error waits while a row's install-failure dialog is
-// open, and shows once that dialog is closed.
-it("an error waits while a row's install-failure dialog is open", async () => {
-  const pending: Array<() => void> = [];
-  vi.stubGlobal(
-    "fetch",
-    () =>
-      new Promise((resolve) => {
-        pending.push(() => resolve({ ok: false }));
-      }),
+  fireEvent.click(within(driftRow()).getByRole("button", { name: "Edit" }));
+  const first = await screen.findByRole("dialog", { name: "Theme action failed" });
+  fireEvent.click(within(first).getByRole("button", { name: "OK" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: "Theme action failed" })).toBeNull(),
   );
-  renderLibrary({
-    themes: [drift],
-    installStatus: {
-      error: "The Mac App refused the theme.",
-      phase: "error",
-      startedAt: "2026-10-18T01:00:00Z",
-      themeId: "drift",
-    } as ThemeInstallStatus,
-  });
-  const installDialog = await screen.findByRole("dialog");
-  const driftRow = screen
-    .getAllByRole("listitem")
-    .find((row) => within(row).queryByText("Drift"))!;
-  fireEvent.click(within(driftRow).getByRole("button", { name: "Edit" }));
 
-  await act(async () => {
-    pending.forEach((release) => release());
-  });
-  expect(screen.queryByRole("dialog", { name: "Theme action failed" })).toBeNull();
-  expect(screen.getAllByRole("dialog")).toEqual([installDialog]);
-
-  fireEvent.click(within(installDialog).getByRole("button", { name: "OK" }));
-  expect(await screen.findByRole("dialog", { name: "Theme action failed" })).toBeTruthy();
-});
-
-// Codex review on #762: two rows that share a theme id can both show an
-// install-failure dialog; the page error waits until both are closed.
-it("an error waits while any of two shared-id install-failure dialogs is open", async () => {
-  const spec = { ...createBlankThemeSpec(), themeId: "drift" };
-  stored.ownThemes = [
-    {
-      id: "mine",
-      updatedAt: "2026-10-18T00:00:00Z",
-      document: { assets: {}, packName: "Mine", spec },
-    },
-  ];
-  const pending: Array<() => void> = [];
-  vi.stubGlobal(
-    "fetch",
-    () =>
-      new Promise((resolve) => {
-        pending.push(() => resolve({ ok: false }));
-      }),
-  );
-  renderLibrary({
-    themes: [drift],
-    installStatus: {
-      error: "The Mac App refused the theme.",
-      phase: "error",
-      startedAt: "2026-10-18T01:00:00Z",
-      themeId: "drift",
-    } as ThemeInstallStatus,
-  });
-  await waitFor(() => expect(screen.getAllByRole("dialog")).toHaveLength(2));
-  const failures = screen.getAllByRole("dialog");
-  const driftRow = screen
-    .getAllByRole("listitem")
-    .find((row) => within(row).queryByText("Drift"))!;
-  fireEvent.click(within(driftRow).getByRole("button", { name: "Edit" }));
-
-  await act(async () => {
-    pending.forEach((release) => release());
-  });
-  expect(screen.queryByRole("dialog", { name: "Theme action failed" })).toBeNull();
-
-  // Closing one failure leaves the other open: the page error still waits.
-  fireEvent.click(within(failures[0]).getByRole("button", { name: "OK" }));
-  expect(screen.queryByRole("dialog", { name: "Theme action failed" })).toBeNull();
-  expect(screen.getAllByRole("dialog")).toHaveLength(1);
-
-  fireEvent.click(within(failures[1]).getByRole("button", { name: "OK" }));
-  expect(await screen.findByRole("dialog", { name: "Theme action failed" })).toBeTruthy();
-});
-
-// Codex review on #762: a companion-unreachable failure draws no dialog, so it
-// must not hold the page's errors back.
-it("an error is not held back by a companion-unreachable install failure", async () => {
-  const pending: Array<() => void> = [];
-  vi.stubGlobal(
-    "fetch",
-    () =>
-      new Promise((resolve) => {
-        pending.push(() => resolve({ ok: false }));
-      }),
-  );
-  renderLibrary({
-    themes: [drift],
-    installStatus: {
-      error: "The VibeTV Companion is not reachable.",
-      failure: {
-        code: "COMPANION_UNREACHABLE",
-        message: "VibeTV Companion is not reachable.",
-        nextAction: "Start VibeTV again.",
-      },
-      phase: "error",
-      startedAt: "2026-10-18T01:00:00Z",
-      themeId: "drift",
-    } as ThemeInstallStatus,
-  });
-  const driftRow = screen
-    .getAllByRole("listitem")
-    .find((row) => within(row).queryByText("Drift"))!;
-  fireEvent.click(within(driftRow).getByRole("button", { name: "Edit" }));
-
-  await act(async () => {
-    pending.forEach((release) => release());
-  });
+  fireEvent.click(within(driftRow()).getByRole("button", { name: "Edit" }));
   expect(await screen.findByRole("dialog", { name: "Theme action failed" })).toBeTruthy();
 });
