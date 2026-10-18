@@ -7467,3 +7467,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-18 — Option: keyboard focus ring in ink instead of lime (app-wide)
+- User approval: pending — Paul decides (keyboard focus ring ink instead of lime, app-wide)
+- Approved customer-visible result: Not decided; this is an option for Paul. The keyboard focus ring becomes the ink colour (`#1B1B1B` on light, `#EDEDED` on dark) instead of olive-lime (`#506600` light, `#CCFF00` dark), at full opacity instead of 40 % or 50 %. Look unchanged except: focus rings of buttons, inputs, textareas, selects, checkboxes, switches, tabs, toggles, badges, list items, the Settings links, and the border and ring of the selected setup card change from `#506600` to `#1B1B1B`, and their opacity from 40 % or 50 % to 100 %. The primary button fill and the switch on-state stay lime. Contrast of the ring against the page: 16.4:1 light, 14.7:1 dark (old lime 6.2:1 light).
+- Scope: `apps/control-center/src/app/globals.css` (`--ring` in both themes), `apps/control-center/src/app/globals.focus-ring.test.ts` (new), the focus classes in `settings-screen.tsx` and `components/ui/{badge,button,checkbox,input,item,select,switch,tabs,textarea,toggle}.tsx`, the internal UI kit swatch value in `vibetv-ui-kit.tsx`, and this approval record. Not merged, not released.
+- What's new: none — no new text, screen or control; only the focus ring colour and strength change

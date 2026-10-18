@@ -29,7 +29,7 @@
   --success-foreground: #3B5200;
   --border: #E3E3E3;
   --input: #888888;
-  --ring: #506600;
+  --ring: #1B1B1B;
   --chart-1: #1B1B1B;
   --chart-2: #506600;
   --chart-3: #2F6473;
@@ -173,7 +173,7 @@ textarea {
   --success-foreground: #F1FFD0;
   --border: #343434;
   --input: #707070;
-  --ring: #CCFF00;
+  --ring: #EDEDED;
   --chart-1: #EDEDED;
   --chart-2: #A9C76A;
   --chart-3: #72AFBC;

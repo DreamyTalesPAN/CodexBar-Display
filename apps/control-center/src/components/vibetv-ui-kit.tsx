@@ -89,7 +89,7 @@ const tokenSwatches = [
   { label: "Muted", value: "#EEEEEE", className: "bg-muted" },
   { label: "Stroke", value: "#E3E3E3", className: "bg-border" },
   { label: "Input", value: "#888888", className: "bg-input" },
-  { label: "Support", value: "#506600", className: "bg-ring" },
+  { label: "Support", value: "#1B1B1B", className: "bg-ring" },
 ];
 
 export function VibeTvUiKit() {
