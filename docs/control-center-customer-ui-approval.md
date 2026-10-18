@@ -7778,3 +7778,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet, pending Paul's decision. Proposed: at narrow tile width (960 px window) a lane label such as "94% session (5h) remaining" stays on one line and its reset ("Reset in 2h 37m") moves to the line beneath when there is no room beside it, instead of being clipped. No wording change. The Usage head above the tiles is unchanged.
 - Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (lane row wraps, one test assertion), and this approval record. Option PR #777 stacked on #669; not merged or released.
 - What's new: none — layout fallback only, no new notice
+
+## 2026-10-18 — Usage tiles: a wrapped reset stays right-aligned (option, #777)
+
+- User approval: pending — Paul decides (Usage tiles in calm type; head unchanged)
+- Approved customer-visible result: none yet, pending Paul's decision. Proposed: when a lane label and its reset do not fit on one line (960 px window), the reset ("Reset in 1h") moves to the line beneath and stays right-aligned there, instead of sitting at the left edge. No wording change. The Usage head above the tiles is unchanged.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (reset alignment, one test assertion), and this approval record. Option PR #777 stacked on #669; not merged or released.
+- What's new: none — layout alignment only, no new notice

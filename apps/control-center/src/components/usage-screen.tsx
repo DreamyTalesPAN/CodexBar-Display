@@ -733,7 +733,7 @@ function UsageLineView({
   status?: ReactNode;
 }) {
   const right = line.resetText ? (
-    <span className="shrink-0 text-muted-foreground">{line.resetText}</span>
+    <span className="ml-auto shrink-0 text-muted-foreground">{line.resetText}</span>
   ) : (
     status
   );
