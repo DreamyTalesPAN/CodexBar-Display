@@ -9,6 +9,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { createBlankThemeSpec } from "@/lib/theme-studio";
 import type { ThemeProduct } from "@/lib/themes";
 import { ThemeLibraryScreen, type ThemeLibraryScreenProps } from "./theme-library-screen";
+import { SystemBusyDialog, systemBusyCopy } from "./system-busy-dialog";
 
 const stored = vi.hoisted(() => ({
   storageError: null as null | string,
@@ -243,4 +244,36 @@ it("OK clears an error, and the next failure opens it again", async () => {
 
   fireEvent.click(within(driftRow()).getByRole("button", { name: "Edit" }));
   expect(await screen.findByRole("dialog", { name: "Theme action failed" })).toBeTruthy();
+});
+
+// Codex review on #762 (P1): the busy announcement and a page notice must not
+// wait on each other. The notice shows; the announcement waits for it.
+it("a page notice is not held back by the busy announcement, which waits for it", async () => {
+  vi.stubGlobal("fetch", async () => ({ ok: false }));
+  render(
+    <>
+      <ThemeLibraryScreen
+        busyAction={null}
+        companionStatus="online"
+        device={null}
+        onInstallCustomTheme={async () => false}
+        onInstallTheme={vi.fn()}
+        onSelectTheme={vi.fn()}
+        selectedThemeId=""
+        storefrontConfigured={false}
+        themeInstallEnabled={false}
+        themes={[drift]}
+      />
+      <SystemBusyDialog onClose={() => {}} />
+    </>,
+  );
+  fireEvent.click(within(driftRow()).getByRole("button", { name: "Edit" }));
+
+  expect(await screen.findByRole("dialog", { name: "Theme action failed" })).toBeTruthy();
+  // Settled: the notice stays, and the busy announcement does not come back over it.
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+  expect(screen.getByRole("dialog", { name: "Theme action failed" })).toBeTruthy();
+  expect(screen.queryByRole("dialog", { name: systemBusyCopy.title })).toBeNull();
 });

@@ -7548,3 +7548,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: `Theme action failed` and `Theme storage needs attention` are shown only while no other dialog is open on the page. A failure that happens while another dialog is open is kept and shows when that dialog closes. When both are pending, `Theme action failed` is shown first and `Theme storage needs attention` after it is closed. `OK` or the X closes the notice and clears it. Words, buttons and every other state are unchanged.
 - Scope: `apps/control-center/src/components/theme-library-screen.tsx` (one rule for the two notices instead of per-dialog conditions) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (tests for the rule), and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no visible change in text or controls
+
+## 2026-10-18 — Themes: the busy announcement and the page notices do not wait on each other (Codex review fix on #762)
+
+- User approval: Not separately approved by Paul; a Codex review fix (P1) on the entry above, which is pending for Paul. Not seen by Paul; the visible result is unchanged.
+- Approved customer-visible result: When a page notice (`Theme action failed` or `Theme storage needs attention`) and the busy announcement both become due, the notice is shown and the busy announcement waits for it. Before, the two could take turns opening and closing. Words, buttons and every other state are unchanged.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (the page notices do not count the busy announcement as another dialog) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (one regression test), and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no visible change

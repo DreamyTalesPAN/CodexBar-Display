@@ -49,6 +49,7 @@ import {
 } from "@/components/ui/item";
 import { Progress } from "@/components/ui/progress";
 import { SetupDialog } from "@/components/setup/setup-dialog";
+import { systemBusyCopy } from "./system-busy-dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -200,15 +201,18 @@ export type ThemeLibraryScreenProps = {
 };
 
 // One rule for the page's notices: a notice waits while any other dialog is
-// open in the document. Dialogs of this page's own notices are not "other".
+// open in the document. Not counted: this page's own notices, and the busy
+// announcement, which already waits for every other dialog (so the two never
+// wait on each other and loop).
 const OPEN_DIALOGS = '[role="dialog"], [role="alertdialog"]';
 let pageNoticesShown = 0;
 
 function otherDialogOpen(): boolean {
-  return (
-    typeof document !== "undefined" &&
-    document.querySelectorAll(OPEN_DIALOGS).length > pageNoticesShown
+  if (typeof document === "undefined") return false;
+  const others = Array.from(document.querySelectorAll(OPEN_DIALOGS)).filter(
+    (dialog) => !dialog.textContent?.includes(systemBusyCopy.title),
   );
+  return others.length > pageNoticesShown;
 }
 
 /** Whether another dialog is open right now, kept current while mounted. */
