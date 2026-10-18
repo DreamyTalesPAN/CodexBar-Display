@@ -7904,3 +7904,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the entry above; the design name is 28 px at desktop widths too.
 - Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and this record. Pull request branch only, not merge or release.
 - What's new: none — refinement of the entry above
+
+## 2026-10-18 — Customer flow: Overview check no longer waits for the removed tiles (#755)
+
+- User approval: none needed — no visible change; the Overview is unchanged (calm Overview, #713). This entry records a customer-flow script fix: the Overview check asserts that the Mac App and firmware tiles are absent instead of waiting for them, after CI failed on the removed tiles.
+- Approved customer-visible result: none. The test script changes what it waits for, not what the customer sees.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
