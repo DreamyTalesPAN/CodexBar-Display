@@ -7467,3 +7467,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-18 — Calm shell: sidebar and page header as in the approved pictures (#713)
+
+- User approval: Paul 17.10. approved the variant-A pictures (shell shown in overview-A/settings-A/overview-A2-center); this applies their sidebar and page header (#713).
+- Approved customer-visible result: The left sidebar is 232 px wide with no line under the brand; the brand is "VIBETV" in one colour at 16 px with "Control Center" below it. Nav entries are 34 px high with 13 px text, the active entry has the olive fill with full-strength text and the other entries are muted; the icons no longer turn lime. Hovering a nav entry shows a weaker tint of the same olive fill (not in the pictures; it is clearly weaker than the active entry). The Appearance chevron points down and turns up when open. The page title is 28 px semibold with the sidebar toggle as a muted 20 px icon above the page, 36 px from the top and 48 px from the sides on wide screens. The update dot is ink instead of lime. Same entries, order, wording, icons and behaviour.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/control-center-brand.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — look only, no new capability
