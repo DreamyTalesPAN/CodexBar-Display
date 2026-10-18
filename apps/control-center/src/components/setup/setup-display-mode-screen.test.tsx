@@ -178,6 +178,9 @@ describe("SetupDisplayModeScreen", () => {
       expect(classes).toContain("ring-foreground/20");
       expect(classes).not.toContain("border-ring");
       expect(classes).not.toContain("ring-ring/20");
+      // Keyboard focus on the chosen card must not fall back to lime.
+      expect(classes).toContain("focus-visible:border-foreground");
+      expect(classes).not.toContain("focus-visible:border-ring");
     }
   });
 
