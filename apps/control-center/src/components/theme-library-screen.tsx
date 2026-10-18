@@ -274,7 +274,8 @@ export function ThemeLibraryScreen({
   const [deleteTheme, setDeleteTheme] = useState<UserThemeRecord | null>(null);
   const [deleteError, setDeleteError] = useState("");
   const deleteReturnFocusRef = useRef<HTMLElement | null>(null);
-  const libraryHeadingRef = useRef<HTMLHeadingElement>(null);
+  // Focus goes here after a delete; the page has no heading of its own.
+  const createButtonRef = useRef<HTMLButtonElement>(null);
   const [loadingEditorRow, setLoadingEditorRow] = useState("");
   // Counts what was opened in the editor, to tell a theme that arrives late.
   const editorOpensRef = useRef(0);
@@ -563,7 +564,7 @@ export function ThemeLibraryScreen({
       persistUserThemes(userThemes.filter((theme) => theme.id !== deleteTheme.id));
       setDeleteTheme(null);
       setDeleteError("");
-      window.setTimeout(() => libraryHeadingRef.current?.focus(), 0);
+      window.setTimeout(() => createButtonRef.current?.focus(), 0);
       return true;
     } catch (error) {
       setDeleteError(
@@ -656,30 +657,13 @@ export function ThemeLibraryScreen({
         "mx-auto w-full max-w-[1180px]",
       )}
     >
-      <section
-        className={cn(
-          "grid gap-5 py-5",
-          "sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center",
-        )}
-      >
-        <div>
-          <h2
-            className={cn(
-              "text-[28px] font-semibold leading-tight text-[#1B1B1B] outline-none",
-              "truncate",
-            )}
-            ref={libraryHeadingRef}
-            tabIndex={-1}
-          >
-            {screensavers ? "Screensavers" : "Themes"}
-          </h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {screensavers
-              ? "Choose what appears when VibeTV enters standby after being idle."
-              : "Customize how your live usage screen looks while VibeTV is active."}
-          </p>
-        </div>
-        <Button onClick={() => openInEditor(openBlankTheme)} type="button">
+      {/* The page title (Themes / Screensavers) is the shell's header. */}
+      <section className="flex justify-end py-5">
+        <Button
+          onClick={() => openInEditor(openBlankTheme)}
+          ref={createButtonRef}
+          type="button"
+        >
           <Plus data-icon="inline-start" aria-hidden />
           <span>{screensavers ? "Create Screensaver" : "Create Theme"}</span>
         </Button>

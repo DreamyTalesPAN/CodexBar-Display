@@ -7485,3 +7485,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: On Appearance › Themes and Appearance › Screensavers, at a narrow card width the name, and its Custom mark, get at least 11 rem, and the row's buttons move to a line of their own below the name instead of covering it (before: the name could shrink to a few pixels). Words, buttons and states are unchanged.
 - Scope: `apps/control-center/src/components/theme-library-screen.tsx` (minimum width of the name) and this approval record. Pull request branch only, not merge or release.
 - What's new: none — layout only, no new words
+
+## 2026-10-18 — Appearance A: one page title, the sub-page name in the header; the sentence under it removed (#754)
+
+- User approval: pending — Paul reviews (one page title as in the approved Appearance A picture); look unchanged except: the in-page title and the sentence under it are removed. Before: "Themes" (or "Screensavers") as a second title, then "Customize how your live usage screen looks while VibeTV is active." (or "Choose what appears when VibeTV enters standby after being idle."); after: no second title and no sentence, the page title is the header ("Themes" / "Screensavers"), which the calm shell (#758) shows; without #758 the header still reads "Appearance". The Create Theme / Create Screensaver button stays on the right above the list.
+- Approved customer-visible result: as in the approved Appearance A picture (#713): one page title, the sub-page name, in the header row; the list starts directly under it.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx`, its test `apps/control-center/src/components/theme-library-screen.test.tsx`, `apps/control-center/src/components/control-center-app.whats-new.test.tsx` (checks the Create Theme button instead of the removed heading), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a removed duplicate title and sentence
