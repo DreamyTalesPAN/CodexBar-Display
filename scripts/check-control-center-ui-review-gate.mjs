@@ -50,18 +50,10 @@ const changedFiles = unique([
   ...workingTreeChangedFiles,
 ]);
 // The approval commit covers the UI files of the commits before it, not its own:
-// a UI file it changes itself counts unless the entry it adds names that file.
-const approvalCommitText = approvalCommit
-  ? addedApprovalText(commitDiff(approvalCommit))
-  : "";
-const unnamedApprovalCommitUiFiles = approvalCommit
-  ? approvalCommitChangedFiles(approvalCommit).filter(
-      (file) => isUiFile(file) && !namesPath(approvalCommitText, file),
-    )
-  : [];
+// a UI file it changes itself counts unless it is covered (see below).
 const uiChangedFiles = unique([
   ...changedFiles.filter(isUiFile),
-  ...unnamedApprovalCommitUiFiles,
+  ...(approvalCommit ? uncoveredApprovalCommitUiFiles(approvalCommit) : []),
 ]);
 const approvalCoversUi = workingTreeApprovalChanged && workingTreeApprovalValid;
 const unapprovedUiFiles = approvalCoversUi ? [] : uiChangedFiles;
@@ -129,6 +121,37 @@ function changedFilesSince(commit, ref) {
 // brings in the files of the merged branch this way).
 function approvalCommitChangedFiles(commit) {
   return lines(tryGit(["diff", "--name-only", `${commit}^1`, commit]));
+}
+
+// UI files the approval commit changes itself that its entry does not cover.
+// A file a merge takes from its second parent is covered when that parent
+// passes the gate on its own (its approval history), so the merge record need
+// not name base UI that is already approved.
+function uncoveredApprovalCommitUiFiles(commit) {
+  const entryText = addedApprovalText(commitDiff(commit));
+  const mergedParent = tryGit(["rev-parse", "--verify", `${commit}^2`]);
+  return approvalCommitChangedFiles(commit)
+    .filter(isUiFile)
+    .filter((file) => !(mergedParent && coveredByMergedParent(file, commit, mergedParent)))
+    .filter((file) => !namesPath(entryText, file));
+}
+
+function coveredByMergedParent(file, commit, parent) {
+  const changedSinceParent = lines(tryGit(["diff", "--name-only", parent, commit, "--", file]));
+  return changedSinceParent.length === 0 && unapprovedUiFilesAt(parent).length === 0;
+}
+
+// The gate's verdict for a committed ref, as a list of unapproved UI files.
+function unapprovedUiFilesAt(ref) {
+  const approval = latestApprovalCommit(ref);
+  const since = changedFilesSince(approval, ref).filter(isUiFile);
+  if (!approval) {
+    return since;
+  }
+  if (!diffAddsApprovalEvidence(commitDiff(approval))) {
+    return [...since, "approval marker without evidence"];
+  }
+  return unique([...since, ...uncoveredApprovalCommitUiFiles(approval)]);
 }
 
 // The path as a whole token: "widget.tsx" does not name "widget.ts".

@@ -446,7 +446,7 @@ test_merge_commit_with_approval_needs_scope_for_branch_ui() {
     "Change customer-facing UI"
   git -C "$repo" checkout -q "$base_branch"
   commit_file "$repo" "docs/base-follow-up.md" "Base follow-up non-ui change"
-  git -C "$repo" merge -q --no-ff --no-commit feature >/dev/null
+  git -C "$repo" merge -q --no-ff --no-commit feature >/dev/null 2>&1
   approval_entry "Merged overview" \
     >> "$repo/docs/control-center-customer-ui-approval.md"
   git -C "$repo" add docs/control-center-customer-ui-approval.md
@@ -472,6 +472,32 @@ test_named_path_must_match_whole_file() {
   expect_gate_due "$repo"
 }
 
+# A branch that merges an already approved base: the base UI it brings in is
+# covered by the base's own approval, so the merge record need not name it.
+test_merge_of_approved_base_needs_no_rescope() {
+  local repo="${TMP_ROOT}/merge-approved-base"
+  setup_repo "$repo"
+  local base_branch
+  base_branch="$(git -C "$repo" symbolic-ref --short HEAD)"
+
+  git -C "$repo" checkout -q -b feature
+  commit_file "$repo" "docs/feature-notes.md" "Feature non-ui change"
+
+  git -C "$repo" checkout -q "$base_branch"
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Change customer-facing UI"
+  commit_approval "$repo" "Base overview"
+  expect_gate_success "$repo"
+
+  git -C "$repo" checkout -q feature
+  git -C "$repo" merge -q --no-ff --no-commit "$base_branch" >/dev/null 2>&1
+  approval_entry "Merged base" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" add docs/control-center-customer-ui-approval.md
+  git -C "$repo" commit -q -m "Merge base and record it"
+  expect_gate_success "$repo"
+}
+
 test_non_ui_commits_do_not_block
 test_ui_change_blocks_immediately
 test_working_tree_ui_change_blocks_immediately
@@ -494,5 +520,6 @@ test_ui_change_in_approval_commit_needs_its_scope
 test_ui_change_in_approval_commit_passes_when_entry_names_it
 test_merge_commit_with_approval_needs_scope_for_branch_ui
 test_named_path_must_match_whole_file
+test_merge_of_approved_base_needs_no_rescope
 
 printf 'control-center UI review gate tests passed\n'
