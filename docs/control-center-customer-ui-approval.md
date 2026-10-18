@@ -7530,3 +7530,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the approved Appearance A picture (#713): one page title, the sub-page name, in the header row next to the sidebar toggle; no description sentence.
 - Scope: `apps/control-center/src/components/theme-library-screen.tsx`, its test `apps/control-center/src/components/theme-library-screen.test.tsx`, `apps/control-center/scripts/test-customer-flows.mjs` (heading waits find the header title, test file only), and this approval record. Pull request branch only, not merge or release. Touches the Themes/Screensavers page; conflicts with #754 there (Marcus resolves).
 - What's new: none — a removed duplicate title and sentence
+
+## 2026-10-18 — Codex review fix: the internal Theme Studio preview keeps the Appearance title (#758)
+
+- User approval: pending — Paul reviews this PR (Codex review on 370fe895, P2, #758); look unchanged except: the internal preview at /internal/theme-studio-preview shows the header "Appearance" as in the Studio of the app. Before: "Themes" in that preview; after: "Appearance". Development preview only, not customer-visible.
+- Approved customer-visible result: as in the calm shell entry of 2026-10-18 (#758): Theme Studio keeps its own "Appearance" header.
+- Scope: `apps/control-center/src/components/theme-studio/theme-studio-preview.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a header flag in the development preview
