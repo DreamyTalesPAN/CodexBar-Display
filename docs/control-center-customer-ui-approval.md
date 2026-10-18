@@ -7488,3 +7488,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none. The provider list looks and behaves as before; it is up to date when the Providers setup step opens or Settings opens, also when a plugin was installed or removed while setup waited for the device.
 - Scope: `apps/control-center/src/components/control-center-app.tsx` (a `fresh=1` provider read is sent once when the provider list becomes visible — the Providers setup step or Settings once inside — not on every render; plain polls send no `fresh=1`) and `apps/control-center/src/components/control-center-app.provider-fresh-read.test.tsx`. Pull request branch only, not merge or release.
 - What's new: none — a fix of a reported defect, no visible change
+
+## 2026-10-18 — Provider list: a failed fresh read is asked again (Codex P2 on #700)
+
+- User approval: pending — Paul reviews this PR (fix of a Codex P2 on the #555 change, #700); look unchanged except: none.
+- Approved customer-visible result: none. The provider list looks and behaves as before; after a failed read the next poll asks CodexBar again, so the list is up to date once the read succeeds.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (the fresh read stays owed while the provider list is visible until one succeeds; polls then send `fresh=1`) and `apps/control-center/src/components/control-center-app.provider-fresh-read.test.tsx` (a case for a failed fresh read). Pull request branch only, not merge or release.
+- What's new: none — a fix of a reported defect, no visible change

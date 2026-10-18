@@ -54,8 +54,15 @@ async function openSettingsWithHeldPlainRead(): Promise<Harness> {
   return openHarness({ setup: false });
 }
 
-async function openHarness({ setup }: { setup: boolean }): Promise<Harness> {
+async function openHarness({
+  setup,
+  failFirstFresh = false,
+}: {
+  setup: boolean;
+  failFirstFresh?: boolean;
+}): Promise<Harness> {
   const providerReads: string[] = [];
+  let freshReads = 0;
   let deviceReady = !setup;
   let pluginInstalled = false;
   let releasePlainRead: () => void = () => {};
@@ -134,6 +141,10 @@ async function openHarness({ setup }: { setup: boolean }): Promise<Harness> {
       if (url.includes("/v1/preferences?section=providers")) {
         providerReads.push(url);
         if (url.includes("fresh=1")) {
+          freshReads += 1;
+          if (failFirstFresh && freshReads === 1) {
+            return jsonResponse({ ok: false, error: { code: "BUSY" } }, 500);
+          }
           return jsonResponse({
             ok: true,
             items: [provider("codex", "Codex"), provider("claude", "Claude")],
@@ -230,5 +241,15 @@ it("a fresh provider read is sent when the Providers step opens, not while the d
   await setup.wait(20);
 
   expect(setup.providerReads.filter((url) => url.includes("fresh=1"))).toHaveLength(1);
+  expect(setup.text()).toContain("Claude");
+});
+
+it("a fresh provider read that fails is sent again by a later poll", async () => {
+  const setup = await openHarness({ setup: true, failFirstFresh: true });
+  setup.setDeviceReady(true);
+  await setup.wait(30);
+
+  // The first fresh read failed; a later poll asked again, and the list shows.
+  expect(setup.providerReads.filter((url) => url.includes("fresh=1")).length).toBeGreaterThanOrEqual(2);
   expect(setup.text()).toContain("Claude");
 });

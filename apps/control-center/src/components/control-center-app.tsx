@@ -525,6 +525,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const providerDisplayWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
   const providerPreferencesReadRef = useRef<Promise<void> | null>(null);
   const providerPreferencesReadFreshRef = useRef(false);
+  // A visible provider list owes CodexBar one fresh read. It stays owed until
+  // that read succeeds, so a failed one is retried by the next poll.
+  const providerListFreshOwedRef = useRef(false);
+  const providerListShownRef = useRef(false);
   const quietUsageReadRef = useRef<Promise<void> | null>(null);
   const providerPreferencesRevisionRef = useRef(0);
   const providerPreferenceWritesRef = useRef<Promise<void>>(Promise.resolve());
@@ -3430,10 +3434,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const refreshProviderPreferences = useCallback(
     (options?: { quiet?: boolean; fresh?: boolean }) => {
       const inFlight = providerPreferencesReadRef.current;
+      const fresh = Boolean(options?.fresh) || providerListFreshOwedRef.current;
       // A plain poll joins any read in flight. A fresh read joins only a fresh
       // read; behind a plain one it waits for that read to settle and then asks
       // CodexBar itself, so the plugin list it returns is the one shown.
-      if (inFlight && (!options?.fresh || providerPreferencesReadFreshRef.current)) {
+      if (inFlight && (!fresh || providerPreferencesReadFreshRef.current)) {
         return inFlight;
       }
       const readNow = async () => {
@@ -3453,7 +3458,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         try {
           const payload = await runCompanion<{
             items: PreferenceDescriptor[];
-          }>(`/v1/preferences?section=providers${options?.fresh ? "&fresh=1" : ""}`, undefined, {
+          }>(`/v1/preferences?section=providers${fresh ? "&fresh=1" : ""}`, undefined, {
             preserveLastError: Boolean(options?.quiet),
           });
           if (
@@ -3466,6 +3471,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           providerPreferencesRef.current = items;
           setProviderPreferences(items);
           setProviderPreferencesError(null);
+          if (fresh) {
+            providerListFreshOwedRef.current = false;
+          }
         } catch (error) {
           if (
             setupGeneration !== setupGenerationRef.current ||
@@ -3482,7 +3490,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         ? inFlight.then(readNow, readNow)
         : readNow();
       providerPreferencesReadRef.current = read;
-      providerPreferencesReadFreshRef.current = Boolean(options?.fresh);
+      providerPreferencesReadFreshRef.current = fresh;
       void read.finally(() => {
         if (providerPreferencesReadRef.current === read) {
           providerPreferencesReadRef.current = null;
@@ -5129,22 +5137,20 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // The provider list is read fresh (fresh=1) once when it becomes visible:
   // the Providers setup step, or Settings once the customer is inside. Plugins
   // installed or removed while the engine ran show up then; plain polls keep
-  // the engine's cached inventory.
+  // the engine's cached inventory until that fresh read has succeeded.
   const providerListVisible =
     companionStatus === "online" &&
     (setupStep === "providers" ||
       (hasEnteredControlCenter && activeShellTab === "settings"));
-  const providerListFreshSentRef = useRef(false);
   useEffect(() => {
-    if (!providerListVisible) {
-      providerListFreshSentRef.current = false;
+    if (providerListShownRef.current === providerListVisible) {
       return;
     }
-    if (providerListFreshSentRef.current) {
-      return;
+    providerListShownRef.current = providerListVisible;
+    providerListFreshOwedRef.current = providerListVisible;
+    if (providerListVisible) {
+      void refreshProviderPreferences({ quiet: true });
     }
-    providerListFreshSentRef.current = true;
-    void refreshProviderPreferences({ quiet: true, fresh: true });
   }, [providerListVisible, refreshProviderPreferences]);
   // Once setup has admitted the customer to the Control Center, it never owns
   // the window again. Theme and screensaver installs can temporarily make the
