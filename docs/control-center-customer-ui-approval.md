@@ -7710,3 +7710,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; the same button wording as the entry above, now also for a saved key that still needs its check. Before → after: "Save key" → "Update key" (saved key, check still pending, new key typed). No other change.
 - Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx` and its test, and this record. Pull request branch only, not merge or release.
 - What's new: none — button wording only, no new feature.
+
+## 2026-10-18 — Calm Theme Studio, variant A (#749): row button follows a stored key still being checked
+
+- User approval: pending — Paul reviews (row button follows a stored-but-pending key)
+- Approved customer-visible result: none yet; proposed: the Theme Studio AI row in Settings › AI providers reads "Change key" while a saved key is still being checked, as the key dialog already does. Before → after: "Add key" → "Change key" (saved key, check still pending). Stored key: "Change key" unchanged. No key stored: "Add key" unchanged.
+- Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx` and its test, and this record. Pull request branch only, not merge or release.
+- What's new: none — button wording only, no new feature.
