@@ -92,9 +92,10 @@ struct Shell {
     // Where the window was when a close released it; the next window goes
     // there. Process lifetime only.
     window_geometry: Mutex<Option<Remembered>>,
-    // Counts the releases by a close, so the startup load can tell that the
-    // customer closed the window while the update check ran.
-    releases: AtomicU64,
+    // Closes requested and not cancelled by a present. The startup load
+    // compares it to tell that the customer closed the window while the
+    // update check ran.
+    closes: AtomicU64,
     shortcut_registered_changed: Condvar,
 }
 
@@ -230,7 +231,7 @@ fn main() {
             windows_created: AtomicU64::new(0),
             window_generation: AtomicU64::new(0),
             window_geometry: Mutex::new(None),
-            releases: AtomicU64::new(0),
+            closes: AtomicU64::new(0),
             shortcut_registered_changed: Condvar::new(),
         })
         .setup(|app| {
@@ -263,13 +264,13 @@ fn main() {
                 queue_install_link(&handle, args[1].to_str());
             }
             std::thread::spawn(move || {
-                let releases_before = handle.state::<Shell>().releases.load(Ordering::SeqCst);
+                let closes_before = handle.state::<Shell>().closes.load(Ordering::SeqCst);
                 launch_update_check(&handle);
                 *handle.state::<Shell>().preparing.lock().unwrap() = false;
                 // Closed while the update check ran: it stays closed until the
                 // tray opens it, as after any close.
                 let closed_meanwhile =
-                    handle.state::<Shell>().releases.load(Ordering::SeqCst) != releases_before;
+                    handle.state::<Shell>().closes.load(Ordering::SeqCst) != closes_before;
                 load(handle.clone(), visible && !closed_meanwhile);
                 loop {
                     std::thread::sleep(IDLE_UPDATE_INTERVAL);
@@ -666,7 +667,11 @@ fn ensure_live_window(app: &AppHandle) -> bool {
         if !ensure_window(app) {
             return false;
         }
+        // Check and switch under the creation lock: a build in flight either
+        // finished (and is found here) or has not started (it takes the new
+        // label). The event loop never takes this lock.
         let shell = app.state::<Shell>();
+        let _creating = shell.window_creation.lock().unwrap();
         let generation = shell.window_generation.load(Ordering::SeqCst);
         let live = app
             .get_webview_window(&label_for_generation(generation))
@@ -788,14 +793,18 @@ fn hide_after_flush(app: &AppHandle) {
     let Some(window) = main_window(app) else {
         return;
     };
-    let _ = window.eval("window.dispatchEvent(new Event('vibetv:native-window-will-close'))");
     let handle = app.clone();
+    // Counted at the request, not at the release: a startup load that ends
+    // during the flush delay must already see the window as closed. The
+    // count goes back when a present cancels the close below.
+    handle.state::<Shell>().closes.fetch_add(1, Ordering::SeqCst);
+    let _ = window.eval("window.dispatchEvent(new Event('vibetv:native-window-will-close'))");
     let presented = handle.state::<Shell>().presentations.load(Ordering::SeqCst);
     std::thread::spawn(move || {
         std::thread::sleep(WINDOW_CLOSE_FLUSH_DELAY);
-        // Reopened from the tray or a second launch meanwhile: keep it open.
         let shell = handle.state::<Shell>();
-        if shell.presentations.load(Ordering::SeqCst) == presented {
+        let presented_now = shell.presentations.load(Ordering::SeqCst);
+        if close_stands(presented, presented_now) {
             // Kept for the window built next; a minimized one keeps the last.
             if let Some(geometry) = window_geometry(&window) {
                 *shell.window_geometry.lock().unwrap() = Some(geometry);
@@ -803,10 +812,17 @@ fn hide_after_flush(app: &AppHandle) {
             // Stored as count + 1, so a release before the first present
             // (count 0) is still told apart from "no release".
             shell.released_at.store(presented + 1, Ordering::SeqCst);
-            shell.releases.fetch_add(1, Ordering::SeqCst);
             let _ = window.destroy();
+        } else {
+            // Reopened from the tray or a second launch meanwhile: keep it open.
+            shell.closes.fetch_sub(1, Ordering::SeqCst);
         }
     });
+}
+
+// A close stands only when nothing presented the window since it was requested.
+fn close_stands(presented_at_request: u64, presented_after_flush: u64) -> bool {
+    presented_at_request == presented_after_flush
 }
 
 // Issue #424: Ctrl+Alt+Shift+P shows the next provider on VibeTV from any app.
@@ -1553,7 +1569,7 @@ fn show_message(message: &str) {
 #[cfg(test)]
 mod tests {
     use super::{
-        centre_on_a_work_area, choose_placement, clear_loaded_theme, label_for_generation,
+        centre_on_a_work_area, choose_placement, clear_loaded_theme, close_stands, label_for_generation,
         theme_id_from_deep_link, Placement, WindowRect,
     };
     use url::Url;
@@ -1615,6 +1631,12 @@ mod tests {
         assert_eq!(label_for_generation(0), "main");
         assert_eq!(label_for_generation(1), "main-1");
         assert_ne!(label_for_generation(1), label_for_generation(2));
+    }
+
+    #[test]
+    fn a_close_is_cancelled_by_any_present_after_the_request() {
+        assert!(close_stands(3, 3));
+        assert!(!close_stands(3, 4));
     }
 
     #[test]
