@@ -256,6 +256,8 @@ fn main() {
             // Through ensure_window: a second launch that arrives during
             // startup goes the same check-and-create way, so only one window
             // is built.
+            // Sampled before the window exists, so no close can be missed.
+            let closes_before = handle.state::<Shell>().closes.load(Ordering::SeqCst);
             if visible {
                 ensure_window(&handle);
             }
@@ -264,7 +266,6 @@ fn main() {
                 queue_install_link(&handle, args[1].to_str());
             }
             std::thread::spawn(move || {
-                let closes_before = handle.state::<Shell>().closes.load(Ordering::SeqCst);
                 launch_update_check(&handle);
                 *handle.state::<Shell>().preparing.lock().unwrap() = false;
                 // Closed while the update check ran: it stays closed until the
