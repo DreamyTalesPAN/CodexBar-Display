@@ -7527,3 +7527,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: When an action fails while the install-failure dialog of a theme row is open, the `Theme action failed` overlay (and the storage notice) waits and is not shown on top of it. When that dialog is closed, the overlay shows with the same sentence and `OK`. Words, buttons and every other state are unchanged.
 - Scope: `apps/control-center/src/components/theme-library-screen.tsx` (the install-failure open state is reported to the page, which waits for it) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (one regression test), and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no visible change, the same dialog waits for the one open
+
+## 2026-10-18 — Themes: page errors wait while any install-failure dialog of the page is open (Codex review fix on #762)
+
+- User approval: Not separately approved by Paul; a Codex review fix (P2) on the entry above, which is pending for Paul. Not seen by Paul; the visible result is unchanged while no other dialog is open.
+- Approved customer-visible result: When two theme rows that share an id both show an install-failure dialog, the `Theme action failed` overlay (and the storage notice) waits until both are closed. Words, buttons and every other state are unchanged.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (each row reports its own install-failure dialog; the page keeps the list of open ones) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (one regression test), and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no visible change, the same dialogs wait for each other

@@ -4,7 +4,7 @@
 // is an overlay dialog over the page, never an inline alert box; a page state
 // with nothing to show (no screensavers, no catalog) is text, not a framed card.
 
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { createBlankThemeSpec } from "@/lib/theme-studio";
 import type { ThemeProduct } from "@/lib/themes";
@@ -259,5 +259,54 @@ it("an error waits while a row's install-failure dialog is open", async () => {
   expect(screen.getAllByRole("dialog")).toEqual([installDialog]);
 
   fireEvent.click(within(installDialog).getByRole("button", { name: "OK" }));
+  expect(await screen.findByRole("dialog", { name: "Theme action failed" })).toBeTruthy();
+});
+
+// Codex review on #762: two rows that share a theme id can both show an
+// install-failure dialog; the page error waits until both are closed.
+it("an error waits while any of two shared-id install-failure dialogs is open", async () => {
+  const spec = { ...createBlankThemeSpec(), themeId: "drift" };
+  stored.ownThemes = [
+    {
+      id: "mine",
+      updatedAt: "2026-10-18T00:00:00Z",
+      document: { assets: {}, packName: "Mine", spec },
+    },
+  ];
+  const pending: Array<() => void> = [];
+  vi.stubGlobal(
+    "fetch",
+    () =>
+      new Promise((resolve) => {
+        pending.push(() => resolve({ ok: false }));
+      }),
+  );
+  renderLibrary({
+    themes: [drift],
+    installStatus: {
+      error: "The Mac App refused the theme.",
+      phase: "error",
+      startedAt: "2026-10-18T01:00:00Z",
+      themeId: "drift",
+    } as ThemeInstallStatus,
+  });
+  await waitFor(() => expect(screen.getAllByRole("dialog")).toHaveLength(2));
+  const failures = screen.getAllByRole("dialog");
+  const driftRow = screen
+    .getAllByRole("listitem")
+    .find((row) => within(row).queryByText("Drift"))!;
+  fireEvent.click(within(driftRow).getByRole("button", { name: "Edit" }));
+
+  await act(async () => {
+    pending.forEach((release) => release());
+  });
+  expect(screen.queryByRole("dialog", { name: "Theme action failed" })).toBeNull();
+
+  // Closing one failure leaves the other open: the page error still waits.
+  fireEvent.click(within(failures[0]).getByRole("button", { name: "OK" }));
+  expect(screen.queryByRole("dialog", { name: "Theme action failed" })).toBeNull();
+  expect(screen.getAllByRole("dialog")).toHaveLength(1);
+
+  fireEvent.click(within(failures[1]).getByRole("button", { name: "OK" }));
   expect(await screen.findByRole("dialog", { name: "Theme action failed" })).toBeTruthy();
 });

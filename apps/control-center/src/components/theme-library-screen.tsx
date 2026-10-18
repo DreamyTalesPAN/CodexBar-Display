@@ -12,7 +12,7 @@ import {
   Wifi,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   AlertDescription,
@@ -267,7 +267,16 @@ export function ThemeLibraryScreen({
   // locked, so the notice is kept here only as "closed for this message".
   const [closedStorageWarning, setClosedStorageWarning] = useState("");
   // The install-failure dialog of a row is a page dialog too; its row reports it.
-  const [installFailureOpen, setInstallFailureOpen] = useState(false);
+  // Every row whose install-failure dialog is open; rows can share a theme id.
+  const [installFailureRows, setInstallFailureRows] = useState<string[]>([]);
+  const installFailureOpen = installFailureRows.length > 0;
+  const reportInstallFailure = useCallback((rowId: string, open: boolean) => {
+    setInstallFailureRows((rows) =>
+      open
+        ? rows.includes(rowId) ? rows : [...rows, rowId]
+        : rows.includes(rowId) ? rows.filter((row) => row !== rowId) : rows,
+    );
+  }, []);
   const [storageLocked, setStorageLocked] = useState(false);
   const [deleteTheme, setDeleteTheme] = useState<UserThemeRecord | null>(null);
   const [deleteError, setDeleteError] = useState("");
@@ -784,7 +793,7 @@ export function ThemeLibraryScreen({
                   themeInstallEnabled={themeInstallEnabled}
                   themeStorageLocked={storageLocked}
                   tokenHistoryUnavailable={tokenHistoryUnavailable}
-                  onInstallFailureOpenChange={setInstallFailureOpen}
+                  onInstallFailureOpenChange={reportInstallFailure}
                 />
               ))}
             </ItemGroup>
@@ -1096,8 +1105,13 @@ function ThemeListItem({
   themeInstallEnabled: boolean;
   themeStorageLocked: boolean;
   tokenHistoryUnavailable: boolean;
-  onInstallFailureOpenChange?: (open: boolean) => void;
+  onInstallFailureOpenChange?: (rowId: string, open: boolean) => void;
 }) {
+  const rowId = rowKey(item);
+  const reportFailureOpen = useCallback(
+    (open: boolean) => onInstallFailureOpenChange?.(rowId, open),
+    [onInstallFailureOpenChange, rowId],
+  );
   const theme = item.kind === "published" ? item.product : null;
   const isCustom = item.kind === "custom";
   // A catalog theme's elements are only known once its preview has loaded.
@@ -1281,7 +1295,7 @@ function ThemeListItem({
         <ItemFooter className="basis-full block">
           <InlineInstallProgress
             canRetry={!disabled}
-            onFailureOpenChange={onInstallFailureOpenChange}
+            onFailureOpenChange={reportFailureOpen}
             // While Show screensaver is off VibeTV shows none, so "ready on
             // VibeTV" said too much (issue #579): the sentence Settings uses.
             installedDetail={
