@@ -6,6 +6,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -148,7 +149,7 @@ export function OpenAIKeyForm({
         <label className="flex items-start gap-3 text-sm">
           <input
             type="checkbox"
-            className="mt-0.5 size-5 shrink-0"
+            className="mt-0.5 size-5 shrink-0 accent-primary"
             checked={consent}
             disabled={connecting}
             onChange={(e) => updateConsent(e.target.checked)}
@@ -228,7 +229,8 @@ export function ThemeStudioKeyRow() {
         {connected ? "Change key" : "Add key"}
       </Button>
       <Dialog open={open} onOpenChange={(next) => { if (!busy) setOpen(next); }}>
-        <DialogContent showCloseButton={!busy}>
+        {/* Calm rule 13: no X. The dialog keeps a visible Close in its footer instead. */}
+        <DialogContent className="[&_[data-slot=dialog-close]]:hidden">
           <DialogHeader>
             <DialogTitle>Theme Studio AI</DialogTitle>
             <DialogDescription>Connect OpenAI to create your design.</DialogDescription>
@@ -242,6 +244,8 @@ export function ThemeStudioKeyRow() {
             }}
             onDisconnected={() => setVersion((v) => v + 1)}
           />
+          {/* Hidden while a key is being checked, as the X was. */}
+          {!busy ? <DialogFooter showCloseButton /> : null}
         </DialogContent>
       </Dialog>
     </div>
