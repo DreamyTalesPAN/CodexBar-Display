@@ -6,11 +6,14 @@
 
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import { createBlankThemeSpec } from "@/lib/theme-studio";
 import type { ThemeProduct } from "@/lib/themes";
 import { ThemeLibraryScreen, type ThemeLibraryScreenProps } from "./theme-library-screen";
 
 const stored = vi.hoisted(() => ({
   storageError: null as null | string,
+  ownThemes: [] as unknown[],
+  writeError: null as null | string,
 }));
 
 vi.mock("@/lib/theme-studio-storage", async (importOriginal) => ({
@@ -22,6 +25,10 @@ vi.mock("@/lib/theme-studio-storage", async (importOriginal) => ({
           data: { themes: [] },
           error: { message: stored.storageError },
         }
+      : { ok: true, value: { themes: stored.ownThemes } },
+  writeUserThemes: () =>
+    stored.writeError
+      ? { ok: false, error: { message: stored.writeError } }
       : { ok: true, value: { themes: [] } },
   loadThemeStudioRecovery: () => ({ ok: true, value: null }),
   clearThemeStudioRecovery: () => ({ ok: true, value: null }),
@@ -30,6 +37,8 @@ vi.mock("@/lib/theme-studio-storage", async (importOriginal) => ({
 afterEach(() => {
   cleanup();
   stored.storageError = null;
+  stored.ownThemes = [];
+  stored.writeError = null;
   vi.unstubAllGlobals();
 });
 
@@ -116,4 +125,30 @@ it("the themes-unavailable state is text without a frame and keeps Reload catalo
   expect(title.closest(".border")).toBeNull();
   expect(title.closest(".bg-card")).toBeNull();
   expect(screen.getByRole("button", { name: "Reload catalog" })).toBeTruthy();
+});
+
+// Codex review on #762: a save that fails while a theme is deleted shows its
+// error once, inside the delete dialog, not as a second overlay on the page.
+it("a failed delete shows its error in the delete dialog only", async () => {
+  stored.ownThemes = [
+    {
+      id: "mine",
+      updatedAt: "2026-10-18T00:00:00Z",
+      document: {
+        assets: {},
+        packName: "Mine",
+        spec: createBlankThemeSpec(),
+      },
+    },
+  ];
+  stored.writeError = "Saved themes could not be written.";
+  renderLibrary({ themes: [] });
+
+  fireEvent.click(await screen.findByRole("button", { name: "Delete Mine" }));
+  const deleteDialog = screen.getByRole("alertdialog", { name: "Delete Mine?" });
+  fireEvent.click(within(deleteDialog).getByRole("button", { name: "Delete local copy" }));
+
+  expect(await within(deleteDialog).findByText("Saved themes could not be written.")).toBeTruthy();
+  expect(screen.queryByRole("dialog", { name: "Theme action failed" })).toBeNull();
+  expect(screen.queryAllByRole("dialog")).toEqual([]);
 });

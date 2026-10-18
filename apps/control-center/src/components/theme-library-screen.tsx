@@ -562,6 +562,9 @@ export function ThemeLibraryScreen({
       window.setTimeout(() => libraryHeadingRef.current?.focus(), 0);
       return true;
     } catch (error) {
+      // The delete dialog shows this failure itself; the page must not open a
+      // second overlay for it. Batched with the save's own error, so it is never shown.
+      setLibraryError("");
       setDeleteError(
         error instanceof Error ? error.message : say("Theme could not be deleted."),
       );
