@@ -735,7 +735,7 @@ describe("UsageScreen", () => {
               stale: false,
               windows: [
                 { id: "session", label: "Session (5h)", usedPercent: 40 },
-                { id: "weekly", label: "Weekly", usedPercent: 20 },
+                { id: "weekly", label: "Weekly", usedPercent: 20, resetSecs: 3600 },
               ],
             },
           ],
@@ -747,6 +747,8 @@ describe("UsageScreen", () => {
     expect(weeklyLabel.className).toContain("whitespace-nowrap");
     // A reset that has no room beside the label moves under it, never clipped.
     expect(weeklyLabel.parentElement?.className).toContain("flex-wrap");
+    // Wrapped alone on its line, the reset keeps its place on the right.
+    expect(screen.getByText("Reset in 1h").className).toContain("ml-auto");
   });
 
   // The header holds only the name. Each reset sits right-aligned on its own
