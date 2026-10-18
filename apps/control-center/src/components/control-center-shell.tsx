@@ -311,7 +311,7 @@ function ShellNavButton({
   const button = (
     <SidebarMenuButton
       aria-current={active && current ? "page" : undefined}
-      className={`h-[34px] gap-2.5 rounded-[var(--radius-control)] px-2.5 text-[13px] font-normal text-sidebar-foreground opacity-[.72] hover:opacity-100 ${active ? "" : WEAK_HOVER} data-active:bg-sidebar-accent data-active:font-normal data-active:text-sidebar-accent-foreground data-active:opacity-100 group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-11! [&_svg]:size-4!`}
+      className={`h-[34px] gap-2.5 rounded-[var(--radius-control)] px-2.5 text-[13px] font-normal text-sidebar-foreground opacity-[.72] hover:opacity-100 ${active ? "" : WEAK_HOVER} data-active:bg-sidebar-accent data-active:font-normal data-active:text-sidebar-accent-foreground data-active:opacity-100 group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-11! group-data-[collapsible=icon]:justify-center [&_svg]:size-4!`}
       disabled={disabled}
       isActive={active}
       onClick={() => {

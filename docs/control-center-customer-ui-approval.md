@@ -7502,3 +7502,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the calm shell entry of 2026-10-18 (#713): hovering an inactive entry shows the weaker tint, clearly weaker than the active entry; the active entry keeps its full fill. The sidebar toggle is a muted 20 px icon. No new text, button or dialog.
 - Scope: `apps/control-center/src/components/control-center-shell.tsx`, its test `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — a hover correction and a larger hit area without a visible size change
+
+## 2026-10-18 — Codex review fix on the calm shell: icons centred in the icon-only pills (#758)
+
+- User approval: pending — Paul reviews this PR (Codex review on a7bd8d47, P2, #758); look unchanged except: with the sidebar collapsed to icons, each nav icon sits in the centre of its pill. Before: the icon sits about 6 px left of the pill centre; after: centred.
+- Approved customer-visible result: as in the collapsed-sidebar entry of 2026-10-18 (#758): icons only in the icon-only sidebar, each entry as a centred pill. No new text, button or dialog.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, its test `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a centring class for the icon-only pills

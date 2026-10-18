@@ -187,6 +187,26 @@ describe("ControlCenterShell", () => {
     );
   });
 
+  // Codex review on a7bd8d47 (P2): collapsed to icons, the 44 px pill kept
+  // start alignment, so the 16 px icon sat 6 px left of the pill center.
+  it("centers the nav icons in the icon-only pills", () => {
+    vi.stubGlobal("matchMedia", () => ({
+      matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }));
+    render(
+      <TooltipProvider>
+        <ControlCenterShell activeTab="overview" onTabChange={vi.fn()}>
+          <div>Overview content</div>
+        </ControlCenterShell>
+      </TooltipProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    const nav = screen.getByRole("navigation", { name: "Control Center" });
+    expect(within(nav).getByRole("button", { name: "Usage" }).className).toContain(
+      "group-data-[collapsible=icon]:justify-center",
+    );
+  });
+
   // Codex review on f9c14aa7 (P2): size-5 on the sidebar toggle shrank its
   // hit target to 20 px. The button keeps a 28 px hit area; the negative
   // margin keeps its layout footprint at 20 px, so the page title does not move.
