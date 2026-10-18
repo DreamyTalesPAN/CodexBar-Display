@@ -27,6 +27,12 @@ func TestEngineStampIsEmptyWhenAFileCannotBeRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
+	// Windows only sets the read-only flag, and root reads anything: where the
+	// file stays readable, the permission cannot be tested here.
+	if probe, err := os.Open(path); err == nil {
+		probe.Close()
+		t.Skip("file permissions are not enforced on this system")
+	}
 	if got := engineStamp(path); got != "" {
 		t.Fatalf("an unreadable file still gives a stamp: %q", got)
 	}
