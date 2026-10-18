@@ -7924,3 +7924,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the entry above; hovering an inactive entry or a subentry shows the weaker tint, not the full olive fill. No other change.
 - Scope: `apps/control-center/src/components/control-center-shell.tsx` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — a hover correction of the calm shell
+
+## 2026-10-18 — Theme page: unsaved-theme card and "Theme is not available" notice use the calm type and colours
+
+- User approval: Paul 17.10. approved Appearance A; this moves two leftover hard-coded colours/weights in the same screen onto the calm tokens (#713).
+- Approved customer-visible result: Look only, no wording, button or state change. `Continue your unsaved theme` card: its title is 13 px semibold in the ink colour (before: 16 px bold, fixed colour), its line `… was last changed …` is 13 px in the muted colour (before: 14 px, fixed colour). `Theme is not available` notice: the icon is in the muted colour (before: olive, a colour outside the theme), the title is in the ink colour (before: fixed colour, weight unchanged).
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (colours, size and weight of the two boxes) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — colours, size and weight only, no new words
