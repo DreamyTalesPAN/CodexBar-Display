@@ -187,7 +187,9 @@ export function OpenAIKeyForm({
             : configured === "pending" && !password.trim()
               ? "Retry connection check"
               : !inSetup
-                ? "Update key"
+                ? configured
+                  ? "Update key"
+                  : "Save key"
                 : configured === true && !password.trim()
                   ? "Continue"
                   : "Connect and continue"}
