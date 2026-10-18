@@ -116,7 +116,14 @@ func engineStamp(paths ...string) string {
 	}
 	var stamp strings.Builder
 	for _, path := range paths {
-		info, err := os.Stat(path)
+		// Opening the file, not only stat-ing it, also proves it is readable:
+		// chmod 000 changes neither size nor modification time.
+		file, err := os.Open(path)
+		if err != nil {
+			return ""
+		}
+		info, err := file.Stat()
+		file.Close()
 		if err != nil || time.Since(info.ModTime()) < engineStampSettle {
 			return ""
 		}
