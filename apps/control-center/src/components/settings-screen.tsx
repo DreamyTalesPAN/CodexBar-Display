@@ -279,7 +279,7 @@ export function SettingsScreen({
           />
         ) : null}
         {providerShortcut ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-[13px] text-muted-foreground">
             {providerShortcut === "available"
               ? // What a press does now (issue #558): it moves between the
                 // providers Manual offers, so one of them leaves nothing to
@@ -451,7 +451,7 @@ export function SettingsScreen({
               <RadioMark selected={connectionMode === mode} />
               <span className="flex flex-col">
                 <span className="font-semibold">{label}</span>
-                <span className="text-muted-foreground">{description}</span>
+                <span className="text-[13px] text-muted-foreground">{description}</span>
               </span>
             </button>
           ))}
