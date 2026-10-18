@@ -8,7 +8,11 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { afterEach, expect, it, vi } from "vitest";
 import { createBlankThemeSpec } from "@/lib/theme-studio";
 import type { ThemeProduct } from "@/lib/themes";
-import { ThemeLibraryScreen, type ThemeLibraryScreenProps } from "./theme-library-screen";
+import {
+  ThemeLibraryScreen,
+  type ThemeInstallStatus,
+  type ThemeLibraryScreenProps,
+} from "./theme-library-screen";
 
 const stored = vi.hoisted(() => ({
   storageError: null as null | string,
@@ -220,4 +224,40 @@ it("a failed delete keeps an error that another action queued", async () => {
   fireEvent.click(within(deleteDialog).getByRole("button", { name: "Cancel" }));
   const failed = await screen.findByRole("dialog", { name: "Theme action failed" });
   expect(within(failed).getByText("Theme could not be opened.")).toBeTruthy();
+});
+
+// Codex review on #762: an error waits while a row's install-failure dialog is
+// open, and shows once that dialog is closed.
+it("an error waits while a row's install-failure dialog is open", async () => {
+  const pending: Array<() => void> = [];
+  vi.stubGlobal(
+    "fetch",
+    () =>
+      new Promise((resolve) => {
+        pending.push(() => resolve({ ok: false }));
+      }),
+  );
+  renderLibrary({
+    themes: [drift],
+    installStatus: {
+      error: "The Mac App refused the theme.",
+      phase: "error",
+      startedAt: "2026-10-18T01:00:00Z",
+      themeId: "drift",
+    } as ThemeInstallStatus,
+  });
+  const installDialog = await screen.findByRole("dialog");
+  const driftRow = screen
+    .getAllByRole("listitem")
+    .find((row) => within(row).queryByText("Drift"))!;
+  fireEvent.click(within(driftRow).getByRole("button", { name: "Edit" }));
+
+  await act(async () => {
+    pending.forEach((release) => release());
+  });
+  expect(screen.queryByRole("dialog", { name: "Theme action failed" })).toBeNull();
+  expect(screen.getAllByRole("dialog")).toEqual([installDialog]);
+
+  fireEvent.click(within(installDialog).getByRole("button", { name: "OK" }));
+  expect(await screen.findByRole("dialog", { name: "Theme action failed" })).toBeTruthy();
 });

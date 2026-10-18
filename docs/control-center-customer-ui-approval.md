@@ -7520,3 +7520,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: When saving the library fails while a custom theme is deleted, the error stays in the `Delete … ?` dialog as before. The delete no longer clears or repeats an error of another action: an error that another action queued while the delete dialog was open still shows after the dialog is closed. Words, buttons and every other state are unchanged.
 - Scope: `apps/control-center/src/components/theme-library-screen.tsx` (the delete save writes and reports its own failure) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (one regression test), and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no visible change, the same dialogs
+
+## 2026-10-18 — Themes: an error or storage notice waits while a row's install-failure dialog is open (Codex review fix on #762)
+
+- User approval: Not separately approved by Paul; a Codex review fix (P2) on the entry above, which is pending for Paul. Not seen by Paul; the visible result is unchanged while no other dialog is open.
+- Approved customer-visible result: When an action fails while the install-failure dialog of a theme row is open, the `Theme action failed` overlay (and the storage notice) waits and is not shown on top of it. When that dialog is closed, the overlay shows with the same sentence and `OK`. Words, buttons and every other state are unchanged.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (the install-failure open state is reported to the page, which waits for it) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (one regression test), and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no visible change, the same dialog waits for the one open

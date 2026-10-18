@@ -266,6 +266,8 @@ export function ThemeLibraryScreen({
   // The storage notice is shown until its OK or X; the storage itself stays
   // locked, so the notice is kept here only as "closed for this message".
   const [closedStorageWarning, setClosedStorageWarning] = useState("");
+  // The install-failure dialog of a row is a page dialog too; its row reports it.
+  const [installFailureOpen, setInstallFailureOpen] = useState(false);
   const [storageLocked, setStorageLocked] = useState(false);
   const [deleteTheme, setDeleteTheme] = useState<UserThemeRecord | null>(null);
   const [deleteError, setDeleteError] = useState("");
@@ -280,7 +282,9 @@ export function ThemeLibraryScreen({
   const recoveryMatchesUsage =
     (recovery ? themeDocumentUsage(recovery.document) : "live") === usage;
   // A page notice waits while another dialog of this page is open.
-  const pageDialogOpenHere = Boolean(previewTheme || deleteTheme || replacingRecovery);
+  const pageDialogOpenHere = Boolean(
+    previewTheme || deleteTheme || replacingRecovery || installFailureOpen,
+  );
   const libraryThemes: ThemeLibraryItem[] = [
     ...userThemes
       .filter((custom) => themeDocumentUsage(custom.document) === usage)
@@ -780,6 +784,7 @@ export function ThemeLibraryScreen({
                   themeInstallEnabled={themeInstallEnabled}
                   themeStorageLocked={storageLocked}
                   tokenHistoryUnavailable={tokenHistoryUnavailable}
+                  onInstallFailureOpenChange={setInstallFailureOpen}
                 />
               ))}
             </ItemGroup>
@@ -1065,6 +1070,7 @@ function ThemeListItem({
   themeInstallEnabled,
   themeStorageLocked,
   tokenHistoryUnavailable,
+  onInstallFailureOpenChange,
 }: {
   busyAction: string | null;
   device: ThemeLibraryDeviceInfo | null;
@@ -1090,6 +1096,7 @@ function ThemeListItem({
   themeInstallEnabled: boolean;
   themeStorageLocked: boolean;
   tokenHistoryUnavailable: boolean;
+  onInstallFailureOpenChange?: (open: boolean) => void;
 }) {
   const theme = item.kind === "published" ? item.product : null;
   const isCustom = item.kind === "custom";
@@ -1274,6 +1281,7 @@ function ThemeListItem({
         <ItemFooter className="basis-full block">
           <InlineInstallProgress
             canRetry={!disabled}
+            onFailureOpenChange={onInstallFailureOpenChange}
             // While Show screensaver is off VibeTV shows none, so "ready on
             // VibeTV" said too much (issue #579): the sentence Settings uses.
             installedDetail={
@@ -1294,17 +1302,25 @@ function ThemeListItem({
 function InlineInstallProgress({
   canRetry,
   installedDetail,
+  onFailureOpenChange,
   onRetry,
   status,
   usage,
 }: {
   canRetry: boolean;
   installedDetail?: string;
+  onFailureOpenChange?: (open: boolean) => void;
   onRetry: () => void;
   status: ThemeInstallStatus;
   usage: ThemeStudioUsage;
 }) {
   const [dismissedErrorAt, setDismissedErrorAt] = useState<string | null>(null);
+  const failureOpen = status.phase === "error" && dismissedErrorAt !== status.startedAt;
+  // The page's own notices wait while this dialog is open (Codex review on #762).
+  useEffect(() => {
+    onFailureOpenChange?.(failureOpen);
+    return () => onFailureOpenChange?.(false);
+  }, [failureOpen, onFailureOpenChange]);
   // The notice of the last row opens below the edge of the window (issue
   // #579). When an install starts or ends, the page moves as far as it takes
   // to show it, and not at all when it is in view. A finished install found
