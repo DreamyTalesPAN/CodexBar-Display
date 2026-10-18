@@ -7523,3 +7523,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the calm shell entry of 2026-10-18 (#758): one page title, the sub-page name, in the header row.
 - Scope: `apps/control-center/src/components/control-center-app.whats-new.test.tsx` (test query only) and this approval record. Pull request branch only, not merge or release.
 - What's new: none — a test query change without a visible change
+
+## 2026-10-18 — Calm shell complete: one page title, no sentence under it on Themes and Screensavers (#758)
+
+- User approval: pending — Paul reviews (one page title as in the approved Appearance A picture); look unchanged except: the page header reads "Themes" or "Screensavers" (before: "Appearance" with a second title "Themes" or "Screensavers" under it), and the sentence under that second title is removed. Removed: "Customize how your live usage screen looks while VibeTV is active." and "Choose what appears when VibeTV enters standby after being idle.". The Create Theme / Create Screensaver button stays on the right above the list (not in the header row).
+- Approved customer-visible result: as in the approved Appearance A picture (#713): one page title, the sub-page name, in the header row next to the sidebar toggle; no description sentence.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx`, its test `apps/control-center/src/components/theme-library-screen.test.tsx`, `apps/control-center/scripts/test-customer-flows.mjs` (heading waits find the header title, test file only), and this approval record. Pull request branch only, not merge or release. Touches the Themes/Screensavers page; conflicts with #754 there (Marcus resolves).
+- What's new: none — a removed duplicate title and sentence

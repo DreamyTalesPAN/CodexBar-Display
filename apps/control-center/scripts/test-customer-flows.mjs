@@ -6484,7 +6484,7 @@ async function testSetupUnlocksWhenThemeInstallGateDisabled(browser, appUrl) {
   });
   await clickNavigation(page, "Themes");
   await page
-    .getByRole("heading", { name: "Themes" })
+    .getByRole("heading", { level: 1, name: "Themes", exact: true })
     .waitFor({ timeout: 10_000 });
   await page.getByText("Fixture Synthwave Theme").waitFor({ timeout: 10_000 });
   await page.getByText("Fixture Clippy Theme").waitFor({ timeout: 10_000 });
@@ -10925,7 +10925,7 @@ async function testUnpairedThemeDeepLinkWaitsForWifiConfirmation(
     waitUntil: "domcontentloaded",
   });
   await connectDiscoveredVibeTV(page);
-  await page.getByRole("heading", { name: "Themes" }).waitFor({
+  await page.getByRole("heading", { level: 1, name: "Themes", exact: true }).waitFor({
     timeout: 20_000,
   });
   assert(
