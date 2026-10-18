@@ -5022,8 +5022,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
     const timer = window.setTimeout(() => {
       void Promise.all([
-        // fresh=1 only when a provider list opens; polls do not send it.
-        refreshProviderPreferences({ quiet: true, fresh: true }),
+        refreshProviderPreferences({ quiet: true }),
         refreshProviderDisplay({ quiet: true }),
       ]);
       if (activeShellTab === "settings") {
@@ -5126,6 +5125,27 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           deviceCompletedThemeSetup(device)
         )),
   });
+
+  // The provider list is read fresh (fresh=1) once when it becomes visible:
+  // the Providers setup step, or Settings once the customer is inside. Plugins
+  // installed or removed while the engine ran show up then; plain polls keep
+  // the engine's cached inventory.
+  const providerListVisible =
+    companionStatus === "online" &&
+    (setupStep === "providers" ||
+      (hasEnteredControlCenter && activeShellTab === "settings"));
+  const providerListFreshSentRef = useRef(false);
+  useEffect(() => {
+    if (!providerListVisible) {
+      providerListFreshSentRef.current = false;
+      return;
+    }
+    if (providerListFreshSentRef.current) {
+      return;
+    }
+    providerListFreshSentRef.current = true;
+    void refreshProviderPreferences({ quiet: true, fresh: true });
+  }, [providerListVisible, refreshProviderPreferences]);
   // Once setup has admitted the customer to the Control Center, it never owns
   // the window again. Theme and screensaver installs can temporarily make the
   // device unready; that is install progress, not a new customer setup.

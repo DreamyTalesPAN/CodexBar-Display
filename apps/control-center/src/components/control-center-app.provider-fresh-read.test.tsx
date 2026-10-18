@@ -38,8 +38,26 @@ function provider(providerId: string, label: string) {
 // The first provider read is held until the test releases it; it still lists
 // only Codex, as if the plugin had not been found yet. Reads with fresh=1 answer
 // at once with the list that includes Claude.
-async function openSettingsWithHeldPlainRead() {
+type Harness = {
+  providerReads: string[];
+  releasePlainRead: () => void;
+  text: () => string;
+  wait: (seconds: number) => Promise<void>;
+  setDeviceReady: (ready: boolean) => void;
+};
+
+async function openSetupWithDeviceSearching(): Promise<Harness> {
+  return openHarness({ setup: true });
+}
+
+async function openSettingsWithHeldPlainRead(): Promise<Harness> {
+  return openHarness({ setup: false });
+}
+
+async function openHarness({ setup }: { setup: boolean }): Promise<Harness> {
   const providerReads: string[] = [];
+  let deviceReady = !setup;
+  let pluginInstalled = false;
   let releasePlainRead: () => void = () => {};
   const plainRead = new Promise<void>((resolve) => {
     releasePlainRead = resolve;
@@ -68,9 +86,20 @@ async function openSettingsWithHeldPlainRead() {
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith("/v1/status")) {
+        if (!deviceReady) {
+          return jsonResponse({
+            ok: true,
+            companion: { version: "9.9.9", installationMode: "dmg" },
+            setup: { providerSelectionRequired: true, providerSelectionComplete: false },
+            device: null,
+          });
+        }
         return jsonResponse({
           ok: true,
           companion: { version: "9.9.9", installationMode: "dmg" },
+          setup: setup
+            ? { providerSelectionRequired: true, providerSelectionComplete: false }
+            : undefined,
           device: {
             active: true,
             connected: true,
@@ -110,8 +139,16 @@ async function openSettingsWithHeldPlainRead() {
             items: [provider("codex", "Codex"), provider("claude", "Claude")],
           });
         }
-        await plainRead;
-        return jsonResponse({ ok: true, items: [provider("codex", "Codex")] });
+        if (!setup) {
+          await plainRead;
+        }
+        // After the plugin is installed, the cached read would list it too.
+        return jsonResponse({
+          ok: true,
+          items: pluginInstalled
+            ? [provider("codex", "Codex"), provider("claude", "Claude")]
+            : [provider("codex", "Codex")],
+        });
       }
       if (url.endsWith("/v1/preferences?section=display")) {
         return jsonResponse({ ok: true, items: [] });
@@ -146,13 +183,20 @@ async function openSettingsWithHeldPlainRead() {
     }
   };
   await wait(10);
-  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  if (!setup) {
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  }
   await wait(1);
   return {
     providerReads,
     releasePlainRead,
     text: () => view.container.ownerDocument.body.textContent || "",
     wait,
+    setDeviceReady: (ready: boolean) => {
+      deviceReady = ready;
+      // The plugin is installed while the device is found: only a fresh read sees it.
+      pluginInstalled = ready && setup;
+    },
   };
 }
 
@@ -174,4 +218,17 @@ it("a fresh provider read waits for a plain read in flight and then asks CodexBa
 
   expect(settings.providerReads.filter((url) => url.includes("fresh=1"))).toHaveLength(1);
   expect(settings.text()).toContain("Claude");
+});
+
+it("a fresh provider read is sent when the Providers step opens, not while the device is still searched", async () => {
+  const setup = await openSetupWithDeviceSearching();
+  // The device is still being searched: the Providers step is not shown yet.
+  expect(setup.providerReads.some((url) => url.includes("fresh=1"))).toBe(false);
+
+  // The device answers; the Providers step opens and the list is read fresh.
+  setup.setDeviceReady(true);
+  await setup.wait(20);
+
+  expect(setup.providerReads.filter((url) => url.includes("fresh=1"))).toHaveLength(1);
+  expect(setup.text()).toContain("Claude");
 });
