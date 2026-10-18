@@ -111,12 +111,12 @@ func (s *Server) macAppReleaseInfo(ctx context.Context) companionReleaseInfo {
 		Status:           "check_failed",
 		InstalledVersion: installedVersion,
 		UpdateAvailable:  false,
-		Message:          macAppReleaseName() + " check failed.",
+		Message:          macAppName() + " check failed.",
 	}
 
 	if macAppReleaseCheckDisabled() {
 		info.Status = "disabled"
-		info.Message = macAppReleaseName() + " update check is disabled."
+		info.Message = macAppName() + " update check is disabled."
 		s.cacheMacAppReleaseInfo(now, info)
 		return info
 	}
@@ -149,10 +149,10 @@ func (s *Server) macAppReleaseInfo(ctx context.Context) companionReleaseInfo {
 		LatestVersion:    latestVersion,
 		InstalledVersion: installedVersion,
 		UpdateAvailable:  updateAvailable,
-		Message:          macAppReleaseName() + " is up to date.",
+		Message:          macAppName() + " is up to date.",
 	}
 	if updateAvailable {
-		info.Message = macAppReleaseName() + " update is available."
+		info.Message = macAppName() + " update is available."
 	}
 	s.cacheMacAppReleaseInfo(now, info)
 	return info
@@ -166,11 +166,21 @@ func (s *Server) cacheMacAppReleaseInfo(checkedAt time.Time, info companionRelea
 	s.macAppReleaseCache = info
 }
 
-// macAppReleaseName names the app in its update message. The Windows app is
-// "App" in customer copy (#558), the same switch as the other server-worded text.
-func macAppReleaseName() string {
+// macAppName names the app where customer copy starts a sentence with it:
+// "App" in the Windows app, "Mac App" on a Mac (#558). It uses the same switch
+// as the other server-worded text.
+func macAppName() string {
 	if providerCopyGOOS == "windows" {
 		return "App"
+	}
+	return "Mac App"
+}
+
+// macAppNameInSentence names the app inside a sentence: "app" in the Windows
+// app, "Mac App" on a Mac (#558).
+func macAppNameInSentence() string {
+	if providerCopyGOOS == "windows" {
+		return "app"
 	}
 	return "Mac App"
 }

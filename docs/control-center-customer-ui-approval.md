@@ -7467,3 +7467,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-18 — Windows: Companion messages say App, not Mac App
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #558); look unchanged except: on Windows, the customer messages listed in the PR body say "App" at the start of a sentence and "app" inside one where they said "Mac App" (for example "The app's background service started again." in the setup log). Mac text unchanged.
+- Approved customer-visible result: Not yet approved by Paul; pending his yes in the PR review. On Windows the setup log's restart entry reads "The app's background service started again.", and the other Companion messages that named the Mac App (for example "App is restarting.", "Restart the app, then retry.", "Make sure the app is open, then try again.") name the app the way the Windows app does. The Mac wording stays byte for byte. No screen, control, or layout changes.
+- Scope: Companion customer messages in `companion/internal/companionapi` (Go, no Control Center file), the new test `windows_app_copy_test.go`, and this approval record. Pull request branch only, not merge, release, or installation.
+- What's new: none — wording on Windows only, no new notice

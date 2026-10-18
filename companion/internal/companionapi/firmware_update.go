@@ -269,7 +269,7 @@ func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Requ
 			w,
 			http.StatusConflict,
 			"mac_app_restarting",
-			"Mac App is restarting.",
+			macAppName()+" is restarting.",
 			"Wait a moment, then start the update again.",
 		)
 		return

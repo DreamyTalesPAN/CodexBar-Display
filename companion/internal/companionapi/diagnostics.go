@@ -161,8 +161,8 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		checks = append(checks, diagnosticCheck{
 			Name:       "theme_install_gate",
 			Status:     "disabled",
-			Detail:     "Theme install is disabled by local Mac App configuration.",
-			NextAction: "Unset VIBETV_DISABLE_WIFI_THEME_INSTALL, then restart the Mac App.",
+			Detail:     "Theme install is disabled by local " + macAppNameInSentence() + " configuration.",
+			NextAction: "Unset VIBETV_DISABLE_WIFI_THEME_INSTALL, then restart the " + macAppNameInSentence() + ".",
 		})
 	}
 
@@ -297,7 +297,7 @@ func appendDisplayStreamDiagnostic(checks []diagnosticCheck, stream *displayStre
 			Status:     "attention",
 			Detail:     stream.Detail,
 			ErrorCode:  "provider_setup_required",
-			NextAction: "Finish AI setup in the Mac App, then click Check again.",
+			NextAction: "Finish AI setup in the " + macAppNameInSentence() + ", then click Check again.",
 		})
 	}
 	return append(checks, diagnosticCheck{

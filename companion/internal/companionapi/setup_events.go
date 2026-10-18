@@ -126,7 +126,7 @@ func (l *setupEventLog) restoreLocked(now time.Time) bool {
 		At:      now.UTC().Format(time.RFC3339),
 		Stage:   "service_restart",
 		Status:  "succeeded",
-		Message: "The Mac App's background service started again.",
+		Message: "The " + macAppNameInSentence() + "'s background service started again.",
 	})
 	l.saveLocked()
 	return true

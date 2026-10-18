@@ -663,7 +663,7 @@ func (s *Server) handleSetupWiFiNetworks(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if s.scanCableWiFi == nil {
-		writeError(w, http.StatusNotImplemented, "wifi_scan_unsupported", "This Mac App cannot scan WiFi networks through VibeTV.", "Enter the WiFi name manually.")
+		writeError(w, http.StatusNotImplemented, "wifi_scan_unsupported", "This "+macAppNameInSentence()+" cannot scan WiFi networks through VibeTV.", "Enter the WiFi name manually.")
 		return
 	}
 	networks, err := s.scanCableWiFi(port, hello.DeviceID)

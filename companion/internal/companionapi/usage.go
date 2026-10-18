@@ -397,7 +397,7 @@ func (s *Server) handleDisplayFrameLatest(w http.ResponseWriter, r *http.Request
 			http.StatusNotFound,
 			"display_frame_unavailable",
 			"Display frame is not available.",
-			"Keep the Mac App running until VibeTV receives a usage frame.",
+			"Keep the "+macAppNameInSentence()+" running until VibeTV receives a usage frame.",
 		)
 		return
 	}

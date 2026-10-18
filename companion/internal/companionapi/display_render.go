@@ -72,7 +72,7 @@ func (s *Server) handleDeviceReloadDisplay(w http.ResponseWriter, r *http.Reques
 			http.StatusConflict,
 			"provider_setup_required",
 			"VibeTV is connected, but AI usage is not ready yet.",
-			"Finish AI setup in the Mac App, then press Reload image again.",
+			"Finish AI setup in the "+macAppNameInSentence()+", then press Reload image again.",
 		)
 		return
 	}

@@ -1111,10 +1111,10 @@ func providerHealthMessage(state codexbar.ProviderHealthState) string {
 
 func writePreferencesReadError(w http.ResponseWriter, err error) {
 	if codexbar.ProviderSettingsErrorKindOf(err) == codexbar.ProviderSettingsErrorVersion {
-		writeError(w, http.StatusServiceUnavailable, "provider_preferences_update_required", "Provider settings need a newer Mac App.", "Update the Mac App, then try again.")
+		writeError(w, http.StatusServiceUnavailable, "provider_preferences_update_required", "Provider settings need a newer "+macAppNameInSentence()+".", "Update the "+macAppNameInSentence()+", then try again.")
 		return
 	}
-	writeError(w, http.StatusServiceUnavailable, "preferences_unavailable", "Settings are not available right now.", "Make sure the Mac App is open, then try again.")
+	writeError(w, http.StatusServiceUnavailable, "preferences_unavailable", "Settings are not available right now.", "Make sure the "+macAppNameInSentence()+" is open, then try again.")
 }
 
 func writePreferenceNotFound(w http.ResponseWriter) {

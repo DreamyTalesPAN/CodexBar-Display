@@ -66,7 +66,7 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 	switch refusal := s.tryStartThemeInstall(); refusal {
 	case "":
 	case "mac_app_restarting":
-		writeError(w, http.StatusConflict, refusal, "Mac App is restarting.", "Wait a moment, then try again.")
+		writeError(w, http.StatusConflict, refusal, macAppName()+" is restarting.", "Wait a moment, then try again.")
 		return
 	case "firmware_update_in_progress":
 		writeError(w, http.StatusConflict, refusal, "VibeTV update is still running.", "Wait for the update to finish, then try again.")
@@ -139,7 +139,7 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 			http.StatusForbidden,
 			"theme_install_disabled",
 			"Theme install is disabled for this Companion build.",
-			"Unset VIBETV_DISABLE_WIFI_THEME_INSTALL, then restart the Mac App.",
+			"Unset VIBETV_DISABLE_WIFI_THEME_INSTALL, then restart the "+macAppNameInSentence()+".",
 		)
 		return
 	}
@@ -264,7 +264,7 @@ func readThemePackUpload(w http.ResponseWriter, r *http.Request, refuse func(sta
 	deadlineSet := false
 	if err := controller.SetReadDeadline(time.Now().Add(themePackUploadReadTime)); err != nil {
 		if !errors.Is(err, http.ErrNotSupported) {
-			refuse(http.StatusInternalServerError, "theme_pack_upload_unavailable", "Theme upload is unavailable.", "Restart the Mac App, then retry.")
+			refuse(http.StatusInternalServerError, "theme_pack_upload_unavailable", "Theme upload is unavailable.", "Restart the "+macAppNameInSentence()+", then retry.")
 			return nil, false
 		}
 	} else {
@@ -288,7 +288,7 @@ func readThemePackUpload(w http.ResponseWriter, r *http.Request, refuse func(sta
 	}
 	if resetErr != nil {
 		w.Header().Set("Connection", "close")
-		refuse(http.StatusInternalServerError, "theme_pack_upload_unavailable", "Theme upload is unavailable.", "Restart the Mac App, then retry.")
+		refuse(http.StatusInternalServerError, "theme_pack_upload_unavailable", "Theme upload is unavailable.", "Restart the "+macAppNameInSentence()+", then retry.")
 		return nil, false
 	}
 	return packBytes, true
@@ -393,7 +393,7 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 				status: http.StatusBadGateway,
 				api: apiError{
 					Code:       "display_render_failed",
-					Message:    "Mac App could not read the current VibeTV screen state.",
+					Message:    macAppName() + " could not read the current VibeTV screen state.",
 					NextAction: "Keep VibeTV powered on, then retry the theme install.",
 				},
 			}
@@ -476,8 +476,8 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 			status: http.StatusBadGateway,
 			api: apiError{
 				Code:       "display_stream_refresh_failed",
-				Message:    "Theme installed, but Mac App could not refresh the VibeTV display.",
-				NextAction: "Run setup again or restart the Mac App, then retry.",
+				Message:    "Theme installed, but " + macAppNameInSentence() + " could not refresh the VibeTV display.",
+				NextAction: "Run setup again or restart the " + macAppNameInSentence() + ", then retry.",
 			},
 		}
 	}
@@ -511,7 +511,7 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 				status: http.StatusBadGateway,
 				api: apiError{
 					Code:       "display_stream_refresh_failed",
-					Message:    "Theme installed, but Mac App did not send a fresh image to VibeTV.",
+					Message:    "Theme installed, but " + macAppNameInSentence() + " did not send a fresh image to VibeTV.",
 					NextAction: "Keep VibeTV connected and try installing the theme again.",
 				},
 			}

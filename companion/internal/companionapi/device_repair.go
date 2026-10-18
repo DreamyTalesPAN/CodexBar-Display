@@ -405,7 +405,7 @@ func (s *Server) repairDeviceOnceLocked(
 					Healthy: false,
 					Running: false,
 					Target:  target,
-					Detail:  "VibeTV is connected. The Mac App will retry the display stream.",
+					Detail:  "VibeTV is connected. The " + macAppNameInSentence() + " will retry the display stream.",
 				}
 			}
 		}
@@ -775,7 +775,7 @@ func writeRepairError(w http.ResponseWriter, err error) {
 			writePairingError(w, err, stageErr.firmware)
 			return
 		case "display-stream":
-			writeError(w, http.StatusBadGateway, "display_stream_repair_failed", "Mac App could not refresh the VibeTV display stream.", "Run setup again or restart the Mac App, then retry Fix connection.")
+			writeError(w, http.StatusBadGateway, "display_stream_repair_failed", macAppName()+" could not refresh the VibeTV display stream.", "Run setup again or restart the "+macAppNameInSentence()+", then retry Fix connection.")
 			return
 		case "display-render":
 			writeError(w, http.StatusBadGateway, "display_render_repair_failed", "VibeTV did not render a fresh image.", "Keep VibeTV powered on, then retry Fix connection.")
