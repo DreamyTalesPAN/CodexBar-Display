@@ -7485,3 +7485,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: On Appearance › Themes and Appearance › Screensavers, at a narrow card width the name, and its Custom mark, get at least 11 rem, and the row's buttons move to a line of their own below the name instead of covering it (before: the name could shrink to a few pixels). Words, buttons and states are unchanged.
 - Scope: `apps/control-center/src/components/theme-library-screen.tsx` (minimum width of the name) and this approval record. Pull request branch only, not merge or release.
 - What's new: none — layout only, no new words
+
+## 2026-10-18 — Revert of the page-title change on Appearance: the tree is back to the previous clean head (#754)
+
+- User approval: pending — Paul reviews this PR (the page title change moved completely into #758); look unchanged except: none. The tree is the same as the previous clean head 314a265d: the two Appearance pages show the in-page title and the sentence as before.
+- Approved customer-visible result: as in the approved Appearance A picture (#713), once #758 is in: one page title, the sub-page name, and no sentence under it. This branch alone keeps the earlier look.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx`, its tests, and this approval record (revert of 74cdbd62). Pull request branch only, not merge or release.
+- What's new: none — a revert without a visible change
