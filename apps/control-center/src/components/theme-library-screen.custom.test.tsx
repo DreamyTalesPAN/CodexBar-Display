@@ -431,9 +431,10 @@ describe("ThemeLibraryScreen custom themes", () => {
       });
 
       // The page's own title is worded for the list; the message is not touched.
-      expect(host.textContent).toContain("Screensaver action failed");
-      expect(host.textContent).toContain("Dark Theme uses a theme file that is too large.");
-      expect(host.textContent).not.toContain("Dark Screensaver");
+      // The error is an overlay dialog, portalled to the body, not page text.
+      expect(document.body.textContent).toContain("Screensaver action failed");
+      expect(document.body.textContent).toContain("Dark Theme uses a theme file that is too large.");
+      expect(document.body.textContent).not.toContain("Dark Screensaver");
       await act(async () => root.unmount());
     } finally {
       ownScreensaver.packName = savedName;
