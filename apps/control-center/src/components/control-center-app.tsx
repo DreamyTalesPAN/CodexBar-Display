@@ -102,7 +102,7 @@ import {
 import { useCompanionRelease } from "./companion-installer-actions";
 import { LogsScreen } from "./logs-screen";
 import { WithLatestDisplayFrame } from "./live-vibetv-preview";
-import { OverviewScreen } from "./overview-screen";
+import { OverviewScreen, useOverviewNotice } from "./overview-screen";
 import { VibeTVNotFoundDialog, vibetvNotFound } from "./vibetv-not-found-dialog";
 import {
   PROVIDER_RECONCILE_WINDOW_MS,
@@ -5171,6 +5171,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     !lostDevicePickerOpen &&
     !setupOwnsScreen &&
     !(usageFailure && !usageFailureHidden);
+  // The Overview notices (#265, #498) wait while the busy notice is due.
+  const overviewNotice = useOverviewNotice(device, systemBusyOpen);
   // The notice opens by itself on Overview, and again from Updates, once
   // nothing else asks for the customer: not during setup or a firmware update,
   // and under no other dialog. It stays on the page it was opened on: other
@@ -5666,6 +5668,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                 device={device}
                 displayFrame={displayFrame}
                 firmwareUpdateStatus={firmwareUpdateStatus}
+                notice={overviewNotice.notice}
+                onCloseNotice={overviewNotice.close}
                 usage={usage}
                 windowsHost={windowsHost}
               />
