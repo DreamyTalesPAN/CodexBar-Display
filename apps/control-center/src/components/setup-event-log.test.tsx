@@ -128,6 +128,14 @@ describe("SetupEventLog", () => {
     );
   }
 
+  it("keeps the wheel at the end of the list from moving the page behind it", async () => {
+    const load = vi.fn().mockResolvedValue(log);
+    mount(load);
+    await act(async () => {});
+    const list = screen.getByRole("list", { name: "Setup log" });
+    expect(list.className).toContain("overscroll-contain");
+  });
+
   it("shows the empty state when an older Mac App has no setup log", async () => {
     const load = vi.fn().mockRejectedValue({ code: "HTTP_404", message: "Request failed." });
     mount(load);

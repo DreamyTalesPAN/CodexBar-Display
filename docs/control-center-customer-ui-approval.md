@@ -7467,3 +7467,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-18 — Setup log: the wheel at its end no longer moves the page (walk-through leftovers, #579)
+
+- User approval: pending — Paul reviews this PR (fix of a point from the Mac walk-through reported in #579: with the pointer over the Setup log at its end, the page scrolled instead of stopping).
+- Approved customer-visible result: No visible change. On Support › Setup log, the mouse wheel or trackpad scroll stops at the end of the list instead of moving the page behind it. Wording, layout and colours stay as they are.
+- Scope: the class of the Setup log list in `apps/control-center/src/components/setup-event-log.tsx` and one test in `setup-event-log.test.tsx`; this approval record. Pull request branch only, not merge or release.
+- What's new: none — a scroll-chaining fix
