@@ -83,6 +83,9 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  /* Calm type: the one body size for buttons, cards, labels and inputs (#713). */
+  --text-body: 13px;
+  --text-body--line-height: 1.25rem;
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
