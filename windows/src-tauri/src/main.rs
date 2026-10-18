@@ -554,11 +554,23 @@ fn ensure_live_window(app: &AppHandle) -> bool {
         if !ensure_window(app) {
             return false;
         }
-        if main_window(app).is_some_and(|window| window.is_visible().is_ok()) {
+        let shell = app.state::<Shell>();
+        let generation = shell.window_generation.load(Ordering::SeqCst);
+        let live = app
+            .get_webview_window(&label_for_generation(generation))
+            .is_some_and(|window| window.is_visible().is_ok());
+        if live {
             return true;
         }
-        log("the main window was not built; the next attempt uses a new window");
-        app.state::<Shell>().window_generation.fetch_add(1, Ordering::SeqCst);
+        // Only the generation that was checked moves on. A concurrent worker
+        // that checked the same failed window has moved it already.
+        if shell
+            .window_generation
+            .compare_exchange(generation, generation + 1, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            log("the main window was not built; the next attempt uses a new window");
+        }
     }
     false
 }
