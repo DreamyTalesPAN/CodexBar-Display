@@ -71,8 +71,8 @@ export type UpdatesScreenProps = {
   onRetryThemeUpdate?: () => Promise<boolean> | boolean | void;
   /** Opens the "What's new" notice again. */
   onShowWhatsNew?: () => void;
-  /** The notice is open: a failed check waits until it is closed. */
-  whatsNewOpen?: boolean;
+  /** Another dialog of the app is open (the notes, usage recovery, system busy): a failed check waits until it is closed. */
+  otherDialogOpen?: boolean;
   requiresMacAppMigration?: boolean;
   busyAction?: string | null;
   updateStatus?: FirmwareUpdateStatus | null;
@@ -94,7 +94,7 @@ export function UpdatesScreen({
   onInstallUpdate,
   onRetryThemeUpdate,
   onShowWhatsNew,
-  whatsNewOpen = false,
+  otherDialogOpen = false,
   requiresMacAppMigration = false,
   busyAction,
   updateStatus,
@@ -437,7 +437,7 @@ export function UpdatesScreen({
 
       {(macAppCheckFailed || firmwareCheckFailed) &&
       !checkBusy &&
-      !whatsNewOpen &&
+      !otherDialogOpen &&
       visibleUpdateStatus?.phase !== "error" ? (
         <CheckFailedDialog
           // A newer failed check is a new failure and opens again; a check

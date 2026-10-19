@@ -285,7 +285,7 @@ describe("calm Updates screen", () => {
     expect(screen.getByRole("dialog", { name: "Could not check for updates" })).toBeTruthy();
   });
 
-  it("failed check: waits while the notes are open and while a retry runs", () => {
+  it("failed check: waits while another dialog is open and while a retry runs", () => {
     const failed = {
       ...upToDate,
       firmwareUpdate: {
@@ -295,7 +295,7 @@ describe("calm Updates screen", () => {
         updateAvailable: false,
       },
     };
-    const view = render(<UpdatesScreen {...failed} whatsNewOpen />);
+    const view = render(<UpdatesScreen {...failed} otherDialogOpen />);
     expect(screen.queryByRole("dialog")).toBeNull();
     view.rerender(<UpdatesScreen {...failed} />);
     expect(screen.getByRole("dialog", { name: "Could not check for updates" })).toBeTruthy();
