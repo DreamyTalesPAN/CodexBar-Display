@@ -8,6 +8,7 @@ import (
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 )
 
 func pacedUsageWindows() []protocol.UsageWindow {
@@ -78,5 +79,46 @@ func TestMarshalFrameWithinLimitDropsPaceBeforeUsageWindows(t *testing.T) {
 	}
 	if frame.UsageWindows[0].Pace.State != protocol.PaceReserve {
 		t.Fatal("trimming must not touch the authoritative frame")
+	}
+}
+
+// Settings "Pace" off: firmware that shows pace is handed none.
+func TestHidePaceKeepsPaceOffTheFrame(t *testing.T) {
+	prepareFastTestEnv(t)
+	now := time.Date(2026, 9, 21, 8, 30, 0, 0, time.UTC)
+	for _, hidden := range []bool{false, true} {
+		parsed := testParsedFrame("claude", 8, 73, 12000)
+		parsed.CollectedAt = now
+		parsed.Frame.UsageWindows = pacedUsageWindows()
+		var sent []byte
+		err := runCycleWithDeps(context.Background(), "", &runtimeState{selector: codexbar.NewProviderSelector()}, runtimeDeps{
+			now:         func() time.Time { return now },
+			homeDir:     func() (string, error) { return "/home/test", nil },
+			loadConfig:  func(string) (runtimeconfig.Config, error) { return runtimeconfig.Config{HidePace: hidden}, nil },
+			resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+			deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+				return protocol.DeviceCapabilities{
+					Known: true, Board: "esp8266-smalltv-st7789",
+					NegotiatedProtocolVersion: protocol.ProtocolVersionV2, SupportsUsagePaceV1: true,
+				}, nil
+			},
+			fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+				return []codexbar.ParsedFrame{parsed}, nil
+			},
+			logf: func(string, ...any) {},
+			sendLine: func(_ string, line []byte) error {
+				sent = append([]byte(nil), line...)
+				return nil
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := bytes.Contains(sent, []byte(`"pace"`)); got == hidden {
+			t.Fatalf("hidePace=%t sent pace=%t:\n%s", hidden, got, sent)
+		}
+		if !bytes.Contains(sent, []byte(`"percent":73`)) {
+			t.Fatalf("the windows must stay when pace is hidden:\n%s", sent)
+		}
 	}
 }

@@ -9,7 +9,10 @@ import (
 
 // Used or Remaining is CodexBar's own choice (usageBarsShowUsed); VibeTV keeps
 // no second copy of it (AGENTS.md, CodexBar Integration Boundary).
-const displayRotatePreferenceID = "vibetv.display.rotateSeconds"
+const (
+	displayRotatePreferenceID = "vibetv.display.rotateSeconds"
+	displayPacePreferenceID   = "vibetv.display.showPace"
+)
 
 // displayPreferenceAdapter serves the VibeTV-owned display preference. It
 // lives in the runtime config, where the display worker reads it every cycle.
@@ -20,7 +23,7 @@ type displayPreferenceAdapter struct {
 func (displayPreferenceAdapter) Section() string { return "display" }
 
 func (displayPreferenceAdapter) Owns(settingID string) bool {
-	return settingID == displayRotatePreferenceID
+	return settingID == displayRotatePreferenceID || settingID == displayPacePreferenceID
 }
 
 func (a displayPreferenceAdapter) List(context.Context) ([]preferenceDescriptor, error) {
@@ -28,13 +31,18 @@ func (a displayPreferenceAdapter) List(context.Context) ([]preferenceDescriptor,
 	if err != nil {
 		return nil, err
 	}
-	return []preferenceDescriptor{displayRotateDescriptor(cfg)}, nil
+	return []preferenceDescriptor{displayRotateDescriptor(cfg), displayPaceDescriptor(cfg)}, nil
 }
 
-func (a displayPreferenceAdapter) Write(_ context.Context, _ string, value any) (preferenceDescriptor, error) {
-	// The registry has validated the value: a registered option.
-	option, _ := value.(string)
+func (a displayPreferenceAdapter) Write(_ context.Context, settingID string, value any) (preferenceDescriptor, error) {
+	// The registry has validated the value: a registered option, or a boolean.
 	cfg, err := a.server.updateConfig(func(cfg *runtimeconfig.Config) {
+		if settingID == displayPacePreferenceID {
+			show, _ := value.(bool)
+			cfg.HidePace = !show
+			return
+		}
+		option, _ := value.(string)
 		cfg.DisplayRotateSeconds, _ = strconv.Atoi(option)
 	})
 	if err != nil {
@@ -43,7 +51,28 @@ func (a displayPreferenceAdapter) Write(_ context.Context, _ string, value any) 
 	if a.server.renderDisplayStream != nil {
 		a.server.renderDisplayStream()
 	}
+	if settingID == displayPacePreferenceID {
+		return displayPaceDescriptor(cfg), nil
+	}
 	return displayRotateDescriptor(cfg), nil
+}
+
+// displayPaceDescriptor is the switch of the Pace section: CodexBar's reserve
+// or deficit on the VibeTV themes that have a place for it. On by default. It
+// only changes what the frame carries; Usage keeps showing pace.
+func displayPaceDescriptor(cfg runtimeconfig.Config) preferenceDescriptor {
+	return preferenceDescriptor{
+		ID:             displayPacePreferenceID,
+		Section:        "display",
+		Owner:          "vibetv",
+		Type:           preferenceTypeBoolean,
+		Label:          "Show reserve or deficit",
+		Value:          !cfg.HidePace,
+		EffectiveValue: !cfg.HidePace,
+		Availability:   preferenceAvailability{State: "available"},
+		WriteStrategy:  "vibetv_override",
+		Writable:       true,
+	}
 }
 
 // displayRotateDescriptor is the timed rotation of Automatic (issue #322). It

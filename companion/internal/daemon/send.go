@@ -89,7 +89,7 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 		// wire bytes against its frame budget.
 		frame.ProviderSlots = nil
 	}
-	if !caps.SupportsUsagePaceV1 {
+	if cfg, ok := loadRuntimeConfig(deps); !caps.SupportsUsagePaceV1 || ok && cfg.HidePace {
 		frame = frame.WithoutUsagePace()
 	}
 	now := deps.now()

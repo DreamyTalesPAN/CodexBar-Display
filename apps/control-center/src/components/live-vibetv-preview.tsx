@@ -71,7 +71,10 @@ type UsageSlotFrame = {
   label?: string;
   percent?: number;
   resetSecs?: number;
+  pace?: UsagePaceFrame;
 };
+// CodexBar's pace for a usage window, as the Companion sends it (usage-pace-v1).
+type UsagePaceFrame = { delta?: number; state?: string; lasts?: boolean };
 type UsageWindowFrame = UsageSlotFrame;
 
 type DisplayFrame = {
@@ -144,6 +147,10 @@ export type ThemePrimitive = {
   bc?: string;
   borderRadius?: number;
   br?: number;
+  reserveColor?: string;
+  rc?: string;
+  deficitColor?: string;
+  dc?: string;
   align?: string;
   al?: string;
   valign?: string;
@@ -191,6 +198,7 @@ type FrameData = {
     resetSecs: number;
     available: boolean;
     idle: boolean;
+    pace?: UsagePaceFrame;
   }>;
   usageSlot1Label: string;
   usageSlot1Percent: number;
@@ -232,8 +240,22 @@ export const THEME_CATALOG_PREVIEW_FRAME: FrameData = {
   resetSecs: 3600,
   usageMode: "used",
   usageWindows: [
-    { label: "Session", percent: 64, resetSecs: 3600, available: true, idle: false },
-    { label: "Weekly", percent: 28, resetSecs: 7200, available: true, idle: false },
+    {
+      label: "Session",
+      percent: 64,
+      resetSecs: 3600,
+      available: true,
+      idle: false,
+      pace: { delta: -12, state: "reserve", lasts: true },
+    },
+    {
+      label: "Weekly",
+      percent: 28,
+      resetSecs: 7200,
+      available: true,
+      idle: false,
+      pace: { delta: 8, state: "deficit", lasts: false },
+    },
   ],
   usageSlot1Label: "Session",
   usageSlot1Percent: 64,
@@ -799,7 +821,12 @@ function ThemePrimitiveNode({
     return (
       <ThemeTextPrimitive
         align={primitive.align || primitive.al}
-        color={colorFor(primitive.color || primitive.c, "#FFFFFF")}
+        color={
+          (primitive.binding || primitive.b || "").includes("Pace") &&
+          (primitive.colorStops || primitive.cs)?.length
+            ? paceStateColor(primitive, frame)
+            : colorFor(primitive.color || primitive.c, "#FFFFFF")
+        }
         font={font}
         fontSize={fontSize}
         fontWeight={themeFontWeight(font)}
@@ -1025,13 +1052,37 @@ function ThemeProgress({
     percent,
     frame.usageMode,
   );
+  const marks = paceBarMarks(primitive, frame, percent);
+  const pieceColor = colorFor(
+    marks.hatched
+      ? primitive.deficitColor || primitive.dc
+      : primitive.reserveColor || primitive.rc,
+    marks.hatched ? "#FF0000" : "#00FF00",
+  );
+  const hatchId = `hatch-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
+  // Reserve: a solid piece. Deficit: diagonal stripes over the track.
+  const pieceFill = marks.hatched ? `url(#${hatchId})` : pieceColor;
+  const hatch = marks.hatched ? (
+    <defs>
+      <pattern
+        height={4}
+        id={hatchId}
+        patternTransform="rotate(45)"
+        patternUnits="userSpaceOnUse"
+        width={4}
+      >
+        <rect fill={hatchGapColor(pieceColor, bgColor)} height={4} width={4} />
+        <rect fill={pieceColor} height={4} width={2} />
+      </pattern>
+    </defs>
+  ) : null;
   const innerWidth = Math.max(0, width - 2);
   const innerHeight = Math.max(0, height - 2);
   // A long-form key that is present decides, also when it is empty, as on
   // VibeTV: `"progressStyle":""` beside `"ps":"arc"` is a straight bar.
   const style = primitive.progressStyle ?? primitive.ps ?? "";
   if (style === "arc") {
-    const arc = themeProgressArc(primitive, percent);
+    const arc = themeProgressArc(primitive, marks.fillTo);
     // Each stroke runs clockwise along the middle of the ring. A circle's
     // outline starts at 3 o'clock, a quarter turn after 12 o'clock.
     const stroke = (degrees: number, color: string) =>
@@ -1047,10 +1098,43 @@ function ThemeProgress({
           transform={`rotate(${arc.start - 90} ${arc.cx} ${arc.cy})`}
         />
       ) : null;
+    // The piece runs from the end of the fill to its own end, and the tick
+    // crosses the ring at the plan, in whole degrees like DrawProgressArc.
+    const pieceDegrees = arc
+      ? Math.floor((arc.sweep * marks.pieceTo) / 100) - arc.filled
+      : 0;
+    const planAngle = arc
+      ? ((arc.start + Math.floor((arc.sweep * marks.planAt) / 100)) * Math.PI) / 180
+      : 0;
+    const inner = arc ? arc.radius - arc.thickness / 2 - PACE_TICK_OVERHANG : 0;
+    const outer = arc ? arc.radius + arc.thickness / 2 + PACE_TICK_OVERHANG : 0;
     return (
       <g>
+        {hatch}
         {stroke(arc?.sweep ?? 0, bgColor)}
         {stroke(arc?.filled ?? 0, fillColor)}
+        {arc && pieceDegrees > 0 ? (
+          <circle
+            cx={arc.cx}
+            cy={arc.cy}
+            fill="none"
+            r={arc.radius}
+            stroke={pieceFill}
+            strokeDasharray={`${(arc.radius * pieceDegrees * Math.PI) / 180} ${arc.radius * 2 * Math.PI}`}
+            strokeWidth={arc.thickness}
+            transform={`rotate(${arc.start + arc.filled - 90} ${arc.cx} ${arc.cy})`}
+          />
+        ) : null}
+        {arc && marks.planAt >= 0 ? (
+          <line
+            stroke="#FFFFFF"
+            strokeWidth={2}
+            x1={arc.cx + inner * Math.sin(planAngle)}
+            x2={arc.cx + outer * Math.sin(planAngle)}
+            y1={arc.cy - inner * Math.cos(planAngle)}
+            y2={arc.cy - outer * Math.cos(planAngle)}
+          />
+        ) : null}
       </g>
     );
   }
@@ -1061,13 +1145,18 @@ function ThemeProgress({
     height,
   );
   const innerRadius = Math.max(0, radius - 1);
-  const fillWidth = Math.max(
-    0,
-    Math.min(innerWidth, Math.floor((innerWidth * percent) / 100)),
-  );
+  // A pace bar fills to the larger of use and plan and lays the piece over the
+  // part past the fill, so the fill's rounded end is hidden under the piece.
+  const barWidth = (value: number) =>
+    Math.max(0, Math.min(innerWidth, Math.floor((innerWidth * value) / 100)));
+  const fillWidth = barWidth(marks.pieceTo);
+  const pieceFrom = barWidth(marks.fillTo);
+  const tickX = Math.max(x, x + 1 + barWidth(marks.planAt) - 1);
+  const tickTop = Math.max(0, y - PACE_TICK_OVERHANG);
 
   return (
     <g>
+      {hatch}
       <rect
         fill="none"
         height={height}
@@ -1091,7 +1180,9 @@ function ThemeProgress({
         <SegmentedProgress
           fillColor={fillColor}
           height={innerHeight}
-          percent={percent}
+          percent={marks.fillTo}
+          pieceFill={pieceFill}
+          piecePercent={marks.pieceTo}
           segmentGap={primitive.segmentGap ?? primitive.gg ?? 1}
           segments={primitive.segments || primitive.sg || 10}
           width={innerWidth}
@@ -1100,16 +1191,36 @@ function ThemeProgress({
           radius={innerRadius}
         />
       ) : (
-        <rect
-          fill={fillColor}
-          height={innerHeight}
-          rx={clampRadius(innerRadius, fillWidth, innerHeight)}
-          ry={clampRadius(innerRadius, fillWidth, innerHeight)}
-          width={fillWidth}
-          x={x + 1}
-          y={y + 1}
-        />
+        <>
+          <rect
+            fill={fillColor}
+            height={innerHeight}
+            rx={clampRadius(innerRadius, fillWidth, innerHeight)}
+            ry={clampRadius(innerRadius, fillWidth, innerHeight)}
+            width={fillWidth}
+            x={x + 1}
+            y={y + 1}
+          />
+          {fillWidth > pieceFrom ? (
+            <rect
+              fill={pieceFill}
+              height={innerHeight}
+              width={fillWidth - pieceFrom}
+              x={x + 1 + pieceFrom}
+              y={y + 1}
+            />
+          ) : null}
+        </>
       )}
+      {marks.planAt >= 0 ? (
+        <rect
+          fill="#FFFFFF"
+          height={y + height + PACE_TICK_OVERHANG - tickTop}
+          width={2}
+          x={tickX}
+          y={tickTop}
+        />
+      ) : null}
     </g>
   );
 }
@@ -1118,6 +1229,8 @@ function SegmentedProgress({
   fillColor,
   height,
   percent,
+  pieceFill,
+  piecePercent,
   radius,
   segmentGap,
   segments,
@@ -1128,6 +1241,8 @@ function SegmentedProgress({
   fillColor: string;
   height: number;
   percent: number;
+  pieceFill: string;
+  piecePercent: number;
   radius: number;
   segmentGap: number;
   segments: number;
@@ -1136,15 +1251,16 @@ function SegmentedProgress({
   y: number;
 }) {
   const filledSegments = Math.ceil((segments * percent) / 100);
+  const pieceSegments = Math.ceil((segments * piecePercent) / 100);
   return (
     <g>
       {Array.from({ length: segments }, (_, index) => {
         const segX1 = x + (index * width) / segments;
         const segX2 = x + ((index + 1) * width) / segments;
         const segW = Math.max(0, segX2 - segX1 - Math.max(0, segmentGap));
-        return index < filledSegments && segW > 0 ? (
+        return index < pieceSegments && segW > 0 ? (
           <rect
-            fill={fillColor}
+            fill={index < filledSegments ? fillColor : pieceFill}
             height={height}
             key={index}
             rx={clampRadius(radius, segW, height)}
@@ -1374,6 +1490,7 @@ export function buildFrameData(
       resetSecs: remainingResetSeconds(slot.resetSecs),
       available: true,
       idle: windowIsIdle(slot),
+      pace: slot.pace,
     })),
     usageSlot1Label: slot1?.label || "",
     usageSlot1Percent: clampPercent(slot1?.percent),
@@ -1659,6 +1776,7 @@ function slotCountdownFor(
   }
   switch (key) {
     case "usageSlot1Reset":
+    case "usageSlot1PaceLastsSep":
     case "us1r":
       return {
         available: frame.usageSlot1Available,
@@ -1666,6 +1784,7 @@ function slotCountdownFor(
         idle: frame.usageSlot1Idle,
       };
     case "usageSlot2Reset":
+    case "usageSlot2PaceLastsSep":
     case "us2r":
       return {
         available: frame.usageSlot2Available,
@@ -1733,7 +1852,44 @@ function formatTokenCount(value: number): string {
   return `${whole}.${String(frac).padStart(2, "0")}${unit}`;
 }
 
+// The pace behind a usageSlotNPace... binding while its window is available and
+// its countdown still runs, as in BoundPaceFor (theme_spec_renderer_core.h).
+function boundPace(binding: string, frame: FrameData): UsagePaceFrame | undefined {
+  const match = /^usageSlot([12])Pace/.exec(binding);
+  const window = match ? frame.usageWindows[Number(match[1]) - 1] : undefined;
+  const pace = window?.available && window.resetSecs > 0 ? window.pace : undefined;
+  return PACE_STATE_LEVEL[pace?.state ?? ""] === undefined ? undefined : pace;
+}
+
+const PACE_STATE_LEVEL: Record<string, number> = { reserve: 100, "on pace": 50, deficit: 0 };
+
+// Mirrors FormatBoundPace: CodexBar's pace as ready sentences, and nothing
+// without a pace or once the window's countdown is gone.
+function usagePaceText(binding: string, kind: string, frame: FrameData): string {
+  const pace = boundPace(binding, frame);
+  if (!pace) {
+    return "";
+  }
+  if (kind === "Text" || kind === "Short") {
+    const short = kind === "Short";
+    if (pace.state === "on pace") {
+      return short ? "on pace" : "On pace";
+    }
+    const amount = Math.min(100, Math.abs(pace.delta ?? 0));
+    return `${amount}% ${short ? "" : "in "}${pace.state}`;
+  }
+  if (pace.lasts === undefined || (kind === "RunsOut" && pace.lasts)) {
+    return "";
+  }
+  const sentence = pace.lasts ? "lasts until reset" : "runs out";
+  return kind === "LastsSep" ? `${sentence} - ` : sentence;
+}
+
 export function boundValue(key: string, frame: FrameData): string {
+  const paceMatch = /^usageSlot[12]Pace(Text|Short|LastsSep|Lasts|RunsOut)$/.exec(key);
+  if (paceMatch) {
+    return usagePaceText(key, paceMatch[1], frame);
+  }
   const usageMatch = /^usage\.(\d+)\.(label|percent|reset|available)$/.exec(
     key,
   );
@@ -1753,6 +1909,10 @@ export function boundValue(key: string, frame: FrameData): string {
       return formatReset(window.resetSecs, window.idle);
     }
     return String(window.percent);
+  }
+  if (key === "usageModeShort") {
+    // Mirrors the firmware: "left" for what remains, else the mode itself.
+    return frame.usageMode === "remaining" ? "left" : frame.usageMode;
   }
   switch (key) {
     case "label":
@@ -1870,10 +2030,10 @@ export function progressPercent(
     const window = frame.usageWindows[Number(usageMatch[1])];
     return window?.available ? window.percent : 0;
   }
-  if (binding === "usageSlot1Percent" || binding === "us1p") {
+  if (binding === "usageSlot1Percent" || binding === "us1p" || binding === "usageSlot1Pace") {
     return frame.usageSlot1Available ? frame.usageSlot1Percent : 0;
   }
-  if (binding === "usageSlot2Percent" || binding === "us2p") {
+  if (binding === "usageSlot2Percent" || binding === "us2p" || binding === "usageSlot2Pace") {
     return frame.usageSlot2Available ? frame.usageSlot2Percent : 0;
   }
   if (binding === "weekly" || binding === "weeklyPercent" || binding === "w") {
@@ -1915,6 +2075,64 @@ export function themeProgressArc(primitive: ThemePrimitive, percent: number) {
     filled: Math.floor((sweep * Math.max(0, Math.min(100, percent))) / 100),
   };
 }
+
+// A pace-bound text matches its stops against CodexBar's state instead of the
+// quota (reserve 100, on pace 50, deficit 0), like ResolvePaceColor; without a
+// pace it keeps the solid colour.
+function paceStateColor(primitive: ThemePrimitive, frame: FrameData): string {
+  const pace = boundPace(primitive.binding || primitive.b || "", frame);
+  const level = PACE_STATE_LEVEL[pace?.state ?? ""];
+  if (level !== undefined) {
+    for (const stop of [...(primitive.colorStops || primitive.cs || [])]
+      .filter((entry) => typeof entry.gte === "number" && (entry.color || entry.c))
+      .sort((a, b) => (b.gte ?? 0) - (a.gte ?? 0))) {
+      if (level >= (stop.gte ?? 0)) {
+        return colorFor(stop.color || stop.c, "#FFFFFF");
+      }
+    }
+  }
+  return colorFor(primitive.color || primitive.c, "#FFFFFF");
+}
+
+// Where a pace bar stands, as PaceBarFor works it out: filled to the smaller
+// of use and plan, the piece up to the larger, the tick at the plan. On pace
+// shows the use itself and no piece; without a pace it is a plain bar.
+export function paceBarMarks(
+  primitive: ThemePrimitive,
+  frame: FrameData,
+  percent: number,
+) {
+  const binding = primitive.binding || primitive.b || "";
+  const pace = /^usageSlot[12]Pace$/.test(binding)
+    ? boundPace(binding, frame)
+    : undefined;
+  if (!pace) {
+    return { fillTo: percent, pieceTo: percent, planAt: -1, hatched: false };
+  }
+  const delta = pace.delta ?? 0;
+  const planAt = Math.max(
+    0,
+    Math.min(100, percent + (frame.usageMode === "used" ? -delta : delta)),
+  );
+  const onPace = pace.state === "on pace";
+  return {
+    fillTo: onPace ? percent : Math.min(percent, planAt),
+    pieceTo: onPace ? percent : Math.max(percent, planAt),
+    planAt,
+    hatched: pace.state === "deficit",
+  };
+}
+
+// The hatch's gaps are the track, tinted a little towards the stripe colour.
+function hatchGapColor(stripe: string, track: string): string {
+  const parse = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  const [s, t] = [parse(stripe), parse(track)];
+  const mixed = t.map((channel, i) => Math.trunc(channel + (s[i] - channel) / 12));
+  return `#${mixed.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+}
+
+// The plan tick reaches this far beyond the bar or ring it marks.
+const PACE_TICK_OVERHANG = 3;
 
 function resolveProgressFillColor(
   primitive: ThemePrimitive,

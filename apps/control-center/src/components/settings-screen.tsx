@@ -30,6 +30,7 @@ import { errorForHost } from "@/lib/customer-platform";
 import { loadUserThemes } from "@/lib/theme-studio-storage";
 import type { ThemeProduct } from "@/lib/themes";
 import { PreferenceControl } from "./preference-control";
+import { paceSetting, PaceSetting } from "./settings-pace";
 import { ThemeStudioKeyRow } from "./theme-studio/openai-key-form";
 import { isProviderItem, type ProviderPickerProps } from "./provider-picker";
 import {
@@ -211,6 +212,12 @@ export function SettingsScreen({
     providerPicker.preferencesError || providerPicker.displayError;
   const rotation = displayPreferences.find(
     (item) => item.id === "vibetv.display.rotateSeconds",
+  );
+  const pace = paceSetting(
+    displayPreferences,
+    providerPicker.usage,
+    device?.activeTheme,
+    themes,
   );
 
   return (
@@ -396,6 +403,20 @@ export function SettingsScreen({
           </p>
         ) : null}
       </SettingsSection>
+
+      {pace ? (
+        <>
+          <ItemSeparator className="my-0" />
+          <SettingsSection id="settings-pace" title="Pace">
+            <PaceSetting
+              descriptor={pace.descriptor}
+              disabled={localActionBusy}
+              note={pace.note}
+              onChange={onDisplayPreferenceChange}
+            />
+          </SettingsSection>
+        </>
+      ) : null}
 
       {standbySupport ? (
         <>
