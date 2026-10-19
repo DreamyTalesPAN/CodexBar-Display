@@ -8390,3 +8390,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none; the test only.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #784: own-app provider dialog uses the template sentence (build 2 decision)
+
+- User approval: Paul via the communicator, 20.10.2026 night: build-2 decision — the sentence of the provider dialog for a provider that needs its own app follows the template (frame 39); before → after: "VibeTV can't read Ollama until the Ollama app is installed and running." (with the provider's own name) → before "VibeTV reads Ollama usage from Ollama's own app, so make sure it is installed and signed in on this computer."
+- Approved customer-visible result: the dialog reads as drawn in frame 39 of "Calm Redesign - alle Screens", title "<Provider> needs its own app", sentence as above.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, `apps/control-center/src/components/setup/setup-providers-screen.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
