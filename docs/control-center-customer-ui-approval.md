@@ -8413,3 +8413,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: merge of origin/claude/group-calm-redesign (#784, 9c18d75f) into this branch, `apps/control-center/src/components/control-center-shell.tsx` (the Appearance sub-menu stays removed; the open Theme Studio header from #784 stays), and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-19 — #802: Appearance tells the shell while the Theme Studio is open (build 2 QA)
+
+- User approval: pending — Paul reviews (Theme Studio header as one row per the approved template, build 2 QA); look unchanged except, before → after: with Appearance built as one page, the open Theme Studio shows one header row — the Studio's own (back arrow, design name, File, undo and redo, status line, Save, Send to VibeTV) — with the sidebar open → before a second row "Appearance" sat above it. The Appearance page itself looks the same. This restores the hand-over of #784, which the one-page rebuild had dropped.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/control-center-app.tsx`, `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/theme-library-screen.tsx`, `apps/control-center/src/components/theme-library-screen.appearance.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
