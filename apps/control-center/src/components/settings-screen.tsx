@@ -153,8 +153,11 @@ export function SettingsScreen({
     timeoutMinutes: 10,
     brightnessPercent: 20,
   };
+  // Not open before VibeTV's own value is read: until then the placeholder
+  // values above stand here, and a save would write them over the customer's
+  // own time and brightness (issue #643).
   const standbyToggleDisabled =
-    !deviceIsCustomerConnected(device) || localActionBusy;
+    !standby || !deviceIsCustomerConnected(device) || localActionBusy;
   const standbyDetailsDisabled =
     standbyToggleDisabled || !standbyValues.enabled;
   // The customer's own screensavers are saved in this browser, by Theme Studio.
@@ -397,7 +400,7 @@ export function SettingsScreen({
       {standbySupport ? (
         <>
           <ItemSeparator className="my-0" />
-          <SettingsSection title="Screensaver">
+          <SettingsSection id="settings-screensaver" title="Screensaver">
             <Field className="justify-start gap-3" orientation="horizontal">
               <Switch
                 aria-label="Show screensaver"
@@ -608,7 +611,7 @@ function SettingsSection({
   title,
 }: {
   children: ReactNode;
-  /** For a link that opens Settings at this group ("What's new"). */
+  /** For a link that opens Settings at this group ("What's new", Screensavers). */
   id?: string;
   title: string;
 }) {

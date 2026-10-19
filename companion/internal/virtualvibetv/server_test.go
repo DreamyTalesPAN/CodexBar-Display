@@ -282,8 +282,100 @@ func TestFrameLimitBoundary(t *testing.T) {
 	if got := frame(MaxFrameBytes); got != http.StatusOK {
 		t.Fatalf("frame of exactly %d bytes: status %d", MaxFrameBytes, got)
 	}
-	if got := frame(MaxFrameBytes + 1); got != http.StatusBadRequest {
-		t.Fatalf("frame of %d bytes: status %d, want 400", MaxFrameBytes+1, got)
+	// The firmware answers an oversized frame 413 (handleFrame in main.cpp).
+	if got := frame(MaxFrameBytes + 1); got != http.StatusRequestEntityTooLarge {
+		t.Fatalf("frame of %d bytes: status %d, want 413", MaxFrameBytes+1, got)
+	}
+}
+
+// The firmware takes a frame as one line: it trims the body, then refuses a
+// line break left inside it with 400 (handleFrame in main.cpp, #354).
+func TestFrameRefusesMoreThanOneLine(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.RebootUnavailableRequests = 0
+	running, err := Start(cfg)
+	if err != nil {
+		t.Fatalf("start virtual VibeTV: %v", err)
+	}
+	t.Cleanup(func() { _ = running.Close() })
+	for _, tt := range []struct {
+		name, body string
+		want       int
+	}{
+		{"one line", `{"v":2}`, http.StatusOK},
+		{"trailing line break is trimmed", "{\"v\":2}\n", http.StatusOK},
+		{"line break inside the frame", "{\n\"v\":2}", http.StatusBadRequest},
+		{"two frames", "{\"v\":2}\n{\"v\":2}", http.StatusBadRequest},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodPost, running.HTTPURL+"/frame", strings.NewReader(tt.body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("X-VibeTV-Token", cfg.PairingToken)
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = resp.Body.Close()
+			if resp.StatusCode != tt.want {
+				t.Fatalf("%q: status %d, want %d", tt.body, resp.StatusCode, tt.want)
+			}
+		})
+	}
+}
+
+// The firmware refuses a theme path outside /themes/ with 400 'invalid theme
+// path', even when a file of that name is on the device (readStoredThemeSpec in
+// main.cpp, #354).
+func TestThemeActivationRefusesPathOutsideThemes(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.RebootUnavailableRequests = 0
+	running, err := Start(cfg)
+	if err != nil {
+		t.Fatalf("start virtual VibeTV: %v", err)
+	}
+	t.Cleanup(func() { _ = running.Close() })
+	const spec = `{"id":"a","rev":1,"p":[{"t":"r","w":1,"h":1}]}`
+	for _, path := range []string{"/mini.json", "/themes-old/a.json"} {
+		status, answer := activateStoredTheme(t, running, path, spec, `{"path":"`+path+`"}`)
+		if status != http.StatusBadRequest || !strings.Contains(answer, "invalid theme path") {
+			t.Fatalf("%s: status %d %q, want 400 invalid theme path", path, status, answer)
+		}
+	}
+	status, answer := activateStoredTheme(t, running, "/themes/u/ok.json", spec, `{"path":"/themes/u/ok.json"}`)
+	if status != http.StatusOK {
+		t.Fatalf("/themes/ path: status %d %q, want 200", status, answer)
+	}
+}
+
+// The firmware answers 404 with the text 'theme file not found' when the file of
+// a /themes/ path is not on the device (readStoredThemeSpec and handleThemeActive
+// in main.cpp, #354).
+func TestThemeActivationAnswersMissingFileLikeFirmware(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.RebootUnavailableRequests = 0
+	running, err := Start(cfg)
+	if err != nil {
+		t.Fatalf("start virtual VibeTV: %v", err)
+	}
+	t.Cleanup(func() { _ = running.Close() })
+	req, err := http.NewRequest(http.MethodPost, running.HTTPURL+"/theme/active", strings.NewReader(`{"path":"/themes/u/missing.json"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-VibeTV-Token", cfg.PairingToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	answer, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusNotFound || strings.TrimSpace(string(answer)) != "theme file not found" {
+		t.Fatalf("missing theme: status %d %q, want 404 %q", resp.StatusCode, answer, "theme file not found")
 	}
 }
 
@@ -666,6 +758,27 @@ func virtualHello(t *testing.T) protocol.DeviceHello {
 		t.Fatalf("decode hello: %v", err)
 	}
 	return hello
+}
+
+// The firmware's hello lists the primitive types it compiles, in the order of
+// themeCapabilitiesJSON in firmware_esp8266/src/main.cpp; the virtual hello lists
+// the same ones (#354).
+func TestSupportedPrimitiveTypesMatchFirmware(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("..", "..", "..", "firmware_esp8266", "src", "main.cpp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	list := regexp.MustCompile(`supportedPrimitiveTypes\\":\[((?:\\"[a-z]+\\",?)+)\]`).FindSubmatch(source)
+	if list == nil {
+		t.Fatal("no supportedPrimitiveTypes list in the firmware source")
+	}
+	var want []string
+	for _, match := range regexp.MustCompile(`\\"([a-z]+)\\"`).FindAllSubmatch(list[1], -1) {
+		want = append(want, string(match[1]))
+	}
+	if got := virtualHello(t).Capabilities.Theme.SupportedPrimitiveTypes; !slices.Equal(got, want) {
+		t.Fatalf("supportedPrimitiveTypes: virtual=%v firmware=%v", got, want)
+	}
 }
 
 // Like the firmware, an upload that names an MD5 is stored only when its bytes

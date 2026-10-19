@@ -528,6 +528,115 @@ func TestSenderReusesResolvedCablePortWithoutReopeningOtherDevices(t *testing.T)
 	}
 }
 
+// replyPort answers every request with reply, like a device that is up.
+type replyPort struct {
+	*mockSerialPort
+	reply string
+}
+
+func (p replyPort) Write(b []byte) (int, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.readQueue = append(p.readQueue, []byte(p.reply))
+	return len(b), nil
+}
+
+// Issue #537: the status read searches every port while the stream resolves
+// its VibeTV. Asking the other port between the stream's hello and its
+// identity check closed the VibeTV port, so one frame was lost with "cable
+// identity changed during resolution".
+func TestResolvePortIsAtomicAgainstTheStatusSearch(t *testing.T) {
+	vibetv, other := "/dev/cu.usbserial-vibetv", "/dev/cu.usbserial-other"
+	listSerialPorts(t, vibetv, other)
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener: &mockOpener{portsByPath: map[string]SerialPort{
+			vibetv: replyPort{newMockSerialPort(), unplugTestHello},
+			other:  replyPort{newMockSerialPort(), `{"kind":"hello","board":"foreign-board"}` + "\n"},
+		}},
+		Sleep: func(time.Duration) {},
+	})
+	defer sender.Close()
+
+	// Status reads arrive concurrently and keep searching while the stream
+	// resolves its port again and again.
+	stop := make(chan struct{})
+	var status sync.WaitGroup
+	for range 4 {
+		status.Go(func() {
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					_, _ = sender.ResolveControlPort("", "")
+				}
+			}
+		})
+	}
+	defer status.Wait()
+	defer close(stop)
+	for i := range 300 {
+		if _, err := sender.ResolvePort("", "5804558"); err != nil {
+			t.Fatalf("round %d: stream resolution: %v", i, err)
+		}
+	}
+}
+
+// Codex P2 on #662: the status path must answer from the open, verified VibeTV
+// and never probe a silent second serial port.
+func TestOpenVibeTVPortReportsOnlyAVerifiedOpenPort(t *testing.T) {
+	vibetv, silent := "/dev/cu.usbserial-vibetv", "/dev/cu.usbserial-silent"
+	listSerialPorts(t, vibetv, silent)
+	opener := &mockOpener{portsByPath: map[string]SerialPort{
+		vibetv: replyPort{newMockSerialPort(), unplugTestHello},
+		silent: newMockSerialPort(),
+	}}
+	sender := NewSenderWithConfig(SenderConfig{Opener: opener, Sleep: func(time.Duration) {}})
+	defer sender.Close()
+
+	if path, ok := sender.OpenVibeTVPort(); ok || path != "" {
+		t.Fatalf("no port is open, got %q %v", path, ok)
+	}
+	if _, err := sender.DeviceHello(vibetv); err != nil {
+		t.Fatalf("open the VibeTV: %v", err)
+	}
+	if path, ok := sender.OpenVibeTVPort(); !ok || path != vibetv {
+		t.Fatalf("OpenVibeTVPort() = %q, %v; want %q, true", path, ok, vibetv)
+	}
+	got, err := sender.ResolveControlPort(vibetv, "")
+	if err != nil || got != vibetv {
+		t.Fatalf("ResolveControlPort(open, \"\") = %q, %v", got, err)
+	}
+	if n := opener.openCount(silent); n != 0 {
+		t.Fatalf("silent candidate was opened %d times", n)
+	}
+}
+
+// Codex P1 on #662: after a scan found two VibeTVs, the last one must not be
+// taken as the only device by the next call.
+func TestIdentifierlessScanKeepsTheMultipleVibeTVsCheck(t *testing.T) {
+	a, b := "/dev/cu.usbserial-a", "/dev/cu.usbserial-b"
+	listSerialPorts(t, a, b)
+	helloB := `{"kind":"hello","board":"esp8266-smalltv-st7789","deviceId":"14799300","capabilities":{"transport":{"active":"usb","mode":"cable"}}}` + "\n"
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener: &mockOpener{portsByPath: map[string]SerialPort{
+			a: replyPort{newMockSerialPort(), unplugTestHello},
+			b: replyPort{newMockSerialPort(), helloB},
+		}},
+		Sleep: func(time.Duration) {},
+	})
+	defer sender.Close()
+
+	for i := range 2 {
+		if _, err := sender.ResolveControlPort("", ""); errcode.Of(err) != errcode.TransportMultipleDevices {
+			t.Fatalf("call %d: two VibeTVs must stay ambiguous, got %v", i, err)
+		}
+		if path, ok := sender.OpenVibeTVPort(); ok {
+			t.Fatalf("call %d: ambiguous scan left %q as the verified port", i, path)
+		}
+	}
+}
+
 func TestResolverKeepsPendingCableTransitionWhenConfirmationIsRejected(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "cu.usbserial-vibetv")
 	if err := os.WriteFile(path, nil, 0o600); err != nil {
