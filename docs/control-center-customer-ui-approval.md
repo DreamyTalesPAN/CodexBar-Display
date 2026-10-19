@@ -9562,6 +9562,7 @@ issue scope, or release permission never implies UI permission.
 ## 2026-10-19 — #798: approval marker after merging the calm redesign base (Updates)
 
 ## 2026-10-19 — #802: approval marker after merging the calm redesign base (one-page Appearance)
+## 2026-10-19 — #803: approval marker after merging the calm redesign base (Support Fix link)
 
 - User approval: Merge of the calm redesign base (#784 incl. main with #638) into this branch; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
