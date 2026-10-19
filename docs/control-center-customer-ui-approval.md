@@ -8428,3 +8428,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/control-center-app.tsx`, `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/theme-library-screen.tsx`, `apps/control-center/src/components/theme-library-screen.appearance.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-19 — #802: Codex fix, the Theme Studio preview route shows the Studio's own header only
+
+- User approval: pending — Paul reviews (Codex review fix; development preview route only); no visible change for customers: the development preview of the AI Theme Studio (VIBETV_AI_THEME_PREVIEW) hides the Appearance header above the Studio's own header, as the app does → before the preview showed a duplicate Appearance header.
+- Approved customer-visible result: none; no visible change for customers.
+- Scope: `apps/control-center/src/components/theme-studio/theme-studio-preview.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
