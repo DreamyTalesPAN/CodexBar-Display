@@ -7468,6 +7468,144 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
 
+## 2026-10-15 — #643: Show screensaver says where its twin is
+
+- User approval: Marcus chose on 2026-10-15 to keep both Show screensaver switches (Settings and Appearance › Screensavers) and add a line under each that says they are the same setting (#643, option c), and asked to find and test when either shows a stale value. The wording below is a draft until his click test of this pull request.
+- Approved customer-visible result: under the switch in Settings, "The same switch is under Appearance › Screensavers."; under the switch in Screensavers, "The same switch is in Settings, where you also choose when the screensaver starts and how bright it is." Both switches now open and close by one rule (VibeTV connected, no connection change, setup, erase or firmware update running). The Settings switch stays closed until VibeTV's own setting is read, so it no longer offers placeholder values that a click would save over the customer's time and brightness.
+- Scope: `settings-screen.tsx`, `theme-library-screen.tsx`, `control-center-types.ts`, their tests and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a small clarification of an existing setting, not announced to customers
+
+## 2026-10-16 — #643: approval marker after merging main with #615
+
+- User approval: Marcus passed the click test of #645 on 2026-10-15 (build 99.0.1117). Main moved on with #615 while the branch was in review, so main is merged in. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #643 entry above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — #643: approval marker after merging main with #628 and #619
+
+- User approval: Marcus passed the click test of #645 on 2026-10-15 (build 99.0.1117) and asked on 2026-10-16 to resolve the conflict with main. Main moved on with #628 and #619, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #643 entry above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — #643: Codex review fix, screensaver values belong to one VibeTV
+
+- User approval: Codex review fix, no new wording; not seen by Paul. Marcus passed the click test of #645 on 2026-10-15 (build 99.0.1117) for the rule this fix applies.
+- Approved customer-visible result: as approved in the #643 entry above ("The Settings switch stays closed until VibeTV's own setting is read"). When the Mac App is connected to another VibeTV, the first one's screensaver values are dropped, so both Show screensaver switches stay closed (and the Screensavers block stays hidden, as on first load) until the new VibeTV's own setting is read.
+- Scope: `control-center-app.tsx`, its display preferences test and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — review fix, no customer-visible change of its own
+
+## 2026-10-16 — #643: Codex review fix, a late read of the first VibeTV no longer counts
+
+- User approval: Codex review fix, no new wording; not seen by Paul. It applies the rule approved in the #643 entries above.
+- Approved customer-visible result: as in "Codex review fix, screensaver values belong to one VibeTV" above. A settings read still on its way for the first VibeTV when another one is connected no longer puts the first one's screensaver values back; the switch stays closed until the new VibeTV's own setting is read.
+- Scope: `control-center-app.tsx`, its display preferences test and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — review fix, no customer-visible change of its own
+
+## 2026-10-16 — #643: Show screensaver only in Settings, a line under Screensavers (variant 645-A)
+
+- User approval: Paul chose variant 645-A on 2026-10-16 (Claude Design page 'Display Settings Redesign', section 645) via the review orchestrator; he has not yet seen this exact build.
+- Approved customer-visible result: the Show screensaver switch exists only in Settings › Screensaver, beside "Show after" and "Brightness in screensaver", without an explanation line under it. Appearance › Screensavers has no switch and no explanation line of its own; while the screensaver is off it shows one muted line "Screensaver is off." with the link "Turn on in Settings", which opens Settings at the Screensaver group. The "Screensaver is turned off" notice ("Turn on Show screensaver to install and use a screensaver.") is gone. Install stays disabled while the screensaver is off ("Turn on first"). The Settings switch opens only once VibeTV's own setting is read. This replaces the two "The same switch is …" lines of the #643 entry above.
+- Scope: `theme-library-screen.tsx`, `settings-screen.tsx`, `control-center-app.tsx`, their tests, `scripts/test-customer-flows.mjs` and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a small change to an existing setting, not announced to customers
+
+## 2026-10-16 — #645: code simplification of the device-switch guard (no visible change)
+
+- User approval: none needed, no visible change. Code simplification of the #645 device-switch guard (AGENTS.md: one central reset); no visible change; not seen by Paul.
+- Approved customer-visible result: unchanged; the Settings screensaver switch, its line and all copy stay as in the entries above.
+- Scope: `control-center-app.tsx` (standby reset helper shared by the device-change and disconnect paths). Pull-request branch only, not merge or release.
+- What's new: none — refactor, no customer-visible change
+
+## 2026-10-16 — #645: device check on the settings answer (no visible change)
+
+- User approval: none needed, no visible change. Code simplification of the #645 device-switch guard (AGENTS.md: one central reset); the settings answer's own device.deviceId decides whether a read is applied; no visible change; not seen by Paul.
+- Approved customer-visible result: unchanged; the Settings screensaver switch, its line and all copy stay as in the entries above.
+- Scope: `control-center-app.tsx`, the late-read test in `control-center-app.display-preferences.test.tsx` and the settings fixtures in `control-center-app.screensaver-install.test.tsx`, `control-center-app.custom-theme-install.test.tsx`, `control-center-app.screensaver-setting.test.tsx`. Pull-request branch only, not merge or release.
+- What's new: none — refactor and test fixtures, no customer-visible change
+
+## 2026-10-17 — #645: "Turn on in Settings" uses the Design System link colour
+
+- User approval: Paul's finding on 2026-10-17 while testing #645 (via the communicator): "Turn on in Settings" lime on grey unreadable → design-system link colour as in 645-A; he has not yet seen this build.
+- Approved customer-visible result: in the "Screensaver is off." line under Appearance › Screensavers, the link "Turn on in Settings" is the Design System link (the Button link variant): dark ink with an underline, olive on hover, instead of lime. Same text, same place, same action. Contrast (WCAG 2.x): rest 14.85:1 light, 7.98:1 dark; hover olive #506600 5.58:1 light, 1.44:1 dark. The dark hover fails 4.5:1 and is open, not approved as final until the orchestrator decides.
+- Scope: `theme-library-screen.tsx`, its test and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a colour fix of an existing link, not announced to customers
+
+## 2026-10-16 — #663: Same device-switch reset as #645 for display brightness (no visible change)
+
+- User approval: none needed, no visible change. Same device-switch reset as #645 for display brightness (#663); no new wording; not seen by Paul.
+- Approved customer-visible result: unchanged; Brightness and the Settings screensaver switch stay as in the entries above. While another VibeTV's settings are still unknown, Brightness stays disabled, as the screensaver switch does.
+- Scope: `control-center-app.tsx`, its display preferences test. Pull-request branch only, not merge or release.
+- What's new: none — review fix, no customer-visible change of its own
+
+## 2026-10-16 — #674: approval marker after merging #645 and main (no visible change)
+
+
+
+- User approval: Merge of the stacked base (#645) and main for the hardware run; no visible change of its own; not seen by Paul. The UI review gate cannot read a clean merge commit as approval marker, so this entry stands for that merge. No new wording.
+
+- Approved customer-visible result: as approved in the #663 entry above (no visible change); nothing else changes.
+
+- Scope: the merge of the #645 branch and main into this branch and this approval record. Pull request branch only, not merge or release.
+
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible change)
+
+- User approval: Codex review fix, no visible change; not seen by Paul.
+- Approved customer-visible result: none. When another VibeTV connects, a Brightness change still waiting to be sent is dropped instead of being sent to that VibeTV; the slider and all wording stay as they are.
+- Scope: `resetDeviceSettings` in `apps/control-center/src/components/control-center-app.tsx`, its test in `control-center-app.display-preferences.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix, no customer-visible change
+
+## 2026-10-19 — #645: dark-mode hover of "Turn on in Settings" reaches 4.5:1
+
+- User approval: Marcus, answers 54b and 55a on 2026-10-19 (via the orchestrator): fix the dark-mode hover contrast of "Turn on in Settings" now, in #645 (54b). Because the Control Center does not switch dark mode on, the evidence is a unit test, a contrast calculation and a rendered image with dark mode on, without a new device test (55a).
+- Approved customer-visible result: in dark mode the link "Turn on in Settings" in the "Screensaver is off." line under Appearance › Screensavers hovers in the light olive #A9C76A, 4.92:1 on the dark grey #444933, instead of olive #506600 with 1.44:1. Light mode is unchanged: olive #506600 on hover, 5.58:1. Same text, same place, same action. The Control Center does not switch dark mode on today, so customers see no change yet.
+- Scope: `theme-library-screen.tsx`, its test and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a colour fix of an existing link, not announced to customers
+
+## 2026-10-19 — #674: Codex review fix of #645, a late settings answer for another VibeTV no longer chooses the selected theme (no visible change)
+
+- User approval: Codex review finding on #645 (`1a568a04`); Marcus, via the orchestrator on 2026-10-19: fix it in #674 with a unit test, without a new device test, because this path never runs with one VibeTV.
+- Approved customer-visible result: none with one VibeTV. When another VibeTV connects while a read of the first one's settings is still on its way, that late answer no longer marks the first VibeTV's active theme as selected under Appearance › Themes; the selection follows the VibeTV connected now, as Brightness and the Settings screensaver switch already do.
+- Scope: `readSettings` in `apps/control-center/src/components/control-center-app.tsx`, its test in `control-center-app.display-preferences.test.tsx`, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — review fix, no customer-visible change
+
+## 2026-10-16 — Small fixes from the 13.10. batch, carried from #603 (#566, #579, #418)
+
+- User approval: Carried from the overnight batch of 13.10. (#603), which Paul's blanket approval for that night covered; not yet seen by him in this form.
+- Approved customer-visible result: Four visible changes. (1) Support, usage engine source: the source of the engine that comes with the Mac App now reads "Included with the app" instead of "Managed by VibeTV". (2) Appearance: the create buttons read "Create theme" and "Create screensaver" instead of "Create Theme" and "Create Screensaver". (3) A slider: a click right beside the round handle moves it there. (4) Sidebar: clicking the tab that is already open scrolls the page back to its top. The Overview image beside the VibeTV photo has a softer shadow that fades out instead of ending in a hard edge. The Mac App update prompt keeps its current behaviour and URLs; only its tests and a wrapper function are added. The Windows docs note (#418) is documentation only.
+- Scope: `apps/control-center/src/components/` (`control-center-app.tsx`, `control-center-runtime.ts`, `control-center-shell.tsx`, `diagnostics-panel.tsx`, `theme-library-screen.tsx`, `ui/slider.tsx`, their tests), `apps/control-center/public/images/vibetv-device-overview-cutout.png`, `apps/control-center/scripts/test-customer-flows.mjs` (expectations for the two button labels only), `docs/windows-shell.md`, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — small fixes; the only wording changes are the two create-button labels and the engine source line above
+
+## 2026-10-16 — #677: Codex review fix, the open Appearance entry starts over at the top (no visible change)
+
+- User approval: Codex review fix, no visible change; not seen by Paul.
+- Approved customer-visible result: none. Clicking Appearance while it is open still toggles its submenu and now also scrolls the page to the top, as the other sidebar entries already do; no wording, layout or control changes.
+- Scope: `ShellNavButton` in `apps/control-center/src/components/control-center-shell.tsx`, its test in `control-center-shell.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix, no customer-visible change
+
+## 2026-10-17 — #677: Paul approves the look of the small fixes (refers to the pending entry of 2026-10-16, "Small fixes from the 13.10. batch")
+
+- User approval: Paul approved 17.10. (via the communicator): "Create theme"/"Create screensaver", "Included with the app", the soft shadow beside the VibeTV photo. Functional test still open.
+- Approved customer-visible result: the three items named in the user approval above, as described in the pending entry: the create buttons read "Create theme" and "Create screensaver"; the engine source line reads "Included with the app"; the Overview image beside the VibeTV photo has the softer shadow that fades out. The slider and sidebar items of that pending entry are not named in this approval and stay open.
+- Scope: this approval record only; no code change in this entry. Pull request branch only, not merge or release.
+- What's new: none — approval record
+
+## 2026-10-19 — #677: approval marker after merging main with #645
+
+- User approval: Marcus passed the click test of #677 on 2026-10-19 (build 99.0.1148, head f27b888d) without remarks; it covered all five items of the 2026-10-16 entry, including the slider and sidebar items that stayed open after Paul's approval. Main moved on with #645 while the branch was in review, so main is merged in (orchestrator, Paul not active). The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #677 entries above and the #645 entries from main. Appearance › Screensavers shows "Create screensaver" together with #645's "Screensaver is off." line; nothing else changes.
+- Scope: the merge of main into this branch, the Screensavers expectation in `theme-library-screen.test.tsx` (both sides kept) and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — #677: approval marker after merging main with #674
+
+- User approval: as in the marker entry above (Marcus's click test of #677 on 2026-10-19). Main moved on with #674 right after #645, so main is merged in again (orchestrator, Paul not active). The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. The conflict was only in this record; both sides are kept. No new wording.
+- Approved customer-visible result: as approved in the #677 entries above and the #645 and #674 entries from main; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
 ## 2026-10-16 — Provider next steps no longer say "then check again"
 - User approval: follows Paul's rule of 2026-10-16 "no Check again — the app re-checks by itself" (via the review orchestrator); the exact sentences are shown to him for approval on 2026-10-17.
 - Approved customer-visible result: The next-step sentence a customer reads for a provider (in the setup log and in the provider message) no longer ends with ", then check again"; the sentence ends with a period and says only what the customer does. The app re-checks by itself. Before → after:
