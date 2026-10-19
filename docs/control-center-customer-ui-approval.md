@@ -9665,3 +9665,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/setup/setup-recovery-dialogs.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-19 — #780: Setup selected-card ring matched to the template (build 2 QA)
+
+- User approval: pending — Paul reviews (#780 matched to the approved template, build 2 QA); look unchanged except, each one before → after: the soft 3 px ring around the chosen card (VibeTV, display mode, theme) is olive (#506600) at 25 % → before ink at 25 %.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/setup/setup-selectable-card.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content

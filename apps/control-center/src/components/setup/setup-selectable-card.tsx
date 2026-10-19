@@ -66,7 +66,7 @@ export function selectedItemClass(selected: boolean, ink = false): string {
 const CARD_RING =
   "shadow-[0_0_0_1px_color-mix(in_srgb,var(--foreground)_10%,transparent)]";
 const CARD_RING_SELECTED =
-  "shadow-[0_0_0_1px_color-mix(in_srgb,var(--foreground)_10%,transparent),0_0_0_3px_color-mix(in_srgb,var(--ring)_25%,transparent)]";
+  "shadow-[0_0_0_1px_color-mix(in_srgb,var(--foreground)_10%,transparent),0_0_0_3px_color-mix(in_srgb,var(--vibetv-support)_25%,transparent)]";
 
 /**
  * The calm card of the Setup Wizard (variant B): a 12px card with a 10% ink
