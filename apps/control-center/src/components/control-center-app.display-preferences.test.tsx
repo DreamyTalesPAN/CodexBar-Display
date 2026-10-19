@@ -649,8 +649,8 @@ it("leaves the Brightness in screensaver thumb where it is dragged when an earli
 // A brightness change that was still on its way, and one waiting behind it,
 // reached VibeTV during or after the reset.
 it.each([
-  ["Run setup again", "Run setup again", "/v1/setup/reset"],
-  ["Reset to factory settings", "Reset", "/v1/device/factory-reset"],
+  ["Run setup", "Run setup again", "/v1/setup/reset"],
+  ["Reset…", "Reset", "/v1/device/factory-reset"],
 ])("%s waits until a brightness change is saved", async (button, confirm, reset) => {
   const window = startWindow();
   await window.wait(10);
@@ -814,7 +814,7 @@ it("asks before running setup again and lets the customer cancel", async () => {
 
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   await window.wait(1);
-  fireEvent.click(screen.getByRole("button", { name: "Run setup again" }));
+  fireEvent.click(screen.getByRole("button", { name: "Run setup" }));
   expect(question()?.textContent).toContain(
     "VibeTV keeps its WiFi details, settings and themes.",
   );
@@ -868,18 +868,18 @@ it("enters a changed display mode, provider switching and provider under Recent 
     screen.getByText("Recent activity").closest("section") as HTMLElement,
   )
     .getAllByRole("listitem")
-    .map((entry) => entry.textContent?.replace(/\d\d:\d\d:\d\d$/, ""));
+    .map((entry) => entry.textContent?.replace(/^\d\d:\d\d:\d\d/, ""));
   expect(entries).toEqual([
-    "AI provider savedClaude turned off.",
-    "Display mode savedAlways show Claude.",
-    "Switch providers savedSwitch providers is set to Every 30 seconds.",
-    "Control Center openedThis session started.",
+    "AI provider saved · Claude turned off.",
+    "Display mode saved · Always show Claude.",
+    "Switch providers saved · Switch providers is set to Every 30 seconds.",
+    "Control Center opened · This session started.",
   ]);
   // The first entry is written when the app opens, so it has a time too.
   const first = within(
     screen.getByText("Recent activity").closest("section") as HTMLElement,
   ).getAllByRole("listitem").at(-1);
-  expect(first?.textContent).toMatch(/\d\d:\d\d:\d\d$/);
+  expect(first?.textContent).toMatch(/^\d\d:\d\d:\d\d/);
 });
 
 // The refusal stands on the page; the list keeps it for the support report.
@@ -893,7 +893,7 @@ it("enters a refused change of the provider switching under Recent activity", as
 
   fireEvent.click(screen.getByRole("button", { name: "Support" }));
   await window.wait(1);
-  expect(window.text()).toContain("Switch providers save needs attentionTry again in a moment.");
+  expect(window.text()).toContain("Switch providers save needs attention · Try again in a moment.");
   expect(window.text()).not.toContain("Switch providers saved");
 });
 
@@ -920,7 +920,7 @@ it("enters nothing under Recent activity for what the app writes by itself", asy
 
   fireEvent.click(screen.getByRole("button", { name: "Support" }));
   await window.wait(1);
-  expect(window.text()).toContain("AI provider savedClaude turned on.");
+  expect(window.text()).toContain("AI provider saved · Claude turned on.");
   expect(window.text()).not.toContain("Display mode save");
 });
 

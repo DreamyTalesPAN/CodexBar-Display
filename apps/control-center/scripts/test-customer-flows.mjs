@@ -9754,8 +9754,8 @@ async function testSupportReportExportsAppearAfterReportLoads(browser, appUrl) {
     name: "Create report",
   });
   assert(
-    (await createReportButton.getAttribute("data-variant")) === "default",
-    "Support screen should keep Create report primary",
+    (await createReportButton.getAttribute("data-variant")) === "outline",
+    "Support screen shows Create report as the calm outline button",
   );
   await createReportButton.click();
   await page.getByRole("button", { name: "Copy", exact: true }).waitFor({
@@ -9764,13 +9764,13 @@ async function testSupportReportExportsAppearAfterReportLoads(browser, appUrl) {
   await page.getByRole("button", { name: "Download", exact: true }).waitFor({
     timeout: 10_000,
   });
-  const createAgainButton = page.getByRole("button", { name: "Create again" });
+  const createAgainButton = page.getByRole("button", { name: "Create new" });
   await createAgainButton.waitFor({
     timeout: 10_000,
   });
   assert(
-    (await createAgainButton.getAttribute("data-variant")) === "default",
-    "Support screen should keep Create again primary",
+    (await createAgainButton.getAttribute("data-variant")) === "outline",
+    "Support screen shows Create new as the calm outline button",
   );
   for (const hiddenDetail of [
     "Background runtime",
@@ -9956,14 +9956,17 @@ async function testOverviewShowsOnlyTheVibeTV(browser, appUrl) {
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByText("VibeTV is connected").waitFor({ timeout: 10_000 });
-  // The calm Overview shows only the VibeTV: no Mac App or firmware tiles (#713).
+  // The calm Overview shows the VibeTV and four quiet figures under it.
+  for (const label of ["Mac App", "VibeTV", "Display", "Firmware"]) {
+    assert(
+      (await page.getByRole("term").filter({ hasText: label }).count()) === 1,
+      `Overview must show the ${label} figure`,
+    );
+  }
   assert(
-    (await page.getByText("Mac App", { exact: true }).count()) === 0,
-    "Overview must not show a Mac App tile",
-  );
-  assert(
-    (await page.getByText("VibeTV firmware", { exact: true }).count()) === 0,
-    "Overview must not show a firmware tile",
+    (await page.locator("dl").getByText("1.0.33", { exact: true }).count()) === 1 &&
+      (await page.locator("dl").getByText("1.0.32", { exact: true }).count()) === 1,
+    "Overview must show the Mac App and firmware versions",
   );
   await page
     .getByRole("img", {
@@ -13440,7 +13443,8 @@ async function clickNavigation(page, name) {
 
 // "Run setup again" asks first (#546); these flows are about what follows.
 async function runSetupAgain(page) {
-  const button = page.getByRole("button", { name: "Run setup again" });
+  // Settings words the button "Run setup", Support "Run setup again".
+  const button = page.getByRole("button", { name: /^Run setup( again)?$/ });
   await button.waitFor({ timeout: 10_000 });
   await button.click();
   await page

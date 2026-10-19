@@ -7,7 +7,13 @@ import type {
   DeviceInfo,
   UsageSnapshot,
 } from "./control-center-types";
-import { deviceIsCustomerConnected } from "./control-center-types";
+import { Check } from "lucide-react";
+import type { ThemeProduct } from "@/lib/themes";
+import {
+  deviceIsCustomerConnected,
+  deviceUsesCable,
+} from "./control-center-types";
+import { activeThemeLabel } from "./logs-screen";
 import { SetupDialog } from "./setup/setup-dialog";
 import {
   LiveVibeTVPreview,
@@ -85,23 +91,34 @@ type OverviewScreenProps = {
   notice?: OverviewNotice | null;
   onCloseNotice?: (notice: OverviewNotice) => void;
   usage?: UsageSnapshot | null;
+  /** The four figures under the device, read from what the app already knows. */
+  firmwareUpdateAvailable?: boolean;
+  macAppUpdateAvailable?: boolean;
+  /** The catalog, to name the theme VibeTV shows. */
+  themes?: ThemeProduct[];
   /** The app runs on Windows; the wording says "computer" instead of "Mac". */
   windowsHost?: boolean;
 };
 
 /**
- * Overview shows only the VibeTV, centered in 3D. The status line above it is
- * the only text. The Mac App, VibeTV, Display and firmware tiles are gone (the
- * approved calm Overview, #713). Calm rule 12 is deliberately not applied to
- * this page: the device is centered, not left-aligned.
+ * Overview: the status line with a small green check, the VibeTV centred in 3D
+ * and four quiet figures under a hairline (Mac App, VibeTV, Display, Firmware),
+ * as in the approved calm master. Calm rule 12 is deliberately not applied to
+ * this page: the heading and the device are centred, not left-aligned.
  */
 export function OverviewScreen({
+  companionStatus,
+  companionVersion,
   device,
   displayFrame = null,
+  firmwareUpdateAvailable = false,
   firmwareUpdateStatus = null,
+  macAppUpdateAvailable = false,
   notice = null,
   onCloseNotice,
+  themes = [],
   usage,
+  windowsHost = false,
 }: OverviewScreenProps) {
   const connected = deviceIsCustomerConnected(device);
   const updateOwnedDisconnect = Boolean(
@@ -150,20 +167,33 @@ export function OverviewScreen({
   }, []);
 
   return (
-    <div className="mx-auto max-w-[1180px] py-4">
-      <section aria-labelledby="vibetv-overview-title">
-        <h2
-          className="text-[28px] font-semibold leading-tight tracking-tight text-foreground"
-          id="vibetv-overview-title"
-        >
-          {connected
-            ? "VibeTV is connected"
-            : updateOwnedDisconnect
-              ? "VibeTV is restarting"
-              : "VibeTV status"}
-        </h2>
+    <div className="mx-auto max-w-[1180px]">
+      <section
+        aria-labelledby="vibetv-overview-title"
+        className="mt-7 flex flex-col items-center"
+      >
+        <div className="flex items-center gap-3">
+          {connected ? (
+            <span
+              aria-hidden
+              className="grid size-[22px] place-items-center rounded-full bg-success text-success-foreground shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--success-foreground)_22%,transparent)]"
+            >
+              <Check className="size-[13px]" strokeWidth={2.6} />
+            </span>
+          ) : null}
+          <h2
+            className="text-[28px] font-semibold leading-[1.1] tracking-[-0.01em] text-foreground"
+            id="vibetv-overview-title"
+          >
+            {connected
+              ? "VibeTV is connected"
+              : updateOwnedDisconnect
+                ? "VibeTV is restarting"
+                : "VibeTV status"}
+          </h2>
+        </div>
 
-        <div className="relative mt-6 flex w-full justify-center">
+        <div className="relative mt-3 flex w-full justify-center">
           {use3D ? (
             <div
               // Until the 3D is revealed it is only drawn in the background:
@@ -187,14 +217,69 @@ export function OverviewScreen({
             </div>
           ) : null}
           {threeReady ? null : (
-            <LiveVibeTVPreview
-              device={device}
-              displayFrame={displayFrame}
-              updateOwnedDisconnect={updateOwnedDisconnect}
-              usage={usage || null}
-            />
+            <div className="w-[392px] max-w-full">
+              <LiveVibeTVPreview
+                device={device}
+                displayFrame={displayFrame}
+                updateOwnedDisconnect={updateOwnedDisconnect}
+                usage={usage || null}
+              />
+            </div>
           )}
         </div>
+
+        <dl className="mt-5 grid w-full grid-cols-2 gap-x-8 gap-y-5 border-t border-foreground/10 pt-5 text-[13px] lg:grid-cols-4">
+          <Fact
+            label={windowsHost ? "App" : "Mac App"}
+            line={
+              companionStatus === "online"
+                ? macAppUpdateAvailable
+                  ? "Update available"
+                  : "Up to date"
+                : undefined
+            }
+            value={
+              companionStatus === "online"
+                ? companionVersion || "Online"
+                : companionStatus === "missing"
+                  ? "Not reachable"
+                  : windowsHost
+                    ? "Waiting for app"
+                    : "Waiting for Mac App"
+            }
+          />
+          <Fact
+            label="VibeTV"
+            line={
+              connected
+                ? `${deviceUsesCable(device) ? "USB-C cable" : "WiFi"} · connected`
+                : undefined
+            }
+            value={
+              connected
+                ? device?.deviceId || device?.board || "Connected"
+                : updateOwnedDisconnect
+                  ? "Restarting"
+                  : "Not connected"
+            }
+          />
+          <Fact
+            label="Display"
+            line="Active theme"
+            value={activeThemeLabel(themes, device)}
+          />
+          <Fact
+            label="Firmware"
+            line={
+              device?.firmware
+                ? firmwareUpdateAvailable
+                  ? "Update available"
+                  : "Up to date"
+                : undefined
+            }
+            value={device?.firmware || "Waiting for VibeTV"}
+          />
+        </dl>
       </section>
 
       {notice ? (
@@ -212,6 +297,25 @@ export function OverviewScreen({
           title={NOTICE_COPY[notice].title}
         />
       ) : null}
+    </div>
+  );
+}
+
+/** One quiet figure: a muted label, the value in 600, a muted line. */
+function Fact({
+  label,
+  line,
+  value,
+}: {
+  label: string;
+  line?: string;
+  value: string;
+}) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="mt-0.5 truncate font-semibold">{value}</dd>
+      {line ? <dd className="text-muted-foreground">{line}</dd> : null}
     </div>
   );
 }

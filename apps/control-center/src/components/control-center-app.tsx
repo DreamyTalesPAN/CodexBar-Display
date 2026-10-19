@@ -5669,9 +5669,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                 companionStatus={companionStatus}
                 device={device}
                 displayFrame={displayFrame}
+                firmwareUpdateAvailable={firmwareUpdateAvailable}
                 firmwareUpdateStatus={firmwareUpdateStatus}
+                macAppUpdateAvailable={macAppUpdateAvailable}
                 notice={overviewNotice.notice}
                 onCloseNotice={overviewNotice.close}
+                themes={catalog.themes}
                 usage={usage}
                 windowsHost={windowsHost}
               />
@@ -5700,7 +5703,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               setProviderDisplayError(null);
               setProviderPreferencesError(null);
             }}
-            automaticPreviews={setupPreviews}
             brightness={brightness}
             busyAction={
               firmwareUpdateInProgress ? "firmware-update" : busyAction

@@ -2,7 +2,6 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import { Field, FieldLabel } from "@/components/ui/field";
 import { ItemSeparator } from "@/components/ui/item";
 import { Label } from "@/components/ui/label";
 import {
@@ -32,10 +31,6 @@ import type { ThemeProduct } from "@/lib/themes";
 import { PreferenceControl } from "./preference-control";
 import { isProviderItem, type ProviderPickerProps } from "./provider-picker";
 import {
-  DisplayModeChoice,
-  type SetupDisplayModePreview,
-} from "./setup/setup-display-mode-screen";
-import {
   ProviderList,
   setupProviderCanDisplay,
 } from "./setup/setup-providers-screen";
@@ -58,8 +53,6 @@ export function standbyTimeoutLabel(minutes: number): string {
 }
 
 export type SettingsScreenProps = {
-  /** Live usage per provider, in the order Automatic moves through them. */
-  automaticPreviews: SetupDisplayModePreview[];
   device: DeviceInfo | null;
   /** The app's own display preferences; a Mac App without them sends none. */
   displayPreferences?: PreferenceDescriptor[];
@@ -101,7 +94,6 @@ export function providerShortcutKeys(windowsHost: boolean): string {
 }
 
 export function SettingsScreen({
-  automaticPreviews,
   device,
   displayPreferences = [],
   brightness,
@@ -208,9 +200,22 @@ export function SettingsScreen({
   const rotation = displayPreferences.find(
     (item) => item.id === "vibetv.display.rotateSeconds",
   );
+  const selectMode = (mode: "automatic" | "fixed") =>
+    void providerPicker.onDisplayChange(
+      {
+        mode,
+        providerIds:
+          mode === "automatic"
+            ? enabledProviderIds
+            : manualProviderId
+              ? [manualProviderId]
+              : [],
+      },
+      manualProviderId ?? enabledProviderIds[0] ?? "",
+    );
 
   return (
-    <div className="mx-auto w-full max-w-[1040px] py-10">
+    <div className="mx-auto w-full max-w-[1040px] pt-4 pb-10">
       <SetupStepFailedDialog
         error={actionError ?? errorForHost(providerError, windowsHost)}
         onOpenChange={(open) => !open && onDismissError()}
@@ -221,64 +226,67 @@ export function SettingsScreen({
             {providerPicker.displayNotice}
           </p>
         ) : null}
-        <DisplayModeChoice
-          automaticDescription={
-            rotation && rotation.value !== "0"
-              ? "VibeTV switches between your providers on a timer."
-              : undefined
-          }
-          automaticPreview={automaticPreviews[0] ?? null}
-          automaticPreviews={automaticPreviews}
-          ink
-          manualPreview={
-            automaticPreviews.find(
-              (preview) =>
-                preview.providerLabel ===
-                displayable.find(
-                  (item) =>
-                    // While Manual is chosen, the provider VibeTV is pinned
-                    // to; otherwise the one a click on Manual would pin.
-                    item.providerId ===
-                    (displayMode === "fixed"
-                      ? currentProviderId
-                      : manualProviderId),
-                )?.label,
-            ) ?? null
-          }
-          mode={displayMode}
-          onSelectMode={(mode) =>
-            void providerPicker.onDisplayChange(
-              {
-                mode,
-                providerIds:
-                  mode === "automatic"
-                    ? enabledProviderIds
-                    : manualProviderId
-                      ? [manualProviderId]
-                      : [],
-              },
-              manualProviderId ?? enabledProviderIds[0] ?? "",
-            )
-          }
-          onSelectProvider={(providerId) =>
-            void providerPicker.onDisplayChange(
-              { mode: "fixed", providerIds: [providerId] },
-              providerId,
-            )
-          }
-          providers={displayable.map((item) => ({
-            id: item.providerId,
-            label: item.label,
-          }))}
-          selectedProviderId={providerPicker.display?.providerIds[0] ?? null}
-        />
-        {displayMode === "automatic" && rotation ? (
-          <PreferenceRow
-            descriptor={rotation}
-            disabled={localActionBusy}
-            onChange={onDisplayPreferenceChange}
+        <div
+          aria-label="Display mode"
+          className="flex flex-col gap-4"
+          role="group"
+        >
+          <RadioRow
+            description={
+              rotation && rotation.value !== "0"
+                ? "VibeTV switches between your providers on a timer."
+                : "VibeTV switches between your providers based on recent activity and usage."
+            }
+            label="Automatic"
+            onSelect={() => selectMode("automatic")}
+            selected={displayMode === "automatic"}
           />
-        ) : null}
+          {displayMode === "automatic" && rotation ? (
+            <div className="mt-4">
+              <PreferenceRow
+                descriptor={rotation}
+                disabled={localActionBusy}
+                onChange={onDisplayPreferenceChange}
+              />
+            </div>
+          ) : null}
+          <RadioRow
+            description="VibeTV always shows the one provider you pick — nothing else."
+            label="Manual"
+            onSelect={() => selectMode("fixed")}
+            selected={displayMode === "fixed"}
+          />
+          {displayMode === "fixed" ? (
+            <div className="mt-4">
+            <SettingRow htmlFor="vibetv-manual-provider" label="Show this provider">
+              <Select
+                onValueChange={(providerId) =>
+                  void providerPicker.onDisplayChange(
+                    { mode: "fixed", providerIds: [providerId] },
+                    providerId,
+                  )
+                }
+                value={currentProviderId ?? ""}
+              >
+                <SelectTrigger
+                  aria-label="Show this provider"
+                  className="w-full data-[size=default]:h-9"
+                  id="vibetv-manual-provider"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {displayable.map((item) => (
+                    <SelectItem key={item.providerId} value={item.providerId}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </SettingRow>
+            </div>
+          ) : null}
+        </div>
         {providerShortcut ? (
           <p className="text-[13px] text-muted-foreground">
             {providerShortcut === "available"
@@ -364,7 +372,7 @@ export function SettingsScreen({
               >
                 <SelectTrigger
                   aria-label="Show after"
-                  className="w-full"
+                  className="w-full data-[size=default]:h-9"
                   id="vibetv-standby-timeout"
                 >
                   <SelectValue />
@@ -438,23 +446,16 @@ export function SettingsScreen({
             { mode: "cable", label: "USB-C", description: `Requires a data cable connected to ${thisHost}.`, supported: cableSupported },
             { mode: "wifi", label: "WiFi", description: "No cable needed — VibeTV can sit anywhere on your desk.", supported: wifiSupported },
           ] as const).map(({ mode, label, description, supported }) => (
-            <button
-              aria-label={label}
-              aria-pressed={connectionMode === mode}
-              className="grid w-full grid-cols-[16px_minmax(0,1fr)] items-start gap-3 rounded-md text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            <RadioRow
+              description={description}
               disabled={connectionModeDisabled || !supported}
               key={mode}
-              onClick={() => {
+              label={label}
+              onSelect={() => {
                 if (mode !== connectionMode) setRequestedMode(mode);
               }}
-              type="button"
-            >
-              <RadioMark selected={connectionMode === mode} />
-              <span className="flex flex-col">
-                <span className="font-semibold">{label}</span>
-                <span className="text-[13px] text-muted-foreground">{description}</span>
-              </span>
-            </button>
+              selected={connectionMode === mode}
+            />
           ))}
         </div>
         {requestedMode !== null ? <Dialog
@@ -494,12 +495,19 @@ export function SettingsScreen({
       <SettingsSection title="Setup">
         {/* Each action sits beside its own line: one line beside both
             explained only the first (issue #579). */}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[13px] font-semibold">Run setup again</p>
+            <p className="text-[13px] text-muted-foreground" id="vibetv-run-setup-help">
+              Connect {thisHost} to another VibeTV.
+            </p>
+          </div>
           <Button
             aria-describedby="vibetv-run-setup-help"
             className="shrink-0"
             disabled={localActionBusy}
             onClick={onResetSetup}
+            size="sm"
             type="button"
             variant="outline"
           >
@@ -507,20 +515,24 @@ export function SettingsScreen({
               <Spinner data-icon="inline-start" />
             ) : null}
             <span>
-              {busyAction === "reset-setup" ? "Resetting" : "Run setup again"}
+              {busyAction === "reset-setup" ? "Resetting" : "Run setup"}
             </span>
           </Button>
-          <p className="min-w-[160px] flex-1 text-[13px] text-muted-foreground" id="vibetv-run-setup-help">
-            Connect {thisHost} to another VibeTV.
-          </p>
         </div>
         {onEraseDevice && connectionMode === "cable" ? (
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <div className="flex items-center justify-between gap-4 border-t border-foreground/10 pt-5">
+            <div className="min-w-0">
+              <p className="text-[13px] font-semibold">Factory reset</p>
+              <p className="text-[13px] text-muted-foreground" id="vibetv-factory-reset-help">
+                VibeTV forgets its WiFi details, pairing, settings and themes.
+              </p>
+            </div>
             <Button
               aria-describedby="vibetv-factory-reset-help"
-              className="shrink-0"
+              className="shrink-0 text-destructive"
               disabled={localActionBusy || !deviceIsCustomerConnected(device)}
               onClick={() => setEraseRequested(true)}
+              size="sm"
               type="button"
               variant="outline"
             >
@@ -528,14 +540,9 @@ export function SettingsScreen({
                 <Spinner data-icon="inline-start" />
               ) : null}
               <span>
-                {busyAction === "erase-device"
-                  ? "Resetting"
-                  : "Reset to factory settings"}
+                {busyAction === "erase-device" ? "Resetting" : "Reset…"}
               </span>
             </Button>
-            <p className="min-w-[160px] flex-1 text-[13px] text-muted-foreground" id="vibetv-factory-reset-help">
-              VibeTV forgets its WiFi details, pairing, settings and themes.
-            </p>
           </div>
         ) : null}
         {eraseRequested ? (
@@ -662,20 +669,48 @@ function SettingRow({
   );
 }
 
-/** The round mark of a Settings radio row: a ring, with a dot when chosen. */
-function RadioMark({ selected }: { selected: boolean }) {
+/**
+ * One Settings radio: a round mark, its name in 600 and a muted line under it.
+ * Pressing it chooses it; the rows that belong to a choice sit under it.
+ */
+function RadioRow({
+  description,
+  disabled = false,
+  label,
+  onSelect,
+  selected,
+}: {
+  description: string;
+  disabled?: boolean;
+  label: string;
+  onSelect: () => void;
+  selected: boolean;
+}) {
   return (
-    <span
-      aria-hidden
-      className={cn(
-        "relative mt-0.5 block size-4 rounded-full border-[1.5px]",
-        selected ? "border-foreground" : "border-foreground/40",
-      )}
+    <button
+      aria-label={label}
+      aria-pressed={selected}
+      className="grid w-full grid-cols-[16px_minmax(0,1fr)] items-start gap-3 rounded-md text-left text-[13px] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+      disabled={disabled}
+      onClick={onSelect}
+      type="button"
     >
-      {selected ? (
-        <span className="absolute inset-[3px] rounded-full bg-foreground" />
-      ) : null}
-    </span>
+      <span
+        aria-hidden
+        className={cn(
+          "relative mt-0.5 block size-4 rounded-full border-[1.5px]",
+          selected ? "border-foreground" : "border-foreground/40",
+        )}
+      >
+        {selected ? (
+          <span className="absolute inset-[3px] rounded-full bg-foreground" />
+        ) : null}
+      </span>
+      <span className="flex flex-col">
+        <span className="font-semibold">{label}</span>
+        <span className="text-[13px] text-muted-foreground">{description}</span>
+      </span>
+    </button>
   );
 }
 
@@ -690,14 +725,19 @@ function PreferenceRow({
   onChange: SettingsScreenProps["onDisplayPreferenceChange"];
 }) {
   return (
-    <Field data-disabled={disabled} orientation="horizontal">
-      <FieldLabel htmlFor={descriptor.id}>{descriptor.label}</FieldLabel>
-      <PreferenceControl
-        descriptor={descriptor}
-        disabled={disabled}
-        onChange={(value) => onChange?.(descriptor, value)}
-      />
-    </Field>
+    <SettingRow
+      disabled={disabled}
+      htmlFor={descriptor.id}
+      label={descriptor.label}
+    >
+      <div className="w-full [&>button]:w-full">
+        <PreferenceControl
+          descriptor={descriptor}
+          disabled={disabled}
+          onChange={(value) => onChange?.(descriptor, value)}
+        />
+      </div>
+    </SettingRow>
   );
 }
 

@@ -13,7 +13,6 @@ import {
   standbyTimeoutLabel,
   type SettingsScreenProps,
 } from "./settings-screen";
-import type { SetupDisplayModePreview } from "./setup/setup-display-mode-screen";
 
 const providerPicker: ProviderPickerProps = {
   usage: { providers: ["codex", "claude", "cursor"].map((id) => ({
@@ -97,12 +96,10 @@ function render(
   connectionMode: "cable" | "wifi" = "cable",
   windowsHost = false,
   displayPreferences: PreferenceDescriptor[] = [],
-  automaticPreviews: SetupDisplayModePreview[] = [],
   providerShortcut: SettingsScreenProps["providerShortcut"] = null,
 ) {
   return renderToStaticMarkup(
     <SettingsScreen
-      automaticPreviews={automaticPreviews}
       brightness={brightness}
       busyAction={null}
       connectionMode={connectionMode}
@@ -149,7 +146,6 @@ describe("SettingsScreen on Windows", () => {
 describe("SettingsScreen standby controls", () => {
   it("offers the factory reset only over the USB cable", () => {
     const props = {
-      automaticPreviews: [],
       brightness: 70,
       busyAction: null,
       device: standbyDevice,
@@ -172,14 +168,13 @@ describe("SettingsScreen standby controls", () => {
       <SettingsScreen {...props} connectionMode="wifi" />,
     );
 
-    expect(cable).toContain("Reset to factory settings");
-    expect(wifi).not.toContain("Reset to factory settings");
-    // Paul, 2026-10-08: the two setup actions sit side by side in one row, and
-    // Run diagnostics is on Support only.
-    // Issue #579: each has its own line below it; before, the one line
-    // beside them explained only Run setup again.
+    expect(cable).toContain("Factory reset");
+    expect(wifi).not.toContain("Factory reset");
+    // Calm master: each action is a row with its title, its own line and an
+    // outline button on the right ("Run setup", red "Reset…"). Run diagnostics
+    // is on Support only.
     expect(cable).toMatch(
-      /Run setup again<\/span><\/button><p[^>]*>Connect this Mac to another VibeTV\.<\/p><\/div><div[^>]*><button[^>]*><span>Reset to factory settings<\/span><\/button><p[^>]*>VibeTV forgets its WiFi details, pairing, settings and themes\.<\/p>/,
+      /Run setup again<\/p><p[^>]*>Connect this Mac to another VibeTV\.<\/p><\/div><button[^>]*><span>Run setup<\/span><\/button><\/div><div[^>]*><div[^>]*><p[^>]*>Factory reset<\/p><p[^>]*>VibeTV forgets its WiFi details, pairing, settings and themes\.<\/p><\/div><button[^>]*><span>Reset…<\/span><\/button>/,
     );
     expect(cable.match(/Connect this Mac to another VibeTV\./g)).toHaveLength(1);
     expect(wifi).toContain("Connect this Mac to another VibeTV.");
@@ -385,9 +380,10 @@ describe("SettingsScreen standby controls", () => {
     expect(providerSection).toContain(">Gemini</");
   });
 
-  it("leaves the display mode cards usable when no write is in flight", () => {
+  it("leaves the display mode radios usable when no write is in flight", () => {
     const html = render(standbyDevice);
-    const cards = html.match(/<button aria-pressed="(?:true|false)"[^>]*>/g) || [];
+    const cards =
+      html.match(/<button aria-label="(?:Automatic|Manual)" aria-pressed="(?:true|false)"[^>]*>/g) || [];
 
     expect(cards.length).toBeGreaterThanOrEqual(2);
     expect(cards.some((card) => card.includes('disabled=""'))).toBe(false);
@@ -432,7 +428,6 @@ describe("SettingsScreen standby controls", () => {
   it("sets the remaining small Settings text at 13 px", () => {
     const html = renderToStaticMarkup(
       <SettingsScreen
-        automaticPreviews={[]}
         brightness={70}
         busyAction={null}
         connectionMode="cable"
@@ -516,7 +511,6 @@ describe("SettingsScreen standby controls", () => {
   it("keeps VibeTV mutations disabled during a firmware update", () => {
     const html = renderToStaticMarkup(
       <SettingsScreen
-        automaticPreviews={[]}
         brightness={50}
         busyAction="firmware-update"
         connectionMode="cable"
@@ -537,7 +531,7 @@ describe("SettingsScreen standby controls", () => {
     expect(html.match(/<button[^>]*disabled=""/g)?.length).toBeGreaterThanOrEqual(2);
   });
 
-  // Issue #322: the timed rotation is one select under the Automatic card.
+  // Issue #322: the timed rotation is one select under the Automatic radio.
   it("offers the rotation under Display mode only while Automatic is chosen", () => {
     const displayMode = (
       mode: "automatic" | "fixed",
@@ -569,7 +563,7 @@ describe("SettingsScreen standby controls", () => {
     expect(automatic).toContain(byActivity);
     expect(automatic).not.toContain(onATimer);
 
-    // The Automatic card says what the chosen timer makes it do.
+    // The Automatic line says what the chosen timer makes it do.
     const timed = displayMode("automatic", [{ ...rotation, value: "30" }]);
     expect(timed).toContain(onATimer);
     expect(timed).not.toContain(byActivity);
@@ -578,66 +572,35 @@ describe("SettingsScreen standby controls", () => {
     expect(displayMode("automatic", [])).not.toContain("Switch providers");
   });
 
-  // Windows walk-through of 2026-10-08: with Automatic chosen and a signed-out
-  // provider first in the list, the Manual card read "No usage yet" although a
-  // click on it showed Claude.
-  it("previews on the Manual card the provider a click on Manual would show", () => {
-    const signedOut: ProviderItem = {
-      ...provider("codex", "Codex", true),
-      health: { message: "Authentication required.", service: "operational", state: "auth_required" },
+  // Calm master: Display mode is a plain radio list. Only the chosen radio is
+  // pressed; "Show this provider" is a select that belongs to Manual only.
+  it("shows Display mode as a radio list with the provider select under Manual", () => {
+    const section = (mode: "automatic" | "fixed") => {
+      const html = render(standbyDevice, savedStandby, {
+        ...providerPicker,
+        display: { mode, providerIds: ["claude"], configured: true, valid: true },
+        items: [provider("claude", "Claude", true), provider("codex", "Codex", true)],
+      });
+      return html.slice(
+        html.indexOf(">Display mode</h2>"),
+        html.indexOf(">Screensaver</h2>"),
+      );
     };
-    const manualPanel = (mode: "automatic" | "fixed", providerIds: string[]) => {
-      const panel = render(
-        standbyDevice,
-        savedStandby,
-        {
-          ...providerPicker,
-          display: { mode, providerIds, configured: true, valid: true },
-          items: [signedOut, provider("claude", "Claude", true)],
-        },
-        70, "cable", false, [],
-        [{ providerLabel: "Claude", resetLabel: null, windows: [{ label: "Session", percent: 12 }] }],
-      ).split('data-slot="display-mode-preview"')[2] ?? "";
-      return panel.slice(0, panel.indexOf(">Manual<"));
-    };
+    const pressed = (html: string) =>
+      Array.from(
+        html.matchAll(/<button\b[^>]*aria-label="([^"]*)"[^>]*aria-pressed="true"/g),
+        (match) => match[1],
+      );
 
-    const automatic = manualPanel("automatic", ["codex", "claude"]);
-    expect(automatic).toContain("Claude");
-    expect(automatic).toContain("12");
-    expect(automatic).not.toContain("No usage yet");
+    const manual = section("fixed");
+    expect(pressed(manual)).toEqual(["Manual"]);
+    expect(manual).toContain("Show this provider");
+    // No preview cards in Settings any more.
+    expect(manual).not.toContain('data-slot="display-mode-preview"');
 
-    // Pinned to a provider that shows nothing, the card keeps saying so.
-    expect(manualPanel("fixed", ["codex"])).toContain("No usage yet");
-    expect(manualPanel("fixed", ["claude"])).toContain("Claude");
-  });
-
-  // Calm rule (#713): lime is only for a primary button fill and a switch that
-  // is on. The chosen Display mode card and the chosen provider are framed in
-  // ink, not in the lime ring token (olive in light mode).
-  it("frames the chosen Display mode card and provider in ink, not lime", () => {
-    const html = render(standbyDevice, savedStandby, {
-      ...providerPicker,
-      display: { mode: "fixed", providerIds: ["claude"], configured: true, valid: true },
-      items: [provider("claude", "Claude", true), provider("codex", "Codex", true)],
-    });
-    const section = html.slice(
-      html.indexOf(">Display mode</h2>"),
-      html.indexOf(">Screensaver</h2>"),
-    );
-    // Only the chosen card and the chosen provider are pressed: the Manual card
-    // comes first, the provider list after it.
-    const pressed = Array.from(
-      section.matchAll(/<button\b[^>]*aria-pressed="true"[^>]*>/g),
-      (match) => match[0],
-    );
-    expect(pressed).toHaveLength(2);
-    for (const tag of pressed) {
-      const classes = (tag.match(/class="([^"]*)"/)?.[1] ?? "").split(/\s+/);
-      expect(classes).toContain("border-foreground");
-      expect(classes).toContain("ring-foreground/20");
-      expect(classes).not.toContain("border-ring");
-      expect(classes).not.toContain("ring-ring/20");
-    }
+    const automatic = section("automatic");
+    expect(pressed(automatic)).toEqual(["Automatic"]);
+    expect(automatic).not.toContain("Show this provider");
   });
 
   // Issue #424: the app's global shortcut for the next provider is named
@@ -658,7 +621,7 @@ describe("SettingsScreen standby controls", () => {
         standbyDevice, savedStandby,
         { ...providerPicker, items,
           display: { mode, providerIds: ["claude"], configured: true, valid: true } },
-        70, "cable", windowsHost, [], [], providerShortcut,
+        70, "cable", windowsHost, [], providerShortcut,
       );
       return html.slice(
         html.indexOf(">Display mode</h2>"),
@@ -703,7 +666,7 @@ describe("SettingsScreen standby controls", () => {
       standbyDevice, savedStandby,
       { ...providerPicker, usage: null, items: twoWithUsage,
         display: { mode: "automatic", providerIds: ["claude"], configured: true, valid: true } },
-      70, "cable", false, [], [], "available",
+      70, "cable", false, [], "available",
     );
     expect(unread).toContain("Press ⌃⌥⌘P in any app to show the next provider.</p>");
     expect(unread).not.toContain("This needs two providers with usage.");
@@ -755,7 +718,6 @@ describe("SettingsScreen standby controls", () => {
     ) => {
       const html = renderToStaticMarkup(
         <SettingsScreen
-          automaticPreviews={[]}
           brightness={70}
           busyAction={null}
           connectionMode="cable"
@@ -833,7 +795,6 @@ describe("SettingsScreen standby controls", () => {
           items: [provider("claude", "Claude", true), provider("codex", "Codex", false)],
         },
         70, "cable", false, [rotation],
-        [{ providerLabel: "Claude", resetLabel: null, windows: [{ label: "Session", percent: 12 }] }],
       ),
     );
   });
