@@ -456,6 +456,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, [busyAction]);
   const [supportReportBusy, setSupportReportBusy] = useState(false);
   const [lastError, setLastError] = useState<ApiError | null>(null);
+  // One error object is one occurrence. Once a surface has closed it, no
+  // surface shows it again (Support and Settings alike).
+  const [dismissedError, setDismissedError] = useState<ApiError | null>(null);
+  const shownError = lastError && lastError !== dismissedError ? lastError : null;
+  const supportError = useMemo(
+    () => errorForHost(shownError, windowsHost),
+    [shownError, windowsHost],
+  );
   const [lastInstall, setLastInstall] = useState<InstallResponse["result"]>();
   const [themeInstallStatus, setThemeInstallStatus] =
     useState<ThemeInstallStatus | null>(null);
@@ -5185,6 +5193,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       id !== "provider-shortcut" ||
       nativeProviderShortcut(navigator.userAgent) !== "unavailable",
   );
+  // The centred dialogs of the arbitration below win over the Support error:
+  // it waits for them, so two centred dialogs never stack.
+  const centredDialogOpen =
+    (needsRuntimeRecovery && !runtimeRecoveryHidden) ||
+    lostDevicePickerOpen ||
+    (usageFailure && !usageFailureHidden) ||
+    systemBusyOpen ||
+    setupAgainRequested ||
+    whatsNewEntries.length > 0;
   // Opened from Updates and taken away by something else, or by the window
   // moving to another page, the notice does not come back by itself: what
   // follows may be a dialog this condition does not know, as the one Updates
@@ -5665,9 +5682,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         {activeShellTab === "settings" ? (
           <SettingsScreen
             actionError={
-              lostDevicePickerOpen ? null : errorForHost(lastError, windowsHost)
+              lostDevicePickerOpen ? null : errorForHost(shownError, windowsHost)
             }
             onDismissError={() => {
+              setDismissedError(lastError);
               setLastError(null);
               setProviderDisplayError(null);
               setProviderPreferencesError(null);
@@ -5789,7 +5807,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             themes={catalog.themes}
             diagnostics={supportDiagnostics}
             events={logs}
-            lastError={errorForHost(lastError, windowsHost)}
+            lastError={centredDialogOpen ? null : supportError}
+            onDismissError={() => setDismissedError(lastError)}
             onLoadDiagnostics={loadSupportDiagnostics}
             onRefresh={checkCompanion}
             onRepairUsageEngine={retryUsageService}

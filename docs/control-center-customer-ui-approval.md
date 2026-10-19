@@ -7601,3 +7601,38 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none beyond the entry above: "Sign in to GitHub Copilot so VibeTV can read its usage." instead of "Sign in to Copilot ..." for that name.
 - Scope: `setupProviderDialogSentence` in `apps/control-center/src/components/setup/setup-providers-screen.tsx` and its test. Pull request branch only, not merge or release.
 - What's new: none — a Codex review fix to the wording already approved above
+
+## 2026-10-17 — Support: the last error opens as an overlay dialog, not inline text
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect: errors are dialogs over the page, not inline text; rule scan 1017, item 12); look unchanged except: the last error as an inline warning in the Recent activity card at the top of Support → the same sentences in an overlay dialog with "OK".
+- Approved customer-visible result: On Support, when the last action failed, the error is no longer an inline warning in the Recent activity card. It opens as a dialog over the page: the title is the error sentence (the same text as before), below it the next-step sentence (the same text as before), and one button "OK" that closes it (the X closes it too). The dialog does not come back for the same error on its own; a new occurrence of the error opens it again. Wording, colours and buttons of everything else stay the same.
+- Scope: `apps/control-center/src/components/logs-screen.tsx`, its new test `apps/control-center/src/components/logs-screen.error-overlay.test.tsx` and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — the same sentences in a dialog, no new capability
+
+## 2026-10-17 — Support error dialog: the app keeps the dismissal per error
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect: errors are dialogs over the page, not inline text; rule scan 1017, item 12); look unchanged except: the last error as an inline warning in the Recent activity card at the top of Support → the same sentences in an overlay dialog with "OK". Same wording as the entry above; this entry only moves where the dismissal is kept.
+- Approved customer-visible result: On Support, the last error opens as a dialog over the page (title = the error sentence, next-step sentence below, "OK" and the X close it), as in the entry above. It stays closed for the same error, also after leaving Support and coming back. A new failure, even with the same words, opens it again. Nothing else changes.
+- Scope: `apps/control-center/src/components/logs-screen.tsx`, `apps/control-center/src/components/control-center-app.tsx` (it keeps the dismissed error and passes it to Support), `apps/control-center/src/components/logs-screen.error-overlay.test.tsx` and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — the same sentences in a dialog, no new capability
+
+## 2026-10-17 — Support error dialog waits while runtime repair or the lost-VibeTV picker is open
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect: two centred dialogs stacked on Support, the lower one's buttons unreachable; Codex review on #743); look unchanged except: when Refresh on Support loses the Companion, the Support error dialog no longer opens on top of the runtime repair dialog (and not on top of the lost-VibeTV picker); the runtime repair dialog alone is shown.
+- Approved customer-visible result: On Support, while the runtime repair dialog or the lost-VibeTV picker is open, the last error is not shown as a second dialog. The text of both dialogs is unchanged. Once that dialog is closed, the Support error dialog shows, as in the entries above, unless it was already dismissed. Nothing else changes.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (the condition for what Support receives) and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no new capability, the same dialogs in a fixed order
+
+## 2026-10-17 — Support error dialog waits for every centred dialog
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect: centred dialogs stacked on Support, the lower one's buttons unreachable; Codex review on #743); look unchanged except: while the runtime repair, the lost-VibeTV picker, the usage repair dialog, the system busy dialog, "Run setup again?" or What's new is open, the Support error dialog waits and is not shown on top of them.
+- Approved customer-visible result: On Support, the last error is shown as its dialog only when no other centred dialog is open. The text of every dialog is unchanged. When the other dialog closes, the Support error shows, unless it was already dismissed. Nothing else changes.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (the condition for what Support receives) and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no new capability, the same dialogs in a fixed order
+
+## 2026-10-17 — An error closed once stays closed on Support and in Settings
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect: an error closed on Support came back on Settings; Codex review on #743); look unchanged except: an error closed with "OK" on Support no longer opens again when Settings is opened, and the Settings error dialog is not shown for an error that was already closed.
+- Approved customer-visible result: An error dialog closed with "OK" (or the X) stays closed on every page for that same error. A new failure, even with the same words, opens it again. The text and buttons of the dialogs are unchanged. Nothing else changes.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (the dismissed error, kept once for Support and Settings), `apps/control-center/src/components/logs-screen.tsx` (reports the dismissal, no own state), `apps/control-center/src/components/logs-screen.error-overlay.test.tsx` and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no new capability, the same dialogs
