@@ -114,7 +114,7 @@ export function LogsScreen({
                   key={event.id}
                 >
                   <span className="text-muted-foreground">{event.timestamp}</span>
-                  <span className="truncate">
+                  <span className="break-words">
                     <span>{supportText(event.label)}</span>
                     {event.detail ? (
                       <>

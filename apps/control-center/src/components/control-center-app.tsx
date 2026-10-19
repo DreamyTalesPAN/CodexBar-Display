@@ -5669,9 +5669,21 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                 companionStatus={companionStatus}
                 device={device}
                 displayFrame={displayFrame}
-                firmwareUpdateAvailable={firmwareUpdateAvailable}
+                firmwareUpdate={
+                  firmwareUpdateAvailable
+                    ? "available"
+                    : effectiveFirmwareUpdate?.status === "current"
+                      ? "current"
+                      : undefined
+                }
                 firmwareUpdateStatus={firmwareUpdateStatus}
-                macAppUpdateAvailable={macAppUpdateAvailable}
+                macAppUpdate={
+                  macAppUpdateAvailable
+                    ? "available"
+                    : companionRelease?.status === "available"
+                      ? "current"
+                      : undefined
+                }
                 notice={overviewNotice.notice}
                 onCloseNotice={overviewNotice.close}
                 themes={catalog.themes}

@@ -59,6 +59,8 @@ describe("OverviewScreen", () => {
           firmware: "1.0.48",
           target: "cable://vibetv",
         }}
+        firmwareUpdate="current"
+        macAppUpdate="current"
       />,
     );
 
@@ -84,14 +86,27 @@ describe("OverviewScreen", () => {
     }
   });
 
+  it("says nothing about updates until a check has confirmed a result", () => {
+    const html = renderToStaticMarkup(
+      <OverviewScreen
+        companionStatus="online"
+        companionVersion="1.0.64"
+        device={{ ...connectedDevice, firmware: "1.0.48" }}
+      />,
+    );
+
+    expect(html).not.toContain("Up to date");
+    expect(html).not.toContain("Update available");
+  });
+
   it("says an update is waiting and uses App on Windows", () => {
     const html = renderToStaticMarkup(
       <OverviewScreen
         companionStatus="online"
         companionVersion="1.0.64"
         device={{ ...connectedDevice, firmware: "1.0.48" }}
-        firmwareUpdateAvailable
-        macAppUpdateAvailable
+        firmwareUpdate="available"
+        macAppUpdate="available"
         windowsHost
       />,
     );

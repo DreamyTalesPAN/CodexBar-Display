@@ -97,9 +97,13 @@ type OverviewScreenProps = {
   notice?: OverviewNotice | null;
   onCloseNotice?: (notice: OverviewNotice) => void;
   usage?: UsageSnapshot | null;
-  /** The four figures under the device, read from what the app already knows. */
-  firmwareUpdateAvailable?: boolean;
-  macAppUpdateAvailable?: boolean;
+  /**
+   * What the last update check found, for the lines under the Mac App and
+   * Firmware figures. No value (not checked yet, or the check failed) says
+   * nothing: "Up to date" is only for a confirmed-current result.
+   */
+  firmwareUpdate?: "available" | "current";
+  macAppUpdate?: "available" | "current";
   /** The catalog, to name the theme VibeTV shows. */
   themes?: ThemeProduct[];
   /** The app runs on Windows; the wording says "computer" instead of "Mac". */
@@ -117,9 +121,9 @@ export function OverviewScreen({
   companionVersion,
   device,
   displayFrame = null,
-  firmwareUpdateAvailable = false,
+  firmwareUpdate,
   firmwareUpdateStatus = null,
-  macAppUpdateAvailable = false,
+  macAppUpdate,
   notice = null,
   onCloseNotice,
   themes = [],
@@ -237,13 +241,7 @@ export function OverviewScreen({
         <dl className="mt-5 grid w-full grid-cols-2 gap-x-8 gap-y-5 border-t border-foreground/10 pt-5 text-[13px] lg:grid-cols-4">
           <Fact
             label={windowsHost ? "App" : "Mac App"}
-            line={
-              companionStatus === "online"
-                ? macAppUpdateAvailable
-                  ? "Update available"
-                  : "Up to date"
-                : undefined
-            }
+            line={updateLine(macAppUpdate)}
             value={
               companionStatus === "online"
                 ? companionVersion || "Online"
@@ -276,13 +274,7 @@ export function OverviewScreen({
           />
           <Fact
             label="Firmware"
-            line={
-              device?.firmware
-                ? firmwareUpdateAvailable
-                  ? "Update available"
-                  : "Up to date"
-                : undefined
-            }
+            line={device?.firmware ? updateLine(firmwareUpdate) : undefined}
             value={device?.firmware || "Waiting for VibeTV"}
           />
         </dl>
@@ -305,6 +297,14 @@ export function OverviewScreen({
       ) : null}
     </div>
   );
+}
+
+function updateLine(update?: "available" | "current"): string | undefined {
+  return update === "available"
+    ? "Update available"
+    : update === "current"
+      ? "Up to date"
+      : undefined;
 }
 
 /** One quiet figure: a muted label, the value in 600, a muted line. */

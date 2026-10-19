@@ -7907,3 +7907,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/{logs-screen,overview-screen,control-center-app,control-center-brand}.tsx` and their tests, `docs/control-center-accessibility.md` (wording of the manual checks), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no new content
+
+## 2026-10-19 — Calm redesign matched to the master: Codex fixes for Overview update lines and Recent activity (#784)
+
+- User approval: pending — Paul reviews (#784 matched to the approved master design "Calm Redesign - alle Screens", 19.10.); look unchanged except: (1) the lines "Up to date" under Mac App and Firmware on the Overview show only after a finished check confirmed it; before the first check, or after a failed check, the line is left out ("Update available" shows as before when one is waiting); (2) a long Recent activity line on Support wraps onto the next line instead of being cut off with an ellipsis.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/{overview-screen,logs-screen,control-center-app}.tsx`, `apps/control-center/src/components/overview-screen.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
