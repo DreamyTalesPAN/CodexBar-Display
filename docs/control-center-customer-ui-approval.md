@@ -9619,4 +9619,10 @@ issue scope, or release permission never implies UI permission.
 - User approval: pending — Paul reviews (#783 matched to the approved template, build 2 QA); look unchanged except, each one before → after: (1) the Usage page starts 24 px higher: the "Last 30 days" row sits 16 px under the page header → before 40 px; the page ends 32 px below the tiles → before 40 px; (2) the two provider tiles stand 16 px apart → before 20 px; (3) in the first lane of a tile the big percent has no extra line space, so the bar sits 3 px lower under it → before the bar 3 px closer.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/usage-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
+
+## 2026-10-19 — #802: Appearance page matched to the template (build 2 QA)
+
+- User approval: pending — Paul reviews (#802 matched to the approved template, build 2 QA); look unchanged except, each one before → after: (1) the lime Create button is 36 px high with 17 px sides → before 44 px high; (2) the cards in the list stand 24 px apart sideways and 28 px apart downwards and are 275 px wide → before 10 px apart both ways and 284 px wide; (3) the theme preview dialog is 520 px wide, shows the picture 240 px wide, and its Close button is a plain text button → before 440 px, a picture as wide as the dialog, and a lime Close button.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
