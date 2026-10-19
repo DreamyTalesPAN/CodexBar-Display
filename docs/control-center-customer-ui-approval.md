@@ -8363,6 +8363,14 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/src/components/setup/setup-recovery-dialogs.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
+## 2026-10-19 — #784: open Theme Studio shows one header row (build 2 QA)
+
+- User approval: pending — Paul reviews (Theme Studio header as one row per the approved template, build 2 QA); look unchanged except, before → after: while the Theme Studio is open, the window shows one header row — the Studio's own (back arrow, design name, File, undo and redo, status line, Save, Send to VibeTV) — with the sidebar open → before a second row "Appearance" with the sidebar button sat above it; the page title "Appearance" stays for screen readers.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+
 ## 2026-10-19 — Support: "n of 6 passed" and a Fix link for the usage engine (#795)
 
 - User approval: pending — Paul reviews (Support "Fix" + "n of 6 passed" as drawn in the approved master "Calm Redesign - alle Screens", frame 11, #795); look unchanged except: before, Diagnostics showed only "Run diagnostics" and no check had a Fix link; after, a muted "n of m passed" (the real count of the last run) stands left of "Run diagnostics", and a failing usage engine row shows an underlined "Fix" link at its right end that starts the same usage engine repair as the existing "Repair" button. Other checks show no Fix link.
@@ -8396,4 +8404,11 @@ issue scope, or release permission never implies UI permission.
 - User approval: pending — Paul reviews (Codex review fix); look unchanged except, before → after: on a narrow window (below about 345 px of content width) the count "n of m passed" and the Run diagnostics button wrap onto a second line under the Diagnostics heading → before they stay on one line and the button can be clipped; at normal widths nothing changes.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/diagnostics-panel.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #803: approval marker after merging the newest calm redesign base (Theme Studio header)
+
+- User approval: pending — Paul reviews (#803 merged with the newest #784 head, 9c18d75f); look unchanged except what the #784 entries and this PR's Support entries describe; no new visible change of its own.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: merge of origin/claude/group-calm-redesign (#784, 9c18d75f) into this branch, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
