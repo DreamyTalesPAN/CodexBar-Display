@@ -1235,15 +1235,15 @@ export function AIThemeStudioScreen({
               </div>
             ) : null}
             {primitive && !isAttachedSceneAnimation(primitive.assetPath) ? (
-              <Collapsible data-selection-controls className="relative mx-auto w-full max-w-[460px]">
+              <Collapsible data-selection-controls className="mx-auto flex min-h-0 w-full max-w-[460px] flex-col">
                 <CollapsibleTrigger asChild>
                   <Button variant="ghost" className="group w-full justify-between">
                     Details
                     <ChevronDown className="transition-transform group-data-[state=open]:rotate-180" />
                   </Button>
                 </CollapsibleTrigger>
-                {/* An overlay over the lower part of the preview: it scrolls inside its own area and the preview stays put. */}
-                <CollapsibleContent className="absolute inset-x-0 bottom-full mb-2 max-h-[22rem] overflow-y-auto rounded-xl bg-popover p-3 text-popover-foreground shadow-lg ring-1 ring-foreground/10">
+                {/* The panel is as high as the free space below the preview and scrolls inside itself. */}
+                <CollapsibleContent className="min-h-0 flex-1 overflow-y-auto pt-3">
               <section className="space-y-3" aria-label="Selected element tools">
                 <div className="flex items-center justify-between gap-2">
                   <h2 className="min-w-0 truncate font-medium">

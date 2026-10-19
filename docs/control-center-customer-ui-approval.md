@@ -8051,3 +8051,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the entries above; only the dialog title and the row button text after such a failed check change.
 - Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx`, `ai-theme-studio-screen.tsx` (key dialog), the test of the form, and this record. Pull request branch only, not merge or release.
 - What's new: none — fix of a review finding, no new text or feature
+
+## 2026-10-19 — Theme Studio: Details open below the preview, never over it (#781, build 7194, second revision)
+
+- User approval: Paul, 19.10.2026 via the communicator, decision on build 7194 (he edits the preview while Details is open, so the preview must stay fully visible: Details uses the free space below the preview and scrolls inside itself)
+- Approved customer-visible result: before → after: the overlay of the previous revision, which covered the lower part of the preview while Details was open, is gone. The preview keeps its centred place and is never covered. "Details" and its panel sit in the free space below the preview in the same column; the panel is as high as that free space (it gets smaller in a lower window, never larger than the space) and scrolls inside itself. In a window so low that the left column scrolls, the preview and the Details bar scroll together as before. Texts and controls inside Details are unchanged.
+- Scope: `apps/control-center/src/components/theme-studio/editable-theme-preview.tsx` (three-row layout), `ai-theme-studio-screen.tsx` (the Details block), their tests, and this record. Pull request branch only, not merge or release.
+- What's new: none — layout refinement of the Theme Studio, no new feature
