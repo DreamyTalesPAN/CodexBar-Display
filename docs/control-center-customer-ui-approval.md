@@ -8443,3 +8443,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx` and this approval record; merge of origin/claude/group-calm-redesign (#784, 5d8f2885). Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-19 — #798: Codex fix follow-up, test scope only
+
+- User approval: pending — Paul reviews (Codex review fix, test file only); no visible change: the new test that checks the Mac App row's status reads that row only.
+- Approved customer-visible result: none; no visible change.
+- Scope: `apps/control-center/src/components/updates-screen.calm.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
