@@ -570,7 +570,15 @@ describe("UsageScreen", () => {
   it("swaps the reset time for the Updating spinner in a quiet tile and keeps its numbers", () => {
     const html = renderUsage(null, {
       ...usage,
-      providers: [{ ...usage.providers[0], stale: true, resetSecs: 3600 }],
+      providers: [
+        {
+          ...usage.providers[0],
+          stale: true,
+          resetSecs: 3600,
+          sessionRetained: true,
+          weeklyRetained: true,
+        },
+      ],
     });
     expect(html).toContain('aria-label="Updating"');
     expect(html).not.toContain("Reset in");
@@ -590,6 +598,8 @@ describe("UsageScreen", () => {
           usageUnavailable: true,
           sessionUnavailable: true,
           weeklyUnavailable: true,
+          sessionRetained: true,
+          weeklyRetained: true,
         },
       ],
     });
@@ -598,6 +608,70 @@ describe("UsageScreen", () => {
     expect(html).toContain('aria-label="Updating"');
     expect(html).not.toContain("??");
     expect(html).not.toContain("Reset in");
+  });
+
+  it("shows a stale retained 0% lane as a number with the Updating spinner", () => {
+    const html = renderUsage(null, {
+      ...usage,
+      providers: [
+        {
+          ...usage.providers[0],
+          session: 0,
+          weekly: 26,
+          stale: true,
+          usageUnavailable: true,
+          sessionUnavailable: true,
+          weeklyUnavailable: true,
+          sessionRetained: true,
+          weeklyRetained: true,
+        },
+      ],
+    });
+    expect(html).toContain('aria-label="0% session used"');
+    expect(html).toContain('aria-label="26% weekly used"');
+    expect(html).toContain('aria-label="Updating"');
+  });
+
+  it("keeps a non-current stale provider whose retained lanes are all 0% visible", () => {
+    const html = renderUsage(null, {
+      ...usage,
+      currentProvider: "codex",
+      providers: [
+        usage.providers[0],
+        {
+          id: "claude",
+          label: "Claude",
+          session: 0,
+          weekly: 0,
+          usageMode: "used",
+          stale: true,
+          usageUnavailable: true,
+          sessionUnavailable: true,
+          weeklyUnavailable: true,
+          sessionRetained: true,
+          weeklyRetained: true,
+        },
+      ],
+    });
+    expect(html).toContain("Claude");
+    expect(html).toContain('aria-label="0% session used"');
+  });
+
+  it("shows a stale retained 0% window as a number", () => {
+    const html = renderUsage(null, {
+      ...usage,
+      providers: [
+        {
+          ...usage.providers[0],
+          stale: true,
+          usageUnavailable: true,
+          windowsRetained: true,
+          windows: [{ id: "weekly", label: "Weekly", usedPercent: 0 }],
+        },
+      ],
+    });
+    expect(html).toContain('aria-label="0% weekly used"');
+    expect(html).toContain('aria-label="Updating"');
   });
 
   it("shows no 0% for a cleared stale provider with nothing retained", () => {
@@ -620,7 +694,7 @@ describe("UsageScreen", () => {
     expect(html).toContain('aria-label="Updating"');
   });
 
-  it("keeps a stale reading's non-zero lane and shows a zero lane as unavailable", () => {
+  it("keeps a stale reading's retained lane and shows a lane it does not retain as unavailable", () => {
     const html = renderUsage(null, {
       ...usage,
       providers: [
@@ -632,6 +706,7 @@ describe("UsageScreen", () => {
           usageUnavailable: true,
           sessionUnavailable: true,
           weeklyUnavailable: true,
+          weeklyRetained: true,
         },
       ],
     });
@@ -732,6 +807,7 @@ describe("UsageScreen", () => {
               usageUnavailable: true,
               sessionUnavailable: true,
               weeklyUnavailable: true,
+              sessionRetained: true,
             },
           ],
         }}

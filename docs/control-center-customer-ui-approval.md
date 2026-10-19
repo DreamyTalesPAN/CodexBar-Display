@@ -7778,3 +7778,16 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the token chart as described in the pending entry above: each provider's line runs unbroken, and a day on which a provider used no tokens sits on the zero line, with 0 in the tooltip. Nothing beyond that entry.
 - Scope: this approval record only; no code change in this entry. Pull request branch only, not merge or release.
 - What's new: none — approval record
+## 2026-10-17 — Usage: a stale reading shows its real 0% lane (#670)
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #670); look unchanged except: a stale reading's real 0% lane shows its number ("0% session used", "0% weekly used") with the Updating spinner, where it showed placeholder bars before; this is the quiet error look 5b as approved on 2026-10-16.
+- Approved customer-visible result: On Usage, a stale reading shows a real 0% lane as its number ("0% session used", "0% weekly used") with the Updating spinner, as in look 5b; a lane without a reading stays placeholder bars. No new wording.
+- Scope: `usage-screen.tsx` and its test, `control-center-types.ts` (three optional retained flags), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the same copy as before; only the zero lane is now a number
+
+## 2026-10-17 — Usage: a provider whose only reading is a retained 0% stays visible (#670)
+
+- User approval: Codex review fix, no new look; not seen by Paul. It makes the approved #670 result hold for one case the review found: a provider whose stale reading is all 0% and that has no token or cost data.
+- Approved customer-visible result: As in the #670 entry above, that provider's tile stays on Usage and shows its real 0% lanes ("0% session used", "0% weekly used") with the Updating spinner. Before this fix the tile was hidden. No new wording.
+- Scope: `usage-screen.tsx` (provider visibility counts a retained reading) and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix, no new notice
