@@ -20,8 +20,10 @@ type SetupLogProps = {
   stillLines?: boolean;
 };
 
-/** A step still running after this long gets a "Still …" line, rewritten each time. */
+/** A step that is still running after this long gets a "Still …" line. */
 const STILL_INTERVAL_MS = 8000;
+/** Most "Still …" lines one step gets; after that the log stops growing. */
+const STILL_MAX_LINES = 5;
 
 /**
  * Terminal-style progress log for the setup wizard.
@@ -31,10 +33,9 @@ const STILL_INTERVAL_MS = 8000;
  * New lines append at the bottom for the same reason: the box is a fixed size
  * and only the log inside it scrolls.
  *
- * While the last step runs for longer than STILL_INTERVAL_MS, one "Still …"
- * line under it shows how long the wait has lasted, and is replaced every
- * interval. This is the only display timer: a real failure arrives from the
- * companion as its own line or error.
+ * While the last step runs for longer than STILL_INTERVAL_MS, a "Still …" line
+ * is added under it every interval. This is the only display timer: a real
+ * failure arrives from the companion as its own line or error.
  */
 export function SetupLog({
   className,
@@ -44,33 +45,36 @@ export function SetupLog({
 }: SetupLogProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const lastId = lines[lines.length - 1]?.id;
-  // Intervals each step has waited, keyed by the step's line id.
-  const [stillTicks, setStillTicks] = useState<Record<string, number>>({});
+  // How many "Still …" lines each step has got, keyed by the step's line id.
+  const [stillCounts, setStillCounts] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (!stillLines || !running || lastId === undefined) {
       return;
     }
     const timer = window.setInterval(() => {
-      setStillTicks((ticks) => ({ ...ticks, [lastId]: (ticks[lastId] ?? 0) + 1 }));
+      setStillCounts((counts) => ({
+        ...counts,
+        [lastId]: Math.min((counts[lastId] ?? 0) + 1, STILL_MAX_LINES),
+      }));
     }, STILL_INTERVAL_MS);
     return () => window.clearInterval(timer);
   }, [stillLines, running, lastId]);
 
-  // A new key per interval makes the Still line a new node, so it fades in again.
-  const rows: SetupLogLine[] = lines.flatMap((line) => {
-    const ticks = stillTicks[line.id] ?? 0;
-    return ticks
-      ? [line, { id: `${line.id}-still-${ticks}`, text: stillText(line.text, ticks * STILL_INTERVAL_MS) }]
-      : [line];
-  });
+  const rows: SetupLogLine[] = lines.flatMap((line) => [
+    line,
+    ...Array.from({ length: stillCounts[line.id] ?? 0 }, (_, index) => ({
+      id: `${line.id}-still-${index + 1}`,
+      text: stillText(line.text),
+    })),
+  ]);
 
   useEffect(() => {
     const node = scrollRef.current;
     if (node) {
       node.scrollTop = node.scrollHeight;
     }
-  }, [lines, running, stillTicks]);
+  }, [lines, running, stillCounts]);
 
   return (
     <div
@@ -111,32 +115,21 @@ export function SetupLog({
 
 /**
  * "Refreshing display stream." becomes "Still refreshing display stream – hang
- * tight. 24 s". Only the last sentence counts ("Upload interrupted. Retrying."
- * reads "retrying"), and a " · " or " — " tail (a percentage, a version) is left
- * out, so the line does not go stale as that number changes. A dot inside a
- * number ("192.168") is kept. A past-tense text ("Uploaded theme layout.") says
+ * tight." Only the last sentence counts ("Upload interrupted. Retrying." reads
+ * "retrying"), and a " · " or " — " tail (a percentage, a version) is left out,
+ * so the line does not go stale as that number changes. A dot inside a number
+ * ("192.168") is kept. A past-tense text ("Uploaded theme layout.") says
  * nothing about what is running, so it gets the generic line.
  */
-function stillText(text: string, waitedMs: number): string {
+function stillText(text: string): string {
   const sentences = text.replace(/\.$/, "").split(/\. /);
   const step = sentences[sentences.length - 1].split(/ · | — /)[0];
-  const doing =
-    !step || /\b\w+ed\b/i.test(step)
-      ? "working on it"
-      // Lower-case a capitalised first word, but not a name such as VibeTV.
-      : step.replace(/^[A-Z][a-z]+\b/, (word) => word.toLowerCase());
-  return `Still ${doing} – hang tight. ${waitedText(waitedMs)}`;
-}
-
-/** "24 s", "1 min 12 s", "2 min": the wait so far, in whole seconds. */
-function waitedText(waitedMs: number): string {
-  const seconds = Math.round(waitedMs / 1000);
-  if (seconds < 60) {
-    return `${seconds} s`;
+  if (!step || /\b\w+ed\b/i.test(step)) {
+    return "Still working on it – hang tight.";
   }
-  const minutes = Math.floor(seconds / 60);
-  const rest = seconds % 60;
-  return rest ? `${minutes} min ${rest} s` : `${minutes} min`;
+  // Lower-case a capitalised first word, but not a name such as VibeTV.
+  const doing = step.replace(/^[A-Z][a-z]+\b/, (word) => word.toLowerCase());
+  return `Still ${doing} – hang tight.`;
 }
 
 function SetupLogCaret() {

@@ -3,6 +3,8 @@ import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SetupLog, type SetupLogLine } from "./setup-log";
 
+const STILL = /> Still /;
+
 function logText(container: HTMLElement) {
   return Array.from(container.querySelectorAll("[role=status] > div")).map(
     (row) => row.textContent,
@@ -10,7 +12,7 @@ function logText(container: HTMLElement) {
 }
 
 function stillRows(container: HTMLElement) {
-  return logText(container).filter((text) => /> Still /.test(text ?? ""));
+  return logText(container).filter((text) => STILL.test(text ?? ""));
 }
 
 function advance(ms: number) {
@@ -41,70 +43,42 @@ describe("SetupLog while a step runs long", () => {
     expect(stillRows(container)).toEqual([]);
   });
 
-  it("shows one line at 8 seconds and rewrites it, never adds a second", () => {
+  it("adds one line at 8 seconds and one more every 8 seconds", () => {
     const { container } = render(<SetupLog lines={running} running />);
 
     advance(8000);
     expect(stillRows(container)).toEqual([
-      "> Still refreshing display stream – hang tight. 8 s",
+      "> Still refreshing display stream – hang tight.",
     ]);
 
     advance(8000);
-    expect(stillRows(container)).toEqual([
-      "> Still refreshing display stream – hang tight. 16 s",
-    ]);
-    expect(logText(container)).toHaveLength(2);
+    expect(stillRows(container)).toHaveLength(2);
   });
 
-  it("keeps the real steps above the one Still line", () => {
-    const { container } = render(
-      <SetupLog
-        lines={[
-          { id: "start", text: "Preparing theme install." },
-          ...running,
-        ]}
-        running
-      />,
-    );
-
-    advance(16000);
-
-    expect(logText(container)).toEqual([
-      "> Preparing theme install.",
-      "> Refreshing display stream.",
-      "> Still refreshing display stream – hang tight. 16 s",
-    ]);
-  });
-
-  it("shows minutes from one minute on", () => {
-    const { container } = render(<SetupLog lines={running} running />);
-
-    advance(72000);
-    expect(stillRows(container)).toEqual([
-      "> Still refreshing display stream – hang tight. 1 min 12 s",
-    ]);
-
-    advance(48000);
-    expect(stillRows(container)).toEqual([
-      "> Still refreshing display stream – hang tight. 2 min",
-    ]);
-  });
-
-  it("stops updating once the step finishes or fails", () => {
+  it("stops adding lines once the step finishes or fails", () => {
     const { container, rerender } = render(
       <SetupLog lines={running} running />,
     );
-    advance(16000);
+    advance(8000);
+    expect(stillRows(container)).toHaveLength(1);
 
     rerender(<SetupLog lines={running} running={false} />);
     advance(60000);
 
-    expect(stillRows(container)).toEqual([
-      "> Still refreshing display stream – hang tight. 16 s",
-    ]);
+    expect(stillRows(container)).toHaveLength(1);
   });
 
-  it("starts the wait again for a new step and keeps the old step's line", () => {
+  it("caps the lines of one step at five and keeps the log short", () => {
+    const { container } = render(<SetupLog lines={running} running />);
+
+    advance(50000);
+    expect(stillRows(container)).toHaveLength(5);
+
+    advance(200000);
+    expect(stillRows(container)).toHaveLength(5);
+  });
+
+  it("starts the count again for a new step and keeps the old step's lines", () => {
     const { container, rerender } = render(
       <SetupLog lines={running} running />,
     );
@@ -118,67 +92,15 @@ describe("SetupLog while a step runs long", () => {
     );
     expect(logText(container)).toEqual([
       "> Refreshing display stream.",
-      "> Still refreshing display stream – hang tight. 16 s",
+      "> Still refreshing display stream – hang tight.",
+      "> Still refreshing display stream – hang tight.",
       "> Display stream refreshed.",
     ]);
 
-    advance(8000);
-    expect(logText(container)).toEqual([
-      "> Refreshing display stream.",
-      "> Still refreshing display stream – hang tight. 16 s",
-      "> Display stream refreshed.",
-      "> Still working on it – hang tight. 8 s",
-    ]);
-  });
-
-  it("keeps the last sentence, and a dot inside a number", () => {
-    const { container, rerender } = render(
-      <SetupLog
-        lines={[{ id: "retry", text: "Upload interrupted. Retrying." }]}
-        running
-      />,
-    );
-    advance(8000);
-    expect(stillRows(container)).toEqual([
-      "> Still retrying – hang tight. 8 s",
-    ]);
-
-    rerender(
-      <SetupLog
-        lines={[{ id: "ip", text: "connecting to 192.168.178.153" }]}
-        running
-      />,
-    );
-    advance(8000);
-    expect(stillRows(container)).toEqual([
-      "> Still connecting to 192.168.178.153 – hang tight. 8 s",
-    ]);
-  });
-
-  it("gives a past-tense text the generic line", () => {
-    const { container } = render(
-      <SetupLog
-        lines={[{ id: "layout", text: "Uploaded theme layout." }]}
-        running
-      />,
-    );
-    advance(8000);
-    expect(stillRows(container)).toEqual([
-      "> Still working on it – hang tight. 8 s",
-    ]);
-  });
-
-  it("keeps a product name capitalised at the start", () => {
-    const { container } = render(
-      <SetupLog
-        lines={[{ id: "wait", text: "VibeTV is waiting for AI usage." }]}
-        running
-      />,
-    );
-    advance(8000);
-    expect(stillRows(container)).toEqual([
-      "> Still VibeTV is waiting for AI usage – hang tight. 8 s",
-    ]);
+    advance(7999);
+    expect(stillRows(container)).toHaveLength(2);
+    advance(1);
+    expect(stillRows(container)).toHaveLength(3);
   });
 
   it("drops a changing number from the Still line", () => {
@@ -194,7 +116,68 @@ describe("SetupLog while a step runs long", () => {
     advance(8000);
 
     expect(stillRows(container)).toEqual([
-      "> Still updating firmware – hang tight. 8 s",
+      "> Still updating firmware – hang tight.",
+    ]);
+  });
+
+  it("keeps the last sentence, and a dot inside a number", () => {
+    const { container, rerender } = render(
+      <SetupLog
+        lines={[{ id: "retry", text: "Upload interrupted. Retrying." }]}
+        running
+      />,
+    );
+    advance(8000);
+    expect(stillRows(container)).toEqual([
+      "> Still retrying – hang tight.",
+    ]);
+
+    rerender(
+      <SetupLog
+        lines={[{ id: "ip", text: "connecting to 192.168.178.153" }]}
+        running
+      />,
+    );
+    advance(8000);
+    expect(stillRows(container)).toContain(
+      "> Still connecting to 192.168.178.153 – hang tight.",
+    );
+  });
+
+  it("gives a past-tense text the generic line", () => {
+    const { container, rerender } = render(
+      <SetupLog
+        lines={[{ id: "layout", text: "Uploaded theme layout." }]}
+        running
+      />,
+    );
+    advance(8000);
+    expect(stillRows(container)).toEqual([
+      "> Still working on it – hang tight.",
+    ]);
+
+    rerender(
+      <SetupLog
+        lines={[{ id: "shown", text: "Display stream refreshed." }]}
+        running
+      />,
+    );
+    advance(8000);
+    expect(stillRows(container)).toContain(
+      "> Still working on it – hang tight.",
+    );
+  });
+
+  it("keeps a product name capitalised at the start", () => {
+    const { container } = render(
+      <SetupLog
+        lines={[{ id: "wait", text: "VibeTV shows it once AI usage is ready." }]}
+        running
+      />,
+    );
+    advance(8000);
+    expect(stillRows(container)).toEqual([
+      "> Still VibeTV shows it once AI usage is ready – hang tight.",
     ]);
   });
 
@@ -208,7 +191,7 @@ describe("SetupLog while a step runs long", () => {
     expect(stillRows(container)).toEqual([]);
   });
 
-  it("moves the caret to the newest line, Still line included", () => {
+  it("moves the caret to the newest line, Still lines included", () => {
     const { container } = render(<SetupLog lines={running} running />);
     advance(8000);
 
