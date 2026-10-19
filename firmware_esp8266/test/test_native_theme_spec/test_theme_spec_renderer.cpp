@@ -4629,28 +4629,47 @@ void testUsagePaceArcDrawsPieceHatchAndTick() {
   frame.usageWindows[0].pace = {20, 3, codexbar_display::usage_window_contract::kPaceRunsOut};
   RecordingSink sink;
   TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
-  bool tick = false, stripe = false, gap = false, fill = false;
-  int tickTop = 1000;
-  for (const RecordedCommand& command : sink.commands) {
-    if (command.type != CommandType::FillRect) {
-      continue;
+  // The colour drawn last at a pixel; 0x0001 when nothing drew there.
+  auto colourAt = [&sink](int x, int y) {
+    uint16_t colour = 0x0001;
+    for (const RecordedCommand& command : sink.commands) {
+      if (command.type == CommandType::FillRect && x >= command.x && x < command.x + command.width &&
+          y >= command.y && y < command.y + command.height) {
+        colour = command.color;
+      }
     }
-    tick = tick || command.color == 0xFFFF;
-    stripe = stripe || command.color == 0xF800;
-    fill = fill || command.color == 0x8410;
-    gap = gap || (command.color != 0xF800 && command.color != 0x8410 && command.color != 0xFFFF &&
-                  command.color != 0x2104 && command.color != 0x0000);
-    if (command.color == 0xFFFF && command.y < tickTop) {
-      tickTop = command.y;
-    }
-  }
-  TEST_ASSERT_TRUE(tick);
-  TEST_ASSERT_TRUE(stripe);
-  TEST_ASSERT_TRUE(gap);
-  TEST_ASSERT_TRUE(fill);
-  // 40% left, 60% planned: the plan sits at 216 degrees, lower left, so the
-  // tick top is not above the ring's own top edge.
-  TEST_ASSERT_TRUE(tickTop >= 20 - 4);
+    return colour;
+  };
+  // The ring's centre is (70, 70). 40% left is 144 degrees clockwise from 12
+  // o'clock, the plan at 60% is 216: lower left. Bottom (180 degrees) is in the
+  // piece, the tick stands at 216 degrees across the ring and 4 px beyond it.
+  TEST_ASSERT_EQUAL_HEX16(0x8410, colourAt(110, 70));           // 90 degrees: filled
+  TEST_ASSERT_TRUE(colourAt(70, 70 + 40) == 0xF800 || colourAt(70, 70 + 41) == 0xF800 ||
+                   colourAt(71, 70 + 40) == 0xF800 || colourAt(69, 70 + 40) == 0xF800);  // hatch stripe
+  TEST_ASSERT_EQUAL_HEX16(0xFFFF, colourAt(47, 102));            // the tick, inside the ring
+  TEST_ASSERT_EQUAL_HEX16(0xFFFF, colourAt(40, 111));            // the tick, 4 px beyond the ring (r 54 -> 58)
+  TEST_ASSERT_EQUAL_HEX16(0x2104, colourAt(30, 70));             // 270 degrees: track
+}
+
+// A repaint of a pace bar must clear its tick, which reaches 4 px beyond it.
+void testUsagePaceBarRepaintCoversItsTick() {
+  const char* spec = R"JSON({"v":1,"id":"pace-bounds","rev":1,"p":[
+    {"t":"p","x":14,"y":78,"w":212,"h":12,"b":"usageSlot1Pace"},
+    {"t":"p","x":2,"y":2,"w":50,"h":12,"b":"usageSlot1Percent"}
+  ]})JSON";
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  TEST_ASSERT_TRUE(CompileThemeSpec(spec, doc, scene));
+  Bounds bounds;
+  TEST_ASSERT_TRUE(CompiledPrimitiveBounds(scene, scene.primitives[0], testFrame(), false, bounds));
+  TEST_ASSERT_EQUAL_INT(10, bounds.x);
+  TEST_ASSERT_EQUAL_INT(74, bounds.y);
+  TEST_ASSERT_EQUAL_INT(220, bounds.width);
+  TEST_ASSERT_EQUAL_INT(20, bounds.height);
+  TEST_ASSERT_TRUE(CompiledPrimitiveBounds(scene, scene.primitives[1], testFrame(), false, bounds));
+  TEST_ASSERT_EQUAL_INT(2, bounds.x);
+  TEST_ASSERT_EQUAL_INT(50, bounds.width);
+  ReleaseCompiledThemeSpec(scene);
 }
 
 void testUsagePaceParsesAndRepaintsOnlyThemesThatShowIt() {
@@ -4878,6 +4897,7 @@ int main() {
   RUN_TEST(testUsagePaceTextsRenderCodexBarPace);
   RUN_TEST(testUsagePaceColoursAndBarMarks);
   RUN_TEST(testUsagePaceArcDrawsPieceHatchAndTick);
+  RUN_TEST(testUsagePaceBarRepaintCoversItsTick);
   RUN_TEST(testUsagePaceParsesAndRepaintsOnlyThemesThatShowIt);
   return UNITY_END();
 }
