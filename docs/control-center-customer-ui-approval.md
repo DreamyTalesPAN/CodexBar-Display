@@ -8400,3 +8400,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — #798: Updates page matched to the template (build 2 QA)
+
+- User approval: pending — Paul reviews (#798 matched to the approved template, build 2 QA); look unchanged except, each one before → after: (1) the text on Updates is 14 px with 21 px lines (row names, descriptions, Up to date, Checked, What's new card) → before 13 px; (2) the headline (for example Everything is up to date) is 15 px → before 13 px; (3) Check for updates and Read notes are 14 px → before 13 px; the version numbers stay 13 px monospace; each row is 3 px taller, the page is a little taller.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/updates-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content

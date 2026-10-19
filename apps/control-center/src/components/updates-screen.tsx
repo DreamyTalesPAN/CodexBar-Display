@@ -312,14 +312,14 @@ export function UpdatesScreen({
       : "What's new";
 
   return (
-    <div className="max-w-[760px] pb-10 text-[13px]">
+    <div className="max-w-[760px] pb-10 text-[14px] leading-normal">
       {/*
         The shell draws the page title on its own line and leaves the right of
         it free; this row sits on that line, as in the design.
       */}
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3.5 sm:relative sm:-mt-10 sm:h-10 sm:flex-nowrap sm:justify-end">
         {checkedText ? (
-          <span className="text-[13px] whitespace-nowrap text-muted-foreground">
+          <span className="text-[14px] whitespace-nowrap text-muted-foreground">
             {checkedText}
           </span>
         ) : null}
@@ -328,7 +328,7 @@ export function UpdatesScreen({
           // a second press, but is not disabled: that drops keyboard focus to
           // the page (issue #558).
           aria-disabled={refreshing || undefined}
-          className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
+          className="text-sm aria-disabled:pointer-events-none aria-disabled:opacity-50"
           disabled={
             actionsLocked || (checkingUpdates && !refreshing) || !onCheckUpdates
           }
@@ -347,7 +347,7 @@ export function UpdatesScreen({
 
       <div className="mt-6 flex items-center gap-2.5 sm:mt-8">
         <StatusDot tone={headingTone} />
-        <h2 className="text-[13px] font-semibold">{pageStatusHeading}</h2>
+        <h2 className="text-[15px] font-semibold">{pageStatusHeading}</h2>
       </div>
 
       <div className="mt-4 divide-y divide-foreground/10 overflow-hidden rounded-[var(--radius-card)] bg-card ring-1 ring-foreground/10">
@@ -463,7 +463,7 @@ export function UpdatesScreen({
             ) : null}
           </div>
           <Button
-            className="h-auto shrink-0 px-0"
+            className="h-auto shrink-0 px-0 text-sm"
             onClick={onShowWhatsNew}
             type="button"
             variant="link"
@@ -553,7 +553,7 @@ function UpdateRow({
         <p className="text-muted-foreground">{description}</p>
       </div>
       <div className="col-start-2 mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 sm:col-start-3 sm:mt-0">
-        <span className="font-mono text-foreground">{version}</span>
+        <span className="font-mono text-[13px] text-foreground">{version}</span>
         {action ??
           (status ? (
             <RowStatusLabel status={status} />
