@@ -439,7 +439,12 @@ func (e *ProviderSettingsError) Error() string {
 	return e.Err.Error()
 }
 
-func (e *ProviderSettingsError) Unwrap() error { return e.Err }
+func (e *ProviderSettingsError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
 
 func ProviderSettingsErrorKindOf(err error) ProviderSettingsErrorKind {
 	var settingsErr *ProviderSettingsError
