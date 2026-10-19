@@ -149,6 +149,23 @@ describe("Theme Studio notices", () => {
   });
 });
 
+describe("Theme Studio small window", () => {
+  it("keeps the chat input in a bounded chat column while the preview scrolls above it", async () => {
+    render(<AIThemeStudioScreen />);
+    const classes = (element: Element) => element.getAttribute("class")?.split(/\s+/) ?? [];
+    const root = document.querySelector("[data-theme-studio-root]") as HTMLElement;
+    const preview = document.getElementById("theme-design-canvas")!.parentElement!;
+    const chatColumn = (await screen.findByRole("region", { name: "AI creation" })).parentElement!;
+
+    // Below the wide layout the editor has the window height and only the preview scrolls.
+    expect(classes(root)).toContain("h-[calc(100svh-86px)]");
+    expect(classes(preview)).toContain("overflow-y-auto");
+    // The chat column keeps its height, so the message list scrolls and the input stays visible.
+    expect(classes(chatColumn)).toEqual(expect.arrayContaining(["max-lg:max-h-[40svh]", "max-lg:shrink-0"]));
+    expect(chatColumn.contains(document.getElementById("ai-scene-request"))).toBe(true);
+  });
+});
+
 describe("Theme Studio reference images", () => {
   function stubImageDecoding() {
     globalThis.createImageBitmap = vi.fn(async () => ({ width: 10, height: 10, close: () => {} })) as unknown as typeof createImageBitmap;

@@ -8061,3 +8061,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none beyond the entry above. A closed notice now stays closed when the customer switches tabs and comes back. When both notices are due, the theme notice shows once the WiFi notice is closed. Both notices wait while the low-memory notice is due, so the two never block each other.
 - Scope: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/overview-screen.notices.test.tsx`, `apps/control-center/src/components/control-center-app.tsx` (state and props for the Overview notice only), and this approval record. Option stacked on PR #755; not merge or release.
 - What's new: none — no new content
+
+## 2026-10-18 — Calm Theme Studio, variant A (#749): row button follows a stored key still being checked
+
+- User approval: pending — Paul reviews (row button follows a stored-but-pending key)
+- Approved customer-visible result: none yet; proposed: the Theme Studio AI row in Settings › AI providers reads "Change key" while a saved key is still being checked, as the key dialog already does. Before → after: "Add key" → "Change key" (saved key, check still pending). Stored key: "Change key" unchanged. No key stored: "Add key" unchanged.
+- Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx` and its test, and this record. Pull request branch only, not merge or release.
+- What's new: none — button wording only, no new feature.
+
+## 2026-10-18 — Calm Theme Studio, variant A (#749): chat input stays visible below 1024 px width
+
+- User approval: pending — Paul reviews (finding N14 from the Windows click run 18.10.: at 960x640 the chat input sat below the fold and the preview filled the first screen; placeholder colour not changed in this entry).
+- Approved customer-visible result: none yet; proposed: below 1024 px width the Theme Studio preview scrolls inside its own area and the chat column (message list and prompt box) stays at the bottom of the window, at most 40% of the window height, so the prompt box is in view at 960x640. At 1024 px and wider nothing changes. Before → after: prompt box below the preview (needs scrolling) → prompt box in view at the bottom; no text changes.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, and this record. Pull request branch only, not merge or release.
+- What's new: none — layout only, no new feature.

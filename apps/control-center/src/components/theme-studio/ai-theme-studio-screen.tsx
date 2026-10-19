@@ -969,7 +969,7 @@ export function AIThemeStudioScreen({
   return (
     <div
       data-theme-studio-root
-      className="flex min-h-[calc(100svh-86px)] flex-col pb-6 text-foreground lg:h-[calc(100svh-86px)]"
+      className="flex min-h-[calc(100svh-86px)] h-[calc(100svh-86px)] flex-col pb-6 text-foreground"
       onKeyDown={(event) => {
         if (isTypingTarget(event.target) || locked || panel || pending || leaving || event.nativeEvent.isComposing)
           return;
@@ -1100,7 +1100,7 @@ export function AIThemeStudioScreen({
           </div>
         ) : null}
           <main className="flex min-h-0 flex-1 flex-col gap-6 pt-8 lg:flex-row lg:gap-12">
-            <div className="min-h-0 min-w-0 flex-1 lg:overflow-y-auto">
+            <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
             <div
               id="theme-design-canvas"
               role="region"
@@ -1456,7 +1456,7 @@ export function AIThemeStudioScreen({
               </EditableThemePreview>
             </div>
             </div>
-            <div className="mx-auto flex min-h-0 w-full max-w-[680px] flex-col lg:w-[420px] lg:shrink-0 lg:overflow-y-auto">
+            <div className="mx-auto flex min-h-0 w-full max-w-[680px] flex-col max-lg:max-h-[40svh] max-lg:shrink-0 lg:w-[420px] lg:shrink-0 lg:overflow-y-auto">
             <div className="flex min-h-24 flex-1 flex-col gap-3 overflow-y-auto pb-4" role="log" aria-label="Conversation">
               {messages.length || asking !== null ? messages.map((message, i) => (
                 message.role === "user" ? <div key={i}>{userTurn(message.content, message.images)}</div> : <p
