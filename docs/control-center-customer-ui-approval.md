@@ -8384,8 +8384,12 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/src/components/setup/setup-dialog.tsx`, the new test `apps/control-center/src/components/setup/setup-dialog.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
+## 2026-10-19 — #784: customer flow follows the Theme Studio's own header row
 
-
+- User approval: pending — Paul reviews (CI fix of the customer flow for the header change in 9c18d75f); no visible change: the flow checks that the open Studio draws its own header row and not the shell's Appearance header.
+- Approved customer-visible result: none; the test only.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
 
 ## 2026-10-19 — Support: "n of 6 passed" and a Fix link for the usage engine (#795)
 
