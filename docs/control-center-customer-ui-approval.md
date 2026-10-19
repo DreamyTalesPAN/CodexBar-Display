@@ -8171,3 +8171,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/{control-center-shell,diagnostics-panel,theme-library-screen}.tsx`, `apps/control-center/src/components/ui/slider.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.tsx`, `apps/control-center/src/components/{control-center-shell,diagnostics-panel}.test.tsx` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no new content
+
+## 2026-10-19 — #784: approval marker after merging main (f2e8904c)
+
+- User approval: pending — Paul reviews (#784 matched to the approved Claude Design template "Calm Redesign - alle Screens", design QA 19.10.); merge of main into the Calm redesign group; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: none yet; waits for Paul's yes. See this branch's entries above, in particular the two entries of 2026-10-19 "every remaining difference to the approved template" and "merge of main (f2e8904c)".
+- Scope: the merge of main into this branch and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
