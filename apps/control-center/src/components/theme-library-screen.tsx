@@ -219,6 +219,8 @@ export type ThemeLibraryScreenProps = {
   onSelectTheme: (themeId: string, usage: ThemeStudioUsage) => void;
   onInstallCustomTheme: (payload: ThemeStudioInstallPayload) => Promise<boolean>;
   onInstallTheme: (theme: ThemeProduct) => Promise<unknown> | void;
+  /** Tells the shell whether the Theme Studio is open (it draws its own header row). */
+  onStudioOpenChange?: (open: boolean) => void;
   /** The "Settings" link of the screensaver-off notice. */
   onOpenScreensaverSettings?: () => void;
   /** The app runs on Windows, where "Mac App" reads "app". */
@@ -287,6 +289,7 @@ export function ThemeLibraryScreen({
   onSelectTheme,
   onInstallTheme,
   onOpenScreensaverSettings,
+  onStudioOpenChange,
   windowsHost = false,
 }: ThemeLibraryScreenProps) {
   const screensavers = usage === "screensaver";
@@ -333,6 +336,11 @@ export function ThemeLibraryScreen({
   const [replacingRecovery, setReplacingRecovery] = useState<(() => void) | null>(null);
   const [editingTheme, setEditingTheme] =
     useState<ThemeStudioEditorTheme | null>(null);
+  // Reset when this screen goes away (the shell then shows its header again).
+  useEffect(() => {
+    onStudioOpenChange?.(editingTheme !== null);
+    return () => onStudioOpenChange?.(false);
+  }, [editingTheme, onStudioOpenChange]);
   const [libraryError, setLibraryError] = useState("");
   const [storageWarning, setStorageWarning] = useState("");
   // The storage notice is shown until its OK or X; the storage itself stays

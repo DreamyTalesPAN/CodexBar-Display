@@ -275,6 +275,18 @@ it("creates a theme or a screensaver directly in its own segment", () => {
   expect(created.spec?.usage).toBe("screensaver");
 });
 
+// Build 2 QA: the shell hides its header row while the Studio draws its own,
+// so it has to be told when the Studio opens and when the screen goes away.
+it("tells the shell while the Studio is open and resets it when the screen goes away", () => {
+  const onStudioOpenChange = vi.fn();
+  const { unmount } = render(<Page start="live" onStudioOpenChange={onStudioOpenChange} />);
+  expect(onStudioOpenChange).toHaveBeenLastCalledWith(false);
+  fireEvent.click(screen.getByRole("button", { name: "Create theme" }));
+  expect(onStudioOpenChange).toHaveBeenLastCalledWith(true);
+  unmount();
+  expect(onStudioOpenChange).toHaveBeenLastCalledWith(false);
+});
+
 it("asks Theme or Screensaver when Create is pressed on All", async () => {
   render(<Page />);
   fireEvent.click(screen.getByRole("button", { name: "Create" }));

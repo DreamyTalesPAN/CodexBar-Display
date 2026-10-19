@@ -326,6 +326,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         : "live"
       : "all",
   );
+  const [themeStudioOpen, setThemeStudioOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>(
     initialThemeId ? "theme-library" : "overview",
   );
@@ -5695,6 +5696,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       <ControlCenterShell
         activeTab={activeShellTab}
         disabledTabs={disabledTabs}
+        themeStudioOpen={themeStudioOpen}
         updateAvailable={anyUpdateAvailable}
         onTabChange={(tab) => {
           if (disabledTabs.includes(tab)) {
@@ -5820,6 +5822,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                 ? setSelectedScreensaverId(themeId)
                 : setSelectedThemeId(themeId)
             }
+            onStudioOpenChange={setThemeStudioOpen}
             onUsageChange={setAppearanceUsage}
             requestedThemeId={
               appearanceUsage !== "screensaver" ? initialThemeId : undefined
