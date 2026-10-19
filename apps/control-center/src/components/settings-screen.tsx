@@ -567,7 +567,6 @@ export function SettingsScreen({
 
       <SettingsSection title="AI providers">
         <ProviderList
-          onCheckAgain={(provider) => void providerPicker.onCheck(provider)}
           onOpenSignIn={
             providerPicker.onOpenSignIn
               ? (provider) => void providerPicker.onOpenSignIn?.(provider)

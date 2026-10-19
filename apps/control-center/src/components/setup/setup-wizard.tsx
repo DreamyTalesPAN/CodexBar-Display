@@ -116,7 +116,6 @@ export type SetupWizardProps = {
   onDismissThemeError: () => void;
   onRetryTheme: () => void;
   themeRetryLabel?: string;
-  onProviderCheck: (provider: ProviderItem) => void;
   onProviderOpenSignIn?: (provider: ProviderItem) => void;
   onProviderOpenSetupGuide?: () => void;
   onProviderToggle: (provider: ProviderItem, enabled: boolean) => void;
@@ -911,7 +910,6 @@ export function SetupWizard(props: SetupWizardProps) {
         <SetupProvidersScreen
           {...help}
           onBack={goBack}
-          onCheckAgain={props.onProviderCheck}
           onOpenSignIn={props.onProviderOpenSignIn}
           onOpenSetupGuide={props.onProviderOpenSetupGuide}
           continuing={providersContinuing}
