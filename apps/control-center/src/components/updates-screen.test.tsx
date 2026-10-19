@@ -624,4 +624,23 @@ describe("UpdatesScreen finished update notice", () => {
     expect(screen.getByText("Update check failed")).toBeTruthy();
     expect(screen.queryByText("Update complete")).toBeNull();
   });
+
+  // Issue #687: a failure recorded before the update finished must not hide
+  // the completion notice.
+  it("keeps Update complete when the failed check is older than the update", () => {
+    render(
+      <UpdatesScreen
+        {...props}
+        firmwareUpdate={{
+          checkedAt: "2026-10-13T09:00:00Z",
+          installedFirmware: "1.0.40",
+          updateAvailable: false,
+          status: "check_failed",
+        }}
+        updateStatus={completedUpdate}
+      />,
+    );
+
+    expect(screen.getByText("Update complete")).toBeTruthy();
+  });
 });
