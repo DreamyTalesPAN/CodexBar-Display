@@ -503,6 +503,16 @@ struct CodexBarCommandResult {
     let output: String
 }
 
+// Issue #556: on a busy Mac the first preparation of the bundled CodexBar can
+// fail where the same command passes moments later, and a new customer's first
+// screen was "Usage service needs repair". The preparation behind the start
+// screen tries once more, with the command's full time budget, before it asks
+// for that. A repair answers after one try: the page waits 120 s for one, and a
+// repair of the usage service is one the customer asked for.
+func retriesCodexBarBootstrap(fromStartScreen: Bool, repairRequested: Bool) -> Bool {
+    fromStartScreen && !repairRequested
+}
+
 private final class CommandOutput: @unchecked Sendable {
     var data = Data()
 }
@@ -2193,7 +2203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             guard let self else {
                 return
             }
-            let outcome = await self.prepareCompanion()
+            let outcome = await self.prepareCompanion(fromStartScreen: true)
             self.preparationTask = nil
             if self.pendingCodexBarRepairRerun {
                 // This outcome belongs to a preparation that never saw the
@@ -3903,7 +3913,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         return application != nil
     }
 
-    private func prepareCompanion() async -> RuntimePreparationOutcome {
+    private func prepareCompanion(fromStartScreen: Bool = false) async -> RuntimePreparationOutcome {
         guard isInstalledApplicationsBundle(Bundle.main.bundleURL) else {
             NSLog(
                 "VibeTV Control Center runtime migration skipped: move the app to /Applications first"
@@ -3982,7 +3992,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             }
         }
 
-        guard bootstrapCodexBar() else {
+        var codexBarPrepared = bootstrapCodexBar()
+        if !codexBarPrepared,
+           retriesCodexBarBootstrap(fromStartScreen: fromStartScreen, repairRequested: codexBarRepairRequired) {
+            NSLog("VibeTV Control Center retries its CodexBar preparation once before asking for a repair")
+            try? await Task.sleep(for: .seconds(5))
+            // A repair requested during the pause has not stopped the runtime
+            // for this preparation; its own rerun replaces CodexBar after it
+            // has.
+            if !codexBarRepairRequired {
+                codexBarPrepared = bootstrapCodexBar()
+            }
+        }
+        guard codexBarPrepared else {
             return .codexBarRepairRequired
         }
 
