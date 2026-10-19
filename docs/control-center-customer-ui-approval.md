@@ -7794,3 +7794,10 @@ issue scope, or release permission never implies UI permission.
 - Visible text: none changed.
 - Scope: `apps/control-center/src/components/control-center-brand.tsx` (hero variant only, the class of the TV span) and its new test `control-center-brand.test.tsx`.
 - What's new: none — colour of one word only
+
+## 2026-10-19 — #780: approval marker after merging main (#214 arrow keys and the release round) into the calm Setup Wizard
+
+- User approval: Merge of main (#214 arrow keys and the release round) into #780; no visible change of its own; not seen by Paul
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and main's entries; nothing else changes. In the calm look the arrow keys move between the VibeTVs and the themes, and through the Help menu, as on main.
+- Scope: the merge of main into this branch (setup-device-card.tsx, setup-device-screen.tsx, setup-help-menu.tsx, setup-theme-screen.tsx) and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
