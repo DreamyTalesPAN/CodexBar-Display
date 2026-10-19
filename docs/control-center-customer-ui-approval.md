@@ -7836,3 +7836,31 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: As in the "Tokens:" entry above, with this PR's plan name in the tile header and the cap line under the Tokens line, as in the entry before it. No new wording.
 - Scope: `apps/control-center/src/components/usage-screen.tsx` (merge of #669 into this PR), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — the same tiles as above, no new notice
+
+## 2026-10-17 — Usage head in variant A: "Last 30 days", legend and icon Refresh, chart without card (stacked on #680)
+
+- User approval: Usage head r6 variant A, Paul 17.10. (via the communicator; picture review-1016/ui/644/r6-usage-head/variant-A.png); he has not yet seen this build.
+- Approved customer-visible result: Usage opens with a left-aligned head. Small muted text "Last 30 days" on the left; on the right the provider names, each with a small dot in its chart colour (Claude in ink, Codex in olive), and an icon-only Refresh button. The button keeps its behaviour: while a refresh runs it shows a spinner and is closed. Below: the 30-day total in 28 px semibold, followed by a small muted "tokens", and the total in words in small muted text. The token chart runs the full width without a card and without a title: thin lines, a very light fill, three values on the left axis and the dates below, all in small muted text. Before → after: "Total tokens in the last 30 days" (heading) → "Last 30 days"; "Tokens used over time" (card title) → removed; "Refresh token usage" with its text (card button) → an icon-only button named "Refresh". No other wording.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (head and chart only; the tiles are not touched), the selectors of `scripts/test-customer-flows.mjs` that follow these labels, and this approval record. Stacked on #680 (→ #669); pull request branch only, not merge or release.
+- What's new: none — layout and colour change only, no new notice
+
+## 2026-10-17 — Usage head bigger: hero total, taller chart, legend below the chart (stacked on #714)
+
+- User approval: Paul 17.10. (tested build 7141): Usage head bigger (hero number, taller chart), legend below the chart. Look per his direction.
+- Approved customer-visible result: the 30-day total in Usage is set in a larger hero size (46 px, semibold, tight line height), the only text size beyond 28 px and 13 px. The token chart is taller (384 px instead of 256 px), still without card or title. The provider legend (colour dot and name) moves from the head line to below the chart, left-aligned under the x-axis. The Refresh icon stays top right on the "Last 30 days" line. Wording unchanged; no new control.
+- Scope: `usage-screen.tsx`, `usage-screen.test.tsx`, the hero token in `src/app/globals.css`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — size and position change only, no new notice
+
+## 2026-10-17 — Usage chart colours follow the provider, not the order of the response (Codex review on #714)
+
+- User approval: pending — Paul reviews this PR (fix of a Codex finding on #714); look unchanged: Claude keeps the ink dot and line, Codex the olive, as in the entry above. Nothing else.
+- Approved customer-visible result: none beyond the colours of the entry above: Claude in ink, Codex in olive. When the response lists Codex first, the colours had swapped before; now they stay with the provider. In the usual order nothing changes.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (chart colour assignment only), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — colour fix only, no new notice
+
+## 2026-10-17 — Usage chart: another provider never takes the colour of Claude or Codex (Codex review on #714)
+
+- User approval: pending — Paul reviews this PR (fix of a second Codex finding on #714); look unchanged: Claude keeps the ink dot and line, Codex the olive, as in the entries above.
+- Approved customer-visible result: none beyond the colours of the entries above. A provider other than Claude and Codex (for example Gemini) now takes one of the three colours left (chart-3 to chart-5) instead of the colour of Codex or Claude, which it could share before. Claude and Codex are unchanged.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (chart colour assignment only), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — colour fix only, no new notice

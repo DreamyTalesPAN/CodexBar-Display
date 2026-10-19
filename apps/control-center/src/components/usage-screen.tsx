@@ -15,15 +15,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
-  CardAction,
   CardContent,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
 import {
   ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
@@ -385,153 +382,158 @@ function TokenUsageOverTimePanel({
 
   return (
     <>
-      <section
-        aria-labelledby="total-tokens-heading"
-        className="mb-6 px-4 text-center"
-      >
-        {updating ? (
-          <Badge
-            aria-live="polite"
-            className="mb-3"
-            data-testid="token-history-updating"
-            variant="secondary"
-          >
-            <Spinner className="size-3" data-icon="inline-start" />
-            Still counting
-          </Badge>
-        ) : refreshPending ? (
-          <Badge
-            aria-live="polite"
-            className="mb-3"
-            data-testid="usage-refresh-pending"
-            variant="secondary"
-          >
-            <Spinner className="size-3" data-icon="inline-start" />
-            Refreshing
-          </Badge>
-        ) : null}
-        <h2
-          className="text-sm font-bold uppercase tracking-wide text-muted-foreground"
-          id="total-tokens-heading"
-        >
-          Total tokens in the last 30 days
-        </h2>
-        <p className="mt-2 break-words text-3xl font-black tracking-tight tabular-nums sm:text-5xl">
-          {formatFullTokenCount(last30DaysTokens)}
-        </p>
-        {last30DaysTokens !== null ? (
-          <p className="mx-auto mt-2 max-w-3xl text-sm font-semibold leading-relaxed text-muted-foreground">
-            {formatTokenCountInWords(last30DaysTokens)} tokens
-          </p>
-        ) : null}
-      </section>
-
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>Tokens used over time</CardTitle>
-          <CardAction>
-            <Button
-              aria-busy={refreshing}
-              aria-label="Refresh token usage"
-              disabled={refreshing || !onRefresh}
-              onClick={() => onRefresh?.()}
-              size="sm"
-              type="button"
-              variant="outline"
+      <section aria-labelledby="total-tokens-heading">
+        <div className="flex h-8 items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-2">
+            <h2
+              className="text-[13px] font-normal text-muted-foreground"
+              id="total-tokens-heading"
             >
-              {refreshing ? (
-                <Spinner data-icon="inline-start" />
-              ) : (
-                <RefreshCw data-icon="inline-start" aria-hidden />
-              )}
-              {refreshing ? "Refreshing" : "Refresh"}
-            </Button>
-          </CardAction>
-        </CardHeader>
-
-        <CardContent>
-          <div className="relative min-h-52">
-            <ChartContainer
-              aria-hidden={!hasCurrentData}
-              aria-label={`Daily tokens used over time for ${providerNames.join(", ")}`}
-              className={cn(
-                "h-52 w-full overflow-hidden px-2 pt-3 transition-opacity",
-                !hasCurrentData && "pointer-events-none opacity-25 grayscale",
-              )}
-              config={chartConfig}
-              role="img"
-            >
-              <AreaChart
-                accessibilityLayer
-                data={chartData}
-                margin={{ top: 8, right: 10, bottom: 0, left: 10 }}
-              >
-                <CartesianGrid vertical={false} />
-                <XAxis
-                  axisLine={false}
-                  dataKey="day"
-                  interval="preserveStartEnd"
-                  minTickGap={28}
-                  tickFormatter={formatDayLabel}
-                  tickLine={false}
-                  tickMargin={8}
-                />
-                <YAxis
-                  axisLine={false}
-                  tickFormatter={formatTokenCount}
-                  tickLine={false}
-                  tickMargin={8}
-                  width={48}
-                />
-                <ChartTooltip
-                  content={
-                    <ChartTooltipContent
-                      labelFormatter={(value) => formatDayLabel(String(value))}
-                    />
-                  }
-                  cursor={false}
-                />
-                <ChartLegend
-                  content={
-                    <ChartLegendContent className="flex-wrap gap-x-4 gap-y-2 pb-1" />
-                  }
-                />
-                {series.map((item) => (
-                  <Area
-                    activeDot={{ r: 4 }}
-                    connectNulls={false}
-                    dataKey={item.dataKey}
-                    fill={`var(--color-${item.dataKey})`}
-                    fillOpacity={0.12}
-                    isAnimationActive={false}
-                    key={item.dataKey}
-                    stroke={`var(--color-${item.dataKey})`}
-                    strokeWidth={2}
-                    type="monotone"
-                  />
-                ))}
-              </AreaChart>
-            </ChartContainer>
-
-            {!hasCurrentData ? (
-              <Empty
+              Last 30 days
+            </h2>
+            {updating ? (
+              <Badge
                 aria-live="polite"
-                className="absolute inset-0 min-h-0 bg-transparent p-4"
-                role="status"
+                data-testid="token-history-updating"
+                variant="secondary"
               >
-                <EmptyHeader>
-                  <EmptyTitle>
-                    <Badge variant="secondary">No data</Badge>
-                  </EmptyTitle>
-                  <EmptyDescription>
-                    Token history is temporarily unavailable.
-                  </EmptyDescription>
-                </EmptyHeader>
-              </Empty>
+                <Spinner className="size-3" data-icon="inline-start" />
+                Still counting
+              </Badge>
+            ) : refreshPending ? (
+              <Badge
+                aria-live="polite"
+                data-testid="usage-refresh-pending"
+                variant="secondary"
+              >
+                <Spinner className="size-3" data-icon="inline-start" />
+                Refreshing
+              </Badge>
             ) : null}
           </div>
-        </CardContent>
-      </Card>
+          <Button
+            aria-busy={refreshing}
+            aria-label="Refresh"
+            className="size-8 shrink-0 text-muted-foreground"
+            disabled={refreshing || !onRefresh}
+            onClick={() => onRefresh?.()}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            {refreshing ? <Spinner /> : <RefreshCw aria-hidden />}
+          </Button>
+        </div>
+        <div className="mt-3.5">
+          <p className="text-hero break-words font-semibold text-foreground tabular-nums">
+            <span>{formatFullTokenCount(last30DaysTokens)}</span>
+            <span className="ml-1.5 text-[13px] font-normal tracking-normal text-muted-foreground">
+              tokens
+            </span>
+          </p>
+          <p className="mt-2 text-[13px] leading-normal text-muted-foreground">
+            {formatTokenCountInWords(last30DaysTokens)}
+          </p>
+        </div>
+      </section>
+
+      <div className="relative mt-8 min-h-96">
+        <ChartContainer
+          aria-hidden={!hasCurrentData}
+          aria-label={`Daily tokens used over time for ${providerNames.join(", ")}`}
+          className={cn(
+            "h-96 w-full overflow-hidden transition-opacity",
+            !hasCurrentData && "pointer-events-none opacity-25 grayscale",
+          )}
+          config={chartConfig}
+          role="img"
+        >
+          <AreaChart
+            accessibilityLayer
+            data={chartData}
+            margin={{ top: 8, right: 4, bottom: 0, left: 0 }}
+          >
+            <CartesianGrid
+              stroke="var(--foreground)"
+              strokeOpacity={0.08}
+              vertical={false}
+            />
+            <XAxis
+              axisLine={false}
+              dataKey="day"
+              interval="preserveStartEnd"
+              minTickGap={28}
+              tick={{ fill: "var(--muted-foreground)", fontSize: 13 }}
+              tickFormatter={formatDayLabel}
+              tickLine={false}
+              tickMargin={8}
+            />
+            <YAxis
+              axisLine={false}
+              tick={{ fill: "var(--muted-foreground)", fontSize: 13 }}
+              tickCount={3}
+              tickFormatter={formatTokenCount}
+              tickLine={false}
+              tickMargin={8}
+              width={44}
+            />
+            <ChartTooltip
+              content={
+                <ChartTooltipContent
+                  labelFormatter={(value) => formatDayLabel(String(value))}
+                />
+              }
+              cursor={false}
+            />
+            {series.map((item) => (
+              <Area
+                activeDot={{ r: 4 }}
+                connectNulls={false}
+                dataKey={item.dataKey}
+                fill={`var(--color-${item.dataKey})`}
+                fillOpacity={0.05}
+                isAnimationActive={false}
+                key={item.dataKey}
+                stroke={`var(--color-${item.dataKey})`}
+                strokeWidth={1.5}
+                type="monotone"
+              />
+            ))}
+          </AreaChart>
+        </ChartContainer>
+
+        {!hasCurrentData ? (
+          <Empty
+            aria-live="polite"
+            className="absolute inset-0 min-h-0 bg-transparent p-4"
+            role="status"
+          >
+            <EmptyHeader>
+              <EmptyTitle>
+                <Badge variant="secondary">No data</Badge>
+              </EmptyTitle>
+              <EmptyDescription>
+                Token history is temporarily unavailable.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : null}
+      </div>
+      <div
+        className="mt-4 mb-10 flex flex-wrap items-center gap-x-[18px] gap-y-1 text-[13px] text-muted-foreground"
+        data-testid="usage-legend"
+      >
+        {series.map((item) => (
+          <span className="inline-flex items-center" key={item.dataKey}>
+            <i
+              aria-hidden
+              className="mr-[7px] inline-block size-2 rounded-full"
+              style={{ background: item.color }}
+            />
+            {item.label}
+          </span>
+        ))}
+      </div>
     </>
   );
 }
@@ -1077,8 +1079,17 @@ export function buildProviderTokenChart(
     provider: UsageProviderInfo;
   }>,
 ) {
+  // Claude keeps the ink and Codex the olive, whatever order the response lists them in.
+  // Any other provider takes one of the three colours left, so it never looks like them.
+  const colorById: Record<string, string> = {
+    claude: usageProviderChartColors[0],
+    codex: usageProviderChartColors[1],
+  };
+  const otherColors = usageProviderChartColors.slice(2);
+  let otherCount = 0;
   const series = providerHistories.map(({ provider }, index) => ({
-    color: usageProviderChartColors[index % usageProviderChartColors.length],
+    color:
+      colorById[provider.id] ?? otherColors[otherCount++ % otherColors.length],
     dataKey: `provider${index + 1}`,
     label: provider.label || provider.id,
   }));

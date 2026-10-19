@@ -2782,7 +2782,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
     );
     assert(
       (await page
-        .getByText("Total tokens in the last 30 days", { exact: true })
+        .getByText("Last 30 days", { exact: true })
         .count()) === 0,
       "Token totals must stay hidden until token history is ready",
     );
@@ -7091,7 +7091,8 @@ async function testUsagePrioritizesProviderTokenHistory(browser, appUrl) {
   );
   await clickNavigation(page, "Usage");
   const tokenChartHeading = page.getByRole("heading", {
-    name: "Tokens used over time",
+    name: "Last 30 days",
+    exact: true,
   });
   await tokenChartHeading.waitFor({
     timeout: 10_000,
@@ -7101,12 +7102,13 @@ async function testUsagePrioritizesProviderTokenHistory(browser, appUrl) {
     .waitFor({ timeout: 10_000 });
   await page
     .getByText(
-      "four billion three hundred nineteen million one hundred seventy-six thousand three hundred thirty tokens",
+      "four billion three hundred nineteen million one hundred seventy-six thousand three hundred thirty",
       { exact: true },
     )
     .waitFor({ timeout: 10_000 });
   const tokenUsageRefresh = page.getByRole("button", {
-    name: "Refresh token usage",
+    name: "Refresh",
+    exact: true,
   });
   const refreshResponse = page.waitForResponse(
     (response) =>
