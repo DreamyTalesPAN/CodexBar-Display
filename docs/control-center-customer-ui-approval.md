@@ -9944,4 +9944,10 @@ issue scope, or release permission never implies UI permission.
 - User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the dialog showed the setup device cards (thumbnail, WiFi and "Previously connected" chips, ring, check mark) → it shows plain radio rows between hairlines as drawn in frame 47: round radio, "VibeTV 4F2A", "192.168.178.163 · Firmware 1.4.2" below, "WiFi · Previously connected" (or "Cable") at the right; the dialog is 480 px wide as drawn. The words are unchanged.
 - Approved customer-visible result: the picker dialog looks like frame 47 of "Calm Redesign - alle Screens".
 - Scope: `apps/control-center/src/components/setup/setup-device-dialogs.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+
+## 2026-10-20 — #781: build 2b QA, the Theme Studio's notice next to Save wraps to two lines
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: "Theme pack exported. No device was contacted." (and the other notices in the Studio's top row) sat in a box about 117 px wide and wrapped to three lines, which made the top row taller and moved the design name down → the notice sits right next to Save in a box up to 224 px wide, wraps to two lines as drawn in the template, and the top row keeps its height. The words are unchanged.
+- Approved customer-visible result: the Studio's top row looks like frames 7-9 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content

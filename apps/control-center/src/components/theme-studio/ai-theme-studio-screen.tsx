@@ -1093,12 +1093,12 @@ export function AIThemeStudioScreen({
             </Button>
           </div>
           {notices.length || sendBlockedReason ? (
-            <div className="flex flex-[1_1_0%] flex-col items-end gap-0.5 text-right">
+            <div className="ml-auto flex min-w-0 max-w-[14rem] flex-[0_1_auto] flex-col items-end gap-0.5 text-right">
               {notices.map((text, i) => <p key={i} role="status" className="text-[13px] font-normal text-muted-foreground [overflow-wrap:break-word]">{text}</p>)}
               {sendBlockedReason ? <p id="send-blocked-reason" role="status" className="text-[13px] font-normal text-muted-foreground [overflow-wrap:break-word]">{sendBlockedReason}</p> : null}
             </div>
           ) : null}
-          <div className="ml-auto flex shrink-0 items-center gap-2">
+          <div className={`${notices.length || sendBlockedReason ? "" : "ml-auto "}flex shrink-0 items-center gap-2`}>
             <Button
               variant="outline"
               disabled={locked || Boolean(saveBlockedReason) || !document.spec.primitives.length || validation.errors.length > 0}
