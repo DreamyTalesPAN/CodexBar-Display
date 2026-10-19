@@ -8473,3 +8473,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the row looks as drawn in frame 10 of "Calm Redesign - alle Screens".
 - Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.test.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx`, `apps/control-center/scripts/test-customer-flows.mjs` (three locators of the row title) and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-19 — #798: approval marker after merging the Control Center row branch (rv-tpl798)
+
+- User approval: Paul, 19.10.2026 via the communicator: the first Updates row as drawn in frame 10 (entry above); this marker adds no visible change of its own.
+- Approved customer-visible result: as in the entry "Updates row \"Control Center\" as drawn in the template (build 2 decision)" above.
+- Scope: merge of origin/claude/calm-updates (380662fd) into this branch, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
