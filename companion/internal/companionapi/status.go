@@ -418,7 +418,9 @@ func cableConnectionChoiceDevice(hello protocol.DeviceHello, ok bool) deviceInfo
 }
 
 func refreshDefaultCableHello() (protocol.DeviceHello, bool) {
-	port, err := usb.ResolveVibeTVControlPort("", "")
+	// An open, verified VibeTV answers for itself; "" keeps the full search.
+	explicit, _ := usb.OpenVibeTVPort()
+	port, err := usb.ResolveVibeTVControlPort(explicit, "")
 	if err != nil {
 		return protocol.DeviceHello{}, false
 	}
