@@ -8075,3 +8075,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; proposed: below 1024 px width the Theme Studio preview scrolls inside its own area and the chat column (message list and prompt box) stays at the bottom of the window, at most 40% of the window height, so the prompt box is in view at 960x640. At 1024 px and wider nothing changes. Before → after: prompt box below the preview (needs scrolling) → prompt box in view at the bottom; no text changes.
 - Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, and this record. Pull request branch only, not merge or release.
 - What's new: none — layout only, no new feature.
+
+## 2026-10-18 — Support: no placeholder in the Recent activity time column; Setup log fades its top edge (#750)
+
+- User approval: pending — Paul reviews this PR (Support page calm look, variant A, #750); look: the first Recent activity entry `Control Center opened` shows the time the app opened instead of the word `Session`, and the top edge of the Setup log fades instead of cutting a row in half.
+- Approved customer-visible result: Support › Recent activity: the entry `Control Center opened` / `This session started.` shows its clock time instead of `Session`; no other text changes. Support › Setup log: the top edge of the box fades like the Setup wizard log, so no row is shown cut in half. No new text, screen, button or dialog.
+- Scope: `logs-screen.tsx`, `control-center-app.tsx` (the initial session entry only), `setup-event-log.tsx`, their tests `logs-screen.test.tsx`, `setup-event-log.test.tsx` and `control-center-app.display-preferences.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new wording
+
+## 2026-10-18 — Support Setup log: the top fade only while older entries are above the view (#750, Codex review)
+
+- User approval: pending — Paul reviews this PR (Support page calm look, variant A, #750); look: at the oldest entry the Setup log's top row is shown whole, not faded; while older entries are scrolled out of view the top edge fades as in the entry above.
+- Approved customer-visible result: Support › Setup log: the fade at the top edge applies only while older entries are above the view. No new text, screen, button or dialog.
+- Scope: `setup-event-log.tsx`, its test `setup-event-log.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new wording
