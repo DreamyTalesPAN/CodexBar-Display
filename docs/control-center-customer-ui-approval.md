@@ -7528,3 +7528,38 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as approved in the #610 entries above; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-17 — Provider list asks for a fresh inventory once when it opens (#555, PR #700)
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #555); look unchanged except: none.
+- Approved customer-visible result: none. The provider list looks and behaves as before; it shows a plugin installed or removed while the engine ran after the list is opened, instead of at the next restart.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (the request that loads the provider list when Settings or the provider setup opens sends `fresh=1` once; polls do not), three `control-center-app.*.test.tsx` files whose request matcher now also accepts the `&fresh=1` suffix, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a fix of a reported defect, no visible change
+
+## 2026-10-18 — Provider list: a fresh read waits for a plain read in flight (Codex P1, PR #700)
+
+- User approval: pending — Paul reviews this PR (fix of a Codex P1 on the #555 change, #700); look unchanged except: none.
+- Approved customer-visible result: none. The provider list looks and behaves as before; a plugin installed or removed while the engine runs shows after the list is opened, also when the list opens while a plain poll is still in flight.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (a `fresh=1` provider read no longer joins a plain read in flight; it waits for that read and then asks CodexBar; plain polls still join any read in flight) and the new test `apps/control-center/src/components/control-center-app.provider-fresh-read.test.tsx`. Pull request branch only, not merge or release.
+- What's new: none — a fix of a reported defect, no visible change
+
+## 2026-10-18 — Provider list reads fresh when it becomes visible (Codex P1 on #700)
+
+- User approval: pending — Paul reviews this PR (fix of a Codex P1 on the #555 change, #700); look unchanged except: none.
+- Approved customer-visible result: none. The provider list looks and behaves as before; it is up to date when the Providers setup step opens or Settings opens, also when a plugin was installed or removed while setup waited for the device.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (a `fresh=1` provider read is sent once when the provider list becomes visible — the Providers setup step or Settings once inside — not on every render; plain polls send no `fresh=1`) and `apps/control-center/src/components/control-center-app.provider-fresh-read.test.tsx`. Pull request branch only, not merge or release.
+- What's new: none — a fix of a reported defect, no visible change
+
+## 2026-10-18 — Provider list: a failed fresh read is asked again (Codex P2 on #700)
+
+- User approval: pending — Paul reviews this PR (fix of a Codex P2 on the #555 change, #700); look unchanged except: none.
+- Approved customer-visible result: none. The provider list looks and behaves as before; after a failed read the next poll asks CodexBar again, so the list is up to date once the read succeeds.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (the fresh read stays owed while the provider list is visible until one succeeds; polls then send `fresh=1`) and `apps/control-center/src/components/control-center-app.provider-fresh-read.test.tsx` (a case for a failed fresh read). Pull request branch only, not merge or release.
+- What's new: none — a fix of a reported defect, no visible change
+
+## 2026-10-18 — Provider list: each opening gets its own fresh read (Codex P2 on #700)
+
+- User approval: pending — Paul reviews this PR (fix of a Codex P2 on the #555 change, #700); look unchanged except: none.
+- Approved customer-visible result: none. The provider list looks and behaves as before; when it is closed and opened again while an earlier fresh read is still running, the new opening asks CodexBar itself, so a plugin changed in between shows.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (a fresh provider read counts only for the opening of the list it was sent for) and `apps/control-center/src/components/control-center-app.provider-fresh-read.test.tsx` (a case for closing and opening again). Pull request branch only, not merge or release.
+- What's new: none — a fix of a reported defect, no visible change

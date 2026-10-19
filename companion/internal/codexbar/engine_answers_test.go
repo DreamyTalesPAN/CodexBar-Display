@@ -6,13 +6,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 	"time"
 )
 
-// withEngineAnswerReuse switches the Windows reuse on and starts and ends with
-// nothing kept.
+// withEngineAnswerReuse switches the reuse on and starts and ends with nothing
+// kept.
 func withEngineAnswerReuse(t *testing.T) {
 	t.Helper()
 	original := reuseEngineAnswers
@@ -124,26 +125,11 @@ func TestInstalledVersionAsksAgainWheneverTheAnswerMayNotHold(t *testing.T) {
 		}
 	})
 
-	t.Run("the Mac", func(t *testing.T) {
-		withEngineAnswerReuse(t)
-		reuseEngineAnswers = false
-		bin := filepath.Join(t.TempDir(), "codexbar")
-		writeFileChangedAgo(t, bin, "engine", time.Hour)
-		runs := stubVersionCommand(t, &reported, nil)
-		for range 2 {
-			if _, err := installedVersion(context.Background(), bin); err != nil {
-				t.Fatal(err)
-			}
-		}
-		if *runs != 2 {
-			t.Fatalf("the Mac path changed: its CLI was asked %d times, want 2", *runs)
-		}
-	})
 }
 
-// settledEngine switches the reuse on and points FindBinary at a CLI file and
-// APPDATA at a settings.json that were both last changed an hour ago. It
-// returns the settings path.
+// settledEngine switches the reuse on and points FindBinary at a CLI file, and
+// both APPDATA (Windows) and CODEXBAR_CONFIG (the Mac) at a settings file, that
+// were all last changed an hour ago. It returns the settings path.
 func settledEngine(t *testing.T) string {
 	t.Helper()
 	withEngineAnswerReuse(t)
@@ -155,6 +141,7 @@ func settledEngine(t *testing.T) string {
 	t.Setenv("APPDATA", appData)
 	settings := filepath.Join(appData, "CodexBar", "settings.json")
 	writeFileChangedAgo(t, settings, `{"enabled_providers":["claude"]}`, time.Hour)
+	t.Setenv("CODEXBAR_CONFIG", settings)
 	reported := "codexbar-cli 0.60.3"
 	stubVersionCommand(t, &reported, nil)
 	return settings
@@ -243,6 +230,7 @@ func TestSetProviderEnabledForgetsTheInventoryAtOnce(t *testing.T) {
 // The inventory was kept one minute and then read again on every poll with the
 // window open: "config providers" once a minute on Windows (#555). The answer
 // now stays for the life of the engine process while settings.json is unchanged.
+// settledEngine also points the Mac config at that file, so this holds on the Mac.
 func TestProviderInventoryIsKeptForTheLifeOfTheEngine(t *testing.T) {
 	settledEngine(t)
 	runs := stubEngineCommands(t, func() ([]byte, error) { return inventoryWithClaude(true), nil })
@@ -276,7 +264,6 @@ func TestProviderInventoryAsksAgainWheneverTheAnswerMayNotHold(t *testing.T) {
 				t.Fatal(err)
 			}
 		}},
-		{name: "the Mac", prepare: func(*testing.T, string) { reuseEngineAnswers = false }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			settings := settledEngine(t)
@@ -297,5 +284,78 @@ func TestProviderInventoryAsksAgainWheneverTheAnswerMayNotHold(t *testing.T) {
 				t.Fatalf("the CLI must be asked again: inventory=%+v err=%v runs=%d", inventory, err, *runs)
 			}
 		})
+	}
+}
+
+// On the Mac the inventory is read from the CodexBar config the CLI is pointed
+// at, the same file commandEnvironment passes as CODEXBAR_CONFIG; a config path
+// carried by the caller's context wins, as it does for the CLI (#555).
+func TestInventorySettingsPathIsTheConfigTheMacCLIReads(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows reads its own settings.json under APPDATA")
+	}
+	config := filepath.Join(t.TempDir(), "codexbar.json")
+	t.Setenv("CODEXBAR_CONFIG", config)
+	if got := inventorySettingsPath(context.Background()); got != config {
+		t.Fatalf("inventory settings path = %q, want the CODEXBAR_CONFIG file %q", got, config)
+	}
+	passed := filepath.Join(t.TempDir(), "passed.json")
+	ctx := context.WithValue(context.Background(), configPathContextKey{}, passed)
+	if got := inventorySettingsPath(ctx); got != passed {
+		t.Fatalf("inventory settings path = %q, want the config passed to the CLI %q", got, passed)
+	}
+}
+
+// The Control Center asks with fresh=1 when a provider list opens. That drops
+// the kept inventory once, so a plugin installed or removed while the engine
+// ran shows; the answer is kept again after that read.
+func TestForgetProviderInventoryMakesTheNextReadAskTheCLI(t *testing.T) {
+	settledEngine(t)
+	runs := stubEngineCommands(t, func() ([]byte, error) { return inventoryWithClaude(true), nil })
+	if _, err := FetchProviderInventory(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := FetchProviderInventory(context.Background()); err != nil || *runs != 1 {
+		t.Fatalf("a plain read must keep the answer: err=%v runs=%d", err, *runs)
+	}
+	ForgetProviderInventory()
+	if _, err := FetchProviderInventory(context.Background()); err != nil || *runs != 2 {
+		t.Fatalf("after ForgetProviderInventory the CLI must be asked again: err=%v runs=%d", err, *runs)
+	}
+	if _, err := FetchProviderInventory(context.Background()); err != nil || *runs != 2 {
+		t.Fatalf("the read after the forget is kept again: err=%v runs=%d", err, *runs)
+	}
+}
+
+// A read that began before a plugin change and ends after the fresh=1 forget
+// must not bring its old answer back (Codex review on #700).
+func TestInventoryReadStartedBeforeAForgetIsNotKept(t *testing.T) {
+	settledEngine(t)
+	started, release := make(chan struct{}), make(chan struct{})
+	pluginInstalled := false
+	runs := stubEngineCommands(t, func() ([]byte, error) {
+		if pluginInstalled {
+			return inventoryWithClaude(false), nil
+		}
+		close(started)
+		<-release
+		return inventoryWithClaude(true), nil
+	})
+	done := make(chan error, 1)
+	go func() {
+		_, err := FetchProviderInventory(context.Background())
+		done <- err
+	}()
+	<-started
+	pluginInstalled = true
+	ForgetProviderInventory()
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+
+	inventory, err := FetchProviderInventory(context.Background())
+	if err != nil || len(inventory) != 1 || inventory[0].Enabled || *runs != 2 {
+		t.Fatalf("the read after the forget must ask the CLI: inventory=%+v err=%v runs=%d", inventory, err, *runs)
 	}
 }

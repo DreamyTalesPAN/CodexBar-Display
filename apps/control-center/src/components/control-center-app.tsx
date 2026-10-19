@@ -524,6 +524,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const providerDisplayRevisionRef = useRef(0);
   const providerDisplayWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
   const providerPreferencesReadRef = useRef<Promise<void> | null>(null);
+  const providerPreferencesReadFreshRef = useRef(false);
+  // A visible provider list owes CodexBar one fresh read. It stays owed until
+  // that read succeeds, so a failed one is retried by the next poll.
+  const providerListFreshOwedRef = useRef(false);
+  // Counts the openings of the provider list. A fresh read satisfies only the
+  // opening it was sent for.
+  const providerListOpeningRef = useRef(0);
+  const providerPreferencesReadOpeningRef = useRef(0);
+  const providerListShownRef = useRef(false);
   const quietUsageReadRef = useRef<Promise<void> | null>(null);
   const providerPreferencesRevisionRef = useRef(0);
   const providerPreferenceWritesRef = useRef<Promise<void>>(Promise.resolve());
@@ -3427,11 +3436,23 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   const refreshProviderPreferences = useCallback(
-    (options?: { quiet?: boolean }) => {
-      if (providerPreferencesReadRef.current) {
-        return providerPreferencesReadRef.current;
+    (options?: { quiet?: boolean; fresh?: boolean }) => {
+      const inFlight = providerPreferencesReadRef.current;
+      const fresh = Boolean(options?.fresh) || providerListFreshOwedRef.current;
+      const opening = providerListOpeningRef.current;
+      // A plain poll joins any read in flight. A fresh read joins only a fresh
+      // read sent for this opening of the list; behind a plain one, or one
+      // from an earlier opening, it waits for that read to settle and then
+      // asks CodexBar itself, so the plugin list it returns is the one shown.
+      if (
+        inFlight &&
+        (!fresh ||
+          (providerPreferencesReadFreshRef.current &&
+            providerPreferencesReadOpeningRef.current === opening))
+      ) {
+        return inFlight;
       }
-      const read = (async () => {
+      const readNow = async () => {
         // Start after older writes, then ignore the result if a newer write
         // begins beside this GET. Otherwise a pre-write snapshot can replace
         // the PATCH-confirmed row and feed the stale provider back into the
@@ -3448,7 +3469,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         try {
           const payload = await runCompanion<{
             items: PreferenceDescriptor[];
-          }>("/v1/preferences?section=providers", undefined, {
+          }>(`/v1/preferences?section=providers${fresh ? "&fresh=1" : ""}`, undefined, {
             preserveLastError: Boolean(options?.quiet),
           });
           if (
@@ -3461,6 +3482,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           providerPreferencesRef.current = items;
           setProviderPreferences(items);
           setProviderPreferencesError(null);
+          if (fresh && opening === providerListOpeningRef.current) {
+            providerListFreshOwedRef.current = false;
+          }
         } catch (error) {
           if (
             setupGeneration !== setupGenerationRef.current ||
@@ -3472,8 +3496,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             normalizeCaughtError(error, "Provider settings need attention."),
           );
         }
-      })();
+      };
+      const read: Promise<void> = inFlight
+        ? inFlight.then(readNow, readNow)
+        : readNow();
       providerPreferencesReadRef.current = read;
+      providerPreferencesReadFreshRef.current = fresh;
+      providerPreferencesReadOpeningRef.current = opening;
       void read.finally(() => {
         if (providerPreferencesReadRef.current === read) {
           providerPreferencesReadRef.current = null;
@@ -5121,6 +5150,26 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           deviceCompletedThemeSetup(device)
         )),
   });
+
+  // The provider list is read fresh (fresh=1) once when it becomes visible:
+  // the Providers setup step, or Settings once the customer is inside. Plugins
+  // installed or removed while the engine ran show up then; plain polls keep
+  // the engine's cached inventory until that fresh read has succeeded.
+  const providerListVisible =
+    companionStatus === "online" &&
+    (setupStep === "providers" ||
+      (hasEnteredControlCenter && activeShellTab === "settings"));
+  useEffect(() => {
+    if (providerListShownRef.current === providerListVisible) {
+      return;
+    }
+    providerListShownRef.current = providerListVisible;
+    providerListFreshOwedRef.current = providerListVisible;
+    if (providerListVisible) {
+      providerListOpeningRef.current += 1;
+      void refreshProviderPreferences({ quiet: true });
+    }
+  }, [providerListVisible, refreshProviderPreferences]);
   // Once setup has admitted the customer to the Control Center, it never owns
   // the window again. Theme and screensaver installs can temporarily make the
   // device unready; that is install progress, not a new customer setup.
