@@ -1136,7 +1136,7 @@ export function AIThemeStudioScreen({
                   event.currentTarget.focus({ preventScroll: true });
                 }
               }}
-              className="group/canvas flex min-h-full w-full flex-col outline-none"
+              className="group/canvas flex h-full w-full flex-col outline-none"
               inert={locked}
               aria-busy={busy}
             >
