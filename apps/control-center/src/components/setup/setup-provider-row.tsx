@@ -152,7 +152,10 @@ export function SetupProviderRow({
     >
       <ItemContent>
         <ItemTitle
-          className={cn(calm && "font-semibold", unusable && "opacity-50")}
+          className={cn(
+            calm ? "font-semibold" : "text-[13px] font-semibold",
+            unusable && "opacity-50",
+          )}
         >
           {label}
         </ItemTitle>

@@ -4,7 +4,7 @@ import type {
   SupportDiagnostics,
   UsageSnapshot,
 } from "../control-center-types";
-import { Search, SearchX, TriangleAlert } from "lucide-react";
+import { Search, SearchX } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -323,7 +323,6 @@ export function ProviderList({
           open
           title={issue.provider.label}
           description={issue.message}
-          icon={TriangleAlert}
           onOpenChange={(open) => { if (!open) dismissIssue(); }}
           primaryAction={issueSignIn ? {
             label: `Sign in to ${issueSignIn.label}`,
@@ -338,9 +337,11 @@ export function ProviderList({
               setupGuide();
             },
           } : { label: "OK", onSelect: dismissIssue }}
-          secondaryAction={!issueSignIn && setupGuide
-            ? { label: "OK", onSelect: dismissIssue }
-            : undefined}
+          secondaryAction={issueSignIn
+            ? { label: "Not now", onSelect: dismissIssue }
+            : setupGuide ? { label: "OK", onSelect: dismissIssue } : undefined}
+          // OK or Not now is the way out here (Paul, 16.10.: at most two actions).
+          showCloseButton={false}
         />
       ) : null}
       {showIntro ? (
@@ -427,11 +428,11 @@ export function ProviderList({
 
       {remaining > 0 ? (
         <Button
-          className="mt-3 self-center"
+          className="mt-3 self-center font-normal"
           onClick={() => setShown((count) => count + PROVIDER_PAGE_SIZE)}
           size="sm"
           type="button"
-          variant="ghost"
+          variant="link"
         >
           <span>{`Show more providers (${remaining} left)`}</span>
         </Button>

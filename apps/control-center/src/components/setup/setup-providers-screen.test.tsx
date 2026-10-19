@@ -186,7 +186,7 @@ describe("SetupProvidersScreen", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     rerender(<SetupProvidersScreen {...props} />);
     expect(screen.getByRole("dialog")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
     fireEvent.click(screen.getByRole("switch", { name: "GitHub Copilot" }));
     expect(onToggle).toHaveBeenCalledWith(failed, false);
     rerender(<SetupProvidersScreen {...props} providers={[claude, { ...failed, value: false }]} />);
@@ -349,7 +349,7 @@ describe("SetupProvidersScreen", () => {
       expect(within(dialog).getByText(sentence)).toBeTruthy();
       expect(dialog.textContent).not.toMatch(/fetch strategy|No usage reading|Check again|check again/);
       expect(within(dialog).getAllByRole("button").map((button) => button.textContent))
-        .toEqual(["OK", "Close"]);
+        .toEqual(["OK"]);
       unmount();
     }
     for (const state of ["healthy", "checking", "disabled"]) {
@@ -429,7 +429,7 @@ describe("SetupProvidersScreen", () => {
     expect(dialog.queryByText("No available fetch strategy for copilot.")).toBeNull();
     expect(dialog.queryByRole("button", { name: /Copy provider message/ })).toBeNull();
     expect(dialog.getAllByRole("button").map((button) => button.textContent))
-      .toEqual(["OK", "Open setup guide", "Close"]);
+      .toEqual(["OK", "Open setup guide"]);
     fireEvent.click(dialog.getByRole("button", { name: "Open setup guide" }));
     expect(onOpenSetupGuide).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -657,6 +657,24 @@ describe("SetupProvidersScreen", () => {
     expect(html).toContain("Provider 9");
     expect(html).not.toContain("Provider 10");
     expect(html).toContain("Show more providers (4 left)");
+  });
+
+  // Calm rule: a link is ink with an underline, like the other links in Settings.
+  it("shows the more-providers control as an underlined link", () => {
+    const many = Array.from({ length: 14 }, (_, index) =>
+      provider({
+        health: "healthy",
+        label: `Provider ${index}`,
+        providerId: `p${index}`,
+      }),
+    );
+    const html = render({ providers: many });
+    const control = html.match(/<button[^>]*>(?:(?!<\/button>)[\s\S])*Show more providers/)?.[0] ?? "";
+    const opening = control.slice(0, control.indexOf(">"));
+
+    expect(opening).toContain("underline");
+    expect(opening).toContain("font-normal");
+    expect(opening).not.toContain("font-semibold");
   });
 
   it("does not offer more when everything already fits", () => {
