@@ -153,6 +153,16 @@ describe("Theme Studio notices", () => {
     expect(screen.getByRole("button", { name: "Save" }).parentElement?.className).toContain("shrink-0");
   });
 
+  it("cuts a long design name with an ellipsis and shows it in full on hover", () => {
+    render(<AIThemeStudioScreen initialTheme={{ packName: "Freche Sonnenbrillen-Sammlung", source: "custom", spec: createBlankThemeSpec() }} />);
+    const name = screen.getByLabelText("Design name") as HTMLInputElement;
+    expect(name.title).toBe("Freche Sonnenbrillen-Sammlung");
+    expect(name.className).toContain("text-ellipsis");
+    fireEvent.change(name, { target: { value: "Neu" } });
+    expect(name.value).toBe("Neu");
+    expect(name.title).toBe("Neu");
+  });
+
   it("opens the key dialog with a plain heading and no subtitle", async () => {
     vi.mocked(fetchAIThemeCapabilities).mockResolvedValue({ enabled: true, providers: [{ id: "openai", configured: false }] } as never);
     vi.mocked(planAIThemeLayout).mockReturnValue(new Promise(() => {}));
@@ -209,7 +219,7 @@ describe("Theme Studio small window", () => {
     for (const column of [preview, chatColumn]) expect(classes(column)).toEqual(expect.arrayContaining(["lg:flex-1", "lg:basis-0"]));
     expect(classes(chatColumn)).not.toContain("lg:w-[464px]");
     const frame = document.querySelector('[aria-label="Selection workspace"]')!.querySelector(":scope > div") as HTMLElement;
-    expect(classes(frame)).toContain("my-auto");
+    expect(classes(frame)).toContain("row-start-2");
     expect(classes(frame.firstElementChild!)).toContain("mx-auto");
     expect(classes(screen.getByRole("log", { name: "Conversation" }))).not.toContain("[&>:first-child]:mt-auto");
   });

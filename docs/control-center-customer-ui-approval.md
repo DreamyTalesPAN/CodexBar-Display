@@ -8007,3 +8007,19 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the entry above and in the entry of #638 (finished turns keep a small thumbnail); nothing else changes.
 - Scope: the merge of `codex/theme-studio-pack` (8759ac73) into this branch and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — Theme Studio: Paul's feedback on test build 7194 (#781)
+
+- User approval: Paul, 19.10.2026 via the communicator, feedback on test build 7194 (the preview stays put when an element is selected, long design name with an ellipsis)
+- Approved customer-visible result, before → after:
+  1. Selecting an element: before: the "Details" row appeared under the preview and pushed the preview up; after: the preview keeps exactly its centred place when an element is selected or deselected, when Details opens or closes. "Details" sits right below the preview in space that is reserved anyway, and when opened its content scrolls inside its own area (at least 8 rem high, more in a taller window).
+  2. Design name in the header: before: in a narrow window the name was cut off hard ("Freche Sonnenbrillen-S"); after: it ends with "…", and the full name shows when the mouse rests on it (tooltip). Editing the name works as before.
+- Scope: `apps/control-center/src/components/theme-studio/editable-theme-preview.tsx` (three-row layout), `ai-theme-studio-screen.tsx` (name field), their tests, and this record. Pull request branch only, not merge or release.
+- What's new: none — layout refinement of the Theme Studio, no new feature
+
+## 2026-10-19 — #781: approval marker after merging #638 (73788377)
+
+- User approval: Paul, 19.10.2026 via the communicator, feedback on test build 7194 (the entry above); the merge itself has no visible change of its own and was not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: as in the entry above and in the entries of #638; nothing else changes.
+- Scope: the merge of `codex/theme-studio-pack` (73788377) into this branch and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own

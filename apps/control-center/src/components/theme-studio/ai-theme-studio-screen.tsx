@@ -1038,8 +1038,8 @@ export function AIThemeStudioScreen({
           <h2 className="sr-only">{document.usage === "screensaver" ? "Screensaver Studio" : "Theme Studio"}</h2>
           <Input
             aria-label="Design name"
-            title="Design name"
-            className="h-10 min-w-24 max-w-xs flex-[2_1_0%] border-transparent bg-transparent px-2 text-[28px] leading-none font-semibold md:text-[28px] shadow-none hover:border-input focus-visible:border-ring"
+            title={document.packName || "Design name"}
+            className="h-10 min-w-24 max-w-xs flex-[2_1_0%] text-ellipsis border-transparent bg-transparent px-2 text-[28px] leading-none font-semibold md:text-[28px] shadow-none hover:border-input focus-visible:border-ring"
             value={document.packName}
             maxLength={48}
             disabled={locked}
