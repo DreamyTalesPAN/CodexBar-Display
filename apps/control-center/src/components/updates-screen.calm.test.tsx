@@ -154,6 +154,58 @@ describe("calm Updates screen", () => {
     expect(updates[0].disabled).toBe(false);
   });
 
+  it("keeps the firmware Update closed while a check runs and after the Mac App check failed", () => {
+    const offered = {
+      ...upToDate,
+      firmwareUpdate: {
+        ...upToDate.firmwareUpdate!,
+        latestFirmware: "1.0.49",
+        status: "update_available" as const,
+        updateAvailable: true,
+      },
+    };
+    const update = () => screen.getByRole("button", { name: "Update" }) as HTMLButtonElement;
+    const view = render(<UpdatesScreen {...offered} />);
+    expect(update().disabled).toBe(false);
+
+    view.rerender(<UpdatesScreen {...offered} busyAction="firmware-check" />);
+    expect(update().disabled).toBe(true);
+
+    view.rerender(
+      <UpdatesScreen
+        {...offered}
+        companionRelease={{ ...upToDate.companionRelease!, status: "check_failed" }}
+      />,
+    );
+    expect(update().disabled).toBe(true);
+  });
+
+  it("a theme-only update names no firmware version", () => {
+    render(<UpdatesScreen {...upToDate} themeUpdateAvailable />);
+    expect(screen.getByText("A theme update is available")).toBeTruthy();
+    expect(screen.queryByText(/^Version /)).toBeNull();
+    expect(screen.getByRole("button", { name: "Update" })).toBeTruthy();
+  });
+
+  it("a firmware check with no answer is not 'up to date'", () => {
+    render(
+      <UpdatesScreen
+        {...upToDate}
+        firmwareUpdate={{
+          checkedAt: "2026-10-19T09:10:00Z",
+          status: "no_board_release",
+          installedFirmware: "1.0.48",
+          updateAvailable: false,
+          message: "No update is available for this VibeTV.",
+        }}
+      />,
+    );
+    expect(screen.getByRole("heading", { level: 2, name: "No update available" })).toBeTruthy();
+    expect(screen.getByText("No update is available for this VibeTV.")).toBeTruthy();
+    // Only the Mac App row says it is up to date.
+    expect(screen.getAllByText("Up to date")).toHaveLength(1);
+  });
+
   it("installing: the step is a process-steps line inside the card, no Update button", () => {
     render(
       <UpdatesScreen

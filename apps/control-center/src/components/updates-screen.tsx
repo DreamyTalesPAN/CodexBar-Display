@@ -182,6 +182,14 @@ export function UpdatesScreen({
     companionStatus === "missing"
       ? "Not running"
       : companionInfo?.app?.version || companionVersion || "Unknown";
+  // The answer was neither "current" nor an update nor a failure (no release
+  // for this board, not supported over this connection): never "up to date".
+  const firmwareNoAnswer = Boolean(
+    firmwareUpdate &&
+      !["current", "update_available", "check_failed"].includes(
+        firmwareUpdate.status,
+      ),
+  );
   const pageStatusHeading =
     installingUpdate
       ? updateStatus?.stage === "rebooting" ||
@@ -194,12 +202,14 @@ export function UpdatesScreen({
           ? "Update available"
           : checkingUpdates
             ? "Checking for updates"
-            : "Everything is up to date";
+            : firmwareNoAnswer
+              ? "No update available"
+              : "Everything is up to date";
   const headingTone: Tone = installingUpdate || anyUpdateAvailable
     ? "ink"
     : macAppCheckFailed || firmwareCheckFailed
       ? "failed"
-      : checkingUpdates
+      : checkingUpdates || firmwareNoAnswer
         ? "muted"
         : "ok";
 
@@ -234,8 +244,13 @@ export function UpdatesScreen({
   const firmwareUpdateButton =
     firmwareUpdateOffered && !installingUpdate ? (
       <Button
+        // Not while a check runs or the Mac App check failed: only a check that
+        // answered tells whether the Mac App has to come first.
         disabled={
-          actionsLocked || (checkingUpdates && !refreshing) || !onInstallUpdate
+          actionsLocked ||
+          checkBusy ||
+          macAppCheckFailed ||
+          !onInstallUpdate
         }
         onClick={() => void onInstallUpdate?.()}
         size="sm"
@@ -326,9 +341,11 @@ export function UpdatesScreen({
         <UpdateRow
           action={firmwareUpdateButton}
           description={
-            vibetvUpdateAvailable && firmwareUpdate?.latestFirmware
+            updateAvailable && firmwareUpdate?.latestFirmware
               ? `Version ${firmwareUpdate.latestFirmware} is available`
-              : "Software on your VibeTV"
+              : vibetvUpdateAvailable
+                ? "A theme update is available"
+                : "Software on your VibeTV"
           }
           icon={<Tv aria-hidden />}
           status={
@@ -342,9 +359,14 @@ export function UpdatesScreen({
                     ? "failed"
                     : checking
                       ? "checking"
-                      : canCheckFirmware
+                      : canCheckFirmware && !firmwareNoAnswer
                         ? "ok"
                         : undefined
+          }
+          note={
+            firmwareNoAnswer && !installingUpdate && !vibetvUpdateAvailable
+              ? firmwareUpdate?.message
+              : undefined
           }
           title="VibeTV firmware"
           version={installedFirmware}
@@ -452,6 +474,7 @@ function UpdateRow({
   children,
   description,
   icon,
+  note,
   status,
   title,
   version,
@@ -462,6 +485,8 @@ function UpdateRow({
   children?: ReactNode;
   description: string;
   icon: ReactNode;
+  /** The check's own words when it answered with neither "current" nor an update. */
+  note?: string;
   status?: RowStatus;
   title: string;
   version: string;
@@ -478,7 +503,12 @@ function UpdateRow({
       </div>
       <div className="col-start-2 mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 sm:col-start-3 sm:mt-0">
         <span className="font-mono text-foreground">{version}</span>
-        {action ?? (status ? <RowStatusLabel status={status} /> : null)}
+        {action ??
+          (status ? (
+            <RowStatusLabel status={status} />
+          ) : note ? (
+            <span className="text-muted-foreground">{note}</span>
+          ) : null)}
       </div>
       {hasDetail ? (
         <div className="col-start-2 mt-3 flex flex-col gap-3 sm:col-span-2">{children}</div>

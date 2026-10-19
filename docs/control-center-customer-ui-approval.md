@@ -7897,3 +7897,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged from the entry above except: a Mac App migration that cannot start yet (no verified download) shows no closed "Update" button next to a firmware update that can start, so the one lime "Update" stays the firmware's (before: one closed and one open "Update"); the Mac App row says "Version <x> is available" from the release's version or tag.
 - Scope: `apps/control-center/src/components/updates-screen.tsx`, its tests, `control-center-app.update-check.test.tsx` and `control-center-app.whats-new.test.tsx` (new wording: "Checked <date>, <time>", "Read notes"), the customer-flow selectors in `apps/control-center/scripts/test-customer-flows.mjs`, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none
+
+## 2026-10-19 — Calm Updates screen: Codex review fixes (#752)
+- User approval: pending — Paul reviews (Updates built as drawn in the approved master + derived states, decided by the communicator 19.10.)
+- Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged from the entries above except: the firmware "Update" stays closed while a check runs and after the Mac App check failed (as the old single button did); a theme-only update says "A theme update is available" instead of a firmware version; a firmware check that answered with neither "current" nor an update (no release for this board, not supported over this connection) shows its own message in the row and the headline "No update available" instead of "Up to date".
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none
