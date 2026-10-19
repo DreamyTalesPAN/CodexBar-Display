@@ -2219,3 +2219,118 @@ describe("SetupWizard: accessibility", () => {
   });
 });
 
+
+// Build-2 decision (19.10.2026, frames 18, 19, 27, 28): Back is on the connect
+// and WiFi-wait screens as the template draws it. The companion cannot cancel
+// a pairing or a firmware write, so Back lets the step that runs finish, starts
+// no further one, and then shows the connection choice.
+describe("SetupWizard: Back while connecting or waiting for WiFi", () => {
+  const cable: DeviceCandidate = { target: "cable://vibetv", deviceId: "vibetv-1", transport: "cable" };
+  const wifi: DeviceCandidate = { target: "http://192.168.1.42", deviceId: "vibetv-1", transport: "wifi" };
+  const deferred = <T,>() => {
+    let resolve!: (value: T) => void;
+    let reject!: (reason: unknown) => void;
+    const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+    return { promise, reject, resolve };
+  };
+  const choiceShown = () => screen.getByRole("heading", { name: "How should VibeTV connect?" });
+  // Cable and WiFi both found: the customer chooses Cable, and it connects.
+  const connectOverCable = async (steps: Partial<SetupWizardProps["connectSteps"]>) => {
+    const props = baseProps({
+      step: "device", connectionMode: "", connectionModeChoiceRequired: true,
+      deviceSearchState: "multiple", deviceCandidates: [cable, wifi],
+      onConnectionComplete: vi.fn(),
+      connectSteps: {
+        connect: vi.fn().mockResolvedValue({ firmware: "1.0.41" }),
+        checkFirmware: vi.fn().mockResolvedValue(null),
+        installFirmware: vi.fn(),
+        ...steps,
+      },
+    });
+    render(<SetupWizard {...props} />);
+    choiceShown();
+    expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Connect" })); });
+    return props;
+  };
+
+  it("shows Back on the WiFi wait and leaves it with nothing left running", () => {
+    vi.useFakeTimers();
+    const props = baseProps({
+      step: "device", connectionMode: "", connectionModeChoiceRequired: true,
+      initialWiFiSetup: { status: "waiting_for_wifi", deviceId: "vibetv-1" },
+      deviceSearchState: "not-found",
+      connectSteps: { connect: vi.fn(), checkFirmware: vi.fn(), installFirmware: vi.fn() },
+    });
+    render(<SetupWizard {...props} />);
+    expect(screen.getByText("VibeTV is connecting. The app will continue when it appears on WiFi.")).toBeTruthy();
+    act(() => vi.advanceTimersByTime(1_500));
+    expect(props.onSearchDevices).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.queryByText("VibeTV is connecting. The app will continue when it appears on WiFi.")).toBeNull();
+    // Back's own search is the last one: the wait's poll and its 60 s deadline stopped with the screen.
+    const searches = vi.mocked(props.onSearchDevices).mock.calls.length;
+    act(() => vi.advanceTimersByTime(61_000));
+    expect(vi.mocked(props.onSearchDevices).mock.calls.length).toBe(searches);
+    expect(screen.queryByRole("dialog", { name: "WiFi setup failed" })).toBeNull();
+    expect(props.connectSteps.connect).not.toHaveBeenCalled();
+  });
+
+  it("while pairing: Back waits for the pairing, starts no firmware check, then shows the connection choice", async () => {
+    const pairing = deferred<{ firmware: string }>();
+    const props = await connectOverCable({ connect: vi.fn(() => pairing.promise) });
+    expect(props.connectSteps.connect).toHaveBeenCalledWith(cable);
+    expect(screen.getByRole("heading", { name: "Connecting to VibeTV" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    // Not left yet: the running pairing is not abandoned half way.
+    expect(screen.getByRole("heading", { name: "Connecting to VibeTV" })).toBeTruthy();
+
+    await act(async () => pairing.resolve({ firmware: "1.0.41" }));
+    expect(props.connectSteps.checkFirmware).not.toHaveBeenCalled();
+    expect(props.connectSteps.installFirmware).not.toHaveBeenCalled();
+    expect(props.onConnectionComplete).not.toHaveBeenCalled();
+    choiceShown();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("while the firmware writes: Back is there, the write is not interrupted, then the connection choice shows", async () => {
+    const write = deferred<void>();
+    const props = await connectOverCable({
+      checkFirmware: vi.fn().mockResolvedValue({ from: "1.0.41", to: "1.0.42" }),
+      installFirmware: vi.fn(() => write.promise),
+    });
+    expect(props.connectSteps.installFirmware).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByRole("heading", { name: "Connecting to VibeTV" })).toBeTruthy();
+
+    await act(async () => write.resolve());
+    expect(props.connectSteps.installFirmware).toHaveBeenCalledTimes(1);
+    expect(props.onConnectionComplete).not.toHaveBeenCalled();
+    choiceShown();
+    expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
+  });
+
+  it("a connect that fails after Back opens no error dialog over the connection choice", async () => {
+    const pairing = deferred<{ firmware: string }>();
+    await connectOverCable({ connect: vi.fn(() => pairing.promise) });
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    await act(async () => pairing.reject({ message: "VibeTV did not answer." }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    choiceShown();
+  });
+
+  it("offers no Back to a lone VibeTV that connects by itself: there is no choice to return to", async () => {
+    const pairing = deferred<{ firmware: string }>();
+    render(<SetupWizard {...baseProps({
+      step: "device", connectionMode: "cable", connectionModeChoiceRequired: false,
+      deviceSearchState: "multiple", deviceCandidates: [cable],
+      connectSteps: { connect: vi.fn(() => pairing.promise), checkFirmware: vi.fn(), installFirmware: vi.fn() },
+    })} />);
+    expect(await screen.findByRole("heading", { name: "Connecting to VibeTV" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
+  });
+});

@@ -7970,3 +7970,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none; no visible change.
 - Scope: `apps/control-center/src/components/setup/setup-device-screen.tsx`, `apps/control-center/src/components/setup/setup-theme-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-19 — #780: Back on the connect and WiFi-wait screens (build 2 decision)
+
+- User approval: Paul, 19.10.2026 via the communicator: build-2 decision — app follows the template (frames 18, 19, 27, 28); before → after: (1) while "Connecting to VibeTV" runs (connecting, checking the firmware, updating the firmware, frames 18 and 19) a "Back" button stands top left → before none; it is shown where the customer chose a VibeTV or Cable/WiFi first (a lone VibeTV that connects by itself has no choice to return to and keeps no Back); pressing it lets the step that runs finish (a pairing or a firmware update is never stopped half way, the companion has no cancel for them), starts no further step and then shows the choice of Cable/WiFi or the list again, without an error dialog; (2) while "Connect VibeTV to WiFi" waits for VibeTV on the network (frames 27 and 28) a "Back" button stands top left → before none; it stops the wait and shows the choice of Cable/WiFi again.
+- Approved customer-visible result: the two screens show Back as drawn in frames 18, 19, 27 and 28 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/setup/setup-connect.ts`, `apps/control-center/src/components/setup/setup-wizard.tsx`, `apps/control-center/src/components/setup/setup-device-screen.tsx`, `apps/control-center/src/components/setup/setup-wizard.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
