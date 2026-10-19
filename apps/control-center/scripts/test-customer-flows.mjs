@@ -4998,7 +4998,7 @@ async function testThemeMissingDeviceChoosesThemeAndCompletesSetup(
     "Theme setup must stay inside setup instead of opening the Control Center shell",
   );
   assert(
-    (await page.getByRole("button", { name: "Create Theme" }).count()) === 0 &&
+    (await page.getByRole("button", { name: "Create theme" }).count()) === 0 &&
       (await page.getByRole("button", { name: /^Edit/ }).count()) === 0 &&
       (await page.getByText("Published", { exact: true }).count()) === 0,
     "Theme setup must show only the theme list and its install action",
@@ -6535,10 +6535,16 @@ async function testAppearanceSidebarNavigation(browser, appUrl) {
       .getByRole("heading", { name: "Screensavers", exact: true })
       .waitFor({ timeout: 10_000 });
     await page.getByText("Fixture Night Clock Screensaver").waitFor();
-    const screensaverSwitch = page
-      .locator("main.control-center-shell")
-      .getByRole("switch", { name: "Show screensaver" });
-    await page.getByText("Screensaver is turned off").waitFor();
+    // The switch is in Settings only (#643): Screensavers says it is off
+    // and links there.
+    await page.getByText("Screensaver is off.", { exact: true }).waitFor();
+    assert(
+      (await page
+        .locator("main.control-center-shell")
+        .getByRole("switch", { name: "Show screensaver" })
+        .count()) === 0,
+      "Screensavers must not have a Show screensaver switch of its own",
+    );
     assert(
       (await page.getByText("Fixture Synthwave Theme").count()) === 0,
       "Screensavers must not include live theme packs",
@@ -6550,19 +6556,33 @@ async function testAppearanceSidebarNavigation(browser, appUrl) {
         .count()) === 0,
       "Appearance sections must stay in the sidebar, not become content tabs",
     );
-    await screensaverSwitch.click();
+    await page
+      .getByRole("link", { name: "Turn on in Settings", exact: true })
+      .click();
+    await page
+      .getByRole("heading", { name: "Screensaver", exact: true })
+      .waitFor({ timeout: 10_000 });
+    await page
+      .locator("main.control-center-shell")
+      .getByRole("switch", { name: "Show screensaver" })
+      .click();
     await waitForCondition(
       () => settingsWrites.length === 1,
-      "Screensaver library toggle should write once",
+      "Show screensaver should write once",
     );
     assert(
       settingsWrites[0]?.standby?.enabled === true,
-      `Screensaver library toggle should enable standby, got ${JSON.stringify(settingsWrites[0])}`,
+      `Show screensaver should enable standby, got ${JSON.stringify(settingsWrites[0])}`,
     );
+    await clickNavigation(page, "Screensavers");
     await page
-      .getByText("Screensaver is turned off")
-      .waitFor({ state: "detached", timeout: 10_000 });
+      .getByRole("heading", { name: "Screensavers", exact: true })
+      .waitFor({ timeout: 10_000 });
     await page.getByText("Fixture Night Clock Screensaver").waitFor();
+    assert(
+      (await page.getByText("Screensaver is off.", { exact: true }).count()) === 0,
+      "Screensavers must drop the off line once the screensaver is on",
+    );
 
     await clickNavigation(page, "Themes");
     await page
@@ -10478,7 +10498,7 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
   const navigation = page.getByRole("navigation", { name: "Control Center", exact: true });
   await navigation.getByRole("button", { name: "Appearance", exact: true }).click();
   await navigation.getByRole("button", { name: screensaver ? "Screensavers" : "Themes", exact: true }).click();
-  await page.getByRole("button", { name: screensaver ? "Create Screensaver" : "Create Theme", exact: true }).click();
+  await page.getByRole("button", { name: screensaver ? "Create screensaver" : "Create theme", exact: true }).click();
   await page.getByLabel("Your idea", { exact: true }).waitFor();
   await page.locator('[data-slot="sidebar"][data-state="collapsed"]').waitFor();
   assert(await page.locator(".control-center-shell__header").isVisible(), "Studio stays inside the native shell");
@@ -10505,7 +10525,7 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
   await page.evaluate((document) => localStorage.setItem("vibetv.controlCenter.themeStudioDraft", JSON.stringify({
     schemaVersion: 1, recovery: { document: { ...document, packName: "Unsaved other design" }, source: "blank", updatedAt: new Date().toISOString() },
   })), saved.themes[0].document);
-  await page.getByRole("button", { name: screensaver ? "Create Screensaver" : "Create Theme", exact: true }).click();
+  await page.getByRole("button", { name: screensaver ? "Create screensaver" : "Create theme", exact: true }).click();
   await page.getByLabel("Your idea", { exact: true }).waitFor();
   if (screensaver) {
     await page.getByRole("button", { name: "Design settings", exact: true }).click();

@@ -28,7 +28,7 @@ const CHECK_LABELS: Record<string, string> = {
 
 const ENGINE_SOURCES: Record<string, string> = {
   bundled: "Included with the app",
-  app_managed: "Managed by VibeTV",
+  app_managed: "Included with the app",
   override: "Custom location",
   system: "Installed app",
   path: "Command line install",

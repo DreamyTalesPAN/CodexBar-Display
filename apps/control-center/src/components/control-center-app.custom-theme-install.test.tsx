@@ -182,6 +182,7 @@ async function openThemesWithSavedTheme(
         return jsonResponse({
           ok: true,
           settings: { standby: { enabled: false, timeoutMinutes: 1, brightnessPercent: 20 } },
+          device: { deviceId: "16199235" },
         });
       }
       if (url.endsWith("/v1/display-frame/latest")) {

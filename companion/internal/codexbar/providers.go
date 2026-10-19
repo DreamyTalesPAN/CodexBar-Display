@@ -637,7 +637,7 @@ func parseProviderSettings(raw []byte) ([]ProviderSetting, error) {
 		seen[id] = struct{}{}
 		label := strings.TrimSpace(item.DisplayName)
 		if label == "" {
-			label = humanLabel(id)
+			label = HumanLabel(id)
 		}
 		health := ProviderHealthChecking
 		if !item.Enabled {
@@ -677,7 +677,7 @@ func parseProviderSettingsText(raw []byte) ([]ProviderSetting, error) {
 		seen[id] = struct{}{}
 		label := strings.TrimSpace(match[4])
 		if label == "" {
-			label = humanLabel(id)
+			label = HumanLabel(id)
 		}
 		settings = append(settings, ProviderSetting{
 			ID:             id,
