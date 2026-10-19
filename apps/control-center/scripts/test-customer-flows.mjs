@@ -8437,7 +8437,7 @@ async function testNativeMacAppUpdateUsesSparkleAction(browser, appUrl) {
     (await updateLink.getAttribute("href")) === "vibetv://check-for-updates",
     "Installed native Mac Apps must hand updates to the exact Sparkle URL action",
   );
-  await page.getByText("1.0.32").waitFor({ timeout: 10_000 });
+  await page.getByText("1.0.32", { exact: true }).waitFor({ timeout: 10_000 });
   await page
     .getByRole("heading", { name: "Mac App", level: 3 })
     .waitFor({ timeout: 10_000 });
@@ -8699,15 +8699,15 @@ async function testUpdatesShowLegacyCompanionReleaseFallback(browser, appUrl) {
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await clickNavigation(page, "Updates");
   await page.getByRole("link", { name: "Update" }).waitFor({ timeout: 10_000 });
-  const macAppSection = page.locator('[data-slot="card"]').filter({
-    has: page.getByRole("heading", { name: "Mac App" }),
-  });
+  const macAppSection = page
+    .getByRole("heading", { name: "Mac App", level: 3 })
+    .locator("xpath=../..");
   await macAppSection
     .getByText("1.0.32", { exact: true })
     .first()
     .waitFor({ timeout: 10_000 });
   await macAppSection
-    .getByText("1.0.99", { exact: true })
+    .getByText("Version 1.0.99 is available", { exact: true })
     .waitFor({ timeout: 10_000 });
 
   assertNoInstallRequests(installRequests);
@@ -9628,9 +9628,9 @@ async function testUpdatesKeepDmgHiddenWithoutVerifiedAsset(browser, appUrl) {
     "Overview must not announce an unavailable update",
   );
   await clickNavigation(page, "Updates");
-  await page.getByRole("heading", { name: "Up to date" }).waitFor({
-    timeout: 10_000,
-  });
+  await page
+    .getByRole("heading", { name: "Everything is up to date" })
+    .waitFor({ timeout: 10_000 });
   const unavailableButton = page.getByRole("button", {
     name: "Update",
     exact: true,

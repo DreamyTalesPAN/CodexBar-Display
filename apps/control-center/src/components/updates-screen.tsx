@@ -213,6 +213,9 @@ export function UpdatesScreen({
   const macAppUpdateHref = macAppNativeAction
     ? "vibetv://check-for-updates"
     : macAppDownloadUrl;
+  const firmwareUpdateOffered = vibetvUpdateAvailable && !firmwareUpdateBlocked;
+  // A migration that cannot start yet (no verified download) never takes the
+  // one Update away from a firmware update that can.
   const macAppUpdateButton = macAppUpdateOffered ? (
     macAppUpdateHref && !actionsLocked && !checkBusy ? (
       <Button asChild size="sm">
@@ -221,14 +224,13 @@ export function UpdatesScreen({
           <span>Update</span>
         </a>
       </Button>
-    ) : (
+    ) : macAppUpdateAvailable || !firmwareUpdateOffered ? (
       <Button disabled size="sm" type="button">
         <Download data-icon="inline-start" aria-hidden />
         <span>Update</span>
       </Button>
-    )
+    ) : null
   ) : null;
-  const firmwareUpdateOffered = vibetvUpdateAvailable && !firmwareUpdateBlocked;
   const firmwareUpdateButton =
     firmwareUpdateOffered && !installingUpdate ? (
       <Button
@@ -298,8 +300,9 @@ export function UpdatesScreen({
         <UpdateRow
           action={macAppUpdateButton}
           description={
-            macAppUpdateAvailable && companionRelease?.latestVersion
-              ? `Version ${companionRelease.latestVersion} is available`
+            macAppUpdateAvailable &&
+            (companionRelease?.latestVersion || companionRelease?.release)
+              ? `Version ${companionRelease.latestVersion || companionRelease.release} is available`
               : windowsHost
                 ? "Software on this computer"
                 : "Software on this Mac"

@@ -136,6 +136,24 @@ describe("calm Updates screen", () => {
     expect(install).toHaveBeenCalledTimes(1);
   });
 
+  it("a Mac App migration without a verified download leaves the firmware Update as the only button", () => {
+    render(
+      <UpdatesScreen
+        {...upToDate}
+        firmwareUpdate={{
+          ...upToDate.firmwareUpdate!,
+          latestFirmware: "1.0.49",
+          status: "update_available",
+          updateAvailable: true,
+        }}
+        requiresMacAppMigration
+      />,
+    );
+    const updates = screen.getAllByRole("button", { name: "Update" }) as HTMLButtonElement[];
+    expect(updates).toHaveLength(1);
+    expect(updates[0].disabled).toBe(false);
+  });
+
   it("installing: the step is a process-steps line inside the card, no Update button", () => {
     render(
       <UpdatesScreen
