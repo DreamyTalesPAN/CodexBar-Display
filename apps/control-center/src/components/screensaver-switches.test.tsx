@@ -112,7 +112,8 @@ describe("Show screensaver in Settings, a line under Screensavers", () => {
 
   it("says in one line under Screensavers that the screensaver is off and links to Settings", () => {
     const off = screensavers({ ...standby, enabled: false });
-    expect(off).toMatch(/Screensaver is off\. Turn it on in(?: |<!-- -->)<button [^>]*role="link"[^>]*>Settings<\/button>/);
+    expect(off).toContain("Screensaver is off. Turn it on in");
+    expect(off).toMatch(/<a [^>]*href="#settings-screensaver"[^>]*>Settings<\/a>/);
     expect(settings(vibetv, null, standby)).toContain('id="settings-screensaver"');
 
     expect(screensavers(standby)).not.toContain("Screensaver is off.");

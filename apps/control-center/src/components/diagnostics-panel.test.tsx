@@ -73,7 +73,7 @@ describe("DiagnosticsPanel", () => {
   it("shows each check with a label, text state, detail and next action", () => {
     const text = show(report);
     const rows = screen.getAllByRole("listitem").map((row) => row.textContent);
-    expect(rows[0]).toContain("Mac App");
+    expect(rows[0]?.startsWith("App")).toBe(true);
     expect(rows[0]).toContain("Pass");
     expect(rows[1]).toContain("Usage engine");
     expect(rows[2]).toContain("VibeTV reachable");
@@ -86,34 +86,13 @@ describe("DiagnosticsPanel", () => {
     expect(text).not.toContain("Some checks could not run");
   });
 
-  it("shows the selected usage engine without a file location", () => {
+  it("shows the usage engine block only for an engine that is too old", () => {
     const text = show(report);
-    const engine = screen.getByRole("region", { name: "Usage engine" }).textContent;
-    expect(engine).toContain("0.63.0");
-    expect(engine).toContain("0.23.0");
-    expect(engine).toContain("Managed by VibeTV");
-    // A path with the product name replaced is a path that does not exist.
-    expect(engine).not.toContain("Location");
+    expect(screen.queryByRole("region", { name: "Usage engine" })).toBeNull();
+    // The check row says it; no table of status, version and source, and no file location.
+    expect(text).not.toContain("Required version");
     expect(text).not.toContain("Application Support");
     expect(text).not.toContain("/Users/marcus");
-  });
-
-  it.each([
-    ["bundled", "Included with the app"],
-    ["override", "Custom location"],
-    ["system", "Installed app"],
-    ["path", "Command line install"],
-  ])("names the %s source in plain words", (source, words) => {
-    show({ providerSetup: { engine: { status: "ready", version: "0.63.0", source } } });
-    expect(screen.getByRole("region", { name: "Usage engine" }).textContent).toContain(words);
-  });
-
-  it("falls back to the diagnostics engine identity without its name", () => {
-    show({ usageEngine: { name: "CodexBar", status: "ready", version: "0.63.0", path: "C:\\Users\\marcus\\AppData\\codexbar.exe" } });
-    const engine = screen.getByRole("region", { name: "Usage engine" }).textContent;
-    expect(engine).toContain("0.63.0");
-    expect(engine).not.toContain("AppData");
-    expect(engine).not.toContain("CodexBar");
   });
 
   it("says an old engine is too old and offers the repair", () => {
@@ -128,7 +107,7 @@ describe("DiagnosticsPanel", () => {
       { onRepairUsageEngine: repair },
     );
     expect(text).toContain("Usage engine 0.17.0 is too old. Version 0.23.0 or newer is required.");
-    expect(text).toContain("Too old");
+    expect(text).not.toContain("/Applications/CodexBar.app");
     fireEvent.click(screen.getByRole("button", { name: "Repair" }));
     expect(repair).toHaveBeenCalledTimes(1);
   });

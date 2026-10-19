@@ -48,28 +48,34 @@ export function LogsScreen({
   supportReportBusy = false,
   windowsHost = false,
 }: LogsScreenProps) {
+  const lastCreated = diagnostics?.generatedAt
+    ? createdWhen(diagnostics.generatedAt)
+    : "";
   const supportText = (value: string) =>
     copyForHost(formatCustomerSupportText(value), windowsHost);
 
   return (
     <div className="grid max-w-[760px] gap-10 pt-8 pb-10 text-sm">
       <div
-        className={`flex flex-wrap items-center justify-between gap-x-6 gap-y-3 p-5 ${FRAME}`}
+        className={`flex items-center justify-between gap-6 p-5 ${FRAME}`}
       >
         <div className="min-w-0">
           <h2 className="text-[15px] font-semibold">Support report</h2>
           <p className="text-muted-foreground">
             A diagnostic file for the support team.
+            {lastCreated ? ` Last created ${lastCreated}.` : ""}
           </p>
         </div>
-        <SupportReportActions
-          creating={supportReportBusy}
-          diagnostics={diagnostics}
-          onCreate={onLoadDiagnostics}
-          quiet
-          size="sm"
-          windowsHost={windowsHost}
-        />
+        <div className="shrink-0">
+          <SupportReportActions
+            creating={supportReportBusy}
+            diagnostics={diagnostics}
+            onCreate={onLoadDiagnostics}
+            quiet
+            size="sm"
+            windowsHost={windowsHost}
+          />
+        </div>
       </div>
 
       <DiagnosticsPanel
@@ -136,6 +142,16 @@ export function LogsScreen({
       </SupportSection>
     </div>
   );
+}
+
+/** "today at 16:42", or the date when it was another day. */
+function createdWhen(generatedAt: string): string {
+  const created = new Date(generatedAt);
+  if (Number.isNaN(created.getTime())) return "";
+  const time = created.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  return created.toDateString() === new Date().toDateString()
+    ? `today at ${time}`
+    : `on ${created.toLocaleDateString([], { day: "numeric", month: "short" })} at ${time}`;
 }
 
 /** One Support section: its heading (with an optional action) above the content. */

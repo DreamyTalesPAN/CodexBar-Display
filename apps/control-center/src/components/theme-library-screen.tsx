@@ -787,7 +787,7 @@ export function ThemeLibraryScreen({
     );
   }
 
-  const createLabel = screensavers ? "Create Screensaver" : "Create Theme";
+  const createLabel = screensavers ? "Create screensaver" : "Create theme";
   return (
     <div
       className={cn(
@@ -886,15 +886,16 @@ export function ThemeLibraryScreen({
       {screensavers && screensaverInstallBlockedReason === SCREENSAVER_OFF_REASON ? (
         <p className="mt-6 text-body text-muted-foreground">
           Screensaver is off. Turn it on in{" "}
-          <button
-            className="text-foreground underline underline-offset-4 hover:text-[var(--vibetv-support)] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none dark:hover:text-[#A9C76A]"
-            onClick={onOpenScreensaverSettings}
-            // It goes to another page, so it is a link, not a second "Settings" button.
-            role="link"
-            type="button"
+          <a
+            className="text-foreground underline underline-offset-4 hover:text-[var(--vibetv-support)] dark:hover:text-[#A9C76A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            href="#settings-screensaver"
+            onClick={(event) => {
+              event.preventDefault();
+              onOpenScreensaverSettings?.();
+            }}
           >
             Settings
-          </button>
+          </a>
           .
         </p>
       ) : null}
@@ -1004,14 +1005,12 @@ export function ThemeLibraryScreen({
       {libraryError && !otherDialogOpen ? (
         <PageNotice
           description={libraryError}
-          icon={Lock}
           onOpenChange={(open) => {
             if (!open) setLibraryError("");
           }}
           open
           primaryAction={{ label: "OK", onSelect: () => setLibraryError("") }}
           title={say("Theme action failed")}
-          tone="neutral"
         />
       ) : null}
       {/* The storage notice shows after the error is closed, never with it. */}
@@ -1021,7 +1020,6 @@ export function ThemeLibraryScreen({
       !otherDialogOpen ? (
         <PageNotice
           description={storageWarning}
-          icon={Lock}
           onOpenChange={(open) => {
             if (!open) setClosedStorageWarning(storageWarning);
           }}
@@ -1031,7 +1029,6 @@ export function ThemeLibraryScreen({
             onSelect: () => setClosedStorageWarning(storageWarning),
           }}
           title={say("Theme storage needs attention")}
-          tone="neutral"
         />
       ) : null}
       {replacingRecovery && recovery ? (
@@ -1453,7 +1450,7 @@ function ThemeListItem({
       <ItemActions className="min-h-7 basis-full justify-between gap-3 px-0.5">
         <span className="flex items-center gap-3">
           <Button
-            className="h-7 px-0"
+            className="h-7 px-0 font-normal"
             disabled={Boolean(loadingEditorRow)}
             onClick={() => void onEditTheme(item)}
             size="sm"
@@ -1466,7 +1463,7 @@ function ThemeListItem({
           {item.kind === "custom" ? (
             <Button
               aria-label={`Delete ${item.title}`}
-              className="h-7 px-0"
+              className="h-7 px-0 font-normal"
               disabled={themeStorageLocked}
               onClick={() => onDeleteTheme(item.custom)}
               title={
@@ -1487,7 +1484,7 @@ function ThemeListItem({
         <Button
           className={cn(
             "h-7 px-3",
-            installIsText && "px-0 disabled:opacity-100 disabled:text-muted-foreground",
+            installIsText && "px-0 font-normal disabled:opacity-100 disabled:text-muted-foreground",
           )}
           disabled={disabled}
           onClick={() => {

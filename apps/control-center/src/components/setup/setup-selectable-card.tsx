@@ -1,5 +1,38 @@
 import { Check } from "lucide-react";
+import type { KeyboardEvent } from "react";
 import { cn } from "@/lib/utils";
+
+const ARROW_STEP: Record<string, number> = {
+  ArrowDown: 1,
+  ArrowLeft: -1,
+  ArrowRight: 1,
+  ArrowUp: -1,
+};
+
+/**
+ * Keys for a group of choices (a radio group): the arrows move focus to the
+ * next or previous radio, wrapping around, and select it, as native radio
+ * inputs do. Selecting only marks the choice in every setup picker, so the
+ * arrows may select. Tab reaches the group once: see the tabIndex each card
+ * gets from its group.
+ */
+export function moveAmongRadios(event: KeyboardEvent<HTMLElement>) {
+  const step = ARROW_STEP[event.key];
+  if (!step) {
+    return;
+  }
+  const radios = Array.from(
+    event.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]:not(:disabled)'),
+  );
+  const at = radios.indexOf(event.target as HTMLElement);
+  if (at < 0) {
+    return;
+  }
+  event.preventDefault();
+  const next = radios[(at + step + radios.length) % radios.length];
+  next.focus();
+  next.click();
+}
 
 /**
  * Selection state for the wizard's pickable cards, layered on top of the Item

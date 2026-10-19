@@ -417,7 +417,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
     expect(html).not.toContain(
       "Customize how your live usage screen looks while VibeTV is active.",
     );
-    expect(html).toContain("Create Theme");
+    expect(html).toContain("Create theme");
     expect(html).toContain("Live Theme");
     expect(html).not.toContain("Night Clock");
   });
@@ -430,12 +430,11 @@ describe("ThemeLibraryScreen Appearance sections", () => {
     expect(html).not.toContain(
       "Choose what appears when VibeTV enters standby after being idle.",
     );
-    expect(html).toContain("Create Screensaver");
+    expect(html).toContain("Create screensaver");
     // The switch is in Settings; the page has the one-line notice with a link.
     expect(html).not.toContain('aria-label="Show screensaver"');
     expect(html).toContain("Screensaver is off. Turn it on in");
-    expect(html).toContain(">Settings</button>");
-    expect(html).toContain('role="link"');
+    expect(html).toMatch(/<a [^>]*href="#settings-screensaver"[^>]*>Settings<\/a>/);
     expect(html).toContain("Night Clock");
     expect(html).not.toContain("Live Theme");
     // Switched off is a normal state, not an error (#548): plain muted text.
@@ -480,7 +479,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
     expect(html).not.toContain("Turn on first");
     // The Design System link (dark ink, underline, olive on hover), not lime on grey.
     // Dark mode hovers in the light olive #A9C76A: #506600 has only 1.44:1 on the dark grey.
-    const link = html.match(/<button class="([^"]*)"[^>]*role="link"[^>]*>Settings<\/button>/)?.[1] ?? "";
+    const link = html.match(/<a class="([^"]*)"[^>]*>Settings<\/a>/)?.[1] ?? "";
     expect(link.split(" ")).toEqual(expect.arrayContaining(["text-foreground", "underline", "hover:text-[var(--vibetv-support)]", "dark:hover:text-[#A9C76A]"]));
     expect(link).not.toContain("text-primary");
   });
@@ -592,7 +591,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
 
     expect(html).toContain("No screensavers yet");
     expect(html).toContain("Create a screensaver to add it to this list.");
-    expect(html).toContain("Create Screensaver");
+    expect(html).toContain("Create screensaver");
     expect(html).not.toContain("Reload catalog");
   });
 
