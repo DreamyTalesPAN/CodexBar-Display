@@ -292,7 +292,8 @@ describe("calm Updates screen", () => {
         companionRelease={{ ...upToDate.companionRelease!, status: "disabled", updateAvailable: false }}
       />,
     );
-    expect(screen.queryByText("Up to date")).toBeNull();
+    // Only the firmware row (current) reads "Up to date"; the Mac App row does not.
+    expect(screen.getAllByText("Up to date")).toHaveLength(1);
     expect(screen.queryByText("Everything is up to date")).toBeNull();
     expect(screen.getByText("No update available")).toBeTruthy();
   });
