@@ -109,6 +109,8 @@ function startWindow(themes: unknown[] = []) {
     // While set, a read of VibeTV's settings answers late, with what it found
     // when it started.
     holdSettingsRead: null as Promise<void> | null,
+    // While set, the Mac App's status answers late.
+    holdStatus: null as Promise<void> | null,
   };
   const takeHeldWrite = () => {
     const held = companion.holdWrite;
@@ -141,6 +143,7 @@ function startWindow(themes: unknown[] = []) {
       const method = init?.method || "GET";
       companion.requests.push(`${method} ${url} ${init?.body ?? ""}`.trim());
       if (url.endsWith("/v1/status")) {
+        await companion.holdStatus;
         return jsonResponse({
           ok: true,
           companion: { version: "9.9.9", installationMode: "dmg" },
@@ -843,6 +846,49 @@ it("leaves no Recent activity entry for reading the settings", async () => {
   expect(window.text()).toContain("Control Center opened");
   expect(window.text()).not.toContain("Settings loaded");
   expect(window.text()).not.toContain("Brightness is set to");
+});
+
+// Issues #548, #558, #579: Recent activity is newest first, and each entry shows
+// the time it was written. A Mac App check asked for at 10:00:00 that answers
+// after a brightness save at 10:00:05 must not show as the older time on top.
+it("lists Recent activity newest first with the time each entry was written", async () => {
+  const window = startWindow();
+  vi.setSystemTime(new Date(2026, 9, 17, 10, 0, 0));
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Support" }));
+  await window.wait(1);
+
+  let answer = () => {};
+  window.companion.holdStatus = new Promise<void>((resolve) => {
+    answer = resolve;
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  await window.wait(1);
+
+  // While the check is on its way the customer changes the brightness.
+  vi.setSystemTime(new Date(2026, 9, 17, 10, 0, 5));
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  await window.step(() =>
+    fireEvent.keyDown(screen.getByRole("slider", { name: "Brightness" }), { key: "ArrowRight" }),
+  );
+  await window.wait(1);
+
+  vi.setSystemTime(new Date(2026, 9, 17, 10, 0, 6));
+  answer();
+  await window.wait(2);
+  fireEvent.click(screen.getByRole("button", { name: "Support" }));
+  await window.wait(1);
+
+  const entries = within(
+    screen.getByText("Recent activity").closest('[data-slot="card"]') as HTMLElement,
+  ).getAllByRole("listitem");
+  // The session start keeps its marker "Session" and stays last.
+  expect(entries.at(-1)?.textContent).toMatch(/Session$/);
+  const times = entries.slice(0, -1).map((entry) => entry.textContent?.match(/\d\d:\d\d:\d\d$/)?.[0]);
+  expect(times.length).toBeGreaterThanOrEqual(2);
+  expect(times.every((time) => time !== undefined)).toBe(true);
+  expect(times).toEqual([...times].sort().reverse());
 });
 
 // Issue #579: Recent activity named a saved brightness, and nothing else the

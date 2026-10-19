@@ -7533,3 +7533,15 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: wording, buttons and layout stay the same. The notice hides only when the failed check is newer than the finished update. Live completions now store their finish as an exact instant, so this order is known for them too.
 - Scope: `apps/control-center/src/components/updates-screen.tsx` and its test, `apps/control-center/src/components/control-center-app.tsx` (firmware finish times), `apps/control-center/src/components/update-jobs.ts` (firmware status fallback), this approval record. Pull request branch only, not merge or release.
 - What's new: none — ordering fix only, no new capability
+
+## 2026-10-17 — Recent activity: newest first, each entry with the time it was written
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #548, #558, #579); look unchanged except: the time of a Recent activity entry is the time it was written (for example `VibeTV update needs attention` after a device check or a theme install step now shows that later time, not the time the update step ended); no wording change.
+- Approved customer-visible result: Support › Recent activity keeps the newest entry on top, and its time is the moment the entry was written, so the times read top to bottom never go back. No new wording. `Settings loaded` stays out of the list at start (already removed on main); the repeated-entry rule is unchanged.
+- Scope: `addEvent` and the calls of `addEvent` in `apps/control-center/src/components/control-center-app.tsx`, the display-preferences test file in `apps/control-center/src/components/` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a fix of a reported defect, no new capability
+
+## 2026-10-17 — Codex review fix on #685: the Recent activity test checks every timed entry
+- User approval: Covered by the entry above (#685, pending Paul's review); this entry changes only a test, no visible change; not seen by Paul.
+- Approved customer-visible result: No visible change. The test no longer skips list rows without a time, and it checks that the session entry keeps its marker `Session` and stays last.
+- Scope: `apps/control-center/src/components/control-center-app.display-preferences.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a test-only fix from a Codex review
