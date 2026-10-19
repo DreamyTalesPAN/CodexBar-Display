@@ -1774,9 +1774,16 @@ function slotCountdownFor(
         }
       : undefined;
   }
+  // PaceLastsSep collapses with the countdown of its window.
+  const lead = paceBinding(key);
+  if (lead?.field === "LastsSep") {
+    const window = frame.usageWindows[lead.index];
+    return window
+      ? { available: window.available, resetSecs: window.resetSecs, idle: window.idle }
+      : undefined;
+  }
   switch (key) {
     case "usageSlot1Reset":
-    case "usageSlot1PaceLastsSep":
     case "us1r":
       return {
         available: frame.usageSlot1Available,
@@ -1784,7 +1791,6 @@ function slotCountdownFor(
         idle: frame.usageSlot1Idle,
       };
     case "usageSlot2Reset":
-    case "usageSlot2PaceLastsSep":
     case "us2r":
       return {
         available: frame.usageSlot2Available,
@@ -1852,11 +1858,25 @@ function formatTokenCount(value: number): string {
   return `${whole}.${String(frac).padStart(2, "0")}${unit}`;
 }
 
-// The pace behind a usageSlotNPace... binding while its window is available and
-// its countdown still runs, as in BoundPaceFor (theme_spec_renderer_core.h).
+// A pace binding in any spelling the firmware reads (UsageWindowBindingIndex
+// with the "Pace..." field): usageSlot1PaceText, us1PaceText, usage.0.PaceText.
+// The window is 0-based; the field is what follows "Pace".
+export function paceBinding(key: string): { index: number; field: string } | null {
+  const match =
+    /^usageSlot([12])Pace(\w*)$/.exec(key) ||
+    /^us([12])Pace(\w*)$/.exec(key);
+  if (match) {
+    return { index: Number(match[1]) - 1, field: match[2] };
+  }
+  const generic = /^usage\.(\d+)\.Pace(\w*)$/.exec(key);
+  return generic ? { index: Number(generic[1]), field: generic[2] } : null;
+}
+
+// The pace behind a pace binding while its window is available and its
+// countdown still runs, as in BoundPaceFor (theme_spec_renderer_core.h).
 function boundPace(binding: string, frame: FrameData): UsagePaceFrame | undefined {
-  const match = /^usageSlot([12])Pace/.exec(binding);
-  const window = match ? frame.usageWindows[Number(match[1]) - 1] : undefined;
+  const key = paceBinding(binding);
+  const window = key ? frame.usageWindows[key.index] : undefined;
   const pace = window?.available && window.resetSecs > 0 ? window.pace : undefined;
   return PACE_STATE_LEVEL[pace?.state ?? ""] === undefined ? undefined : pace;
 }
@@ -1886,9 +1906,9 @@ function usagePaceText(binding: string, kind: string, frame: FrameData): string 
 }
 
 export function boundValue(key: string, frame: FrameData): string {
-  const paceMatch = /^usageSlot[12]Pace(Text|Short|LastsSep|Lasts|RunsOut)$/.exec(key);
-  if (paceMatch) {
-    return usagePaceText(key, paceMatch[1], frame);
+  const paceKey = paceBinding(key);
+  if (paceKey && /^(Text|Short|LastsSep|Lasts|RunsOut)$/.test(paceKey.field)) {
+    return usagePaceText(key, paceKey.field, frame);
   }
   const usageMatch = /^usage\.(\d+)\.(label|percent|reset|available)$/.exec(
     key,
@@ -2030,10 +2050,16 @@ export function progressPercent(
     const window = frame.usageWindows[Number(usageMatch[1])];
     return window?.available ? window.percent : 0;
   }
-  if (binding === "usageSlot1Percent" || binding === "us1p" || binding === "usageSlot1Pace") {
+  const paceKey = paceBinding(binding);
+  if (paceKey?.field === "") {
+    // A pace bar fills like its window's percent.
+    const window = frame.usageWindows[paceKey.index];
+    return window?.available ? window.percent : 0;
+  }
+  if (binding === "usageSlot1Percent" || binding === "us1p") {
     return frame.usageSlot1Available ? frame.usageSlot1Percent : 0;
   }
-  if (binding === "usageSlot2Percent" || binding === "us2p" || binding === "usageSlot2Pace") {
+  if (binding === "usageSlot2Percent" || binding === "us2p") {
     return frame.usageSlot2Available ? frame.usageSlot2Percent : 0;
   }
   if (binding === "weekly" || binding === "weeklyPercent" || binding === "w") {
@@ -2103,9 +2129,7 @@ export function paceBarMarks(
   percent: number,
 ) {
   const binding = primitive.binding || primitive.b || "";
-  const pace = /^usageSlot[12]Pace$/.test(binding)
-    ? boundPace(binding, frame)
-    : undefined;
+  const pace = paceBinding(binding)?.field === "" ? boundPace(binding, frame) : undefined;
   if (!pace) {
     return { fillTo: percent, pieceTo: percent, planAt: -1, hatched: false };
   }

@@ -1199,6 +1199,18 @@ describe("usage pace", () => {
     expect(boundValue("usageSlot1PaceText", noCountdown)).toBe("");
   });
 
+  it("reads every spelling of a pace binding the firmware reads", () => {
+    const frame = paced(91, { delta: -6, state: "reserve", lasts: true });
+    for (const key of ["usageSlot1PaceText", "us1PaceText", "usage.0.PaceText"]) {
+      expect(boundValue(key, frame), key).toBe("6% in reserve");
+    }
+    expect(boundValue("us1PaceLastsSep", frame)).toBe("lasts until reset - ");
+    for (const binding of ["usageSlot1Pace", "us1Pace", "usage.0.Pace"]) {
+      expect(paceBarMarks({ ...bar, b: binding }, frame, 91), binding).toMatchObject({ fillTo: 85, planAt: 85 });
+      expect(progressPercent({ ...bar, b: binding }, frame), binding).toBe(91);
+    }
+  });
+
   it("says left for what remains and the mode itself otherwise", () => {
     expect(boundValue("usageModeShort", paced(91, undefined))).toBe("left");
     expect(boundValue("usageModeShort", paced(9, undefined, { usageMode: "used" }))).toBe("used");

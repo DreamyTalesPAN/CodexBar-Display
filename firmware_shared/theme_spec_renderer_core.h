@@ -1158,9 +1158,12 @@ inline uint32_t BindingFieldMask(const char* binding) {
     return kThemeSpecFieldProviderSlots;
   }
   if (UsageWindowBindingIndex(binding) >= 0) {
+    // A pace bar's plan moves with the usage mode (delta counts used percent), also
+    // when the percent itself does not.
     return kThemeSpecFieldUsageWindows |
            (UsageWindowKeyFollowsReset(binding) ? kThemeSpecFieldUsageWindowReset : 0) |
-           (UsageWindowKeyShowsPace(binding) ? kThemeSpecFieldUsageWindowPace : 0);
+           (UsageWindowKeyShowsPace(binding) ? kThemeSpecFieldUsageWindowPace : 0) |
+           (std::strcmp(UsageWindowField(binding), "Pace") == 0 ? kThemeSpecFieldUsageMode : 0);
   }
   if (StringEqualsAny(binding, "usageMode", "u", "usageModeShort")) {
     return kThemeSpecFieldUsageMode;

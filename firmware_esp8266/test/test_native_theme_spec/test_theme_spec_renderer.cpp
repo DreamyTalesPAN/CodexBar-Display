@@ -4684,6 +4684,26 @@ void testUsagePaceBarRepaintCoversItsTick() {
   ReleaseCompiledThemeSpec(scene);
 }
 
+// The plan of a pace bar moves with the usage mode (delta counts used percent), also
+// when the percent and the pace stay as they are (a window at exactly 50 %).
+void testPaceBarRepaintsWhenOnlyTheUsageModeChanges() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* spec = R"JSON("themeSpec":{"v":1,"id":"pace-mode","rev":1,"p":[{"t":"p","x":0,"y":0,"w":100,"h":10,"b":"usageSlot1Pace"}]})JSON";
+  const std::string frame = [&](const char* mode) {
+    return std::string(R"JSON({"v":2,"provider":"claude","usageMode":")JSON") + mode +
+           R"JSON(","usageWindows":[{"id":"session","label":"Session","percent":50,"resetSecs":12000,"pace":{"delta":10,"state":"deficit"}}],)JSON" + spec + "}";
+  }("used");
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, frame.c_str(), 1000, event));
+  const std::string flipped = [&](const char* mode) {
+    return std::string(R"JSON({"v":2,"provider":"claude","usageMode":")JSON") + mode +
+           R"JSON(","usageWindows":[{"id":"session","label":"Session","percent":50,"resetSecs":12000,"pace":{"delta":10,"state":"deficit"}}]})JSON";
+  }("remaining");
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, flipped.c_str(), 2000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldUsageMode) != 0);
+}
+
 // The periodic countdown repaint (no frame arrived, the countdown ran out) also
 // repaints the pace of a theme that binds only pace, and nothing for one that does not.
 void testCountdownRepaintTakesTheBoundPaceAlong() {
@@ -4925,5 +4945,6 @@ int main() {
   RUN_TEST(testUsagePaceBarRepaintCoversItsTick);
   RUN_TEST(testUsagePaceParsesAndRepaintsOnlyThemesThatShowIt);
   RUN_TEST(testCountdownRepaintTakesTheBoundPaceAlong);
+  RUN_TEST(testPaceBarRepaintsWhenOnlyTheUsageModeChanges);
   return UNITY_END();
 }
