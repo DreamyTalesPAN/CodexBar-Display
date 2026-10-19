@@ -18,8 +18,11 @@ import (
 // starts; each usage probe answers with a healthy provider.
 func serveReadingEngine(t *testing.T, perProvider bool, inventory string) *[]string {
 	t.Helper()
-	settledEngine(t)
 	setExistingConfig(t)
+	// After setExistingConfig: the settled settings file is the one the Mac
+	// config points at, and it was not written just now (no answer is kept
+	// for a file younger than engineStampSettle).
+	settledEngine(t)
 	forgetServeUsage()
 	t.Cleanup(forgetServeUsage)
 	originalMode := providerProbePerProvider

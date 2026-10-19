@@ -10,7 +10,6 @@ type ParsedFrame struct {
 	Frame              protocol.Frame
 	Provider           string
 	Source             string
-	AccountEmail       string
 	Meta               ProviderUsageMeta
 	CollectedAt        time.Time
 	ActivityObservedAt time.Time

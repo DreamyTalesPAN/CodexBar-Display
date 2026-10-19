@@ -238,3 +238,10 @@ func TestProviderSettingsErrorMessageAndUnwrap(t *testing.T) {
 		t.Fatal("errors.Is must reach the inner error through Unwrap")
 	}
 }
+
+func TestProviderSettingsErrorUnwrapNilReceiverDoesNotPanic(t *testing.T) {
+	var nilErr *ProviderSettingsError
+	if got := errors.Unwrap(nilErr); got != nil {
+		t.Fatalf("nil ProviderSettingsError must unwrap to nil, got %v", got)
+	}
+}

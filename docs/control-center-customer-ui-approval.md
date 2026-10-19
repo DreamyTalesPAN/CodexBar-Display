@@ -9808,3 +9808,112 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the entry above; nothing else changes.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this record. Pull request branch only, not merge or release.
 - What's new: none — test expectation only, no customer-visible change
+## 2026-10-14 — Windows: an app update found while the app runs installs only with the window closed
+
+- User approval: Paul on 2026-10-14, after he was told that the Windows app installed a newer version without a question while it was open, restarting under a customer in setup or in a provider sign-in: "ja das ist natürlich kacke", then "ok klingt gut" to this proposal: no automatic install with the window open, a quiet install with the window closed, launch install, Update and the tray item unchanged, the Mac App unchanged.
+- Approved customer-visible result: In the Windows app only. With the window open (also minimized) the app never installs an update by itself any more: before, the Control Center sent itself to `vibetv://check-for-updates` once per offered version, which on Windows downloads and installs at once, closes the app and runs the installer, and showed "The update could not be installed. …" when that failed although nobody had clicked anything. The update at launch (#565), `Update` on the Updates screen and the tray item "Check for Updates…" install as before. While the app runs with its window closed, it looks for a newer version every 6 hours; when there is one and no VibeTV update or theme install runs, it installs it with the installer's progress window, as at launch, and starts again in the tray with the window closed. No message in any outcome; a version is tried this way at most once in 24 hours, sharing the note of the update at launch. VibeTV gets no new numbers for the few seconds the background service restarts. The Mac App is unchanged: it still opens Sparkle's dialog once per offered version and installs only after the customer's answer. No new wording, screen or control.
+- Scope: `control-center-app.tsx` (the redirect is skipped on Windows), the new `control-center-app.app-update-prompt.test.tsx`, `windows/src-tauri/src/main.rs`, `windows/src-tauri/src/launch_update.rs` and its tests, `docs/windows-shell.md`, and this approval record. Branch only, not merge, release, installation, or a device operation.
+- What's new: none — updates arrive on their own; there is nothing for the customer to find or use
+
+## 2026-10-14 — #610 brought up to date with main after #597 and #612
+
+- User approval: Paul's approval of 2026-10-14 recorded in "Windows: an app update found while the app runs installs only with the window closed" above. This update only merges main (#597, #612) into the branch; the one conflict in `windows/src-tauri/src/main.rs` keeps both the hidden start after an update with the window closed and #597's theme link at launch.
+- Approved customer-visible result: as recorded in that entry above and in #597's entries; nothing else changes.
+- Scope: merge of main into `claude/win-no-silent-app-update`, and this approval record.
+
+## 2026-10-14 — #610 brought up to date with main after #608
+
+- User approval: Paul's approval of 2026-10-14 recorded in "Windows: an app update found while the app runs installs only with the window closed" above. This update only merges main (#608) into the branch, without a conflict outside this record.
+- Approved customer-visible result: as recorded in that entry above and in #608's entries; nothing else changes.
+- Scope: merge of main into `claude/win-no-silent-app-update`, and this approval record.
+
+## 2026-10-15 — #610: approval marker after merging main with #607, #620 and #629
+
+- User approval: Paul asked on 2026-10-15 to bring #618, which is stacked on this branch, to ready. Main moved on with #607, #620 and #629, so main is merged into this branch. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #610 entries above and in the entries of #607, #620 and #629; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-15 — #610: update-prompt test fixture reports renderOk (after #629)
+
+- User approval: Paul asked on 2026-10-15 to bring #618, which is stacked on this branch, to ready. Since #629 a VibeTV counts as live only when it reports its theme as rendered, so this branch's new test fixture now says `renderOk: true`, as #629 did for every other app test.
+- Approved customer-visible result: none; test fixture only.
+- Scope: `apps/control-center/src/components/control-center-app.app-update-prompt.test.tsx` and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — test only
+
+## 2026-10-16 — #610: approval marker after merging main with #615
+
+- User approval: Paul asked on 2026-10-15 to keep #618, which is stacked on this branch, ready. Main moved on with #615, so main is merged into this branch again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #610 entries above and in the #615 entries; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — #610: approval marker after merging main with #619 and #628
+
+- User approval: Paul asked on 2026-10-16 to resolve the merge conflicts of the open pull requests. Main moved on with #619 and #628, so main is merged into this branch again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #610 entries above and in the entries of #619 and #628; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — #610: update-prompt test follows the quiet Mac check from #619
+
+- User approval: Paul asked on 2026-10-16 to resolve the merge conflicts of the open pull requests. Since #619 the Mac App's automatic prompt opens `vibetv://check-for-updates-in-background`; this branch's test now expects that URL for the Mac App. Windows keeps the visible check.
+- Approved customer-visible result: none; test only.
+- Scope: `apps/control-center/src/components/control-center-app.app-update-prompt.test.tsx` and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — test only
+
+## 2026-10-16 — #610: approval marker after merging main with #657
+
+- User approval: Paul asked on 2026-10-16 to resolve the merge conflicts of the open pull requests. Main moved on with #657 (an approval-record marker), so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #610 entries above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-17 — Provider list asks for a fresh inventory once when it opens (#555, PR #700)
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #555); look unchanged except: none.
+- Approved customer-visible result: none. The provider list looks and behaves as before; it shows a plugin installed or removed while the engine ran after the list is opened, instead of at the next restart.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (the request that loads the provider list when Settings or the provider setup opens sends `fresh=1` once; polls do not), three `control-center-app.*.test.tsx` files whose request matcher now also accepts the `&fresh=1` suffix, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a fix of a reported defect, no visible change
+
+## 2026-10-18 — Provider list: a fresh read waits for a plain read in flight (Codex P1, PR #700)
+
+- User approval: pending — Paul reviews this PR (fix of a Codex P1 on the #555 change, #700); look unchanged except: none.
+- Approved customer-visible result: none. The provider list looks and behaves as before; a plugin installed or removed while the engine runs shows after the list is opened, also when the list opens while a plain poll is still in flight.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (a `fresh=1` provider read no longer joins a plain read in flight; it waits for that read and then asks CodexBar; plain polls still join any read in flight) and the new test `apps/control-center/src/components/control-center-app.provider-fresh-read.test.tsx`. Pull request branch only, not merge or release.
+- What's new: none — a fix of a reported defect, no visible change
+
+## 2026-10-18 — Provider list reads fresh when it becomes visible (Codex P1 on #700)
+
+- User approval: pending — Paul reviews this PR (fix of a Codex P1 on the #555 change, #700); look unchanged except: none.
+- Approved customer-visible result: none. The provider list looks and behaves as before; it is up to date when the Providers setup step opens or Settings opens, also when a plugin was installed or removed while setup waited for the device.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (a `fresh=1` provider read is sent once when the provider list becomes visible — the Providers setup step or Settings once inside — not on every render; plain polls send no `fresh=1`) and `apps/control-center/src/components/control-center-app.provider-fresh-read.test.tsx`. Pull request branch only, not merge or release.
+- What's new: none — a fix of a reported defect, no visible change
+
+## 2026-10-18 — Provider list: a failed fresh read is asked again (Codex P2 on #700)
+
+- User approval: pending — Paul reviews this PR (fix of a Codex P2 on the #555 change, #700); look unchanged except: none.
+- Approved customer-visible result: none. The provider list looks and behaves as before; after a failed read the next poll asks CodexBar again, so the list is up to date once the read succeeds.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (the fresh read stays owed while the provider list is visible until one succeeds; polls then send `fresh=1`) and `apps/control-center/src/components/control-center-app.provider-fresh-read.test.tsx` (a case for a failed fresh read). Pull request branch only, not merge or release.
+- What's new: none — a fix of a reported defect, no visible change
+
+## 2026-10-18 — Provider list: each opening gets its own fresh read (Codex P2 on #700)
+
+- User approval: pending — Paul reviews this PR (fix of a Codex P2 on the #555 change, #700); look unchanged except: none.
+- Approved customer-visible result: none. The provider list looks and behaves as before; when it is closed and opened again while an earlier fresh read is still running, the new opening asks CodexBar itself, so a plugin changed in between shows.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (a fresh provider read counts only for the opening of the list it was sent for) and `apps/control-center/src/components/control-center-app.provider-fresh-read.test.tsx` (a case for closing and opening again). Pull request branch only, not merge or release.
+- What's new: none — a fix of a reported defect, no visible change
+
+## 2026-10-17 — Theme install finish time stored as an ISO instant
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, found in review of #693); look unchanged except: none.
+- Approved customer-visible result: none — the theme install finish time is stored as an ISO instant instead of a clock time; nothing on screen changes, the event log keeps its clock time.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (theme install status finish times), `apps/control-center/src/components/update-jobs.ts` (theme status fallback), the new test `update-jobs.test.ts`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — internal time format only, nothing new to show
+
+## 2026-10-19 — Merge of main (v1.0.65 release round + #638) into the Windows app + Companion engine group
+
+- User approval: Merge of main (v1.0.65 release round + #638) into this group; no visible change of its own; not seen by Paul
+- Approved customer-visible result: as in this branch's entries and main's entries
+- Scope: the merge conflict resolutions in `macos/VibeTVControlCenter/main.swift`, `scripts/test-macos-control-center-app-bundle.sh` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own

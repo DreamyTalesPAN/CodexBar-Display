@@ -179,11 +179,11 @@ func themeRenderPackMatches(data []byte, specFile, specHash string) bool {
 	return true
 }
 
-func (s *Server) serveControlCenterFile(w http.ResponseWriter, r *http.Request, assetPath string) bool {
+func (s *Server) serveControlCenterFile(w http.ResponseWriter, r *http.Request, assetPath string) {
 	assetPath, ok := normalizeControlCenterAssetPath(assetPath)
 	if !ok {
 		http.NotFound(w, r)
-		return false
+		return
 	}
 	if strings.HasSuffix(assetPath, ".html") {
 		w.Header().Set("Cache-Control", "no-store")
@@ -200,13 +200,12 @@ func (s *Server) serveControlCenterFile(w http.ResponseWriter, r *http.Request, 
 				}
 				_, _ = io.WriteString(w, "<!doctype html><title>VibeTV Control Center unavailable</title><p>VibeTV Control Center is not bundled with this "+app+". Run setup again.</p>")
 			}
-			return false
+			return
 		}
 		http.NotFound(w, r)
-		return false
+		return
 	}
 	http.ServeContent(w, r, path.Base(assetPath), time.Time{}, bytes.NewReader(data))
-	return true
 }
 
 func (s *Server) controlCenterFileExists(assetPath string) bool {
