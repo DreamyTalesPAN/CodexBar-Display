@@ -7570,3 +7570,11 @@ issue scope, or release permission never implies UI permission.
 - Visible text: none changed.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs` only (the Windows welcome check now waits for `starting the app`, the first line that differs by host).
 - What's new: none — test script only
+
+## 2026-10-19 — Setup wordmark TV lime (group #780)
+
+- User approval: pending — Paul reviews (Setup wordmark "TV" lime, Paul's decision 19.10.)
+- Approved customer-visible result: none yet. On the Setup welcome and Mac App download screens the hero wordmark reads "VIBE" in ink and "TV" in the lime brand colour, on light backgrounds too (was olive #506600). Nothing else changes; the sidebar wordmark is unchanged.
+- Visible text: none changed.
+- Scope: `apps/control-center/src/components/control-center-brand.tsx` (hero variant only, the class of the TV span) and its new test `control-center-brand.test.tsx`.
+- What's new: none — colour of one word only
