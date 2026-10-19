@@ -149,6 +149,27 @@ describe("Theme Studio notices", () => {
   });
 });
 
+describe("Theme Studio composer (master 19.10.)", () => {
+  it("keeps Add/Cancel, Attach and the round Send button in the one input frame", async () => {
+    render(<AIThemeStudioScreen />);
+    const idea = await screen.findByLabelText("Your idea");
+    const frame = idea.parentElement as HTMLElement;
+    for (const name of ["Add manually", "Attach reference images", "Create"]) {
+      expect(frame.contains(screen.getByRole("button", { name }))).toBe(true);
+    }
+    expect(screen.getByRole("button", { name: "Create" }).getAttribute("class")).toContain("size-8 rounded-full");
+  });
+
+  it("says what the field is for once there is a conversation, instead of a typed idea", async () => {
+    vi.mocked(planAIThemeLayout).mockReturnValue(new Promise(() => {}));
+    render(<AIThemeStudioScreen />);
+    await sendIdea();
+
+    const idea = screen.getByLabelText("Your idea") as HTMLTextAreaElement;
+    await waitFor(() => expect(idea.placeholder).toBe("Describe your design or what to change…"));
+  });
+});
+
 describe("Theme Studio small window", () => {
   it("keeps the chat input in a bounded chat column while the preview scrolls above it", async () => {
     render(<AIThemeStudioScreen />);

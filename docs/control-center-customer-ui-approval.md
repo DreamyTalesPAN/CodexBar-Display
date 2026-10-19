@@ -7742,3 +7742,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none beyond the entries above; this only changes which palette slots are used when a companion has many colours.
 - Scope: `encodeAIThemeCBA1` in `apps/control-center/src/lib/ai-theme.ts` and its test in `apps/control-center/src/lib/ai-theme-document.test.ts`. Pull request branch only, not merge or release.
 - What's new: none — a fix of a reported defect; no new text, no new screen
+
+## 2026-10-19 — Theme Studio matched to the approved calm master (#781)
+
+- User approval: pending — Paul reviews (#781 matched to the approved master design, 19.10.)
+- Approved customer-visible result: none yet, pending Paul's review. Look only: the preview panel is 464 px wide with the picture 400 px inside (32 px around it), sits at the top-left under the header and no longer floats in the middle; the chat column takes the rest of the width; messages sit at the bottom of the chat, 16 px apart; the input is one frame with the Add (Cancel while working) and Attach buttons and the round ink-coloured Send button (32 px) inside it, at the bottom; the notice under the header is 13 px (was 14 px). One wording change: the input hint, a typed rotating idea (e.g. "A fox resting in an autumn forest…") → "Describe your design or what to change…" once the chat has a message; an empty studio keeps the rotating ideas. Not changed: the collapsed sidebar while the Studio is open, the grey look of the header while a request runs, and the shell header "Appearance" (the master draws none, that is the shell, #784).
+- Scope: `ai-theme-studio-screen.tsx`, `editable-theme-preview.tsx`, `ai-theme-studio-screen.test.tsx` (two look-pinning tests), and this approval record.
+- What's new: none — look only, no new notice

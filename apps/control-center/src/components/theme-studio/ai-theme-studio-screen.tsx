@@ -889,7 +889,13 @@ export function AIThemeStudioScreen({
 
   useEffect(() => {
     const input = promptInput.current;
-    if (!input || prompt || selected.length || locked) return;
+    if (!input) return;
+    // The ideas are for an empty studio; once there is a conversation the field says what it is for (master 19.10.).
+    if (messages.length || asking !== null) {
+      input.placeholder = selected.length ? "Describe what to change in this element…" : "Describe your design or what to change…";
+      return;
+    }
+    if (prompt || selected.length || locked) return;
     const ideas = [
       "A sleepy cat by a rainy window…",
       "A cozy fireplace in a pixel-art cabin…",
@@ -922,7 +928,7 @@ export function AIThemeStudioScreen({
     }
     type();
     return () => clearTimeout(timer);
-  }, [prompt, selected.length, locked]);
+  }, [prompt, selected.length, locked, messages.length, asking]);
 
   // Grow with the text, including programmatic prompt changes and window resizing.
   // Cap the height so a long request never pushes all editing controls off-screen.
@@ -1094,12 +1100,12 @@ export function AIThemeStudioScreen({
         </header>
         {notices.length || sendBlockedReason ? (
           <div className="flex flex-col gap-1 pt-3">
-            {notices.map((text, i) => <p key={i} role="status" className="text-sm text-muted-foreground [overflow-wrap:anywhere]">{text}</p>)}
-            {sendBlockedReason ? <p id="send-blocked-reason" role="status" className="text-sm text-muted-foreground [overflow-wrap:anywhere]">{sendBlockedReason}</p> : null}
+            {notices.map((text, i) => <p key={i} role="status" className="text-[13px] text-muted-foreground [overflow-wrap:anywhere]">{text}</p>)}
+            {sendBlockedReason ? <p id="send-blocked-reason" role="status" className="text-[13px] text-muted-foreground [overflow-wrap:anywhere]">{sendBlockedReason}</p> : null}
           </div>
         ) : null}
           <main className="flex min-h-0 flex-1 flex-col gap-6 pt-8 lg:flex-row lg:gap-12">
-            <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+            <div className="min-h-0 min-w-0 overflow-y-auto lg:w-[464px] lg:flex-none">
             <div
               id="theme-design-canvas"
               role="region"
@@ -1455,12 +1461,12 @@ export function AIThemeStudioScreen({
               </EditableThemePreview>
             </div>
             </div>
-            <div className="mx-auto flex min-h-0 w-full max-w-[680px] flex-col max-lg:max-h-[40svh] max-lg:shrink-0 lg:w-[420px] lg:shrink-0 lg:overflow-y-auto">
-            <div className="flex min-h-24 flex-1 flex-col gap-3 overflow-y-auto pb-4" role="log" aria-label="Conversation">
+            <div className="mx-auto flex min-h-0 w-full max-w-[680px] flex-col max-lg:max-h-[40svh] max-lg:shrink-0 lg:flex-1 lg:overflow-y-auto">
+            <div className="flex min-h-24 flex-1 flex-col gap-4 overflow-y-auto pb-4 [&>:first-child]:mt-auto" role="log" aria-label="Conversation">
               {messages.length || asking !== null ? messages.map((message, i) => (
                 message.role === "user" ? <div key={i}>{userTurn(message.content, message.images)}</div> : <p
                   key={i}
-                  className="mr-8 whitespace-pre-wrap text-sm [overflow-wrap:anywhere]"
+                  className="mr-6 whitespace-pre-wrap text-sm [overflow-wrap:anywhere]"
                 >
                   {message.content}
                 </p>
@@ -1492,7 +1498,7 @@ export function AIThemeStudioScreen({
               </label>
               <div className="flex items-center gap-3">
               <div
-                className="relative min-w-0 flex-1 overflow-hidden rounded-xl border border-input bg-background focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40"
+                className="relative min-w-0 flex-1 overflow-hidden rounded-xl border border-input bg-card focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40"
                 onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
                 onDrop={(event) => { event.preventDefault(); void attachImages(event.dataTransfer.files); }}
               >
@@ -1554,23 +1560,10 @@ export function AIThemeStudioScreen({
                     void generate();
                   }
                 }}
-                className="min-h-14 max-h-64 resize-none overflow-y-auto rounded-none border-0 py-4 pl-4 pr-14 focus-visible:ring-0 [field-sizing:fixed]"
+                className="min-h-8 max-h-64 resize-none overflow-y-auto rounded-none border-0 bg-transparent px-3.5 pb-0 pt-3 disabled:bg-transparent focus-visible:ring-0 [field-sizing:fixed]"
                 placeholder={selected.length ? "Describe what to change in this element…" : "Describe your design or what to change…"}
               />
-                <Button
-                  size="icon"
-                  className="absolute bottom-2 right-2 size-10 rounded-full"
-                  aria-label="Create"
-                  title="Create"
-                  aria-busy={busy}
-                  disabled={locked || attaching || !enabled || connecting || !prompt.trim()}
-                  onClick={() => void generate()}
-                >
-                  {busy ? <Spinner className="motion-reduce:animate-none" /> : <ArrowUp />}
-                </Button>
-              </div>
-              </div>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-0.5 px-1.5 pb-2 pt-3">
               <Button
                 variant="ghost"
                 size={canCancel ? "default" : "icon"}
@@ -1589,6 +1582,19 @@ export function AIThemeStudioScreen({
                 >
                   {attaching ? <Spinner /> : <Paperclip />}
                 </Button>
+                <Button
+                  size="icon"
+                  className="ml-auto size-8 rounded-full bg-foreground text-background hover:bg-foreground/90"
+                  aria-label="Create"
+                  title="Create"
+                  aria-busy={busy}
+                  disabled={locked || attaching || !enabled || connecting || !prompt.trim()}
+                  onClick={() => void generate()}
+                >
+                  <ArrowUp />
+                </Button>
+              </div>
+              </div>
               </div>
             </section>
             <div className="mt-3 w-full space-y-3">
