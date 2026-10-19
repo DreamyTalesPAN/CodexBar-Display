@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ACESFilmicToneMapping,
@@ -32,8 +32,9 @@ type VibeTV3DPreviewProps = {
   device: DeviceInfo | null;
   displayFrame: DisplayFrameSnapshot | null;
   /**
-   * Called on the first frame with the model on screen, whether or not VibeTV
-   * has a live frame to show; the caller then drops its flat preview.
+   * Called on the first frame with the model on screen and a screen that no
+   * longer says "Loading preview", whether or not VibeTV has a live frame to
+   * show; the caller then drops its flat preview.
    */
   onReady?: () => void;
   updateOwnedDisconnect?: boolean;
@@ -88,6 +89,10 @@ export function VibeTV3DPreview({
   const [screenHost, setScreenHost] = useState<HTMLDivElement | null>(null);
   const [modelFailed, setModelFailed] = useState(false);
   const onReadyRef = useRef(onReady);
+  const screenSettledRef = useRef(false);
+  const onScreenSettled = useCallback(() => {
+    screenSettledRef.current = true;
+  }, []);
 
   useEffect(() => {
     onReadyRef.current = onReady;
@@ -168,8 +173,9 @@ export function VibeTV3DPreview({
     // Counted from mount: the first frame of a new Overview must not sway.
     let touchedAt = performance.now();
     // Set once the model and its screen are in the scene; announced after the
-    // first frame that draws them.
+    // first frame that draws them and once the screen has its theme.
     let modelShown = false;
+    let drawn = false;
     let announced = false;
     let dragging = false;
     controls.addEventListener("start", () => { dragging = true; });
@@ -198,10 +204,12 @@ export function VibeTV3DPreview({
         dirty = false;
         renderer.render(scene, camera);
         cssRenderer.render(cssScene, camera);
-        if (modelShown && !announced) {
-          announced = true;
-          onReadyRef.current?.();
-        }
+        drawn = modelShown;
+      }
+      // The flat preview goes only when the 3D screen shows no loading text.
+      if (drawn && screenSettledRef.current && !announced) {
+        announced = true;
+        onReadyRef.current?.();
       }
     };
 
@@ -305,6 +313,7 @@ export function VibeTV3DPreview({
         <LiveVibeTVPreview
           device={device}
           displayFrame={displayFrame}
+          onScreenSettled={onScreenSettled}
           screenOnly
           updateOwnedDisconnect={updateOwnedDisconnect}
           usage={usage}

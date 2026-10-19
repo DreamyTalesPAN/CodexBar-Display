@@ -7928,3 +7928,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/control-center-app.tsx` (one condition), `apps/control-center/src/components/control-center-app.whats-new.test.tsx` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no new content
+
+## 2026-10-19 — Calm redesign matched to the master: the 3D VibeTV replaces the flat one only once its screen has its theme (#784, Codex fix)
+
+- User approval: pending — Paul reviews (#784 matched to the approved master design "Calm Redesign - alle Screens", 19.10.); look unchanged except: on the Overview, the flat VibeTV stays until the 3D VibeTV's screen has loaded its theme. Before, the flat one could go while the 3D screen still said "Loading preview" for a moment.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/live-vibetv-preview.tsx` (one callback), `apps/control-center/src/components/vibetv-3d-preview.tsx`, `apps/control-center/src/components/live-vibetv-preview.recovery.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
