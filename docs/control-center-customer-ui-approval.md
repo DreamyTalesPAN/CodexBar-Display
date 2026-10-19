@@ -8532,3 +8532,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-19 — #798: the failed-check dialog is shown again alongside the native Mac App prompt (as before)
+
+- User approval: pending — Paul reviews (Codex review fix; this reverts the deferral of the previous commit); look unchanged except, before → after: when the firmware check fails and a Mac App update is offered, the "Could not check for updates" dialog shows again (as before this branch's deferral) → the deferral removed; the native update prompt does not tell this screen when it closes, so the failure dialog cannot wait for it.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
