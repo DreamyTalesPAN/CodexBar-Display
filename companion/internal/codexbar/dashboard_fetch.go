@@ -196,8 +196,17 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 			parsed.Meta.Windows = nil
 			parsed.Stale = true
 		}
-		out = append(out, parsed)
 		id := strings.ToLower(strings.TrimSpace(provider.ID))
+		// CodexBar's pace rides in the same usage item as the windows. Serve's
+		// answer is the only source on this path, so it is read here (#210, #412).
+		if !parsed.Frame.UsageUnavailable {
+			parsed.Meta.Pace = parseProviderPace(usageItems[id])
+		}
+		parsed.Meta.Plan = strings.TrimSpace(provider.Identity.Plan)
+		if spend, ok := parseProviderSpend(usageItems[id]); ok && usageOK {
+			parsed.Meta.Spend = &spend
+		}
+		out = append(out, parsed)
 		if item, ok := serveUsageItem(provider, usageItems[id], !parsed.Frame.UsageUnavailable); ok {
 			readings[id] = item
 		}

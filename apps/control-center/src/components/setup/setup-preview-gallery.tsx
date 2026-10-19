@@ -556,7 +556,6 @@ export function SetupPreviewGallery() {
             onOpenSignIn={noop}
             onCreateSupportReport={createSupportReport}
             onBack={() => goTo("02")}
-            onCheckAgain={noop}
             onContinue={() => goTo("04")}
             onToggle={noop}
             pendingCheckIds={NO_PENDING_CHECKS}
@@ -569,7 +568,6 @@ export function SetupPreviewGallery() {
         return (
           <>
             <SetupProvidersScreen
-              onCheckAgain={noop}
               onContinue={noop}
               onToggle={noop}
               pendingCheckIds={NO_PENDING_CHECKS}

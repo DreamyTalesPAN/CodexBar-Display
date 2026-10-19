@@ -22,7 +22,6 @@ const providerPicker: ProviderPickerProps = {
   items: [],
   pendingCheckIds: new Set(),
   pendingPreferenceIds: new Set(),
-  onCheck: vi.fn(),
   onDisplayChange: vi.fn(),
   onPreferenceChange: vi.fn(),
 };

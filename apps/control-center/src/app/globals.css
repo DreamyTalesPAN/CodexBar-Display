@@ -31,7 +31,7 @@
   --input: #888888;
   --ring: #1B1B1B;
   --chart-1: #1B1B1B;
-  --chart-2: #506600;
+  --chart-2: #444933;
   --chart-3: #2F6473;
   --chart-4: #7A4F73;
   --chart-5: #9A651F;
@@ -93,6 +93,10 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+  /* The one hero size: the 30-day total in Usage only. Calm rules allow no other size. */
+  --text-hero: 48px;
+  --text-hero--line-height: 1.05;
+  --text-hero--letter-spacing: -0.02em;
 }
 
 body {
