@@ -7886,3 +7886,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. Not built here (waiting for Paul or a separate feature PR): Support "Connected VibeTV" table and Setup log stay; wordmark colour stays; Appearance segment switch, search, filters, tags, merged page, single Create; "n of 6 passed" and "Fix" on Support; "Last created today at …" on the Support report; Theme Studio AI key row; the Screensaver-off line with a Settings link; Updates (own PR).
 - Scope: `apps/control-center/src/components/{overview-screen,settings-screen,logs-screen,diagnostics-panel,support-report-actions,theme-library-screen,vibetv-3d-preview,preference-control,control-center-app}.tsx` and their tests, `apps/control-center/scripts/test-customer-flows.mjs` (Overview figures, "Run setup", Support "Create new"), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no new content
+
+## 2026-10-19 — Calm redesign matched to the master: review and CI fixes (#784)
+
+- User approval: pending — Paul reviews (#784 matched to the approved master design "Calm Redesign - alle Screens", 19.10.); look unchanged except: none beyond the entry above. Two fixes for it: a Recent activity line keeps its label and its detail as separate text parts (the visible text "label · detail" is the same), and the Create button row on Themes and Screensavers no longer covers the sidebar toggle button (it sits at the right end of the title row, the toggle at the left).
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entry above.
+- Scope: `apps/control-center/src/components/logs-screen.tsx`, `apps/control-center/src/components/theme-library-screen.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
