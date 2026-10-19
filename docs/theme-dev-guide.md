@@ -150,6 +150,8 @@ A `text` primitive bound to a pace text (one binding, not a template) may carry
 `colorStops`, matched against CodexBar's state: `reserve` is 100, `on pace` 50,
 `deficit` 0. Without a pace the solid `c` is used.
 
+`{usageSlot1PaceFooter}` is the line under a ring: the notice (`Update available`, `Open VibeTV Mac App`) while VibeTV shows one, else `lasts until reset - resets 3h 34m` (`resets 3h 34m` without a pace; the idle or unavailable text without a countdown). A theme that binds it shows the notice itself, so keep that line clear of everything else. `usageProviderName` is the provider's name without the notice: bind the name inside a ring to it and the notice to the footer, so the notice never runs over the ring. `{usageModeShort}` is `left` or `used`.
+
 A `progress` primitive bound to `usageSlot1Pace` is a pace bar, on a plain bar,
 a segmented bar (`ps: "segments"`) and a ring (`ps: "arc"`). `c` or `cs` is the
 fill as for any bar (colour stops on the quota) and `bg` the track. The fill

@@ -415,11 +415,14 @@ func specUsesProgressArc(spec Spec) bool {
 // percent, so a pace binding must never reach it. The firmware reads any
 // usage window key containing "Pace" as pace (usageSlot1PaceDelta,
 // us1PaceDelta, usage.1.PaceDelta), so every such key counts here too, and so
-// does usageModeShort, which only pace themes use ("Session left").
+// do usageModeShort ("Session left") and usageProviderName (the name without
+// the notice), which only pace themes use.
 func specUsesUsagePace(spec Spec) bool {
 	for _, primitive := range spec.Primitives {
 		if strings.Contains(primitive.Binding, "Pace") || primitive.Binding == "usageModeShort" ||
-			usagePaceTextKey.MatchString(primitive.Text) || strings.Contains(primitive.Text, "{usageModeShort}") {
+			primitive.Binding == "usageProviderName" ||
+			usagePaceTextKey.MatchString(primitive.Text) || strings.Contains(primitive.Text, "{usageModeShort}") ||
+			strings.Contains(primitive.Text, "{usageProviderName}") {
 			return true
 		}
 	}

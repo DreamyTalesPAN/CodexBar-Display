@@ -22,14 +22,16 @@ const clock = new Date("2026-10-08T12:00:00Z");
 const paceSession = { delta: -6, state: "reserve", lasts: true };
 
 function frame(percent: number, extra: Record<string, unknown> = {}, pace?: Record<string, unknown>) {
-  return buildFrameData(clock.toISOString(), {
+  const { updateNotice, ...rest } = extra as { updateNotice?: string };
+  const built = buildFrameData(clock.toISOString(), {
     provider: "claude", label: "Claude", usageMode: "remaining",
     usageSlots: [
       { id: "session", label: "Session", percent, resetSecs: 8078, pace },
       { id: "weekly", label: "Weekly", percent: 87, resetSecs: 300000, pace: pace && { delta: -35, state: "reserve" } },
     ],
-    ...extra,
+    ...rest,
   }, clock);
+  return updateNotice ? { ...built, updateNotice } : built;
 }
 function render(data = frame(91)) {
   return renderToStaticMarkup(createElement(ThemeSpecPreview, { pack, themeId: "gauge", status: "ready", animate: false, frame: data }));
@@ -52,7 +54,7 @@ describe("Gauge 2.0 theme pack", () => {
     expect(manifest).toMatchObject({ usage: "live", assets: [], minFirmware: "1.0.50", version: "0.2.0" });
     expect(manifest.requiredCapabilities).toEqual(["usage-slots-v1", "color-stops-v1", "progress-arc-v1", "usage-pace-v1"]);
     // Two letters, so no theme a customer saves can share the file name.
-    expect(manifest.themeSpec.path).toMatch(/^\/themes\/u\/ga-8-[0-9a-f]{8}\.json$/);
+    expect(manifest.themeSpec.path).toMatch(/^\/themes\/u\/ga-9-[0-9a-f]{8}\.json$/);
     expect(manifest.themeSpec.bytes).toBe(Buffer.byteLength(rawSpec));
     expect(pack.specPath).toBe(manifest.themeSpec.path);
   });
@@ -82,7 +84,7 @@ describe("Gauge 2.0 theme pack", () => {
   });
 
   it("says that the reset time is missing instead of showing a countdown", () => {
-    const reset = texts.find((p) => p.v?.includes("{usageSlot1Reset}"))!;
+    const reset = texts.find((p) => p.b === "usageSlot1PaceFooter")!;
     expect(renderTextPrimitive(reset, frame(42))).toBe("resets 2h 14m");
     expect(renderTextPrimitive(reset, frame(42, noReset))).toBe("Reset unavailable");
     const idle = { usageSlots: [{ id: "session", label: "Session", percent: 100, resetSecs: 0 }], resetTrust: "live", resetSource: "codexbar", resetTrustSecs: 600 };
@@ -99,7 +101,7 @@ describe("Gauge 2.0 theme pack", () => {
   it("shows only the provider line without a usage window and the second window only when there is one", () => {
     const none = frame(0, { usageSlots: [], session: 0 });
     expect(primitives.filter((p) => primitiveUsageSlotVisible(p, none))).toEqual(
-      expect.arrayContaining([texts.find((p) => p.b === "l")]),
+      expect.arrayContaining([texts.find((p) => p.b === "usageProviderName")]),
     );
     expect(render(none)).not.toContain("<circle");
     const one = frame(64, { usageSlots: [{ id: "session", label: "Session", percent: 64, resetSecs: 8078 }] });
@@ -108,10 +110,12 @@ describe("Gauge 2.0 theme pack", () => {
   });
 
   it("keeps every line inside its lane on the device", () => {
-    expect(texts.filter((p) => p.b === "l")).toHaveLength(1);
+    // The name does not show the notice; the footer does.
+    expect(texts.filter((p) => p.b === "usageProviderName")).toHaveLength(1);
+    expect(texts.filter((p) => p.b === "usageSlot1PaceFooter")).toHaveLength(1);
     const frames = [
       frame(91), frame(91, {}, paceSession), frame(38, {}, { delta: 14, state: "deficit", lasts: false }),
-      frame(50, { label: "Update available" }), frame(50, { label: "Open VibeTV Mac App" }),
+      frame(50, { updateNotice: "Update available" }), frame(50, { updateNotice: "Open VibeTV Mac App" }), frame(50, { label: "Open VibeTV Mac App" }),
       frame(50, noReset), frame(100, { usageMode: "used" }),
       frame(50, { usageSlots: [
         { id: "weekly", label: "Codex Spark Weekly", percent: 100, resetSecs: 604740 },
@@ -123,10 +127,6 @@ describe("Gauge 2.0 theme pack", () => {
       for (const p of texts.filter((t) => t.f !== 4)) {
         const value = renderTextPrimitive(p, data);
         seen.add(value);
-        // The provider line is clipped at its box, so a notice may be longer than it.
-        if (p.b === "l") {
-          continue;
-        }
         const font = p.f ?? 1;
         const size = themeTextFittedSize(value, font, p.s!, p.w!, true);
         const width = themeFirmwareTextMetrics(value, font, size)!.width;
@@ -138,21 +138,42 @@ describe("Gauge 2.0 theme pack", () => {
     }
   });
 
-  // A notice replaces the provider name ("Update available", "Open VibeTV Mac App").
-  // VibeTV draws a text inside its box and clips it there, so a notice longer than
-  // the box is cut at the box edge. The box lies inside the hole of the ring:
-  // whatever the text, nothing of it can reach the ring.
-  it("keeps the update notice inside the ring", () => {
+  // A notice replaces the reset line under the ring, never the provider name in it:
+  // the name stays inside the hole, and every notice lies wholly outside the ring.
+  it("shows the update notice under the ring and keeps the provider name inside it", () => {
     const { cx, cy, radius, thickness } = themeProgressArc(arc, 0)!;
     const hole = radius - thickness / 2;
-    const name = texts.find((p) => p.b === "l")!;
-    const height = 8 * 2; // TFT_eSPI font 2 cell, with its clip margin
-    for (const [x, y] of [[name.x!, name.y!], [name.x! + name.w!, name.y!], [name.x!, name.y! + height], [name.x! + name.w!, name.y! + height]]) {
-      expect(Math.hypot(x - cx, y - cy), `box corner ${x},${y}`).toBeLessThan(hole - 2);
+    const outer = radius + thickness / 2;
+    const name = texts.find((p) => p.b === "usageProviderName")!;
+    const footer = texts.find((p) => p.b === "usageSlot1PaceFooter")!;
+    const box = (p: ThemePrimitive, text: string) => {
+      const size = themeTextFittedSize(text, p.f!, p.s!, p.w!, true);
+      const width = themeFirmwareTextMetrics(text, p.f!, size)!.width;
+      const left = p.x! + (p.w! - width) / 2;
+      const height = 16 * size;
+      return [[left, p.y!], [left + width, p.y!], [left, p.y! + height], [left + width, p.y! + height]];
+    };
+    // Names are short: every corner of the name box lies inside the hole, notice or not.
+    for (const label of ["Claude", "Codex", "Cursor", "OpenCode Go"]) {
+      for (const [x, y] of box(name, renderTextPrimitive(name, frame(91, { label, updateNotice: "Open VibeTV Mac App" })))) {
+        expect(Math.hypot(x - cx, y - cy), `${label} corner ${x},${y}`).toBeLessThan(hole);
+      }
     }
-    // The preview clips the notice at the same box.
-    const notice = render(frame(91, { label: "Open VibeTV Mac App" }));
-    expect(notice).toContain(`width="${name.w}"`);
+    expect(renderTextPrimitive(name, frame(91, { updateNotice: "Update available" }))).toBe("Claude");
+    for (const updateNotice of ["Update available", "Open VibeTV Mac App"]) {
+      const data = frame(91, {}, paceSession);
+      const text = renderTextPrimitive(footer, { ...data, updateNotice });
+      expect(text).toBe(updateNotice);
+      for (const [x, y] of box(footer, text)) {
+        expect(Math.hypot(x - cx, y - cy), `${updateNotice} corner ${x},${y}`).toBeGreaterThan(outer + 4);
+        expect(x).toBeGreaterThanOrEqual(0);
+        expect(x).toBeLessThanOrEqual(240);
+      }
+      // The reset line is hidden while it shows, and the pace line above stays.
+      const shownText = shown(render({ ...data, updateNotice }));
+      expect(shownText).not.toContain("resets");
+      expect(shownText).toContain(`6% in reserve${updateNotice}`);
+    }
   });
 
   it("stays inside the 240 px panel and renders through the production preview", () => {

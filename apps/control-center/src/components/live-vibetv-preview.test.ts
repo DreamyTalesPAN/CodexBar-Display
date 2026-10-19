@@ -1228,6 +1228,22 @@ describe("usage pace", () => {
     expect(boundValue("usageSlot1PaceText", later)).toBe("");
   });
 
+  it("names the provider without the notice and puts the notice in the footer line", () => {
+    const frame = { ...paced(91, { delta: -6, state: "reserve", lasts: true }), label: "Claude" };
+    expect(boundValue("usageProviderName", frame)).toBe("Claude");
+    expect(boundValue("usageSlot1PaceFooter", frame)).toBe("lasts until reset - resets 3h 20m");
+    expect(boundValue("usageSlot1PaceFooter", paced(91, undefined))).toBe("resets 3h 20m");
+    const noted = { ...frame, updateNotice: "Update available" };
+    expect(boundValue("usageProviderName", noted)).toBe("Claude");
+    expect(boundValue("l", noted)).toBe("Update available");
+    expect(boundValue("us1PaceFooter", noted)).toBe("Update available");
+    // No countdown: the unavailable text, as the reset binding says it.
+    const none = paced(91, undefined, {
+      usageSlots: [{ id: "session", label: "Session", percent: 91, resetSecs: 0 }],
+    });
+    expect(boundValue("usageSlot1PaceFooter", none)).toBe(boundValue("usageSlot1Reset", none));
+  });
+
   it("says left for what remains and the mode itself otherwise", () => {
     expect(boundValue("usageModeShort", paced(91, undefined))).toBe("left");
     expect(boundValue("usageModeShort", paced(9, undefined, { usageMode: "used" }))).toBe("used");

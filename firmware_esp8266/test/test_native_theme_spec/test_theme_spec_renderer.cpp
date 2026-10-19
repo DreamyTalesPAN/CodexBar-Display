@@ -4739,6 +4739,69 @@ void testPaceBarRepaintsWhenOnlyTheUsageModeChanges() {
   TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldUsageMode) != 0);
 }
 
+// The provider name without the notice, and the footer line that is the notice while
+// one shows and the reset sentence otherwise (Gauge 2.0).
+void testProviderNameAndPaceFooterAroundTheNotice() {
+  const char* spec = R"JSON({"v":1,"id":"footer","rev":1,"p":[
+    {"t":"tx","x":0,"y":0,"b":"usageProviderName"},
+    {"t":"tx","x":0,"y":20,"b":"l"},
+    {"t":"tx","x":0,"y":40,"b":"usageSlot1PaceFooter"}
+  ]})JSON";
+  FrameData frame;
+  frame.label = "Claude";
+  frame.usageSlot1Label = frame.usageWindows[0].label = "Session";
+  frame.usageSlot1Percent = frame.usageWindows[0].percent = 91;
+  frame.usageSlot1ResetSecs = frame.usageWindows[0].resetSecs = 12000;
+  frame.usageSlot1Available = frame.usageWindows[0].available = true;
+  frame.usageWindows[0].pace = {-6, 1, codexbar_display::usage_window_contract::kPaceLastsToReset};
+  std::vector<std::string> plain = renderedTexts(spec, frame);
+  TEST_ASSERT_EQUAL_STRING("Claude", plain[0].c_str());
+  TEST_ASSERT_EQUAL_STRING("Claude", plain[1].c_str());
+  TEST_ASSERT_EQUAL_STRING("lasts until reset - resets 3h 20m", plain[2].c_str());
+  // Without a pace: the plain reset sentence; without a countdown: the unavailable text.
+  frame.usageWindows[0].pace = {};
+  TEST_ASSERT_EQUAL_STRING("resets 3h 20m", renderedTexts(spec, frame)[2].c_str());
+  frame.usageSlot1ResetSecs = frame.usageWindows[0].resetSecs = 0;
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", renderedTexts(spec, frame)[2].c_str());
+  frame.usageSlot1ResetSecs = frame.usageWindows[0].resetSecs = 12000;
+  // A notice replaces the label and the footer, never the provider name.
+  frame.updateAvailable = true;
+  frame.showUpdateNotice = true;
+  frame.updateNotice = "Open VibeTV Mac App";
+  std::vector<std::string> notice = renderedTexts(spec, frame);
+  TEST_ASSERT_EQUAL_STRING("Claude", notice[0].c_str());
+  TEST_ASSERT_EQUAL_STRING("Open VibeTV Mac App", notice[1].c_str());
+  TEST_ASSERT_EQUAL_STRING("Open VibeTV Mac App", notice[2].c_str());
+  // The theme counts as one that shows the notice itself, and repaints with it.
+  TEST_ASSERT_TRUE(codexbar_display::core::ThemeSpecLiveUseForRaw(
+      String(R"JSON({"p":[{"t":"tx","b":"usageSlot1PaceFooter"}]})JSON")).Uses(codexbar_display::themespec::kThemeSpecFieldLabel));
+  TEST_ASSERT_TRUE(codexbar_display::core::ThemeSpecLiveUseForRaw(
+      String(R"JSON({"p":[{"t":"tx","b":"usageProviderName"}]})JSON")).Uses(codexbar_display::themespec::kThemeSpecFieldLabel));
+}
+
+// A window whose countdown ran out here lost its pace on screen; the frame that
+// restores it, with the same percent and pace, must repaint the pace.
+void testPaceRepaintsAfterTheCountdownRanOutAndTrustReturns() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* frame =
+      R"JSON({"v":2,"provider":"claude","resetSecs":60,"usageWindows":[{"id":"session","label":"Session","percent":50,"resetSecs":60,"pace":{"delta":-5,"state":"reserve"}}],"themeSpec":{"v":1,"id":"pace-only","rev":1,"p":[{"t":"p","x":0,"y":0,"w":100,"h":10,"b":"usageSlot1Pace"}]}})JSON";
+  const char* again =
+      R"JSON({"v":2,"provider":"claude","resetSecs":7200,"usageWindows":[{"id":"session","label":"Session","percent":50,"resetSecs":7200,"pace":{"delta":-5,"state":"reserve"}}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, frame, 1000, event));
+  // Still counting (56 s left): an identical frame repaints nothing.
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, again, 5000, event));
+  TEST_ASSERT_FALSE(event.visualChanged);
+  // 10 minutes after the first frame the 60 s countdown is long gone (the
+  // countdown repaint hid the pace); the same percent and pace come back with a
+  // fresh deadline.
+  RuntimeState slept;
+  TEST_ASSERT_TRUE(ConsumeFrameLine(slept, frame, 1000, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(slept, again, 1000 + 600000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldUsageWindowPace) != 0);
+}
+
 // The periodic countdown repaint (no frame arrived, the countdown ran out) also
 // repaints the pace of a theme that binds only pace, and nothing for one that does not.
 void testCountdownRepaintTakesTheBoundPaceAlong() {
@@ -4756,7 +4819,7 @@ void testUsagePaceParsesAndRepaintsOnlyThemesThatShowIt() {
   RuntimeState state;
   SerialConsumeEvent event;
   const char* first =
-      R"JSON({"v":2,"provider":"claude","usageWindows":[{"id":"session","label":"Session","percent":92,"resetSecs":12000,"pace":{"delta":-25,"state":"reserve","lasts":true}},{"id":"weekly","label":"Weekly","percent":27,"resetSecs":95000,"pace":{"delta":14,"state":"deficit"}},{"id":"fable","label":"Fable","percent":0,"resetSecs":95000,"pace":{"delta":3,"state":"farBehind","lasts":false}}],"themeSpec":{"v":1,"id":"pace-redraw","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"usageSlot1PaceDelta"}]}})JSON";
+      R"JSON({"v":2,"provider":"claude","resetSecs":12000,"usageWindows":[{"id":"session","label":"Session","percent":92,"resetSecs":12000,"pace":{"delta":-25,"state":"reserve","lasts":true}},{"id":"weekly","label":"Weekly","percent":27,"resetSecs":95000,"pace":{"delta":14,"state":"deficit"}},{"id":"fable","label":"Fable","percent":0,"resetSecs":95000,"pace":{"delta":3,"state":"farBehind","lasts":false}}],"themeSpec":{"v":1,"id":"pace-redraw","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"usageSlot1PaceDelta"}]}})JSON";
   TEST_ASSERT_TRUE(ConsumeFrameLine(state, first, 1000, event));
   const auto& windows = state.current.usageWindows;
   TEST_ASSERT_EQUAL_INT(-25, windows[0].pace.delta);
@@ -4773,7 +4836,7 @@ void testUsagePaceParsesAndRepaintsOnlyThemesThatShowIt() {
 
   // Only the pace moved: the pace theme repaints its pace primitive.
   const char* paceMoved =
-      R"JSON({"v":2,"provider":"claude","usageWindows":[{"id":"session","label":"Session","percent":92,"resetSecs":12000,"pace":{"delta":-24,"state":"reserve","lasts":true}}]})JSON";
+      R"JSON({"v":2,"provider":"claude","resetSecs":12000,"usageWindows":[{"id":"session","label":"Session","percent":92,"resetSecs":12000,"pace":{"delta":-24,"state":"reserve","lasts":true}}]})JSON";
   TEST_ASSERT_TRUE(ConsumeFrameLine(state, paceMoved, 2000, event));
   TEST_ASSERT_TRUE(event.visualChanged);
   TEST_ASSERT_TRUE(event.themeSpecPartialRender);
@@ -4782,14 +4845,14 @@ void testUsagePaceParsesAndRepaintsOnlyThemesThatShowIt() {
   // Only the countdown ticked, as it does with every frame: nothing the pace
   // theme shows changed, so nothing is repainted.
   const char* countdownTicked =
-      R"JSON({"v":2,"provider":"claude","usageWindows":[{"id":"session","label":"Session","percent":92,"resetSecs":11998,"pace":{"delta":-24,"state":"reserve","lasts":true}}]})JSON";
+      R"JSON({"v":2,"provider":"claude","resetSecs":11998,"usageWindows":[{"id":"session","label":"Session","percent":92,"resetSecs":11998,"pace":{"delta":-24,"state":"reserve","lasts":true}}]})JSON";
   TEST_ASSERT_TRUE(ConsumeFrameLine(state, countdownTicked, 4000, event));
   TEST_ASSERT_FALSE(event.visualChanged);
   TEST_ASSERT_EQUAL_UINT32(0, event.themeSpecChangedFields);
 
   // The countdown ran out: the pace is gone, and that is repainted.
   const char* countdownGone =
-      R"JSON({"v":2,"provider":"claude","usageWindows":[{"id":"session","label":"Session","percent":92,"resetSecs":0,"pace":{"delta":-24,"state":"reserve","lasts":true}}]})JSON";
+      R"JSON({"v":2,"provider":"claude","resetSecs":0,"usageWindows":[{"id":"session","label":"Session","percent":92,"resetSecs":0,"pace":{"delta":-24,"state":"reserve","lasts":true}}]})JSON";
   TEST_ASSERT_TRUE(ConsumeFrameLine(state, countdownGone, 6000, event));
   TEST_ASSERT_TRUE(event.visualChanged);
   TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldUsageWindowPace) != 0);
@@ -4797,7 +4860,7 @@ void testUsagePaceParsesAndRepaintsOnlyThemesThatShowIt() {
   // A theme without pace bindings ignores pace that moves with the clock.
   RuntimeState usageOnly;
   const char* usageTheme =
-      R"JSON({"v":2,"provider":"claude","usageWindows":[{"id":"session","label":"Session","percent":92,"resetSecs":12000,"pace":{"delta":-25,"state":"reserve","lasts":true}}],"themeSpec":{"v":1,"id":"usage-only","rev":1,"p":[{"t":"tx","x":0,"y":0,"v":"{usageSlot1Percent}%"}]}})JSON";
+      R"JSON({"v":2,"provider":"claude","resetSecs":12000,"usageWindows":[{"id":"session","label":"Session","percent":92,"resetSecs":12000,"pace":{"delta":-25,"state":"reserve","lasts":true}}],"themeSpec":{"v":1,"id":"usage-only","rev":1,"p":[{"t":"tx","x":0,"y":0,"v":"{usageSlot1Percent}%"}]}})JSON";
   TEST_ASSERT_TRUE(ConsumeFrameLine(usageOnly, usageTheme, 1000, event));
   TEST_ASSERT_TRUE(ConsumeFrameLine(usageOnly, paceMoved, 2000, event));
   TEST_ASSERT_FALSE(event.visualChanged);
@@ -4981,6 +5044,8 @@ int main() {
   RUN_TEST(testPaceTickOnAFullyThickRingReachesTheCentre);
   RUN_TEST(testUsagePaceParsesAndRepaintsOnlyThemesThatShowIt);
   RUN_TEST(testCountdownRepaintTakesTheBoundPaceAlong);
+  RUN_TEST(testProviderNameAndPaceFooterAroundTheNotice);
+  RUN_TEST(testPaceRepaintsAfterTheCountdownRanOutAndTrustReturns);
   RUN_TEST(testPaceBarRepaintsWhenOnlyTheUsageModeChanges);
   return UNITY_END();
 }

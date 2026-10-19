@@ -1472,6 +1472,18 @@ inline bool ConsumeFrameLine(
   outEvent.reportsWorking = !next.hasError && next.activity == "coding";
 
   outEvent.hadFrame = runtimeState.hasFrame;
+  // The screen shows a window whose countdown ran out here, or lost its trust,
+  // without its pace (the countdown repaint removed it). Compare against that,
+  // not against the frame as it was sent: a frame that restores trust with the same
+  // percent and pace must repaint the pace. The previous frame is replaced below.
+  if (runtimeState.hasFrame) {
+    for (size_t i = 0; i < kMaxUsageWindows; ++i) {
+      if (runtimeState.current.usageWindows[i].resetSecs > 0 &&
+          CurrentUsageWindowRemainingSecs(runtimeState, i, nowMillis) == 0) {
+        runtimeState.current.usageWindows[i].resetSecs = 0;
+      }
+    }
+  }
   NoteFrameVisualChange(runtimeState, previous, next, outEvent);
 
   runtimeState.activityTtlMillis = next.activityTtlSecs * 1000U;

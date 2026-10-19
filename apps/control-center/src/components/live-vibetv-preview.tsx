@@ -223,6 +223,9 @@ type FrameData = {
   totalTokens: number;
   // Mirrors the firmware: token totals absent from the frame render as "--".
   hasTokenTotals: boolean;
+  // The notice VibeTV shows in place of the provider name ("Update available"); the
+  // device decides on it, so only a caller that knows one sets it.
+  updateNotice?: string;
   time: string;
   date: string;
 };
@@ -1906,10 +1909,30 @@ function usagePaceText(binding: string, kind: string, frame: FrameData): string 
   return kind === "LastsSep" ? `${sentence} - ` : sentence;
 }
 
+// Mirrors FormatPaceFooter: the notice while one shows, else the reset sentence
+// ("lasts until reset - resets 3h 34m", "resets 3h 34m", or the idle or
+// unavailable text without a countdown).
+function paceFooterText(key: string, index: number, frame: FrameData): string {
+  const window = frame.usageWindows[index];
+  if (!window?.available) {
+    return "";
+  }
+  if (frame.updateNotice) {
+    return frame.updateNotice;
+  }
+  if (window.resetSecs <= 0) {
+    return formatReset(window.resetSecs, window.idle);
+  }
+  return `${usagePaceText(key.replace(/Footer$/, "LastsSep"), "LastsSep", frame)}resets ${formatReset(window.resetSecs)}`;
+}
+
 export function boundValue(key: string, frame: FrameData): string {
   const paceKey = paceBinding(key);
   if (paceKey && /^(Text|Short|LastsSep|Lasts|RunsOut)$/.test(paceKey.field)) {
     return usagePaceText(key, paceKey.field, frame);
+  }
+  if (paceKey?.field === "Footer") {
+    return paceFooterText(key, paceKey.index, frame);
   }
   const usageMatch = /^usage\.(\d+)\.(label|percent|reset|available)$/.exec(
     key,
@@ -1939,6 +1962,9 @@ export function boundValue(key: string, frame: FrameData): string {
     case "label":
     case "providerLabel":
     case "l":
+      return frame.updateNotice || frame.label;
+    case "usageProviderName":
+      // The provider's name, never the notice.
       return frame.label;
     case "provider":
     case "pr":

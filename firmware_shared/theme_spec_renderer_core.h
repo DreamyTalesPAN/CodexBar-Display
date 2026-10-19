@@ -642,7 +642,8 @@ inline const char* UsageWindowField(const char* key) {
 // pv1r/pv2r.
 inline bool UsageWindowKeyFollowsReset(const char* key) {
   key = SafeText(key);
-  return std::strcmp(UsageWindowField(key), "reset") == 0 || (std::strlen(key) == 4 && key[3] == 'r');
+  return std::strcmp(UsageWindowField(key), "reset") == 0 || std::strcmp(UsageWindowField(key), "PaceFooter") == 0 ||
+         (std::strlen(key) == 4 && key[3] == 'r');
 }
 
 // CodexBar's pace repaints only when the pace itself changes or its window's
@@ -823,6 +824,31 @@ inline void FormatBoundPace(
   }
 }
 
+// usageSlotNPaceFooter: the line under a pace theme's ring. While VibeTV shows a
+// notice ("Update available") the line is the notice; else the reset sentence:
+// "lasts until reset - resets 3h 34m" with a running pace, "resets 3h 34m" without
+// one, and the idle or unavailable text when there is no countdown.
+inline void FormatPaceFooter(
+    const FrameData& frame,
+    const UsageWindowData& window,
+    const usage_window_contract::Pace& pace,
+    char* out,
+    size_t outSize) {
+  if (frame.updateAvailable && frame.showUpdateNotice && SafeText(frame.updateNotice)[0] != '\0') {
+    std::snprintf(out, outSize, "%s", frame.updateNotice);
+    return;
+  }
+  if (window.resetSecs <= 0) {
+    std::snprintf(out, outSize, "%s", ResetTextFor(ResetSecsAreIdle(window.resetSecs)));
+    return;
+  }
+  char lead[24] = {0};
+  FormatBoundPace(pace, true, "LastsSep", lead, sizeof(lead));
+  char countdown[32] = {0};
+  FormatDuration(window.resetSecs, countdown, sizeof(countdown));
+  std::snprintf(out, outSize, "%sresets %s", lead, countdown);
+}
+
 inline void BoundValue(const char* key, const FrameData& frame, char* out, size_t outSize) {
   if (out == nullptr || outSize == 0) {
     return;
@@ -836,6 +862,11 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
   }
   if (std::strcmp(key, "provider") == 0 || std::strcmp(key, "pr") == 0) {
     std::snprintf(out, outSize, "%s", SafeText(frame.provider));
+    return;
+  }
+  if (std::strcmp(key, "usageProviderName") == 0) {
+    // The provider's name as the label binding shows it, but never the notice.
+    std::snprintf(out, outSize, "%s", SafeText(frame.label));
     return;
   }
   if (std::strcmp(key, "session") == 0 || std::strcmp(key, "sessionPercent") == 0 || std::strcmp(key, "s") == 0) {
@@ -913,7 +944,11 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
     } else if (std::strncmp(field, "Pace", 4) == 0) {
       // CodexBar computed this pace for the running window; once its
       // countdown expired or lost trust, the pace is unknown again.
-      FormatBoundPace(UsageWindowFor(frame, slotIndex).pace, window.resetSecs > 0, field + 4, out, outSize);
+      if (std::strcmp(field, "PaceFooter") == 0) {
+        FormatPaceFooter(frame, window, UsageWindowFor(frame, slotIndex).pace, out, outSize);
+      } else {
+        FormatBoundPace(UsageWindowFor(frame, slotIndex).pace, window.resetSecs > 0, field + 4, out, outSize);
+      }
     } else {
       std::snprintf(out, outSize, "%d", ClampPct(window.percent));
     }
@@ -1143,7 +1178,7 @@ inline uint32_t BindingFieldMask(const char* binding) {
   if (StringEqualsAny(binding, "provider", "pr")) {
     return kThemeSpecFieldProvider;
   }
-  if (StringEqualsAny(binding, "label", "providerLabel", "l")) {
+  if (StringEqualsAny(binding, "label", "providerLabel", "l") || std::strcmp(SafeText(binding), "usageProviderName") == 0) {
     return kThemeSpecFieldLabel;
   }
   if (StringEqualsAny(binding, "session", "sessionPercent", "s")) {
@@ -1164,7 +1199,9 @@ inline uint32_t BindingFieldMask(const char* binding) {
     return kThemeSpecFieldUsageWindows |
            (UsageWindowKeyFollowsReset(binding) ? kThemeSpecFieldUsageWindowReset : 0) |
            (UsageWindowKeyShowsPace(binding) ? kThemeSpecFieldUsageWindowPace : 0) |
-           (std::strcmp(UsageWindowField(binding), "Pace") == 0 ? kThemeSpecFieldUsageMode : 0);
+           (std::strcmp(UsageWindowField(binding), "Pace") == 0 ? kThemeSpecFieldUsageMode : 0) |
+           // The footer is the notice while one shows, so it is a label field too.
+           (std::strcmp(UsageWindowField(binding), "PaceFooter") == 0 ? kThemeSpecFieldLabel : 0);
   }
   if (StringEqualsAny(binding, "usageMode", "u", "usageModeShort")) {
     return kThemeSpecFieldUsageMode;
