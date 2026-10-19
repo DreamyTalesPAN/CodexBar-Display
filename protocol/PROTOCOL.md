@@ -131,6 +131,7 @@ Fields:
 - `sessionUnavailable` / `weeklyUnavailable` (boolean, optional): only that legacy usage lane is unknown. Missing/false remains backward compatible. Its text binding shows `??` and its progress primitive is omitted. `usageUnavailable:true` still overrides both lanes, including stale frames.
 - `usageMode` (string, optional): semantic of `session`/`weekly` and `usageWindows[].percent` (`used` or `remaining`).
 - `usageWindows` (array, optional, v2): generic ordered provider usage windows. Each emitted window carries `id` (max 32 UTF-8 bytes), `label` (max 24 UTF-8 bytes), `percent`, and its own `resetSecs`. Presence means availability; missing or unavailable source windows are omitted rather than coerced to `0`/`100`. Legacy `session`, `weekly`, and shared `resetSecs` remain compatibility aliases for windows 1, 2, and window 1's reset.
+- `usageWindows[].pace` (object, optional, `usage-pace-v1`): CodexBar's pace for that window, never computed by the host. `delta` is CodexBar's `deltaPercent` (`-100..100`; negative is in reserve, positive is in deficit). `state` is CodexBar's own stage family, the split its pace text makes: `reserve` (`slightlyBehind`, `behind`, `farBehind`), `on pace` (`onTrack`), `deficit` (`slightlyAhead`, `ahead`, `farAhead`). `lasts` is `willLastToReset`: `true` for CodexBar's "Lasts until reset", `false` when CodexBar projects running out (it reports an ETA), and omitted when CodexBar projects neither. The host sends `pace` only to devices that advertise `usage-pace-v1`, only for windows CodexBar paces, and only while that window's `resetSecs` is positive; absent means unknown, never zero. A stage CodexBar does not define is dropped. When a frame exceeds `maxFrameBytes`, the host drops pace before it drops a window.
 - `usageSlots` (array, optional, legacy): compatibility input/output for v1-era two-slot readers. The Companion normalizes slots into `usageWindows` when no windows are present; normalized v2 frames omit `usageSlots`.
 - `sessionTokens` (number, optional): absolute token total for the current provider session/window when available.
 - `weekTokens` (number, optional): rolling 7-day token total when available.
@@ -492,7 +493,7 @@ WiFi:
   "firmware": "1.0.0",
   "deviceId": "14799300",
   "networkMode": "off",
-  "features": ["theme", "theme-spec-v1", "provider-slots-v1", "provider-assets-v1", "color-stops-v1", "text-valign-v1", "progress-arc-v1", "cable-transfer-v1", "cable-transfer-v2", "cable-health-v1"],
+  "features": ["theme", "theme-spec-v1", "provider-slots-v1", "provider-assets-v1", "color-stops-v1", "text-valign-v1", "progress-arc-v1", "usage-pace-v1", "cable-transfer-v1", "cable-transfer-v2", "cable-health-v1"],
   "maxFrameBytes": 2048,
   "capabilities": {
     "display": {
@@ -516,6 +517,7 @@ WiFi:
       "supportsColorStopsV1": true,
       "supportsTextValignV1": true,
       "supportsProgressArcV1": true,
+      "supportsUsagePaceV1": true,
       "maxThemeSpecBytes": 2048,
       "maxThemePrimitives": 32,
       "supportedPrimitiveTypes": ["text", "rect", "progress", "gif", "sprite", "pixels"],
@@ -554,6 +556,7 @@ Fields:
   - `theme.supportsColorStopsV1` gates `colorStops` / `cs`. Older firmware uses solid `c`. Stops are authored against remaining-style percent; when the frame `usageMode` is `used`, firmware matches `100 - percent` so warning colors stay correct.
   - `theme.supportsTextValignV1` gates `valign` / `va`. Older firmware treats `y` as the glyph top, so shrink+middle is not a compatible fallback. Hosts must not install a spec that emits `va` onto firmware without this capability.
   - `theme.supportsProgressArcV1` gates `progressStyle: "arc"` / `ps: "arc"`. Older firmware does not know the style and draws a straight bar across the arc's box, so there is no compatible fallback. Hosts must not install a spec that uses it onto firmware without this capability.
+  - `theme.supportsUsagePaceV1` (feature `usage-pace-v1`) gates `usageWindows[].pace` on the wire and the `usageSlotNPace*` bindings. Hosts send pace only to firmware that advertises it and must not install a spec that uses those bindings elsewhere.
   - `theme.maxStoredThemeSpecBytes` is the uploaded/stored ThemeSpec JSON byte limit for WiFi themes.
   - `theme.maxThemePrimitives` is the maximum primitive count accepted by the renderer.
   - `theme.supportedPrimitiveTypes` lists the ThemeSpec primitive types this firmware can render.

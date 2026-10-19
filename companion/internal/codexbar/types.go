@@ -112,7 +112,9 @@ type ProviderPace struct {
 	HasExpectedUsedPercent bool
 	WillLastToReset        bool
 	ETASeconds             int64
-	Summary                string
+	// HasETA tells a zero ETA ("Runs out now") from none at all.
+	HasETA  bool
+	Summary string
 }
 
 type UsageOverTimePoint struct {
