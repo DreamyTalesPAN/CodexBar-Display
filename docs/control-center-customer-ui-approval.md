@@ -8251,6 +8251,7 @@ issue scope, or release permission never implies UI permission.
 - Scope: `usage-screen.tsx`, `usage-screen.test.tsx`, `globals.css` (`--chart-2` in the light theme), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — look only, no new notice
 
+<<<<<<< HEAD
 ## 2026-10-19 — Pace on Usage (#789, stacked on #783)
 
 - User approval: pending — Paul reviews (pace on Usage per the approved master + 19.10. decisions)
@@ -8264,3 +8265,18 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet, pending Paul's review. Visible result unchanged from the entry above, except one edge: when CodexBar sends a stage but not its gap or expected-use number, the lane shows no tick, no piece and no line (before this fix the tick would sit at 0%). Not seen by Paul.
 - Scope: `usage-pace.tsx` and `usage-pace.test.tsx`, plus Companion files (`parse.go`, `types.go`, `usage.go` and their tests) that are not screens, and this approval record.
 - What's new: none — edge case of the pace feature, no new notice
+=======
+## 2026-10-19 — Approval record for the merge of main into claude/group-usage (no visible change)
+
+- User approval: none needed for this entry; it records only the merge of main into `claude/group-usage`, no visible change of its own. The visible changes of the branch are in the entries above, all pending Paul's review.
+- Approved customer-visible result: as recorded in the entries above; nothing else changed.
+- Scope: the merge of main (#645, #682 and later) into this branch and this approval record. Pull request branch only, not merge or release.
+- What's new: none — merge of main, no customer-visible change of its own
+>>>>>>> origin/claude/group-usage
+
+## 2026-10-19 — Approval record for the merge of claude/group-usage into claude/usage-pace (no visible change)
+
+- User approval: none needed for this entry; it records only the merge of `claude/group-usage` (and main) into `claude/usage-pace`, no visible change of its own. The pace line already is 13 px, 600 for reserve and deficit and 400 for "On pace", as in the master. The visible changes of the branch are in the entries above, all pending Paul's review.
+- Approved customer-visible result: as recorded in the entries above; nothing else changed.
+- Scope: the merge of the base branch into this branch and this approval record. Pull request branch only, not merge or release.
+- What's new: none — merge of the base branch, no customer-visible change of its own
