@@ -628,11 +628,13 @@ func usageWindowsFromMeta(meta codexbar.ProviderUsageMeta) []usageWindowInfo {
 			willLast := pace.WillLastToReset
 			info.WillLastToReset = &willLast
 			info.ETASeconds = pace.ETASeconds
-			if stage := strings.TrimSpace(pace.Stage); stage != "" {
+			info.Stage = strings.TrimSpace(pace.Stage)
+			if pace.HasDeltaPercent {
 				delta := pace.DeltaPercent
-				expected := clampUsagePercent(pace.ExpectedUsedPercent)
-				info.Stage = stage
 				info.DeltaPercent = &delta
+			}
+			if pace.HasExpectedUsedPercent {
+				expected := clampUsagePercent(pace.ExpectedUsedPercent)
 				info.ExpectedUsedPercent = &expected
 			}
 		}

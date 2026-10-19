@@ -85,8 +85,8 @@ func TestUsageWindowsCarryCodexBarPaceStage(t *testing.T) {
 			{ID: "fable", Label: "Fable only", UsedPercent: 0},
 		},
 		Pace: []codexbar.ProviderPace{
-			{Window: "primary", Stage: "farBehind", DeltaPercent: -39, ExpectedUsedPercent: 44, WillLastToReset: true},
-			{Window: "secondary", Stage: "farAhead", DeltaPercent: 54, ExpectedUsedPercent: 16, ETASeconds: 40427},
+			{Window: "primary", Stage: "farBehind", DeltaPercent: -39, HasDeltaPercent: true, ExpectedUsedPercent: 44, HasExpectedUsedPercent: true, WillLastToReset: true},
+			{Window: "secondary", Stage: "farAhead", DeltaPercent: 54, HasDeltaPercent: true, ExpectedUsedPercent: 16, HasExpectedUsedPercent: true, ETASeconds: 40427},
 		},
 	})
 	session, weekly, fable := windows[0], windows[1], windows[2]
@@ -114,7 +114,7 @@ func TestUsageWindowsCarryCodexBarPaceStage(t *testing.T) {
 func TestUsageWindowsKeepZeroPaceNumbers(t *testing.T) {
 	windows := usageWindowsFromMeta(codexbar.ProviderUsageMeta{
 		Windows: []codexbar.UsageWindow{{ID: "weekly", Label: "Weekly", UsedPercent: 0}},
-		Pace:    []codexbar.ProviderPace{{Window: "secondary", Stage: "onTrack", WillLastToReset: true}},
+		Pace:    []codexbar.ProviderPace{{Window: "secondary", Stage: "onTrack", HasDeltaPercent: true, HasExpectedUsedPercent: true, WillLastToReset: true}},
 	})
 	raw, err := json.Marshal(windows[0])
 	if err != nil {
@@ -143,5 +143,23 @@ func TestUsageDisplayModeFlipsExpectedUsedWithTheWindow(t *testing.T) {
 	}
 	if provider.Windows[1].ExpectedUsedPercent != nil {
 		t.Fatalf("a lane without pace stays without, got %+v", provider.Windows[1])
+	}
+}
+
+// A pace object with a stage but without the numbers must not turn into 0s.
+func TestUsageWindowsKeepMissingPaceNumbersMissing(t *testing.T) {
+	windows := usageWindowsFromMeta(codexbar.ProviderUsageMeta{
+		Windows: []codexbar.UsageWindow{{ID: "weekly", Label: "Weekly", UsedPercent: 40}},
+		Pace:    []codexbar.ProviderPace{{Window: "secondary", Stage: "ahead", WillLastToReset: true}},
+	})
+	if windows[0].DeltaPercent != nil || windows[0].ExpectedUsedPercent != nil {
+		t.Fatalf("missing pace numbers must stay missing, got %+v", windows[0])
+	}
+	raw, err := json.Marshal(windows[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "deltaPercent") || strings.Contains(string(raw), "expectedUsedPercent") {
+		t.Fatalf("missing pace numbers must not reach the wire, got %s", raw)
 	}
 }

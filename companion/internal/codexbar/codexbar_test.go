@@ -1419,3 +1419,20 @@ func TestParseProviderPayloadBuildsOrderedUsageWindows(t *testing.T) {
 		t.Fatalf("expected legacy aliases to mirror the first two windows, got %+v", parsed[0].Frame)
 	}
 }
+
+// CodexBar's pace numbers keep their presence: a stage without numbers is not a 0.
+func TestParseProviderPaceKeepsNumberPresence(t *testing.T) {
+	pace := parseProviderPace(map[string]any{"pace": map[string]any{
+		"primary":   map[string]any{"stage": "ahead", "deltaPercent": float64(0), "expectedUsedPercent": float64(0)},
+		"secondary": map[string]any{"stage": "ahead", "expectedUsedPercent": "soon"},
+	}})
+	if len(pace) != 2 {
+		t.Fatalf("expected two pace entries, got %+v", pace)
+	}
+	if !pace[0].HasDeltaPercent || !pace[0].HasExpectedUsedPercent {
+		t.Fatalf("sent zeros are present, got %+v", pace[0])
+	}
+	if pace[1].HasDeltaPercent || pace[1].HasExpectedUsedPercent {
+		t.Fatalf("missing or malformed numbers are not present, got %+v", pace[1])
+	}
+}

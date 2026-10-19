@@ -737,14 +737,14 @@ func parseProviderPace(payload map[string]any) []ProviderPace {
 			continue
 		}
 		pace := ProviderPace{
-			Window:              strings.TrimSpace(strings.ToLower(key)),
-			Stage:               firstString(itemMap, "stage"),
-			DeltaPercent:        intAtPaths(itemMap, "deltaPercent"),
-			ExpectedUsedPercent: intAtPaths(itemMap, "expectedUsedPercent"),
-			WillLastToReset:     boolAtPaths(itemMap, "willLastToReset"),
-			ETASeconds:          int64(intAtPaths(itemMap, "etaSeconds")),
-			Summary:             firstString(itemMap, "summary"),
+			Window:          strings.TrimSpace(strings.ToLower(key)),
+			Stage:           firstString(itemMap, "stage"),
+			WillLastToReset: boolAtPaths(itemMap, "willLastToReset"),
+			ETASeconds:      int64(intAtPaths(itemMap, "etaSeconds")),
+			Summary:         firstString(itemMap, "summary"),
 		}
+		pace.DeltaPercent, pace.HasDeltaPercent = intAtPathsWithPresence(itemMap, "deltaPercent")
+		pace.ExpectedUsedPercent, pace.HasExpectedUsedPercent = intAtPathsWithPresence(itemMap, "expectedUsedPercent")
 		if pace.Stage == "" && pace.Summary == "" {
 			continue
 		}

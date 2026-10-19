@@ -191,10 +191,11 @@ describe("pace in the lane bar", () => {
     expect(container.textContent).not.toMatch(/in reserve|in deficit|On pace/);
   });
 
-  it("draws no pace without an expected-used percent or with a stage it does not know", () => {
+  it("draws no pace without an expected-used percent or a delta, or with a stage it does not know", () => {
     const { container } = renderProvider({
       windows: [
         { id: "session", label: "Session", usedPercent: 40, stage: "ahead", deltaPercent: 5 },
+        { id: "extra", label: "Extra", usedPercent: 40, stage: "ahead", expectedUsedPercent: 35 },
         { id: "weekly", label: "Weekly", usedPercent: 40, stage: "somethingNew", deltaPercent: 5, expectedUsedPercent: 35 },
       ],
     });
