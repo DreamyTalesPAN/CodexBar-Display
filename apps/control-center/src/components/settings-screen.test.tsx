@@ -625,6 +625,35 @@ describe("SettingsScreen standby controls", () => {
     expect(manualPanel("fixed", ["claude"])).toContain("Claude");
   });
 
+  // Calm rule (#713): lime is only for a primary button fill and a switch that
+  // is on. The chosen Display mode card and the chosen provider are framed in
+  // ink, not in the lime ring token (olive in light mode).
+  it("frames the chosen Display mode card and provider in ink, not lime", () => {
+    const html = render(standbyDevice, savedStandby, {
+      ...providerPicker,
+      display: { mode: "fixed", providerIds: ["claude"], configured: true, valid: true },
+      items: [provider("claude", "Claude", true), provider("codex", "Codex", true)],
+    });
+    const section = html.slice(
+      html.indexOf(">Display mode</h2>"),
+      html.indexOf(">Screensaver</h2>"),
+    );
+    // Only the chosen card and the chosen provider are pressed: the Manual card
+    // comes first, the provider list after it.
+    const pressed = Array.from(
+      section.matchAll(/<button\b[^>]*aria-pressed="true"[^>]*>/g),
+      (match) => match[0],
+    );
+    expect(pressed).toHaveLength(2);
+    for (const tag of pressed) {
+      const classes = (tag.match(/class="([^"]*)"/)?.[1] ?? "").split(/\s+/);
+      expect(classes).toContain("border-foreground");
+      expect(classes).toContain("ring-foreground/20");
+      expect(classes).not.toContain("border-ring");
+      expect(classes).not.toContain("ring-ring/20");
+    }
+  });
+
   // Issue #424: the app's global shortcut for the next provider is named
   // under Display mode, and so is the case that the system refused its keys.
   it("names the provider shortcut under Display mode", () => {

@@ -8096,3 +8096,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the approved Appearance A picture (#713), once #758 is in: one page title, the sub-page name, and no sentence under it. This branch alone keeps the earlier look.
 - Scope: `apps/control-center/src/components/theme-library-screen.tsx`, its tests, and this approval record (revert of 74cdbd62). Pull request branch only, not merge or release.
 - What's new: none — a revert without a visible change
+
+## 2026-10-18 — Settings chosen Display mode card and provider in ink, not lime (#748)
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #748, from the Windows click run `winclick-1018b`, finding N7); look unchanged except: the outline around the chosen Display mode card (Automatic or Manual) and around the chosen provider under `Show this provider` on Settings goes from the lime-olive outline to an ink outline of the same thickness.
+- Approved customer-visible result: Only the colour of the outline around the chosen card and the chosen provider changes, to ink. Same words, same places, same size and thickness. Lime stays only for primary button fills and the switch on state. The round selection mark keeps its look. The setup wizard's Display Mode step is not changed by this entry.
+- Scope: `apps/control-center/src/components/setup/setup-selectable-card.tsx` (optional ink tone for the chosen frame, default unchanged), `apps/control-center/src/components/setup/setup-display-mode-screen.tsx` (ink flag passed through `DisplayModeChoice`, only Settings sets it), `apps/control-center/src/components/settings-screen.tsx` (sets the flag), `apps/control-center/src/components/settings-screen.test.tsx` (new test for the ink frame), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a colour change of an existing outline needs no notice.

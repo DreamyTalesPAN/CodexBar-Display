@@ -8,12 +8,19 @@ import { cn } from "@/lib/utils";
  * Selection is a colour change on a border that is always drawn. Adding and
  * removing the ring instead would snap, because a width change cannot be
  * transitioned.
+ *
+ * `ink` frames the chosen card in ink instead of the lime-olive ring colour.
+ * Settings uses it (calm rule: lime only for primary fill and switch on); the
+ * wizard keeps the ring colour.
  */
-export function selectedItemClass(selected: boolean): string {
+export function selectedItemClass(selected: boolean, ink = false): string {
+  const chosenFrame = ink
+    ? "border-foreground ring-2 ring-foreground/20"
+    : "border-ring ring-2 ring-ring/20";
   return cn(
     "cursor-pointer rounded-[var(--radius-card)] text-left transition-all duration-150 ease-out",
     selected
-      ? "border-ring ring-2 ring-ring/20"
+      ? chosenFrame
       : "ring-0 ring-transparent hover:bg-muted/40",
   );
 }
