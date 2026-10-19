@@ -133,3 +133,14 @@ func TestDisplayStreamReportsUsageWarmingAndThemeWaitSettles(t *testing.T) {
 		t.Fatal("other waits must keep waiting for a frame while usage warms up")
 	}
 }
+
+// The job keeps the awaiting-usage message instead of claiming the theme is
+// active while the VibeTV has no usage picture yet.
+func TestThemeInstallProgressKeepsWaitingForUsageOutcome(t *testing.T) {
+	for _, line := range []string{"Display stream: waiting for usage", "Display stream: waiting for AI provider"} {
+		message, _, ok := customerInstallProgress(line, &themeInstallJob{})
+		if !ok || message != themeInstallAwaitingProviderMessage {
+			t.Fatalf("%q mapped to %q (ok=%v)", line, message, ok)
+		}
+	}
+}

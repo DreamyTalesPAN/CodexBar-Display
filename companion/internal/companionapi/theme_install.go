@@ -811,7 +811,8 @@ func customerInstallProgress(line string, job *themeInstallJob) (string, int, bo
 		return "Refreshing display stream.", 94, true
 	case strings.HasPrefix(line, "Display stream: refreshed"):
 		return "Display stream refreshed.", 98, true
-	case strings.HasPrefix(line, "Display stream: waiting for AI provider"):
+	case strings.HasPrefix(line, "Display stream: waiting for AI provider"),
+		strings.HasPrefix(line, "Display stream: waiting for usage"):
 		return themeInstallAwaitingProviderMessage, 98, true
 	case strings.HasPrefix(line, "Done:"):
 		return "Theme installed.", 88, true
