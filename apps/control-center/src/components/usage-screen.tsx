@@ -245,15 +245,7 @@ export function UsageScreen({
             updating={tokenUsageUpdating}
           />
         ) : tokenUsagePending ? (
-          <Card
-            aria-live="polite"
-            className="mb-6 min-h-[294px] items-center justify-center"
-            data-testid="token-history-loading"
-            role="status"
-          >
-            <Spinner className="size-6" />
-            <span className="sr-only">Token history is loading</span>
-          </Card>
+          <TokenUsageSkeleton providerCount={providers.length} />
         ) : null}
 
         {tiles.length > 0 ? (
@@ -352,6 +344,48 @@ function usageRefreshNotice(
     default:
       return null;
   }
+}
+
+// Stands in for TokenUsageOverTimePanel while its token history loads (issue
+// #598): the same blocks at the same heights, grey and without figures, so the
+// tiles below do not move when the graph arrives. One legend chip per provider,
+// below the chart as the chart will show. Under reduced motion the blocks stand still.
+function TokenUsageSkeleton({ providerCount }: { providerCount: number }) {
+  return (
+    <div aria-live="polite" data-testid="token-history-loading" role="status">
+      {/* A heading keeps the provider tiles below in order for assistive tech. */}
+      <h2 className="sr-only">Token history is loading</h2>
+      <div aria-hidden>
+        <section>
+          <div className="flex h-8 items-center justify-between gap-4">
+            <Skeleton className="h-3.5 w-20 motion-reduce:animate-none" />
+            {/* The Refresh button's place. */}
+            <div className="size-8 shrink-0" />
+          </div>
+          <div className="mt-3.5">
+            {/* The hero size's line box: 46 px at line height 1.05. */}
+            <div className="flex h-[48.3px] items-center">
+              <Skeleton className="h-9 w-56 max-w-full motion-reduce:animate-none" />
+            </div>
+            <div className="mt-2 flex h-[19.5px] items-center">
+              <Skeleton className="h-3.5 w-52 max-w-full motion-reduce:animate-none" />
+            </div>
+          </div>
+        </section>
+        <div className="relative mt-8 min-h-96">
+          <Skeleton className="h-96 w-full motion-reduce:animate-none" />
+        </div>
+        <div className="mt-4 mb-10 flex flex-wrap items-center gap-x-[18px] gap-y-1">
+          {/* Each chip reserves the legend's line box (19.5 px), so a wrapped row is as tall as the loaded one. */}
+          {Array.from({ length: providerCount }, (_, index) => (
+            <div className="flex h-[19.5px] items-center" key={index}>
+              <Skeleton className="h-3.5 w-14 motion-reduce:animate-none" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function TokenUsageOverTimePanel({

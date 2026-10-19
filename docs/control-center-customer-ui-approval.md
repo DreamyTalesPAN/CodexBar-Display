@@ -7864,3 +7864,38 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none beyond the colours of the entries above. A provider other than Claude and Codex (for example Gemini) now takes one of the three colours left (chart-3 to chart-5) instead of the colour of Codex or Claude, which it could share before. Claude and Codex are unchanged.
 - Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (chart colour assignment only), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — colour fix only, no new notice
+
+## 2026-10-17 — Usage: grey outline of the head and chart while the token history loads (#598, stacked on #714)
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #598); look unchanged except: small spinner in the empty chart area → grey outline of the head and chart while loading.
+- Approved customer-visible result: none yet; pending Paul's review. Proposed: while the token history loads, the head ("Last 30 days" line, legend, number and words line) and the chart area are grey blocks at the heights of the finished graph, no spinner, no figures; the same look under reduced motion, without the pulse.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (loading state of the token history only), the loading assertions of `scripts/test-customer-flows.mjs`, and this approval record. Stacked on #714; pull request branch only, not merge or release.
+- What's new: none — loading state only, no new notice
+
+## 2026-10-17 — Usage: grey blocks follow the bigger head and the legend below the chart while the token history loads (#598, stacked on #714)
+
+- User approval: pending — Paul sees the grey loading blocks on the bigger head (#714); look unchanged except: hero-size block for the total, chart block 384 px instead of 256 px, legend chips below the chart instead of in the head line.
+- Approved customer-visible result: none yet; pending Paul's review. Proposed: while the token history loads, the grey blocks keep the layout of #714 (head line with the Refresh place, a block at the hero size for the total, the words line, a 384 px chart block, one legend chip per provider below it). No text change.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (loading block only), and this approval record. Stacked on #714; pull request branch only, not merge or release.
+- What's new: none — loading state only, no new notice
+
+## 2026-10-17 — Approval record: the #714 colour fixes merged into the skeleton (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the #714 colour fixes and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-17 — Usage loading blocks: the grey legend blocks wrap on a narrow screen like the legend (Codex review on #724)
+
+- User approval: pending — Paul reviews this PR (fix of a Codex finding on #724); look unchanged on a wide screen. On a narrow screen (about 390 px) with five or more providers, the grey legend blocks now wrap onto a second row instead of being clipped, as the loaded legend does.
+- Approved customer-visible result: none beyond the loading blocks of the entry above. Only the grey legend row changes: it wraps like the loaded legend and keeps its height on one line. No text, no other layout.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (loading legend row only), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — loading state only, no new notice
+
+## 2026-10-18 — Usage loading blocks: each grey legend chip keeps the legend's line height when it wraps (Codex review on #724)
+
+- User approval: pending — Paul reviews this PR (fix of a Codex finding on #724); look unchanged. The grey legend blocks keep the height of the loaded legend row when they wrap on a narrow screen, so the tiles below do not jump when the legend arrives.
+- Approved customer-visible result: none beyond the loading blocks of the entries above. Only the height of the grey legend row changes (one line of the legend's height per row); no text, no other layout.
+- Scope: `usage-screen.tsx` (loading legend row only), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — loading state only, no new notice
