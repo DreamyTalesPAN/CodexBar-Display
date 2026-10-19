@@ -7886,3 +7886,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Not decided. Exact rendered result of this option: a selected setup card has an ink border (`#1B1B1B` light, `#EDEDED` dark) and a soft 20 % ink halo (before: 20 % olive `#506600` light, 20 % lime `#CCFF00` dark). The selected card is not changed to a full-strength ring in this option; that is the topic of option #775. Keyboard focus is a full-strength ink ring (`#1B1B1B` light, `#EDEDED` dark).
 - Scope: this approval record only. No code change to `setup-selectable-card.tsx` in this commit. Not merged, not released.
 - What's new: none — no new text, screen or control; only the colour of the selected card border and halo and of the keyboard focus ring change
+
+## 2026-10-19 — Group: Calm redesign, shell and tabs (#763 #758 #748 #750 #753 #754 #759 #762 #755 #710 #761, options #772 #775 #776)
+
+- User approval: pending — Paul reviews this group (parts: #763 #758 #748 #750 #753 #754 #759 #762 #755 #710 #761; options #772 #775 #776); look unchanged except: none beyond the entries of the parts above. The one merge fix: with option #776 merged, the chosen Display mode card and provider in Settings keep a faint ink halo at rest but the keyboard focus ring on them is full-strength ink (before the merge it was a 50 % ink ring from #748).
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries of the parts above.
+- Scope: `apps/control-center/src/components/setup/setup-selectable-card.tsx` (ink focus ring at full strength) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a merge fix between #748 and #776

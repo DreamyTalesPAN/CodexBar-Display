@@ -15,7 +15,11 @@ import { cn } from "@/lib/utils";
  */
 export function selectedItemClass(selected: boolean, ink = false): string {
   const chosenFrame = ink
-    ? "border-foreground ring-2 ring-foreground/20 focus-visible:border-foreground focus-visible:ring-foreground/50"
+    ? // Resting frame is a faint ink ring; the focus ring is full ink (#776).
+      cn(
+        "border-foreground ring-2 ring-foreground/20",
+        "focus-visible:border-foreground focus-visible:ring-foreground",
+      )
     : "border-ring ring-2 ring-ring/20";
   return cn(
     "cursor-pointer rounded-[var(--radius-card)] text-left transition-all duration-150 ease-out",
