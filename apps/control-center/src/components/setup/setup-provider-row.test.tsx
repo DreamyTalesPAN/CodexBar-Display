@@ -31,6 +31,11 @@ describe("SetupProviderRow", () => {
     },
   );
 
+  it("resizes the switch only in the calm Setup look, not in Settings", () => {
+    expect(render()).not.toContain("w-[34px]");
+    expect(render({ calm: true })).toContain("w-[34px]");
+  });
+
   it("keeps error text in the popup and offers its opener plus retry", () => {
     const html = render({ health: "auth_required" });
     expect(html).toContain('aria-label="Show provider message for Claude Code"');

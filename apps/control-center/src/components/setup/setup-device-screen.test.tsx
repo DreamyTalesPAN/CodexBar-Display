@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "@/test/axe";
 import type { DeviceCandidate } from "../control-center-types";
+import { candidateKey } from "./setup-connection";
 import { SetupDeviceScreen } from "./setup-device-screen";
 
 const known: DeviceCandidate = {
@@ -187,6 +188,71 @@ describe("SetupDeviceScreen while the scan is still running", () => {
     const html = render({ candidates: [], searching: false });
 
     expect(html).toContain("0 VibeTVs found on your WiFi.");
+  });
+});
+
+// Calm Setup Wizard variant B (pictures B-04 and B-08, #713).
+describe("SetupDeviceScreen connection method and firmware progress", () => {
+  const cableCandidate: DeviceCandidate = {
+    target: "cable://vibetv",
+    deviceId: "5804508",
+    transport: "cable",
+  };
+
+  it("puts the round check mark on the selected connection method only", () => {
+    const html = render({ candidates: [cableCandidate], showModeChoice: true, showCandidates: false });
+    const cards = [...html.matchAll(/<button[^>]*aria-label="(Cable|WiFi)"[^>]*>([\s\S]*?)<\/button>/g)];
+
+    expect(cards).toHaveLength(2);
+    const marked = cards.filter((card) => card[2].includes('data-selected="true"'));
+    expect(marked).toHaveLength(1);
+    expect(marked[0][0]).toContain('data-state="on"');
+  });
+
+  it("shows the firmware progress bar with the percent the update reports", () => {
+    const html = render({
+      connecting: true,
+      connectPhase: "updating-firmware",
+      firmwarePercent: 42,
+      logLines: [{ id: "updating", text: "updating firmware · 42% — keep VibeTV powered on" }],
+    });
+
+    expect(html).toContain('role="progressbar"');
+    expect(html).toContain('aria-valuenow="42"');
+  });
+
+  it("hides the progress bar when no real percent exists", () => {
+    const html = render({
+      connecting: true,
+      connectPhase: "updating-firmware",
+      logLines: [{ id: "updating", text: "updating firmware — keep VibeTV powered on" }],
+    });
+
+    expect(html).not.toContain('role="progressbar"');
+  });
+
+  it("hides the progress bar outside the firmware update", () => {
+    const html = render({ connecting: true, connectPhase: "checking-firmware", firmwarePercent: 42 });
+
+    expect(html).not.toContain('role="progressbar"');
+  });
+});
+
+// Calm Setup Wizard variant B, step 2 (picture B-02, #713): the device cards use the round mark.
+describe("SetupDeviceScreen device cards", () => {
+  it("puts the round mark on the selected device card and an empty ring on the others", () => {
+    const html = render({ selectedTarget: candidateKey(known) });
+    const cards = [...html.matchAll(/<button[^>]*role="radio"[^>]*>([\s\S]*?)<\/button>/g)];
+
+    expect(cards).toHaveLength(2);
+    const selected = cards.filter((card) => card[0].includes('aria-checked="true"'));
+    const unselected = cards.filter((card) => card[0].includes('aria-checked="false"'));
+    expect(selected).toHaveLength(1);
+    expect(unselected).toHaveLength(1);
+    expect(selected[0][1]).toContain('data-selected="true"');
+    expect(selected[0][1]).toContain("bg-foreground");
+    expect(unselected[0][1]).not.toContain("data-selected");
+    expect(unselected[0][1]).toContain("inset_0_0_0_1px_color-mix");
   });
 });
 

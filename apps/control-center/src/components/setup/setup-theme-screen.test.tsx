@@ -32,12 +32,12 @@ describe("SetupThemeScreen", () => {
     }
   });
 
-  it("gives the theme choice stronger visual weight", () => {
+  it("keeps the theme title at the shared 28px step and shows a square preview", () => {
     const html = render();
 
-    expect(html).toContain("text-[40px]");
-    expect(html).toContain("text-lg");
-    expect(html).toContain("h-[72px] w-[100px]");
+    expect(html).toContain("text-[28px]");
+    expect(html).not.toContain("text-[40px]");
+    expect(html).toContain("size-20 shrink-0 rounded-[6px]");
   });
 
   it("keeps the install action to the one word, whichever theme is chosen", () => {
