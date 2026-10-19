@@ -7,10 +7,10 @@
 // shell needs to know it asks the Companion.
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
@@ -41,6 +41,13 @@ const LAUNCH_UPDATE_CHECK_LIMIT: Duration = Duration::from_secs(5);
 const LAUNCH_UPDATE_DOWNLOAD_LIMIT: Duration = Duration::from_secs(180);
 const LAUNCH_UPDATE_STALL_LIMIT: Duration = Duration::from_secs(20);
 const LAUNCH_UPDATE_MARKER: &str = "launch-update-attempt.txt";
+// While the app runs it looks for its update this often, like the Companion's
+// own release check, and installs it only with the window closed.
+const IDLE_UPDATE_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
+// An update installed with the window closed relaunches the app with this
+// argument and this note, and the app comes back in the tray only.
+const AFTER_IDLE_UPDATE_ARG: &str = "--after-idle-update";
+const IDLE_UPDATE_RELAUNCH_MARKER: &str = "idle-update-relaunch.txt";
 
 const MENU_OPEN: &str = "open";
 const MENU_RELOAD: &str = "reload";
@@ -64,7 +71,102 @@ struct Shell {
     // One updater at a time: the check at launch, the tray item and
     // vibetv://check-for-updates must not launch two NSIS installers over
     // the same files.
-    updating: AtomicBool,
+    updater: Mutex<Updater>,
+}
+
+// Who holds the updater, in one lock so a click or an opened window can
+// never fall between two pieces of it.
+#[derive(Clone, Copy, PartialEq)]
+enum Updater {
+    Free,
+    // At launch, or the customer's own run.
+    Busy,
+    // The check with the window closed. A click on Update or the tray item
+    // meanwhile is noted in `asked`, an opened window in `presented`.
+    Idle { asked: bool, presented: bool },
+    // That check has decided to install with the window closed; the
+    // installer starts now and the app is to come back in the tray. A click
+    // meanwhile is kept in `asked` in case the installer fails.
+    IdleInstalling { asked: bool },
+}
+
+// Takes the updater for `run`; false while it is held. A click while the
+// check with the window closed holds it is noted for that check.
+fn take_updater(app: &AppHandle, run: UpdateRun) -> bool {
+    let shell = app.state::<Shell>();
+    let mut updater = shell.updater.lock().unwrap();
+    match *updater {
+        Updater::Free => {
+            *updater = if run == UpdateRun::Idle {
+                Updater::Idle { asked: false, presented: false }
+            } else {
+                Updater::Busy
+            };
+            true
+        }
+        Updater::Idle { presented, .. } if run == UpdateRun::Asked => {
+            *updater = Updater::Idle { asked: true, presented };
+            log("update requested during the check with the window closed; it takes the request over");
+            false
+        }
+        Updater::IdleInstalling { .. } if run == UpdateRun::Asked => {
+            *updater = Updater::IdleInstalling { asked: true };
+            // The customer asked for the update: if the installer succeeds,
+            // the app must come back with its window, as after a present.
+            if let Ok(folder) = app.path().app_local_data_dir() {
+                launch_update::release(&folder.join(IDLE_UPDATE_RELAUNCH_MARKER));
+            }
+            log("update requested while the installer starts; the app comes back with its window");
+            false
+        }
+        _ => false,
+    }
+}
+
+// Frees the updater; true when a click came during the check with the window
+// closed and was not used by an install.
+fn free_updater(app: &AppHandle) -> bool {
+    let shell = app.state::<Shell>();
+    let mut updater = shell.updater.lock().unwrap();
+    let asked = matches!(*updater, Updater::Idle { asked: true, .. });
+    *updater = Updater::Free;
+    asked
+}
+
+enum IdleDecision {
+    // A click came meanwhile: the customer's install, the window comes back.
+    Asked,
+    // The window was opened: nothing is installed.
+    InUse,
+    // Install with the window closed; the relaunch note is on file.
+    Hidden,
+}
+
+// The last word of the check with the window closed, under the same lock as
+// `present_window`: a window opened before it stops the install, one opened
+// after it removes the relaunch note so the app comes back with its window.
+// Visibility is read before the lock: Tauri asks the main thread, where a
+// tray click may be waiting for this lock in `present_window`. A window opened
+// after that read is caught by `presented`.
+fn decide_idle_install(app: &AppHandle, note: Option<&Path>) -> IdleDecision {
+    let visible = window_in_use(app);
+    let shell = app.state::<Shell>();
+    let mut updater = shell.updater.lock().unwrap();
+    match *updater {
+        Updater::Idle { asked: true, .. } => {
+            *updater = Updater::Busy;
+            IdleDecision::Asked
+        }
+        Updater::Idle { presented: true, .. } => IdleDecision::InUse,
+        _ if visible => IdleDecision::InUse,
+        _ => {
+            if let Some(note) = note {
+                launch_update::note_relaunch(note, unix_now());
+            }
+            *updater = Updater::IdleInstalling { asked: false };
+            IdleDecision::Hidden
+        }
+    }
 }
 
 fn main() {
@@ -96,7 +198,7 @@ fn main() {
             // The update at launch owns the start until it has ended.
             preparing: Mutex::new(true),
             presentations: AtomicU64::new(0),
-            updating: AtomicBool::new(false),
+            updater: Mutex::new(Updater::Free),
         })
         .setup(|app| {
             let handle = app.handle().clone();
@@ -104,7 +206,8 @@ fn main() {
             if let Err(error) = handle.autolaunch().enable() {
                 log(&format!("could not enable autostart: {error}"));
             }
-            create_window(&handle, register_provider_shortcut(handle.clone()))?;
+            let visible = !relaunched_after_idle_update(&handle);
+            create_window(&handle, register_provider_shortcut(handle.clone()), visible)?;
             let args: Vec<_> = std::env::args_os().collect();
             if args.len() == 2 {
                 queue_install_link(&handle, args[1].to_str());
@@ -112,7 +215,11 @@ fn main() {
             std::thread::spawn(move || {
                 launch_update_check(&handle);
                 *handle.state::<Shell>().preparing.lock().unwrap() = false;
-                prepare_and_load(handle);
+                load(handle.clone(), visible);
+                loop {
+                    std::thread::sleep(IDLE_UPDATE_INTERVAL);
+                    idle_update_check(&handle);
+                }
             });
             Ok(())
         })
@@ -235,10 +342,11 @@ fn configure_tray(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-fn create_window(app: &AppHandle, provider_shortcut: bool) -> tauri::Result<()> {
+fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tauri::Result<()> {
     let actions = app.clone();
     let window = WebviewWindowBuilder::new(app, WINDOW_LABEL, WebviewUrl::App("index.html".into()))
         .title("VibeTV Control Center")
+        .visible(visible)
         .inner_size(1280.0, 900.0)
         .min_inner_size(960.0, 640.0)
         // Issue #548: 1280x900 plus the title bar is taller than the space
@@ -278,9 +386,23 @@ fn create_window(app: &AppHandle, provider_shortcut: bool) -> tauri::Result<()> 
 }
 
 fn present_window(app: &AppHandle) {
-    app.state::<Shell>()
-        .presentations
-        .fetch_add(1, Ordering::SeqCst);
+    let shell = app.state::<Shell>();
+    shell.presentations.fetch_add(1, Ordering::SeqCst);
+    {
+        // The update check with the window closed must hear of it.
+        let mut updater = shell.updater.lock().unwrap();
+        match *updater {
+            Updater::Idle { asked, .. } => *updater = Updater::Idle { asked, presented: true },
+            Updater::IdleInstalling { .. } => {
+                // Too late to stop the installer: the app comes back with
+                // its window instead.
+                if let Ok(folder) = app.path().app_local_data_dir() {
+                    launch_update::release(&folder.join(IDLE_UPDATE_RELAUNCH_MARKER));
+                }
+            }
+            _ => {}
+        }
+    }
     if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
         let _ = window.show();
         let _ = window.unminimize();
@@ -647,6 +769,12 @@ fn dispatch_status(app: &AppHandle, detail: serde_json::Value) {
 // wait until the runtime that answers is the one just registered, then load
 // the Control Center. Returns false when the runtime never became healthy.
 fn prepare_and_load(app: AppHandle) -> bool {
+    load(app, true)
+}
+
+// `present` is false only after an update installed with the window closed:
+// the app then loads in the tray, where the customer left it.
+fn load(app: AppHandle, present: bool) -> bool {
     let shell = app.state::<Shell>();
     {
         let mut preparing = shell.preparing.lock().unwrap();
@@ -660,7 +788,9 @@ fn prepare_and_load(app: AppHandle) -> bool {
         *preparing = true;
     }
     show_status(&app, None);
-    present_window(&app);
+    if present {
+        present_window(&app);
+    }
     let result = prepare_runtime(&app);
     match &result {
         Ok(origin) => {
@@ -835,21 +965,22 @@ fn runtime_origin_candidates() -> Vec<Url> {
 // has no console, so every outcome the customer waits for is shown in a
 // native message box; stderr alone would leave the click unanswered.
 fn check_for_updates(app: AppHandle) {
-    if app
-        .state::<Shell>()
-        .updating
-        .swap(true, Ordering::SeqCst)
-    {
-        log("update check already running; ignoring repeated request");
+    // During the check with the window closed the click is noted: that
+    // check installs right away, or hands over to a new request when it ends
+    // without installing.
+    if !take_updater(&app, UpdateRun::Asked) {
+        log("update check already running; this request is not started");
         return;
     }
     tauri::async_runtime::spawn(async move {
-        let result = run_update(&app, false).await;
+        let result = run_update(&app, UpdateRun::Asked).await;
         // The installer relaunches this process on success; every other
         // outcome frees the guard for the next request.
-        app.state::<Shell>().updating.store(false, Ordering::SeqCst);
+        free_updater(&app);
         match result {
-            Ok(UpdateOutcome::Installed) | Ok(UpdateOutcome::AlreadyTried) => {}
+            Ok(UpdateOutcome::Installed)
+            | Ok(UpdateOutcome::AlreadyTried)
+            | Ok(UpdateOutcome::InUse) => {}
             Ok(UpdateOutcome::UpToDate) => show_message("VibeTV Control Center is up to date."),
             Ok(UpdateOutcome::Busy) => {
                 log("update deferred: a firmware update or theme install owns the runtime");
@@ -873,36 +1004,112 @@ fn check_for_updates(app: AppHandle) {
 // within the limit, a running VibeTV update, or a download that fails, stalls
 // or takes too long all let the start go on without a message.
 fn launch_update_check(app: &AppHandle) {
-    if app
-        .state::<Shell>()
-        .updating
-        .swap(true, Ordering::SeqCst)
-    {
+    if !take_updater(app, UpdateRun::Launch) {
         return;
     }
-    let result = tauri::async_runtime::block_on(run_update(app, true));
-    app.state::<Shell>().updating.store(false, Ordering::SeqCst);
+    let result = tauri::async_runtime::block_on(run_update(app, UpdateRun::Launch));
+    free_updater(app);
     match result {
         Ok(UpdateOutcome::Installed) => {}
         Ok(UpdateOutcome::UpToDate) => log("launch update check: no newer version"),
         Ok(UpdateOutcome::AlreadyTried) => {
-            log("launch update skipped: this version was tried at a start in the last 24 hours, or the attempt could not be noted")
+            log("launch update skipped: this version was tried in the last 24 hours, or the attempt could not be noted")
         }
         Ok(UpdateOutcome::Busy) => {
             log("launch update skipped: a firmware update or theme install owns the runtime")
         }
+        Ok(UpdateOutcome::InUse) => {}
         Err(error) => log(&format!("launch update skipped: {error}")),
     }
 }
 
+// The app runs for weeks in the tray, so an update published meanwhile would
+// wait for the next start. It is installed while the customer is not using
+// the app: only with the window closed, never during a VibeTV update or theme
+// install, and without a message whatever the outcome. The same note as at
+// launch keeps it to one attempt per version in 24 hours. Installing restarts
+// the app and the background service; VibeTV gets no new numbers for those
+// seconds. The window comes back closed (`AFTER_IDLE_UPDATE_ARG`).
+fn idle_update_check(app: &AppHandle) {
+    if window_in_use(app) {
+        log("update check skipped: the window is open");
+        return;
+    }
+    if *app.state::<Shell>().preparing.lock().unwrap() {
+        return;
+    }
+    if !take_updater(app, UpdateRun::Idle) {
+        return;
+    }
+    let result = tauri::async_runtime::block_on(run_update(app, UpdateRun::Idle));
+    // A click that came during the check and was not used by an install:
+    // it gets its own run, with its messages.
+    if free_updater(app) {
+        check_for_updates(app.clone());
+    }
+    match result {
+        Ok(UpdateOutcome::Installed) => {}
+        Ok(UpdateOutcome::UpToDate) => log("update check: no newer version"),
+        Ok(UpdateOutcome::AlreadyTried) => {
+            log("update skipped: this version was tried in the last 24 hours, or the attempt could not be noted")
+        }
+        Ok(UpdateOutcome::Busy) => {
+            log("update skipped: a firmware update or theme install owns the runtime")
+        }
+        Ok(UpdateOutcome::InUse) => log("update skipped: the window was opened before the install"),
+        Err(error) => log(&format!("update skipped: {error}")),
+    }
+}
+
+// Shown, also minimized to the taskbar (a minimized window stays visible):
+// the customer may be in the middle of something there. Only the hidden
+// window in the tray is free; a window closed while minimized is hidden and
+// still minimized, so the minimized state alone says nothing.
+fn window_in_use(app: &AppHandle) -> bool {
+    app.get_webview_window(WINDOW_LABEL)
+        .map(|window| window.is_visible().unwrap_or(true))
+        .unwrap_or(false)
+}
+
+// True once, for the start the installer of an update with the window closed
+// relaunched. The argument alone is not enough: a process keeps its arguments,
+// and the installer of a later update the customer asked for hands them on.
+fn relaunched_after_idle_update(app: &AppHandle) -> bool {
+    if !std::env::args().any(|arg| arg == AFTER_IDLE_UPDATE_ARG) {
+        return false;
+    }
+    let Ok(folder) = app.path().app_local_data_dir() else {
+        return false;
+    };
+    launch_update::take_relaunch_note(&folder.join(IDLE_UPDATE_RELAUNCH_MARKER), unix_now())
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_secs())
+        .unwrap_or(0)
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum UpdateRun {
+    // The tray item or the Updates tab: the customer asked.
+    Asked,
+    // At launch, before the app looks for a VibeTV (#565).
+    Launch,
+    // While the app runs with its window closed.
+    Idle,
+}
+
 // Check, download and install. On Windows a successful install ends this
 // process inside `update.install`.
-async fn run_update(app: &AppHandle, at_launch: bool) -> Result<UpdateOutcome, String> {
+async fn run_update(app: &AppHandle, run: UpdateRun) -> Result<UpdateOutcome, String> {
     let mut builder = app.updater_builder();
-    // The marker keeps the check at launch to one attempt per version in
-    // 24 hours.
+    // The marker keeps the updates nobody asked for to one attempt per
+    // version in 24 hours.
     let mut marker: Option<PathBuf> = None;
-    if at_launch {
+    let mut relaunch_note: Option<PathBuf> = None;
+    if run != UpdateRun::Asked {
         // This limit covers the check only: the plugin hands the update
         // back without one, so the download gets its own below.
         builder = builder
@@ -913,6 +1120,12 @@ async fn run_update(app: &AppHandle, at_launch: bool) -> Result<UpdateOutcome, S
             .app_local_data_dir()
             .map_err(|error| format!("no folder for the launch update marker: {error}"))?;
         marker = Some(folder.join(LAUNCH_UPDATE_MARKER));
+        if run == UpdateRun::Idle {
+            // NSIS hands everything after /ARGS to the relaunched app, and
+            // the plugin puts these arguments last.
+            builder = builder.installer_arg(AFTER_IDLE_UPDATE_ARG);
+            relaunch_note = Some(folder.join(IDLE_UPDATE_RELAUNCH_MARKER));
+        }
     }
     let updater = builder.build().map_err(|error| format!("updater unavailable: {error}"))?;
     let update = updater.check().await.map_err(|error| format!("update check failed: {error}"))?;
@@ -920,15 +1133,14 @@ async fn run_update(app: &AppHandle, at_launch: bool) -> Result<UpdateOutcome, S
         return Ok(UpdateOutcome::UpToDate);
     };
     if let Some(marker) = &marker {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|since| since.as_secs())
-            .unwrap_or(0);
+        let now = unix_now();
         if !launch_update::claim(marker, &update.version, now) {
             return Ok(UpdateOutcome::AlreadyTried);
         }
         update.timeout = Some(LAUNCH_UPDATE_DOWNLOAD_LIMIT);
-        show_updating(app, &update.version);
+        if run == UpdateRun::Launch {
+            show_updating(app, &update.version);
+        }
     }
     log(&format!("downloading update {}", update.version));
     let bytes = update
@@ -950,8 +1162,42 @@ async fn run_update(app: &AppHandle, at_launch: bool) -> Result<UpdateOutcome, S
         }
         return Ok(UpdateOutcome::Busy);
     }
+    // Decided only now: the window may have been opened during the download
+    // or while the hold was claimed, which can take a few runtime requests. A
+    // click on Update meanwhile makes this the customer's install: it goes
+    // on, and the app comes back with its window.
+    let mut asked = false;
+    if run == UpdateRun::Idle {
+        match decide_idle_install(app, relaunch_note.as_deref()) {
+            IdleDecision::Asked => {
+                asked = true;
+                relaunch_note = None;
+            }
+            IdleDecision::InUse => {
+                let _ = tauri::async_runtime::spawn_blocking(release_update_hold).await;
+                // Nothing was tried; the next check may install this version.
+                if let Some(marker) = &marker {
+                    launch_update::release(marker);
+                }
+                return Ok(UpdateOutcome::InUse);
+            }
+            IdleDecision::Hidden => {}
+        }
+    }
     log(&format!("installing update {}", update.version));
     if let Err(error) = update.install(bytes) {
+        if let Some(note) = &relaunch_note {
+            launch_update::release(note);
+        }
+        if run == UpdateRun::Idle {
+            // Back to the check, so freeing the updater works as before; a
+            // click, before or while the installer started, still gets its
+            // answer, from its own run.
+            let shell = app.state::<Shell>();
+            let mut updater = shell.updater.lock().unwrap();
+            let clicked = asked || matches!(*updater, Updater::IdleInstalling { asked: true });
+            *updater = Updater::Idle { asked: clicked, presented: false };
+        }
         // Nothing was replaced; give the runtime back to device jobs.
         let _ = tauri::async_runtime::spawn_blocking(release_update_hold).await;
         return Err(format!("update install failed: {error}"));
@@ -963,8 +1209,10 @@ enum UpdateOutcome {
     Installed,
     UpToDate,
     Busy,
-    // Only the check at launch: it tries a version once in 24 hours.
+    // Only the updates nobody asked for: they try a version once in 24 hours.
     AlreadyTried,
+    // Only with the window closed: it was opened before the install.
+    InUse,
 }
 
 // Native message box: works while the webview is hidden or still loading.
