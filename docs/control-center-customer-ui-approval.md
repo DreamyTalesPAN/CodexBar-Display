@@ -7544,3 +7544,37 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the calm shell entry of 2026-10-18 (#758): Theme Studio keeps its own "Appearance" header.
 - Scope: `apps/control-center/src/components/theme-studio/theme-studio-preview.tsx` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — a header flag in the development preview
+## 2026-10-17 — Settings calm redesign, variant A (#713)
+
+- User approval: pending — Paul reviews this PR (calm redesign Settings, variant A, #713); look: Settings as in `settings-A.png`: each section has its name on the left and a divider, AI providers last.
+- Approved customer-visible result: Settings reads top to bottom as Display mode, Brightness, Screensaver, Connection, Setup, AI providers. Section names sit in a fixed left column, controls on the right. Connection is a list of two radio rows (USB-C, WiFi) with their descriptions instead of two cards. Screensaver rows show the name on the left (Show screensaver, Show after, Brightness in screensaver) and the control beside it. Setup shows each button beside its line. Text before → after: the section heading "Display" becomes "Brightness" (the brightness slider is the only control in it); no other text changes.
+- Scope: `apps/control-center/src/components/settings-screen.tsx` (layout and classes only, same controls, same behaviour), `settings-screen.test.tsx` (pinned section order, headings and row order updated; behaviour assertions unchanged), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a re-arranged Settings page with the same settings needs no notice.
+
+## 2026-10-17 — Settings calm redesign, rows wrap at narrow widths (#713)
+
+- User approval: pending — Paul reviews this PR (calm redesign Settings, variant A, #713); look: unchanged from the entry above, except that label-and-control rows wrap below their label on a narrow Settings track, and brightness status text ("Loading", "Not supported") keeps its natural width.
+- Approved customer-visible result: as in the entry above. When the Settings column is narrower than the label column plus the control, the control moves below its label instead of being squeezed or clipped. The setup explanations wrap the same way. Brightness shows "Loading" or "Not supported" in full. No new text, button or dialog.
+- Scope: `apps/control-center/src/components/settings-screen.tsx` (wrap and width classes only), `apps/control-center/scripts/test-customer-flows.mjs` (the Settings wait now uses the "Brightness" heading), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a layout fix of the same Settings page needs no notice.
+
+## 2026-10-18 — Settings calm leftovers: 13 px descriptions and an underlined link (#748)
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #748, from the Mac click run on build 9999.0.7161); look unchanged except: the two Connection descriptions ("Requires a data cable connected to this Mac." and "No cable needed — VibeTV can sit anywhere on your desk.") and the Display mode shortcut line go from about 14–16 px to 13 px, and "Show more providers (N left)" under AI providers goes from bold to regular weight with an underline. Text before → after: none; the words stay the same.
+- Approved customer-visible result: Only the size and weight of the text named above change, so Settings reads the same words in the same places. The Connection descriptions and the shortcut line match the 13 px small text of the other calm pages. The "Show more providers" control is an ink link with an underline and regular weight, as the other links on Settings are, instead of a bold label without an underline. No new text, control or dialog.
+- Scope: `apps/control-center/src/components/settings-screen.tsx` (classes on the Connection descriptions and the shortcut line), `settings-screen.test.tsx`, `apps/control-center/src/components/setup/setup-providers-screen.tsx` (the "Show more providers" button uses the link variant, regular weight), `setup-providers-screen.test.tsx`, and this approval record. Pull request branch only, not merge or release. Not seen by Paul yet.
+- What's new: none — a size and underline fix of existing text, no new feature
+
+## 2026-10-18 — Settings remaining small text at 13 px (#748)
+
+- User approval: pending — Paul reviews (remaining Settings help texts at 13 px, decided by the communicator 18.10.).
+- Approved customer-visible result: Only the size of the small grey text on Settings changes to 13 px, with the same words in the same places. That is the grey status line beside `Choose screensaver` (the installed-screensaver line), the notice above Display mode, the help texts under `Run setup again` and `Reset to factory settings`, the brightness reading next to its slider, and the `Configured` / `Not configured` status of a secret setting. The section names (Display mode, Brightness, Screensaver, Connection, Setup, AI providers) go from 14 px to 13 px, still semibold. Text before → after: none; the words stay the same. The `Choose screensaver` link and the buttons keep their size. The page title and the device-preview cards are unchanged. No new text, control or dialog.
+- Scope: `apps/control-center/src/components/settings-screen.tsx` (classes only), `apps/control-center/src/components/preference-control.tsx` (classes of the secret status text, used only on Settings), `settings-screen.test.tsx`, and this approval record. Pull request branch only, not merge or release. Not seen by Paul yet.
+- What's new: none — a size change of existing small text needs no notice.
+
+## 2026-10-18 — Settings chosen Display mode card and provider in ink, not lime (#748)
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #748, from the Windows click run `winclick-1018b`, finding N7); look unchanged except: the outline around the chosen Display mode card (Automatic or Manual) and around the chosen provider under `Show this provider` on Settings goes from the lime-olive outline to an ink outline of the same thickness.
+- Approved customer-visible result: Only the colour of the outline around the chosen card and the chosen provider changes, to ink. Same words, same places, same size and thickness. Lime stays only for primary button fills and the switch on state. The round selection mark keeps its look. The setup wizard's Display Mode step is not changed by this entry.
+- Scope: `apps/control-center/src/components/setup/setup-selectable-card.tsx` (optional ink tone for the chosen frame, default unchanged), `apps/control-center/src/components/setup/setup-display-mode-screen.tsx` (ink flag passed through `DisplayModeChoice`, only Settings sets it), `apps/control-center/src/components/settings-screen.tsx` (sets the flag), `apps/control-center/src/components/settings-screen.test.tsx` (new test for the ink frame), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a colour change of an existing outline needs no notice.

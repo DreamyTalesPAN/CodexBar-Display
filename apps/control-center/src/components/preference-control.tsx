@@ -127,7 +127,7 @@ export function PreferenceControl({
       );
     case "secret":
       return (
-        <span className="text-sm text-muted-foreground">
+        <span className="text-[13px] text-muted-foreground">
           {descriptor.secretState === "configured"
             ? "Configured"
             : "Not configured"}

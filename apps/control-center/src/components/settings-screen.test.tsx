@@ -217,8 +217,9 @@ describe("SettingsScreen standby controls", () => {
 
     expect(html).toContain(">Screensaver</h2>");
     expect(html).toContain("Show screensaver");
-    expect(html.indexOf('id="vibetv-standby"')).toBeLessThan(
-      html.indexOf('for="vibetv-standby"'),
+    // The name sits in its fixed column to the left, the switch beside it.
+    expect(html.indexOf('for="vibetv-standby"')).toBeLessThan(
+      html.indexOf('id="vibetv-standby"'),
     );
     expect(html).toContain("Show after");
     expect(html).toContain("Brightness in screensaver");
@@ -270,9 +271,7 @@ describe("SettingsScreen standby controls", () => {
     expect(html).toContain("Show screensaver");
     expect(html).toContain('aria-checked="true"');
     expect(html).toContain("Show after");
-    expect(html).toMatch(
-      /data-orientation="horizontal"[^>]*><label[^>]+for="vibetv-standby-timeout"/,
-    );
+    expect(html).toMatch(/<label[^>]+for="vibetv-standby-timeout"/);
     expect(html).toContain('id="vibetv-standby-timeout"');
     expect(html).toContain("Brightness in screensaver");
     expect(html).toContain('id="vibetv-standby-brightness"');
@@ -309,7 +308,7 @@ describe("SettingsScreen standby controls", () => {
     const headings = html.match(/<h2[^>]*>([^<]+)<\/h2>/g) || [];
 
     expect(headings).toHaveLength(6);
-    expect(html).toContain(">Display</h2>");
+    expect(html).toContain(">Brightness</h2>");
     expect(html).toContain(">Display mode</h2>");
     expect(html).toContain(">AI providers</h2>");
     expect(html).toContain(">Screensaver</h2>");
@@ -328,10 +327,10 @@ describe("SettingsScreen standby controls", () => {
     );
 
     expect(order).toEqual([
-      "Connection",
-      "Display",
       "Display mode",
+      "Brightness",
       "Screensaver",
+      "Connection",
       "Setup",
       "AI providers",
     ]);
@@ -406,13 +405,61 @@ describe("SettingsScreen standby controls", () => {
     expect(html).not.toMatch(/<output[^>]*style="left:/);
   });
 
-  it("puts the design's connection cards first and marks the active mode", () => {
+  it("puts Connection after Screensaver and marks the active mode", () => {
     const html = render(standbyDevice);
-    expect(html.indexOf(">Connection</h2>")).toBeLessThan(html.indexOf(">Display</h2>"));
+    expect(html.indexOf(">Screensaver</h2>")).toBeLessThan(html.indexOf(">Connection</h2>"));
     expect(html).toContain('aria-label="USB-C" aria-pressed="true"');
     expect(html).toContain('aria-label="WiFi" aria-pressed="false"');
     expect(html).toContain("Requires a data cable connected to this Mac.");
     expect(html).toContain("VibeTV can sit anywhere on your desk.");
+  });
+
+  // Calm rule: small descriptions are 13 px, not the 16 px of the page body.
+  it("sets the Connection descriptions at 13 px", () => {
+    const html = render(standbyDevice, savedStandby, providerPicker, 70, "cable", false);
+
+    expect(html).toMatch(
+      /<span class="[^"]*text-\[13px\][^"]*">Requires a data cable connected to this Mac\.<\/span>/,
+    );
+    expect(html).toMatch(
+      /<span class="[^"]*text-\[13px\][^"]*">No cable needed — VibeTV can sit anywhere on your desk\.<\/span>/,
+    );
+  });
+
+  // Calm rule: the rest of the small text on Settings is 13 px too: section
+  // names (semibold), the notice above Display mode, the brightness reading
+  // and both help texts under Setup.
+  it("sets the remaining small Settings text at 13 px", () => {
+    const html = renderToStaticMarkup(
+      <SettingsScreen
+        automaticPreviews={[]}
+        brightness={70}
+        busyAction={null}
+        connectionMode="cable"
+        device={standbyDevice}
+        standby={savedStandby}
+        onBrightnessChange={vi.fn()}
+        onChooseScreensaver={vi.fn()}
+        onConnectionModeChange={vi.fn()}
+        onDismissError={vi.fn()}
+        onEraseDevice={vi.fn()}
+        onResetSetup={vi.fn()}
+        onSaveBrightness={vi.fn()}
+        onSaveStandby={vi.fn()}
+        onStandbyBrightnessChange={vi.fn()}
+        providerPicker={{
+          ...providerPicker,
+          displayNotice: "Codex is off, so VibeTV now switches automatically.",
+        }}
+      />,
+    );
+
+    expect(html).toMatch(/<h2 class="[^"]*text-\[13px\][^"]*">Display mode<\/h2>/);
+    expect(html).toMatch(/<h2 class="[^"]*text-\[13px\][^"]*">Connection<\/h2>/);
+    expect(html).toMatch(/<p [^>]*text-\[13px\][^>]*role="status">/);
+    expect(html).toMatch(/<output [^>]*text-\[13px\][^>]*>70%<\/output>/);
+    expect(html).toMatch(/<p [^>]*text-\[13px\][^>]*id="vibetv-run-setup-help">/);
+    expect(html).toMatch(/<p [^>]*text-\[13px\][^>]*id="vibetv-factory-reset-help">/);
   });
 
   it("keeps Cable recovery available for an active offline WiFi binding", () => {
@@ -564,6 +611,35 @@ describe("SettingsScreen standby controls", () => {
     expect(manualPanel("fixed", ["claude"])).toContain("Claude");
   });
 
+  // Calm rule (#713): lime is only for a primary button fill and a switch that
+  // is on. The chosen Display mode card and the chosen provider are framed in
+  // ink, not in the lime ring token (olive in light mode).
+  it("frames the chosen Display mode card and provider in ink, not lime", () => {
+    const html = render(standbyDevice, savedStandby, {
+      ...providerPicker,
+      display: { mode: "fixed", providerIds: ["claude"], configured: true, valid: true },
+      items: [provider("claude", "Claude", true), provider("codex", "Codex", true)],
+    });
+    const section = html.slice(
+      html.indexOf(">Display mode</h2>"),
+      html.indexOf(">Screensaver</h2>"),
+    );
+    // Only the chosen card and the chosen provider are pressed: the Manual card
+    // comes first, the provider list after it.
+    const pressed = Array.from(
+      section.matchAll(/<button\b[^>]*aria-pressed="true"[^>]*>/g),
+      (match) => match[0],
+    );
+    expect(pressed).toHaveLength(2);
+    for (const tag of pressed) {
+      const classes = (tag.match(/class="([^"]*)"/)?.[1] ?? "").split(/\s+/);
+      expect(classes).toContain("border-foreground");
+      expect(classes).toContain("ring-foreground/20");
+      expect(classes).not.toContain("border-ring");
+      expect(classes).not.toContain("ring-ring/20");
+    }
+  });
+
   // Issue #424: the app's global shortcut for the next provider is named
   // under Display mode, and so is the case that the system refused its keys.
   it("names the provider shortcut under Display mode", () => {
@@ -632,6 +708,11 @@ describe("SettingsScreen standby controls", () => {
     expect(unread).toContain("Press ⌃⌥⌘P in any app to show the next provider.</p>");
     expect(unread).not.toContain("This needs two providers with usage.");
 
+    // Calm rule: the shortcut line is 13 px like the other small text.
+    expect(displayMode("available")).toMatch(
+      /<p class="[^"]*text-\[13px\][^"]*">Press ⌃⌥⌘P in any app to show the next provider\. This switches to Manual\.<\/p>/,
+    );
+
     // A browser has no global shortcut, so Settings names none.
     expect(displayMode(null)).not.toContain("shortcut");
     expect(displayMode(null)).not.toContain("Press ");
@@ -694,7 +775,7 @@ describe("SettingsScreen standby controls", () => {
       );
       return html.slice(
         html.indexOf(">Screensaver</h2>"),
-        html.indexOf(">Setup</h2>"),
+        html.indexOf(">Connection</h2>"),
       );
     };
     const link = /<a aria-disabled="false"[^>]*>Choose screensaver<\/a>/;
@@ -702,7 +783,7 @@ describe("SettingsScreen standby controls", () => {
     it("is named beside Choose screensaver while the screensaver is on", () => {
       // An older revision in the slot is still this screensaver.
       const named = block(true, { screensaverPath: "/themes/s/nc-2-cb6d64ba.json" });
-      expect(named).toMatch(/>Night Clock is installed\.<\/span><a /);
+      expect(named).toMatch(/<span class="[^"]*text-\[13px\][^"]*">Night Clock is installed\.<\/span>/);
       expect(named).toMatch(link);
 
       // A screensaver neither the catalog nor this computer knows.
@@ -713,7 +794,7 @@ describe("SettingsScreen standby controls", () => {
     it("says that none is installed, with Choose screensaver as the way out", () => {
       const none = block(true, { active: false });
 
-      expect(none).toMatch(/>No screensaver is installed yet\.<\/span><a /);
+      expect(none).toMatch(/>No screensaver is installed yet\.<\/span>/);
       expect(none).toMatch(link);
     });
 
