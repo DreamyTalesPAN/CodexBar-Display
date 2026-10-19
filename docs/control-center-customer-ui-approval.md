@@ -8098,3 +8098,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the entry above; nothing else changes.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this record. Pull request branch only, not merge or release.
 - What's new: none — test expectation only, no customer-visible change
+
+## 2026-10-20 — #781: build 2b QA, the Theme Studio's notice next to Save wraps to two lines
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: "Theme pack exported. No device was contacted." (and the other notices in the Studio's top row) sat in a box about 117 px wide and wrapped to three lines, which made the top row taller and moved the design name down → the notice sits right next to Save in a box up to 224 px wide, wraps to two lines as drawn in the template, and the top row keeps its height. The words are unchanged.
+- Approved customer-visible result: the Studio's top row looks like frames 7-9 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
