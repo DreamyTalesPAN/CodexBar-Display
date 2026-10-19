@@ -8185,3 +8185,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged except: with keyboard focus the brightness slider handle shows the full-strength ink focus ring instead of a 40 % ring; mouse users see no change.
 - Scope: `apps/control-center/src/components/ui/slider.tsx` (one class) and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-19 — Calm redesign: customer-flow check follows the one-line screensaver notice (#784, CI fix)
+
+- User approval: pending — Paul reviews (#784 matched to the approved Claude Design template "Calm Redesign - alle Screens", design QA 19.10.); CI fix of a test script, no visible change; not seen by Paul
+- Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged; the one-line notice "Screensaver is off. Turn it on in Settings." is in the entry above.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` (two locators) and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
