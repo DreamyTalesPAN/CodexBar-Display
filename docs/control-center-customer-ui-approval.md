@@ -8596,3 +8596,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Unchanged. A pack that Theme Studio exports and that uses only `usageModeShort` now asks for `usage-pace-v1` and firmware 1.0.50, as the Companion already requires (before: the manifest named no such capability).
 - Scope: `lib/theme-studio.ts` and its test, and this approval record.
 - What's new: none — a manifest correction, no new notice
+
+## 2026-10-19 — Pace themes: Codex review fix, preview and device drop pace of a stale reading (#800)
+
+- User approval: Codex review fix, no visible change of the approved Pace themes; not seen by Paul.
+- Approved customer-visible result: Unchanged while the reading is fresh. When a collection failed or the reset trust has run out, VibeTV and its preview show no reserve or deficit (before: the preview, and a retained last-good frame on the device, kept the old pace), like Usage.
+- Scope: `components/live-vibetv-preview.tsx` and its test, the Companion frame (`daemon/send.go`, not a screen), and this approval record.
+- What's new: none — a stale-data correction, no new notice

@@ -1490,7 +1490,8 @@ export function buildFrameData(
       resetSecs: remainingResetSeconds(slot.resetSecs),
       available: true,
       idle: windowIsIdle(slot),
-      pace: slot.pace,
+      // The device drops pace with the reset trust it was computed against.
+      pace: basisTrusted ? slot.pace : undefined,
     })),
     usageSlot1Label: slot1?.label || "",
     usageSlot1Percent: clampPercent(slot1?.percent),

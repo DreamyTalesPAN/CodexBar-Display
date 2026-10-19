@@ -89,7 +89,9 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 		// wire bytes against its frame budget.
 		frame.ProviderSlots = nil
 	}
-	if cfg, ok := loadRuntimeConfig(deps); !caps.SupportsUsagePaceV1 || ok && cfg.HidePace {
+	// CodexBar paced a window against a reading that was fresh; a retained or
+	// stale one carries no pace, like the Usage API (Settings "Pace" can also turn it off).
+	if cfg, ok := loadRuntimeConfig(deps); !caps.SupportsUsagePaceV1 || !result.usageFresh || ok && cfg.HidePace {
 		frame = frame.WithoutUsagePace()
 	}
 	now := deps.now()

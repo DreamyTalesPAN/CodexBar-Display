@@ -122,3 +122,40 @@ func TestHidePaceKeepsPaceOffTheFrame(t *testing.T) {
 		}
 	}
 }
+
+// A stale reading keeps its windows on the device but not their pace, like the Usage API.
+func TestStaleReadingSendsNoPace(t *testing.T) {
+	prepareFastTestEnv(t)
+	now := time.Date(2026, 9, 21, 8, 30, 0, 0, time.UTC)
+	for _, stale := range []bool{false, true} {
+		parsed := testParsedFrame("claude", 8, 73, 12000)
+		parsed.CollectedAt = now
+		parsed.Stale = stale
+		parsed.Frame.UsageWindows = pacedUsageWindows()
+		var sent []byte
+		err := runCycleWithDeps(context.Background(), "", &runtimeState{selector: codexbar.NewProviderSelector()}, runtimeDeps{
+			now:         func() time.Time { return now },
+			resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+			deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+				return protocol.DeviceCapabilities{
+					Known: true, Board: "esp8266-smalltv-st7789",
+					NegotiatedProtocolVersion: protocol.ProtocolVersionV2, SupportsUsagePaceV1: true,
+				}, nil
+			},
+			fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+				return []codexbar.ParsedFrame{parsed}, nil
+			},
+			logf: func(string, ...any) {},
+			sendLine: func(_ string, line []byte) error {
+				sent = append([]byte(nil), line...)
+				return nil
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := bytes.Contains(sent, []byte(`"pace"`)); got == stale {
+			t.Fatalf("stale=%t sent pace=%t:\n%s", stale, got, sent)
+		}
+	}
+}

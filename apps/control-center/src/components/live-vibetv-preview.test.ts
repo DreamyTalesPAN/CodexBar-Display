@@ -1211,6 +1211,23 @@ describe("usage pace", () => {
     }
   });
 
+  it("drops pace together with the reset trust it was computed against", () => {
+    const stale = paced(91, { delta: -6, state: "reserve" }, { resetTrust: "stale" });
+    expect(boundValue("usageSlot1PaceText", stale)).toBe("");
+    const expired = paced(91, { delta: -6, state: "reserve" }, {
+      resetTrust: "live", resetSource: "claude", resetTrustSecs: 60,
+    });
+    // 120 s later the trust budget of 60 s has run out.
+    const later = buildFrameData(
+      clock.toISOString(),
+      { provider: "claude", usageMode: "remaining", resetTrust: "live", resetSource: "claude", resetTrustSecs: 60,
+        usageSlots: [{ id: "session", label: "Session", percent: 91, resetSecs: 12000, pace: { delta: -6, state: "reserve" } }] },
+      new Date(clock.getTime() + 120_000),
+    );
+    expect(boundValue("usageSlot1PaceText", expired)).toBe("6% in reserve");
+    expect(boundValue("usageSlot1PaceText", later)).toBe("");
+  });
+
   it("says left for what remains and the mode itself otherwise", () => {
     expect(boundValue("usageModeShort", paced(91, undefined))).toBe("left");
     expect(boundValue("usageModeShort", paced(9, undefined, { usageMode: "used" }))).toBe("used");
