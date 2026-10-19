@@ -5638,6 +5638,26 @@ func TestProviderCollectorUnavailableTokenHistoryCompletesWithoutKnownZero(t *te
 	}
 }
 
+func TestProviderCollectorNamesATokenOnlyProviderByItsDisplayName(t *testing.T) {
+	prepareFastTestEnv(t)
+	now := time.Date(2026, 10, 16, 9, 0, 0, 0, time.UTC)
+	c := &providerCollector{
+		now: func() time.Time { return now }, logf: func(string, ...any) {},
+		snapshotMaxAge: time.Minute, persistInterval: time.Minute,
+		providers: map[string]providerSnapshot{},
+		fetchTokenStatsReport: func(context.Context) (map[string]codexbar.ProviderTokenStats, codexbar.ProviderTokenStatsReport) {
+			return map[string]codexbar.ProviderTokenStats{
+				"claude": {SessionTokens: 5, TotalTokens: 5},
+			}, codexbar.ProviderTokenStatsReport{OK: true}
+		},
+	}
+	c.collectTokenStatsOnce(context.Background())
+	got, ok := c.providers["claude"]
+	if !ok || got.Frame.Label != "Claude" || !got.Collected.IsZero() || !got.Frame.UsageUnavailable {
+		t.Fatalf("token-history-only provider should carry its display name and no reading time: %+v", got)
+	}
+}
+
 func TestProviderCollectorPartialTokenScanKeepsFailedProviderLastGood(t *testing.T) {
 	prepareFastTestEnv(t)
 

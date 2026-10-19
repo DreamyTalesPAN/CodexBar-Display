@@ -1,5 +1,6 @@
 #if VIBETV_CONTROL_CENTER_TESTING
 import Foundation
+import WebKit
 
 private func require(_ condition: @autoclosure () -> Bool, _ message: String) {
     guard condition() else {
@@ -9,6 +10,33 @@ private func require(_ condition: @autoclosure () -> Bool, _ message: String) {
 }
 
 func runURLSchemeTests() {
+    // Issue #655: a window behind other windows must not suspend the page that
+    // drives the setup.
+    MainActor.assumeIsolated {
+        let configuration = makeControlCenterWebViewConfiguration()
+        require(
+            configuration.preferences.inactiveSchedulingPolicy == .none,
+            "the Control Center page must keep running while its window is covered"
+        )
+        require(
+            configuration.defaultWebpagePreferences.allowsContentJavaScript,
+            "the Control Center page needs JavaScript"
+        )
+    }
+
+    // Issue #556: the start screen retries the CodexBar preparation once; a repair does not.
+    require(
+        retriesCodexBarBootstrap(fromStartScreen: true, repairRequested: false),
+        "the start screen must retry the CodexBar preparation before asking for a repair"
+    )
+    require(
+        !retriesCodexBarBootstrap(fromStartScreen: true, repairRequested: true),
+        "a requested CodexBar repair must answer after one preparation"
+    )
+    require(
+        !retriesCodexBarBootstrap(fromStartScreen: false, repairRequested: false),
+        "a runtime repair must answer within the page's wait, after one preparation"
+    )
     // Issue #582: the page learns how the save dialog ended.
     require(
         downloadFinishedEventScript(fileName: "vibetv-theme-new-theme.zip", saved: true)

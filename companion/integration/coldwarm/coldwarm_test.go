@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -82,18 +81,12 @@ func runColdWarm(t *testing.T, signedOut bool) {
 	if err := os.MkdirAll(runtimeRoot, 0700); err != nil {
 		t.Fatal(err)
 	}
-	// Reserve distinct loopback ports while selecting them, then release each
-	// immediately before its owner starts. Never use the installed API port.
-	reserve := func() net.Listener {
-		t.Helper()
-		l, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = l.Close() })
-		return l
-	}
-	apiPort, devicePort := reserve(), reserve()
+	// Reserve distinct loopback ports outside the OS ephemeral ranges and release
+	// them before the owners start. Ephemeral ports (listen on :0) are unsafe
+	// here: while the device is powered off, outbound sockets can take the port
+	// and the power-on bind then fails with "address already in use" (see
+	// ports_test.go). Never use the installed API port.
+	apiPort, devicePort := reserveNonEphemeralPort(t), reserveNonEphemeralPort(t)
 	apiAddr, deviceAddr := apiPort.Addr().String(), devicePort.Addr().String()
 	config := fmt.Sprintf(`{"deviceTarget":%q,"deviceToken":"virtual-pair-token","deviceId":"virtual-vibetv-001","knownDevices":[{"deviceId":"virtual-vibetv-001","target":%q,"deviceToken":"virtual-pair-token"}]}`, "http://"+deviceAddr, "http://"+deviceAddr)
 	if err := os.WriteFile(filepath.Join(runtimeRoot, "config.json"), []byte(config), 0600); err != nil {

@@ -619,6 +619,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // Last standby settings the device confirmed (loaded or saved). A failed
   // save rolls back to this, never to the in-flight slider value.
   const lastSavedStandbyRef = useRef<StandbySettings | null>(null);
+  // The VibeTV the settings on screen belong to (see mergeDevice).
+  const settingsDeviceIdRef = useRef<string | undefined>(undefined);
   const setupGenerationRef = useRef(0);
   const deviceSearchAttemptRef = useRef(0);
   // A VibeTV on firmware from before USB-C support is offered as the VibeTV
@@ -693,7 +695,40 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     companionStatus === "online" && companionInstallationMode === "legacy",
   );
 
+  // The settings on screen that belong to one VibeTV: Brightness, and the
+  // screensaver values with the shown setting. Unsaved and saved values alike
+  // are dropped when that VibeTV goes.
+  const resetDeviceSettings = useCallback(() => {
+    // A write still queued for the VibeTV before must not reach the one now
+    // connected: a newer turn makes the queued one stop (Codex review of #674).
+    const writes = deviceSettingWritesRef.current;
+    writes.brightness += 1;
+    writes.standby += 1;
+    setBusyAction((busy) =>
+      busy === "brightness" || busy === "standby" ? null : busy,
+    );
+    brightnessDirtyRef.current = null;
+    setBrightness(null);
+    standbyDirtyRef.current = null;
+    lastSavedStandbyRef.current = null;
+    setStandby(null);
+  }, []);
+
   const mergeDevice = useCallback((next: DeviceInfo) => {
+    // The settings on screen belong to one VibeTV. When another one is
+    // connected they go, a read still on its way for the first one no longer
+    // counts (readSettings) and the next read starts anew, so Brightness and
+    // the Show screensaver switch stay closed until the new VibeTV's own
+    // settings are read: a click would send the first VibeTV's values to it
+    // (Codex review of #645, issue #663).
+    const deviceId = next.deviceId?.trim();
+    if (deviceId && deviceId !== settingsDeviceIdRef.current) {
+      if (settingsDeviceIdRef.current) {
+        settingsReadRef.current = null;
+        resetDeviceSettings();
+      }
+      settingsDeviceIdRef.current = deviceId;
+    }
     if (deviceIsReady(next)) {
       didRunAutomaticDeviceSearch.current = false;
       setLastError((current) => isConnectionRecoveryError(current) ? null : current);
@@ -711,7 +746,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         ),
       };
     });
-  }, []);
+  }, [resetDeviceSettings]);
 
   useEffect(() => {
     providerPreferencesRef.current = providerPreferences;
@@ -1072,22 +1107,30 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (setupGeneration !== setupGenerationRef.current) {
         return;
       }
+      // An answer that names another VibeTV than the one on screen is old: its
+      // values are not for the VibeTV connected now (see mergeDevice).
+      const sameDevice = payload.device?.deviceId === settingsDeviceIdRef.current;
       const loadedBrightness =
         payload.settings?.display?.brightnessPercent ?? null;
       if (
+        sameDevice &&
         brightnessDirtyRef.current === null &&
         writes.brightness === brightnessWrites
       ) {
         setBrightness(loadedBrightness);
       }
       if (
+        sameDevice &&
         standbyDirtyRef.current === null &&
         writes.standby === standbyWrites
       ) {
         lastSavedStandbyRef.current = payload.settings?.standby ?? null;
         setStandby(payload.settings?.standby ?? null);
       }
-      if (payload.device) {
+      // Its active theme is the old VibeTV's too: it must not choose the
+      // theme shown as selected for the VibeTV connected now (Codex review of
+      // #645).
+      if (sameDevice && payload.device) {
         const activeLiveTheme = resolveActiveLiveTheme(
           catalog.themes,
           payload.device,
@@ -2101,11 +2144,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setConnectionModeChoiceRequired(
         payload.connectionModeChoiceRequired !== false,
       );
-      brightnessDirtyRef.current = null;
-      setBrightness(null);
-      standbyDirtyRef.current = null;
-      lastSavedStandbyRef.current = null;
-      setStandby(null);
+      resetDeviceSettings();
       setLastInstall(undefined);
       setThemeInstallStatus(null);
       setSupportDiagnostics(null);
@@ -2187,6 +2226,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     addEvent,
     markCompanionAccessBlocked,
     markCompanionUnavailable,
+    resetDeviceSettings,
     runCompanion,
     setDeviceRecoveryGate,
   ]);
@@ -5751,7 +5791,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             usage={
               appearanceSection === "screensavers" ? "screensaver" : "live"
             }
-            onSaveStandby={saveStandby}
+            onOpenScreensaverSettings={() => {
+              shownAfterPageOpensRef.current = "settings-screensaver";
+              setActiveTab("settings");
+            }}
             windowsHost={windowsHost}
           />
         ) : null}
