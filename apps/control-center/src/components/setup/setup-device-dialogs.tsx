@@ -14,6 +14,7 @@ import {
 import { candidateKey } from "./setup-connection";
 import { SetupDeviceCard } from "./setup-device-card";
 import { SetupDialog } from "./setup-dialog";
+import { moveAmongRadios } from "./setup-selectable-card";
 
 const ADDRESS_ERROR = "Enter the IP address shown on the VibeTV screen.";
 
@@ -318,6 +319,8 @@ export function SetupDevicePickerDialog({
     candidates.find((candidate) => candidateKey(candidate) === selectedKey) ??
     candidates.find((candidate) => candidate.known) ??
     candidates[0];
+  // The Tab stop of the group: the selected VibeTV, or the first one.
+  const selectedIndex = candidates.findIndex((candidate) => candidate === selected);
   return (
     <SetupDialog
       description={
@@ -334,13 +337,19 @@ export function SetupDevicePickerDialog({
       showCloseButton={false}
       title={error?.message ?? "Choose your VibeTV"}
     >
-      <ItemGroup aria-label="VibeTVs found" className="gap-3" role="radiogroup">
-        {candidates.map((candidate) => (
+      <ItemGroup
+        aria-label="VibeTVs found"
+        className="gap-3"
+        onKeyDown={moveAmongRadios}
+        role="radiogroup"
+      >
+        {candidates.map((candidate, index) => (
           <SetupDeviceCard
             candidate={candidate}
             key={candidateKey(candidate)}
             onSelect={() => setSelectedKey(candidateKey(candidate))}
             selected={candidate === selected}
+            tabStop={index === Math.max(selectedIndex, 0)}
           />
         ))}
       </ItemGroup>

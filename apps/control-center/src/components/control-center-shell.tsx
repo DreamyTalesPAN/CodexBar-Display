@@ -121,6 +121,13 @@ export function ControlCenterShell({
   useLayoutEffect(() => {
     document.documentElement.scrollTop = 0;
   }, [activeTab, activeAppearanceSection]);
+  // Clicking the tab that is already open starts it over at the top.
+  const selectTab = (tab: ActiveTab) => {
+    if (tab === activeTab) {
+      document.documentElement.scrollTop = 0;
+    }
+    onTabChange(tab);
+  };
   return (
     <SidebarProvider
       className="control-center-shell overflow-x-hidden bg-background text-foreground"
@@ -134,7 +141,7 @@ export function ControlCenterShell({
       <div className="control-center-shell__layout flex min-h-svh w-full">
         <Sidebar className="control-center-shell__sidebar" collapsible="icon">
           <SidebarHeader className="px-3.5 pt-7 pb-7 group-data-[collapsible=icon]:p-2">
-            <BrandHomeButton onClick={() => onTabChange("overview")}>
+            <BrandHomeButton onClick={() => selectTab("overview")}>
               <ControlCenterBrand className="group-data-[collapsible=icon]:hidden" />
               <ControlCenterBrand
                 className="hidden group-data-[collapsible=icon]:block"
@@ -149,7 +156,7 @@ export function ControlCenterShell({
               isTabDisabled={isTabDisabled}
               hiddenTabs={hiddenTabs}
               onAppearanceSectionChange={onAppearanceSectionChange}
-              onTabChange={onTabChange}
+              onTabChange={selectTab}
               updateAvailable={updateAvailable}
             />
           </SidebarContent>
@@ -325,7 +332,9 @@ function ShellNavButton({
       disabled={disabled}
       isActive={active}
       onClick={() => {
-        if (!collapsible || collapsedToIcons) {
+        // An open Appearance entry toggles its submenu and also starts over at
+        // the top (Codex review of #677); the submenu itself stays a toggle.
+        if (!collapsible || collapsedToIcons || active) {
           onClick();
         }
         if (isMobile && !collapsible) {

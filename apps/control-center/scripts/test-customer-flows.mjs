@@ -2631,7 +2631,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
   const cases = [
     {
       status: "auth_required",
-      expected: "Sign in to Claude in CodexBar, then check again.",
+      expected: "Sign in to Claude in CodexBar.",
       healthState: "auth_required",
       reportedMessage:
         "Codex connection failed: codex account authentication required to read rate limits",
@@ -2640,7 +2640,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
     {
       status: "permission_required",
       expected:
-        "Claude needs permission to read your sign-in. Open CodexBar and allow access, then check again.",
+        "Claude needs permission to read your sign-in. Open CodexBar and allow access.",
       healthState: "permission_required",
       reportedMessage:
         "Safari cookie file is not readable. Enable Full Disk Access for CodexBar.",
@@ -5002,7 +5002,7 @@ async function testThemeMissingDeviceChoosesThemeAndCompletesSetup(
     "Theme setup must stay inside setup instead of opening the Control Center shell",
   );
   assert(
-    (await page.getByRole("button", { name: "Create Theme" }).count()) === 0 &&
+    (await page.getByRole("button", { name: "Create theme" }).count()) === 0 &&
       (await page.getByRole("button", { name: /^Edit/ }).count()) === 0 &&
       (await page.getByText("Published", { exact: true }).count()) === 0,
     "Theme setup must show only the theme list and its install action",
@@ -10523,7 +10523,7 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
   const navigation = page.getByRole("navigation", { name: "Control Center", exact: true });
   await navigation.getByRole("button", { name: "Appearance", exact: true }).click();
   await navigation.getByRole("button", { name: screensaver ? "Screensavers" : "Themes", exact: true }).click();
-  await page.getByRole("button", { name: screensaver ? "Create Screensaver" : "Create Theme", exact: true }).click();
+  await page.getByRole("button", { name: screensaver ? "Create screensaver" : "Create theme", exact: true }).click();
   await page.getByLabel("Your idea", { exact: true }).waitFor();
   await page.locator('[data-slot="sidebar"][data-state="collapsed"]').waitFor();
   assert(await page.locator(".control-center-shell__header").isVisible(), "Studio stays inside the native shell");
@@ -10550,7 +10550,7 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
   await page.evaluate((document) => localStorage.setItem("vibetv.controlCenter.themeStudioDraft", JSON.stringify({
     schemaVersion: 1, recovery: { document: { ...document, packName: "Unsaved other design" }, source: "blank", updatedAt: new Date().toISOString() },
   })), saved.themes[0].document);
-  await page.getByRole("button", { name: screensaver ? "Create Screensaver" : "Create Theme", exact: true }).click();
+  await page.getByRole("button", { name: screensaver ? "Create screensaver" : "Create theme", exact: true }).click();
   await page.getByLabel("Your idea", { exact: true }).waitFor();
   if (screensaver) {
     await page.getByRole("button", { name: "Design settings", exact: true }).click();
@@ -11629,7 +11629,7 @@ async function routeCompanionOnline(
           ...(!ready
             ? {
                 nextAction:
-                  "Open provider setup, sign in again, then check this provider.",
+                  "Open provider setup, sign in again.",
               }
             : {}),
         };

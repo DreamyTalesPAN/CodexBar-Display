@@ -57,7 +57,7 @@ function Slider({
           aria-labelledby={ariaLabelledBy}
           data-slot="slider-thumb"
           key={index}
-          className="relative block size-[19px] shrink-0 rounded-full border-[1.5px] border-foreground bg-background ring-ring transition-[color,box-shadow] select-none after:absolute after:-inset-2 hover:ring-3 focus-visible:ring-3 focus-visible:outline-hidden active:ring-3 disabled:pointer-events-none disabled:opacity-50"
+          className="relative block size-[19px] shrink-0 rounded-full border-[1.5px] border-foreground bg-background ring-foreground/40 transition-[color,box-shadow] select-none after:absolute after:-inset-y-2 after:inset-x-0 hover:ring-3 focus-visible:ring-3 focus-visible:outline-hidden active:ring-3 disabled:pointer-events-none disabled:opacity-50"
         />
       ))}
     </SliderPrimitive.Root>

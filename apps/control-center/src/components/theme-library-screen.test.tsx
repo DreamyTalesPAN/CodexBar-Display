@@ -417,7 +417,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
     expect(html).not.toContain(
       "Customize how your live usage screen looks while VibeTV is active.",
     );
-    expect(html).toContain("Create Theme");
+    expect(html).toContain("Create theme");
     expect(html).toContain("Live Theme");
     expect(html).not.toContain("Night Clock");
   });
@@ -430,7 +430,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
     expect(html).not.toContain(
       "Choose what appears when VibeTV enters standby after being idle.",
     );
-    expect(html).toContain("Create Screensaver");
+    expect(html).toContain("Create screensaver");
     // The switch is in Settings only (#643, variant 645-A).
     expect(html).not.toContain('aria-label="Show screensaver"');
     expect(html).toContain("Screensaver is off.");
@@ -588,7 +588,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
 
     expect(html).toContain("No screensavers yet");
     expect(html).toContain("Create a screensaver to add it to this list.");
-    expect(html).toContain("Create Screensaver");
+    expect(html).toContain("Create screensaver");
     expect(html).not.toContain("Reload catalog");
   });
 
