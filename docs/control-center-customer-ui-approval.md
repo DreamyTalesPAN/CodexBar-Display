@@ -7801,3 +7801,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and main's entries; nothing else changes. In the calm look the arrow keys move between the VibeTVs and the themes, and through the Help menu, as on main.
 - Scope: the merge of main into this branch (setup-device-card.tsx, setup-device-screen.tsx, setup-help-menu.tsx, setup-theme-screen.tsx) and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — #780: Codex review fix, the setup log is no longer marked aria-busy
+
+- User approval: Codex review fix (P2, thread on setup-log.tsx), no visible change; not seen by Paul
+- Approved customer-visible result: none; nothing on screen changes. A screen reader now announces the progress lines of a setup step while it runs instead of holding them back.
+- Scope: `setup-log.tsx`, its test and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
