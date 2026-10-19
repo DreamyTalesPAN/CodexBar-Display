@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { SETUP_REVEAL } from "./setup-reveal";
 
@@ -16,7 +16,14 @@ type SetupLogProps = {
   lines: SetupLogLine[];
   /** Renders the blinking caret after the last line while work is in flight. */
   running?: boolean;
+  /** Off where the screen already writes its own "still …" lines. */
+  stillLines?: boolean;
 };
+
+/** A step that is still running after this long gets a "Still …" line. */
+const STILL_INTERVAL_MS = 8000;
+/** Most "Still …" lines one step gets; after that the log stops growing. */
+const STILL_MAX_LINES = 5;
 
 /**
  * Terminal-style progress log for the setup wizard.
@@ -25,16 +32,49 @@ type SetupLogProps = {
  * starts logging cannot move the controls the customer is already looking at.
  * New lines append at the bottom for the same reason: the box is a fixed size
  * and only the log inside it scrolls.
+ *
+ * While the last step runs for longer than STILL_INTERVAL_MS, a "Still …" line
+ * is added under it every interval. This is the only display timer: a real
+ * failure arrives from the companion as its own line or error.
  */
-export function SetupLog({ className, lines, running = false }: SetupLogProps) {
+export function SetupLog({
+  className,
+  lines,
+  running = false,
+  stillLines = true,
+}: SetupLogProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const lastId = lines[lines.length - 1]?.id;
+  // How many "Still …" lines each step has got, keyed by the step's line id.
+  const [stillCounts, setStillCounts] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    if (!stillLines || !running || lastId === undefined) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setStillCounts((counts) => ({
+        ...counts,
+        [lastId]: Math.min((counts[lastId] ?? 0) + 1, STILL_MAX_LINES),
+      }));
+    }, STILL_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [stillLines, running, lastId]);
+
+  const rows: SetupLogLine[] = lines.flatMap((line) => [
+    line,
+    ...Array.from({ length: stillCounts[line.id] ?? 0 }, (_, index) => ({
+      id: `${line.id}-still-${index + 1}`,
+      text: stillText(line.text),
+    })),
+  ]);
 
   useEffect(() => {
     const node = scrollRef.current;
     if (node) {
       node.scrollTop = node.scrollHeight;
     }
-  }, [lines, running]);
+  }, [lines, running, stillCounts]);
 
   return (
     <div
@@ -51,7 +91,7 @@ export function SetupLog({ className, lines, running = false }: SetupLogProps) {
       )}
       ref={scrollRef}
     >
-      {lines.map((line, index) => (
+      {rows.map((line, index) => (
         <div
           className={cn(
             // Keyed by id, so only a line that is genuinely new animates; the
@@ -66,11 +106,25 @@ export function SetupLog({ className, lines, running = false }: SetupLogProps) {
           key={line.id}
         >
           <span>&gt; {line.text}</span>
-          {running && index === lines.length - 1 ? <SetupLogCaret /> : null}
+          {running && index === rows.length - 1 ? <SetupLogCaret /> : null}
         </div>
       ))}
     </div>
   );
+}
+
+/**
+ * "Refreshing display stream." becomes "Still refreshing display stream – hang
+ * tight." Only the first sentence counts, and a " · " or " — " tail (a
+ * percentage, a version) is left out, so the line does not go stale as that
+ * number changes. A dot inside a number ("192.168") is kept.
+ */
+function stillText(text: string): string {
+  const step = text.split(/\. | · | — |\.$/)[0];
+  const doing = step
+    ? `${step.charAt(0).toLowerCase()}${step.slice(1)}`
+    : "working on it";
+  return `Still ${doing} – hang tight.`;
 }
 
 function SetupLogCaret() {
