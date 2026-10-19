@@ -181,7 +181,7 @@ export function UsageScreen({
 
   return (
     <div className="mx-auto max-w-[1180px]">
-      <section className="py-10">
+      <section className="pt-4 pb-8">
         {refreshNotice ? (
           <Alert className="mb-6 bg-muted">
             {refreshNotice.tone === "attention" ? <AlertTriangle /> : <Info />}
@@ -210,7 +210,7 @@ export function UsageScreen({
         ) : null}
 
         {tiles.length > 0 ? (
-          <ol className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
+          <ol className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
             {tiles.map((tile) => (
               <li className="min-w-0" key={tile.id}>
                 {tile.node}
@@ -845,7 +845,7 @@ function UsageLineView({
     <div className="grid gap-2">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-[14.5px] text-foreground">
         {index === 0 ? (
-          <span className="whitespace-nowrap text-muted-foreground">
+          <span className="whitespace-nowrap leading-none text-muted-foreground">
             <span className="text-[32px] leading-none font-semibold text-foreground">
               {line.percent}%
             </span>{" "}
