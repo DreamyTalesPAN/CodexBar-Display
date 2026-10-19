@@ -8519,3 +8519,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — Pace on the VibeTV, step 1: capability handling (#800)
+
+- User approval: pending — Paul reviews (scope decided by Paul and the communicator, 19.10.: one Pace PR; pace themes per the approved page "Pace – alle Themes"). Not seen by Paul as running UI.
+- Approved customer-visible result: none yet, pending Paul's review. New: a theme that needs the new firmware capability `usage-pace-v1` is offered like every other theme that needs a firmware capability: on a VibeTV whose firmware lacks it, the theme library shows the existing "firmware update needed" state for it and the active-theme upgrade asks for the firmware update; no other theme is flagged. No new text and no new screen; no pace theme exists in this step. Also on Usage, no pace is shown for a stale reading or for a window whose reset has passed since CodexBar collected it (before: the Usage page drew it).
+- Scope: `control-center-types.ts` (capability field), `theme-library-screen.tsx` (capability blocker), `theme-studio-capabilities.ts` (type field only), `active-theme-upgrade.ts` and its test, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — capability handling for the Pace themes that follow, no customer-visible notice of its own
