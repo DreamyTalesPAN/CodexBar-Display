@@ -103,6 +103,9 @@ type providerCollector struct {
 	lastPersistedAt  time.Time
 	inventoryKnown   bool
 	inventoryEnabled map[string]struct{}
+	// inventoryLabels holds the display name CodexBar lists per provider, so a
+	// snapshot created before its first usage reading is named like the reading.
+	inventoryLabels map[string]string
 	// inventoryDisabled holds providers the inventory lists as switched off.
 	// A provider missing from the inventory is unknown, not off.
 	inventoryDisabled map[string]struct{}
@@ -669,9 +672,14 @@ func (c *providerCollector) applyProviderInventoryLocked(settings []codexbar.Pro
 	c.inventoryKnown = true
 	c.inventoryEnabled = enabled
 	c.inventoryDisabled = make(map[string]struct{}, len(settings))
+	c.inventoryLabels = make(map[string]string, len(settings))
 	for _, setting := range settings {
-		if key := normalizeProviderKey(setting.ID); key != "" && !setting.Enabled {
+		key := normalizeProviderKey(setting.ID)
+		if key != "" && !setting.Enabled {
 			c.inventoryDisabled[key] = struct{}{}
+		}
+		if key != "" && strings.TrimSpace(setting.Label) != "" {
+			c.inventoryLabels[key] = strings.TrimSpace(setting.Label)
 		}
 	}
 	updated := !equalProviderOrder(c.order, enabledOrder)
@@ -932,7 +940,6 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 				Provider: key,
 				Frame: protocol.Frame{
 					Provider:         key,
-					Label:            key,
 					UsageUnavailable: true,
 				},
 				Source: strings.TrimSpace(stats.Source),
@@ -942,8 +949,11 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 		if strings.TrimSpace(frame.Provider) == "" {
 			frame.Provider = key
 		}
-		if strings.TrimSpace(frame.Label) == "" {
-			frame.Label = key
+		if label := strings.TrimSpace(frame.Label); label == "" || label == key {
+			// Empty, or a raw id left by an older build's placeholder, takes the
+			// inventory name. Without one it stays empty and the Companion API
+			// names it like a reading does.
+			frame.Label = c.inventoryLabels[key]
 		}
 		frame.SessionTokens = stats.SessionTokens
 		frame.WeekTokens = stats.WeekTokens
