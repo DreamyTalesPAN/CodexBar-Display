@@ -1451,6 +1451,17 @@ describe("UsageScreen plan name and extra-usage cap", () => {
     expect(html).not.toContain("this month");
   });
 
+  it("keeps a provider that has only a plan or a cap, even at zero use", () => {
+    const zero = { session: 0, weekly: 0, totalTokens: 0 };
+    expect(renderUsage(null, claude({ ...zero, plan: "Max 20x" }))).toContain("Max 20x");
+    expect(
+      renderUsage(
+        null,
+        claude({ ...zero, spend: { limit: 100, used: 0, currency: "EUR", period: "Monthly cap" } }),
+      ),
+    ).toContain("Extra usage €0 of €100 this month");
+  });
+
   it("shows no extra-usage line without a cap above zero", () => {
     expect(renderUsage(null, claude({}))).not.toContain("Extra usage");
     expect(
@@ -1487,6 +1498,13 @@ describe("weekly axis ticks", () => {
       "2026-10-04",
       "2026-10-11",
       "2026-10-18",
+    ]);
+  });
+
+  it("labels the first day of a short history too", () => {
+    expect(weeklyDayTicks(["2026-10-17", "2026-10-18", "2026-10-19"])).toEqual([
+      "2026-10-17",
+      "2026-10-19",
     ]);
   });
 

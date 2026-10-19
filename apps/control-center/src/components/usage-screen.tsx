@@ -182,7 +182,7 @@ export function UsageScreen({
 
   return (
     <div className="mx-auto max-w-[1180px]">
-      <section className="py-10">
+      <section className="pt-4 pb-8">
         {refreshNotice ? (
           <Alert className="mb-6 bg-muted">
             {refreshNotice.tone === "attention" ? <AlertTriangle /> : <Info />}
@@ -211,7 +211,7 @@ export function UsageScreen({
         ) : null}
 
         {tiles.length > 0 ? (
-          <ol className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
+          <ol className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
             {tiles.map((tile) => (
               <li className="min-w-0" key={tile.id}>
                 {tile.node}
@@ -854,7 +854,7 @@ function UsageLineView({
     <div className="grid gap-2">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-[14.5px] text-foreground">
         {index === 0 ? (
-          <span className="whitespace-nowrap text-muted-foreground">
+          <span className="whitespace-nowrap leading-none text-muted-foreground">
             <span className="text-[32px] leading-none font-semibold text-foreground">
               {line.percent}%
             </span>{" "}
@@ -1054,6 +1054,9 @@ function shouldShowProvider(
   if (providerHasCost(provider)) {
     return true;
   }
+  if (providerHasPlanOrSpend(provider)) {
+    return true;
+  }
   return (provider.usageOverTime || []).some(
     (point) => point.totalCreditsUsed > 0,
   );
@@ -1099,6 +1102,10 @@ function providerHasCost(provider: UsageProviderInfo): boolean {
     (cost.latestTokens || 0) > 0 ||
     Boolean(cost.topModel?.trim())
   );
+}
+
+function providerHasPlanOrSpend(provider: UsageProviderInfo): boolean {
+  return Boolean(provider.plan?.trim()) || spendText(provider.spend) !== null;
 }
 
 function normalizeTokenHistory(days: UsageCostDay[]) {
@@ -1396,14 +1403,19 @@ function WeekTick({
 // day, left out only where it would crowd the last one.
 export function weeklyDayTicks(days: string[]): string[] {
   const dayMs = 86_400_000;
-  const start = Date.parse(`${days[0]}T00:00:00Z`);
+  const first = days[0];
   const last = days[days.length - 1];
+  if (first === undefined || last === undefined) {
+    return [];
+  }
+  const start = Date.parse(`${first}T00:00:00Z`);
   const end = Date.parse(`${last}T00:00:00Z`);
-  const ticks = days.filter((day) => {
+  const weekly = days.filter((day) => {
     const offset = (Date.parse(`${day}T00:00:00Z`) - start) / dayMs;
-    return offset % 7 === 0 && (end - Date.parse(`${day}T00:00:00Z`)) / dayMs >= 4;
+    return day !== first && offset % 7 === 0 && (end - Date.parse(`${day}T00:00:00Z`)) / dayMs >= 4;
   });
-  return last === undefined ? [] : [...ticks, last];
+  // The first day is always labelled, also in a short history; a set drops it twice when it is the last day too.
+  return [...new Set([first, ...weekly, last])];
 }
 
 function formatDayLabel(day: string): string {

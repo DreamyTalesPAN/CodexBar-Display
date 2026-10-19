@@ -8485,6 +8485,20 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
 
+## 2026-10-19 — #783: Usage matched to the template (build 2 QA)
+
+- User approval: pending — Paul reviews (#783 matched to the approved template, build 2 QA); look unchanged except, each one before → after: (1) the Usage page starts 24 px higher: the "Last 30 days" row sits 16 px under the page header → before 40 px; the page ends 32 px below the tiles → before 40 px; (2) the two provider tiles stand 16 px apart → before 20 px; (3) in the first lane of a tile the big percent has no extra line space, so the bar sits 3 px lower under it → before the bar 3 px closer.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/usage-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #783: Codex fixes, first day on short charts and plan-only providers
+
+- User approval: pending — Paul reviews (Codex review fix); look unchanged except, each one before → after: (1) the usage chart of 2 to 4 days labels its first day too → before only its last day; (2) a provider with a plan name or an extra-usage cap but zero use stays in the usage list → before it was hidden.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/usage-screen.tsx`, `apps/control-center/src/components/usage-screen.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
 ## 2026-10-19 — Pace on Usage (#789, stacked on #783)
 
 - User approval: pending — Paul reviews (pace on Usage per the approved master + 19.10. decisions)
