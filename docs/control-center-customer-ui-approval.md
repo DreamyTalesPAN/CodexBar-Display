@@ -7676,3 +7676,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as approved in the #681 entries above (provider next steps without "then check again"); nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — #681: approval marker after merging main with #676
+
+- User approval: Marcus, answer 65a on 2026-10-19 (via the orchestrator): merge main with #676 into this branch. The click test of #681 stays as in the marker entry above (Marcus, 2026-10-19, build 99.0.1155 from head b4c2324e).
+- Approved customer-visible result: as approved in the #681 entries above (provider next steps without "then check again"); nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
