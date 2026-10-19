@@ -14,6 +14,30 @@ int ClampDrawRadius(int radius, int width, int height) {
   return max(0, min(radius, min(width, height) / 2));
 }
 
+// The reserve or deficit piece of a pace bar: solid, or hatched with diagonal
+// stripes two pixels wide every four, as the Control Center draws it.
+void FillPacePiece(TFT_eSPI& tft, int x, int y, int w, int h, const primitive::ProgressCommand& cmd) {
+  if (w <= 0 || h <= 0) {
+    return;
+  }
+  if (!cmd.hatched) {
+    tft.fillRect(x, y, w, h, cmd.pieceColor);
+    return;
+  }
+  tft.fillRect(x, y, w, h, cmd.hatchGapColor);
+  for (int row = 0; row < h; ++row) {
+    int stripe = x - 3;
+    stripe += (4 - ((stripe + y + row) & 3)) & 3;
+    for (; stripe < x + w; stripe += 4) {
+      const int from = max(stripe, x);
+      const int to = min(stripe + 2, x + w);
+      if (to > from) {
+        tft.fillRect(from, y + row, to - from, 1, cmd.pieceColor);
+      }
+    }
+  }
+}
+
 class ESP8266PrimitiveSink final : public primitive::Sink {
  public:
   void FillScreen(uint16_t color) override {
@@ -71,10 +95,14 @@ class ESP8266PrimitiveSink final : public primitive::Sink {
         tft.fillRect(cmd.x + 1, cmd.y + 1, innerW, innerH, cmd.bgColor);
       }
     }
+    // A pace bar fills up to the larger of use and plan and lays the piece over
+    // the part past `percent`; without a pace pieceTo is not past percent.
+    const int pieceP = max(p, codexbar_display::core::ClampPct(cmd.pieceTo));
     if (cmd.style == 1) {
       const int segments = cmd.segments > 0 ? cmd.segments : 10;
       const int gap = cmd.segmentGap < 0 ? 0 : cmd.segmentGap;
       const int filledSegments = (segments * p + 99) / 100;
+      const int pieceSegments = (segments * pieceP + 99) / 100;
       for (int i = 0; i < segments; ++i) {
         const int segX1 = cmd.x + 1 + ((i * innerW) / segments);
         const int segX2 = cmd.x + 1 + (((i + 1) * innerW) / segments);
@@ -86,25 +114,29 @@ class ESP8266PrimitiveSink final : public primitive::Sink {
           } else {
             tft.fillRect(segX1, cmd.y + 1, segW, innerH, cmd.fillColor);
           }
+        } else if (segW > 0 && i < pieceSegments) {
+          FillPacePiece(tft, segX1, cmd.y + 1, segW, innerH, cmd);
         }
       }
-      return;
-    }
-
-    int filled = (innerW * p) / 100;
-    if (filled > innerW) {
-      filled = innerW;
-    }
-    if (filled < 0) {
-      filled = 0;
-    }
-    if (filled > 0) {
-      const int fillRadius = ClampDrawRadius(innerRadius, filled, innerH);
-      if (fillRadius > 0) {
-        tft.fillRoundRect(cmd.x + 1, cmd.y + 1, filled, innerH, fillRadius, cmd.fillColor);
-      } else {
-        tft.fillRect(cmd.x + 1, cmd.y + 1, filled, innerH, cmd.fillColor);
+    } else {
+      const int filled = min(innerW, max(0, (innerW * pieceP) / 100));
+      if (filled > 0) {
+        const int fillRadius = ClampDrawRadius(innerRadius, filled, innerH);
+        if (fillRadius > 0) {
+          tft.fillRoundRect(cmd.x + 1, cmd.y + 1, filled, innerH, fillRadius, cmd.fillColor);
+        } else {
+          tft.fillRect(cmd.x + 1, cmd.y + 1, filled, innerH, cmd.fillColor);
+        }
       }
+      const int pieceFrom = min(innerW, max(0, (innerW * p) / 100));
+      FillPacePiece(tft, cmd.x + 1 + pieceFrom, cmd.y + 1, filled - pieceFrom, innerH, cmd);
+    }
+    if (cmd.planAt >= 0) {
+      // The plan tick, 2 px wide, reaching past the bar like the ring's.
+      const int tickX = cmd.x + 1 + (innerW * min(cmd.planAt, 100)) / 100 - 1;
+      const int overhang = codexbar_display::usage_window_contract::kPaceTickOverhang;
+      const int tickY = max(0, cmd.y - overhang);
+      tft.fillRect(max(cmd.x, tickX), tickY, 2, cmd.y + cmd.height + overhang - tickY, 0xFFFF);
     }
   }
 };
