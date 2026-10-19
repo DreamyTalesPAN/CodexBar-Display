@@ -17,7 +17,7 @@ import {
   type CompanionReleaseInfo,
 } from "@/lib/companion-release";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
-import { statusForHost } from "@/lib/customer-platform";
+import { copyForHost, statusForHost } from "@/lib/customer-platform";
 import { WHATS_NEW } from "@/lib/whats-new";
 import type { CompanionInfo } from "./control-center-types";
 import { ProcessSteps } from "./process-steps";
@@ -211,6 +211,14 @@ export function UpdatesScreen({
         firmwareUpdate.status,
       ),
   );
+  // The Mac App check answered, but not with "available" (disabled, or no
+  // asset to install): that does not establish the app is current either.
+  const macAppNoAnswer = Boolean(
+    macAppRunning &&
+      companionRelease &&
+      companionRelease.status !== "available" &&
+      !macAppCheckFailed,
+  );
   const pageStatusHeading =
     installingUpdate
       ? updateStatus?.stage === "rebooting" ||
@@ -227,17 +235,17 @@ export function UpdatesScreen({
           ? "Update available"
           : checkingUpdates
             ? "Checking for updates"
-            : firmwareNoAnswer
+            : firmwareNoAnswer || macAppNoAnswer
               ? "No update available"
               : "Everything is up to date";
   const headingTone: Tone = installingUpdate
     ? "ink"
     : refreshing
       ? "muted"
-      : anyUpdateAvailable
-        ? "ink"
-        : macAppCheckFailed || firmwareCheckFailed
-      ? "failed"
+      : macAppCheckFailed || firmwareCheckFailed
+        ? "failed"
+        : anyUpdateAvailable
+          ? "ink"
       : checkingUpdates || firmwareNoAnswer
         ? "muted"
         : "ok";
@@ -300,11 +308,19 @@ export function UpdatesScreen({
       </Button>
     ) : null;
 
+  // A firmware answer counts as a finished check even without a release
+  // version (no release for this board, or the current version).
+  const firmwareCheckAnswered = Boolean(
+    firmwareUpdate &&
+      ["current", "update_available", "no_board_release"].includes(
+        firmwareUpdate.status,
+      ),
+  );
   const checkedText = lastCheckedText(
     companionRelease?.status === "available"
       ? companionRelease.checkedAt
       : undefined,
-    firmwareUpdate?.latestFirmware ? firmwareUpdate.checkedAt : undefined,
+    firmwareCheckAnswered ? firmwareUpdate?.checkedAt : undefined,
   );
   const whatsNewTitle =
     companionStatus === "online" && companionInstalled !== "Unknown"
@@ -357,9 +373,7 @@ export function UpdatesScreen({
             macAppUpdateAvailable &&
             (companionRelease?.latestVersion || companionRelease?.release)
               ? `Version ${companionRelease.latestVersion || companionRelease.release} is available`
-              : windowsHost
-                ? "Software on this computer"
-                : "Software on this Mac"
+              : copyForHost("App on this Mac", windowsHost)
           }
           icon={<Monitor aria-hidden />}
           status={
@@ -371,9 +385,11 @@ export function UpdatesScreen({
                   ? "failed"
                   : checkingMacApp
                     ? "checking"
-                    : "ok"
+                    : macAppNoAnswer
+                      ? undefined
+                      : "ok"
           }
-          title={windowsHost ? "App" : "Mac App"}
+          title="Control Center"
           version={companionInstalled}
         />
 

@@ -445,8 +445,9 @@ describe("UpdatesScreen Mac-App-first gate", () => {
 
   // Issues #438/#460: the Windows app must not call itself a Mac App.
   it.each([
-    [false, "Mac App", "Software on this Mac", "Checking Mac App"],
-    [true, "App", "Software on this computer", "Checking the app"],
+    // Frame 10 of the template: "Control Center" / "App on this Mac".
+    [false, "Control Center", "App on this Mac", "Checking Mac App"],
+    [true, "Control Center", "App on this computer", "Checking the app"],
   ])("names the app for the platform (windows=%s)", (windowsHost, title, description, checking) => {
     const html = renderMarkup(
       <UpdatesScreen
@@ -466,8 +467,8 @@ describe("UpdatesScreen Mac-App-first gate", () => {
   // Issue #558: the cards were titled "App" and "VibeTV update": one named
   // what is updated, the other the update.
   it.each([
-    [false, "Mac App"],
-    [true, "App"],
+    [false, "Control Center"],
+    [true, "Control Center"],
   ])("titles both rows with what they update (windows=%s)", (windowsHost, app) => {
     render(
       <UpdatesScreen

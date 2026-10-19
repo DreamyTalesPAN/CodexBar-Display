@@ -9116,6 +9116,51 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in this branch's entries and main's entries; the key dialog in Settings has no X (calm A2 dialogs have none).
 - Scope: the merge of main, `apps/control-center/src/components/theme-studio/openai-key-form.tsx` (one prop), `apps/control-center/src/components/settings-screen.test.tsx` (7 sections incl. Theme Studio AI) and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — #784: Support page matched to the template (build 2 QA)
+
+- User approval: pending — Paul reviews (#784 matched to the approved template, build 2 QA); look unchanged except, each one before → after: (1) the text on Support has 21 px lines → before 20 px, so the report card is 4 px taller and each check row is 46 px high → before 45 px; (2) the buttons Copy, Download, Create new and Run diagnostics have 14 px sides (Run diagnostics: icon 16 px, 8 px gap) → before 12 px sides, so each is 4 to 10 px wider now; (3) Create new and Refresh are 14 px → before 13 px.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/logs-screen.tsx`, `apps/control-center/src/components/support-report-actions.tsx`, `apps/control-center/src/components/diagnostics-panel.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #784: What's new dialog matched to the template (build 2 QA)
+
+- User approval: pending — Paul reviews (#784 matched to the approved template, build 2 QA); look unchanged except, each one before → after: (1) the dialog is 520 px wide → before 440 px; (2) "Version 1.0.64" sits as a muted line under the title "What's new" → before a small green capital line above the title (VERSION 1.0.64); (3) the entries have no icon square in front → before a green square with an icon; (4) the entries stand 24 px apart → before 16 px.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/whats-new-dialog.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #784: Support buttons spacing matched to the template (build 2 QA)
+
+- User approval: pending — Paul reviews (#784 matched to the approved template, build 2 QA); look unchanged except, each one before → after: Copy, Download and Create new stand 4 px apart → before 12 px.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/support-report-actions.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #784: Control Center needs attention dialog matched to the template (build 2 QA)
+
+- User approval: pending — Paul reviews (#784 matched to the approved template, build 2 QA); look unchanged except, each one before → after: the dialog "VibeTV Control Center needs attention" is 480 px wide, so Restart Control Center and Try automatic repair again stand side by side → before 440 px wide with the two buttons one under the other.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/setup/setup-recovery-dialogs.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #784: open Theme Studio shows one header row (build 2 QA)
+
+- User approval: pending — Paul reviews (Theme Studio header as one row per the approved template, build 2 QA); look unchanged except, before → after: while the Theme Studio is open, the window shows one header row — the Studio's own (back arrow, design name, File, undo and redo, status line, Save, Send to VibeTV) — with the sidebar open → before a second row "Appearance" with the sidebar button sat above it; the page title "Appearance" stays for screen readers.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #784: dialogs 32, 33, 39 and 47 follow the template (build 2 decision)
+
+- User approval: Paul, 19.10.2026 via the communicator: build-2 decision — app follows the template (frames 32, 33, 39, 47); each one before → after: (1) the dialogs "Repairing VibeTV Control Center" and "VibeTV Control Center needs attention" dim the screen behind them with the grey backdrop like every other dialog → before no backdrop, the page stayed bright and clickable; (2) the provider dialog for a provider that needs its own app has the title "<Provider> needs its own app" (e.g. "Ollama needs its own app") and the buttons Close and Open setup guide → before the title was only the provider's name and the buttons were OK and Open setup guide (the sentence below the title is unchanged; the other provider messages keep the provider's name as title and OK); (3) the dialog for a lost VibeTV has the title "Your VibeTV is not reachable" and the line "Choose it to connect again." → before the title "Choose your VibeTV" and the line "Your VibeTV is not reachable. Choose it to connect again." (a failed connect still shows its own message as the title).
+- Approved customer-visible result: the four dialogs look as drawn in frames 32, 33, 39 and 47 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/setup/setup-recovery-dialogs.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.tsx`, `apps/control-center/src/components/setup/setup-providers-screen.tsx`, their tests (`setup-device-dialogs.test.tsx`, `setup-providers-screen.test.tsx`) and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+
+
 ## 2026-10-19 — Calm Updates screen as drawn in the approved master, plus the states derived from the calm rules (#752)
 - User approval: pending — Paul reviews (Updates built as drawn in the approved master + derived states, decided by the communicator 19.10.)
 - Approved customer-visible result: none yet; waits for Paul's yes. Before: two cards "Mac App" and "VibeTV" with Installed / Available version chips, "Last checked <date, time with seconds>" per card, an "Alert" box for the Mac-App-first rule and the update progress, a heading "Up to date" with a "What's new" link, and one full-width lime button ("Check for updates" / "Update"). After: one headline with a dot ("Everything is up to date", "Update available", "Checking for updates", "Update check failed", "Updating VibeTV", "VibeTV is restarting"); one framed card with a row "Mac App" ("App" on Windows) and a row "VibeTV firmware", each with an icon, one version number (the installed one) and "Up to date"; "Checked today, 08:44" (or "yesterday" / the date) and an outline "Check for updates" button beside the page title; a grey "What's new in <version>" note card with the newest entry's title and "Read notes" (opens the existing What's new dialog). Update available: the row that has the update shows a lime "Update" button (Mac App: Sparkle updater or verified download; firmware: starts the update) and says "Version <x> is available"; the firmware row keeps "Update Mac App first" / "Checking Mac App" inside its row while the app comes first. Installing: a thin progress bar and one "> step" line (shared process steps) inside the firmware row. Update complete / attention: title and sentence inside the firmware row. Failed check: a dialog "Could not check for updates" with "Check the internet connection, then try again.", a lime "Try again" and "Close" (no X); the failed update dialog is unchanged.
@@ -9639,18 +9684,18 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/src/components/updates-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
-## 2026-10-19 — #784: What's new dialog matched to the template (build 2 QA)
+## 2026-10-19 — #798: Codex fixes for Updates, merge of the calm redesign base
 
-- User approval: pending — Paul reviews (#784 matched to the approved template, build 2 QA); look unchanged except, each one before → after: (1) the dialog is 520 px wide → before 440 px; (2) "Version 1.0.64" sits as a muted line under the title "What's new" → before a small green capital line above the title (VERSION 1.0.64); (3) the entries have no icon square in front → before a green square with an icon; (4) the entries stand 24 px apart → before 16 px.
+- User approval: pending — Paul reviews (Codex review fix); look unchanged except, each one before → after: (1) "Checked today, 09:10" also counts a firmware answer without a release version (no release for this board, or current) → before only a firmware answer with a version; (2) a Mac App check that is disabled or has no asset to install no longer shows "Up to date" on its row → before the green "Up to date"; (3) the page headline reads "No update available" in that case → before "Everything is up to date".
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
-- Scope: `apps/control-center/src/components/whats-new-dialog.tsx` and this approval record. Pull request branch only, not merged, not released.
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx` and this approval record; merge of origin/claude/group-calm-redesign (#784, 5d8f2885). Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
-## 2026-10-19 — #784: Support buttons spacing matched to the template (build 2 QA)
+## 2026-10-19 — #798: Codex fix follow-up, test scope only
 
-- User approval: pending — Paul reviews (#784 matched to the approved template, build 2 QA); look unchanged except, each one before → after: Copy, Download and Create new stand 4 px apart → before 12 px.
-- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
-- Scope: `apps/control-center/src/components/support-report-actions.tsx` and this approval record. Pull request branch only, not merged, not released.
+- User approval: pending — Paul reviews (Codex review fix, test file only); no visible change: the new test that checks the Mac App row's status reads that row only.
+- Approved customer-visible result: none; no visible change.
+- Scope: `apps/control-center/src/components/updates-screen.calm.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
 ## 2026-10-19 — #803: approval marker after merging the calm redesign base again (Support QA)
@@ -9660,10 +9705,11 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
 ## 2026-10-19 — #784: Control Center needs attention dialog matched to the template (build 2 QA)
+## 2026-10-19 — #798: Updates row "Control Center" as drawn in the template (build 2 decision)
 
-- User approval: pending — Paul reviews (#784 matched to the approved template, build 2 QA); look unchanged except, each one before → after: the dialog "VibeTV Control Center needs attention" is 480 px wide, so Restart Control Center and Try automatic repair again stand side by side → before 440 px wide with the two buttons one under the other.
-- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
-- Scope: `apps/control-center/src/components/setup/setup-recovery-dialogs.tsx` and this approval record. Pull request branch only, not merged, not released.
+- User approval: Paul, 19.10.2026 via the communicator: build-2 decision — app follows the template (frame 10); before → after: the first row on Updates is titled "Control Center" with the line "App on this Mac" (on Windows "App on this computer", the app's usual wording for "this Mac") → before the title "Mac App" (Windows: "App") with the line "Software on this Mac" (Windows: "Software on this computer").
+- Approved customer-visible result: the row looks as drawn in frame 10 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.test.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx`, `apps/control-center/scripts/test-customer-flows.mjs` (three locators of the row title) and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
 ## 2026-10-19 — Appearance: one page with type switch, search, filters and one Create button (#790, #791, #792, #794)
@@ -9751,13 +9797,14 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the two screens show Back as drawn in frames 18, 19, 27 and 28 of "Calm Redesign - alle Screens".
 - Scope: `apps/control-center/src/components/setup/setup-connect.ts`, `apps/control-center/src/components/setup/setup-wizard.tsx`, `apps/control-center/src/components/setup/setup-device-screen.tsx`, `apps/control-center/src/components/setup/setup-wizard.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 ## 2026-10-19 — #784: open Theme Studio shows one header row (build 2 QA)
+## 2026-10-19 — #798: approval marker after merging the Control Center row branch (rv-tpl798)
 
-- User approval: pending — Paul reviews (Theme Studio header as one row per the approved template, build 2 QA); look unchanged except, before → after: while the Theme Studio is open, the window shows one header row — the Studio's own (back arrow, design name, File, undo and redo, status line, Save, Send to VibeTV) — with the sidebar open → before a second row "Appearance" with the sidebar button sat above it; the page title "Appearance" stays for screen readers.
-- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
-- Scope: `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- User approval: Paul, 19.10.2026 via the communicator: the first Updates row as drawn in frame 10 (entry above); this marker adds no visible change of its own.
+- Approved customer-visible result: as in the entry "Updates row \"Control Center\" as drawn in the template (build 2 decision)" above.
+- Scope: merge of origin/claude/calm-updates (380662fd) into this branch, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
-## 2026-10-19 — #784: dialogs 32, 33, 39 and 47 follow the template (build 2 decision)
+## 2026-10-19 — #798: Codex fix, the headline's dot follows a failed check
 
 - User approval: Paul, 19.10.2026 via the communicator: build-2 decision — app follows the template (frames 32, 33, 39, 47); each one before → after: (1) the dialogs "Repairing VibeTV Control Center" and "VibeTV Control Center needs attention" dim the screen behind them with the grey backdrop like every other dialog → before no backdrop, the page stayed bright and clickable; (2) the provider dialog for a provider that needs its own app has the title "<Provider> needs its own app" (e.g. "Ollama needs its own app") and the buttons Close and Open setup guide → before the title was only the provider's name and the buttons were OK and Open setup guide (the sentence below the title is unchanged; the other provider messages keep the provider's name as title and OK); (3) the dialog for a lost VibeTV has the title "Your VibeTV is not reachable" and the line "Choose it to connect again." → before the title "Choose your VibeTV" and the line "Your VibeTV is not reachable. Choose it to connect again." (a failed connect still shows its own message as the title).
 - Approved customer-visible result: the four dialogs look as drawn in frames 32, 33, 39 and 47 of "Calm Redesign - alle Screens".
@@ -9769,4 +9816,7 @@ issue scope, or release permission never implies UI permission.
 - User approval: pending — Paul reviews (Codex review fix, P1 on the outage dialog; the orchestrator's decision: grey backdrop as in the template); look: the outage dialog ("Repairing VibeTV Control Center" / "VibeTV Control Center needs attention") and the busy-computer dialog show the grey backdrop as in the template → before no backdrop; the page behind stays usable as approved before (sidebar and tabs take clicks while the dialog is open).
 - Approved customer-visible result: grey backdrop as in the template; the page behind stays usable as approved before.
 - Scope: `apps/control-center/src/components/setup/setup-dialog.tsx`, the new test `apps/control-center/src/components/setup/setup-dialog.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- User approval: pending — Paul reviews (Codex review fix); look unchanged except, before → after: when a check failed and an update was found by the other check, the dot beside "Update check failed" is red → before the dot was ink, as for "Update available".
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content

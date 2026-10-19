@@ -40,7 +40,7 @@ describe("calm Updates screen", () => {
 
     expect(screen.getByRole("heading", { level: 2, name: "Everything is up to date" })).toBeTruthy();
     const rows = screen.getAllByRole("heading", { level: 3 });
-    expect(rows.map((row) => row.textContent)).toEqual(["Mac App", "VibeTV firmware"]);
+    expect(rows.map((row) => row.textContent)).toEqual(["Control Center", "VibeTV firmware"]);
     expect(screen.getAllByText("Up to date")).toHaveLength(2);
     expect(screen.getByText("1.0.64", { selector: "span" })).toBeTruthy();
     expect(screen.getByText("1.0.48")).toBeTruthy();
@@ -58,12 +58,13 @@ describe("calm Updates screen", () => {
     expect(check).toHaveBeenCalledTimes(1);
   });
 
-  it("names the Windows app 'App' and never says Mac", () => {
+  it("titles the Windows row 'Control Center' too and never says Mac", () => {
     const { container } = render(<UpdatesScreen {...upToDate} windowsHost />);
     expect(screen.getAllByRole("heading", { level: 3 }).map((row) => row.textContent)).toEqual([
-      "App",
+      "Control Center",
       "VibeTV firmware",
     ]);
+    expect(screen.getByText("App on this computer")).toBeTruthy();
     expect(container.textContent).not.toContain("Mac");
   });
 
@@ -283,6 +284,58 @@ describe("calm Updates screen", () => {
       <UpdatesScreen {...upToDate} firmwareUpdate={{ ...failed, checkedAt: "2026-10-19T09:20:00Z" }} />,
     );
     expect(screen.getByRole("dialog", { name: "Could not check for updates" })).toBeTruthy();
+  });
+
+  it("a failed check outranks an available update in the headline's dot", () => {
+    const { container } = render(
+      <UpdatesScreen
+        {...upToDate}
+        companionRelease={{ ...upToDate.companionRelease!, status: "check_failed", updateAvailable: false }}
+        firmwareUpdate={{
+          checkedAt: "2026-10-19T09:10:00Z",
+          status: "update_available",
+          installedFirmware: "1.0.48",
+          latestFirmware: "1.0.50",
+          updateAvailable: true,
+        }}
+      />,
+    );
+    expect(screen.getByText("Update check failed")).toBeTruthy();
+    expect(container.querySelector("i.bg-destructive")).not.toBeNull();
+    expect(container.querySelector("i.bg-foreground")).toBeNull();
+  });
+
+  it("a disabled Mac App check is never shown as up to date", () => {
+    render(
+      <UpdatesScreen
+        {...upToDate}
+        companionRelease={{ ...upToDate.companionRelease!, status: "disabled", updateAvailable: false }}
+      />,
+    );
+    // Only the firmware row (current) reads "Up to date"; the Mac App row does not.
+    expect(screen.getAllByText("Up to date")).toHaveLength(1);
+    expect(screen.queryByText("Everything is up to date")).toBeNull();
+    expect(screen.getByText("No update available")).toBeTruthy();
+  });
+
+  it("a firmware answer without a release counts as the last check", () => {
+    const now = new Date();
+    const firmwareAt = new Date(now.getTime() - 60_000);
+    const macAt = new Date(now.getTime() - 3 * 3_600_000);
+    const { container } = render(
+      <UpdatesScreen
+        {...upToDate}
+        companionRelease={{ ...upToDate.companionRelease!, checkedAt: macAt.toISOString() }}
+        firmwareUpdate={{
+          checkedAt: firmwareAt.toISOString(),
+          status: "no_board_release",
+          installedFirmware: "1.0.48",
+          updateAvailable: false,
+        }}
+      />,
+    );
+    const time = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(firmwareAt);
+    expect(container.textContent).toContain(time);
   });
 
   it("failed check: waits while another dialog is open and while a retry runs", () => {
