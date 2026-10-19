@@ -112,6 +112,9 @@ export function UpdatesScreen({
   // check, not a new timestamp, is what opens the dialog again. "Try again"
   // hides the dialog until its check has started.
   const [retryingFailedCheck, setRetryingFailedCheck] = useState(false);
+  // The update job whose "Update failed" dialog the customer closed. Kept here
+  // so the failed-check dialog knows whether that dialog is really open.
+  const [dismissedUpdateError, setDismissedUpdateError] = useState<string | null>(null);
   const [checkWasBusy, setCheckWasBusy] = useState(false);
   const firmwareUpdateCompleted = updateStatus?.phase === "complete";
   // Installed firmware always comes from device truth (live hello or the
@@ -233,6 +236,9 @@ export function UpdatesScreen({
         : "ok";
 
   const checkBusy = checkingUpdates || refreshing;
+  const updateErrorOpen =
+    visibleUpdateStatus?.phase === "error" &&
+    dismissedUpdateError !== visibleUpdateStatus.startedAt;
   if (checkBusy && !checkWasBusy) {
     setCheckWasBusy(true);
     setRetryingFailedCheck(false);
@@ -422,6 +428,8 @@ export function UpdatesScreen({
           {visibleUpdateStatus ? (
             <InlineUpdateProgress
               key={visibleUpdateStatus.startedAt}
+              errorDismissed={dismissedUpdateError === visibleUpdateStatus.startedAt}
+              onDismissError={() => setDismissedUpdateError(visibleUpdateStatus.startedAt)}
               creatingReport={creatingReport}
               onCreateReport={onCreateReport}
               onRetry={
@@ -463,7 +471,7 @@ export function UpdatesScreen({
       !retryingFailedCheck &&
       !checkBusy &&
       !otherDialogOpen &&
-      visibleUpdateStatus?.phase !== "error" ? (
+      !updateErrorOpen ? (
         <CheckFailedDialog
           onClose={() => setDismissedFailedCheck(failedCheckKey)}
           onTryAgain={
@@ -610,16 +618,19 @@ function CheckFailedDialog({
 
 function InlineUpdateProgress({
   creatingReport,
+  errorDismissed,
+  onDismissError,
   onCreateReport,
   onRetry,
   status,
 }: {
   creatingReport: boolean;
+  errorDismissed: boolean;
+  onDismissError: () => void;
   onCreateReport?: () => void;
   onRetry?: () => void;
   status: FirmwareUpdateStatus;
 }) {
-  const [errorDismissed, setErrorDismissed] = useState(false);
   if (status.phase === "error") {
     if (errorDismissed) return null;
     const reportAction = {
@@ -632,7 +643,9 @@ function InlineUpdateProgress({
       <SetupDialog
         description={status.error || "Update was not installed."}
         icon={TriangleAlert}
-        onOpenChange={(open) => setErrorDismissed(!open)}
+        onOpenChange={(open) => {
+          if (!open) onDismissError();
+        }}
         open
         primaryAction={status.retryAllowed !== false ? {
           label: "Try again", disabled: !onRetry, onSelect: () => onRetry?.(),

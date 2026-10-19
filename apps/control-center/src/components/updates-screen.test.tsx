@@ -45,6 +45,27 @@ describe("UpdatesScreen VibeTV update card", () => {
     expect(retry).toHaveBeenCalledTimes(1);
   });
 
+  it("opens a failed check after the customer closed an update error", () => {
+    const props = {
+      companionStatus: "online" as const,
+      companionRelease: { checkedAt: "2026-09-10T10:00:00Z", status: "available" as const, updateAvailable: false, message: "Mac App is up to date." },
+      device: { connected: true, board: "esp8266-smalltv-st7789", firmware: "1.0.39" },
+      firmwareUpdate: { checkedAt: "2026-09-10T10:00:00Z", status: "update_available" as const, updateAvailable: true, latestFirmware: "1.0.40" },
+      updateStatus: { phase: "error" as const, startedAt: "2026-09-10T10:01:00Z", error: "Update was not installed.", logs: [] },
+    };
+    const view = render(<UpdatesScreen {...props} />);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // A later check fails while the old job still reports its error phase.
+    view.rerender(
+      <UpdatesScreen
+        {...props}
+        firmwareUpdate={{ checkedAt: "2026-09-10T10:05:00Z", status: "check_failed" as const, updateAvailable: false }}
+      />,
+    );
+    expect(screen.getByRole("dialog", { name: "Could not check for updates" })).toBeTruthy();
+  });
+
   it("tells the customer to wait during the update-owned reboot", () => {
     const html = renderMarkup(
       <UpdatesScreen
