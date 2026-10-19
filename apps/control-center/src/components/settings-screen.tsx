@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 import { loadUserThemes } from "@/lib/theme-studio-storage";
 import type { ThemeProduct } from "@/lib/themes";
 import { PreferenceControl } from "./preference-control";
+import { ThemeStudioKeyRow } from "./theme-studio/openai-key-form";
 import { isProviderItem, type ProviderPickerProps } from "./provider-picker";
 import {
   ProviderList,
@@ -580,6 +581,12 @@ export function SettingsScreen({
             </DialogContent>
           </Dialog>
         ) : null}
+      </SettingsSection>
+
+      <ItemSeparator className="my-0" />
+
+      <SettingsSection title="Theme Studio AI">
+        <ThemeStudioKeyRow />
       </SettingsSection>
 
       <ItemSeparator className="my-0" />
