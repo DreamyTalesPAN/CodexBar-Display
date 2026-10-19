@@ -7,10 +7,6 @@ import { createBlankThemeSpec } from "@/lib/theme-studio";
 import { AIThemeStudioScreen } from "./ai-theme-studio-screen";
 import { createDesignElement } from "./design-controls";
 
-vi.mock("@/components/ui/sidebar", () => ({
-  useSidebar: () => ({ open: true, setOpen: () => {} }),
-}));
-
 vi.mock("@/lib/ai-theme", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/ai-theme")>()),
   fetchAIThemeCapabilities: vi.fn(),
@@ -161,6 +157,27 @@ describe("Theme Studio notices", () => {
     fireEvent.change(name, { target: { value: "Neu" } });
     expect(name.value).toBe("Neu");
     expect(name.title).toBe("Neu");
+  });
+
+  it("does not touch the navigation, so the sidebar stays as the customer left it (no provider needed)", () => {
+    render(<AIThemeStudioScreen />);
+    expect(screen.getByLabelText("Design name")).toBeTruthy();
+  });
+
+  it("sets the chat text at 13 px", async () => {
+    vi.mocked(planAIThemeLayout).mockReturnValue(new Promise(() => {}));
+    render(<AIThemeStudioScreen />);
+    expect(screen.getByText(/Describe a design, ask for a change/).className).toContain("text-[13px]");
+    await sendIdea();
+    expect((await screen.findByText("A tiny office at dusk")).className).toContain("text-[13px]");
+  });
+
+  it("sets the File menu entries in regular weight", async () => {
+    render(<AIThemeStudioScreen />);
+    fireEvent.click(within(document.querySelector("header") as HTMLElement).getByRole("button", { name: "File" }));
+    for (const name of ["New design", "Open saved design…", "Open design file…", "Download editable design", "Export theme pack"]) {
+      expect((await screen.findByRole("button", { name })).className).toContain("font-normal");
+    }
   });
 
   it("opens the key dialog with a plain heading and no subtitle", async () => {

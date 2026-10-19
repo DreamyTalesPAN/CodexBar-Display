@@ -8079,3 +8079,15 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: before → after: the class of the third revision alone left the panel squeezed to 12 px in a window narrower than 1024 px, because the panel's own scroll rule still applied; after: below 1024 px the panel has its natural height (about 170 px for the selected element) and the column scrolls; in the wide layout it is unchanged.
 - Scope: `apps/control-center/src/components/theme-studio/editable-theme-preview.tsx`, `ai-theme-studio-screen.tsx` (the Details block: the scroll rule applies from 1024 px up), and this record. Pull request branch only, not merge or release.
 - What's new: none — layout refinement of the Theme Studio, no new feature
+
+## 2026-10-19 — Theme Studio and key dialog matched to the approved template (#781, build 2 QA)
+
+- User approval: matched to the approved template "Calm Redesign – alle Screens" (Paul's design, frames 03, 07–09 and 38) after the build 2 QA of 19.10.2026; no new design decision, not seen by Paul as a build.
+- Approved customer-visible result: before → after:
+  1. Settings › Theme Studio AI (frame 03): before: a framed card with only "Connected" and "Change key" at 14 px; after: an unframed row like the other Settings rows: the label "API key" (13 px, muted), a green dot with "Connected" (a grey dot with "Not connected" when no key is saved), and the outline button "Change key" ("Add key" when none) at 13 px.
+  2. Key dialog (frame 38; "Add OpenAI key" or "Replace OpenAI key"): before: the buttons were stacked full-width ("Connect and continue" / "Update key" above "Disconnect OpenAI", plus a Close row or an X); after: one row: "Not now" and the main action side by side on the right ("Connect and continue" in the Studio, "Save key" / "Update key" in Settings, "Retry connection check" after a failed check); "Disconnect OpenAI" stays on the left of the same row, as a quiet button, when a key is saved. The key field and the agreement line are 13 px, the tick box 16 px. No X in the Studio's key dialog.
+  3. Theme Studio while open: before: the editor collapsed the navigation to icons; after: the navigation stays as it is (open in the template).
+  4. Theme Studio texts: before: chat messages and the hint were 14 px and the File menu entries medium weight; after: chat messages, the hint and the message field are 13 px and the File menu entries regular weight.
+  5. The export notice ("Theme pack exported. No device was contacted.") shows in the header row, right, left of Save (unchanged since the entry above; now covered by a test and a picture).
+- Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx`, `ai-theme-studio-screen.tsx`, their tests, the copy guard `apps/control-center/scripts/check-customer-ui-copy.mjs` ("API key" is the approved label of the Settings row), and this record. Pull request branch only, not merge or release. The one header row without the extra "Appearance" title needs the shell of #784 and is delivered as a patch for that branch.
+- What's new: none — matched to the approved design, no new feature

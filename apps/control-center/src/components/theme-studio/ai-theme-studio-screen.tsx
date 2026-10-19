@@ -27,7 +27,6 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
 import { Input } from "@/components/ui/input";
-import { useSidebar } from "@/components/ui/sidebar";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -150,7 +149,7 @@ function userTurn(text: string | null, images: { name: string; data: string }[] 
       {images.map((image, i) => (
         <span key={i} role="img" aria-label={image.name} title={image.name} className="size-8 shrink-0 rounded-md bg-cover bg-center" style={{ backgroundImage: `url(data:image/png;base64,${image.data})` }} />
       ))}
-      <p className="min-w-0 whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{text}</p>
+      <p className="min-w-0 whitespace-pre-wrap text-[13px] [overflow-wrap:anywhere]">{text}</p>
     </div>
   );
 }
@@ -183,14 +182,6 @@ export function AIThemeStudioScreen({
     } : blank()),
   );
   const nativeInstall = Boolean(onInstallTheme);
-  const sidebar = useSidebar();
-  // Give the editor the width while it is open; the customer can still expand
-  // the navigation, so this runs once and restores the earlier state on leave.
-  useEffect(() => {
-    sidebar.setOpen(false);
-    return () => sidebar.setOpen(sidebar.open);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
   const document = state.present;
   const dirty = isThemeStudioDirty(state);
   const visibleInstallStatus = installStatus?.themeId === document.spec.themeId ? installStatus : null;
@@ -1060,20 +1051,20 @@ export function AIThemeStudioScreen({
               </PopoverTrigger>
               <PopoverContent align="start" className="w-64 p-1.5">
                 <div className="flex flex-col gap-0.5" onClick={() => setFileMenu(false)}>
-                  <Button size="sm" variant="ghost" className="w-full justify-start font-medium" onClick={() => requestLoad({ document: blank() })}>
+                  <Button size="sm" variant="ghost" className="w-full justify-start font-normal" onClick={() => requestLoad({ document: blank() })}>
                     New design
                   </Button>
-                  <Button size="sm" variant="ghost" className="w-full justify-start font-medium" onClick={() => openPanel("library")}>
+                  <Button size="sm" variant="ghost" className="w-full justify-start font-normal" onClick={() => openPanel("library")}>
                     Open saved design…
                   </Button>
                   <div aria-hidden className="my-1 h-px bg-border" />
-                  <Button size="sm" variant="ghost" className="w-full justify-start font-medium" onClick={() => jsonInput.current?.click()}>
+                  <Button size="sm" variant="ghost" className="w-full justify-start font-normal" onClick={() => jsonInput.current?.click()}>
                     Open design file…
                   </Button>
-                  <Button size="sm" variant="ghost" className="w-full justify-start font-medium" disabled={!document.spec.primitives.length} onClick={() => download(JSON.stringify(document, null, 2), "vibetv-scene.json", "application/json")}>
+                  <Button size="sm" variant="ghost" className="w-full justify-start font-normal" disabled={!document.spec.primitives.length} onClick={() => download(JSON.stringify(document, null, 2), "vibetv-scene.json", "application/json")}>
                     Download editable design
                   </Button>
-                  <Button size="sm" variant="ghost" className="w-full justify-start font-medium" disabled={!document.spec.primitives.length || validation.errors.length > 0} onClick={exportPack}>
+                  <Button size="sm" variant="ghost" className="w-full justify-start font-normal" disabled={!document.spec.primitives.length || validation.errors.length > 0} onClick={exportPack}>
                     Export theme pack
                   </Button>
                 </div>
@@ -1487,12 +1478,12 @@ export function AIThemeStudioScreen({
               {messages.length || asking !== null ? messages.map((message, i) => (
                 message.role === "user" ? <div key={i}>{userTurn(message.content, message.images)}</div> : <p
                   key={i}
-                  className="mr-6 whitespace-pre-wrap text-sm [overflow-wrap:anywhere]"
+                  className="mr-6 whitespace-pre-wrap text-[13px] [overflow-wrap:anywhere]"
                 >
                   {message.content}
                 </p>
               )) : (
-                <p className="my-auto text-center text-sm text-muted-foreground">
+                <p className="my-auto text-center text-[13px] text-muted-foreground">
                   Describe a design, ask for a change, or ask what is possible.
                 </p>
               )}
@@ -1581,7 +1572,7 @@ export function AIThemeStudioScreen({
                     void generate();
                   }
                 }}
-                className="min-h-8 max-h-64 resize-none overflow-y-auto rounded-none border-0 bg-transparent px-3.5 pb-0 pt-3 disabled:bg-transparent focus-visible:ring-0 [field-sizing:fixed]"
+                className="min-h-8 max-h-64 resize-none overflow-y-auto rounded-none border-0 text-[13px] md:text-[13px] bg-transparent px-3.5 pb-0 pt-3 disabled:bg-transparent focus-visible:ring-0 [field-sizing:fixed]"
                 placeholder={selected.length ? "Describe what to change in this element…" : "Describe your design or what to change…"}
               />
               <div className="flex items-center gap-0.5 px-1.5 pb-2 pt-3">
@@ -1643,12 +1634,13 @@ export function AIThemeStudioScreen({
           if (!open) closePanel();
         }}
         title={configured ? "Replace OpenAI key" : "Add OpenAI key"}
-        showCloseButton={!connecting}
+        showCloseButton={false}
       >
           <OpenAIKeyForm
               inSetup
               initialConfigured={configured}
               onConfiguredChange={setConfigured}
+              onDismiss={closePanel}
               onConnectingChange={setConnecting}
               onConnected={(kept) => {
                 setConfigured(true);
