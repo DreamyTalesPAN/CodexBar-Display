@@ -214,6 +214,20 @@ needed.
   read-only flag. The job verifies the resulting signature with
   `Get-AuthenticodeSignature` and fails the release if it is missing or issued
   to an unexpected subject.
+- SmartScreen record (#418). The public installer of v1.0.64, read on the test
+  laptop on 2026-10-13 with `Get-AuthenticodeSignature`: status `Valid`,
+  subject `CN=DreamyTales GmbH, O=DreamyTales GmbH, L=Cologne, S=North
+  Rhine-Westphalia, C=DE`, issuer `Microsoft ID Verified CS EOC CA 03`, a
+  three-day certificate (2026-10-12 to 2026-10-15) with a counter-signature of
+  the `Microsoft Public RSA Time Stamping Authority`, so the signature stays
+  valid after the certificate ends. That is a publicly trusted, identity
+  validated certificate, not an EV one. The installed
+  `VibeTVControlCenter.exe` of an unsigned CI build reads `NotSigned`, as
+  expected. Not recorded: the reputation state, that is whether SmartScreen
+  shows "Windows protected your PC" on a first download. The bench installs
+  over SSH from a file without the Mark of the Web, so SmartScreen never looks
+  at it; it needs one download in Edge on a Windows machine that has never run
+  the app, with a picture of what appears.
 - Pinned-CLI validation (`validate-codexbar`) is a stub outside macOS; the
   Windows CLI is trusted by the installer SHA-256 pin only.
 - Not proven in the VM: ARM64 hosts, Cable transport, a real N→N+1 update
