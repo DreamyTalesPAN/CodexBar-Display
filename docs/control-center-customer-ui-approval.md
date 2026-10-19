@@ -8363,6 +8363,13 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/src/components/setup/setup-recovery-dialogs.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
+## 2026-10-19 — #784: open Theme Studio shows one header row (build 2 QA)
+
+- User approval: pending — Paul reviews (Theme Studio header as one row per the approved template, build 2 QA); look unchanged except, before → after: while the Theme Studio is open, the window shows one header row — the Studio's own (back arrow, design name, File, undo and redo, status line, Save, Send to VibeTV) — with the sidebar open → before a second row "Appearance" with the sidebar button sat above it; the page title "Appearance" stays for screen readers.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
 ## 2026-10-19 — #784: dialogs 32, 33, 39 and 47 follow the template (build 2 decision)
 
 - User approval: Paul, 19.10.2026 via the communicator: build-2 decision — app follows the template (frames 32, 33, 39, 47); each one before → after: (1) the dialogs "Repairing VibeTV Control Center" and "VibeTV Control Center needs attention" dim the screen behind them with the grey backdrop like every other dialog → before no backdrop, the page stayed bright and clickable; (2) the provider dialog for a provider that needs its own app has the title "<Provider> needs its own app" (e.g. "Ollama needs its own app") and the buttons Close and Open setup guide → before the title was only the provider's name and the buttons were OK and Open setup guide (the sentence below the title is unchanged; the other provider messages keep the provider's name as title and OK); (3) the dialog for a lost VibeTV has the title "Your VibeTV is not reachable" and the line "Choose it to connect again." → before the title "Choose your VibeTV" and the line "Your VibeTV is not reachable. Choose it to connect again." (a failed connect still shows its own message as the title).
