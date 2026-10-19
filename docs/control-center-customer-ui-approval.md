@@ -9820,3 +9820,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-19 — #780: Codex fix, Back during a pairing returns to the connection choice
+
+- User approval: pending — Paul reviews (Codex review fix, P1/P2 on Back during a pairing); look unchanged except, before → after: pressing Back while a pairing still finishes lands on the connection choice → before, when the VibeTV had already been published, the customer could be sent on to provider setup instead.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/setup/setup-wizard.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #780: Back shows "Stopping…" while the running step finishes (build 2 decision)
+
+- User approval: Paul via the communicator, 20.10.2026 night: build-2 decision — Back during "Connecting to VibeTV" (frames 18, 19) shows at once that it was pressed; before → after: right after the click the Back button turns into a spinner with "Stopping…" (13 px, muted, not clickable) and stays so until the running step (pairing, firmware check or firmware update) has finished, then the choice of Cable/WiFi shows → before the button looked unchanged until the step ended. Back while waiting for WiFi (frames 27, 28) still leaves at once.
+- Approved customer-visible result: the Back button reads "Stopping…" with a spinner while the running step finishes.
+- Scope: `apps/control-center/src/components/setup/setup-connect.ts`, `apps/control-center/src/components/setup/setup-wizard.tsx`, `apps/control-center/src/components/setup/setup-wizard-screen.tsx`, `apps/control-center/src/components/setup/setup-device-screen.tsx`, `apps/control-center/src/components/setup/setup-wizard.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content

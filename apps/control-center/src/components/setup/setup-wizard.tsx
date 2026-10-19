@@ -183,10 +183,6 @@ export function SetupWizard(props: SetupWizardProps) {
   // Only then does the connect screen have a choice to go back to; a lone
   // VibeTV that connects by itself has none.
   const [connectChosen, setConnectChosen] = useState(false);
-  const derivedStepRef = useRef(derivedStep);
-  useEffect(() => {
-    derivedStepRef.current = derivedStep;
-  }, [derivedStep]);
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [connectionDeviceId, setConnectionDeviceId] = useState<string | null>(null);
   const [preferredTransport, setPreferredTransport] =
@@ -736,11 +732,10 @@ export function SetupWizard(props: SetupWizardProps) {
     // then the connection choice shows again.
     const leaveAfterConnect = () => connect.leaveWhenSettled(() => {
       // Pairing publishes the VibeTV before the sequence ends, so the derived
-      // step may already be past this one.
+      // step may already be past this one: the connection choice is recorded
+      // either way, without reading the step ref that may still be stale.
       directAttempt.current = "";
-      if (derivedStepRef.current !== "device") {
-        setWentBackTo("device");
-      }
+      setWentBackTo("device");
       backToConnectionChoice();
     });
     const onBack = connectInFlight
@@ -773,6 +768,7 @@ export function SetupWizard(props: SetupWizardProps) {
           logLines={connectLogLines(connect.state, props.firmwareWrittenPercent)}
           onConnect={startConnect}
           onBack={onBack}
+          stopping={connect.leaving}
           onChooseTransport={(transport) => void chooseTransport(transport)}
           onEditWiFi={() => setWiFiSetup((current) =>
             current ? { ...current, phase: "credentials" } : current,
