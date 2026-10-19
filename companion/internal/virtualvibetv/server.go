@@ -334,6 +334,7 @@ func (s *Server) handleHello(w http.ResponseWriter, r *http.Request) {
 				MaxThemeGifHeight:        80,
 				MaxThemeGifPixels:        80 * 80,
 				MaxThemeGifLzwBits:       11,
+				SupportedPrimitiveTypes:  []string{"text", "rect", "progress", "gif", "sprite", "pixels"},
 				BuiltinThemes:            []string{"mini-classic", "claude-creature"},
 			},
 			Transport: protocol.TransportCapabilities{Active: "wifi", Supported: []string{"usb", "wifi"}, Mode: "station"},
@@ -470,7 +471,32 @@ func (s *Server) handleFrame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, MaxFrameBytes+1))
-	if err != nil || len(body) == 0 || len(body) > MaxFrameBytes || !json.Valid(body) {
+	if err != nil {
+		s.respond(w, r, http.StatusBadRequest, "invalid frame", "invalid frame")
+		return
+	}
+	// The same answers as handleFrame in firmware_esp8266/src/main.cpp: 413 for
+	// a frame above the limit, 400 for an empty body.
+	if len(body) == 0 {
+		s.respond(w, r, http.StatusBadRequest, "empty frame body", "invalid frame")
+		return
+	}
+	if len(body) > MaxFrameBytes {
+		s.respond(w, r, http.StatusRequestEntityTooLarge, "frame body too large", "frame too large")
+		return
+	}
+	// A frame is one line: the firmware trims the body, then refuses any line
+	// break left inside it.
+	body = bytes.TrimSpace(body)
+	if len(body) == 0 {
+		s.respond(w, r, http.StatusBadRequest, "empty frame body", "invalid frame")
+		return
+	}
+	if bytes.ContainsAny(body, "\r\n") {
+		s.respond(w, r, http.StatusBadRequest, "expected one newline-delimited JSON frame", "invalid frame")
+		return
+	}
+	if !json.Valid(body) {
 		s.respond(w, r, http.StatusBadRequest, "invalid frame", "invalid frame")
 		return
 	}
@@ -552,6 +578,12 @@ func (s *Server) handleThemeActive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := cleanAssetPath(request.Path)
+	// readStoredThemeSpec in the firmware refuses any path outside /themes/
+	// before it looks for the file.
+	if !strings.HasPrefix(path, "/themes/") {
+		s.respond(w, r, http.StatusBadRequest, "invalid theme path", "theme activation path outside /themes/")
+		return
+	}
 	s.mu.Lock()
 	data, ok := s.assets[path]
 	refusal := storedThemeRefusal(data)
@@ -569,7 +601,7 @@ func (s *Server) handleThemeActive(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Unlock()
 	if !ok {
-		s.respond(w, r, http.StatusNotFound, "theme not found", "theme activation missing asset")
+		s.respond(w, r, http.StatusNotFound, "theme file not found", "theme activation missing asset")
 		return
 	}
 	if refusal != "" {
@@ -598,8 +630,7 @@ func (s *Server) handleThemeActive(w http.ResponseWriter, r *http.Request) {
 // filtered first pass does not reach the error, takes single quotes and unquoted
 // keys, and refuses more than 10 nested levels. Strings that are invalid UTF-8 or
 // hold a lone surrogate escape are counted as Go decodes them, which may differ
-// from the bytes ArduinoJson stores. The GIF and sprite asset rules do not cut a
-// path at a NUL as the firmware does.
+// from the bytes ArduinoJson stores.
 func storedThemeRefusal(spec []byte) string {
 	if len(bytes.TrimSpace(spec)) == 0 || len(spec) > maxStoredThemeSpecBytes {
 		return "theme file too large"
