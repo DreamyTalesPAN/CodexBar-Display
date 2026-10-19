@@ -7558,3 +7558,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the three items named in the user approval above, as described in the pending entry: the create buttons read "Create theme" and "Create screensaver"; the engine source line reads "Included with the app"; the Overview image beside the VibeTV photo has the softer shadow that fades out. The slider and sidebar items of that pending entry are not named in this approval and stay open.
 - Scope: this approval record only; no code change in this entry. Pull request branch only, not merge or release.
 - What's new: none — approval record
+
+## 2026-10-19 — #677: approval marker after merging main with #645
+
+- User approval: Marcus passed the click test of #677 on 2026-10-19 (build 99.0.1148, head f27b888d) without remarks; it covered all five items of the 2026-10-16 entry, including the slider and sidebar items that stayed open after Paul's approval. Main moved on with #645 while the branch was in review, so main is merged in (orchestrator, Paul not active). The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #677 entries above and the #645 entries from main. Appearance › Screensavers shows "Create screensaver" together with #645's "Screensaver is off." line; nothing else changes.
+- Scope: the merge of main into this branch, the Screensavers expectation in `theme-library-screen.test.tsx` (both sides kept) and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
