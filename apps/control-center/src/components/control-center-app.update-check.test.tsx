@@ -3,7 +3,8 @@
 // Observed on hardware on 2026-10-07 (Windows app): "Check for updates" moved
 // the VibeTV card's "Last checked" and left the app card's where it was. The
 // app's own release is read with the status, which repeats its answer for six
-// hours; only a read that says the customer asked gets a new one.
+// hours; only a read that says the customer asked gets a new one. The calm
+// Updates screen shows the newest of the two checks ("Checked Oct 7, 12:34").
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, expect, it, vi } from "vitest";
@@ -36,10 +37,14 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 function lastChecked(value: string): string {
-  return `Last checked ${new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "medium",
-  }).format(new Date(value))}`;
+  const date = new Date(value);
+  return `Checked ${new Intl.DateTimeFormat(undefined, {
+    day: "numeric",
+    month: "short",
+  }).format(date)}, ${new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date)}`;
 }
 
 // The Mac App as this window sees it: its release answer only changes when a
@@ -99,10 +104,20 @@ async function openUpdates() {
           device,
         });
       }
+      if (url.includes("/api/companion/latest")) {
+        return jsonResponse({
+          checkedAt: firstCheck,
+          status: "available",
+          latestVersion: "9.9.9",
+          installedVersion: "9.9.9",
+          updateAvailable: false,
+          message: "Mac App is up to date.",
+        });
+      }
       if (url.includes("/api/firmware/latest")) {
         companion.firmwareChecks += 1;
         return jsonResponse({
-          checkedAt: "2026-10-07T12:34:07Z",
+          checkedAt: "2026-10-07T11:50:07Z",
           installedFirmware: device.firmware,
           latestFirmware: device.firmware,
           updateAvailable: false,

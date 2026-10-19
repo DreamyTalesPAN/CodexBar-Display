@@ -9275,4 +9275,151 @@ issue scope, or release permission never implies UI permission.
 - User approval: Paul, 19.10.2026 via the communicator: build-2 decision — app follows the template (frame 49); before → after: the dialog "Your computer is very busy" dims the screen behind it with the grey backdrop like every other dialog → before no backdrop, the page stayed bright and clickable.
 - Approved customer-visible result: the dialog looks as drawn in frame 49 of "Calm Redesign - alle Screens".
 - Scope: `apps/control-center/src/components/system-busy-dialog.tsx`, `apps/control-center/src/components/system-busy-dialog.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+
+
+
+
+
+## 2026-10-19 — Calm Updates screen as drawn in the approved master, plus the states derived from the calm rules (#752)
+- User approval: pending — Paul reviews (Updates built as drawn in the approved master + derived states, decided by the communicator 19.10.)
+- Approved customer-visible result: none yet; waits for Paul's yes. Before: two cards "Mac App" and "VibeTV" with Installed / Available version chips, "Last checked <date, time with seconds>" per card, an "Alert" box for the Mac-App-first rule and the update progress, a heading "Up to date" with a "What's new" link, and one full-width lime button ("Check for updates" / "Update"). After: one headline with a dot ("Everything is up to date", "Update available", "Checking for updates", "Update check failed", "Updating VibeTV", "VibeTV is restarting"); one framed card with a row "Mac App" ("App" on Windows) and a row "VibeTV firmware", each with an icon, one version number (the installed one) and "Up to date"; "Checked today, 08:44" (or "yesterday" / the date) and an outline "Check for updates" button beside the page title; a grey "What's new in <version>" note card with the newest entry's title and "Read notes" (opens the existing What's new dialog). Update available: the row that has the update shows a lime "Update" button (Mac App: Sparkle updater or verified download; firmware: starts the update) and says "Version <x> is available"; the firmware row keeps "Update Mac App first" / "Checking Mac App" inside its row while the app comes first. Installing: a thin progress bar and one "> step" line (shared process steps) inside the firmware row. Update complete / attention: title and sentence inside the firmware row. Failed check: a dialog "Could not check for updates" with "Check the internet connection, then try again.", a lime "Try again" and "Close" (no X); the failed update dialog is unchanged.
+- Scope: `apps/control-center/src/components/updates-screen.tsx` (+ tests), `apps/control-center/src/components/process-steps.tsx` (+ test; identical to the file in the Theme Studio group, so the two merge without a conflict), and this approval record. Pull request branch only, stacked on #784; not merged, not released.
+- What's new: none — the Updates screen shows the entries that already exist
+
+## 2026-10-19 — Calm Updates screen: test and selector fixes after CI, one visible detail (#752)
+- User approval: pending — Paul reviews (Updates built as drawn in the approved master + derived states, decided by the communicator 19.10.)
+- Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged from the entry above except: a Mac App migration that cannot start yet (no verified download) shows no closed "Update" button next to a firmware update that can start, so the one lime "Update" stays the firmware's (before: one closed and one open "Update"); the Mac App row says "Version <x> is available" from the release's version or tag.
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, its tests, `control-center-app.update-check.test.tsx` and `control-center-app.whats-new.test.tsx` (new wording: "Checked <date>, <time>", "Read notes"), the customer-flow selectors in `apps/control-center/scripts/test-customer-flows.mjs`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new feature; the Updates screen shows the entries that already exist
+
+## 2026-10-19 — Calm Updates screen: Codex review fixes (#752)
+- User approval: pending — Paul reviews (Updates built as drawn in the approved master + derived states, decided by the communicator 19.10.)
+- Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged from the entries above except: the firmware "Update" stays closed while a check runs and after the Mac App check failed (as the old single button did); a theme-only update says "A theme update is available" instead of a firmware version; a firmware check that answered with neither "current" nor an update (no release for this board, not supported over this connection) shows its own message in the row and the headline "No update available" instead of "Up to date".
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new feature; the Updates screen shows the entries that already exist
+
+## 2026-10-19 — Calm Updates screen: failed-check dialog waits for the notes and for a retry (#752)
+- User approval: pending — Paul reviews (Updates built as drawn in the approved master + derived states, decided by the communicator 19.10.)
+- Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged from the entries above except: the "Could not check for updates" dialog does not open while the "What's new" notice is open (it opens after the notice is closed), and not while a retry runs; a retry that succeeds leaves no dialog behind.
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/control-center-app.tsx` (passes whether the notice is open), their tests, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new feature; the Updates screen shows the entries that already exist
+
+## 2026-10-19 — Calm Updates screen: failed-check dialog waits for every other dialog (#752)
+- User approval: pending — Paul reviews (Updates built as drawn in the approved master + derived states, decided by the communicator 19.10.)
+- Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged from the entries above except: the "Could not check for updates" dialog also waits while the usage-recovery or "system busy" dialog is open (before in this PR: only while the "What's new" notice was open), so two dialogs are never open together.
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/control-center-app.tsx`, the Updates test, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new feature; the Updates screen shows the entries that already exist
+
+## 2026-10-19 — Calm Updates screen: a closed failed-check dialog stays closed after another dialog (#752, Codex fix)
+- User approval: pending — Paul reviews (Updates built as drawn in the approved master + derived states, decided by the communicator 19.10.); Codex review fix, no visible change; not seen by Paul
+- Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged from the entries above except: after the customer closes "Could not check for updates", a What's new, usage-recovery or "system busy" dialog that opens and closes no longer brings the same failure back; only a newer failed check opens it again.
+- Scope: `apps/control-center/src/components/updates-screen.tsx` (dismissed failure kept in the screen, not in the dialog), `apps/control-center/src/components/updates-screen.calm.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new feature; the Updates screen shows the entries that already exist
+
+## 2026-10-19 — Calm Updates screen: a retry that fails again always reopens the failed-check dialog (#752, Codex fix)
+- User approval: pending — Paul reviews (Updates built as drawn in the approved master + derived states, decided by the communicator 19.10.); Codex review fix, no visible change; not seen by Paul
+- Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged from the entries above except: after "Try again" the dialog stays closed while the retry runs and opens again when that retry fails, also when its answer carries the same second as the failure before.
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new feature; the Updates screen shows the entries that already exist
+
+## 2026-10-19 — Calm Updates screen: any finished check lifts a closed failed-check dialog (#752, Codex fix)
+- User approval: pending — Paul reviews (Updates built as drawn in the approved master + derived states, decided by the communicator 19.10.); Codex review fix, no visible change; not seen by Paul
+- Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged from the entries above except: a check started from the "Check for updates" button that fails again opens the dialog again, like "Try again", also when its answer carries the same second.
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new feature; the Updates screen shows the entries that already exist
+
+## 2026-10-19 — Calm Updates screen: a closed "Update failed" dialog no longer blocks the failed-check dialog (#752, Codex fix)
+- User approval: pending — Paul reviews (Updates built as drawn in the approved master + derived states, decided by the communicator 19.10.); Codex review fix, no visible change; not seen by Paul
+- Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged from the entries above except: after the customer closed "Update failed", a later failed update check opens "Could not check for updates" although the old job still reports its error.
+- Scope: `apps/control-center/src/components/updates-screen.tsx` (the closed update error is kept in the screen), `apps/control-center/src/components/updates-screen.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new feature; the Updates screen shows the entries that already exist
+
+## 2026-10-19 — Calm Updates screen: the heading says "Checking for updates" while a started check runs (#752, Codex fix)
+- User approval: pending — Paul reviews (Updates built as drawn in the approved master + derived states, decided by the communicator 19.10.); Codex review fix; not seen by Paul
+- Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged from the entries above except: while a check the customer started runs, the headline reads "Checking for updates" (muted dot) instead of the old "Update check failed" / "Update available"; it matches the button "Checking updates".
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new feature; the Updates screen shows the entries that already exist
+
+## 2026-10-19 — #798: approval marker after merging the calm redesign base (Updates)
+
+- User approval: Merge of the calm redesign base (#784 incl. main with #638) into this branch; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — #798: Updates page matched to the template (build 2 QA)
+
+- User approval: pending — Paul reviews (#798 matched to the approved template, build 2 QA); look unchanged except, each one before → after: (1) the text on Updates is 14 px with 21 px lines (row names, descriptions, Up to date, Checked, What's new card) → before 13 px; (2) the headline (for example Everything is up to date) is 15 px → before 13 px; (3) Check for updates and Read notes are 14 px → before 13 px; the version numbers stay 13 px monospace; each row is 3 px taller, the page is a little taller.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/updates-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #798: Codex fixes for Updates, merge of the calm redesign base
+
+- User approval: pending — Paul reviews (Codex review fix); look unchanged except, each one before → after: (1) "Checked today, 09:10" also counts a firmware answer without a release version (no release for this board, or current) → before only a firmware answer with a version; (2) a Mac App check that is disabled or has no asset to install no longer shows "Up to date" on its row → before the green "Up to date"; (3) the page headline reads "No update available" in that case → before "Everything is up to date".
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx` and this approval record; merge of origin/claude/group-calm-redesign (#784, 5d8f2885). Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #798: Codex fix follow-up, test scope only
+
+- User approval: pending — Paul reviews (Codex review fix, test file only); no visible change: the new test that checks the Mac App row's status reads that row only.
+- Approved customer-visible result: none; no visible change.
+- Scope: `apps/control-center/src/components/updates-screen.calm.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #798: Updates row "Control Center" as drawn in the template (build 2 decision)
+
+- User approval: Paul, 19.10.2026 via the communicator: build-2 decision — app follows the template (frame 10); before → after: the first row on Updates is titled "Control Center" with the line "App on this Mac" (on Windows "App on this computer", the app's usual wording for "this Mac") → before the title "Mac App" (Windows: "App") with the line "Software on this Mac" (Windows: "Software on this computer").
+- Approved customer-visible result: the row looks as drawn in frame 10 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.test.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx`, `apps/control-center/scripts/test-customer-flows.mjs` (three locators of the row title) and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #798: approval marker after merging the Control Center row branch (rv-tpl798)
+
+- User approval: Paul, 19.10.2026 via the communicator: the first Updates row as drawn in frame 10 (entry above); this marker adds no visible change of its own.
+- Approved customer-visible result: as in the entry "Updates row \"Control Center\" as drawn in the template (build 2 decision)" above.
+- Scope: merge of origin/claude/calm-updates (380662fd) into this branch, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #798: Codex fix, the headline's dot follows a failed check
+
+- User approval: pending — Paul reviews (Codex review fix); look unchanged except, before → after: when a check failed and an update was found by the other check, the dot beside "Update check failed" is red → before the dot was ink, as for "Update available".
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #798: Codex fix, the dot of an inconclusive Mac App check is muted
+
+- User approval: pending — Paul reviews (Codex review fix); look unchanged except, before → after: when the Mac App check answers with a disabled or missing asset result and the firmware is current, the dot beside "No update available" is grey → before the dot was green, as for "Everything is up to date".
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #798: Codex fix, the failed-check dialog waits while the native Mac App update prompt is offered
+
+- User approval: pending — Paul reviews (Codex review fix); look unchanged except, before → after: when the firmware check fails and a Mac App update is offered, the "Could not check for updates" dialog waits; the native update prompt is shown alone → before both could be on screen at once.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #798: the failed-check dialog is shown again alongside the native Mac App prompt (as before)
+
+- User approval: pending — Paul reviews (Codex review fix; this reverts the deferral of the previous commit); look unchanged except, before → after: when the firmware check fails and a Mac App update is offered, the "Could not check for updates" dialog shows again (as before this branch's deferral) → the deferral removed; the native update prompt does not tell this screen when it closes, so the failure dialog cannot wait for it.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #798: Codex fix, the failed-check retry waits while another action runs
+
+- User approval: pending — Paul reviews (Codex review fix); look unchanged except, before → after: while an install or another action holds the Updates page, the retry "Try again" in the "Could not check for updates" dialog is disabled → before it was enabled and could start a second check.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/updates-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #798: merge of the #784 outage-dialog fix, no change of its own
+
+- User approval: none needed — no visible change: this commit only merges the calm redesign base (#784) with its fix that makes the grey backdrop of the outage dialogs take no clicks; nothing of this pull request's own look changes.
+- Approved customer-visible result: none; no visible change.
+- Scope: merge of `origin/claude/group-calm-redesign` (`apps/control-center/src/components/setup/setup-recovery-dialogs.tsx`, its test, the flow comment) and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content

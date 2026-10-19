@@ -45,6 +45,27 @@ describe("UpdatesScreen VibeTV update card", () => {
     expect(retry).toHaveBeenCalledTimes(1);
   });
 
+  it("opens a failed check after the customer closed an update error", () => {
+    const props = {
+      companionStatus: "online" as const,
+      companionRelease: { checkedAt: "2026-09-10T10:00:00Z", status: "available" as const, updateAvailable: false, message: "Mac App is up to date." },
+      device: { connected: true, board: "esp8266-smalltv-st7789", firmware: "1.0.39" },
+      firmwareUpdate: { checkedAt: "2026-09-10T10:00:00Z", status: "update_available" as const, updateAvailable: true, latestFirmware: "1.0.40" },
+      updateStatus: { phase: "error" as const, startedAt: "2026-09-10T10:01:00Z", error: "Update was not installed.", logs: [] },
+    };
+    const view = render(<UpdatesScreen {...props} />);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // A later check fails while the old job still reports its error phase.
+    view.rerender(
+      <UpdatesScreen
+        {...props}
+        firmwareUpdate={{ checkedAt: "2026-09-10T10:05:00Z", status: "check_failed" as const, updateAvailable: false }}
+      />,
+    );
+    expect(screen.getByRole("dialog", { name: "Could not check for updates" })).toBeTruthy();
+  });
+
   it("tells the customer to wait during the update-owned reboot", () => {
     const html = renderMarkup(
       <UpdatesScreen
@@ -80,7 +101,7 @@ describe("UpdatesScreen VibeTV update card", () => {
 
   it("shows the device-truth installed firmware after a failed update, never the job result", () => {
     // DO NOT weaken this test.
-    const html = renderMarkup(
+    render(
       <UpdatesScreen
         companionStatus="online"
         device={{
@@ -110,13 +131,10 @@ describe("UpdatesScreen VibeTV update card", () => {
       />,
     );
 
-    const installedStart = html.indexOf("Installed firmware");
-    const availableStart = html.indexOf("Available firmware");
-    expect(installedStart).toBeGreaterThan(-1);
-    expect(availableStart).toBeGreaterThan(installedStart);
-    const installedSection = html.slice(installedStart, availableStart);
-    expect(installedSection).toContain("1.0.39");
-    expect(installedSection).not.toContain("99.0.779");
+    // The row's version is the device's; the failed job's target is only ever
+    // named as the update on offer.
+    expect(screen.getByText("1.0.39")).toBeTruthy();
+    expect(screen.queryByText("99.0.779")).toBeNull();
   });
 
   it("never shows an Update available badge together with Update complete when installed matches available", () => {
@@ -394,14 +412,16 @@ describe("UpdatesScreen Mac-App-first gate", () => {
     );
     expect(html).not.toContain("Checking Mac App");
     expect(html).not.toContain("Update Mac App first");
-    expect(html).toContain("Update");
-    expect(html).not.toContain('disabled=""');
+    expect(
+      (screen.getByRole("button", { name: "Update" }) as HTMLButtonElement).disabled,
+    ).toBe(false);
   });
 
   // Issues #438/#460: the Windows app must not call itself a Mac App.
   it.each([
-    [false, "Mac App", "Software running on this Mac.", "Checking Mac App"],
-    [true, "App", "Software running on this computer.", "Checking the app"],
+    // Frame 10 of the template: "Control Center" / "App on this Mac".
+    [false, "Control Center", "App on this Mac", "Checking Mac App"],
+    [true, "Control Center", "App on this computer", "Checking the app"],
   ])("names the app for the platform (windows=%s)", (windowsHost, title, description, checking) => {
     const html = renderMarkup(
       <UpdatesScreen
@@ -421,9 +441,9 @@ describe("UpdatesScreen Mac-App-first gate", () => {
   // Issue #558: the cards were titled "App" and "VibeTV update": one named
   // what is updated, the other the update.
   it.each([
-    [false, "Mac App"],
-    [true, "App"],
-  ])("titles both cards with what they update (windows=%s)", (windowsHost, app) => {
+    [false, "Control Center"],
+    [true, "Control Center"],
+  ])("titles both rows with what they update (windows=%s)", (windowsHost, app) => {
     render(
       <UpdatesScreen
         {...firmwareUpdateAvailableProps}
@@ -434,7 +454,7 @@ describe("UpdatesScreen Mac-App-first gate", () => {
 
     expect(
       screen.getAllByRole("heading", { level: 3 }).map((title) => title.textContent),
-    ).toEqual([app, "VibeTV"]);
+    ).toEqual([app, "VibeTV firmware"]);
   });
 
   it("asks a Windows customer to update the app first", () => {
@@ -495,8 +515,8 @@ describe("UpdatesScreen Mac-App-first gate", () => {
     );
   });
 
-  // Issue #551: "Check for updates" answered within a second and left the
-  // page exactly as it was, so nothing showed that a check had happened.
+  // Issue #551 / master: "Checked today, 08:44" is the newest check that
+  // answered, from the Mac App's or the firmware's.
   describe("last checked", () => {
     const checked = {
       companionStatus: "online" as const,
@@ -516,38 +536,39 @@ describe("UpdatesScreen Mac-App-first gate", () => {
         updateAvailable: false,
       },
     };
-    const at = (value: string) =>
-      `Last checked ${new Intl.DateTimeFormat(undefined, {
-        dateStyle: "medium",
-        timeStyle: "medium",
-      }).format(new Date(value))}`;
-    const lines = () =>
-      screen.getAllByText(/^Last checked /).map((line) => line.textContent);
+    const time = (value: string) =>
+      new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(
+        new Date(value),
+      );
 
-    it("gives each card the time of its own check and moves it after a click", () => {
+    afterEach(() => vi.useRealTimers());
+
+    it("shows the newest check and moves it after a click", () => {
+      vi.useFakeTimers({ now: new Date("2026-10-07T15:00:00Z"), toFake: ["Date"] });
       const view = render(<UpdatesScreen {...checked} />);
-      // The app's own check is repeated every six hours at most, so its time
-      // can be hours older than the firmware's.
-      expect(lines()).toEqual([
-        at("2026-10-07T06:12:04Z"),
-        at("2026-10-07T12:32:07Z"),
-      ]);
+      expect(screen.getByText(`Checked today, ${time("2026-10-07T12:32:07Z")}`)).toBeTruthy();
 
-      // A click two seconds later: the firmware was read again, the app was not.
+      // Minutes later: the firmware was read again, the app was not.
       view.rerender(
         <UpdatesScreen
           {...checked}
-          firmwareUpdate={{
-            ...checked.firmwareUpdate,
-            checkedAt: "2026-10-07T12:32:09Z",
-          }}
+          firmwareUpdate={{ ...checked.firmwareUpdate, checkedAt: "2026-10-07T12:41:09Z" }}
         />,
       );
-      expect(lines()).toEqual([
-        at("2026-10-07T06:12:04Z"),
-        at("2026-10-07T12:32:09Z"),
-      ]);
-      expect(lines()[1]).not.toBe(at("2026-10-07T12:32:07Z"));
+      expect(screen.getByText(`Checked today, ${time("2026-10-07T12:41:09Z")}`)).toBeTruthy();
+    });
+
+    it("says yesterday and then the date", () => {
+      vi.useFakeTimers({ now: new Date("2026-10-08T12:00:00Z"), toFake: ["Date"] });
+      const view = render(<UpdatesScreen {...checked} />);
+      expect(screen.getByText(`Checked yesterday, ${time("2026-10-07T12:32:07Z")}`)).toBeTruthy();
+
+      vi.setSystemTime(new Date("2026-10-19T12:00:00Z"));
+      view.rerender(<UpdatesScreen {...checked} />);
+      const date = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" }).format(
+        new Date("2026-10-07T12:32:07Z"),
+      );
+      expect(screen.getByText(`Checked ${date}, ${time("2026-10-07T12:32:07Z")}`)).toBeTruthy();
     });
 
     it("claims no check that did not answer", () => {
@@ -569,7 +590,7 @@ describe("UpdatesScreen Mac-App-first gate", () => {
           }}
         />,
       );
-      expect(screen.queryByText(/^Last checked /)).toBeNull();
+      expect(screen.queryByText(/^Checked /)).toBeNull();
     });
   });
 });
