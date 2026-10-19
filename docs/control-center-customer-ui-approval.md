@@ -9352,6 +9352,23 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-19 — #802: approval marker after merging the calm redesign base (one-page Appearance)
 
+
+## 2026-10-19 — Support: "n of 6 passed" and a Fix link for the usage engine (#795)
+
+- User approval: pending — Paul reviews (Support "Fix" + "n of 6 passed" as drawn in the approved master "Calm Redesign - alle Screens", frame 11, #795); look unchanged except: before, Diagnostics showed only "Run diagnostics" and no check had a Fix link; after, a muted "n of m passed" (the real count of the last run) stands left of "Run diagnostics", and a failing usage engine row shows an underlined "Fix" link at its right end that starts the same usage engine repair as the existing "Repair" button. Other checks show no Fix link.
+- Approved customer-visible result: none yet; waits for Paul's yes.
+- Scope: `apps/control-center/src/components/diagnostics-panel.tsx`, `apps/control-center/src/components/diagnostics-panel.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+## 2026-10-19 — Support: Fix only for a failing usage engine check (#795, Codex fix)
+
+- User approval: pending — Paul reviews (Support "Fix" + "n of 6 passed" as drawn in the approved master "Calm Redesign - alle Screens", frame 11, #795); look unchanged except: before (this PR's first version), a usage engine check that had not been checked yet (attention) also showed a "Fix" link; after, "Fix" shows only for a failing usage engine check. The "n of m passed" counter and the rest are as in the entry above.
+- Approved customer-visible result: none yet; waits for Paul's yes.
+- Scope: `apps/control-center/src/components/diagnostics-panel.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+## 2026-10-19 — #803: approval marker after merging the calm redesign base (Support Fix link)
+
 - User approval: Merge of the calm redesign base (#784 incl. main with #638) into this branch; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
@@ -9464,6 +9481,28 @@ issue scope, or release permission never implies UI permission.
 - What's new: none — no new content
 
 ## 2026-10-19 — #802: merge of the #784 outage-dialog fix, no change of its own
+## 2026-10-19 — #803: approval marker after merging the calm redesign base again (Support QA)
+
+- User approval: Merge of the newest calm redesign base (#784 with the Support QA fixes) into this branch; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — #803: Codex fix, Diagnostics header wraps on a narrow window
+
+- User approval: pending — Paul reviews (Codex review fix); look unchanged except, before → after: on a narrow window (below about 345 px of content width) the count "n of m passed" and the Run diagnostics button wrap onto a second line under the Diagnostics heading → before they stay on one line and the button can be clipped; at normal widths nothing changes.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/diagnostics-panel.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #803: approval marker after merging the newest calm redesign base (Theme Studio header)
+
+- User approval: pending — Paul reviews (#803 merged with the newest #784 head, 9c18d75f); look unchanged except what the #784 entries and this PR's Support entries describe; no new visible change of its own.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: merge of origin/claude/group-calm-redesign (#784, 9c18d75f) into this branch, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #803: merge of the #784 outage-dialog fix, no change of its own
 
 - User approval: none needed — no visible change: this commit only merges the calm redesign base (#784) with its fix that makes the grey backdrop of the outage dialogs take no clicks; nothing of this pull request's own look changes.
 - Approved customer-visible result: none; no visible change.
