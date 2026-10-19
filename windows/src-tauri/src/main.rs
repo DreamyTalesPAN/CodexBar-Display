@@ -1759,7 +1759,10 @@ mod tests {
         let maximized_bounds = rect(0, 0, 1920, 1040);
         let kept = Some((Some(before), true));
         // Restored from maximized: the new normal place is the one to keep.
-        assert_eq!(remembered_after(restored, false, false, kept), Some((Some(restored), false)));
+        assert_eq!(
+            remembered_after(restored, false, false, kept),
+            Some((Some(restored), false))
+        );
         // Minimized: its position says nothing, nothing is stored.
         assert_eq!(remembered_after(maximized_bounds, true, false, kept), None);
     }
