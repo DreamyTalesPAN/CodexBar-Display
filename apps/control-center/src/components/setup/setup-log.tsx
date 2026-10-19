@@ -2,14 +2,9 @@
 
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { SETUP_REVEAL } from "./setup-reveal";
+import { ProcessSteps, type ProcessStep } from "../process-steps";
 
-export type SetupLogLine = {
-  id: string;
-  text: string;
-  /** "done" dims a step the wizard has already finished. */
-  tone?: "normal" | "done" | "error";
-};
+export type SetupLogLine = ProcessStep;
 
 type SetupLogProps = {
   className?: string;
@@ -27,7 +22,7 @@ type SetupLogProps = {
  *
  * It is as tall as its lines (24px each), centred with the rest of the step,
  * and grows to five lines; beyond that the log scrolls inside the box and the
- * top edge fades.
+ * top edge fades. The lines themselves are ProcessSteps; the ones above the newest read as finished.
  */
 export function SetupLog({ className, lines, running = false }: SetupLogProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -44,7 +39,7 @@ export function SetupLog({ className, lines, running = false }: SetupLogProps) {
       aria-live="polite"
       role="status"
       className={cn(
-        "max-h-[120px] w-full overflow-y-auto text-left font-mono text-[13px] leading-6",
+        "max-h-[120px] w-full overflow-y-auto text-left",
         // The scrollbar is noise next to terminal type. Hiding it costs the
         // only hint that there is more, so the top edge fades instead — the
         // log always sits at its bottom, so anything out of view is above.
@@ -55,26 +50,13 @@ export function SetupLog({ className, lines, running = false }: SetupLogProps) {
       )}
       ref={scrollRef}
     >
-      {lines.map((line, index) => (
-        <div
-          className={cn(
-            // Keyed by id, so only a line that is genuinely new animates; the
-            // ones already on screen keep their node and stay still.
-            "flex items-center gap-2",
-            SETUP_REVEAL,
-            line.tone === "error"
-              ? "text-destructive"
-              : "text-muted-foreground",
-            // Everything above the newest line reads as finished.
-            (line.tone === "done" ||
-              (line.tone !== "error" && index < lines.length - 1)) &&
-              "opacity-55",
-          )}
-          key={line.id}
-        >
-          <span>&gt; {line.text}</span>
-        </div>
-      ))}
+      <ProcessSteps
+        steps={lines.map((line, index) =>
+          line.tone !== "error" && index < lines.length - 1
+            ? { ...line, tone: "done" as const }
+            : line,
+        )}
+      />
     </div>
   );
 }

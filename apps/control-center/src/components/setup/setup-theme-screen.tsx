@@ -114,7 +114,6 @@ export function SetupThemeScreen({
       <SetupLog
         className="mt-3 empty:hidden"
         lines={installLogLines(installLogs)}
-        running={installing}
       />
     </SetupWizardScreen>
   );

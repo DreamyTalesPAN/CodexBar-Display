@@ -10483,8 +10483,8 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
     const [kept] = await exportPack();
     await finished(kept.suggestedFilename(), true);
     await exported.waitFor();
-    // Notices sit under the toolbar, not at the bottom of the chat column.
-    assert((await page.locator("header + div").getByText("Theme pack exported. No device was contacted.", { exact: true }).count()) === 1, "The export notice sits under the Theme Studio toolbar");
+    // Notices sit in the header row, left of Save, not at the bottom of the chat column.
+    assert((await page.locator("header").getByText("Theme pack exported. No device was contacted.", { exact: true }).count()) === 1, "The export notice sits in the Theme Studio header row");
     await page.keyboard.press("Escape");
   }
   await page.getByRole("button", { name: "Send to VibeTV", exact: true }).click();

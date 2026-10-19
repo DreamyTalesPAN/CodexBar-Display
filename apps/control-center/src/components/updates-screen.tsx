@@ -6,7 +6,6 @@ import {
   Download,
   Monitor,
   RefreshCw,
-  TriangleAlert,
   Tv,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -650,7 +649,6 @@ function InlineUpdateProgress({
     return (
       <SetupDialog
         description={status.error || "Update was not installed."}
-        icon={TriangleAlert}
         onOpenChange={(open) => {
           if (!open) onDismissError();
         }}

@@ -2,13 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { SetupDialog } from "@/components/setup/setup-dialog";
 import { Input } from "@/components/ui/input";
 import {
   deleteAIThemeCredential,
@@ -21,6 +15,11 @@ import {
 const CONSENT_KEY = "vibetv.aiTheme.consent";
 
 export type OpenAIState = { enabled: boolean; configured: boolean | "pending" };
+
+/** A key is stored while its check is still pending too, so the label follows the stored key, not the verified one. */
+export function hasStoredKey(configured: boolean | "pending"): boolean {
+  return Boolean(configured);
+}
 
 export function openAIState(capabilities: AIThemeCapabilities): OpenAIState {
   const provider = capabilities.providers.find((p) => p.id === "openai");
@@ -43,16 +42,18 @@ function readConsent(): boolean {
 }
 
 export function OpenAIKeyForm({
-  inSetup, onConnectingChange, onConnected, onDisconnected,
+  inSetup, initialConfigured = false, onConnectingChange, onConnected, onDisconnected,
 }: {
   inSetup: boolean;
+  /** What the opener already knows about the saved key, so the dialog has its final height from the first frame. */
+  initialConfigured?: boolean | "pending";
   onConnectingChange: (busy: boolean) => void;
   /** `kept` is the helper's answer on whether the key survives restarts; undefined when no new key was checked. */
   onConnected: (kept?: boolean) => void;
   onDisconnected: () => void;
 }) {
   const [enabled, setEnabled] = useState(false);
-  const [configured, setConfigured] = useState<boolean | "pending">(false);
+  const [configured, setConfigured] = useState<boolean | "pending">(initialConfigured);
   const [consent, setConsent] = useState(readConsent);
   const [password, setPassword] = useState("");
   const [connecting, setConnecting] = useState(false);
@@ -130,7 +131,8 @@ export function OpenAIKeyForm({
     <div className="space-y-4">
       {configured !== true || !inSetup ? (
         <label className="grid gap-2 text-sm">
-          {configured ? "Replace OpenAI key" : "OpenAI key"}
+          {/* The dialog heading already says "Add OpenAI key" or "Replace OpenAI key". */}
+          <span className="sr-only">{hasStoredKey(configured) ? "Replace OpenAI key" : "OpenAI key"}</span>
           <Input
             type="password"
             autoComplete="off"
@@ -138,7 +140,7 @@ export function OpenAIKeyForm({
             value={password}
             disabled={!enabled || connecting}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder={configured ? "Paste a new key to replace it" : "Paste your key here"}
+            placeholder={hasStoredKey(configured) ? "Paste a new key to replace it" : "Paste your key here"}
             aria-invalid={Boolean(connectionError)}
             aria-describedby={connectionError ? "key-error" : undefined}
           />
@@ -148,7 +150,7 @@ export function OpenAIKeyForm({
         <label className="flex items-start gap-3 text-sm">
           <input
             type="checkbox"
-            className="mt-0.5 size-5 shrink-0"
+            className="mt-0.5 size-5 shrink-0 accent-primary"
             checked={consent}
             disabled={connecting}
             onChange={(e) => updateConsent(e.target.checked)}
@@ -174,7 +176,7 @@ export function OpenAIKeyForm({
             connecting ||
             !consent ||
             (!inSetup && configured === true && !password.trim()) ||
-            (!configured && !password.trim())
+            (!hasStoredKey(configured) && !password.trim())
           }
           onClick={() => {
             if (password.trim() || configured === "pending") void connect();
@@ -186,12 +188,14 @@ export function OpenAIKeyForm({
             : configured === "pending" && !password.trim()
               ? "Retry connection check"
               : !inSetup
-                ? "Update key"
+                ? hasStoredKey(configured)
+                  ? "Update key"
+                  : "Save key"
                 : configured === true && !password.trim()
                   ? "Continue"
                   : "Connect and continue"}
         </Button>
-        {configured ? (
+        {hasStoredKey(configured) ? (
           <Button className="h-12 w-full" variant="outline" disabled={connecting} onClick={disconnect}>
             Disconnect OpenAI
           </Button>
@@ -206,12 +210,12 @@ export function ThemeStudioKeyRow() {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [version, setVersion] = useState(0);
-  const [connected, setConnected] = useState(false);
+  const [configured, setConfigured] = useState<boolean | "pending">(false);
   useEffect(() => {
     let current = true;
     void fetchAIThemeCapabilities()
       .then((capabilities) => {
-        if (current) setConnected(openAIState(capabilities).configured === true);
+        if (current) setConfigured(openAIState(capabilities).configured);
       })
       .catch(() => {});
     return () => {
@@ -222,28 +226,31 @@ export function ThemeStudioKeyRow() {
   return (
     <div className="flex items-center justify-between gap-4 rounded-xl border px-4 py-3">
       <div className="min-w-0">
-        <p className="text-sm">{connected ? "Connected" : "Not connected"}</p>
+        <p className="text-sm">{configured === true ? "Connected" : "Not connected"}</p>
       </div>
       <Button variant="outline" onClick={() => setOpen(true)}>
-        {connected ? "Change key" : "Add key"}
+        {hasStoredKey(configured) ? "Change key" : "Add key"}
       </Button>
-      <Dialog open={open} onOpenChange={(next) => { if (!busy) setOpen(next); }}>
-        <DialogContent showCloseButton={!busy}>
-          <DialogHeader>
-            <DialogTitle>Theme Studio AI</DialogTitle>
-            <DialogDescription>Connect OpenAI to create your design.</DialogDescription>
-          </DialogHeader>
-          <OpenAIKeyForm
-            inSetup={false}
-            onConnectingChange={setBusy}
-            onConnected={() => {
-              setOpen(false);
-              setVersion((v) => v + 1);
-            }}
-            onDisconnected={() => setVersion((v) => v + 1)}
-          />
-        </DialogContent>
-      </Dialog>
+      {/* The same dialog as every other overlay: no entrance animation of its own. */}
+      <SetupDialog
+        open={open}
+        onOpenChange={(next) => { if (!busy) setOpen(next); }}
+        title={hasStoredKey(configured) ? "Replace OpenAI key" : "Add OpenAI key"}
+        // Calm rule 13: no X. A visible Close sits in the footer instead, hidden while a key is checked.
+        showCloseButton={false}
+        secondaryAction={busy ? undefined : { label: "Close", onSelect: () => setOpen(false) }}
+      >
+        <OpenAIKeyForm
+          inSetup={false}
+          initialConfigured={configured}
+          onConnectingChange={setBusy}
+          onConnected={() => {
+            setOpen(false);
+            setVersion((v) => v + 1);
+          }}
+          onDisconnected={() => setVersion((v) => v + 1)}
+        />
+      </SetupDialog>
     </div>
   );
 }

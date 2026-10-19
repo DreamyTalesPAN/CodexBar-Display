@@ -342,7 +342,8 @@ export function EditableThemePreview({
     <div
       ref={surfaceRef}
       aria-label="Selection workspace"
-      className="relative flex w-full flex-1 flex-col justify-center py-4 [touch-action:none]"
+      // Three rows: the preview sits in the middle row and the details live in the last one, so selecting an element never moves the preview.
+      className="relative grid w-full flex-1 grid-rows-[minmax(0,1fr)_auto_minmax(8rem,1fr)] [touch-action:none]"
       onPointerDown={(event) => {
         if (event.button === 0 && !(event.target as Element).closest("svg, button, input, textarea, select, a, [role=button], [data-selection-controls]")) startSelection(event);
       }}
@@ -350,10 +351,10 @@ export function EditableThemePreview({
       onPointerMove={movePointer}
       onPointerUp={finishPointer}
     >
-    {toolbar ? <div className="[touch-action:auto]">{toolbar}</div> : null}
-    <div className="px-8 py-8">
-    <div className="mx-auto w-full max-w-[460px] rounded-2xl border bg-muted p-3 shadow-lg group-focus-visible/canvas:ring-2 group-focus-visible/canvas:ring-ring">
-    <div className="relative aspect-square w-full max-w-[480px] overflow-hidden rounded-lg border border-[#1B1B1B] bg-black p-0">
+    {toolbar ? <div className="row-start-1 [touch-action:auto]">{toolbar}</div> : null}
+    <div className="row-start-2">
+    <div className="mx-auto w-full max-w-[464px] rounded-xl bg-muted p-8 ring-1 ring-foreground/10">
+    <div className="relative mx-auto aspect-square w-full max-w-[480px] overflow-hidden rounded-lg border border-[#1B1B1B] bg-black p-0">
       <ThemeSpecPreview
         animate={animate ?? !prefersReducedMotion}
         pack={pack}
@@ -438,7 +439,7 @@ export function EditableThemePreview({
     </div>
     </div>
     </div>
-    {children ? <div className="[touch-action:auto]">{children}</div> : null}
+    {children ? <div className="row-start-3 min-h-0 overflow-y-auto [touch-action:auto]">{children}</div> : null}
     {selectionBox ? (
       <div aria-hidden="true" data-testid="selection-box"
         className="pointer-events-none absolute z-10 border border-dashed border-[#CCFF00] bg-[#CCFF0033]"
