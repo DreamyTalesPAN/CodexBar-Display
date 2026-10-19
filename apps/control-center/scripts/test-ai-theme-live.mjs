@@ -35,21 +35,17 @@ try {
     await page.getByText("Design opened.",{exact:true}).waitFor();
     // Compare Undo with the accepted editor state, not unrecognised fields
     // which the normal file importer may have canonicalised on entry.
-    await page.getByRole("button",{name:"Design settings",exact:true}).click();
-    await page.getByRole("button",{name:"Import & export",exact:true}).click();
+    await page.getByRole("button",{name:"File",exact:true}).click();
     const baseline=page.waitForEvent("download");
     await page.getByRole("button",{name:"Download editable design",exact:true}).click();
     await (await baseline).saveAs(join(output,"before.json"));
     beforeGeneration=JSON.parse(await readFile(join(output,"before.json"),"utf8"));
-    await page.getByRole("button",{name:"Close",exact:true}).click();
   }
   await input.fill(prompt);
-  await page.getByRole("button",{name:"Create with AI",exact:true}).click();
-  await page.getByRole("dialog",{name:"Create with AI",exact:true}).waitFor();
-  await page.getByLabel(/I agree to send/).check();
   const responsePromise=page.waitForResponse(r=>r.url().endsWith("/ai-theme/concepts") && r.request().postDataJSON().target !== "layout",{timeout:250000});
   const started=Date.now();
-  await page.getByRole("button",{name:"Continue",exact:true}).click();
+  // A saved key is the consent (#633): the request goes straight on.
+  await page.getByRole("button",{name:"Create",exact:true}).click();
   const response=await responsePromise;
   const body=await response.json();
   await writeFile(join(output,"provider-result.json"),JSON.stringify(body));
@@ -77,21 +73,19 @@ try {
     }
     console.log("Distinct rendered samples: "+frames.size);
     if (body.sceneAnimation) assert(frames.size > 1, "Scene does not visibly advance");
-    await page.getByRole("button",{name:"Design settings",exact:true}).click();
-    await page.getByRole("button",{name:"Import & export",exact:true}).click();
+    await page.getByRole("button",{name:"File",exact:true}).click();
     const download=page.waitForEvent("download");
     await page.getByRole("button",{name:"Download editable design",exact:true}).click();
     await (await download).saveAs(join(output,"design.json"));
     const design=JSON.parse(await readFile(join(output,"design.json"),"utf8"));
     console.log("Assets: "+Object.keys(design.assets).join(", "));
+    await page.getByRole("button",{name:"File",exact:true}).click();
     const pack=page.waitForEvent("download");
     await page.getByRole("button",{name:"Export theme pack",exact:true}).click();
     await (await pack).saveAs(join(output,"theme.zip"));
     if(process.argv[3]) {
-      await page.getByRole("button",{name:"Close",exact:true}).click();
       await page.getByRole("button",{name:"Undo last edit",exact:true}).click();
-      await page.getByRole("button",{name:"Design settings",exact:true}).click();
-      await page.getByRole("button",{name:"Import & export",exact:true}).click();
+      await page.getByRole("button",{name:"File",exact:true}).click();
       const undone=page.waitForEvent("download");
       await page.getByRole("button",{name:"Download editable design",exact:true}).click();
       await (await undone).saveAs(join(output,"undo.json"));
