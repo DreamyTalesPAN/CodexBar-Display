@@ -42,7 +42,7 @@ function readConsent(): boolean {
 }
 
 export function OpenAIKeyForm({
-  inSetup, initialConfigured = false, onConfiguredChange, onConnectingChange, onConnected, onDisconnected,
+  inSetup, initialConfigured = false, onConfiguredChange, onConnectingChange, onConnected, onDisconnected, onDismiss,
 }: {
   inSetup: boolean;
   /** What the opener already knows about the saved key, so the dialog has its final height from the first frame. */
@@ -53,6 +53,8 @@ export function OpenAIKeyForm({
   /** `kept` is the helper's answer on whether the key survives restarts; undefined when no new key was checked. */
   onConnected: (kept?: boolean) => void;
   onDisconnected: () => void;
+  /** "Not now": closes the dialog the form sits in. */
+  onDismiss: () => void;
 }) {
   const [enabled, setEnabled] = useState(false);
   const [configured, setConfigured] = useState<boolean | "pending">(initialConfigured);
@@ -133,7 +135,7 @@ export function OpenAIKeyForm({
   return (
     <div className="space-y-4">
       {configured !== true || !inSetup ? (
-        <label className="grid gap-2 text-sm">
+        <label className="grid gap-2 text-[13px]">
           {/* The dialog heading already says "Add OpenAI key" or "Replace OpenAI key". */}
           <span className="sr-only">{hasStoredKey(configured) ? "Replace OpenAI key" : "OpenAI key"}</span>
           <Input
@@ -144,16 +146,17 @@ export function OpenAIKeyForm({
             disabled={!enabled || connecting}
             onChange={(e) => setPassword(e.target.value)}
             placeholder={hasStoredKey(configured) ? "Paste a new key to replace it" : "Paste your key here"}
+            className="text-[13px] md:text-[13px]"
             aria-invalid={Boolean(connectionError)}
             aria-describedby={connectionError ? "key-error" : undefined}
           />
         </label>
       ) : null}
       {inSetup || !consent ? (
-        <label className="flex items-start gap-3 text-sm">
+        <label className="flex items-start gap-3 text-[13px]">
           <input
             type="checkbox"
-            className="mt-0.5 size-5 shrink-0 accent-primary"
+            className="mt-0.5 size-4 shrink-0 accent-primary"
             checked={consent}
             disabled={connecting}
             onChange={(e) => updateConsent(e.target.checked)}
@@ -171,9 +174,17 @@ export function OpenAIKeyForm({
           {connectionError}
         </p>
       ) : null}
-      <div className="grid gap-3">
+      {/* One row, as in the approved dialog: Not now, then the main action; Disconnect stays quietly on the left. */}
+      <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+        {hasStoredKey(configured) ? (
+          <Button className="mr-auto" variant="ghost" disabled={connecting} onClick={disconnect}>
+            Disconnect OpenAI
+          </Button>
+        ) : null}
+        <Button variant="ghost" disabled={connecting} onClick={onDismiss}>
+          Not now
+        </Button>
         <Button
-          className="h-12 w-full"
           disabled={
             !enabled ||
             connecting ||
@@ -198,11 +209,6 @@ export function OpenAIKeyForm({
                   ? "Continue"
                   : "Connect and continue"}
         </Button>
-        {hasStoredKey(configured) ? (
-          <Button className="h-12 w-full" variant="outline" disabled={connecting} onClick={disconnect}>
-            Disconnect OpenAI
-          </Button>
-        ) : null}
       </div>
     </div>
   );
@@ -227,21 +233,24 @@ export function ThemeStudioKeyRow() {
   }, [version]);
 
   return (
-    <div className="flex items-center justify-between gap-4 rounded-xl border px-4 py-3">
-      <div className="min-w-0">
-        <p className="text-sm">{configured === true ? "Connected" : "Not connected"}</p>
+    <div className="flex items-center gap-4 text-[13px]">
+      <span className="w-[168px] shrink-0 text-muted-foreground">API key</span>
+      <div className="flex min-w-0 flex-1 items-center justify-between gap-4">
+        <span className="inline-flex items-center gap-2">
+          <i aria-hidden className={`size-2 shrink-0 rounded-full ${configured === true ? "bg-[oklch(0.72_0.15_150)]" : "bg-muted-foreground/40"}`} />
+          {configured === true ? "Connected" : "Not connected"}
+        </span>
+        <Button variant="outline" size="sm" className="text-[13px]" onClick={() => setOpen(true)}>
+          {hasStoredKey(configured) ? "Change key" : "Add key"}
+        </Button>
       </div>
-      <Button variant="outline" onClick={() => setOpen(true)}>
-        {hasStoredKey(configured) ? "Change key" : "Add key"}
-      </Button>
       {/* The same dialog as every other overlay: no entrance animation of its own. */}
       <SetupDialog
         open={open}
         onOpenChange={(next) => { if (!busy) setOpen(next); }}
         title={hasStoredKey(configured) ? "Replace OpenAI key" : "Add OpenAI key"}
-        // Calm rule 13: no X. A visible Close sits in the footer instead, hidden while a key is checked.
+        // Calm rule 13: no X; "Not now" sits in the form's own button row.
         showCloseButton={false}
-        secondaryAction={busy ? undefined : { label: "Close", onSelect: () => setOpen(false) }}
       >
         <OpenAIKeyForm
           inSetup={false}
@@ -253,6 +262,7 @@ export function ThemeStudioKeyRow() {
             setVersion((v) => v + 1);
           }}
           onDisconnected={() => setVersion((v) => v + 1)}
+          onDismiss={() => setOpen(false)}
         />
       </SetupDialog>
     </div>

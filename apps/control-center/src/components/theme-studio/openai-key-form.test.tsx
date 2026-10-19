@@ -76,7 +76,7 @@ describe("Theme Studio AI row in Settings", () => {
     fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: "Save key" }));
     await screen.findByRole("button", { name: "Retry connection check" });
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.click(screen.getByRole("button", { name: "Not now" }));
     expect(await screen.findByRole("button", { name: "Change key" })).toBeTruthy();
   });
 
@@ -87,7 +87,7 @@ describe("Theme Studio AI row in Settings", () => {
     vi.mocked(saveAIThemeCredential).mockResolvedValue(undefined as never);
     vi.mocked(verifyAIThemeCredential).mockRejectedValue(new Error("Check failed."));
     const onConfiguredChange = vi.fn();
-    render(<OpenAIKeyForm inSetup onConfiguredChange={onConfiguredChange} onConnectingChange={() => {}} onConnected={() => {}} onDisconnected={() => {}} />);
+    render(<OpenAIKeyForm inSetup onConfiguredChange={onConfiguredChange} onConnectingChange={() => {}} onConnected={() => {}} onDisconnected={() => {}} onDismiss={() => {}} />);
     fireEvent.change(await screen.findByLabelText("OpenAI key", { selector: "input" }), { target: { value: "sk-test-key" } });
     fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: "Connect and continue" }));
@@ -116,20 +116,32 @@ describe("Theme Studio AI row in Settings", () => {
     expect(within(dialog).getByRole("button", { name: "Update key" })).toBeTruthy();
   });
 
-  it("offers a visible Close in the footer, hidden while a key is being checked", async () => {
+  it("has Not now and the main action side by side, and Not now is disabled while a key is being checked", async () => {
     vi.mocked(fetchAIThemeCapabilities).mockResolvedValue(capabilities(false));
     vi.mocked(saveAIThemeCredential).mockReturnValue(new Promise(() => {}));
     render(<ThemeStudioKeyRow />);
     fireEvent.click(await screen.findByRole("button", { name: "Add key" }));
     const dialog = await screen.findByRole("dialog");
-    const footerButton = () => dialog.querySelector('[data-slot="dialog-footer"] button');
-    expect(footerButton()?.textContent).toBe("Close");
+    const notNow = within(dialog).getByRole("button", { name: "Not now" });
+    const main = within(dialog).getByRole("button", { name: "Save key" });
+    expect(notNow.parentElement).toBe(main.parentElement);
+    expect(notNow.compareDocumentPosition(main) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-    fireEvent.change(screen.getByLabelText("OpenAI key"), { target: { value: "sk-test-key" } });
+    fireEvent.change(screen.getByLabelText("OpenAI key", { selector: "input" }), { target: { value: "sk-test-key" } });
     fireEvent.click(screen.getByRole("checkbox"));
-    fireEvent.click(screen.getByRole("button", { name: "Save key" }));
+    fireEvent.click(main);
     await waitFor(() => expect(screen.getByRole("button", { name: "Checking…" })).toBeTruthy());
-    expect(footerButton()).toBeNull();
+    expect(within(dialog).getByRole("button", { name: "Not now" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("shows the Settings row as API key, a status dot, the status and an outline button", async () => {
+    vi.mocked(fetchAIThemeCapabilities).mockResolvedValue(capabilities(true));
+    const { container } = render(<ThemeStudioKeyRow />);
+    await screen.findByText("Connected");
+    expect(screen.getByText("API key")).toBeTruthy();
+    expect(container.firstElementChild?.className).not.toContain("border");
+    expect(container.querySelector("i")?.className).toContain("bg-[oklch(0.72_0.15_150)]");
+    expect(screen.getByRole("button", { name: "Change key" }).className).toContain("text-[13px]");
   });
 
   it("shows Change key on the row while a saved key is still being checked", async () => {
@@ -182,6 +194,7 @@ describe("Theme Studio AI row in Settings", () => {
         onConnectingChange={() => {}}
         onConnected={() => {}}
         onDisconnected={() => {}}
+        onDismiss={() => {}}
       />,
     );
     await screen.findByLabelText("OpenAI key");

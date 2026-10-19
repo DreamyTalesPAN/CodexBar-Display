@@ -10461,7 +10461,8 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
   await page.getByRole("radio", { name: new RegExp(screensaver ? "^Screensavers" : "^Themes") }).click();
   await page.getByRole("button", { name: screensaver ? "Create screensaver" : "Create theme", exact: true }).click();
   await page.getByLabel("Your idea", { exact: true }).waitFor();
-  await page.locator('[data-slot="sidebar"][data-state="collapsed"]').waitFor();
+  // The editor leaves the navigation as it is (the approved template shows it open).
+  await page.locator('[data-slot="sidebar"][data-state="expanded"]').waitFor();
   assert(await page.locator(".control-center-shell__header").isVisible(), "Studio stays inside the native shell");
   await page.getByLabel("Your idea", { exact: true }).fill("Make it blue");
   await page.getByRole("button", { name: "Create", exact: true }).click();
