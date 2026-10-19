@@ -729,7 +729,7 @@ export function ThemeLibraryScreen({
           type="button"
         >
           <Plus data-icon="inline-start" aria-hidden />
-          <span>{screensavers ? "Create Screensaver" : "Create Theme"}</span>
+          <span>{screensavers ? "Create screensaver" : "Create theme"}</span>
         </Button>
       </section>
 
@@ -737,18 +737,19 @@ export function ThemeLibraryScreen({
           turned on; management (create, edit, preview) stays available. Its
           switch is in Settings only (issue #643). */}
       {screensavers && standby && !standby.enabled ? (
-        <p className="mb-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-lg bg-muted px-4 py-3 text-sm">
-          <span>Screensaver is off.</span>
+        <p className="mb-5 text-[13px] text-muted-foreground">
+          Screensaver is off. Turn it on in{" "}
           <a
-            className="font-medium text-foreground underline underline-offset-4 hover:text-[var(--vibetv-support)] dark:hover:text-[#A9C76A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            className="text-foreground underline underline-offset-4 hover:text-[var(--vibetv-support)] dark:hover:text-[#A9C76A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             href="#settings-screensaver"
             onClick={(event) => {
               event.preventDefault();
               onOpenScreensaverSettings?.();
             }}
           >
-            Turn on in Settings
+            Settings
           </a>
+          .
         </p>
       ) : null}
 
@@ -778,7 +779,7 @@ export function ThemeLibraryScreen({
               />
             ) : null}
 
-            <ItemGroup className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            <ItemGroup className="grid grid-cols-1 gap-x-6 gap-y-7 sm:grid-cols-2 lg:grid-cols-3">
               {libraryThemes.map((theme) => (
                 <ThemeListItem
                   busyAction={busyAction}
@@ -844,14 +845,12 @@ export function ThemeLibraryScreen({
       {libraryError && !otherDialogOpen ? (
         <PageNotice
           description={libraryError}
-          icon={Lock}
           onOpenChange={(open) => {
             if (!open) setLibraryError("");
           }}
           open
           primaryAction={{ label: "OK", onSelect: () => setLibraryError("") }}
           title={say("Theme action failed")}
-          tone="neutral"
         />
       ) : null}
       {/* The storage notice shows after the error is closed, never with it. */}
@@ -861,7 +860,6 @@ export function ThemeLibraryScreen({
       !otherDialogOpen ? (
         <PageNotice
           description={storageWarning}
-          icon={Lock}
           onOpenChange={(open) => {
             if (!open) setClosedStorageWarning(storageWarning);
           }}
@@ -871,7 +869,6 @@ export function ThemeLibraryScreen({
             onSelect: () => setClosedStorageWarning(storageWarning),
           }}
           title={say("Theme storage needs attention")}
-          tone="neutral"
         />
       ) : null}
       {replacingRecovery && recovery ? (
@@ -1258,7 +1255,7 @@ function ThemeListItem({
       <ItemActions className="basis-full justify-between gap-3 px-0.5">
         <span className="flex items-center gap-3">
         <Button
-          className="px-0"
+          className="h-7 px-0 font-normal"
           disabled={Boolean(loadingEditorRow)}
           onClick={() => void onEditTheme(item)}
           size="sm"
@@ -1271,7 +1268,7 @@ function ThemeListItem({
         {item.kind === "custom" ? (
           <Button
             aria-label={`Delete ${item.title}`}
-            className="px-0"
+            className="h-7 px-0 font-normal"
             disabled={themeStorageLocked}
             onClick={() => onDeleteTheme(item.custom)}
             title={
@@ -1290,7 +1287,7 @@ function ThemeListItem({
         {/* Install is the primary (lime) action at the right edge. Once the
             row has nothing to install, the same slot shows the status as text. */}
         <Button
-          className={cn(disabled && "px-0 disabled:opacity-100 disabled:text-muted-foreground")}
+          className={cn("h-7 px-3", disabled && "px-0 font-normal disabled:opacity-100 disabled:text-muted-foreground")}
           disabled={disabled}
           onClick={() => {
             if (!blocker) {

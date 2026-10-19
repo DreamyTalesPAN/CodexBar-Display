@@ -17,7 +17,7 @@ export const SUPPORT_FRAME =
 type Check = NonNullable<SupportDiagnostics["checks"]>[number];
 
 const CHECK_LABELS: Record<string, string> = {
-  companion_api: "Mac App",
+  companion_api: "App",
   usage_engine: "Usage engine",
   provider_setup: "AI provider",
   network_discovery: "WiFi search",
@@ -28,22 +28,6 @@ const CHECK_LABELS: Record<string, string> = {
   display_stream: "Display updates",
   firmware_update: "Firmware update",
   theme_install_gate: "Theme install",
-};
-
-const ENGINE_SOURCES: Record<string, string> = {
-  bundled: "Included with the app",
-  app_managed: "Managed by VibeTV",
-  override: "Custom location",
-  system: "Installed app",
-  path: "Command line install",
-};
-
-const ENGINE_STATUS: Record<string, string> = {
-  ready: "Ready",
-  not_configured: "Not installed",
-  config_error: "Settings need attention",
-  engine_error: "Not working",
-  engine_incompatible: "Too old",
 };
 
 type Props = {
@@ -84,6 +68,7 @@ export function DiagnosticsPanel({
             </span>
           ) : null}
           <Button
+            className="text-sm"
             disabled={running || !onRun}
             onClick={onRun}
             size="sm"
@@ -107,7 +92,7 @@ export function DiagnosticsPanel({
           {partial ? (
             <StatusLine icon="attention" text="Some checks could not run." />
           ) : null}
-          {engine ? (
+          {engine?.status === "engine_incompatible" ? (
             <UsageEngineBlock
               engine={engine}
               onRepair={onRepairUsageEngine}
@@ -173,42 +158,31 @@ function UsageEngineBlock({
   onRepair?: () => void;
   repairing: boolean;
 }) {
-  const tooOld = engine.status === "engine_incompatible";
   return (
-    <section aria-label="Usage engine" className="grid gap-3">
-      <h3 className="font-semibold">Usage engine</h3>
-      {tooOld ? (
-        <div className="grid gap-2">
-          <StatusLine icon="fail" text={usageEngineTooOldText(engine)} />
-          {onRepair ? (
-            <div>
-              <Button
-                disabled={repairing}
-                onClick={onRepair}
-                size="sm"
-                type="button"
-              >
-                {repairing ? (
-                  <Spinner data-icon="inline-start" />
-                ) : (
-                  <Wrench data-icon="inline-start" aria-hidden />
-                )}
-                <span>{repairing ? "Repairing" : "Repair"}</span>
-              </Button>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              Repair the usage engine, then check again.
-            </p>
-          )}
+    <section aria-label="Usage engine" className="grid gap-2">
+      <StatusLine icon="fail" text={usageEngineTooOldText(engine)} />
+      {onRepair ? (
+        <div>
+          <Button
+            className="text-sm"
+            disabled={repairing}
+            onClick={onRepair}
+            size="sm"
+            type="button"
+          >
+            {repairing ? (
+              <Spinner data-icon="inline-start" />
+            ) : (
+              <Wrench data-icon="inline-start" aria-hidden />
+            )}
+            <span>{repairing ? "Repairing" : "Repair"}</span>
+          </Button>
         </div>
-      ) : null}
-      <dl className="grid">
-        <Fact label="Status" value={ENGINE_STATUS[engine.status ?? ""] ?? humanize(engine.status)} />
-        <Fact label="Version" value={engine.version} />
-        <Fact label="Required version" value={engine.minimumVersion} />
-        <Fact label="Source" value={ENGINE_SOURCES[engine.source ?? ""] ?? humanize(engine.source)} />
-      </dl>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Repair the usage engine, then check again.
+        </p>
+      )}
     </section>
   );
 }
@@ -304,14 +278,5 @@ function StatusLine({ icon, text }: { icon: CheckState; text: string }) {
       <Icon aria-hidden className="size-4 shrink-0" />
       <span>{text}</span>
     </span>
-  );
-}
-
-function Fact({ label, value }: { label: string; value?: string }) {
-  return (
-    <div className="grid min-w-0 grid-cols-[minmax(0,180px)_minmax(0,1fr)] gap-4 border-b border-foreground/10 py-2.5 text-sm last:border-b-0">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="break-words">{value || "Not available"}</dd>
-    </div>
   );
 }

@@ -29,10 +29,8 @@ try {
   });
   await page.goto('http://localhost:3015/internal/theme-studio-preview');
   await page.getByLabel('Your idea',{exact:true}).fill(count===1?'A fox in a quiet woodland':'A fox and a small bird in a quiet woodland');
-  await page.getByRole('button',{name:'Create with AI',exact:true}).click();
-  await page.getByRole('dialog',{name:'Create with AI',exact:true}).waitFor();
-  await page.getByLabel(/I agree to send/).check();
-  await page.getByRole('button',{name:'Continue',exact:true}).click();
+  // A saved key is the consent (#633): the request goes straight on.
+  await page.getByRole('button',{name:'Create',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('textarea')?.value==='' || !!document.querySelector('p[role="alert"]'),null,{timeout:30000});
   assert.deepEqual(await page.locator('p[role="alert"]').allTextContents(),[]);
   assert.equal(requests,1);
@@ -40,8 +38,7 @@ try {
   for(let n=0;n<8;n++){await page.waitForTimeout(270);samples.add(await render.innerHTML());await render.screenshot({path:join(output,`${count}-frame-${n}.png`)});}
   assert(samples.size>3,'Sprite frames must visibly advance');
   await page.screenshot({path:join(output,`${count}-editor.png`),fullPage:true});
-  await page.getByRole('button',{name:'Design settings',exact:true}).click();
-  await page.getByRole('button',{name:'Import & export',exact:true}).click();
+  await page.getByRole('button',{name:'File',exact:true}).click();
   const download=page.waitForEvent('download');
   await page.getByRole('button',{name:'Download editable design',exact:true}).click();
   const designPath=join(output,`${count}-design.json`);await(await download).saveAs(designPath);
@@ -49,6 +46,7 @@ try {
   const sprites=design.spec.primitives.filter(p=>/^\/themes\/u\/ai-pet-[12]\.cba$/.test(p.assetPath));
   assert.equal(sprites.length,count);
   for(const sprite of sprites){assert.equal(sprite.frameCount,8);assert(design.assets[sprite.assetPath].data.includes('.'),'Sprite needs transparent pixels');}
+  await page.getByRole('button',{name:'File',exact:true}).click();
   const pack=page.waitForEvent('download');await page.getByRole('button',{name:'Export theme pack',exact:true}).click();await(await pack).saveAs(join(output,`${count}-theme.zip`));
   assert.deepEqual(errors,[]);
   console.log(JSON.stringify({count,distinctSamples:samples.size,normalButton:'companions',compile:'pass',export:'pass',source:'replayed approved art, not a fresh provider call'}));

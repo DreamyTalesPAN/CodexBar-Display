@@ -1,6 +1,5 @@
 "use client";
 
-import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import {
   Dialog,
@@ -24,9 +23,6 @@ export type SetupDialogAction = {
 type SetupDialogProps = {
   children?: ReactNode;
   description: string;
-  icon?: LucideIcon;
-  /** Destructive tints the header icon; "neutral" is for progress dialogs. */
-  tone?: "error" | "neutral";
   onOpenChange: (open: boolean) => void;
   open: boolean;
   /** The single signal action. Rendered last, on the right. */
@@ -46,6 +42,8 @@ type SetupDialogProps = {
    */
   showCloseButton?: boolean;
   title: string;
+  /** 480 px instead of 440, for the dialogs that carry a list. */
+  wide?: boolean;
 };
 
 /**
@@ -60,8 +58,6 @@ type SetupDialogProps = {
 export function SetupDialog({
   children,
   description,
-  icon: Icon,
-  tone = "error",
   onOpenChange,
   open,
   primaryAction,
@@ -69,6 +65,7 @@ export function SetupDialog({
   secondaryAction,
   showCloseButton = true,
   title,
+  wide = false,
 }: SetupDialogProps) {
   return (
     <Dialog modal={false} onOpenChange={onOpenChange} open={open}>
@@ -85,23 +82,12 @@ export function SetupDialog({
         )}
       />
       <DialogContent
+        className={wide ? "sm:max-w-[480px]" : undefined}
         style={{ animation: "none" }}
         onInteractOutside={(event) => event.preventDefault()}
       >
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            {Icon ? (
-              <Icon
-                className={cn(
-                  "size-[18px] shrink-0",
-                  tone === "error"
-                    ? "text-destructive"
-                    : "text-muted-foreground",
-                )}
-              />
-            ) : null}
-            <span>{title}</span>
-          </DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         {children}

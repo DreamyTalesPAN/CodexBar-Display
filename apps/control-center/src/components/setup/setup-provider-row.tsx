@@ -140,7 +140,7 @@ export function SetupProviderRow({
       variant="outline"
     >
       <ItemContent>
-        <ItemTitle className={cn(unusable && "opacity-50")}>{label}</ItemTitle>
+        <ItemTitle className={cn("text-[13px] font-semibold", unusable && "opacity-50")}>{label}</ItemTitle>
       </ItemContent>
       <ItemActions>
         {signIn ? (

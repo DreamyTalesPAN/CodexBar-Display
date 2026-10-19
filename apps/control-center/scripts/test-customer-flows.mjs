@@ -2631,7 +2631,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
   const cases = [
     {
       status: "auth_required",
-      expected: "Sign in to Claude in CodexBar, then check again.",
+      expected: "Sign in to Claude in CodexBar.",
       healthState: "auth_required",
       reportedMessage:
         "Codex connection failed: codex account authentication required to read rate limits",
@@ -2640,7 +2640,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
     {
       status: "permission_required",
       expected:
-        "Claude needs permission to read your sign-in. Open CodexBar and allow access, then check again.",
+        "Claude needs permission to read your sign-in. Open CodexBar and allow access.",
       healthState: "permission_required",
       reportedMessage:
         "Safari cookie file is not readable. Enable Full Disk Access for CodexBar.",
@@ -5002,7 +5002,7 @@ async function testThemeMissingDeviceChoosesThemeAndCompletesSetup(
     "Theme setup must stay inside setup instead of opening the Control Center shell",
   );
   assert(
-    (await page.getByRole("button", { name: "Create Theme" }).count()) === 0 &&
+    (await page.getByRole("button", { name: "Create theme" }).count()) === 0 &&
       (await page.getByRole("button", { name: /^Edit/ }).count()) === 0 &&
       (await page.getByText("Published", { exact: true }).count()) === 0,
     "Theme setup must show only the theme list and its install action",
@@ -6553,7 +6553,7 @@ async function testAppearanceSidebarNavigation(browser, appUrl) {
     await page.getByText("Fixture Night Clock Screensaver").waitFor();
     // The switch is in Settings only (#643): Screensavers says it is off
     // and links there.
-    await page.getByText("Screensaver is off.", { exact: true }).waitFor();
+    await page.getByText("Screensaver is off.").waitFor();
     assert(
       (await page
         .locator("main.control-center-shell")
@@ -6573,7 +6573,8 @@ async function testAppearanceSidebarNavigation(browser, appUrl) {
       "Appearance sections must stay in the sidebar, not become content tabs",
     );
     await page
-      .getByRole("link", { name: "Turn on in Settings", exact: true })
+      .locator("main.control-center-shell")
+      .getByRole("link", { name: "Settings", exact: true })
       .click();
     await page
       .getByRole("heading", { name: "Screensaver", exact: true })
@@ -6596,7 +6597,7 @@ async function testAppearanceSidebarNavigation(browser, appUrl) {
       .waitFor({ timeout: 10_000 });
     await page.getByText("Fixture Night Clock Screensaver").waitFor();
     assert(
-      (await page.getByText("Screensaver is off.", { exact: true }).count()) === 0,
+      (await page.getByText("Screensaver is off.").count()) === 0,
       "Screensavers must drop the off line once the screensaver is on",
     );
 
@@ -10505,8 +10506,8 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
     } }],
     onThemeInstallRequest: (request) => writes.push(request),
   });
-  let configured = false, verified = false, plans = 0;
-  await page.route("**/v1/ai-theme/**", (route) => {
+  let configured = false, verified = false, plans = 0, holdPlan = null;
+  await page.route("**/v1/ai-theme/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path.endsWith("/capabilities")) return route.fulfill({ json: { enabled: true, providers: [{ id: "openai", configured, verificationRequired: configured && !verified }] } });
@@ -10515,6 +10516,7 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
     plans++;
     assert(verified, "Generation must wait for credential verification");
     assert(request.postDataJSON().layout.length > 0, "Native editing must pass the opened document to AI");
+    await holdPlan;
     return route.fulfill({ json: { mode: "layout", notes: "Updated", edits: [] } });
   });
   await page.goto("http://127.0.0.1:47832/control-center", { waitUntil: "domcontentloaded" });
@@ -10522,7 +10524,7 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
   const navigation = page.getByRole("navigation", { name: "Control Center", exact: true });
   await navigation.getByRole("button", { name: "Appearance", exact: true }).click();
   await navigation.getByRole("button", { name: screensaver ? "Screensavers" : "Themes", exact: true }).click();
-  await page.getByRole("button", { name: screensaver ? "Create Screensaver" : "Create Theme", exact: true }).click();
+  await page.getByRole("button", { name: screensaver ? "Create screensaver" : "Create theme", exact: true }).click();
   await page.getByLabel("Your idea", { exact: true }).waitFor();
   await page.locator('[data-slot="sidebar"][data-state="collapsed"]').waitFor();
   assert(await page.locator(".control-center-shell__header").isVisible(), "Studio stays inside the native shell");
@@ -10538,6 +10540,27 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("vibetv.controlCenter.userThemes")));
   assert(saved.themes.length === 1, "Native Save writes the app library");
   assert((saved.themes[0].document.usage || "live") === (screensaver ? "screensaver" : "live"));
+  if (!screensaver) {
+    // #582: the Mac App asks where to save; only a saved file is confirmed.
+    const finished = (fileName, saved) => page.evaluate(([fileName, saved]) => window.dispatchEvent(
+      new CustomEvent("vibetv:download-finished", { detail: { fileName, saved } })), [fileName, saved]);
+    const exported = page.getByText("Theme pack exported. No device was contacted.", { exact: true });
+    // The File menu closes after each pick, so every export opens it again.
+    const exportPack = async () => {
+      await page.getByRole("button", { name: "File", exact: true }).click();
+      return Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export theme pack", exact: true }).click()]);
+    };
+    const [cancelled] = await exportPack();
+    assert(!(await exported.isVisible()), "The export waits for the Mac save dialog");
+    await finished(cancelled.suggestedFilename(), false);
+    assert(!(await exported.isVisible()), "A cancelled Mac save dialog confirms no export");
+    const [kept] = await exportPack();
+    await finished(kept.suggestedFilename(), true);
+    await exported.waitFor();
+    // Notices sit under the toolbar, not at the bottom of the chat column.
+    assert((await page.locator("header + div").getByText("Theme pack exported. No device was contacted.", { exact: true }).count()) === 1, "The export notice sits under the Theme Studio toolbar");
+    await page.keyboard.press("Escape");
+  }
   await page.getByRole("button", { name: "Send to VibeTV", exact: true }).click();
   await page.getByText("Theme installed.", { exact: true }).waitFor();
   assert(writes.length === 1, "Native send uses one existing Companion install");
@@ -10549,10 +10572,10 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
   await page.evaluate((document) => localStorage.setItem("vibetv.controlCenter.themeStudioDraft", JSON.stringify({
     schemaVersion: 1, recovery: { document: { ...document, packName: "Unsaved other design" }, source: "blank", updatedAt: new Date().toISOString() },
   })), saved.themes[0].document);
-  await page.getByRole("button", { name: screensaver ? "Create Screensaver" : "Create Theme", exact: true }).click();
+  await page.getByRole("button", { name: screensaver ? "Create screensaver" : "Create theme", exact: true }).click();
   await page.getByLabel("Your idea", { exact: true }).waitFor();
   if (screensaver) {
-    await page.getByRole("button", { name: "Design settings", exact: true }).click();
+    await page.getByRole("button", { name: "File", exact: true }).click();
     await page.getByRole("button", { name: "New design", exact: true }).click();
     await page.getByRole("heading", { name: "Screensaver Studio", exact: true }).waitFor();
     await page.locator('input[accept="application/json,.json"]').setInputFiles({
@@ -10564,6 +10587,28 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
   await page.getByRole("button", { name: "Back to library", exact: true }).click();
   await page.getByRole("heading", { name: screensaver ? "Screensavers" : "Themes", exact: true }).waitFor();
   assert(await page.evaluate(() => JSON.parse(localStorage.getItem("vibetv.controlCenter.themeStudioDraft"))?.recovery?.document?.packName) === "Unsaved other design", "Opening a clean design preserves unrelated recovery");
+  if (!screensaver) {
+    // #633: a new session can lose the page's storage while the helper keeps
+    // the key; the first message still goes straight to the AI.
+    await page.evaluate(() => localStorage.removeItem("vibetv.aiTheme.consent"));
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await navigation.waitFor({ timeout: 20000 });
+    if (!(await navigation.getByRole("button", { name: "Themes", exact: true }).isVisible())) {
+      await navigation.getByRole("button", { name: "Appearance", exact: true }).click();
+    }
+    await navigation.getByRole("button", { name: "Themes", exact: true }).click();
+    await page.getByRole("button", { name: "Resume", exact: true }).click();
+    await page.getByLabel("Your idea", { exact: true }).fill("Make it red");
+    let release;
+    holdPlan = new Promise((resolve) => { release = resolve; });
+    await page.getByRole("button", { name: "Create", exact: true }).click();
+    // #634: the chat says which step is running.
+    await page.getByRole("status").filter({ hasText: "Understanding your idea…" }).waitFor();
+    assert(await page.getByRole("dialog").count() === 0, "A saved key asks for no consent again");
+    release();
+    await page.getByRole("log", { name: "Conversation", exact: true }).getByText("Updated", { exact: true }).waitFor();
+    assert(plans === 2, "The first message of a new session reaches the AI");
+  }
   assert(errors.length === 0, errors.join("\n"));
   await page.unrouteAll({ behavior: "ignoreErrors" });
   await page.close();
@@ -11628,7 +11673,7 @@ async function routeCompanionOnline(
           ...(!ready
             ? {
                 nextAction:
-                  "Open provider setup, sign in again, then check this provider.",
+                  "Open provider setup, sign in again.",
               }
             : {}),
         };

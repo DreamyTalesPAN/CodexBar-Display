@@ -1,16 +1,9 @@
 "use client";
 
-import { Cable, CircleAlert, Wifi } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Item,
-  ItemContent,
-  ItemDescription,
-  ItemGroup,
-  ItemMedia,
-  ItemTitle,
-} from "@/components/ui/item";
+import { ItemGroup } from "@/components/ui/item";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import type { ApiError, DeviceCandidate } from "../control-center-types";
@@ -21,7 +14,7 @@ import {
 import { candidateKey } from "./setup-connection";
 import { SetupDeviceCard } from "./setup-device-card";
 import { SetupDialog } from "./setup-dialog";
-import { selectedItemClass } from "./setup-selectable-card";
+import { moveAmongRadios } from "./setup-selectable-card";
 
 const ADDRESS_ERROR = "Enter the IP address shown on the VibeTV screen.";
 
@@ -92,7 +85,6 @@ function SetupAddressDialogForm({
       }}
       showCloseButton={false}
       title="Enter IP address"
-      tone="neutral"
     >
       <Field data-invalid={error ? true : undefined}>
         <FieldLabel htmlFor="setup-device-address">IP address</FieldLabel>
@@ -133,10 +125,6 @@ type NotFoundDialogProps = {
   windowsHost?: boolean;
 };
 
-// The two ways out of "not found" are buttons, so they look like the
-// connection cards in Settings: outlined, on the card background, with hover.
-const notFoundChoiceClass = `${selectedItemClass(false)} bg-card p-4 disabled:cursor-not-allowed disabled:opacity-50`;
-
 /** 02c — neither Cable nor WiFi discovery found a VibeTV. */
 export function SetupDeviceNotFoundDialog({
   busy = false,
@@ -159,47 +147,53 @@ export function SetupDeviceNotFoundDialog({
         onSelect: onEnterAddressManually,
       }}
       title="We couldn't find your VibeTV"
+      wide
     >
-      <div className="flex w-full flex-col gap-3">
-        <Item asChild className={notFoundChoiceClass} variant="outline">
-          <button
-            className="text-left"
-            disabled={busy}
-            onClick={onUseCable}
-            type="button"
-          >
-            <ItemMedia variant="icon">
-              <Cable />
-            </ItemMedia>
-            <ItemContent>
-              <ItemTitle>Use the cable</ItemTitle>
-              <ItemDescription>
-                Plug VibeTV into your {windowsHost ? "computer" : "Mac"} with
-                the cable that came with it.
-              </ItemDescription>
-            </ItemContent>
-          </button>
-        </Item>
-        <Item asChild className={notFoundChoiceClass} variant="outline">
-          <button
-            className="text-left"
-            disabled={busy}
-            onClick={onUseWiFi}
-            type="button"
-          >
-            <ItemMedia variant="icon">
-              <Wifi />
-            </ItemMedia>
-            <ItemContent>
-              <ItemTitle>Already on WiFi</ItemTitle>
-              <ItemDescription>
-                For a VibeTV that is already set up on your WiFi.
-              </ItemDescription>
-            </ItemContent>
-          </button>
-        </Item>
-      </div>
+      <ul className="border-t border-foreground/10">
+        <NotFoundChoice
+          busy={busy}
+          description={`Plug VibeTV into your ${windowsHost ? "computer" : "Mac"} with the cable that came with it.`}
+          onSelect={onUseCable}
+          title="Use the cable"
+        />
+        <NotFoundChoice
+          busy={busy}
+          description="For a VibeTV that is already set up on your WiFi."
+          onSelect={onUseWiFi}
+          title="Already on WiFi"
+        />
+      </ul>
     </SetupDialog>
+  );
+}
+
+/** One way out of "not found": a quiet row with a chevron, as in the design. */
+function NotFoundChoice({
+  busy,
+  description,
+  onSelect,
+  title,
+}: {
+  busy: boolean;
+  description: string;
+  onSelect: () => void;
+  title: string;
+}) {
+  return (
+    <li>
+      <button
+        className="flex w-full items-center gap-4 border-b border-foreground/10 py-3.5 text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+        disabled={busy}
+        onClick={onSelect}
+        type="button"
+      >
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="font-semibold">{title}</span>
+          <span className="text-muted-foreground">{description}</span>
+        </span>
+        <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+      </button>
+    </li>
   );
 }
 
@@ -224,8 +218,6 @@ export function SetupCableHelpDialog({
       </Button>
       <SetupDialog
         description="Setup runs over the USB cable. You can switch to WiFi afterwards."
-        icon={Cable}
-        tone="neutral"
         onOpenChange={setOpen}
         open={open}
         primaryAction={{
@@ -241,21 +233,16 @@ export function SetupCableHelpDialog({
           },
         }}
         title="Connect the USB cable"
+        wide
       >
-        <ol className="flex flex-col gap-4 text-left text-sm leading-relaxed">
+        <ol className="flex flex-col gap-3 text-left">
           {[
-            <>
-              Plug VibeTV into this computer with the USB cable that came with
-              it.
-            </>,
-            <>Wait until the VibeTV screen lights up, then scan again here.</>,
-            <>To use WiFi, choose it after VibeTV is connected.</>,
+            "Plug VibeTV into this computer with the USB cable that came with it.",
+            "Wait until the VibeTV screen lights up, then scan again here.",
+            "To use WiFi, choose it after VibeTV is connected.",
           ].map((step, index) => (
-            <li className="flex items-start gap-3" key={index}>
-              <span
-                aria-hidden
-                className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs text-muted-foreground"
-              >
+            <li className="flex items-start gap-3" key={step}>
+              <span aria-hidden className="w-4 text-muted-foreground">
                 {index + 1}
               </span>
               <span>{step}</span>
@@ -293,7 +280,6 @@ export function SetupConnectFailedDialog({
   return (
     <SetupDialog
       description={description}
-      icon={CircleAlert}
       onOpenChange={onOpenChange}
       open={open}
       primaryAction={
@@ -333,13 +319,14 @@ export function SetupDevicePickerDialog({
     candidates.find((candidate) => candidateKey(candidate) === selectedKey) ??
     candidates.find((candidate) => candidate.known) ??
     candidates[0];
+  // The Tab stop of the group: the selected VibeTV, or the first one.
+  const selectedIndex = candidates.findIndex((candidate) => candidate === selected);
   return (
     <SetupDialog
       description={
         error?.nextAction ??
         "Your VibeTV is not reachable. Choose it to connect again."
       }
-      icon={CircleAlert}
       onOpenChange={onOpenChange}
       open
       primaryAction={{
@@ -350,13 +337,19 @@ export function SetupDevicePickerDialog({
       showCloseButton={false}
       title={error?.message ?? "Choose your VibeTV"}
     >
-      <ItemGroup aria-label="VibeTVs found" className="gap-3" role="radiogroup">
-        {candidates.map((candidate) => (
+      <ItemGroup
+        aria-label="VibeTVs found"
+        className="gap-3"
+        onKeyDown={moveAmongRadios}
+        role="radiogroup"
+      >
+        {candidates.map((candidate, index) => (
           <SetupDeviceCard
             candidate={candidate}
             key={candidateKey(candidate)}
             onSelect={() => setSelectedKey(candidateKey(candidate))}
             selected={candidate === selected}
+            tabStop={index === Math.max(selectedIndex, 0)}
           />
         ))}
       </ItemGroup>

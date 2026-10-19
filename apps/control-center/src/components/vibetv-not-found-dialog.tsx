@@ -1,6 +1,5 @@
 "use client";
 
-import { CircleAlert } from "lucide-react";
 import type { DeviceInfo } from "./control-center-types";
 import { deviceIsCustomerConnected } from "./control-center-types";
 import { SetupDialog } from "./setup/setup-dialog";
@@ -29,7 +28,6 @@ export function VibeTVNotFoundDialog({
   return (
     <SetupDialog
       description={`Check that VibeTV is plugged in and on the same WiFi as this ${windowsHost ? "computer" : "Mac"}.`}
-      icon={CircleAlert}
       onOpenChange={(open) => {
         if (!open) onDismiss();
       }}

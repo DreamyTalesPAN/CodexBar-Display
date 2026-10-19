@@ -1,6 +1,5 @@
 "use client";
 
-import { AppWindow, RefreshCw } from "lucide-react";
 import { SetupDialog } from "./setup-dialog";
 
 type SetupRecoveryDialogsProps = {
@@ -37,18 +36,15 @@ export function SetupRecoveryDialogs({
         // background service that runs to the end either way, and nothing at
         // any layer can stop it part way.
         description="The background service stopped responding and is restarting automatically. Your setup stays saved."
-        icon={RefreshCw}
         onOpenChange={(open) => !open && onHide()}
         open={phase === "repairing"}
         primaryAction={{ label: "Hide", onSelect: onHide }}
         scrim={false}
         showCloseButton={false}
         title="Repairing VibeTV Control Center"
-        tone="neutral"
       />
       <SetupDialog
         description="The background service could not be restarted automatically. Your setup stays saved."
-        icon={AppWindow}
         onOpenChange={(open) => !open && onHide()}
         open={phase === "failed"}
         primaryAction={{
