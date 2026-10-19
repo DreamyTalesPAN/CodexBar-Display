@@ -347,7 +347,11 @@ export function ProviderList({
         // guide beside OK, or OK alone (Paul, 16.10.).
         <SetupDialog
           open
-          title={issue.provider.label}
+          title={
+            setupProviderNeedsOwnApp(issue.provider)
+              ? `${issue.provider.label} needs its own app`
+              : issue.provider.label
+          }
           description={issue.message}
           onOpenChange={(open) => { if (!open) dismissIssue(); }}
           primaryAction={issueSignIn ? {
@@ -365,8 +369,8 @@ export function ProviderList({
           } : { label: "OK", onSelect: dismissIssue }}
           secondaryAction={issueSignIn
             ? { label: "Not now", onSelect: dismissIssue }
-            : setupGuide ? { label: "OK", onSelect: dismissIssue } : undefined}
-          // OK or Not now is the way out here (Paul, 16.10.: at most two actions).
+            : setupGuide ? { label: "Close", onSelect: dismissIssue } : undefined}
+          // Close, Not now or OK is the way out here (Paul, 16.10.: at most two actions).
           showCloseButton={false}
         />
       ) : null}

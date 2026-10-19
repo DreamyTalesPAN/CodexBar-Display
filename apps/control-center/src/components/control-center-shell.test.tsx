@@ -230,6 +230,26 @@ describe("ControlCenterShell", () => {
     expect(within(nav).queryByRole("button", { name: "Screensavers" })).toBeNull();
   });
 
+  // Build 2 QA: the open Studio drew a second row ("Appearance") above its
+  // own header. The approved template has one row.
+  it("draws no header row while the Studio is open: the Studio's own row is the header, the title stays for screen readers", () => {
+    vi.stubGlobal("matchMedia", () => ({
+      matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }));
+    render(
+      <TooltipProvider>
+        <ControlCenterShell activeTab="theme-library" themeStudioOpen onTabChange={vi.fn()}>
+          <div>Studio</div>
+        </ControlCenterShell>
+      </TooltipProvider>,
+    );
+    const title = screen.getByRole("heading", { level: 1 });
+    expect(title.textContent).toBe("Appearance");
+    expect(title.className).toContain("sr-only");
+    expect(document.querySelector(".control-center-shell__header")).toBeNull();
+    expect(screen.getByRole("navigation", { name: "Control Center" })).toBeTruthy();
+  });
+
   it("has no accessibility violations with an update waiting", async () => {
     await expectNoAxeViolations(
       renderToStaticMarkup(

@@ -324,7 +324,7 @@ export function SetupDevicePickerDialog({
     <SetupDialog
       description={
         error?.nextAction ??
-        "Your VibeTV is not reachable. Choose it to connect again."
+        "Choose it to connect again."
       }
       onOpenChange={onOpenChange}
       open
@@ -334,7 +334,7 @@ export function SetupDevicePickerDialog({
       }}
       secondaryAction={{ label: "Not now", onSelect: () => onOpenChange(false) }}
       showCloseButton={false}
-      title={error?.message ?? "Choose your VibeTV"}
+      title={error?.message ?? "Your VibeTV is not reachable"}
     >
       <ItemGroup
         aria-label="VibeTVs found"

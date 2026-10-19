@@ -33,7 +33,8 @@ type SetupDialogProps = {
   /**
    * Whether the screen behind is held. A step's own error freezes it; an
    * announcement about the background service must not, or it takes away the
-   * app it is reporting on.
+   * app it is reporting on. Without it the grey backdrop still shows, but it
+   * takes no clicks.
    */
   scrim?: boolean;
   /**
@@ -106,7 +107,10 @@ export function SetupDialog({
         aria-hidden
         className={cn(
           "fixed inset-0 z-40 bg-black/10 transition-opacity duration-100 supports-backdrop-filter:backdrop-blur-xs",
-          open && scrim ? "opacity-100" : "pointer-events-none opacity-0",
+          open ? "opacity-100" : "pointer-events-none opacity-0",
+          // Without scrim the grey backdrop is only a look: it never takes clicks,
+          // so the page behind stays usable (the outage and busy announcements).
+          !scrim && "pointer-events-none",
         )}
       />
       <DialogContent
