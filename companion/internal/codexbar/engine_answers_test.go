@@ -240,13 +240,31 @@ func TestSetProviderEnabledForgetsTheInventoryAtOnce(t *testing.T) {
 	}
 }
 
-// A stale inventory is worse than one more process.
+// The inventory was kept one minute and then read again on every poll with the
+// window open: "config providers" once a minute on Windows (#555). The answer
+// now stays for the life of the engine process while settings.json is unchanged.
+func TestProviderInventoryIsKeptForTheLifeOfTheEngine(t *testing.T) {
+	settledEngine(t)
+	runs := stubEngineCommands(t, func() ([]byte, error) { return inventoryWithClaude(true), nil })
+	if _, err := FetchProviderInventory(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	engineInventory.mu.Lock()
+	engineInventory.at = engineInventory.at.Add(-time.Hour)
+	engineInventory.mu.Unlock()
+	inventory, err := FetchProviderInventory(context.Background())
+	if err != nil || len(inventory) != 1 || !inventory[0].Enabled || *runs != 1 {
+		t.Fatalf("an hour-old answer for unchanged settings must be kept: inventory=%+v err=%v runs=%d", inventory, err, *runs)
+	}
+}
+
+// An inventory that may not hold for the settings it was read from is asked
+// again at once, however long the engine has run.
 func TestProviderInventoryAsksAgainWheneverTheAnswerMayNotHold(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		prepare func(t *testing.T, settings string)
 		first   func() ([]byte, error)
-		aged    time.Duration
 	}{
 		{name: "an answer that is no inventory", first: func() ([]byte, error) { return []byte("Error: Failed to decode"), nil }},
 		{name: "a read that failed", first: func() ([]byte, error) { return inventoryWithClaude(false), errors.New("exit status 1") }},
@@ -258,9 +276,6 @@ func TestProviderInventoryAsksAgainWheneverTheAnswerMayNotHold(t *testing.T) {
 				t.Fatal(err)
 			}
 		}},
-		// Win-CodexBar answers with its default switches and no error when it
-		// cannot read its settings. Such an answer must not stay for good.
-		{name: "an answer kept for its longest time", aged: inventoryMaxAge},
 		{name: "the Mac", prepare: func(*testing.T, string) { reuseEngineAnswers = false }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -277,9 +292,6 @@ func TestProviderInventoryAsksAgainWheneverTheAnswerMayNotHold(t *testing.T) {
 				return inventoryWithClaude(true), nil
 			})
 			_, _ = FetchProviderInventory(context.Background())
-			engineInventory.mu.Lock()
-			engineInventory.at = engineInventory.at.Add(-tc.aged)
-			engineInventory.mu.Unlock()
 			inventory, err := FetchProviderInventory(context.Background())
 			if err != nil || len(inventory) != 1 || !inventory[0].Enabled || *runs != 2 {
 				t.Fatalf("the CLI must be asked again: inventory=%+v err=%v runs=%d", inventory, err, *runs)
