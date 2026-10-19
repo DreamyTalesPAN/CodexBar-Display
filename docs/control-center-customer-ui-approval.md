@@ -7605,6 +7605,85 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as approved in the #677 entries above and the #645 and #674 entries from main; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — Setup: arrow keys move between choices and through the Help menu (#214)
+- User approval: Carried from the overnight batch of 13.10. (#603), which Paul's blanket approval for that night covered; not yet seen by him in this form.
+- Approved customer-visible result: no visible change. Keyboard only: in setup, Tab reaches each group of choices (VibeTVs, themes) once, and the arrow keys move between the choices and select the one they reach. In the Help menu, focus moves into the menu when it opens, the arrow keys, Home and End move between its entries, focus stays in the menu after an entry was used, and Escape returns focus to Help.
+- Scope: `apps/control-center/src/components/setup/setup-help-menu.tsx`, `setup-help-menu-log.test.tsx`, `setup-choice-keyboard.test.tsx`, `setup-selectable-card.tsx`, `setup-device-card.tsx`, `setup-device-dialogs.tsx`, `setup-device-screen.tsx`, `setup-theme-screen.tsx`, `docs/control-center-accessibility.md` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — keyboard handling only, no new capability
+
+## 2026-10-19 — #676: approval marker after merging main up to #677
+
+- User approval: the orchestrator on 2026-10-19, for Marcus: merge main into this branch after #677 (merge order for this file: #645 > #674 > #677 > #676 > #681) and keep both sets of entries. Marcus' click test of #676 runs on the head that carries this merge. The UI review gate cannot read a merge commit as approval, so this entry marks it.
+- Approved customer-visible result: as recorded in the "Setup: arrow keys move between choices and through the Help menu" entry above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-16 — Provider next steps no longer say "then check again"
+- User approval: follows Paul's rule of 2026-10-16 "no Check again — the app re-checks by itself" (via the review orchestrator); the exact sentences are shown to him for approval on 2026-10-17.
+- Approved customer-visible result: The next-step sentence a customer reads for a provider (in the setup log and in the provider message) no longer ends with ", then check again"; the sentence ends with a period and says only what the customer does. The app re-checks by itself. Before → after:
+  - "Sign in to this provider, then check again." → "Sign in to this provider."
+  - "Sign in to <host> in your browser, close the browser, then check again." → "Sign in to <host> in your browser, close the browser."
+  - "Sign in to this provider in your browser, close the browser, then check again." → "Sign in to this provider in your browser, close the browser."
+  - "Claude usage needs a signed-in claude.ai session in your browser. Sign in to claude.ai in your browser, close the browser, then check again." → "Claude usage needs a signed-in claude.ai session in your browser. Sign in to claude.ai in your browser, close the browser."
+  - "Allow the requested macOS permission, then check again." → "Allow the requested macOS permission."
+  - "Allow the requested access, then check again." → "Allow the requested access."
+  - "Confirm the provider sign-in, then check again." → "Confirm the provider sign-in."
+  - "Repair the usage service, then check again." → "Repair the usage service."
+  - "Repair the usage engine, then check again." → "Repair the usage engine."
+  - "Use this provider once or connect an account with usage, then check again." → "Use this provider once or connect an account with usage."
+  - "Finish setup for this provider, then check again." → "Finish setup for this provider."
+  - "Open <sign-in address> in your browser, sign in, then check again." → "Open <sign-in address> in your browser, sign in."
+  - "Open <sign-in address> in your browser, then check again." → "Open <sign-in address> in your browser."
+  - "Sign in to the provider's app, then check again." → "Sign in to the provider's app."
+  Not changed: "Repair the usage engine, then check again." in the Diagnostics panel and its check row (the panel's own Run diagnostics button) and the row sentences of the Setup providers popup (replaced by #669).
+- Scope: `companion/internal/codexbar/provider_setup.go`, `companion/internal/companionapi/preferences.go`, `companion/internal/companionapi/provider_setup.go`, `companion/internal/companionapi/setup_events.go`, their Go tests, `apps/control-center/src/components/setup-event-log.test.tsx`, `apps/control-center/src/components/setup/setup-providers-screen.test.tsx`, `apps/control-center/src/lib/customer-platform.test.ts`, `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — copy only: the same next steps without the check sentence, no new capability
+
+## 2026-10-16 — Diagnostics keeps "then check again"; the setup log does not
+- User approval: follows Paul's rule of 2026-10-16 "no Check again — the app re-checks by itself" (via the review orchestrator); the exact sentences are shown to him for approval on 2026-10-17.
+- Approved customer-visible result: Diagnostics keeps its usage engine sentence "Repair the usage engine, then check again." (Run diagnostics stays the customer's own check). The setup log entry for the usage engine reads "Repair the usage engine." instead, as in the entry above. Nothing else changes.
+- Scope: `companion/internal/companionapi/setup_events.go` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the same Diagnostics wording, the setup log wording shortened
+
+## 2026-10-16 — Remaining provider and diagnostics next steps drop the check tail
+- User approval: follows Paul's rule of 2026-10-16 "no Check again — the app re-checks by itself" (via the review orchestrator); the exact sentences are shown to him for approval on 2026-10-17.
+- Approved customer-visible result: The next steps below no longer tell the customer to check or click Check again; each keeps the rest of its sentence. The app re-checks by itself. Before → after:
+  - "Open provider setup, sign in again, then check this provider." → "Open provider setup, sign in again."
+  - "Sign in to this provider in your browser, close the browser, then check this provider." → "Sign in to this provider in your browser, close the browser."
+  - "Allow the required access, then check this provider." → "Allow the required access."
+  - "Allow the required macOS access, then check this provider." → "Allow the required macOS access."
+  - "Wait a moment, then check this provider again." → "Wait a moment."
+  - "Repair the usage service, then check this provider again." → "Repair the usage service."
+  - "Check this provider, then try again." (provider the usage service could not read; nothing to do but wait for the app's own re-check) → "Wait a moment."
+  - "Open provider setup, connect a provider, then click Check again." (Diagnostics check row) → "Open provider setup, connect a provider."
+  - "Finish AI setup in the Mac App, then click Check again." (Diagnostics check row) → "Finish AI setup in the Mac App."
+  - "Finish AI setup in the app, then click Check again." (same row on Windows) → "Finish AI setup in the app."
+  Not changed: the Diagnostics "Run diagnostics" wording and the engine sentence "Repair the usage engine, then check again." (see the entries above).
+- Scope: `companion/internal/codexbar/provider_setup.go`, `companion/internal/companionapi/preferences.go`, `companion/internal/companionapi/preferences_test.go`, `companion/internal/companionapi/provider_setup.go`, `companion/internal/companionapi/diagnostics.go`, `companion/internal/companionapi/setup_events_test.go`, `apps/control-center/src/lib/customer-platform.test.ts`, `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — copy only: the same next steps without the check tail, no new capability
+
+## 2026-10-17 — Paul approves the provider next steps without "then check again" (refers to the pending entry of 2026-10-16, "Remaining provider and diagnostics next steps drop the check tail")
+
+- User approval: Paul approved 17.10. (via the communicator): next-step sentences without "then check again". Functional test still open.
+- Approved customer-visible result: the next-step sentences listed before → after in the pending entry above, with no "then check again" tail. The unchanged Diagnostics engine sentence named in that entry is not separately approved here.
+- Scope: this approval record only; no code change in this entry. Pull request branch only, not merge or release.
+- What's new: none — approval record
+
+## 2026-10-19 — #681: click test passed, approval marker after merging main with #677 and #678
+
+- User approval: Marcus passed the click test of #681 on 2026-10-19 (Mac, build 99.0.1155 from head b4c2324e; "Klicktest 681 ok", via the orchestrator). Main moved on with #671, #682, #677, #678 and others while the branch was in review; the merge kept the entries of both sides in this file.
+- Approved customer-visible result: as approved in the #681 entries above (provider next steps without "then check again"); nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — #681: approval marker after merging main with #676
+
+- User approval: Marcus, answer 65a on 2026-10-19 (via the orchestrator): merge main with #676 into this branch. The click test of #681 stays as in the marker entry above (Marcus, 2026-10-19, build 99.0.1155 from head b4c2324e).
+- Approved customer-visible result: as approved in the #681 entries above (provider next steps without "then check again"); nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
 ## 2026-10-16 — #663: Same device-switch reset as #645 for display brightness (no visible change)
 
 - User approval: none needed, no visible change. Same device-switch reset as #645 for display brightness (#663); no new wording; not seen by Paul.
