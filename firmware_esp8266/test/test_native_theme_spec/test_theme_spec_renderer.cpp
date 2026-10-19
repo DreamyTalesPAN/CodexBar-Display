@@ -4513,6 +4513,16 @@ void testUsagePaceTextsRenderCodexBarPace() {
   TEST_ASSERT_EQUAL_STRING("", both[6].c_str());
   TEST_ASSERT_EQUAL_STRING("lasts until reset - resets 3h 20m", both[8].c_str());
 
+  // A misspelled or unknown pace suffix renders nothing, not a neighbour's text.
+  const char* unknown = R"JSON({"v":1,"id":"p","rev":1,"p":[
+    {"t":"tx","x":0,"y":0,"b":"usageSlot1PaceState"},
+    {"t":"tx","x":0,"y":20,"b":"usageSlot1PaceRuns"},
+    {"t":"tx","x":0,"y":40,"b":"usageSlot1PaceTextual"},
+    {"t":"tx","x":0,"y":60,"b":"usageSlot1PaceLastsX"}
+  ]})JSON";
+  for (const std::string& text : renderedTexts(unknown, frame)) {
+    TEST_ASSERT_EQUAL_STRING("", text.c_str());
+  }
   // On pace without a projection: CodexBar names no outcome, neither do we.
   frame.usageWindows[0].pace = {-1, 2, 0};
   std::vector<std::string> onPace = renderedTexts(spec, frame);

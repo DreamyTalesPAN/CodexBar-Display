@@ -802,22 +802,23 @@ inline void FormatBoundPace(
   if (pace.state == 0 || !running) {
     return;
   }
-  const char kind = suffix[0];
-  if (kind == 'T' || kind == 'S') {
+  // Whole suffixes only: a misspelled one (PaceState, PaceRuns) stays empty.
+  const bool lastsSep = std::strcmp(suffix, "LastsSep") == 0;
+  const bool shortForm = std::strcmp(suffix, "Short") == 0;
+  if (shortForm || std::strcmp(suffix, "Text") == 0) {
     const int amount = pace.delta < 0 ? -pace.delta : pace.delta;
-    const bool shortForm = kind == 'S';
     if (pace.state == usage_window_contract::kPaceOnPace) {
       std::snprintf(out, outSize, "%s", shortForm ? "on pace" : "On pace");
     } else {
       std::snprintf(out, outSize, shortForm ? "%d%% %s" : "%d%% in %s", ClampPct(amount),
                     usage_window_contract::PaceState(pace.state));
     }
-  } else if (kind == 'L' && pace.lasts != 0) {
+  } else if ((lastsSep || std::strcmp(suffix, "Lasts") == 0) && pace.lasts != 0) {
     // LastsSep ends in " - " so "{usageSlot1PaceLastsSep}resets {usageSlot1Reset}" reads
     // "lasts until reset - resets 3h 34m", and plain "resets 3h 34m" without a pace.
     std::snprintf(out, outSize, pace.lasts == usage_window_contract::kPaceRunsOut ? "runs out%s" : "lasts until reset%s",
-                  std::strcmp(suffix, "LastsSep") == 0 ? " - " : "");
-  } else if (kind == 'R' && pace.lasts == usage_window_contract::kPaceRunsOut) {
+                  lastsSep ? " - " : "");
+  } else if (std::strcmp(suffix, "RunsOut") == 0 && pace.lasts == usage_window_contract::kPaceRunsOut) {
     std::snprintf(out, outSize, "runs out");
   }
 }
