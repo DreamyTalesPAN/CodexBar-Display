@@ -520,10 +520,6 @@ async function main() {
         browser,
         appContext.appUrl,
       );
-      await testProviderCheckWinsOverOlderPreferenceRead(
-        browser,
-        appContext.appUrl,
-      );
       await testFailedSetupResetReconcilesPendingProviderToggle(
         browser,
         appContext.appUrl,
@@ -1005,10 +1001,6 @@ async function main() {
       appContext.appUrl,
     );
     await testProviderPoolRetriesAfterFailedWrite(
-      browser,
-      appContext.appUrl,
-    );
-    await testProviderCheckWinsOverOlderPreferenceRead(
       browser,
       appContext.appUrl,
     );
@@ -2627,6 +2619,24 @@ async function testDeniedLocalNetworkShowsRecovery(browser, appUrl) {
   await page.close();
 }
 
+// A provider that needs the customer opens its overlay over every main page
+// (states overview 644). A flow that is not about it closes each one with
+// Not now, waiting briefly for it to appear.
+async function closeProviderOverlays(page) {
+  for (let i = 0; i < 4; i++) {
+    const notNow = page
+      .getByRole("dialog")
+      .filter({ hasText: /needs (a new sign-in|access)/ })
+      .getByRole("button", { name: "Not now" });
+    try {
+      await notNow.first().waitFor({ timeout: 2_000 });
+    } catch {
+      return;
+    }
+    await notNow.first().click();
+  }
+}
+
 async function testProviderReadinessCustomerStates(browser, appUrl) {
   const cases = [
     {
@@ -2635,7 +2645,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       healthState: "auth_required",
       reportedMessage:
         "Codex connection failed: codex account authentication required to read rate limits",
-      rowActions: ["Sign in to Codex"],
+      rowActions: ["Sign in needed for Codex"],
     },
     {
       status: "permission_required",
@@ -2650,9 +2660,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       // The popup says one fixed sentence per state, never the engine's text
       // (Paul, 16.10.).
       dialogSentence: "Allow access on this computer so VibeTV can read Codex usage.",
-      rowActions: [
-        "Check Codex again",
-      ],
+      rowActions: ["Allow access"],
     },
     {
       status: "no_usage_available",
@@ -2661,9 +2669,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       healthState: "no_usage_available",
       reportedMessage: "No usage data is available for this Codex account.",
       dialogSentence: "This Codex account has no usage yet.",
-      rowActions: [
-        "Check Codex again",
-      ],
+      rowActions: [],
     },
     {
       status: "config_error",
@@ -2673,16 +2679,14 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       reportedMessage: "CodexBar could not save the Codex provider settings.",
       shownMessage: "Usage engine could not save the Codex provider settings.",
       dialogSentence: "VibeTV could not read Codex usage right now and tries again by itself.",
-      rowActions: [
-        "Check Codex again",
-      ],
+      rowActions: [],
     },
     {
       status: "not_configured",
       expected: "No usable AI provider is configured yet.",
       healthState: "setup_required",
       reportedMessage: "No available fetch strategy for codex.",
-      rowActions: ["Sign in to Codex"],
+      rowActions: ["Sign in needed for Codex"],
     },
   ];
 
@@ -2717,6 +2721,8 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
     // The rendered theme (its image label starts "Rendered VibeTV") is the proof: the
     // loading state has no such image, so the checks below run after the preview drew.
     await page.getByRole("img", { name: /^Rendered VibeTV / }).waitFor({ timeout: 15_000 });
+    // The preferences arrive after the page: then the overlay can open.
+    await closeProviderOverlays(page);
     assert(
       (await page.getByText("AI provider", { exact: true }).count()) === 0,
       "Overview must not guess or show an AI provider",
@@ -2739,37 +2745,18 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       .getByText("Token history is loading", { exact: true })
       .waitFor({ timeout: 10_000 });
     const tokenHistoryLoading = page.getByTestId("token-history-loading");
-    const tokenHistorySpinner = tokenHistoryLoading.locator(
-      '[data-slot="spinner"]',
+    assert(
+      (await tokenHistoryLoading.locator('[data-slot="skeleton"]').count()) > 0,
+      "Token history loading must draw the graph skeleton",
     );
     assert(
-      (await tokenHistoryLoading.getAttribute("data-slot")) === "card",
-      "Token history loading must use the full token card placeholder",
+      (await tokenHistoryLoading.locator('[data-slot="spinner"]').count()) === 0,
+      "Token history loading must not show a spinner (issue #598)",
     );
+    const tokenHistoryBox = await tokenHistoryLoading.boundingBox();
     assert(
-      (await tokenHistorySpinner.count()) === 1,
-      "Token history loading must use the existing spinner",
-    );
-    const tokenHistoryCardBox = await tokenHistoryLoading.boundingBox();
-    const tokenHistorySpinnerBox = await tokenHistorySpinner.boundingBox();
-    assert(
-      tokenHistoryCardBox && tokenHistoryCardBox.height >= 294,
-      "Token history loading card must reserve the token chart height",
-    );
-    assert(
-      tokenHistoryCardBox &&
-        tokenHistorySpinnerBox &&
-        Math.abs(
-          tokenHistorySpinnerBox.x +
-            tokenHistorySpinnerBox.width / 2 -
-            (tokenHistoryCardBox.x + tokenHistoryCardBox.width / 2),
-        ) <= 1 &&
-        Math.abs(
-          tokenHistorySpinnerBox.y +
-            tokenHistorySpinnerBox.height / 2 -
-            (tokenHistoryCardBox.y + tokenHistoryCardBox.height / 2),
-        ) <= 1,
-      "Token history spinner must be centered in its placeholder card",
+      tokenHistoryBox && tokenHistoryBox.height >= 294,
+      "Token history loading must reserve the token chart height",
     );
     assert(
       (await page
@@ -2779,7 +2766,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
     );
     assert(
       (await page
-        .getByText("Total tokens in the last 30 days", { exact: true })
+        .getByText("Last 30 days", { exact: true })
         .count()) === 0,
       "Token totals must stay hidden until token history is ready",
     );
@@ -2810,9 +2797,9 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       .waitFor({ timeout: 10_000 });
     const providerDialog = page.getByRole("dialog", { name: "Codex", exact: true });
     const shownMessage = fixture.shownMessage ?? fixture.reportedMessage;
-    const signInRow = fixture.rowActions.includes("Sign in to Codex");
+    const signInRow = fixture.rowActions.includes("Sign in needed for Codex");
     if (signInRow) {
-      await page.getByRole("button", { name: "Sign in to Codex" })
+      await page.getByRole("button", { name: "Sign in needed for Codex" })
         .waitFor({ timeout: 10_000 });
       assert(await providerDialog.count() === 0,
         `${fixture.status} must not open a popup over the sign-in action`);
@@ -2820,6 +2807,10 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
         `${fixture.status} must not duplicate the sign-in action in a warning`);
       assert(await page.getByRole("switch", { name: "Codex" }).count() === 1,
         `${fixture.status} must keep the toggle beside sign-in`);
+    } else if (fixture.healthState !== "permission_required") {
+      // Looks 5 and 6 never open a dialog by themselves (states overview 644).
+      assert(await providerDialog.count() === 0,
+        `${fixture.status} must not open a popup by itself`);
     } else {
       await providerDialog.getByText(fixture.dialogSentence, { exact: true })
         .waitFor({ timeout: 10_000 });
@@ -3394,7 +3385,7 @@ async function testRunningCompanionOutageKeepsControlCenterOpen(
     .getByRole("img", { name: /Rendered VibeTV theme/ })
     .waitFor({ timeout: 10_000 });
   await clickNavigation(page, "Usage");
-  await page.getByText("Session: 12% used", { exact: true }).waitFor();
+  await page.getByText("12% session used", { exact: true }).waitFor();
   failStatus = true;
   // A service that stops answering is restarted by launchd on its own, and the
   // customer hears nothing while that is happening: the announcement used to
@@ -3439,7 +3430,7 @@ async function testRunningCompanionOutageKeepsControlCenterOpen(
   await clickNavigation(page, "Usage");
   await page.getByText("Mac App needs setup.", { exact: true }).waitFor();
   assert(
-    (await page.getByText("Session: 12% used", { exact: true }).count()) === 0,
+    (await page.getByText("12% session used", { exact: true }).count()) === 0,
     "A Mac App outage must remove cached usage instead of presenting it as current",
   );
   assert(
@@ -6500,7 +6491,7 @@ async function testSetupUnlocksWhenThemeInstallGateDisabled(browser, appUrl) {
   });
   await clickNavigation(page, "Themes");
   await page
-    .getByRole("heading", { level: 1, name: "Themes", exact: true })
+    .getByRole("heading", { level: 1, name: "Appearance", exact: true })
     .waitFor({ timeout: 10_000 });
   await page.getByText("Fixture Synthwave Theme").waitFor({ timeout: 10_000 });
   await page.getByText("Fixture Clippy Theme").waitFor({ timeout: 10_000 });
@@ -6536,10 +6527,29 @@ async function testAppearanceSidebarNavigation(browser, appUrl) {
 
     await page.goto(appUrl, { waitUntil: "domcontentloaded" });
     await clickNavigation(page, "Appearance");
-    await clickNavigation(page, "Themes");
     await page
-      .getByRole("heading", { name: "Themes", exact: true })
+      .getByRole("heading", { name: "Appearance", exact: true })
       .waitFor({ timeout: 10_000 });
+    // One Appearance entry; Themes and Screensavers are not sidebar entries.
+    const sidebar = page.getByRole("navigation", {
+      name: "Control Center",
+      exact: true,
+    });
+    assert(
+      (await sidebar.getByRole("button", { name: "Themes", exact: true }).count()) === 0 &&
+        (await sidebar.getByRole("button", { name: "Screensavers", exact: true }).count()) === 0,
+      "Appearance must be one sidebar entry without a submenu",
+    );
+    // All lists both types; each segment shows only its own.
+    await page.getByRole("radio", { name: /^All/ }).waitFor();
+    await page.getByText("Fixture Synthwave Theme").waitFor();
+    await page.getByText("Fixture Night Clock Screensaver").waitFor();
+    assert(
+      (await page.getByText("Screensaver is off.").count()) === 0,
+      "The screensaver-off notice belongs to the Screensavers segment only",
+    );
+
+    await clickNavigation(page, "Themes");
     await page.getByText("Fixture Synthwave Theme").waitFor();
     assert(
       (await page.getByText("Fixture Night Clock Screensaver").count()) === 0,
@@ -6547,20 +6557,8 @@ async function testAppearanceSidebarNavigation(browser, appUrl) {
     );
 
     await clickNavigation(page, "Screensavers");
-    await page
-      .getByRole("heading", { name: "Screensavers", exact: true })
-      .waitFor({ timeout: 10_000 });
     await page.getByText("Fixture Night Clock Screensaver").waitFor();
-    // The switch is in Settings only (#643): Screensavers says it is off
-    // and links there.
-    await page.getByText("Screensaver is off.", { exact: true }).waitFor();
-    assert(
-      (await page
-        .locator("main.control-center-shell")
-        .getByRole("switch", { name: "Show screensaver" })
-        .count()) === 0,
-      "Screensavers must not have a Show screensaver switch of its own",
-    );
+    await page.getByText("Screensaver is off.").waitFor();
     assert(
       (await page.getByText("Fixture Synthwave Theme").count()) === 0,
       "Screensavers must not include live theme packs",
@@ -6568,10 +6566,12 @@ async function testAppearanceSidebarNavigation(browser, appUrl) {
     assert(
       (await page
         .locator("main.control-center-shell")
-        .getByRole("button", { name: "Screensavers", exact: true })
+        .getByRole("switch", { name: "Show screensaver" })
         .count()) === 0,
-      "Appearance sections must stay in the sidebar, not become content tabs",
+      "The Show screensaver switch lives in Settings, not on Appearance",
     );
+
+    // The notice's "Settings" link opens Settings, where the switch is.
     await page
       .locator("main.control-center-shell")
       .getByRole("link", { name: "Settings", exact: true })
@@ -6585,26 +6585,21 @@ async function testAppearanceSidebarNavigation(browser, appUrl) {
       .click();
     await waitForCondition(
       () => settingsWrites.length === 1,
-      "Show screensaver should write once",
+      "Screensaver toggle should write once",
     );
     assert(
       settingsWrites[0]?.standby?.enabled === true,
-      `Show screensaver should enable standby, got ${JSON.stringify(settingsWrites[0])}`,
-    );
-    await clickNavigation(page, "Screensavers");
-    await page
-      .getByRole("heading", { name: "Screensavers", exact: true })
-      .waitFor({ timeout: 10_000 });
-    await page.getByText("Fixture Night Clock Screensaver").waitFor();
-    assert(
-      (await page.getByText("Screensaver is off.", { exact: true }).count()) === 0,
-      "Screensavers must drop the off line once the screensaver is on",
+      `Screensaver toggle should enable standby, got ${JSON.stringify(settingsWrites[0])}`,
     );
 
-    await clickNavigation(page, "Themes");
+    // The segment is remembered; the notice is gone now.
+    await clickNavigation(page, "Appearance");
+    await page.getByText("Fixture Night Clock Screensaver").waitFor();
     await page
-      .getByRole("heading", { name: "Themes", exact: true })
-      .waitFor({ timeout: 10_000 });
+      .getByText("Screensaver is off.")
+      .waitFor({ state: "detached", timeout: 10_000 });
+
+    await clickNavigation(page, "Themes");
     await page.getByText("Fixture Synthwave Theme").waitFor();
 
     companion.setStandby({
@@ -6618,8 +6613,12 @@ async function testAppearanceSidebarNavigation(browser, appUrl) {
       .getByRole("link", { name: "Choose screensaver", exact: true })
       .click();
     await page
-      .getByRole("heading", { name: "Screensavers", exact: true })
+      .getByRole("radio", { name: /^Screensavers/ })
       .waitFor({ timeout: 10_000 });
+    assert(
+      (await page.getByRole("radio", { name: /^Screensavers/ }).getAttribute("aria-checked")) === "true",
+      "Choose screensaver must open the Screensavers segment",
+    );
 
     assertNoInstallRequests(installRequests);
     await page.close();
@@ -7118,7 +7117,8 @@ async function testUsagePrioritizesProviderTokenHistory(browser, appUrl) {
   );
   await clickNavigation(page, "Usage");
   const tokenChartHeading = page.getByRole("heading", {
-    name: "Tokens used over time",
+    name: "Last 30 days",
+    exact: true,
   });
   await tokenChartHeading.waitFor({
     timeout: 10_000,
@@ -7128,12 +7128,13 @@ async function testUsagePrioritizesProviderTokenHistory(browser, appUrl) {
     .waitFor({ timeout: 10_000 });
   await page
     .getByText(
-      "four billion three hundred nineteen million one hundred seventy-six thousand three hundred thirty tokens",
+      "four billion three hundred nineteen million one hundred seventy-six thousand three hundred thirty",
       { exact: true },
     )
     .waitFor({ timeout: 10_000 });
   const tokenUsageRefresh = page.getByRole("button", {
-    name: "Refresh token usage",
+    name: "Refresh",
+    exact: true,
   });
   const refreshResponse = page.waitForResponse(
     (response) =>
@@ -7294,6 +7295,11 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  // Claude needs a new sign-in, so the provider overlay opens over every page;
+  // the customer closes it first (Not now), then the test navigates.
+  const claudeOverlay = page.getByRole("dialog", { name: "Claude needs a new sign-in" });
+  await claudeOverlay.waitFor({ timeout: 10_000 });
+  await claudeOverlay.getByRole("button", { name: "Not now" }).click();
   await clickNavigation(page, "Usage");
   assert(
     (await page.getByRole("heading", { name: "AI providers" }).count()) === 0,
@@ -7305,13 +7311,13 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
   const panel = page
     .locator("section")
     .filter({ has: page.getByRole("heading", { name: "AI providers" }) });
-  await panel.getByRole("button", { name: "Sign in to Claude" }).waitFor({ timeout: 10_000 });
+  await panel.getByRole("button", { name: "Sign in needed for Claude" }).waitFor({ timeout: 10_000 });
   assert(
     (await page.getByRole("dialog", { name: "Claude", exact: true }).count()) === 0,
     "A signed-out row must lead to its sign-in button, not a popup over it",
   );
   const signInRow = panel.getByRole("listitem").filter({
-    has: page.getByRole("button", { name: "Sign in to Claude" }),
+    has: page.getByRole("button", { name: "Sign in needed for Claude" }),
   });
   assert(await signInRow.getByRole("button").count() === 1,
     "Windows must show only the sign-in action");
@@ -7423,6 +7429,12 @@ async function testMacAppShowsTheWindowsSignInButton(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  // Claude needs a new sign-in, so the provider overlay opens over the page;
+  // the customer closes it (Not now) before the test navigates to Settings.
+  await page
+    .getByRole("dialog", { name: "Claude needs a new sign-in" })
+    .getByRole("button", { name: "Not now" })
+    .click();
   await clickNavigation(page, "Settings");
   const panel = page
     .locator("section")
@@ -7430,7 +7442,7 @@ async function testMacAppShowsTheWindowsSignInButton(browser, appUrl) {
   for (const kept of ["Gemini", "GitHub Copilot"]) {
     await panel.getByText(kept, { exact: true }).waitFor({ timeout: 10_000 });
   }
-  const signInClaude = panel.getByRole("button", { name: "Sign in to Claude" });
+  const signInClaude = panel.getByRole("button", { name: "Sign in needed for Claude" });
   await signInClaude.waitFor({ timeout: 10_000 });
   // Marcus's screenshot of 09.10.: this message used to open by itself, with
   // only a copy action. Now the row's sign-in is the one thing to click.
@@ -7438,7 +7450,7 @@ async function testMacAppShowsTheWindowsSignInButton(browser, appUrl) {
     (await page.getByRole("dialog", { name: "Claude", exact: true }).count()) === 0,
     "The Mac must lead signed-out Claude to its sign-in button, not a popup",
   );
-  const row = panel.getByRole("listitem").filter({ has: page.getByRole("button", { name: "Sign in to Claude" }) });
+  const row = panel.getByRole("listitem").filter({ has: page.getByRole("button", { name: "Sign in needed for Claude" }) });
   assert(await row.getByRole("button").count() === 1,
     "signed-out Claude must have only the sign-in action");
   assert(await row.getByRole("switch").count() === 1,
@@ -7475,9 +7487,17 @@ async function testConcurrentProviderSignInsSurviveTransientChecks(browser, appU
     },
   });
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  // Both providers need a new sign-in, so the provider overlays open over the
+  // page; the customer closes them (Not now) before the test navigates.
+  for (const label of ["Codex", "Claude"]) {
+    await page
+      .getByRole("dialog", { name: `${label} needs a new sign-in` })
+      .getByRole("button", { name: "Not now" })
+      .click();
+  }
   await clickNavigation(page, "Settings");
-  await page.getByRole("button", { name: "Sign in to Codex" }).click();
-  await page.getByRole("button", { name: "Sign in to Claude" }).click();
+  await page.getByRole("button", { name: "Sign in needed for Codex" }).click();
+  await page.getByRole("button", { name: "Sign in needed for Claude" }).click();
   await waitForCondition(() => retries.codex >= 1 && retries.claude >= 1,
     "starting another sign-in must not cancel the first provider's checks", 20_000);
   await waitForCondition(() => retries.codex >= 2 && retries.claude >= 2,
@@ -7630,91 +7650,6 @@ async function testProviderPoolRetriesAfterFailedWrite(browser, appUrl) {
   );
   assert(await claude.isChecked(), "the confirmed provider must remain enabled");
   assert(await cursor.isChecked(), "the second provider must remain enabled");
-  await page.close();
-}
-
-async function testProviderCheckWinsOverOlderPreferenceRead(browser, appUrl) {
-  const page = await newCustomerPage(browser, appUrl, { viewport });
-  const requests = [];
-  let providerRetryFinishedAt = Number.POSITIVE_INFINITY;
-  const codexPreference = {
-    ...providerPreferenceFixture("codex", "Codex"),
-    health: {
-      state: "unavailable",
-      service: "unknown",
-      message: "The provider could not be checked.",
-    },
-  };
-  await routeCompanionOnline(page, [], () => {}, {
-    preferencesDelayMs: 2_000,
-    preferencesSnapshotBeforeDelay: true,
-    preferencesResponse: { ok: true, items: [codexPreference] },
-    onProviderRetry: async (_setup, providerId) => {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      providerRetryFinishedAt = Date.now();
-      return exactProviderSetup(providerId, "ready");
-    },
-    onRequest: (path, method, body) =>
-      requests.push({ path, method, body, at: Date.now() }),
-  });
-
-  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
-    timeout: 10_000,
-  });
-  await clickNavigation(page, "Settings");
-  const checkAgain = page.getByRole("button", { name: "Check Codex again" });
-  await checkAgain.waitFor({ timeout: 10_000 });
-  await page.getByRole("dialog", { name: "Codex", exact: true }).getByRole("button", { name: "OK" }).click();
-  await waitForPreferenceReadsToSettle(requests, 2_000);
-  const readsBeforeNavigation = requests.filter(
-    (request) =>
-      request.path === "/v1/preferences" && request.method === "GET",
-  ).length;
-  assert((await page.getByRole("dialog", { name: "Codex", exact: true }).count()) === 0,
-    "a dismissed provider message must stay closed");
-  await clickNavigation(page, "Overview");
-  await clickNavigation(page, "Settings");
-  await waitForCondition(
-    () =>
-      requests.filter(
-        (request) =>
-          request.path === "/v1/preferences" && request.method === "GET",
-      ).length > readsBeforeNavigation,
-    "navigation must start the stale read used by the provider-check race",
-  );
-
-  assert(
-    (await page.getByRole("dialog", { name: "Codex", exact: true }).count()) === 0,
-    "a provider message acknowledged before leaving Settings must not open again",
-  );
-  await checkAgain.click();
-  await waitForCondition(
-    () =>
-      requests.some(
-        (request) =>
-          request.path === "/v1/providers/retry" && request.method === "POST",
-      ),
-    "Check again must run the exact provider retry",
-  );
-  await waitForCondition(
-    () =>
-      requests.some(
-        (request) =>
-          request.path === "/v1/preferences" &&
-          request.method === "GET" &&
-          request.at >= providerRetryFinishedAt,
-      ),
-    "a successful provider check must start a fresh preference read",
-  );
-  await waitForCondition(
-    async () => (await checkAgain.count()) === 0,
-    "the stale pre-check preference read must not restore the old provider health",
-  );
-  assert(
-    await page.getByRole("switch", { name: "Codex" }).isChecked(),
-    "the confirmed provider must remain enabled after its fresh health read",
-  );
   await page.close();
 }
 
@@ -8873,7 +8808,7 @@ async function testReloadRestoresRunningThemeInstall(browser, appUrl) {
     timeout: 10_000,
   });
   await page
-    .getByRole("heading", { name: "Screensavers", exact: true })
+    .getByRole("heading", { name: "Appearance", exact: true })
     .waitFor({ timeout: 10_000 });
   await page
     .getByText("Screensaver is ready on VibeTV.", { exact: true })
@@ -10514,7 +10449,7 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
   await page.getByRole("navigation", { name: "Control Center", exact: true }).waitFor({ timeout: 20000 });
   const navigation = page.getByRole("navigation", { name: "Control Center", exact: true });
   await navigation.getByRole("button", { name: "Appearance", exact: true }).click();
-  await navigation.getByRole("button", { name: screensaver ? "Screensavers" : "Themes", exact: true }).click();
+  await page.getByRole("radio", { name: new RegExp(screensaver ? "^Screensavers" : "^Themes") }).click();
   await page.getByRole("button", { name: screensaver ? "Create screensaver" : "Create theme", exact: true }).click();
   await page.getByLabel("Your idea", { exact: true }).waitFor();
   await page.locator('[data-slot="sidebar"][data-state="collapsed"]').waitFor();
@@ -10559,7 +10494,7 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
   assert(writes[0].headers["content-type"] === "application/zip");
   assert(requests.filter(isDirectDeviceWriteUrl).length === 0, "All hardware traffic stays mocked");
   await page.getByRole("button", { name: "Back to library", exact: true }).click();
-  await page.getByRole("heading", { name: screensaver ? "Screensavers" : "Themes", exact: true }).waitFor();
+  await page.getByRole("heading", { name: "Appearance", exact: true }).waitFor();
   await page.evaluate((document) => localStorage.setItem("vibetv.controlCenter.themeStudioDraft", JSON.stringify({
     schemaVersion: 1, recovery: { document: { ...document, packName: "Unsaved other design" }, source: "blank", updatedAt: new Date().toISOString() },
   })), saved.themes[0].document);
@@ -10576,7 +10511,7 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
     await page.getByRole("heading", { name: "Screensaver Studio", exact: true }).waitFor();
   }
   await page.getByRole("button", { name: "Back to library", exact: true }).click();
-  await page.getByRole("heading", { name: screensaver ? "Screensavers" : "Themes", exact: true }).waitFor();
+  await page.getByRole("heading", { name: "Appearance", exact: true }).waitFor();
   assert(await page.evaluate(() => JSON.parse(localStorage.getItem("vibetv.controlCenter.themeStudioDraft"))?.recovery?.document?.packName) === "Unsaved other design", "Opening a clean design preserves unrelated recovery");
   if (!screensaver) {
     // #633: a new session can lose the page's storage while the helper keeps
@@ -10584,10 +10519,8 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
     await page.evaluate(() => localStorage.removeItem("vibetv.aiTheme.consent"));
     await page.reload({ waitUntil: "domcontentloaded" });
     await navigation.waitFor({ timeout: 20000 });
-    if (!(await navigation.getByRole("button", { name: "Themes", exact: true }).isVisible())) {
-      await navigation.getByRole("button", { name: "Appearance", exact: true }).click();
-    }
-    await navigation.getByRole("button", { name: "Themes", exact: true }).click();
+    await navigation.getByRole("button", { name: "Appearance", exact: true }).click();
+    await page.getByRole("radio", { name: /^Themes/ }).click();
     await page.getByRole("button", { name: "Resume", exact: true }).click();
     await page.getByLabel("Your idea", { exact: true }).fill("Make it red");
     let release;
@@ -11005,7 +10938,7 @@ async function testUnpairedThemeDeepLinkWaitsForWifiConfirmation(
     waitUntil: "domcontentloaded",
   });
   await connectDiscoveredVibeTV(page);
-  await page.getByRole("heading", { level: 1, name: "Themes", exact: true }).waitFor({
+  await page.getByRole("heading", { level: 1, name: "Appearance", exact: true }).waitFor({
     timeout: 20_000,
   });
   assert(
@@ -13487,11 +13420,13 @@ async function getNavigationButton(page, name) {
 }
 
 async function clickNavigation(page, name) {
+  // Themes and Screensavers are the segments of the one Appearance page.
   if (name === "Themes" || name === "Screensavers") {
-    const appearance = await getNavigationButton(page, "Appearance");
-    if ((await appearance.getAttribute("aria-expanded")) !== "true") {
-      await appearance.click({ timeout: 10_000 });
-    }
+    await clickNavigation(page, "Appearance");
+    await page
+      .getByRole("radio", { name: new RegExp(`^${name}`) })
+      .click({ timeout: 10_000 });
+    return;
   }
   await page.waitForTimeout(350);
   await (await getNavigationButton(page, name)).click({ timeout: 10_000 });
