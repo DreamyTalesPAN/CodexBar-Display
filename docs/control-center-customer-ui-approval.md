@@ -7319,6 +7319,40 @@ issue scope, or release permission never implies UI permission.
 - User approval: Paul approved the busy computer dialog, its wording, the VibeTV label and the last good values on 2026-10-15 (entries above). This entry records only the merge of main into `claude/issue-606-busy-computer`; it adds no wording and no new visible behaviour.
 - Approved customer-visible result: as recorded in the busy computer entries above; nothing else changes.
 - Scope: the merge of main (with #615 and #620) into this branch and this approval record. Pull request branch only, not merge or release.
+
+## 2026-10-15 — Offer the Mac App update only on the Mac (#561)
+
+- User approval: Paul asked on 2026-10-15 to fix the Codex review finding on PR #639 ("ja, fix das alles"): the Windows app must not offer a "Mac App" update. He has not personally previewed this exact build.
+- Approved customer-visible result: the "Update the Mac App" hint on the "VibeTV not found" pages appears only in the Mac App. The Windows app shows these pages as before.
+- Scope: `control-center-app.tsx` and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — removes a hint from Windows, nothing to announce
+
+## 2026-10-15 — Mac App update hint also while waiting for a WiFi VibeTV (#561)
+
+- User approval: Paul asked on 2026-10-15 to finish PR #639 ("mach den feddich, ci grün, merge ready"), which includes the open Codex review finding: the approved hint was missing from the "Connect the USB cable" help that appears while setup waits for a WiFi VibeTV without a cable. Main is merged in with #641; the UI review gate cannot read a merge commit as approval marker, so this entry also stands for that merge. No new wording.
+- Approved customer-visible result: the same "Update the Mac App" hint as approved above, now also in that waiting help dialog, only in the Mac App and only when a newer Mac App exists. Nothing else changes.
+- Scope: `setup-device-screen.tsx`, `setup-wizard.tsx`, their test, the pinned actions in `.github/workflows/claude.yml` (same change as #640), the merge of main and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — completes the unreleased hint, nothing to announce
+
+## 2026-10-16 — Mac App update as its own dialog before "not found" (#561, design 1d)
+
+- User approval: Paul rejected the inline hint of the entries above on 2026-10-15 after seeing it on the Mac ("das gebe ich nicht frei"), so those entries no longer describe an approved look. He had the hint redesigned in Claude Design (project "Screen-Redesign mit VibeTV", page "Setup - Mac App Update (561)") and chose variant 1d on 2026-10-16 ("1d").
+- Approved customer-visible result: in the Mac App only, when setup finds no VibeTV and a newer Mac App exists, a dialog "Update the Mac App first" appears before "We couldn't find your VibeTV" and before "Connect the USB cable": "We couldn't find your VibeTV. Version <version> is out, and an older app may not find it. Setup scans again after the update." Footer: "Scan again" (outline) and "Update Mac App" (signal), plus the close button. "Scan again" or closing leads to the usual not-found help without any hint; the old inline card is gone. Windows shows no Mac App dialog.
+- Scope: `setup-device-dialogs.tsx`, `setup-device-screen.tsx`, `setup-wizard.tsx`, `setup-dialog.tsx` (description may carry the version in mono), their tests, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — completes the unreleased #561 hint, nothing to announce
+
+## 2026-10-16 — #561: approval marker after merging main with #615
+
+- User approval: Paul chose design 1d for #639 on 2026-10-16 (entry above). Main moved on with #615 (overnight audit, `WithLatestDisplayFrame` around the setup wizard) and #640 while the branch was in review, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the 2026-10-16 #561 entry above; nothing else changes.
+- Scope: the merge of main into this branch, the `macAppUpdate` prop moved into the wrapped `SetupWizard` in `control-center-app.tsx`, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — #561: approval marker after merging main with #619 and #628
+
+- User approval: Paul chose design 1d for #639 on 2026-10-16 (entry above). Main moved on with #619 and #628 while the branch was in review, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the 2026-10-16 #561 entry above; nothing else changes. "Update Mac App" keeps Sparkle's visible check, as #619 keeps it for Update buttons.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
 ## 2026-10-16 — Approval record: newest marker after the squash merges of #628 and #619
 
@@ -7467,3 +7501,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-15 — Offer the Mac App update on the VibeTV-not-found pages (#561)
+
+- User approval: Paul approved this change in the comment on PR #639 on 2026-10-15 ("du kannst meine freigabe in das ui review gate eintragen"). He has not personally previewed this exact build.
+- Approved customer-visible result: When a newer Mac App is available, the "VibeTV not found" pages show a hint that an update exists with the button `Update the Mac App`. Without a newer Mac App the pages look as before.
+- Scope: `setup-device-dialogs.tsx`, `setup-wizard.tsx`, `control-center-app.tsx`, the focused dialog test, and this approval record. No merge, release, or device write is implied.
+- What's new: none — the hint appears only while a problem is being solved, nothing a customer needs to learn.
+
+## 2026-10-16 — Mac App update offer: not on Windows, also on the WiFi-waiting not-found path (#561)
+
+- User approval: Paul chose variant 1d on 2026-10-16 (Claude Design "Setup - Mac App Update (561)"); this push only fixes where it shows (not on Windows; also on the WiFi-waiting not-found path); look and copy unchanged.
+- Approved customer-visible result: As in the 2026-10-15 entry (#561) above: the update hint with `Update the Mac App` appears on the "VibeTV not found" pages only in a Mac window and only when a newer Mac App exists. The WiFi-waiting not-found page shows the same hint. Windows shows nothing new. Look and copy unchanged.
+- Scope: `apps/control-center/src/components/control-center-app.mac-app-offer.test.tsx` (new test: Mac shows the offer, Windows gets none) and this approval record. The WiFi-waiting forwarding (`setup-device-screen.tsx`) is covered by the existing test in `setup-device-dialogs.test.tsx`. No merge, release, or device write is implied.
+- What's new: none — the hint appears only while a problem is being solved, nothing a customer needs to learn.

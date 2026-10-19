@@ -23,7 +23,7 @@ export type SetupDialogAction = {
 
 type SetupDialogProps = {
   children?: ReactNode;
-  description: string;
+  description: ReactNode;
   icon?: LucideIcon;
   /** Destructive tints the header icon; "neutral" is for progress dialogs. */
   tone?: "error" | "neutral";
