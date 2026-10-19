@@ -211,7 +211,10 @@ func probeWiFiHello(ctx context.Context, client *http.Client, target string) (pr
 func isVibeTVHello(hello protocol.DeviceHello) bool {
 	hello = hello.Normalize()
 	caps := protocol.CapabilitiesFromHello(hello)
-	if !caps.Known {
+	// Known is also true for a board alone. Every VibeTV hello carries a
+	// capabilities block with a transport (#526), so a hello without one is
+	// not a found VibeTV.
+	if !caps.Known || caps.ActiveTransport == "" {
 		return false
 	}
 	board := strings.ToLower(strings.TrimSpace(hello.Board))
