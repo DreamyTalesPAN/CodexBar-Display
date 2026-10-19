@@ -1,6 +1,6 @@
 import { loadUserThemes, writeUserThemes } from "./theme-studio-storage";
 import {describe,it,expect,vi} from "vitest";
-import {encodeAIThemeCBI1,buildAIThemeCompanionCandidateFromRGBA,buildAIThemeCandidateFromRGBA,AI_THEME_SCREENMASTER_ASSET_PATH as ART,AI_THEME_ANIMATION_ASSET_PATH as ANIMATION,type AIThemeConcept} from "./ai-theme";
+import {hasMovingCompanion,encodeAIThemeCBI1,buildAIThemeCompanionCandidateFromRGBA,buildAIThemeCandidateFromRGBA,AI_THEME_SCREENMASTER_ASSET_PATH as ART,AI_THEME_ANIMATION_ASSET_PATH as ANIMATION,type AIThemeConcept} from "./ai-theme";
 import {applyAIThemeCandidate,conceptFromDocument} from "./ai-theme-document";
 import {registerCompanionFrames} from "./ai-companion-sprites";
 import {decodeSprite} from "@/components/live-vibetv-preview";
@@ -277,4 +277,15 @@ describe("flexible picture layouts",()=>{
   expect(c.spec.primitives.find(p=>p.text==='{usageSlot1Label}')).toMatchObject({fit:'shrink',width:136,slot:1});
   expect(validateThemeSpec(c.spec,c.assets).errors).toEqual([]);
  });
+});
+
+// Codex review of #638: "Teaching it to move…" only with a companion that moves.
+describe("the motion word follows a moving companion",()=>{
+  it("counts a companion only while its fps is above zero",()=>{
+    const pet = { assetPath: "/themes/u/ai-pet-1.cba" };
+    expect(hasMovingCompanion([{ assetPath: ART }, pet])).toBe(true);
+    expect(hasMovingCompanion([{ ...pet, fps: 6 }])).toBe(true);
+    expect(hasMovingCompanion([{ ...pet, fps: 0 }])).toBe(false);
+    expect(hasMovingCompanion([{ assetPath: ART, fps: 6 }])).toBe(false);
+  });
 });

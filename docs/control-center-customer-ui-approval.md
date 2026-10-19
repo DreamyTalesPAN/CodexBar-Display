@@ -7684,6 +7684,140 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
 
+## 2026-10-15 — Marcus confirms the Theme Studio pack in the real Mac App (#633, #634, #582)
+
+- User approval: Marcus tested the local build 9999.0.638 of `8a65e29b` on 2026-10-15 in the real Mac App with VibeTV on the cable and reported #550, #549, #633, #634 and #582 as working; he confirmed the three step texts of #634.
+- Approved customer-visible result: The entry "Create with AI: no repeated consent, visible progress, Mac export confirmed after saving" below as written, now confirmed: no consent dialog with a saved key, the steps "Understanding your request…", "Drawing the picture…" and "Adding clock, text and readings…" with seconds from 10 s on, and on the Mac the export notice only after the file was saved.
+- Scope: this approval record only. This approves the customer-visible result on the pull-request branch, not merge or release.
+- What's new: none — fixes to the AI editor, nothing new for customers to learn
+
+## 2026-10-15 — Create with AI: no repeated consent, visible progress, Mac export confirmed after saving (#633, #634, #582)
+
+- User approval: Marcus asked on 2026-10-15 to fix #633, #634 and #582 in one pull request; the behaviour follows the preferred option of each issue. The step texts below are drafted and not yet confirmed by Marcus; he sees them in his Mac test before the merge.
+- Approved customer-visible result: Draft, to be confirmed by Marcus. With an OpenAI key saved, the first message in Create with AI goes straight to the AI, also after the app was closed and opened again; the "Create with AI" dialog with the consent box appears only while no key is saved, and Disconnect OpenAI still removes the key so the next message asks again (#633). While the AI works, the three dots are followed by the running step: "Understanding your request…", then for a new picture "Drawing the picture…" and "Adding clock, text and readings…". Once a step runs 10 seconds or longer, its seconds count up next to it ("23 s"). Answers and layout changes show only the first step (#634). On the Mac, Export theme pack shows "Theme pack exported. No device was contacted." only after the save dialog saved the file, and nothing after Cancel; Windows and the browser show it at once as before (#582).
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, the native Theme Studio flow in `apps/control-center/scripts/test-customer-flows.mjs`, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — fixes to the AI editor, nothing new for customers to learn
+
+
+## 2026-10-16 — #638: approval marker after merging main for the hardware run
+
+- User approval: Merge of main for the hardware run; no visible change; not seen by Paul. Main moved on with #615, #619, #628, #656 and dependency bumps while the branch was in review. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #633, #634 and #582 entries of this branch and in the entries of the merged pull requests; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — #638: companion poses always fit their cells
+
+- User approval: Fix of a customer-blocking error found in Paul's test of 2026-10-16 ("The generated companion needs more space around its poses. Your design is unchanged."); no new wording; the fix itself not seen by Paul.
+- Approved customer-visible result: "Create with AI" no longer stops when a generated companion pose cannot be aligned with the first pose without leaving its cell; that pose keeps the closest alignment that stays inside the cell and the theme is built. The error text is removed; no other wording, layout or control changes.
+- Scope: `registerCompanionFrames` in `apps/control-center/src/lib/ai-companion-sprites.ts`, its tests in `ai-companion-sprites.test.ts`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — fix of an error state
+
+## 2026-10-16 — #638: companion sheets never stop a design
+
+- User approval: Fix of customer-blocking errors under Paul's rule of 2026-10-16 that the app fixes or retries on its own and the customer never sees such errors ("Sprite frame N: … Your design is unchanged." in the app, "Companion … failed after one correction" from the companion); no new wording; not seen by Paul.
+- Approved customer-visible result: A pose whose background cannot be separated repeats the clean pose before it in the loop. A companion sheet the app cannot prepare at all is left out and the picture with the other companions is still built. The companion redraws a rejected sheet up to two times without telling the customer; if it never comes out clean, an existing companion keeps its previous drawings and a new one is left out, and a design without any companion left becomes a still picture. No wording, layout or control changes.
+- Scope: `normalizeCompanionSheet` in `apps/control-center/src/lib/ai-companion-sprites.ts`, the companion step of `buildAIThemeCandidate` in `ai-theme.ts`, their tests in `ai-companion-sprites.test.ts` and `ai-companions.test.ts`, the repair loop in `companion/internal/companionapi/ai_theme_companions.go` with its tests in `ai_theme_companion_matte_test.go`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — fix of error states
+
+## 2026-10-16 — #638: companion sheet fallback simplified
+
+- User approval: Simplification under Paul's rule of 2026-10-16 that the Mac app stays as simple as possible and does no heavy lifting of its own; no new wording; not seen by Paul.
+- Approved customer-visible result: as in "companion sheets never stop a design" above, with two changes: the companion redraws a rejected sheet once (not up to two times), and only the companion decides to leave a companion out; the app no longer drops companion sheets itself and only repeats the nearest clean pose for a single bad cell. No wording, layout or control changes.
+- Scope: the repair step in `companion/internal/companionapi/ai_theme_companions.go` and its tests in `ai_theme_companion_matte_test.go`, `ai-theme.ts` and `ai-companions.test.ts` restored to their earlier state, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — simplification of an error state
+
+## 2026-10-16 — #638: merged with current main (#651, #659, #660)
+
+- User approval: Merge of main into `codex/theme-studio-pack`; no visible change of its own; not seen by Paul. The approval record conflict was resolved by keeping main's entries and appending this branch's.
+- Approved customer-visible result: as approved in the #638 entries of this branch and in the entries of the merged pull requests; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — #638: Theme Studio progress line, toolbar V1 and OpenAI key in Settings
+
+- User approval: Paul chose on 2026-10-16 (via the review orchestrator) in Claude Design page "Theme Studio Redesign": progress "A-1 style single line (Paul 16.10.)" and toolbar V1; he has not yet seen this build.
+- Approved customer-visible result: While Create with AI works, the chat shows one status line in the setup-log style (mono, "> " prefix, blinking caret) that swaps its word every 2.5 s with the setup fly-in. Words only rotate inside the current step: Understanding your idea…, Sketching a plan…, Picking a palette…; Getting the paint ready…, Mixing the colors…, Drawing the picture…, Placing every pixel…, Teaching it to move… (only with an animated companion), Checking the light…, Letting the paint dry…, Cleaning the brushes…; Adding clock and readings…, Fitting it to your VibeTV…, Polishing the details…, Taking one last look…. The seconds counter and bouncing dots are gone. The header has File, Undo and Redo next to the design name; Save and Send to VibeTV stay on the right. The File menu lists New design, Open saved design…, then Open design file…, Download editable design, Export theme pack. The floating Undo/Redo above the preview and the gear button with its Settings dialog are removed. Settings › AI providers ends with a row "Theme Studio AI" showing "Connected" or "Not connected" and a button "Change key" or "Add key" that opens the OpenAI key form (same connect, replace and disconnect flow as before).
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, the new `apps/control-center/src/components/theme-studio/openai-key-form.tsx` with its test, `apps/control-center/src/components/settings-screen.tsx` (one appended row), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — progress and toolbar of Theme Studio, not announced to customers
+
+## 2026-10-16 — #638: File menu roles and script selectors after Codex review
+
+- User approval: Codex review fix, no visible change; not seen by Paul.
+- Approved customer-visible result: none. The File menu of the Theme Studio header keeps the same five entries, icons, separator and order as approved in the entry "#638: Theme Studio progress line, toolbar V1 and OpenAI key in Settings"; only the ARIA menu roles are removed so the items are ordinary keyboard buttons. Customer flow test selectors are updated to the File menu and to the planning step's first word.
+- Scope: the File menu markup in `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, `apps/control-center/scripts/test-customer-flows.mjs` and the Theme Studio preview script, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no customer-visible change
+
+## 2026-10-16 — #638: tests for the one-line progress and the File menu
+
+- User approval: Codex review fix, no visible change; not seen by Paul.
+- Approved customer-visible result: none. The tests cover the status line approved in "#638: Theme Studio progress line, toolbar V1 and OpenAI key in Settings" (one line, swaps within the step, jumps to the next step's first word, no seconds counter) and the File menu entries and the removed gear dialog.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — tests only, no customer-visible change
+
+## 2026-10-16 — #638: "Teaching it to move…" follows the companion sprites
+
+- User approval: Codex review fix that implements the approved rule of "#638: Theme Studio progress line, toolbar V1 and OpenAI key in Settings" (the word shows only with an animated companion); no new wording; not seen by Paul.
+- Approved customer-visible result: as approved above. The word is now chosen by the companion sprites of the design (the attached companion pets) instead of the scene animation files, so it appears for an animated companion and not for a scene loop alone.
+- Scope: the choice of the drawing word list in `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — status word of Theme Studio, not announced to customers
+
+## 2026-10-17 — #638: "Teaching it to move…" only with a companion that moves (Codex review fix, no new wording)
+
+- User approval: Codex review fix that implements the approved rule of "#638: Theme Studio progress line, toolbar V1 and OpenAI key in Settings" (the word shows only with an animated companion); no new wording; not seen by Paul.
+- Approved customer-visible result: as approved in that entry. A companion that does not move (fps 0) no longer adds the word; a companion that moves still does. No other wording, layout or control changes.
+- Scope: `hasMovingCompanion` in `apps/control-center/src/lib/ai-theme.ts`, its use in `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, its test in `apps/control-center/src/lib/ai-companions.test.ts`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — status word of Theme Studio, not announced to customers
+
+## 2026-10-17 — #638: four refinements after Paul's Mac test
+
+- User approval: Paul tested #638 on 2026-10-17 and asked for these four changes (via the communicator); he has not yet seen this build.
+- Approved customer-visible result: (1) the text "Built-in example loaded — no AI request or charge. Click the flame to move it, or describe your changes below." is removed. (2) The AI status line ("> Cleaning the brushes…") has no black cursor block at its end; only the text and its fly-in remain. (3) All Theme Studio notices (saved, exported, sent, cancelled, element added, and the other notices of that kind) show in one place at the top left, directly under the back arrow, instead of at the bottom or the top right; errors stay where they were. (4) Settings: "Theme Studio AI" is its own section with its name on the left, directly above "AI providers"; "AI providers" stays the last section. The other sections already had their name on the left and are unchanged.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, `apps/control-center/src/components/settings-screen.tsx` and its test, one export-notice assertion in `apps/control-center/scripts/test-customer-flows.mjs`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — refinements of #638
+
+## 2026-10-17 — #638: "Teaching it to move…" for a design's first companion (Codex review fix, no new wording)
+
+- User approval: Codex review fix that implements the approved rule of "#638: Theme Studio progress line, toolbar V1 and OpenAI key in Settings" (the word shows only with a companion that moves); no new wording; not seen by Paul.
+- Approved customer-visible result: as approved in that entry. The motion word is now also chosen once the new concept is known, so a first-time design whose new companion moves shows it during the sprite build; the word list itself is unchanged.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — status word of Theme Studio, not announced to customers
+
+## 2026-10-17 — #638: the sent image moves into the message
+
+- User approval: Paul tested #638 on 2026-10-17 and sent a design request with a reference image; the text appeared in the chat, but the image stayed in the input box (fifth point, sent via the communicator); he has not yet seen this build.
+- Approved customer-visible result: when a design request is sent, its reference image leaves the input box and shows as a small rounded thumbnail (40 px, no caption, no new colours) above the customer's message text in the chat; the input box is empty while the request runs. If the request fails, the image goes back into the input box. The image is sent with the request, as before.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, the optional `images` field on the chat turn type in `apps/control-center/src/lib/ai-theme.ts` (kept out of the history sent to the AI), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — refinements of #638
+
+## 2026-10-17 — #638: a cancelled request cannot take the image back (Codex review fix, no new wording)
+
+- User approval: Codex review fix that implements the approved rule of "#638: the sent image moves into the message" (the image returns to the input box when the request fails or is cancelled); no new wording; not seen by Paul.
+- Approved customer-visible result: as approved in that entry. Cancelling gives the image back at once; a request that is cancelled but still finishing its last step no longer puts images back or clears the thumbnail of a newer request.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — status of the image hand-off in Theme Studio, not announced to customers
+
+## 2026-10-17 — #638: no second "Theme Studio AI" title in the Settings row
+
+- User approval: orchestrator decision relayed by the coordinator (the section label on the left already names the row, so the row's inner title is removed); Paul has not seen this yet.
+- Approved customer-visible result: the Theme Studio AI row in Settings shows only its status ("Connected" / "Not connected") and its key button, under the section label "Theme Studio AI". The key dialog keeps its title.
+- Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx` (the row), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — refinement of #638
+
+## 2026-10-19 — #638: finished turns keep only small thumbnails (Codex review fix, no visible change)
+
+- User approval: Codex review fix, no visible change; not seen by Paul.
+- Approved customer-visible result: unchanged. The image bubble of a finished turn still shows the picture at the same 40 px size; only the kept copy is now a 96 px thumbnail instead of the full 768 px picture.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no customer-visible change
+
+## 2026-10-19 — #638: merge of main for the release round (no visible change)
+
+- User approval: Merge of main for the release round; no visible change; not seen by Paul.
+- Approved customer-visible result: unchanged.
+- Scope: merge of `origin/main` into this pull request branch, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no customer-visible change
+
 ## 2026-10-19 — Theme tags in the catalog (data only, #793)
 - User approval: none needed; data only, no visible change; not seen by Paul. The Features and Providers filter groups come in the later Appearance filter PR and need his yes there.
 - Approved customer-visible result: none. The theme catalog gets an optional `tags` field and the readers keep it; no screen, copy, control or layout changes.
