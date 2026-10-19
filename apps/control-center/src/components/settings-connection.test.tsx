@@ -34,8 +34,7 @@ function props(overrides: Partial<SettingsScreenProps> = {}): SettingsScreenProp
     providerPicker: {
       usage: null,
       display: null,
-      items: [], pendingCheckIds: new Set(), pendingPreferenceIds: new Set(),
-      onCheck: vi.fn(), onDisplayChange: vi.fn(), onPreferenceChange: vi.fn(),
+      items: [], pendingCheckIds: new Set(), pendingPreferenceIds: new Set(), onDisplayChange: vi.fn(), onPreferenceChange: vi.fn(),
     },
     ...overrides,
   };

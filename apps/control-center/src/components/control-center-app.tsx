@@ -127,6 +127,7 @@ import type { SetupConnectSteps } from "./setup/setup-connect";
 import { displayPreviewsFor } from "./setup/setup-display-previews";
 import {
   PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS,
+  forgetResolvedProviderIssues,
   providerRowHealthState,
   setupProviderCanDisplay,
 } from "./setup/setup-providers-screen";
@@ -146,6 +147,10 @@ import {
 import { SetupDevicePickerDialog } from "./setup/setup-device-dialogs";
 import { SetupDialog } from "./setup/setup-dialog";
 import { SystemBusyDialog, useSystemBusyDismissal } from "./system-busy-dialog";
+import {
+  ProviderActionDialog,
+  useProviderActionDismissal,
+} from "./provider-action-dialog";
 import { SetupRecoveryDialogs } from "./setup/setup-recovery-dialogs";
 import { SetupWizard } from "./setup/setup-wizard";
 import { SettingsScreen, standbyTimeoutLabel } from "./settings-screen";
@@ -162,7 +167,12 @@ import {
   type ThemeStudioInstallPayload,
 } from "./theme-studio-screen";
 import { UpdatesScreen } from "./updates-screen";
-import { UsageScreen, usageTokenHistoryUnavailableOnVibeTV } from "./usage-screen";
+import {
+  UsageScreen,
+  usageProviderActionsFor,
+  usageTokenHistoryNotice,
+  usageTokenHistoryUnavailableOnVibeTV,
+} from "./usage-screen";
 import { WhatsNewDialog } from "./whats-new-dialog";
 import {
   startUsageSurfacePolling,
@@ -493,6 +503,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   >(null);
   const [providerPreferencesError, setProviderPreferencesError] =
     useState<ApiError | null>(null);
+  // Reports a sign-in start to the provider overlay (set once it is rendered).
+  const providerActionReportRef = useRef<
+    ((id: string, state: string, error: ApiError | null, rearm: boolean, signIn: object) => void) | null
+  >(null);
+  const providerActionStartRef = useRef<((id: string) => object) | null>(null);
   const [providerDisplay, setProviderDisplay] =
     useState<ProviderDisplaySelection | null>(null);
   const providerDisplayRef = useRef<ProviderDisplaySelection | null>(null);
@@ -596,6 +611,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [runtimeRecoveryHidden, setRuntimeRecoveryHidden] = useState(false);
   // Hiding the usage dialog hides the announcement; the repair itself runs on.
   const [usageFailureHidden, setUsageFailureHidden] = useState(false);
+  // One token history notice is one occurrence: closed once, it stays closed
+  // on Usage until the notice has cleared (the reset is below).
+  const [usageHistoryDismissed, setUsageHistoryDismissed] = useState(false);
+  // A usage error is one occurrence too: closed once, it stays closed on Usage
+  // until the error has cleared (the reset is below, with the notice's).
+  const [usageErrorDismissed, setUsageErrorDismissed] = useState(false);
   // The computer is too starved for the usage engine to answer (#606).
   // Its start time keys the incident; null while there is none.
   const [systemBusySince, setSystemBusySince] = useState<string | null>(null);
@@ -3724,11 +3745,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // Each sign-in continues independently through transient check failures.
   const providerSignInFollowUpsRef = useRef(new Map<string, () => void>());
   const openProviderSignIn = useCallback(
-    async (item: PreferenceDescriptor) => {
+    async (item: PreferenceDescriptor, fromOverlay = false) => {
       const providerId = item.providerId?.trim().toLowerCase();
       if (!providerId) {
         return;
       }
+      const signInState = item.health ? providerRowHealthState(item.health) : "";
+      const signIn = providerActionStartRef.current?.(item.providerId ?? "") ?? {};
       // On the Mac the app reads the browser sign-in the background check
       // cannot read. It starts here, inside the customer's click: WebKit
       // hands a vibetv:// link to the app only then.
@@ -3741,13 +3764,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           { method: "POST" },
         );
         setProviderPreferencesError(null);
+        providerActionReportRef.current?.(item.providerId ?? "", signInState, null, fromOverlay, signIn);
       } catch (error) {
-        setProviderPreferencesError(
-          normalizeCaughtError(
-            error,
-            `The ${item.label} sign-in could not be started.`,
-          ),
+        const failure = normalizeCaughtError(
+          error,
+          `The ${item.label} sign-in could not be started.`,
         );
+        // An overlay or Usage start reports into its own dialog only; Settings
+        // keeps its shared error for the sign-in it started itself.
+        if (!fromOverlay) {
+          setProviderPreferencesError(failure);
+        }
+        providerActionReportRef.current?.(item.providerId ?? "", signInState, failure, fromOverlay, signIn);
         return;
       }
       const followUps = providerSignInFollowUpsRef.current;
@@ -4800,6 +4828,43 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // Windows and the Mac alike. Both list every provider CodexBar reports.
   const providerSignInEnabled =
     companionInfo?.features?.providerSignInEnabled === true;
+  // The providers that need the customer, for the Usage tiles and the overlay.
+  const providerActions = usageProviderActionsFor(providerPreferences, {
+    onOpenSettings: () => setActiveTab("settings"),
+    onSignIn: providerSignInEnabled
+      ? (item) => void openProviderSignIn(item, true)
+      : undefined,
+  });
+  // Off, unsupported and without usage data: no tile on Usage (look 6 and 7).
+  const hiddenUsageProviderIds = (providerPreferences || [])
+    .filter(isProviderItem)
+    .filter(
+      (item) =>
+        item.value !== true ||
+        ["unsupported", "no_usage_available"].includes(
+          providerRowHealthState(item.health),
+        ),
+    )
+    .map((item) => item.providerId);
+  const providerChecking = (providerPreferences || [])
+    .filter(isProviderItem)
+    .filter((item) => providerRowHealthState(item.health) === "checking")
+    .map((item) => item.providerId);
+  // A healthy or switched-off provider forgets its closed message, even while
+  // its list is not shown (see forgetResolvedProviderIssues).
+  useEffect(() => {
+    forgetResolvedProviderIssues((providerPreferences || []).filter(isProviderItem));
+  }, [providerPreferences]);
+  const [providerActionShown, dismissProviderAction, reportProviderSignIn, startProviderSignIn] =
+    useProviderActionDismissal(
+      providerActions,
+      activeTab === "settings",
+      providerChecking,
+    );
+  useEffect(() => {
+    providerActionReportRef.current = reportProviderSignIn;
+    providerActionStartRef.current = startProviderSignIn;
+  });
   const providerPickerProps = {
     usage,
     display: providerDisplay,
@@ -4818,7 +4883,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     preferencesError: providerPreferencesError,
     pendingCheckIds: pendingProviderCheckIds,
     pendingPreferenceIds,
-    onCheck: checkProvider,
     onOpenSignIn: providerSignInEnabled ? openProviderSignIn : undefined,
     onOpenSetupGuide: providerSignInEnabled ? openProviderSetupGuide : undefined,
     onDisplayChange: (
@@ -4952,11 +5016,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const usageRefreshPending = usage?.refresh?.state === "refreshing";
   useEffect(() => {
+    // On every main page: the provider overlay can open on any of them and
+    // needs the provider health to be current.
     if (
       companionStatus !== "online" ||
-      (hasEnteredControlCenter &&
-        (!controlCenterAvailable ||
-          !["usage", "overview", "settings"].includes(activeShellTab)))
+      (hasEnteredControlCenter && !controlCenterAvailable)
     ) {
       return;
     }
@@ -5255,6 +5319,42 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       id !== "provider-shortcut" ||
       nativeProviderShortcut(navigator.userAgent) !== "unavailable",
   );
+  // The centred dialogs that the Usage notice waits for, so two never stack.
+  // The provider's action dialog is rendered under the same condition as below.
+  const centredDialogOpen =
+    (needsRuntimeRecovery && !runtimeRecoveryHidden) ||
+    lostDevicePickerOpen ||
+    (usageFailure && !usageFailureHidden) ||
+    systemBusyOpen ||
+    setupAgainRequested ||
+    whatsNewEntries.length > 0 ||
+    (Boolean(providerActionShown) &&
+      companionStatus === "online" &&
+      !setupOwnsScreen &&
+      activeShellTab !== "settings");
+  const tokenHistoryNoticeShown = usageTokenHistoryNotice(
+    usage,
+    hiddenUsageProviderIds,
+  );
+  // The reset happens while rendering, when the notice changes from shown to
+  // cleared (React's own pattern for state that follows a prop), not in an effect.
+  const [tokenHistoryNoticeWasShown, setTokenHistoryNoticeWasShown] =
+    useState(tokenHistoryNoticeShown);
+  if (tokenHistoryNoticeWasShown !== tokenHistoryNoticeShown) {
+    setTokenHistoryNoticeWasShown(tokenHistoryNoticeShown);
+    if (!tokenHistoryNoticeShown) {
+      setUsageHistoryDismissed(false);
+    }
+  }
+  // The same reset for the usage error: it comes back only after it has cleared.
+  const usageErrorShown = Boolean(usageError);
+  const [usageErrorWasShown, setUsageErrorWasShown] = useState(usageErrorShown);
+  if (usageErrorWasShown !== usageErrorShown) {
+    setUsageErrorWasShown(usageErrorShown);
+    if (!usageErrorShown) {
+      setUsageErrorDismissed(false);
+    }
+  }
   // Opened from Updates and taken away by something else, or by the window
   // moving to another page, the notice does not come back by itself: what
   // follows may be a dialog this condition does not know, as the one Updates
@@ -5622,7 +5722,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                 setSetupThemeInstallRequested(true);
                 void installTheme();
               }}
-              onProviderCheck={(provider) => void checkProvider(provider)}
               onProviderOpenSignIn={
                 providerSignInEnabled
                   ? (provider) => void openProviderSignIn(provider)
@@ -5734,6 +5833,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             busyAction={busyAction}
             companionStatus={companionStatus}
             onRefresh={() => refreshUsage()}
+            providerActions={providerActions}
+            centredDialogOpen={centredDialogOpen}
+            hiddenProviderIds={hiddenUsageProviderIds}
+            onDismissTokenHistory={() => setUsageHistoryDismissed(true)}
+            onDismissUsageError={() => setUsageErrorDismissed(true)}
+            tokenHistoryDismissed={usageHistoryDismissed}
+            usageErrorDismissed={usageErrorDismissed}
             usage={usage}
             usageError={errorForHost(usageError, windowsHost)}
             windowsHost={windowsHost}
@@ -5948,6 +6054,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             setSetupAgainRequested(true);
           }}
           windowsHost={windowsHost}
+        />
+      ) : null}
+      {providerActionShown &&
+      companionStatus === "online" &&
+      !setupOwnsScreen &&
+      // Settings lists the same provider with its own dialog; one is enough.
+      activeShellTab !== "settings" ? (
+        <ProviderActionDialog
+          action={providerActionShown.action}
+          error={providerActionShown.error}
+          onDismiss={dismissProviderAction}
         />
       ) : null}
       {setupAgainRequested ? (

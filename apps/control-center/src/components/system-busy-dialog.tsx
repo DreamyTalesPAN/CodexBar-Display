@@ -28,37 +28,47 @@ export function useSystemBusyDismissal(
 }
 
 /**
- * Whether a dialog other than this one is open. The busy dialog leaves the
- * page usable, so a page's own dialog (Run setup again, a theme preview, a
+ * Whether a dialog other than this one is open. The busy dialog comes up on
+ * its own, so a page's own dialog (Run setup again, a theme preview, a
  * factory reset, a delete confirmation) can open under it, or be open when it
  * comes; it waits for that one instead of covering it, and returns once it is
  * closed. The first answer is read before the first render, so the busy dialog
  * never mounts over a dialog that was already open.
  */
-function otherDialogOpen(): boolean {
+function otherDialogOpen(ownTitles: string[]): boolean {
   return (
     typeof document !== "undefined" &&
     Array.from(
       document.querySelectorAll('[role="dialog"], [role="alertdialog"]'),
-    ).some((dialog) => !dialog.textContent?.includes(systemBusyCopy.title))
+    ).some(
+      (dialog) =>
+        !ownTitles.some((title) => dialog.textContent?.includes(title)),
+    )
   );
 }
 
-function useOtherDialogOpen(): boolean {
-  const [open, setOpen] = useState(otherDialogOpen);
+/**
+ * Whether a dialog other than the ones titled `ownTitles` is open. Shared with
+ * the provider overlay; each names the dialogs it waits for, so the two never
+ * hide each other.
+ */
+export function useOtherDialogOpen(ownTitles: string[]): boolean {
+  const key = ownTitles.join("\n");
+  const [open, setOpen] = useState(() => otherDialogOpen(ownTitles));
   useEffect(() => {
-    const check = () => setOpen(otherDialogOpen());
+    const titles = key.split("\n");
+    const check = () => setOpen(otherDialogOpen(titles));
     check();
     const observer = new MutationObserver(check);
     observer.observe(document.body, { childList: true, subtree: true });
     return () => observer.disconnect();
-  }, []);
+  }, [key]);
   return open;
 }
 
 /** The computer is too starved for the usage engine to answer (#606). */
 export function SystemBusyDialog({ onClose }: { onClose: () => void }) {
-  if (useOtherDialogOpen()) {
+  if (useOtherDialogOpen([systemBusyCopy.title])) {
     return null;
   }
   return (
@@ -71,9 +81,6 @@ export function SystemBusyDialog({ onClose }: { onClose: () => void }) {
       }}
       open
       primaryAction={{ label: systemBusyCopy.action, onSelect: onClose }}
-      // An announcement over whatever the customer is doing: the app behind
-      // it keeps working.
-      scrim={false}
       showCloseButton={false}
       title={systemBusyCopy.title}
     />
