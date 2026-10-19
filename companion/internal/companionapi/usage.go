@@ -100,6 +100,13 @@ type usageWindowInfo struct {
 	// sends none. Nothing here is computed.
 	WillLastToReset *bool `json:"willLastToReset,omitempty"`
 	ETASeconds      int64 `json:"etaSeconds,omitempty"`
+	// CodexBar's own pace words for this window: its stage name, its delta
+	// (positive = ahead of plan = deficit, negative = reserve) and the used
+	// percent it expects by now. ExpectedUsedPercent follows the display mode
+	// like UsedPercent does.
+	Stage               string `json:"stage,omitempty"`
+	DeltaPercent        *int   `json:"deltaPercent,omitempty"`
+	ExpectedUsedPercent *int   `json:"expectedUsedPercent,omitempty"`
 }
 
 type usageStatusInfo struct {
@@ -621,6 +628,13 @@ func usageWindowsFromMeta(meta codexbar.ProviderUsageMeta) []usageWindowInfo {
 			willLast := pace.WillLastToReset
 			info.WillLastToReset = &willLast
 			info.ETASeconds = pace.ETASeconds
+			if stage := strings.TrimSpace(pace.Stage); stage != "" {
+				delta := pace.DeltaPercent
+				expected := clampUsagePercent(pace.ExpectedUsedPercent)
+				info.Stage = stage
+				info.DeltaPercent = &delta
+				info.ExpectedUsedPercent = &expected
+			}
 		}
 		out = append(out, info)
 	}
@@ -888,6 +902,10 @@ func usageProviderForDisplayMode(provider usageProviderInfo, targetMode string) 
 		provider.Weekly = 100 - clampUsagePercent(provider.Weekly)
 		for i := range provider.Windows {
 			provider.Windows[i].UsedPercent = 100 - clampUsagePercent(provider.Windows[i].UsedPercent)
+			if expected := provider.Windows[i].ExpectedUsedPercent; expected != nil {
+				flipped := 100 - clampUsagePercent(*expected)
+				provider.Windows[i].ExpectedUsedPercent = &flipped
+			}
 		}
 	}
 	provider.UsageMode = usageModeOrDefault(targetMode)

@@ -473,6 +473,11 @@ export type UsageWindowInfo = {
   windowMinutes?: number;
   willLastToReset?: boolean;
   etaSeconds?: number;
+  // CodexBar's pace for this lane, as it sent it. expectedUsedPercent is on the
+  // same scale as usedPercent (the Companion flips both in remaining mode).
+  stage?: string;
+  deltaPercent?: number;
+  expectedUsedPercent?: number;
 };
 
 export type UsageStatusInfo = {

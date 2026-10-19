@@ -43,6 +43,7 @@ import {
 } from "@/lib/reset-countdown";
 import { isProviderItem, type ProviderItem } from "./provider-picker";
 import { SetupDialog } from "./setup/setup-dialog";
+import { lanePace, type LanePace, PaceLine, PaceMarks } from "./usage-pace";
 import {
   providerRowHealthState,
   setupProviderOffersSignIn,
@@ -739,6 +740,7 @@ type UsageLine = {
   percent: number;
   resetText: string | null;
   runsOutText: string | null;
+  pace: LanePace | null;
   unavailable: boolean;
 };
 
@@ -782,6 +784,7 @@ function usageLines(
             window,
             remainingResetSecs(window.etaSeconds, provider.collectedAt, now),
           ),
+      pace: quiet ? null : lanePace(window),
       unavailable: laneUnavailable(provider.windowsRetained),
     }));
   }
@@ -800,6 +803,7 @@ function usageLines(
       percent: clampPercent(provider.session),
       resetText: session ? null : resetText(provider.resetSecs),
       runsOutText: null,
+      pace: null,
       unavailable: session,
     },
     {
@@ -808,6 +812,7 @@ function usageLines(
       percent: clampPercent(provider.weekly),
       resetText: weekly ? null : resetText(provider.resetSecs),
       runsOutText: null,
+      pace: null,
       unavailable: weekly,
     },
   ];
@@ -865,14 +870,15 @@ function UsageLineView({
         )}
         {right}
       </div>
-      <Progress
-        aria-label={text}
-        className="h-3 rounded-[4px] [&_[data-slot=progress-indicator]]:rounded-[4px]"
-        value={line.percent}
-      />
-      {line.runsOutText ? (
-        <p className="text-[13px] text-destructive">{line.runsOutText}</p>
-      ) : null}
+      <div className="relative">
+        <Progress
+          aria-label={text}
+          className="h-3 rounded-[4px] [&_[data-slot=progress-indicator]]:rounded-[4px]"
+          value={line.percent}
+        />
+        {line.pace ? <PaceMarks pace={line.pace} percent={line.percent} /> : null}
+      </div>
+      <PaceLine pace={line.pace} runsOut={line.runsOutText} />
     </div>
   );
 }

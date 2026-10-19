@@ -74,3 +74,74 @@ func TestUsageWindowsOmitPaceWhenCodexBarSendsNone(t *testing.T) {
 		t.Fatalf("no pace must mean no pace fields, got %s", raw)
 	}
 }
+
+// CodexBar's stage, delta and expected-used reach the window as CodexBar sent
+// them, from the recorded 0.75.0 codex weekly window (54% in deficit).
+func TestUsageWindowsCarryCodexBarPaceStage(t *testing.T) {
+	windows := usageWindowsFromMeta(codexbar.ProviderUsageMeta{
+		Windows: []codexbar.UsageWindow{
+			{ID: "session", Label: "Session", UsedPercent: 12},
+			{ID: "weekly", Label: "Weekly", UsedPercent: 70},
+			{ID: "fable", Label: "Fable only", UsedPercent: 0},
+		},
+		Pace: []codexbar.ProviderPace{
+			{Window: "primary", Stage: "farBehind", DeltaPercent: -39, ExpectedUsedPercent: 44, WillLastToReset: true},
+			{Window: "secondary", Stage: "farAhead", DeltaPercent: 54, ExpectedUsedPercent: 16, ETASeconds: 40427},
+		},
+	})
+	session, weekly, fable := windows[0], windows[1], windows[2]
+	if session.Stage != "farBehind" || session.DeltaPercent == nil || *session.DeltaPercent != -39 ||
+		session.ExpectedUsedPercent == nil || *session.ExpectedUsedPercent != 44 {
+		t.Fatalf("session must carry CodexBar's pace, got %+v", session)
+	}
+	if weekly.Stage != "farAhead" || weekly.DeltaPercent == nil || *weekly.DeltaPercent != 54 ||
+		weekly.ExpectedUsedPercent == nil || *weekly.ExpectedUsedPercent != 16 {
+		t.Fatalf("weekly must carry CodexBar's pace, got %+v", weekly)
+	}
+	if fable.Stage != "" || fable.DeltaPercent != nil || fable.ExpectedUsedPercent != nil {
+		t.Fatalf("a lane without CodexBar pace carries none, got %+v", fable)
+	}
+	raw, err := json.Marshal(fable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "stage") || strings.Contains(string(raw), "expectedUsedPercent") {
+		t.Fatalf("no pace must mean no pace fields, got %s", raw)
+	}
+}
+
+// An on-track lane has delta 0 and may expect 0% used: both stay on the wire.
+func TestUsageWindowsKeepZeroPaceNumbers(t *testing.T) {
+	windows := usageWindowsFromMeta(codexbar.ProviderUsageMeta{
+		Windows: []codexbar.UsageWindow{{ID: "weekly", Label: "Weekly", UsedPercent: 0}},
+		Pace:    []codexbar.ProviderPace{{Window: "secondary", Stage: "onTrack", WillLastToReset: true}},
+	})
+	raw, err := json.Marshal(windows[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"deltaPercent":0`) || !strings.Contains(string(raw), `"expectedUsedPercent":0`) {
+		t.Fatalf("zero pace numbers must stay on the wire, got %s", raw)
+	}
+}
+
+// In remaining mode the expected-used percent flips with the window's percent,
+// so the tick and the bar share one scale. CodexBar's delta does not change.
+func TestUsageDisplayModeFlipsExpectedUsedWithTheWindow(t *testing.T) {
+	expected, delta := 64, 12
+	provider := usageProviderForDisplayMode(usageProviderInfo{
+		UsageMode: "used",
+		Windows: []usageWindowInfo{
+			{ID: "weekly", Label: "Weekly", UsedPercent: 48, Stage: "ahead", DeltaPercent: &delta, ExpectedUsedPercent: &expected},
+			{ID: "fable", Label: "Fable only", UsedPercent: 0},
+		},
+	}, "remaining")
+	weekly := provider.Windows[0]
+	if weekly.UsedPercent != 52 || weekly.ExpectedUsedPercent == nil || *weekly.ExpectedUsedPercent != 36 ||
+		weekly.DeltaPercent == nil || *weekly.DeltaPercent != 12 {
+		t.Fatalf("remaining mode must flip percent and expected together, got %+v", weekly)
+	}
+	if provider.Windows[1].ExpectedUsedPercent != nil {
+		t.Fatalf("a lane without pace stays without, got %+v", provider.Windows[1])
+	}
+}
