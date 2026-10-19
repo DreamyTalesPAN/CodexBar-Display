@@ -451,8 +451,18 @@ export type UsageProviderInfo = {
   resetCredits?: UsageResetCreditsInfo;
   cost?: UsageCostInfo;
   costSettled?: boolean;
+  plan?: string;
+  spend?: UsageSpendInfo;
   pace?: UsagePaceInfo[];
   usageOverTime?: UsageOverTimePoint[];
+};
+
+// CodexBar's extra-usage cap. Shown only when CodexBar sends one above zero.
+export type UsageSpendInfo = {
+  limit: number;
+  used: number;
+  currency: string;
+  period?: string;
 };
 
 export type UsageWindowInfo = {
