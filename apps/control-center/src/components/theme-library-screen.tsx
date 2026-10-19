@@ -940,6 +940,12 @@ export function ThemeLibraryScreen({
                       : ""
                   }
                   device={device}
+                  displayThemeId={
+                    (theme.usage === "screensaver"
+                      ? screensaverDisplayTheme
+                      : liveDisplayTheme
+                    )?.themeId
+                  }
                   item={theme}
                   installStatus={statusForHost(installStatus, windowsHost)}
                   key={rowKey(theme)}
@@ -1288,6 +1294,7 @@ function rowInstallState(
 function ThemeListItem({
   busyAction,
   device,
+  displayThemeId,
   item,
   installRow,
   installStatus,
@@ -1307,6 +1314,7 @@ function ThemeListItem({
 }: {
   busyAction: string | null;
   device: ThemeLibraryDeviceInfo | null;
+  displayThemeId?: string;
   item: ThemeLibraryItem;
   installRow: string;
   installStatus?: ThemeInstallStatus | null;
@@ -1413,7 +1421,7 @@ function ThemeListItem({
       className="gap-2.5 rounded-[var(--radius-card)] p-2.5"
       id={item.kind === "published" ? catalogThemeRowId(item.themeId) : undefined}
       role="listitem"
-      variant="outline"
+      variant={item.themeId === displayThemeId ? "muted" : "outline"}
     >
       <ItemMedia className="basis-full w-full">
         <Button
