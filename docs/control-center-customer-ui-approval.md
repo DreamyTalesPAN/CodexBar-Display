@@ -7563,3 +7563,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none. The provider list looks and behaves as before; when it is closed and opened again while an earlier fresh read is still running, the new opening asks CodexBar itself, so a plugin changed in between shows.
 - Scope: `apps/control-center/src/components/control-center-app.tsx` (a fresh provider read counts only for the opening of the list it was sent for) and `apps/control-center/src/components/control-center-app.provider-fresh-read.test.tsx` (a case for closing and opening again). Pull request branch only, not merge or release.
 - What's new: none — a fix of a reported defect, no visible change
+
+## 2026-10-17 — Theme install finish time stored as an ISO instant
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, found in review of #693); look unchanged except: none.
+- Approved customer-visible result: none — the theme install finish time is stored as an ISO instant instead of a clock time; nothing on screen changes, the event log keeps its clock time.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (theme install status finish times), `apps/control-center/src/components/update-jobs.ts` (theme status fallback), the new test `update-jobs.test.ts`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — internal time format only, nothing new to show
