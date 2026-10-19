@@ -9638,3 +9638,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/updates-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-19 — #784: What's new dialog matched to the template (build 2 QA)
+
+- User approval: pending — Paul reviews (#784 matched to the approved template, build 2 QA); look unchanged except, each one before → after: (1) the dialog is 520 px wide → before 440 px; (2) "Version 1.0.64" sits as a muted line under the title "What's new" → before a small green capital line above the title (VERSION 1.0.64); (3) the entries have no icon square in front → before a green square with an icon; (4) the entries stand 24 px apart → before 16 px.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/whats-new-dialog.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #784: Support buttons spacing matched to the template (build 2 QA)
+
+- User approval: pending — Paul reviews (#784 matched to the approved template, build 2 QA); look unchanged except, each one before → after: Copy, Download and Create new stand 4 px apart → before 12 px.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/support-report-actions.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
