@@ -172,7 +172,7 @@ describe("SetupProvidersScreen", () => {
     const { rerender } = renderDom(<SetupProvidersScreen {...props} />);
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
     expect(within(screen.getByRole("dialog")).getByText(
-      "VibeTV reads GitHub Copilot usage from GitHub Copilot's own app, so make sure it is installed and signed in on this computer.",
+      "VibeTV can't read GitHub Copilot until the GitHub Copilot app is installed and running.",
     )).toBeTruthy();
     expect(screen.queryByText(failed.health.reported)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "OK" }));
@@ -320,8 +320,8 @@ describe("SetupProvidersScreen", () => {
   it("says one fixed sentence per state, without engine text or a copy action", () => {
     const engine = "No available fetch strategy for openai.";
     const cases: [PreferenceHealthState, string][] = [
-      ["auth_required", "VibeTV reads OpenAI usage from OpenAI's own app, so make sure it is installed and signed in on this computer."],
-      ["setup_required", "VibeTV reads OpenAI usage from OpenAI's own app, so make sure it is installed and signed in on this computer."],
+      ["auth_required", "VibeTV can't read OpenAI until the OpenAI app is installed and running."],
+      ["setup_required", "VibeTV can't read OpenAI until the OpenAI app is installed and running."],
       ["browser_sign_in_required", "Sign in to OpenAI in your browser, then close the browser."],
       ["permission_required", "Allow access on this computer so VibeTV can read OpenAI usage."],
       ["unsupported", "OpenAI no longer works with this account, so switch it off and use another provider."],
@@ -412,7 +412,7 @@ describe("SetupProvidersScreen", () => {
   });
 
   // A signed-out provider the app cannot sign in says what the customer has
-  // to do (its own app, installed and signed in) and offers the setup guide
+  // to do (its own app, installed and running) and offers the setup guide
   // as its signal action beside OK.
   it("tells a signed-out provider without a sign-in to use its own app", () => {
     const onOpenSetupGuide = vi.fn();
@@ -424,7 +424,7 @@ describe("SetupProvidersScreen", () => {
       pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
     const dialog = within(screen.getByRole("dialog"));
     expect(dialog.getByText(
-      "VibeTV reads GitHub Copilot usage from GitHub Copilot's own app, so make sure it is installed and signed in on this computer.",
+      "VibeTV can't read GitHub Copilot until the GitHub Copilot app is installed and running.",
     )).toBeTruthy();
     expect(dialog.queryByText("No available fetch strategy for copilot.")).toBeNull();
     expect(dialog.queryByRole("button", { name: /Copy provider message/ })).toBeNull();
@@ -447,7 +447,7 @@ describe("SetupProvidersScreen", () => {
       [claudeSignedOut, vi.fn(), "Sign in to Claude so VibeTV can read its usage.", "Claude"],
       // Only the own-app case is drawn in the template; the others keep the provider's name.
       [timedOut, vi.fn(), "GitHub Copilot did not answer in time, and VibeTV tries again by itself.", "GitHub Copilot"],
-      [signedOut, undefined, "VibeTV reads GitHub Copilot usage from GitHub Copilot's own app, so make sure it is installed and signed in on this computer.", "GitHub Copilot needs its own app"],
+      [signedOut, undefined, "VibeTV can't read GitHub Copilot until the GitHub Copilot app is installed and running.", "GitHub Copilot needs its own app"],
     ] as const) {
       const { unmount } = renderDom(<SetupProvidersScreen usage={usage} providers={[item]}
         onOpenSetupGuide={guide} onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
