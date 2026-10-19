@@ -8376,3 +8376,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the four dialogs look as drawn in frames 32, 33, 39 and 47 of "Calm Redesign - alle Screens".
 - Scope: `apps/control-center/src/components/setup/setup-recovery-dialogs.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.tsx`, `apps/control-center/src/components/setup/setup-providers-screen.tsx`, their tests (`setup-device-dialogs.test.tsx`, `setup-providers-screen.test.tsx`) and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-19 — #784: Codex fix, grey backdrop of the outage and busy dialogs stays visual
+
+- User approval: pending — Paul reviews (Codex review fix, P1 on the outage dialog; the orchestrator's decision: grey backdrop as in the template); look: the outage dialog ("Repairing VibeTV Control Center" / "VibeTV Control Center needs attention") and the busy-computer dialog show the grey backdrop as in the template → before no backdrop; the page behind stays usable as approved before (sidebar and tabs take clicks while the dialog is open).
+- Approved customer-visible result: grey backdrop as in the template; the page behind stays usable as approved before.
+- Scope: `apps/control-center/src/components/setup/setup-dialog.tsx`, the new test `apps/control-center/src/components/setup/setup-dialog.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
