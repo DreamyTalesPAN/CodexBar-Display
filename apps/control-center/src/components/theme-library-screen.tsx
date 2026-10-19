@@ -716,7 +716,9 @@ export function ThemeLibraryScreen({
   return (
     <div
       className={cn(
-        "mx-auto w-full max-w-[1180px]",
+        // flow-root keeps the negative margin of the Create row inside, so the
+        // page does not cover the sidebar toggle in the title row.
+        "mx-auto flow-root w-full max-w-[1180px]",
       )}
     >
       {/* The page title (Themes / Screensavers) is the shell's header; the
