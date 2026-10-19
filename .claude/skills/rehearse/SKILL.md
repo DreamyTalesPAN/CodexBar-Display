@@ -102,7 +102,9 @@ drive a local build through the real UI, build the app with
 `scripts/build-macos-control-center-app.sh --local-preview`.
 
 Warm start puts a Sparkle "Install Update" dialog in front of you, and you click
-it yourself. Driving it from a CLI would record the update as done without ever
+it yourself -- only while the public Mac App predates the launch update (#561).
+From then on the Mac App installs at launch with no dialog, and the run facts must
+show `macAppLaunchUpdate installed`. Driving it from a CLI would record the update as done without ever
 exercising the customer-visible flow -- which is the only thing a warm start is
 evidence for. Do not spend a run chasing focus for it either: other apps steal
 focus and the dialog closes.
