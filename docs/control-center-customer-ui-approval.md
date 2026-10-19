@@ -8420,3 +8420,283 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/control-center-app.tsx`, `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/theme-library-screen.tsx`, `apps/control-center/src/components/theme-library-screen.appearance.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+## 2026-10-17 — Process steps look like the Setup Wizard log
+
+- User approval: Paul's design rule of 2026-10-17 (via the communicator): process steps look like the Setup Wizard status log everywhere (one component ProcessSteps, no cursor block); he has not yet seen this build.
+- Approved customer-visible result: Every list of running process steps uses the Setup Wizard's log look: one "> text" line per step, in the same mono type, each step fading in, finished steps paler, no blinking block. Changed places, before → after:
+  - Appearance › Themes and Screensavers, install box (`InlineInstallProgress` in `theme-library-screen.tsx`): before: "Installing", the current step as a sentence and earlier steps as small plain text; after: all steps as "> text" lines, finished ones paler. Title, progress bar and "Installed" unchanged.
+  - Updates, VibeTV firmware update (`InlineUpdateProgress` in `updates-screen.tsx`): before: the running step as a sentence in body text; after: the same step as one "> text" line. Title, progress bar, restart text, and the complete and attention messages unchanged.
+  - Setup Wizard status logs: no visible change; the component is extracted from them and keeps the blinking caret while work runs.
+  - Diagnostics: no running steps are listed, so nothing changes.
+- Scope: `apps/control-center/src/components/process-steps.tsx` (new), `apps/control-center/src/components/setup/setup-log.tsx`, `apps/control-center/src/components/theme-library-screen.tsx` (InlineInstallProgress), `apps/control-center/src/components/updates-screen.tsx` (InlineUpdateProgress), their tests, and this record. Pull request branch only, not merge or release.
+- What's new: none — the same steps, shown in the setup log look
+
+## 2026-10-17 — Codex fix: install steps keep their place when they turn finished
+
+- User approval: none needed for this entry; it records a Codex review fix (P2) to the install box of the entry above: a step keeps its line when it turns finished, so it no longer fades in a second time. No visible change beyond the entry above; not seen by Paul.
+- Approved customer-visible result: as in the entry above; nothing else changes.
+- Scope: `InlineInstallProgress` key in `apps/control-center/src/components/theme-library-screen.tsx`, its test, and this record. Pull request branch only, not merge or release.
+- What's new: none — same steps, one fix to the animation
+
+## 2026-10-17 — Test expectation follows the install steps look
+
+- User approval: none needed for this entry; it changes only a test expectation: the screensaver and theme install test now expects the install's first step as "> Preparing … install." (the entry above), as CI on the previous head showed. No visible change beyond the entry above; not seen by Paul.
+- Approved customer-visible result: as in the entry above; nothing else changes.
+- Scope: `apps/control-center/src/components/control-center-app.screensaver-install.test.tsx` and this record. Pull request branch only, not merge or release.
+- What's new: none — same steps, a test expectation only
+
+## 2026-10-17 — Setup Wizard log: no blinking caret
+
+- User approval: Paul's rule of 2026-10-17 (no cursor block anywhere in process steps), decided on the #712 review and relayed by the communicator; he has not yet seen this build. It supersedes the statement in the entry above that the Setup Wizard log keeps its caret.
+- Approved customer-visible result: Setup Wizard status logs (welcome, providers, device, theme install): before: a blinking caret block at the end of the log while work runs; after: none. Lines, box, fade-in and everything else unchanged.
+- Scope: `apps/control-center/src/components/process-steps.tsx`, `apps/control-center/src/components/setup/setup-log.tsx` (caret and `running` prop removed), the four wizard callers that passed `running` (setup-welcome-screen, setup-providers-screen, setup-theme-screen, setup-device-screen), their tests, and this record. Pull request branch only, not merge or release.
+- What's new: none — removes a visual element; no new copy
+
+## 2026-10-17 — Theme Studio AI line uses the shared process-steps look
+
+- User approval: pending — Paul reviews this PR (Paul's rule of 17.10.2026: process steps look the same everywhere); he has not yet seen this build.
+- Approved customer-visible result: look unchanged — the Theme Studio AI line now uses the shared ProcessSteps component (Paul's rule 17.10.). Before → after: none; the "> word" line, its fade-in per word and its word order stay as they are.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` (the AI working line, local styles removed) and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no visible change
+
+## 2026-10-17 — #551: a disabled "Send to VibeTV" says why
+
+- User approval: none yet — Paul reviews this PR (fix of a reported defect, #551); he has not seen this yet.
+- Approved customer-visible result: none yet — before: with an empty design, or a design that breaks a VibeTV limit, "Send to VibeTV" is off and nothing says why (the chat alert shows the reason only once an element exists). After: the same sentence as that chat alert appears under ← in the notice line (grey, same size as the other notices) and as the button's tooltip; empty design: "Add at least one visual element." Busy, saving and sending show no reason.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the sentences already exist in the app; the notice line and tooltip are the only new places
+
+## 2026-10-17 — #551: the tooltip of a disabled Send sits on a hoverable wrapper (Codex review fix, no new wording)
+
+- User approval: none yet — Codex review fix to the #551 entry above; not seen by Paul.
+- Approved customer-visible result: none yet — as described in the #551 entry above. The reason line is unchanged; the tooltip now comes from a wrapper around the button, because a disabled button takes no hover.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — refinement of #551
+
+## 2026-10-17 — #551: a design limit reason shows once
+
+- User approval: none yet — Paul reviews this PR (fix of a reported defect, #551); he has not seen this yet.
+- Approved customer-visible result: none yet — before: with a design that breaks a limit, the reason sentence appeared twice (under ← while Send is off, and in the chat alert below the canvas). After: it appears once, under ← (with the tooltip on Send). While no line under ← can show (busy, saving, installing), the chat alert stays as before. Other chat errors are unchanged.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the same sentences as before, shown once
+
+## 2026-10-17 — #551: the reason line is a live region (Codex review fix, no visible change)
+
+- User approval: none yet — Codex review fix to the #551 entries above; not seen by Paul.
+- Approved customer-visible result: none yet — the reason line under ← looks the same; it is announced as a status update, like the other notices.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — refinement of #551
+
+## 2026-10-17 — #551: the approval lines of the entries above say "none yet" (Codex review fix, no visible change)
+
+- User approval: none yet — the entries above for #551 record no approval; Paul has not seen this PR yet.
+- Approved customer-visible result: none yet — no visible change in this entry; it corrects the approval lines above, which said "pending" or "as approved in that entry".
+- Scope: `docs/control-center-customer-ui-approval.md` (this record only). Pull request branch only, not merge or release.
+- What's new: none — correction of the approval record, not announced to customers
+
+## 2026-10-17 — Calm Theme Studio, variant A (#713): look only
+
+- User approval: pending — Paul reviews this PR (calm redesign Theme Studio, variant A, #713); look: the design canvas is the one framed object, the chat has no frame or divider line, the File menu has no icons, sent images sit inside the message bubble.
+- Approved customer-visible result: same texts and behaviour; look only. Before → after:
+  - Design name in the header: 16 px → 28 px, semibold.
+  - File menu: icons removed from the five entries; the entries and their order stay.
+  - Design canvas: the frame loses its border and shadow, corners 16 px → 12 px, one thin ring.
+  - Chat: the vertical line between canvas and chat is removed; the gap between them is 48 px and the page starts 32 px under the header.
+  - Sent message with reference images: thumbnails 40 px above the text → 32 px thumbnails inside the same bubble, left of the text.
+  - Message composer: the shadow is removed; the border stays.
+  - Notices under ← and the Send reason line: unchanged.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, `apps/control-center/src/components/theme-studio/editable-theme-preview.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — look only, no new wording
+
+## 2026-10-17 — Calm Theme Studio, variant A (#713): Codex review fix, bubble stays content-sized
+
+- User approval: none needed for this entry; it is a Codex review fix (P2) to the sent-message bubble of the entry above: a finished message is a compact bubble on the right, as in the approved picture, not a bar across the chat. Not seen by Paul; the entry above stays pending.
+- Approved customer-visible result: as in the entry above; the sent bubble keeps its width to its text (up to 88% of the chat column) and sits on the right.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and this record. Pull request branch only, not merge or release.
+- What's new: none — refinement of the entry above
+
+## 2026-10-17 — Calm Theme Studio, variant A (#713): Codex review fix, design name stays 28 px on desktop
+
+- User approval: none needed for this entry; it is a Codex review fix (P2) to the design name of the entry above: the shared input sets a smaller size from the desktop width up, which the name now overrides, so the name is 28 px at every width as in the approved picture. Not seen by Paul; the entry above stays pending.
+- Approved customer-visible result: as in the entry above; the design name is 28 px at desktop widths too.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and this record. Pull request branch only, not merge or release.
+- What's new: none — refinement of the entry above
+
+## 2026-10-18 — Calm Theme Studio, variant A (#749): AI key dialog follows calm rule 13
+
+- User approval: pending — Paul reviews this PR; look unchanged except: the AI key dialog (Settings › AI providers › Theme Studio AI) loses its X in the top-right corner and gets a visible "Close" button under the form, hidden while a key is being checked; the consent checkbox in the key form turns lime instead of browser blue (also in the Theme Studio setup panel, which uses the same form).
+- Approved customer-visible result: none yet; proposed exactly as in the line above. Before → after: X → no X; no close button → "Close" button; browser-blue checkbox → lime checkbox.
+- Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx` and its test, and this record. Pull request branch only, not merge or release.
+- What's new: none — look and close control only, no new feature.
+
+## 2026-10-18 — Calm Theme Studio, variant A (#749): key dialog says Save key without a stored key
+
+- User approval: pending — Paul reviews (key dialog: "Save key" without a stored key, "Update key" with one; decided by the communicator 18.10.)
+- Approved customer-visible result: none yet; proposed: the primary button of the AI key dialog (Settings › AI providers › Theme Studio AI) reads "Save key" when no key is stored and "Update key" when a key is stored. Before → after: "Update key" → "Save key" (no key stored); "Update key" unchanged (key stored). The setup flow ("Connect and continue") is unchanged.
+- Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx` and its test, and this record. Pull request branch only, not merge or release.
+- What's new: none — button wording only, no new feature.
+
+## 2026-10-18 — Calm Theme Studio, variant A (#749): Codex fix, saved key still checking says Update key
+
+- User approval: pending — Paul reviews (key dialog: "Update key" also while a saved key is still being checked; decided by the communicator 18.10.)
+- Approved customer-visible result: none yet; the same button wording as the entry above, now also for a saved key that still needs its check. Before → after: "Save key" → "Update key" (saved key, check still pending, new key typed). No other change.
+- Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx` and its test, and this record. Pull request branch only, not merge or release.
+- What's new: none — button wording only, no new feature.
+
+## 2026-10-18 — Calm Theme Studio, variant A (#749): row button follows a stored key still being checked
+
+- User approval: pending — Paul reviews (row button follows a stored-but-pending key)
+- Approved customer-visible result: none yet; proposed: the Theme Studio AI row in Settings › AI providers reads "Change key" while a saved key is still being checked, as the key dialog already does. Before → after: "Add key" → "Change key" (saved key, check still pending). Stored key: "Change key" unchanged. No key stored: "Add key" unchanged.
+- Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx` and its test, and this record. Pull request branch only, not merge or release.
+- What's new: none — button wording only, no new feature.
+
+## 2026-10-18 — Calm Theme Studio, variant A (#749): chat input stays visible below 1024 px width
+
+- User approval: pending — Paul reviews (finding N14 from the Windows click run 18.10.: at 960x640 the chat input sat below the fold and the preview filled the first screen; placeholder colour not changed in this entry).
+- Approved customer-visible result: none yet; proposed: below 1024 px width the Theme Studio preview scrolls inside its own area and the chat column (message list and prompt box) stays at the bottom of the window, at most 40% of the window height, so the prompt box is in view at 960x640. At 1024 px and wider nothing changes. Before → after: prompt box below the preview (needs scrolling) → prompt box in view at the bottom; no text changes.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, and this record. Pull request branch only, not merge or release.
+- What's new: none — layout only, no new feature.
+
+## 2026-10-17 — Companion colours stay exact when a backdrop is added
+- User approval: pending — Paul reviews this PR (fix of a reported defect, PR #422 review finding); look unchanged except: companion colours stay exact when a backdrop is added.
+- Approved customer-visible result: none yet; the device copy of an AI companion keeps its own colours when the picture behind it has many colours. Before: a companion with more than 8 colours could lose the extra ones to the picture on the device. After: up to 18 companion colours keep their exact palette entries and the picture keeps at least 8. Layout, colours of the picture and wording stay the same.
+- Scope: `encodeAIThemeCBA1` palette reservation in `apps/control-center/src/lib/ai-theme.ts` and its test in `apps/control-center/src/lib/ai-theme-document.test.ts`. Pull request branch only, not merge or release.
+- What's new: none — a fix of a reported defect; no new text, no new screen
+
+## 2026-10-17 — Companion colours: picture keeps its slots (review fix)
+- User approval: pending — Paul reviews this PR (review fix of the same defect, PR #422 finding); look unchanged except: companion colours stay exact when a backdrop is added, and the picture behind a companion keeps its own colours.
+- Approved customer-visible result: none beyond the entry above; this only changes which palette slots the picture may use when a companion already uses many colours.
+- Scope: `encodeAIThemeCBA1` in `apps/control-center/src/lib/ai-theme.ts` and its test in `apps/control-center/src/lib/ai-theme-document.test.ts`. Pull request branch only, not merge or release.
+- What's new: none — a fix of a reported defect; no new text, no new screen
+
+## 2026-10-17 — Companion colours: free palette slots go to the companion (review fix 2)
+- User approval: pending — Paul reviews this PR (review fix of the same defect, PR #422 finding); look unchanged except: companion colours stay exact when a backdrop is added, also when the picture has only a few colours.
+- Approved customer-visible result: none beyond the entries above; this only changes which palette slots are used when a companion has many colours.
+- Scope: `encodeAIThemeCBA1` in `apps/control-center/src/lib/ai-theme.ts` and its test in `apps/control-center/src/lib/ai-theme-document.test.ts`. Pull request branch only, not merge or release.
+- What's new: none — a fix of a reported defect; no new text, no new screen
+
+## 2026-10-19 — Theme Studio matched to the approved calm master (#781)
+
+- User approval: pending — Paul reviews (#781 matched to the approved master design, 19.10.)
+- Approved customer-visible result: none yet, pending Paul's review. Look only: the preview panel is 464 px wide with the picture 400 px inside (32 px around it), sits at the top-left under the header and no longer floats in the middle; the chat column takes the rest of the width; messages sit at the bottom of the chat, 16 px apart; the input is one frame with the Add (Cancel while working) and Attach buttons and the round ink-coloured Send button (32 px) inside it, at the bottom; the notice under the header is 13 px (was 14 px). One wording change: the input hint, a typed rotating idea (e.g. "A fox resting in an autumn forest…") → "Describe your design or what to change…" once the chat has a message; an empty studio keeps the rotating ideas. Not changed: the collapsed sidebar while the Studio is open, the grey look of the header while a request runs, and the shell header "Appearance" (the master draws none, that is the shell, #784).
+- Scope: `ai-theme-studio-screen.tsx`, `editable-theme-preview.tsx`, `ai-theme-studio-screen.test.tsx` (two look-pinning tests), and this approval record.
+- What's new: none — look only, no new notice
+
+## 2026-10-19 — #781: approval marker after merging #638 (now containing main)
+
+- User approval: Merge of #638 (which brought main: #617 #645 #662 #664 #671 #674 #682 #729) for Paul's Theme Studio test build; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: as in the entries of this branch (pending, Paul reviews) and in the entries of the merged pull requests; nothing else changes.
+- Scope: the merge of `codex/theme-studio-pack` into this branch and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — Theme Studio: Paul's feedback on test build 7193 (#781)
+
+- User approval: Paul, 19.10.2026 via the communicator, feedback on test build 7193 (columns 50/50, centered preview, top-aligned chat, buttons always visible, status lines right of the header, key overlay heading)
+- Approved customer-visible result, before → after:
+  1. Theme Studio editor columns: before: preview column 464 px wide, chat column up to 680 px, together not filling the width; after: preview column and chat column are exactly the same width (50/50, 48 px gap). Below 1024 px window width the two still stack as before.
+  2. Preview position: before: the preview sits at the top-left of its column; after: the preview panel sits centered in its column, horizontally and vertically (it stays at most 464 px wide).
+  3. Chat history: before: messages sit at the bottom of the chat column with an empty area above them; after: the sent message, the "> …" process line and the answers start at the top of the chat column and grow downward; the input field stays at the bottom.
+  4. Header buttons: before: "Save" and "Send to VibeTV" could be cut off at the right edge in a narrow window; after: both are always fully visible with the normal right margin, at 900 px, at 960 px (the Windows minimum window width) and wider.
+  5. Quiet status lines ("Saved.", "Theme pack exported. No device was contacted.", the reason why Send is disabled, "Theme is active on VibeTV.", "Element removed. Undo brings it back.", "Element added…", "AI is ready.", the transfer lines and every other such line): before: a line under the header, left, under the back arrow; after: in the header row on the right, directly left of "Save", right-aligned, 13 px, regular weight, muted. Nothing is left under the back arrow. In a narrow window the line wraps in its own space and never pushes the buttons out.
+  6. Settings › Theme Studio AI › key dialog (and the same dialog when it opens inside the Studio when Create is pressed without a key): before: heading "Theme Studio AI" with the line "Connect OpenAI to create your design." (inside the Studio: heading "Create with AI"); after: heading "Replace OpenAI key" when a key is saved, "Add OpenAI key" when none is saved, no subtitle. The field label "OpenAI key" above the input is no longer shown (the heading says it; the field keeps its accessible name and its hint text). Everything else in the dialog stays.
+  7. Preview frame while dragging (Paul's report: an olive edge around the grey frame at the top corners and along the bottom after moving an element): before: after a drag or a key nudge the canvas has focus and the grey frame gets a 2 px olive ring (the focus ring colour); after: the frame never gets a coloured ring, border or outline; only the lime dashed selection box around the element stays. The frame keeps its quiet neutral hairline.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, `editable-theme-preview.tsx`, `openai-key-form.tsx`, their tests, `apps/control-center/scripts/test-ai-theme-preview.mjs` and `test-customer-flows.mjs` (expected dialog name and notice place), and this record. Pull request branch only, not merge or release.
+- What's new: none — layout and wording refinement of the Theme Studio (status line next to Save, buttons always in view, dialog title), no new feature
+
+## 2026-10-19 — #781: approval marker after merging #638 again (8759ac73)
+
+- User approval: Paul, 19.10.2026 via the communicator, feedback on test build 7193 (the entry above); the merge itself has no visible change of its own and was not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: as in the entry above and in the entry of #638 (finished turns keep a small thumbnail); nothing else changes.
+- Scope: the merge of `codex/theme-studio-pack` (8759ac73) into this branch and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — Theme Studio: Paul's feedback on test build 7194 (#781)
+
+- User approval: Paul, 19.10.2026 via the communicator, feedback on test build 7194 (the preview stays put when an element is selected, long design name with an ellipsis)
+- Approved customer-visible result: before → after:
+  1. Selecting an element: before: the "Details" row appeared under the preview and pushed the preview up; after: the preview keeps exactly its centred place when an element is selected or deselected, when Details opens or closes. "Details" sits right below the preview in space that is reserved anyway, and when opened its content scrolls inside its own area (at least 8 rem high, more in a taller window).
+  2. Design name in the header: before: in a narrow window the name was cut off hard ("Freche Sonnenbrillen-S"); after: it ends with "…", and the full name shows when the mouse rests on it (tooltip). Editing the name works as before.
+- Scope: `apps/control-center/src/components/theme-studio/editable-theme-preview.tsx` (three-row layout), `ai-theme-studio-screen.tsx` (name field), their tests, and this record. Pull request branch only, not merge or release.
+- What's new: none — layout refinement of the Theme Studio, no new feature
+
+## 2026-10-19 — #781: approval marker after merging #638 (73788377)
+
+- User approval: Paul, 19.10.2026 via the communicator, feedback on test build 7194 (the entry above); the merge itself has no visible change of its own and was not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: as in the entry above and in the entries of #638; nothing else changes.
+- Scope: the merge of `codex/theme-studio-pack` (73788377) into this branch and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — Theme Studio: the OpenAI key dialog opens like every other overlay (#781, build 7194)
+
+- User approval: Paul, 19.10.2026 via the communicator, feedback on test build 7194 (the "Replace OpenAI key" / "Add OpenAI key" overlay slid in from the bottom and then jumped upwards, unlike all other pop-ups)
+- Approved customer-visible result: before → after: the key dialog (Settings › Theme Studio AI, and the same dialog opened from the Studio) used its own plain dialog with a fade-and-zoom entrance and grew after opening, when the saved-key state arrived (the "Disconnect OpenAI" button appeared) and re-centred it, which looked like a jump; after: it is the same dialog as Factory reset and Run setup again (`SetupDialog`): no entrance animation of its own, the same dimmed screen behind it, and it has its final height from the first frame. Texts, heading, buttons and the Close button stay as in the entries above; in the Studio the dialog still has the X while no key is being checked.
+- Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx`, `ai-theme-studio-screen.tsx` (key dialog only), `apps/control-center/src/components/setup/setup-dialog.tsx` (description is optional; no description line is drawn when it is omitted), their tests, and this record. Pull request branch only, not merge or release.
+- What's new: none — same dialog, no new text or feature
+
+## 2026-10-19 — Theme Studio: Details open over the preview, the preview never moves (#781, build 7194, revision)
+
+- User approval: Paul, 19.10.2026 via the communicator, feedback on test build 7194 (the preview must keep exactly its centred place when an element is selected; "Details" appears directly below it, or as an overlay, and scrolls inside its own area)
+- Approved customer-visible result: before → after: "Details" hangs directly below the preview without taking any space, so the preview keeps its centred place when an element is selected or deselected and when Details opens or closes; when opened, the Details panel is an overlay above its bar, over the lower part of the preview, at most 22 rem high, and scrolls inside itself (this replaces the "reserved space" wording of the 7194 entry above, which gave the panel too little room in a window 800 px high). Texts and controls inside Details are unchanged.
+- Scope: `apps/control-center/src/components/theme-studio/editable-theme-preview.tsx`, `ai-theme-studio-screen.tsx` (the Details block), their tests, and this record. Pull request branch only, not merge or release.
+- What's new: none — layout refinement of the Theme Studio, no new feature
+
+## 2026-10-19 — Codex fix: the key dialog row follows a key saved while its check failed (#781)
+
+- User approval: none needed for this entry; it records a Codex review fix (P2) to the key dialog entry above: when a new key was saved but its check failed, closing the dialog now reads the stored-key state again, so the row says "Change key" and the next dialog title says "Replace OpenAI key" (before: the row kept "Add key" and the title "Add OpenAI key" while the form already offered retry and disconnect). Not seen by Paul.
+- Approved customer-visible result: as in the entries above; only the text of the row button and the dialog title after such a failed check changes.
+- Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx` (ThemeStudioKeyRow), its test, and this record. Pull request branch only, not merge or release.
+- What's new: none — fix of a review finding, no new text or feature
+
+## 2026-10-19 — Codex fix: the key dialog title follows a failed check at once, in Settings and in the Studio (#781)
+
+- User approval: none needed for this entry; it records a second Codex review fix (P2) to the key dialog entries above: the key form now tells its opener whenever the stored-key state changes, so after a key was saved but its check failed the dialog title says "Replace OpenAI key" at once (before: it kept "Add OpenAI key" while the form already offered retry and disconnect), also in the Studio, and the Settings row says "Change key". Not seen by Paul.
+- Approved customer-visible result: as in the entries above; only the dialog title and the row button text after such a failed check change.
+- Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx`, `ai-theme-studio-screen.tsx` (key dialog), the test of the form, and this record. Pull request branch only, not merge or release.
+- What's new: none — fix of a review finding, no new text or feature
+
+## 2026-10-19 — Theme Studio: Details open below the preview, never over it (#781, build 7194, second revision)
+
+- User approval: Paul, 19.10.2026 via the communicator, decision on build 7194 (he edits the preview while Details is open, so the preview must stay fully visible: Details uses the free space below the preview and scrolls inside itself)
+- Approved customer-visible result: before → after: the overlay of the previous revision, which covered the lower part of the preview while Details was open, is gone. The preview keeps its centred place and is never covered. "Details" and its panel sit in the free space below the preview in the same column; the panel is as high as that free space (it gets smaller in a lower window, never larger than the space) and scrolls inside itself. In a window so low that the left column scrolls, the preview and the Details bar scroll together as before. Texts and controls inside Details are unchanged.
+- Scope: `apps/control-center/src/components/theme-studio/editable-theme-preview.tsx` (three-row layout), `ai-theme-studio-screen.tsx` (the Details block), their tests, and this record. Pull request branch only, not merge or release.
+- What's new: none — layout refinement of the Theme Studio, no new feature
+
+## 2026-10-19 — #781: approval marker after merging main with the squashed #638 (58ae7cc8)
+
+- User approval: Paul, 19.10.2026 via the communicator, decision on build 7194 (the Details entry above: the preview stays fully visible and centred, Details uses the free space below it and scrolls inside itself); the merge of main (the squash of #638, same content as `codex/theme-studio-pack` 73788377) has no visible change of its own and was not seen by Paul. The canvas of the Studio now has the height of its column so the Details row cannot grow it. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: as in the Details entry above and the entries of this branch; nothing else changes.
+- Scope: the merge of `main` into this branch, `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` (canvas height) and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — Theme Studio: Details take their full height in a narrow or low window (#781, build 7194, third revision)
+
+- User approval: Paul, 19.10.2026 via the communicator, decision on build 7194 (Details below the preview, never over it; checked at 960×700 and 900 px wide)
+- Approved customer-visible result: before → after: in a window narrower than 1024 px (where the left column scrolls and the preview sits at its top) the Details panel was squeezed to a few pixels high under the preview; after: it takes the height it needs under the preview and the column scrolls. In the wide layout nothing changes: the preview stays centred, Details uses the free space below it and scrolls inside itself, never over the preview.
+- Scope: `apps/control-center/src/components/theme-studio/editable-theme-preview.tsx` (one class), its test, and this record. Pull request branch only, not merge or release.
+- What's new: none — layout refinement of the Theme Studio, no new feature
+
+## 2026-10-19 — Theme Studio: Details panel height in the narrow layout, follow-up (#781, build 7194)
+
+- User approval: Paul, 19.10.2026 via the communicator, decision on build 7194 (the third revision entry above: Details take their full height in a narrow or low window)
+- Approved customer-visible result: before → after: the class of the third revision alone left the panel squeezed to 12 px in a window narrower than 1024 px, because the panel's own scroll rule still applied; after: below 1024 px the panel has its natural height (about 170 px for the selected element) and the column scrolls; in the wide layout it is unchanged.
+- Scope: `apps/control-center/src/components/theme-studio/editable-theme-preview.tsx`, `ai-theme-studio-screen.tsx` (the Details block: the scroll rule applies from 1024 px up), and this record. Pull request branch only, not merge or release.
+- What's new: none — layout refinement of the Theme Studio, no new feature
+
+## 2026-10-19 — Theme Studio and key dialog matched to the approved template (#781, build 2 QA)
+
+- User approval: matched to the approved template "Calm Redesign – alle Screens" (Paul's design, frames 03, 07–09 and 38) after the build 2 QA of 19.10.2026; no new design decision, not seen by Paul as a build.
+- Approved customer-visible result: before → after:
+  1. Settings › Theme Studio AI (frame 03): before: a framed card with only "Connected" and "Change key" at 14 px; after: an unframed row like the other Settings rows: the label "API key" (13 px, muted), a green dot with "Connected" (a grey dot with "Not connected" when no key is saved), and the outline button "Change key" ("Add key" when none) at 13 px.
+  2. Key dialog (frame 38; "Add OpenAI key" or "Replace OpenAI key"): before: the buttons were stacked full-width ("Connect and continue" / "Update key" above "Disconnect OpenAI", plus a Close row or an X); after: one row: "Not now" and the main action side by side on the right ("Connect and continue" in the Studio, "Save key" / "Update key" in Settings, "Retry connection check" after a failed check); "Disconnect OpenAI" stays on the left of the same row, as a quiet button, when a key is saved. The key field and the agreement line are 13 px, the tick box 16 px. No X in the Studio's key dialog.
+  3. Theme Studio while open: before: the editor collapsed the navigation to icons; after: the navigation stays as it is (open in the template).
+  4. Theme Studio texts: before: chat messages and the hint were 14 px and the File menu entries medium weight; after: chat messages, the hint and the message field are 13 px and the File menu entries regular weight.
+  5. The export notice ("Theme pack exported. No device was contacted.") shows in the header row, right, left of Save (unchanged since the entry above; now covered by a test and a picture).
+- Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx`, `ai-theme-studio-screen.tsx`, their tests, the copy guard `apps/control-center/scripts/check-customer-ui-copy.mjs` ("API key" is the approved label of the Settings row), and this record. Pull request branch only, not merge or release. The one header row without the extra "Appearance" title needs the shell of #784 and is delivered as a patch for that branch.
+- What's new: none — matched to the approved design, no new feature
+
+## 2026-10-19 — Customer flow test follows the open navigation in the Studio (#781, build 2 QA)
+
+- User approval: none needed for this entry; it records a test expectation of the entry above ("matched to the approved template, build 2 QA", point 3): the customer flow now expects the navigation to stay open while the Studio is open instead of collapsed. No visible change beyond that entry; not seen by Paul.
+- Approved customer-visible result: as in the entry above; nothing else changes.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this record. Pull request branch only, not merge or release.
+- What's new: none — test expectation only, no customer-visible change

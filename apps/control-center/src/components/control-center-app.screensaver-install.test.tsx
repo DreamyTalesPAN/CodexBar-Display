@@ -207,7 +207,7 @@ it.each([
     .find((item) => within(item).queryByText(title))!;
   fireEvent.click(within(row).getByRole("button", { name: "Install" }));
   await wait(1);
-  expect(screen.getByText(`Preparing ${noun.toLowerCase()} install.`)).toBeTruthy();
+  expect(screen.getByText(`> Preparing ${noun.toLowerCase()} install.`)).toBeTruthy();
 
   answerInstall(jsonResponse({ ok: true, job }, 202));
   await wait(3);

@@ -10543,7 +10543,8 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
   await page.getByRole("radio", { name: new RegExp(screensaver ? "^Screensavers" : "^Themes") }).click();
   await page.getByRole("button", { name: screensaver ? "Create screensaver" : "Create theme", exact: true }).click();
   await page.getByLabel("Your idea", { exact: true }).waitFor();
-  await page.locator('[data-slot="sidebar"][data-state="collapsed"]').waitFor();
+  // The editor leaves the navigation as it is (the approved template shows it open).
+  await page.locator('[data-slot="sidebar"][data-state="expanded"]').waitFor();
   assert(await page.locator(".control-center-shell__header").isVisible(), "Studio stays inside the native shell");
   await page.getByLabel("Your idea", { exact: true }).fill("Make it blue");
   await page.getByRole("button", { name: "Create", exact: true }).click();
@@ -10574,8 +10575,8 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
     const [kept] = await exportPack();
     await finished(kept.suggestedFilename(), true);
     await exported.waitFor();
-    // Notices sit under the toolbar, not at the bottom of the chat column.
-    assert((await page.locator("header + div").getByText("Theme pack exported. No device was contacted.", { exact: true }).count()) === 1, "The export notice sits under the Theme Studio toolbar");
+    // Notices sit in the header row, left of Save, not at the bottom of the chat column.
+    assert((await page.locator("header").getByText("Theme pack exported. No device was contacted.", { exact: true }).count()) === 1, "The export notice sits in the Theme Studio header row");
     await page.keyboard.press("Escape");
   }
   await page.getByRole("button", { name: "Send to VibeTV", exact: true }).click();

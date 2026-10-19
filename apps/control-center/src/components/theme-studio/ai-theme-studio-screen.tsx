@@ -7,20 +7,15 @@ import {
   ArrowRight,
   ArrowUp,
   BringToFront,
-  FileDown,
-  FileUp,
   Type,
   TimerReset,
   ChartNoAxesColumn,
   ChevronDown,
   ImagePlus,
-  Package,
   Paperclip,
   Square,
   SquarePlus,
-  FolderOpen,
   X,
-  Plus,
   Redo2,
   SendToBack,
   Trash2,
@@ -32,19 +27,17 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
 import { Input } from "@/components/ui/input";
-import { useSidebar } from "@/components/ui/sidebar";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { SETUP_REVEAL } from "../setup/setup-reveal";
-import { cn } from "@/lib/utils";
+import { ProcessSteps } from "../process-steps";
 import { EditableThemePreview } from "./editable-theme-preview";
+import { SetupDialog } from "../setup/setup-dialog";
 import { OpenAIKeyForm, openAIState } from "./openai-key-form";
 import { friendlyElementName } from "./theme-studio-customer-labels";
 import { createDesignElement, isTypingTarget, LIVE_READINGS, moveLayer, pinnedElement, readingKey, setReading, usageSectionIndices, type AddElementKind } from "./design-controls";
@@ -149,18 +142,14 @@ function referenceThumbnail(source: HTMLCanvasElement) {
   return canvas.toDataURL("image/png").split(",")[1];
 }
 
-// The customer's turn: its reference images as small thumbnails above the text.
+// The customer's turn: its reference images as small thumbnails inside the same bubble, left of the text.
 function userTurn(text: string | null, images: { name: string; data: string }[] = []) {
   return (
-    <div className="ml-8 flex flex-col items-end gap-1.5 self-end">
-      {images.length ? (
-        <div className="flex flex-wrap justify-end gap-1.5">
-          {images.map((image, i) => (
-            <span key={i} role="img" aria-label={image.name} title={image.name} className="size-10 rounded-lg bg-cover bg-center" style={{ backgroundImage: `url(data:image/png;base64,${image.data})` }} />
-          ))}
-        </div>
-      ) : null}
-      <p className="whitespace-pre-wrap rounded-xl bg-muted px-3 py-2 text-sm [overflow-wrap:anywhere]">{text}</p>
+    <div className="ml-auto flex w-fit max-w-[88%] items-center gap-2.5 rounded-xl bg-muted px-3 py-2">
+      {images.map((image, i) => (
+        <span key={i} role="img" aria-label={image.name} title={image.name} className="size-8 shrink-0 rounded-md bg-cover bg-center" style={{ backgroundImage: `url(data:image/png;base64,${image.data})` }} />
+      ))}
+      <p className="min-w-0 whitespace-pre-wrap text-[13px] [overflow-wrap:anywhere]">{text}</p>
     </div>
   );
 }
@@ -193,14 +182,6 @@ export function AIThemeStudioScreen({
     } : blank()),
   );
   const nativeInstall = Boolean(onInstallTheme);
-  const sidebar = useSidebar();
-  // Give the editor the width while it is open; the customer can still expand
-  // the navigation, so this runs once and restores the earlier state on leave.
-  useEffect(() => {
-    sidebar.setOpen(false);
-    return () => sidebar.setOpen(sidebar.open);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
   const document = state.present;
   const dirty = isThemeStudioDirty(state);
   const visibleInstallStatus = installStatus?.themeId === document.spec.themeId ? installStatus : null;
@@ -299,7 +280,7 @@ export function AIThemeStudioScreen({
   const locked = busy || sending || saving || installStatus?.phase === "installing";
   const canCancel = busy && !loadingSample;
   // Every notice of the editor (saved, exported, sent, cancelled) shows in one
-  // place under the toolbar, not at the bottom of the chat column.
+  // place, right in the header row left of Save, not in the chat column.
   const notices = [visibleInstallStatus ? copyForHost(visibleInstallStatus.error || visibleInstallStatus.message || "Sending…", windowsHost) : transferStatus, busy ? "" : status].filter(Boolean);
   // Connecting needs the consent box ticked, so a saved key is that consent
   // (#633); Disconnect removes both.
@@ -326,6 +307,11 @@ export function AIThemeStudioScreen({
       a.x < b.x + (b.width || 0) && b.x < a.x + (a.width || 0) && a.y < b.y + (b.height || 0) && b.y < a.y + (a.height || 0)));
     return overlap ? { ...result, errors: [...result.errors, "Move the animated elements apart. VibeTV cannot show them overlapping."] } : result;
   }, [document]);
+  // Send is off for a design the customer can fix (#551): the reason is the
+  // first validation sentence, the same one the alert in the chat shows. Busy,
+  // saving and sending are passing states and give no reason.
+  const sendNeedsFix = !transferJob && (!document.spec.primitives.length || validation.errors.length > 0);
+  const sendBlockedReason = !locked && sendNeedsFix ? validation.errors[0] ?? "" : "";
 
   useEffect(() => {
     const controller = new AbortController();
@@ -914,7 +900,13 @@ export function AIThemeStudioScreen({
 
   useEffect(() => {
     const input = promptInput.current;
-    if (!input || prompt || selected.length || locked) return;
+    if (!input) return;
+    // The ideas are for an empty studio; once there is a conversation the field says what it is for (master 19.10.).
+    if (messages.length || asking !== null) {
+      input.placeholder = selected.length ? "Describe what to change in this element…" : "Describe your design or what to change…";
+      return;
+    }
+    if (prompt || selected.length || locked) return;
     const ideas = [
       "A sleepy cat by a rainy window…",
       "A cozy fireplace in a pixel-art cabin…",
@@ -947,7 +939,7 @@ export function AIThemeStudioScreen({
     }
     type();
     return () => clearTimeout(timer);
-  }, [prompt, selected.length, locked]);
+  }, [prompt, selected.length, locked, messages.length, asking]);
 
   // Grow with the text, including programmatic prompt changes and window resizing.
   // Cap the height so a long request never pushes all editing controls off-screen.
@@ -993,7 +985,7 @@ export function AIThemeStudioScreen({
   return (
     <div
       data-theme-studio-root
-      className="flex min-h-[calc(100svh-86px)] flex-col pb-6 text-foreground lg:h-[calc(100svh-86px)]"
+      className="flex min-h-[calc(100svh-86px)] h-[calc(100svh-86px)] flex-col pb-6 text-foreground"
       onKeyDown={(event) => {
         if (isTypingTarget(event.target) || locked || panel || pending || leaving || event.nativeEvent.isComposing)
           return;
@@ -1033,13 +1025,13 @@ export function AIThemeStudioScreen({
         }
       }}
     >
-        <header className="flex items-center gap-3">
+        <header className="flex flex-wrap items-center gap-x-3 gap-y-2">
           {onBackToLibrary ? <Button variant="ghost" size="icon" aria-label="Back to library" title="Back to library" disabled={locked} onClick={() => { if (dirty && persistedDraft.current !== document) setLeaving(true); else onBackToLibrary(); }}><ArrowLeft /></Button> : null}
           <h2 className="sr-only">{document.usage === "screensaver" ? "Screensaver Studio" : "Theme Studio"}</h2>
           <Input
             aria-label="Design name"
-            title="Design name"
-            className="h-9 min-w-0 max-w-xs border-transparent bg-transparent px-2 text-base font-semibold shadow-none hover:border-input focus-visible:border-ring"
+            title={document.packName || "Design name"}
+            className="h-10 min-w-24 max-w-xs flex-[2_1_0%] text-ellipsis border-transparent bg-transparent px-2 text-[28px] leading-none font-semibold md:text-[28px] shadow-none hover:border-input focus-visible:border-ring"
             value={document.packName}
             maxLength={48}
             disabled={locked}
@@ -1059,26 +1051,21 @@ export function AIThemeStudioScreen({
               </PopoverTrigger>
               <PopoverContent align="start" className="w-64 p-1.5">
                 <div className="flex flex-col gap-0.5" onClick={() => setFileMenu(false)}>
-                  <Button size="sm" variant="ghost" className="w-full justify-start font-medium" onClick={() => requestLoad({ document: blank() })}>
-                    <Plus data-icon="inline-start" />
-                    <span>New design</span>
+                  <Button size="sm" variant="ghost" className="w-full justify-start font-normal" onClick={() => requestLoad({ document: blank() })}>
+                    New design
                   </Button>
-                  <Button size="sm" variant="ghost" className="w-full justify-start font-medium" onClick={() => openPanel("library")}>
-                    <FolderOpen data-icon="inline-start" />
-                    <span>Open saved design…</span>
+                  <Button size="sm" variant="ghost" className="w-full justify-start font-normal" onClick={() => openPanel("library")}>
+                    Open saved design…
                   </Button>
                   <div aria-hidden className="my-1 h-px bg-border" />
-                  <Button size="sm" variant="ghost" className="w-full justify-start font-medium" onClick={() => jsonInput.current?.click()}>
-                    <FileUp data-icon="inline-start" />
-                    <span>Open design file…</span>
+                  <Button size="sm" variant="ghost" className="w-full justify-start font-normal" onClick={() => jsonInput.current?.click()}>
+                    Open design file…
                   </Button>
-                  <Button size="sm" variant="ghost" className="w-full justify-start font-medium" disabled={!document.spec.primitives.length} onClick={() => download(JSON.stringify(document, null, 2), "vibetv-scene.json", "application/json")}>
-                    <FileDown data-icon="inline-start" />
-                    <span>Download editable design</span>
+                  <Button size="sm" variant="ghost" className="w-full justify-start font-normal" disabled={!document.spec.primitives.length} onClick={() => download(JSON.stringify(document, null, 2), "vibetv-scene.json", "application/json")}>
+                    Download editable design
                   </Button>
-                  <Button size="sm" variant="ghost" className="w-full justify-start font-medium" disabled={!document.spec.primitives.length || validation.errors.length > 0} onClick={exportPack}>
-                    <Package data-icon="inline-start" />
-                    <span>Export theme pack</span>
+                  <Button size="sm" variant="ghost" className="w-full justify-start font-normal" disabled={!document.spec.primitives.length || validation.errors.length > 0} onClick={exportPack}>
+                    Export theme pack
                   </Button>
                 </div>
               </PopoverContent>
@@ -1104,7 +1091,13 @@ export function AIThemeStudioScreen({
               <Redo2 />
             </Button>
           </div>
-          <div className="ml-auto flex items-center gap-2">
+          {notices.length || sendBlockedReason ? (
+            <div className="flex flex-[1_1_0%] flex-col items-end gap-0.5 text-right">
+              {notices.map((text, i) => <p key={i} role="status" className="text-[13px] font-normal text-muted-foreground [overflow-wrap:break-word]">{text}</p>)}
+              {sendBlockedReason ? <p id="send-blocked-reason" role="status" className="text-[13px] font-normal text-muted-foreground [overflow-wrap:break-word]">{sendBlockedReason}</p> : null}
+            </div>
+          ) : null}
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             <Button
               variant="outline"
               disabled={locked || Boolean(saveBlockedReason) || !document.spec.primitives.length || validation.errors.length > 0}
@@ -1113,19 +1106,17 @@ export function AIThemeStudioScreen({
             >
               Save
             </Button>
-            <Button disabled={locked || (!transferJob && (!document.spec.primitives.length || validation.errors.length > 0))} onClick={() => void send()}>
-              {sending ? <Spinner /> : null}
-              {sending ? "Sending…" : transferJob ? "Check transfer" : "Send to VibeTV"}
-            </Button>
+            {/* A disabled button takes no pointer events, so the tooltip sits on this wrapper. */}
+            <span title={sendBlockedReason || undefined} className="inline-flex">
+              <Button disabled={locked || sendNeedsFix} aria-describedby={sendBlockedReason ? "send-blocked-reason" : undefined} onClick={() => void send()}>
+                {sending ? <Spinner /> : null}
+                {sending ? "Sending…" : transferJob ? "Check transfer" : "Send to VibeTV"}
+              </Button>
+            </span>
           </div>
         </header>
-        {notices.length ? (
-          <div className="flex flex-col gap-1 pt-3">
-            {notices.map((text, i) => <p key={i} role="status" className="text-sm text-muted-foreground [overflow-wrap:anywhere]">{text}</p>)}
-          </div>
-        ) : null}
-          <main className="flex min-h-0 flex-1 flex-col gap-6 pt-2 lg:flex-row">
-            <div className="min-h-0 min-w-0 flex-1 lg:overflow-y-auto">
+          <main className="flex min-h-0 flex-1 flex-col gap-6 pt-8 lg:flex-row lg:gap-12">
+            <div className="min-h-0 min-w-0 overflow-y-auto lg:flex-1 lg:basis-0">
             <div
               id="theme-design-canvas"
               role="region"
@@ -1136,7 +1127,7 @@ export function AIThemeStudioScreen({
                   event.currentTarget.focus({ preventScroll: true });
                 }
               }}
-              className="group/canvas flex min-h-full w-full flex-col outline-none"
+              className="group/canvas flex h-full w-full flex-col outline-none"
               inert={locked}
               aria-busy={busy}
             >
@@ -1235,14 +1226,15 @@ export function AIThemeStudioScreen({
               </div>
             ) : null}
             {primitive && !isAttachedSceneAnimation(primitive.assetPath) ? (
-              <Collapsible data-selection-controls className="mx-auto mt-4 w-full max-w-[460px]">
+              <Collapsible data-selection-controls className="mx-auto flex w-full max-w-[460px] flex-col lg:min-h-0">
                 <CollapsibleTrigger asChild>
                   <Button variant="ghost" className="group w-full justify-between">
                     Details
                     <ChevronDown className="transition-transform group-data-[state=open]:rotate-180" />
                   </Button>
                 </CollapsibleTrigger>
-                <CollapsibleContent className="pt-3">
+                {/* The panel is as high as the free space below the preview and scrolls inside itself. */}
+                <CollapsibleContent className="pt-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
               <section className="space-y-3" aria-label="Selected element tools">
                 <div className="flex items-center justify-between gap-2">
                   <h2 className="min-w-0 truncate font-medium">
@@ -1481,17 +1473,17 @@ export function AIThemeStudioScreen({
               </EditableThemePreview>
             </div>
             </div>
-            <div className="mx-auto flex min-h-0 w-full max-w-[680px] flex-col lg:w-[420px] lg:shrink-0 lg:overflow-y-auto lg:border-l lg:pl-6">
-            <div className="flex min-h-24 flex-1 flex-col gap-3 overflow-y-auto pb-4" role="log" aria-label="Conversation">
+            <div className="flex min-h-0 w-full min-w-0 flex-col max-lg:max-h-[40svh] max-lg:shrink-0 lg:flex-1 lg:basis-0 lg:overflow-y-auto">
+            <div className="flex min-h-24 flex-1 flex-col gap-4 overflow-y-auto pb-4" role="log" aria-label="Conversation">
               {messages.length || asking !== null ? messages.map((message, i) => (
                 message.role === "user" ? <div key={i}>{userTurn(message.content, message.images)}</div> : <p
                   key={i}
-                  className="mr-8 whitespace-pre-wrap text-sm [overflow-wrap:anywhere]"
+                  className="mr-6 whitespace-pre-wrap text-[13px] [overflow-wrap:anywhere]"
                 >
                   {message.content}
                 </p>
               )) : (
-                <p className="my-auto text-center text-sm text-muted-foreground">
+                <p className="my-auto text-center text-[13px] text-muted-foreground">
                   Describe a design, ask for a change, or ask what is possible.
                 </p>
               )}
@@ -1499,10 +1491,8 @@ export function AIThemeStudioScreen({
                 <>
                   {userTurn(asking, askingImages)}
                   {progress.words.length ? (
-                    <div aria-hidden className="font-mono text-[13px] leading-6">
-                      <div key={progress.at} className={cn("text-muted-foreground", SETUP_REVEAL)}>
-                        <span>&gt; {progress.words[progress.at % progress.words.length]}</span>
-                      </div>
+                    <div aria-hidden>
+                      <ProcessSteps variant="single" steps={[{ id: String(progress.at), text: progress.words[progress.at % progress.words.length] }]} />
                     </div>
                   ) : null}
                   {/* Announces each real step once, not every word. */}
@@ -1520,7 +1510,7 @@ export function AIThemeStudioScreen({
               </label>
               <div className="flex items-center gap-3">
               <div
-                className="relative min-w-0 flex-1 overflow-hidden rounded-xl border border-input bg-background shadow-sm focus-within:border-ring focus-within:ring-2 focus-within:ring-ring"
+                className="relative min-w-0 flex-1 overflow-hidden rounded-xl border border-input bg-card focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40"
                 onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
                 onDrop={(event) => { event.preventDefault(); void attachImages(event.dataTransfer.files); }}
               >
@@ -1582,23 +1572,10 @@ export function AIThemeStudioScreen({
                     void generate();
                   }
                 }}
-                className="min-h-14 max-h-64 resize-none overflow-y-auto rounded-none border-0 py-4 pl-4 pr-14 focus-visible:ring-0 [field-sizing:fixed]"
+                className="min-h-8 max-h-64 resize-none overflow-y-auto rounded-none border-0 text-[13px] md:text-[13px] bg-transparent px-3.5 pb-0 pt-3 disabled:bg-transparent focus-visible:ring-0 [field-sizing:fixed]"
                 placeholder={selected.length ? "Describe what to change in this element…" : "Describe your design or what to change…"}
               />
-                <Button
-                  size="icon"
-                  className="absolute bottom-2 right-2 size-10 rounded-full"
-                  aria-label="Create"
-                  title="Create"
-                  aria-busy={busy}
-                  disabled={locked || attaching || !enabled || connecting || !prompt.trim()}
-                  onClick={() => void generate()}
-                >
-                  {busy ? <Spinner className="motion-reduce:animate-none" /> : <ArrowUp />}
-                </Button>
-              </div>
-              </div>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-0.5 px-1.5 pb-2 pt-3">
               <Button
                 variant="ghost"
                 size={canCancel ? "default" : "icon"}
@@ -1617,6 +1594,19 @@ export function AIThemeStudioScreen({
                 >
                   {attaching ? <Spinner /> : <Paperclip />}
                 </Button>
+                <Button
+                  size="icon"
+                  className="ml-auto size-8 rounded-full bg-foreground text-background hover:bg-foreground/90"
+                  aria-label="Create"
+                  title="Create"
+                  aria-busy={busy}
+                  disabled={locked || attaching || !enabled || connecting || !prompt.trim()}
+                  onClick={() => void generate()}
+                >
+                  <ArrowUp />
+                </Button>
+              </div>
+              </div>
               </div>
             </section>
             <div className="mt-3 w-full space-y-3">
@@ -1625,8 +1615,9 @@ export function AIThemeStudioScreen({
                   {error}
                 </p>
               ) : null}
+              {/* The same reason already shows under the toolbar while Send is off (#551). */}
               {document.spec.primitives.length > 0 &&
-              validation.errors.length ? (
+              validation.errors.length && !sendBlockedReason ? (
                 <p role="alert" className="text-sm text-destructive">
                   This design needs an adjustment before saving.{" "}
                   {validation.errors[0]}
@@ -1636,14 +1627,43 @@ export function AIThemeStudioScreen({
             </div>
           </main>
 
+      {/* The key dialog is the same dialog as every other overlay, not this editor's own. */}
+      <SetupDialog
+        open={panel === "setup"}
+        onOpenChange={(open) => {
+          if (!open) closePanel();
+        }}
+        title={configured ? "Replace OpenAI key" : "Add OpenAI key"}
+        showCloseButton={false}
+      >
+          <OpenAIKeyForm
+              inSetup
+              initialConfigured={configured}
+              onConfiguredChange={setConfigured}
+              onDismiss={closePanel}
+              onConnectingChange={setConnecting}
+              onConnected={(kept) => {
+                setConfigured(true);
+                if (kept !== undefined)
+                  setStatus(kept || !nativeInstall ? "AI is ready." : copyForHost("AI is ready. The key could not be saved on this Mac, so it is needed again after the Mac App restarts.", windowsHost));
+                setPanel(null);
+                if (prompt.trim()) void generate(true);
+              }}
+              onDisconnected={() => {
+                setConfigured(false);
+                setStatus("OpenAI disconnected. You can keep editing by hand.");
+              }}
+            />
+      </SetupDialog>
+
       <Dialog
-        open={panel !== null}
+        open={panel === "add" || panel === "library"}
         onOpenChange={(open) => {
           if (!open) closePanel();
         }}
       >
         <DialogContent
-          className="max-h-[calc(100dvh-2rem)] overflow-y-auto"
+          className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md"
           onEscapeKeyDown={(event) => {
             if (connecting) event.preventDefault();
           }}
@@ -1658,38 +1678,13 @@ export function AIThemeStudioScreen({
           }}
         >
           <DialogHeader>
-            <DialogTitle>
-              {panel === "setup"
-                ? "Create with AI"
-                : panel === "add"
-                  ? "Add an element"
-                  : "Your saved designs"}
-            </DialogTitle>
+            <DialogTitle>{panel === "add" ? "Add an element" : "Your saved designs"}</DialogTitle>
             <DialogDescription className="sr-only">
-              {panel === "setup"
-                ? "Connect OpenAI to create your design."
-                : panel === "add"
-                  ? "Choose what you want to show. You can move and change it afterwards."
-                  : "Your saved designs."}
+              {panel === "add"
+                ? "Choose what you want to show. You can move and change it afterwards."
+                : "Your saved designs."}
             </DialogDescription>
           </DialogHeader>
-          {panel === "setup" ? (
-            <OpenAIKeyForm
-              inSetup
-              onConnectingChange={setConnecting}
-              onConnected={(kept) => {
-                setConfigured(true);
-                if (kept !== undefined)
-                  setStatus(kept || !nativeInstall ? "AI is ready." : copyForHost("AI is ready. The key could not be saved on this Mac, so it is needed again after the Mac App restarts.", windowsHost));
-                setPanel(null);
-                if (prompt.trim()) void generate(true);
-              }}
-              onDisconnected={() => {
-                setConfigured(false);
-                setStatus("OpenAI disconnected. You can keep editing by hand.");
-              }}
-            />
-          ) : null}
           {panel === "add" ? (
             <div className="grid gap-2">
               {[
@@ -1784,13 +1779,6 @@ export function AIThemeStudioScreen({
               )}
             </div>
           ) : null}
-          {connecting ? null : (
-            <DialogFooter>
-              <Button onClick={closePanel} variant="ghost">
-                {panel === "setup" ? "Not now" : "Close"}
-              </Button>
-            </DialogFooter>
-          )}
         </DialogContent>
       </Dialog>
       <input
@@ -1838,14 +1826,17 @@ export function AIThemeStudioScreen({
               continue.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
+          <div className="grid gap-3">
             <Button
-              variant="ghost"
+              variant="outline"
+              className="h-12 w-full"
               onClick={() => { setPending(undefined); setLeaving(false); }}
             >
               Keep editing
             </Button>
             <Button
+              variant="destructive"
+              className="h-12 w-full"
               onClick={() => {
                 // Discarding is final: the draft must not be offered again later.
                 clearThemeStudioRecovery();
@@ -1856,7 +1847,7 @@ export function AIThemeStudioScreen({
             >
               Discard and continue
             </Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
