@@ -2,7 +2,7 @@
 //
 // The token history notice is a dialog over the Usage page, never a box at its
 // top. OK (or the X) closes it; the owner keeps it closed until it has cleared.
-// The usage tiles stay on the page under it.
+// The usage tiles stay on the page, under the dialog's darkening.
 
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
@@ -37,16 +37,18 @@ it("shows the notice as a dialog over the page, not as text on the page", () => 
   expect(screen.getByLabelText("34% weekly used")).toBeTruthy();
 });
 
-// The page behind the notice is not held: no scrim over the tiles, so they can
-// be pressed under it (the dialog default would swallow those clicks).
-it("leaves the page behind the notice unscrimmed and usable", () => {
+// The notice uses the standard dialog backdrop, like every other dialog: the
+// screen behind is darkened and held, so nothing is pressed under the notice.
+it("darkens and holds the page behind the notice like every other dialog", () => {
   const { container } = render(
     <UsageScreen companionStatus="online" onRefresh={vi.fn()} usage={usage} />,
   );
 
   const scrim = container.querySelector('div[aria-hidden][class*="fixed"]');
   expect(scrim).not.toBeNull();
-  expect(scrim?.className).toContain("pointer-events-none");
+  expect(scrim?.className).toContain("bg-black/10");
+  expect(scrim?.className).toContain("opacity-100");
+  expect(scrim?.className).not.toContain("pointer-events-none");
 });
 
 it("reports the close to its owner when OK is pressed", () => {
@@ -115,44 +117,4 @@ it("says every selected provider only when several are shown", () => {
 
   const dialog = screen.getByRole("dialog", { name: title });
   expect(within(dialog).getByText(/not available for every selected provider/)).toBeTruthy();
-});
-
-// Radix would wrap Tab from the last control of the notice back to its first.
-// The page behind is usable, so Tab from the last control moves to the page.
-it("lets Tab leave the notice for the page behind it", () => {
-  const control = document.createElement("button");
-  control.textContent = "Page control";
-  document.body.prepend(control);
-  render(<UsageScreen companionStatus="online" onRefresh={vi.fn()} usage={usage} />);
-
-  const dialog = screen.getByRole("dialog", { name: title });
-  const last = within(dialog).getByRole("button", { name: "Close" });
-  last.focus();
-  const notPrevented = fireEvent.keyDown(last, { key: "Tab" });
-
-  expect(notPrevented).toBe(false);
-  expect(document.activeElement).toBe(control);
-  control.remove();
-});
-
-// Radix's invisible focus guards are tabbable too, but they are not page
-// controls: Tab must land on the page control behind them.
-it("does not stop Tab on Radix's focus guards", () => {
-  const control = document.createElement("button");
-  control.textContent = "Page control";
-  document.body.prepend(control);
-  const guard = document.createElement("span");
-  guard.setAttribute("data-radix-focus-guard", "");
-  guard.tabIndex = 0;
-  document.body.prepend(guard);
-  render(<UsageScreen companionStatus="online" onRefresh={vi.fn()} usage={usage} />);
-
-  const dialog = screen.getByRole("dialog", { name: title });
-  const last = within(dialog).getByRole("button", { name: "Close" });
-  last.focus();
-  fireEvent.keyDown(last, { key: "Tab" });
-
-  expect(document.activeElement).toBe(control);
-  guard.remove();
-  control.remove();
 });
