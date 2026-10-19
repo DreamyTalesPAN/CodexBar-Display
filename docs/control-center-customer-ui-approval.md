@@ -8057,3 +8057,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet, pending Paul's decision. Proposed: when a lane label and its reset do not fit on one line (960 px window), the reset ("Reset in 1h") moves to the line beneath and stays right-aligned there, instead of sitting at the left edge. No wording change. The Usage head above the tiles is unchanged.
 - Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (reset alignment, one test assertion), and this approval record. Option PR #777 stacked on #669; not merged or released.
 - What's new: none — layout alignment only, no new notice
+
+## 2026-10-19 — Group: Usage page (13 PRs in one)
+
+- User approval: pending — Paul reviews this group (parts: #669, #680, #686, #694, #702, #703, #708, #714, #724, #726, #745, #746, and the option #777); each part's own entry above keeps its approval state.
+- Approved customer-visible result: none beyond the entries above; this record restates that the listed parts are combined into one pull request and changes no screen. Not yet seen by Paul as a whole.
+- Scope: this approval record, and one test line in `usage-screen.test.tsx` (the option #777 type test reads the token row, which #708 made a container). Pull request branch only, not merge or release.
+- What's new: none — approval record only

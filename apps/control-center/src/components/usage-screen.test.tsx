@@ -925,10 +925,12 @@ describe("UsageScreen", () => {
       />,
     );
 
+    // The token line sits in the token row, which carries the type (the plan
+    // and extra-usage lines share it).
     for (const element of [
       screen.getByText("All systems operational"),
       screen.getByText("Coding"),
-      screen.getByText(/^Tokens:/),
+      screen.getByText(/^Tokens:/).parentElement as HTMLElement,
     ]) {
       expect(element.className).toContain("text-[13px]");
       expect(element.className).not.toMatch(/\bfont-(semibold|bold|black|medium)\b/);
