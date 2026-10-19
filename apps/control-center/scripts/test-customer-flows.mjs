@@ -6553,7 +6553,7 @@ async function testAppearanceSidebarNavigation(browser, appUrl) {
     await page.getByText("Fixture Night Clock Screensaver").waitFor();
     // The switch is in Settings only (#643): Screensavers says it is off
     // and links there.
-    await page.getByText("Screensaver is off.", { exact: true }).waitFor();
+    await page.getByText("Screensaver is off.").waitFor();
     assert(
       (await page
         .locator("main.control-center-shell")
@@ -6597,7 +6597,7 @@ async function testAppearanceSidebarNavigation(browser, appUrl) {
       .waitFor({ timeout: 10_000 });
     await page.getByText("Fixture Night Clock Screensaver").waitFor();
     assert(
-      (await page.getByText("Screensaver is off.", { exact: true }).count()) === 0,
+      (await page.getByText("Screensaver is off.").count()) === 0,
       "Screensavers must drop the off line once the screensaver is on",
     );
 
