@@ -307,6 +307,11 @@ export function AIThemeStudioScreen({
       a.x < b.x + (b.width || 0) && b.x < a.x + (a.width || 0) && a.y < b.y + (b.height || 0) && b.y < a.y + (a.height || 0)));
     return overlap ? { ...result, errors: [...result.errors, "Move the animated elements apart. VibeTV cannot show them overlapping."] } : result;
   }, [document]);
+  // Send is off for a design the customer can fix (#551): the reason is the
+  // first validation sentence, the same one the alert in the chat shows. Busy,
+  // saving and sending are passing states and give no reason.
+  const sendNeedsFix = !transferJob && (!document.spec.primitives.length || validation.errors.length > 0);
+  const sendBlockedReason = !locked && sendNeedsFix ? validation.errors[0] ?? "" : "";
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1092,15 +1097,19 @@ export function AIThemeStudioScreen({
             >
               Save
             </Button>
-            <Button disabled={locked || (!transferJob && (!document.spec.primitives.length || validation.errors.length > 0))} onClick={() => void send()}>
-              {sending ? <Spinner /> : null}
-              {sending ? "Sending…" : transferJob ? "Check transfer" : "Send to VibeTV"}
-            </Button>
+            {/* A disabled button takes no pointer events, so the tooltip sits on this wrapper. */}
+            <span title={sendBlockedReason || undefined} className="inline-flex">
+              <Button disabled={locked || sendNeedsFix} aria-describedby={sendBlockedReason ? "send-blocked-reason" : undefined} onClick={() => void send()}>
+                {sending ? <Spinner /> : null}
+                {sending ? "Sending…" : transferJob ? "Check transfer" : "Send to VibeTV"}
+              </Button>
+            </span>
           </div>
         </header>
-        {notices.length ? (
+        {notices.length || sendBlockedReason ? (
           <div className="flex flex-col gap-1 pt-3">
             {notices.map((text, i) => <p key={i} role="status" className="text-sm text-muted-foreground [overflow-wrap:anywhere]">{text}</p>)}
+            {sendBlockedReason ? <p id="send-blocked-reason" role="status" className="text-sm text-muted-foreground [overflow-wrap:anywhere]">{sendBlockedReason}</p> : null}
           </div>
         ) : null}
           <main className="flex min-h-0 flex-1 flex-col gap-6 pt-2 lg:flex-row">
@@ -1602,8 +1611,9 @@ export function AIThemeStudioScreen({
                   {error}
                 </p>
               ) : null}
+              {/* The same reason already shows under the toolbar while Send is off (#551). */}
               {document.spec.primitives.length > 0 &&
-              validation.errors.length ? (
+              validation.errors.length && !sendBlockedReason ? (
                 <p role="alert" className="text-sm text-destructive">
                   This design needs an adjustment before saving.{" "}
                   {validation.errors[0]}

@@ -3,7 +3,9 @@ import { readFileSync } from "node:fs";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildAIThemeCandidate, fetchAIThemeCapabilities, generateAIThemeConcept, planAIThemeLayout } from "@/lib/ai-theme";
+import { createBlankThemeSpec } from "@/lib/theme-studio";
 import { AIThemeStudioScreen } from "./ai-theme-studio-screen";
+import { createDesignElement } from "./design-controls";
 
 vi.mock("@/components/ui/sidebar", () => ({
   useSidebar: () => ({ open: true, setOpen: () => {} }),
@@ -223,5 +225,80 @@ describe("Theme Studio header", () => {
     expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
     expect(screen.getByRole("button", { name: "Undo last edit" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Redo edit" })).toBeTruthy();
+  });
+});
+
+describe("Theme Studio send reason", () => {
+  const sendButton = () => screen.getByRole("button", { name: "Send to VibeTV" });
+  const reasonLine = () => document.getElementById("send-blocked-reason");
+  // The tooltip sits on the wrapper: a disabled button takes no hover.
+  const tooltipOf = (button: HTMLElement) => button.parentElement;
+
+  it("says why an empty design cannot be sent, under the toolbar and on the button", () => {
+    render(<AIThemeStudioScreen />);
+
+    expect(sendButton().hasAttribute("disabled")).toBe(true);
+    const reason = reasonLine();
+    expect(reason?.textContent).toBe("Add at least one visual element.");
+    const header = document.querySelector("header") as HTMLElement;
+    expect(header.nextElementSibling?.contains(reason)).toBe(true);
+    expect(reason?.getAttribute("role")).toBe("status");
+    expect(tooltipOf(sendButton())?.getAttribute("title")).toBe("Add at least one visual element.");
+    expect(sendButton().hasAttribute("title")).toBe(false);
+    expect(sendButton().getAttribute("aria-describedby")).toBe("send-blocked-reason");
+  });
+
+  it("shows a design limit reason once, under the toolbar, not again in the chat alert", () => {
+    const text = { ...createDesignElement("text", 1), text: "x".repeat(1100) };
+    render(<AIThemeStudioScreen initialTheme={{ packName: "Long text", source: "custom", spec: { ...createBlankThemeSpec(), primitives: [text] } }} />);
+
+    expect(sendButton().hasAttribute("disabled")).toBe(true);
+    const reason = reasonLine()?.textContent;
+    expect(reason).toBeTruthy();
+    expect(reason).not.toBe("Add at least one visual element.");
+    expect(screen.queryByText(/This design needs an adjustment/)).toBeNull();
+    expect(screen.getAllByText(reason as string)).toHaveLength(1);
+    expect(tooltipOf(sendButton())?.getAttribute("title")).toBe(reason);
+  });
+
+  it("gives no reason while an install is running", () => {
+    render(<AIThemeStudioScreen installStatus={{ phase: "installing", themeId: "other", title: "Other", startedAt: "10:00:00", logs: [] }} />);
+
+    expect(sendButton().hasAttribute("disabled")).toBe(true);
+    expect(reasonLine()).toBeNull();
+    expect(tooltipOf(sendButton())?.hasAttribute("title")).toBe(false);
+  });
+
+  it("keeps the chat alert while no reason line can show, so the reason is never lost", () => {
+    const text = { ...createDesignElement("text", 1), text: "x".repeat(1100) };
+    render(<AIThemeStudioScreen
+      initialTheme={{ packName: "Long text", source: "custom", spec: { ...createBlankThemeSpec(), primitives: [text] } }}
+      installStatus={{ phase: "installing", themeId: "other", title: "Other", startedAt: "10:00:00", logs: [] }}
+    />);
+
+    expect(reasonLine()).toBeNull();
+    expect(screen.getByRole("alert").textContent).toContain("This design needs an adjustment before saving.");
+  });
+
+  it("gives no reason while the design is being sent", async () => {
+    const send = deferred<boolean>();
+    render(<AIThemeStudioScreen onInstallTheme={() => send.promise} />);
+    fireEvent.click(screen.getByRole("button", { name: "Add manually" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Text/ }));
+    fireEvent.click(sendButton());
+
+    await screen.findByRole("button", { name: "Sending…" });
+    expect(reasonLine()).toBeNull();
+    expect(tooltipOf(screen.getByRole("button", { name: "Sending…" }))?.hasAttribute("title")).toBe(false);
+  });
+
+  it("gives no reason when a valid design can be sent", async () => {
+    render(<AIThemeStudioScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Add manually" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Text/ }));
+
+    expect(sendButton().hasAttribute("disabled")).toBe(false);
+    expect(reasonLine()).toBeNull();
+    expect(tooltipOf(sendButton())?.hasAttribute("title")).toBe(false);
   });
 });

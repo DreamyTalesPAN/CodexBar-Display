@@ -7626,3 +7626,38 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: look unchanged — the Theme Studio AI line now uses the shared ProcessSteps component (Paul's rule 17.10.). Before → after: none; the "> word" line, its fade-in per word and its word order stay as they are.
 - Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` (the AI working line, local styles removed) and its test, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no visible change
+
+## 2026-10-17 — #551: a disabled "Send to VibeTV" says why
+
+- User approval: none yet — Paul reviews this PR (fix of a reported defect, #551); he has not seen this yet.
+- Approved customer-visible result: none yet — before: with an empty design, or a design that breaks a VibeTV limit, "Send to VibeTV" is off and nothing says why (the chat alert shows the reason only once an element exists). After: the same sentence as that chat alert appears under ← in the notice line (grey, same size as the other notices) and as the button's tooltip; empty design: "Add at least one visual element." Busy, saving and sending show no reason.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the sentences already exist in the app; the notice line and tooltip are the only new places
+
+## 2026-10-17 — #551: the tooltip of a disabled Send sits on a hoverable wrapper (Codex review fix, no new wording)
+
+- User approval: none yet — Codex review fix to the #551 entry above; not seen by Paul.
+- Approved customer-visible result: none yet — as described in the #551 entry above. The reason line is unchanged; the tooltip now comes from a wrapper around the button, because a disabled button takes no hover.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — refinement of #551
+
+## 2026-10-17 — #551: a design limit reason shows once
+
+- User approval: none yet — Paul reviews this PR (fix of a reported defect, #551); he has not seen this yet.
+- Approved customer-visible result: none yet — before: with a design that breaks a limit, the reason sentence appeared twice (under ← while Send is off, and in the chat alert below the canvas). After: it appears once, under ← (with the tooltip on Send). While no line under ← can show (busy, saving, installing), the chat alert stays as before. Other chat errors are unchanged.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the same sentences as before, shown once
+
+## 2026-10-17 — #551: the reason line is a live region (Codex review fix, no visible change)
+
+- User approval: none yet — Codex review fix to the #551 entries above; not seen by Paul.
+- Approved customer-visible result: none yet — the reason line under ← looks the same; it is announced as a status update, like the other notices.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — refinement of #551
+
+## 2026-10-17 — #551: the approval lines of the entries above say "none yet" (Codex review fix, no visible change)
+
+- User approval: none yet — the entries above for #551 record no approval; Paul has not seen this PR yet.
+- Approved customer-visible result: none yet — no visible change in this entry; it corrects the approval lines above, which said "pending" or "as approved in that entry".
+- Scope: `docs/control-center-customer-ui-approval.md` (this record only). Pull request branch only, not merge or release.
+- What's new: none — correction of the approval record, not announced to customers
