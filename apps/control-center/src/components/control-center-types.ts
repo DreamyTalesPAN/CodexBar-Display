@@ -461,6 +461,8 @@ export type UsageWindowInfo = {
   usedPercent: number;
   resetSecs?: number;
   windowMinutes?: number;
+  willLastToReset?: boolean;
+  etaSeconds?: number;
 };
 
 export type UsageStatusInfo = {
