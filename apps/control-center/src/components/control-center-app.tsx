@@ -1127,7 +1127,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         lastSavedStandbyRef.current = payload.settings?.standby ?? null;
         setStandby(payload.settings?.standby ?? null);
       }
-      if (payload.device) {
+      // Its active theme is the old VibeTV's too: it must not choose the
+      // theme shown as selected for the VibeTV connected now (Codex review of
+      // #645).
+      if (sameDevice && payload.device) {
         const activeLiveTheme = resolveActiveLiveTheme(
           catalog.themes,
           payload.device,

@@ -7563,3 +7563,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: in dark mode the link "Turn on in Settings" in the "Screensaver is off." line under Appearance › Screensavers hovers in the light olive #A9C76A, 4.92:1 on the dark grey #444933, instead of olive #506600 with 1.44:1. Light mode is unchanged: olive #506600 on hover, 5.58:1. Same text, same place, same action. The Control Center does not switch dark mode on today, so customers see no change yet.
 - Scope: `theme-library-screen.tsx`, its test and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — a colour fix of an existing link, not announced to customers
+
+## 2026-10-19 — #674: Codex review fix of #645, a late settings answer for another VibeTV no longer chooses the selected theme (no visible change)
+
+- User approval: Codex review finding on #645 (`1a568a04`); Marcus, via the orchestrator on 2026-10-19: fix it in #674 with a unit test, without a new device test, because this path never runs with one VibeTV.
+- Approved customer-visible result: none with one VibeTV. When another VibeTV connects while a read of the first one's settings is still on its way, that late answer no longer marks the first VibeTV's active theme as selected under Appearance › Themes; the selection follows the VibeTV connected now, as Brightness and the Settings screensaver switch already do.
+- Scope: `readSettings` in `apps/control-center/src/components/control-center-app.tsx`, its test in `control-center-app.display-preferences.test.tsx`, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — review fix, no customer-visible change

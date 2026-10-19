@@ -966,6 +966,60 @@ it("keeps Brightness dropped when a read for the first VibeTV answers after anot
   expect(window.settingsWrites()).toEqual([]);
 });
 
+it("keeps the new VibeTV's theme selected when a read for the first VibeTV answers late", async () => {
+  const live = (themeId: string, title: string) => ({
+    id: themeId,
+    themeId,
+    title,
+    themeSpecPath: `/themes/u/${themeId}-1-000000.json`,
+    usage: "live",
+  });
+  const window = startWindow([live("codex", "Codex"), live("gauge", "Gauge")]);
+  await window.wait(10);
+  const hold = () => {
+    let answer = () => {};
+    const held = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    return { held, answer };
+  };
+  const other = { ...device, deviceId: "16198106", target: "http://192.168.178.183", activeTheme: "gauge" };
+
+  // The Mac App is connected to another VibeTV that shows Gauge; the status
+  // that says so is on its way while a read of the first VibeTV's settings is
+  // on its way too.
+  const status = hold();
+  window.companion.holdStatus = status.held;
+  window.companion.device = other;
+  await window.wait(5);
+  window.companion.holdStatus = null;
+  const firstRead = hold();
+  window.companion.holdSettingsRead = firstRead.held;
+  await openScreensavers(window);
+  await openSettings(window);
+  const secondRead = hold();
+  window.companion.holdSettingsRead = secondRead.held;
+  status.answer();
+  await window.wait(1);
+
+  // The new VibeTV's own answer comes first and selects Gauge.
+  secondRead.answer();
+  await window.wait(1);
+  // The first VibeTV's answer, which names Codex, arrives late and is ignored.
+  window.companion.settingsAnswerDevice = device;
+  firstRead.answer();
+  await window.wait(1);
+  window.companion.settingsAnswerDevice = null;
+
+  // No later read may answer and hide the result.
+  window.companion.holdSettingsRead = new Promise<void>(() => {});
+  fireEvent.click(screen.getByRole("button", { name: "Themes" }));
+  await window.wait(1);
+  const row = (themeId: string) => document.getElementById(`catalog-theme-${themeId}`);
+  expect(row("gauge")?.dataset.variant).toBe("muted");
+  expect(row("codex")?.dataset.variant).toBe("outline");
+});
+
 it("keeps the display mode cards focused while the mode is saved", async () => {
   const window = startWindow();
   window.companion.providers = [claude];
