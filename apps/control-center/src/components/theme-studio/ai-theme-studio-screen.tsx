@@ -41,8 +41,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { SETUP_REVEAL } from "../setup/setup-reveal";
-import { cn } from "@/lib/utils";
+import { ProcessSteps } from "../process-steps";
 import { EditableThemePreview } from "./editable-theme-preview";
 import { OpenAIKeyForm, openAIState } from "./openai-key-form";
 import { friendlyElementName } from "./theme-studio-customer-labels";
@@ -1479,10 +1478,8 @@ export function AIThemeStudioScreen({
                 <>
                   {userTurn(asking, askingImages)}
                   {progress.words.length ? (
-                    <div aria-hidden className="font-mono text-[13px] leading-6">
-                      <div key={progress.at} className={cn("text-muted-foreground", SETUP_REVEAL)}>
-                        <span>&gt; {progress.words[progress.at % progress.words.length]}</span>
-                      </div>
+                    <div aria-hidden>
+                      <ProcessSteps variant="single" steps={[{ id: String(progress.at), text: progress.words[progress.at % progress.words.length] }]} />
                     </div>
                   ) : null}
                   {/* Announces each real step once, not every word. */}
