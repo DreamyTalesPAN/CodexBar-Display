@@ -599,7 +599,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // Its start time keys the incident; null while there is none.
   const [systemBusySince, setSystemBusySince] = useState<string | null>(null);
   const [systemBusyDismissed, dismissSystemBusy] = useSystemBusyDismissal(systemBusySince);
-  // "Run setup again" asks first, from Settings and from Support alike.
+  // "Run setup again" asks first, from Settings and from the not-found dialog alike.
   const [setupAgainRequested, setSetupAgainRequested] = useState(false);
   const [vibetvNotFoundDismissed, setVibetvNotFoundDismissed] = useState(false);
   // The "What's new" entries this customer has seen, null while nothing is
@@ -5669,9 +5669,21 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                 companionStatus={companionStatus}
                 device={device}
                 displayFrame={displayFrame}
-                firmwareUpdateAvailable={firmwareUpdateAvailable}
+                firmwareUpdate={
+                  firmwareUpdateAvailable
+                    ? "available"
+                    : effectiveFirmwareUpdate?.status === "current"
+                      ? "current"
+                      : undefined
+                }
                 firmwareUpdateStatus={firmwareUpdateStatus}
-                macAppUpdateAvailable={macAppUpdateAvailable}
+                macAppUpdate={
+                  macAppUpdateAvailable
+                    ? "available"
+                    : companionRelease?.status === "available"
+                      ? "current"
+                      : undefined
+                }
                 notice={overviewNotice.notice}
                 onCloseNotice={overviewNotice.close}
                 themes={catalog.themes}
@@ -5817,15 +5829,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         {activeShellTab === "logs" ? (
           <LogsScreen
             busyAction={busyAction}
-            device={device}
-            themes={catalog.themes}
             diagnostics={supportDiagnostics}
             events={logs}
             lastError={errorForHost(lastError, windowsHost)}
             onLoadDiagnostics={loadSupportDiagnostics}
             onRefresh={checkCompanion}
             onRepairUsageEngine={retryUsageService}
-            onRunSetupAgain={() => setSetupAgainRequested(true)}
             repairingUsageEngine={busyAction === "usage-service-repair"}
             supportReportBusy={supportReportBusy}
             windowsHost={windowsHost}

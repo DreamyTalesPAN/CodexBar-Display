@@ -730,15 +730,21 @@ it("lets the customer's own question come before a busy computer", async () => {
   const question = () => screen.queryByRole("dialog", { name: "Run setup again?" });
   expect(busyDialog()).not.toBeNull();
 
-  fireEvent.click(screen.getByRole("button", { name: "Support" }));
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   await app.wait(1);
-  fireEvent.click(screen.getByRole("button", { name: "Run setup again" }));
+  fireEvent.click(screen.getByRole("button", { name: "Run setup" }));
   await app.wait(1);
   expect(question()).not.toBeNull();
   expect(busyDialog()).toBeNull();
 
   // Answered, the busy computer is told again: the customer never closed it.
+  // (This fixture has no preferences route, so Settings shows its own
+  // "Request failed" dialog; that one comes first and is closed here.)
   fireEvent.click(within(question()!).getByRole("button", { name: "Cancel" }));
+  await app.wait(1);
+  fireEvent.click(
+    within(screen.getByRole("dialog", { name: "Request failed." })).getByRole("button", { name: "OK" }),
+  );
   await app.wait(1);
   expect(busyDialog()).not.toBeNull();
 });
