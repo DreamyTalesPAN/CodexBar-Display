@@ -211,6 +211,14 @@ export function UpdatesScreen({
         firmwareUpdate.status,
       ),
   );
+  // The Mac App check answered, but not with "available" (disabled, or no
+  // asset to install): that does not establish the app is current either.
+  const macAppNoAnswer = Boolean(
+    macAppRunning &&
+      companionRelease &&
+      companionRelease.status !== "available" &&
+      !macAppCheckFailed,
+  );
   const pageStatusHeading =
     installingUpdate
       ? updateStatus?.stage === "rebooting" ||
@@ -227,7 +235,7 @@ export function UpdatesScreen({
           ? "Update available"
           : checkingUpdates
             ? "Checking for updates"
-            : firmwareNoAnswer
+            : firmwareNoAnswer || macAppNoAnswer
               ? "No update available"
               : "Everything is up to date";
   const headingTone: Tone = installingUpdate
@@ -300,11 +308,19 @@ export function UpdatesScreen({
       </Button>
     ) : null;
 
+  // A firmware answer counts as a finished check even without a release
+  // version (no release for this board, or the current version).
+  const firmwareCheckAnswered = Boolean(
+    firmwareUpdate &&
+      ["current", "update_available", "no_board_release"].includes(
+        firmwareUpdate.status,
+      ),
+  );
   const checkedText = lastCheckedText(
     companionRelease?.status === "available"
       ? companionRelease.checkedAt
       : undefined,
-    firmwareUpdate?.latestFirmware ? firmwareUpdate.checkedAt : undefined,
+    firmwareCheckAnswered ? firmwareUpdate?.checkedAt : undefined,
   );
   const whatsNewTitle =
     companionStatus === "online" && companionInstalled !== "Unknown"
@@ -371,7 +387,9 @@ export function UpdatesScreen({
                   ? "failed"
                   : checkingMacApp
                     ? "checking"
-                    : "ok"
+                    : macAppNoAnswer
+                      ? undefined
+                      : "ok"
           }
           title={windowsHost ? "App" : "Mac App"}
           version={companionInstalled}

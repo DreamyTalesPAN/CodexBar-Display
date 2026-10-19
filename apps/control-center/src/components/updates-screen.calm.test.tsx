@@ -285,6 +285,38 @@ describe("calm Updates screen", () => {
     expect(screen.getByRole("dialog", { name: "Could not check for updates" })).toBeTruthy();
   });
 
+  it("a disabled Mac App check is never shown as up to date", () => {
+    render(
+      <UpdatesScreen
+        {...upToDate}
+        companionRelease={{ ...upToDate.companionRelease!, status: "disabled", updateAvailable: false }}
+      />,
+    );
+    expect(screen.queryByText("Up to date")).toBeNull();
+    expect(screen.queryByText("Everything is up to date")).toBeNull();
+    expect(screen.getByText("No update available")).toBeTruthy();
+  });
+
+  it("a firmware answer without a release counts as the last check", () => {
+    const now = new Date();
+    const firmwareAt = new Date(now.getTime() - 60_000);
+    const macAt = new Date(now.getTime() - 3 * 3_600_000);
+    const { container } = render(
+      <UpdatesScreen
+        {...upToDate}
+        companionRelease={{ ...upToDate.companionRelease!, checkedAt: macAt.toISOString() }}
+        firmwareUpdate={{
+          checkedAt: firmwareAt.toISOString(),
+          status: "no_board_release",
+          installedFirmware: "1.0.48",
+          updateAvailable: false,
+        }}
+      />,
+    );
+    const time = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(firmwareAt);
+    expect(container.textContent).toContain(time);
+  });
+
   it("failed check: waits while another dialog is open and while a retry runs", () => {
     const failed = {
       ...upToDate,
