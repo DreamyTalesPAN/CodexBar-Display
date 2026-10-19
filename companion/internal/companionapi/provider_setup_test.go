@@ -1181,3 +1181,18 @@ func TestOnlyChecksNobodyAskedForReadTheServeReading(t *testing.T) {
 		t.Fatal("Run diagnostics must ask the provider, not repeat the serve reading")
 	}
 }
+
+// The popup offers the sign-in only for the providers the Companion can start
+// (providerSignInLaunches); the codexbar package keeps the same list for its
+// sentences, so both must name the same providers.
+func TestSignInStartableProvidersAreTheOnesWithALaunch(t *testing.T) {
+	ids := codexbar.SignInStartableProviderIDs()
+	if len(ids) != len(providerSignInLaunches) {
+		t.Fatalf("sentence list %v, launches %d", ids, len(providerSignInLaunches))
+	}
+	for _, id := range ids {
+		if _, ok := providerSignInLaunches[id]; !ok {
+			t.Fatalf("%s is named as sign-in startable but has no launch", id)
+		}
+	}
+}
