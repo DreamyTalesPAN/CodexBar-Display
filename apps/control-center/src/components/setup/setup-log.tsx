@@ -47,6 +47,14 @@ export function SetupLog({
   const lastId = lines[lines.length - 1]?.id;
   // How many "Still …" lines each step has got, keyed by the step's line id.
   const [stillCounts, setStillCounts] = useState<Record<string, number>>({});
+  // A retry reuses the step's id: a step that starts running again counts from zero.
+  const [prevRun, setPrevRun] = useState({ id: lastId, running });
+  if (prevRun.id !== lastId || prevRun.running !== running) {
+    setPrevRun({ id: lastId, running });
+    if (running && lastId !== undefined) {
+      setStillCounts((counts) => ({ ...counts, [lastId]: 0 }));
+    }
+  }
 
   useEffect(() => {
     if (!stillLines || !running || lastId === undefined) {
@@ -115,14 +123,14 @@ export function SetupLog({
 /**
  * "Refreshing display stream." becomes "Still refreshing display stream – hang
  * tight." Only the last sentence counts ("Upload interrupted. Retrying." reads
- * "retrying"), and a " · " or " — " tail (a percentage, a version) is left out,
+ * "retrying"), a tail after ": ", " · " or " — " (a percentage, a version) is left out,
  * so the line does not go stale as that number changes. A dot inside a number
  * ("192.168") is kept. A past-tense text ("Uploaded theme layout.") says
  * nothing about what is running, so it gets the generic line.
  */
 function stillText(text: string): string {
   const sentences = text.replace(/\.$/, "").split(/\. /);
-  const step = sentences[sentences.length - 1].split(/ · | — /)[0];
+  const step = sentences[sentences.length - 1].split(/: | · | — /)[0];
   if (!step || /\b\w+ed\b/i.test(step)) {
     return "Still working on it – hang tight.";
   }

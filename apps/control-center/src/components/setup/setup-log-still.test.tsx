@@ -190,4 +190,33 @@ describe("SetupLog while a step runs long", () => {
 
     expect(stillRows(container)).toEqual([]);
   });
+  it("counts a retried step from zero, not from the failed attempt", () => {
+    const { container, rerender } = render(
+      <SetupLog lines={running} running />,
+    );
+    advance(16000);
+    expect(stillRows(container)).toHaveLength(2);
+
+    rerender(<SetupLog lines={running} running={false} />);
+    rerender(<SetupLog lines={running} running />);
+    expect(stillRows(container)).toEqual([]);
+
+    advance(8000);
+    expect(stillRows(container)).toHaveLength(1);
+  });
+
+  it("drops the percentage of a colon-style progress text", () => {
+    const { container } = render(
+      <SetupLog
+        lines={[{ id: "fw", text: "Updating VibeTV: 40%." }]}
+        running
+      />,
+    );
+
+    advance(8000);
+
+    expect(stillRows(container)).toEqual([
+      "> Still updating VibeTV – hang tight.",
+    ]);
+  });
 });

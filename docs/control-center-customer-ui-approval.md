@@ -7825,3 +7825,10 @@ issue scope, or release permission never implies UI permission.
   Before → after, example: theme install, "> Refreshing display stream." with a blinking black block after it → "> Refreshing display stream." then after 8 s "> Still refreshing display stream – hang tight.", after 16 s a second identical line, no block.
 - Scope: `apps/control-center/src/components/setup/setup-log.tsx`, `apps/control-center/src/components/setup/setup-log.test.tsx`, `apps/control-center/src/components/setup/setup-log-still.test.tsx` (new), `apps/control-center/src/components/setup/setup-providers-screen.tsx` (opt-out only), `apps/control-center/src/components/control-center-app.tsx` (comment only), `apps/control-center/src/app/globals.css` (unused caret keyframe removed). Pull request branch only, not merge or release.
 - What's new: none — step-line change only, no release-note item.
+
+## 2026-10-19 — Step lists: Codex review fix for the Still lines (no new approval)
+
+- User approval: none for this fix itself. It narrows the approved result of the entry "Step lists: "Still … – hang tight." lines and no cursor block" above; Paul has not seen it separately.
+- Approved customer-visible result: as in the entry above, plus two details: a progress text with a colon ("Updating VibeTV: 40%.") gives "> Still updating VibeTV – hang tight." without the percentage, and a step that is retried starts its Still lines from zero.
+- Scope: `apps/control-center/src/components/setup/setup-log.tsx`, `apps/control-center/src/components/setup/setup-log-still.test.tsx`. Pull request branch only, not merge or release.
+- What's new: none — review fix inside the approved step-line change.
