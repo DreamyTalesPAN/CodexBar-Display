@@ -9609,3 +9609,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: before → after: in a window narrower than 1024 px (where the left column scrolls and the preview sits at its top) the Details panel was squeezed to a few pixels high under the preview; after: it takes the height it needs under the preview and the column scrolls. In the wide layout nothing changes: the preview stays centred, Details uses the free space below it and scrolls inside itself, never over the preview.
 - Scope: `apps/control-center/src/components/theme-studio/editable-theme-preview.tsx` (one class), its test, and this record. Pull request branch only, not merge or release.
 - What's new: none — layout refinement of the Theme Studio, no new feature
+## 2026-10-19 — #780: Setup matched to the template (build 2 QA)
+
+- User approval: pending — Paul reviews (#780 matched to the approved template, build 2 QA); look unchanged except, each one before → after: (1) provider names in the Setup list are 13 px semibold → before 14 px; (2) in a provider row the red "Sign in needed" stands 16 px from the switch → before 8 px; (3) the IP address field in "Enter IP address" uses the normal text font → before a monospace font.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/setup/setup-provider-row.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content

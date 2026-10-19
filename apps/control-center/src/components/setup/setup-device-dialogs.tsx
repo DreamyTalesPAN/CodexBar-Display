@@ -91,7 +91,6 @@ function SetupAddressDialogForm({
         <Input
           aria-invalid={error ? true : undefined}
           autoComplete="off"
-          className="font-mono"
           id="setup-device-address"
           inputMode="decimal"
           onChange={(event) => {

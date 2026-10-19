@@ -151,14 +151,14 @@ export function SetupProviderRow({
       <ItemContent>
         <ItemTitle
           className={cn(
-            calm ? "font-semibold" : "text-[13px] font-semibold",
+            "text-[13px] font-semibold",
             noUsage && "text-muted-foreground",
           )}
         >
           {label}
         </ItemTitle>
       </ItemContent>
-      <ItemActions>
+      <ItemActions className={calm ? "gap-4" : undefined}>
         {action ? (
           <button
             aria-label={`${action} for ${label}`}
