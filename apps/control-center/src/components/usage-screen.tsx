@@ -229,7 +229,6 @@ export function UsageScreen({
       {usageErrorDialogOpen && usageError ? (
         <SetupDialog
           description={usageError.nextAction}
-          icon={AlertTriangle}
           onOpenChange={(open) => {
             if (!open) onDismissUsageError?.();
           }}
@@ -249,7 +248,6 @@ export function UsageScreen({
               : undefined
           }
           title={usageError.message}
-          tone="error"
         />
       ) : null}
       {tokenHistoryDialogOpen ? (
@@ -263,7 +261,6 @@ export function UsageScreen({
                 )
               : "Complete local token history is not available for every selected provider. Available usage limits are shown below."
           }
-          icon={Info}
           onOpenChange={(open) => {
             if (!open) onDismissTokenHistory?.();
           }}
@@ -283,7 +280,6 @@ export function UsageScreen({
               : undefined
           }
           title="Token history is unavailable"
-          tone="neutral"
         />
       ) : null}
     </div>
