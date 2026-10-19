@@ -681,7 +681,7 @@ export function ThemeLibraryScreen({
         </div>
         <Button onClick={() => openInEditor(openBlankTheme)} type="button">
           <Plus data-icon="inline-start" aria-hidden />
-          <span>{screensavers ? "Create Screensaver" : "Create Theme"}</span>
+          <span>{screensavers ? "Create screensaver" : "Create theme"}</span>
         </Button>
       </section>
 

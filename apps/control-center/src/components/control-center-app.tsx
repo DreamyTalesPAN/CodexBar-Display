@@ -47,6 +47,7 @@ import {
   launchCodexBarRepair,
   nativeProviderShortcut,
   needsLoopbackTargetAddressSpace,
+  openMacAppUpdatePrompt,
   readBrowserSignIn,
   repairLocalControlCenterRuntime,
   restartLocalControlCenterApp,
@@ -4650,12 +4651,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       return;
     }
     macAppUpdatePromptedFor.current = macAppUpdateOfferedVersion;
-    // The Mac App runs a background Sparkle check for this prompt: it shows a
-    // dialog only when Sparkle finds the update, never "You're up to date"
-    // in the middle of setup (#570). Windows keeps its own check.
-    window.location.href = windowsHost
-      ? "vibetv://check-for-updates"
-      : "vibetv://check-for-updates-in-background";
+    openMacAppUpdatePrompt(windowsHost);
   }, [
     firmwareUpdateInProgress,
     hostedSetup,

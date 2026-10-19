@@ -25,7 +25,7 @@ import type {
 import { candidateKey, type SetupTransport } from "./setup-connection";
 import { SetupDeviceCard } from "./setup-device-card";
 import { SetupCableHelpDialog } from "./setup-device-dialogs";
-import { selectedItemClass } from "./setup-selectable-card";
+import { moveAmongRadios, selectedItemClass } from "./setup-selectable-card";
 import { cn } from "@/lib/utils";
 import type { ConnectPhase } from "./setup-connect-log";
 import { SetupLog, type SetupLogLine } from "./setup-log";
@@ -147,6 +147,10 @@ export function SetupDeviceScreen({
       : connecting && !showCandidates
         ? "Connecting to VibeTV"
         : "Choose your VibeTV";
+  // The Tab stop of the group: the selected VibeTV, or the first one.
+  const selectedIndex = candidates.findIndex(
+    (candidate) => candidateKey(candidate) === selectedTarget,
+  );
   return (
     <SetupWizardScreen
       label="Choose your VibeTV"
@@ -372,14 +376,16 @@ export function SetupDeviceScreen({
         <ItemGroup
           aria-label={transport ? `VibeTVs found ${transport === "cable" ? "by Cable" : "on your WiFi"}` : "VibeTVs found"}
           className="mt-4 gap-3"
+          onKeyDown={moveAmongRadios}
           role="radiogroup"
         >
-          {candidates.map((candidate) => (
+          {candidates.map((candidate, index) => (
             <SetupDeviceCard
               candidate={candidate}
               key={`${candidate.deviceId || "legacy"}-${candidate.target}`}
               onSelect={() => onSelect(candidate)}
               selected={selectedTarget === candidateKey(candidate)}
+              tabStop={index === Math.max(selectedIndex, 0)}
             />
           ))}
         </ItemGroup>

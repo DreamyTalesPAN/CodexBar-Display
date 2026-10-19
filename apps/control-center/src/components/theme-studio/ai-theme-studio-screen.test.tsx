@@ -242,6 +242,25 @@ describe("Theme Studio reference images", () => {
     expect(within(log).getByText("A tiny office at dusk")).toBeTruthy();
   });
 
+  it("keeps only a 96 px thumbnail of the image in the finished turn, while the AI gets the full picture", async () => {
+    globalThis.createImageBitmap = vi.fn(async () => ({ width: 1536, height: 1024, close: () => {} })) as unknown as typeof createImageBitmap;
+    HTMLCanvasElement.prototype.getContext = vi.fn(() => ({ drawImage: () => {} })) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+    // The data says how large each canvas was, so the test can read the size back.
+    HTMLCanvasElement.prototype.toDataURL = vi.fn(function (this: HTMLCanvasElement) {
+      return `data:image/png;base64,W${this.width}x${this.height}`;
+    }) as unknown as typeof HTMLCanvasElement.prototype.toDataURL;
+    vi.mocked(planAIThemeLayout).mockResolvedValue({ mode: "answer", notes: "Here is my answer." } as unknown as Awaited<ReturnType<typeof planAIThemeLayout>>);
+    render(<AIThemeStudioScreen />);
+    await attachPicture();
+    await sendIdea();
+    await screen.findByText("Here is my answer.");
+
+    expect(vi.mocked(planAIThemeLayout).mock.calls[0][3]).toEqual(["W768x512"]);
+    const bubble = within(screen.getByRole("log", { name: "Conversation" })).getByRole("img", { name: "IMG_2454.png" });
+    expect(bubble.style.backgroundImage).toContain("W96x64");
+    expect(bubble.style.backgroundImage).not.toContain("W768x512");
+  });
+
   it("gives the image back to the composer when the customer cancels", async () => {
     stubImageDecoding();
     vi.mocked(planAIThemeLayout).mockReturnValue(new Promise(() => {}));

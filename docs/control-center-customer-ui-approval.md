@@ -7571,6 +7571,54 @@ issue scope, or release permission never implies UI permission.
 - Scope: `readSettings` in `apps/control-center/src/components/control-center-app.tsx`, its test in `control-center-app.display-preferences.test.tsx`, and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — review fix, no customer-visible change
 
+## 2026-10-16 — Small fixes from the 13.10. batch, carried from #603 (#566, #579, #418)
+
+- User approval: Carried from the overnight batch of 13.10. (#603), which Paul's blanket approval for that night covered; not yet seen by him in this form.
+- Approved customer-visible result: Four visible changes. (1) Support, usage engine source: the source of the engine that comes with the Mac App now reads "Included with the app" instead of "Managed by VibeTV". (2) Appearance: the create buttons read "Create theme" and "Create screensaver" instead of "Create Theme" and "Create Screensaver". (3) A slider: a click right beside the round handle moves it there. (4) Sidebar: clicking the tab that is already open scrolls the page back to its top. The Overview image beside the VibeTV photo has a softer shadow that fades out instead of ending in a hard edge. The Mac App update prompt keeps its current behaviour and URLs; only its tests and a wrapper function are added. The Windows docs note (#418) is documentation only.
+- Scope: `apps/control-center/src/components/` (`control-center-app.tsx`, `control-center-runtime.ts`, `control-center-shell.tsx`, `diagnostics-panel.tsx`, `theme-library-screen.tsx`, `ui/slider.tsx`, their tests), `apps/control-center/public/images/vibetv-device-overview-cutout.png`, `apps/control-center/scripts/test-customer-flows.mjs` (expectations for the two button labels only), `docs/windows-shell.md`, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — small fixes; the only wording changes are the two create-button labels and the engine source line above
+
+## 2026-10-16 — #677: Codex review fix, the open Appearance entry starts over at the top (no visible change)
+
+- User approval: Codex review fix, no visible change; not seen by Paul.
+- Approved customer-visible result: none. Clicking Appearance while it is open still toggles its submenu and now also scrolls the page to the top, as the other sidebar entries already do; no wording, layout or control changes.
+- Scope: `ShellNavButton` in `apps/control-center/src/components/control-center-shell.tsx`, its test in `control-center-shell.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix, no customer-visible change
+
+## 2026-10-17 — #677: Paul approves the look of the small fixes (refers to the pending entry of 2026-10-16, "Small fixes from the 13.10. batch")
+
+- User approval: Paul approved 17.10. (via the communicator): "Create theme"/"Create screensaver", "Included with the app", the soft shadow beside the VibeTV photo. Functional test still open.
+- Approved customer-visible result: the three items named in the user approval above, as described in the pending entry: the create buttons read "Create theme" and "Create screensaver"; the engine source line reads "Included with the app"; the Overview image beside the VibeTV photo has the softer shadow that fades out. The slider and sidebar items of that pending entry are not named in this approval and stay open.
+- Scope: this approval record only; no code change in this entry. Pull request branch only, not merge or release.
+- What's new: none — approval record
+
+## 2026-10-19 — #677: approval marker after merging main with #645
+
+- User approval: Marcus passed the click test of #677 on 2026-10-19 (build 99.0.1148, head f27b888d) without remarks; it covered all five items of the 2026-10-16 entry, including the slider and sidebar items that stayed open after Paul's approval. Main moved on with #645 while the branch was in review, so main is merged in (orchestrator, Paul not active). The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #677 entries above and the #645 entries from main. Appearance › Screensavers shows "Create screensaver" together with #645's "Screensaver is off." line; nothing else changes.
+- Scope: the merge of main into this branch, the Screensavers expectation in `theme-library-screen.test.tsx` (both sides kept) and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — #677: approval marker after merging main with #674
+
+- User approval: as in the marker entry above (Marcus's click test of #677 on 2026-10-19). Main moved on with #674 right after #645, so main is merged in again (orchestrator, Paul not active). The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. The conflict was only in this record; both sides are kept. No new wording.
+- Approved customer-visible result: as approved in the #677 entries above and the #645 and #674 entries from main; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — Setup: arrow keys move between choices and through the Help menu (#214)
+- User approval: Carried from the overnight batch of 13.10. (#603), which Paul's blanket approval for that night covered; not yet seen by him in this form.
+- Approved customer-visible result: no visible change. Keyboard only: in setup, Tab reaches each group of choices (VibeTVs, themes) once, and the arrow keys move between the choices and select the one they reach. In the Help menu, focus moves into the menu when it opens, the arrow keys, Home and End move between its entries, focus stays in the menu after an entry was used, and Escape returns focus to Help.
+- Scope: `apps/control-center/src/components/setup/setup-help-menu.tsx`, `setup-help-menu-log.test.tsx`, `setup-choice-keyboard.test.tsx`, `setup-selectable-card.tsx`, `setup-device-card.tsx`, `setup-device-dialogs.tsx`, `setup-device-screen.tsx`, `setup-theme-screen.tsx`, `docs/control-center-accessibility.md` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — keyboard handling only, no new capability
+
+## 2026-10-19 — #676: approval marker after merging main up to #677
+
+- User approval: the orchestrator on 2026-10-19, for Marcus: merge main into this branch after #677 (merge order for this file: #645 > #674 > #677 > #676 > #681) and keep both sets of entries. Marcus' click test of #676 runs on the head that carries this merge. The UI review gate cannot read a merge commit as approval, so this entry marks it.
+- Approved customer-visible result: as recorded in the "Setup: arrow keys move between choices and through the Help menu" entry above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — merge of main, no customer-visible change of its own
+
 ## 2026-10-15 — Marcus confirms the Theme Studio pack in the real Mac App (#633, #634, #582)
 
 - User approval: Marcus tested the local build 9999.0.638 of `8a65e29b` on 2026-10-15 in the real Mac App with VibeTV on the cable and reported #550, #549, #633, #634 and #582 as working; he confirmed the three step texts of #634.
@@ -7690,6 +7738,13 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the Theme Studio AI row in Settings shows only its status ("Connected" / "Not connected") and its key button, under the section label "Theme Studio AI". The key dialog keeps its title.
 - Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx` (the row), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — refinement of #638
+
+## 2026-10-19 — #638: finished turns keep only small thumbnails (Codex review fix, no visible change)
+
+- User approval: Codex review fix, no visible change; not seen by Paul.
+- Approved customer-visible result: unchanged. The image bubble of a finished turn still shows the picture at the same 40 px size; only the kept copy is now a 96 px thumbnail instead of the full 768 px picture.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no customer-visible change
 
 ## 2026-10-17 — Process steps look like the Setup Wizard log
 

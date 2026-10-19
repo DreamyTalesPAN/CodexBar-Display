@@ -79,7 +79,7 @@ function renderLibrary(props: Partial<ThemeLibraryScreenProps> = {}) {
 it("asks before a new theme takes the place of an older unsaved draft", async () => {
   renderLibrary();
   await screen.findByText("Continue your unsaved theme");
-  fireEvent.click(screen.getByRole("button", { name: "Create Theme" }));
+  fireEvent.click(screen.getByRole("button", { name: "Create theme" }));
   expect(screen.getByRole("alertdialog", { name: "Replace your changes?" })).toBeTruthy();
   expect(
     screen.getByText("Draft keep me has changes that are not saved. What you open takes its place."),
@@ -91,7 +91,7 @@ it("asks before a new theme takes the place of an older unsaved draft", async ()
   expect(stored.cleared).toBe(0);
   expect(screen.getByText("Continue your unsaved theme")).toBeTruthy();
 
-  fireEvent.click(screen.getByRole("button", { name: "Create Theme" }));
+  fireEvent.click(screen.getByRole("button", { name: "Create theme" }));
   fireEvent.click(screen.getByRole("button", { name: "Replace" }));
   expect(stored.cleared).toBe(1);
   expect(screen.getByText("Editor open")).toBeTruthy();
@@ -160,8 +160,8 @@ it("leaves the editor and the draft alone when a theme arrives after something e
   await screen.findByText("Continue your unsaved theme");
   fireEvent.click(screen.getByRole("button", { name: "Edit" }));
   fireEvent.click(screen.getByRole("button", { name: "Replace" }));
-  // Create Theme is still there while the row loads.
-  fireEvent.click(screen.getByRole("button", { name: "Create Theme" }));
+  // Create theme is still there while the row loads.
+  fireEvent.click(screen.getByRole("button", { name: "Create theme" }));
   fireEvent.click(screen.getByRole("button", { name: "Replace" }));
   expect(screen.getByText("Editing New Theme")).toBeTruthy();
   expect(stored.cleared).toBe(1);
@@ -174,7 +174,7 @@ it("leaves the editor and the draft alone when a theme arrives after something e
 it("opens a new theme at once when no unsaved draft waits", () => {
   stored.recovery = false;
   renderLibrary();
-  fireEvent.click(screen.getByRole("button", { name: "Create Theme" }));
+  fireEvent.click(screen.getByRole("button", { name: "Create theme" }));
   expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(screen.getByText("Editor open")).toBeTruthy();
 });
@@ -212,7 +212,7 @@ it.each([
   if (reason) {
     expect(install.disabled).toBe(true);
   }
-  fireEvent.click(screen.getByRole("button", { name: "Create Screensaver" }));
+  fireEvent.click(screen.getByRole("button", { name: "Create screensaver" }));
   expect(screen.getByText("Editor open")).toBeTruthy();
   const send = stored.studioInstall?.({
     assets: {}, packName: "Mine", spec: createBlankThemeSpec(), usage: "screensaver",
