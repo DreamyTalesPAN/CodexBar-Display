@@ -190,6 +190,8 @@ export function setupProviderDialogSentence(
 export const acknowledgedProviderIssues = new Map<string, string>();
 
 type ProviderListProps = {
+  /** The Setup Wizard's calm look (variant B); Settings keeps its own. */
+  calm?: boolean;
   className?: string;
   onCheckAgain: (provider: ProviderItem) => void;
   onOpenSignIn?: (provider: ProviderItem) => void;
@@ -214,6 +216,7 @@ type ProviderListProps = {
  * and the two drifted apart in copy and in behaviour.
  */
 export function ProviderList({
+  calm = false,
   className,
   onCheckAgain,
   onOpenSignIn,
@@ -361,6 +364,7 @@ export function ProviderList({
       <ItemGroup className="mt-3 gap-2">
         {visible.map((provider) => (
           <SetupProviderRow
+            calm={calm}
             checking={pendingCheckIds.has(provider.providerId)}
             enabled={provider.value}
             health={
@@ -465,6 +469,7 @@ export function SetupProvidersScreen({
       <SetupWizardTitle className={CALM_TITLE_CLASS}>Choose AI providers</SetupWizardTitle>
 
       <ProviderList
+        calm
         className="mt-4"
         onCheckAgain={onCheckAgain}
         onOpenSignIn={onOpenSignIn}

@@ -85,6 +85,8 @@ type SetupProviderRowProps = {
    * while the rest are still on their way -- reopening Continue on a gate that
    * has not been satisfied, and repeating the sign-in work behind the check.
    */
+  /** The Setup Wizard's calm look (variant B); Settings keeps its own. */
+  calm?: boolean;
   checking?: boolean;
   enabled: boolean;
   health: PreferenceHealthState;
@@ -110,6 +112,7 @@ type SetupProviderRowProps = {
 };
 
 export function SetupProviderRow({
+  calm = false,
   checking = false,
   enabled,
   health,
@@ -140,7 +143,9 @@ export function SetupProviderRow({
       variant="outline"
     >
       <ItemContent>
-        <ItemTitle className={cn("font-semibold", unusable && "opacity-50")}>
+        <ItemTitle
+          className={cn(calm && "font-semibold", unusable && "opacity-50")}
+        >
           {label}
         </ItemTitle>
       </ItemContent>
@@ -182,7 +187,10 @@ export function SetupProviderRow({
             mistake must be switchable off without signing in first (#647). */}
         <Switch
           aria-label={label}
-          className="data-[size=default]:h-5! data-[size=default]:w-[34px]! data-checked:[&_[data-slot=switch-thumb]]:translate-x-[16px]!"
+          className={cn(
+            calm &&
+              "data-[size=default]:h-5! data-[size=default]:w-[34px]! data-checked:[&_[data-slot=switch-thumb]]:translate-x-[16px]!",
+          )}
           checked={enabled}
           disabled={saving}
           onCheckedChange={onToggle}

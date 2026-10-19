@@ -7546,3 +7546,11 @@ issue scope, or release permission never implies UI permission.
 - Visible text: none changed.
 - Scope: `apps/control-center/src/components/setup/mac-app-download-screen.tsx`, its test `mac-app-download-screen.test.tsx` (one look test), and this approval record. Stacked on #747. Pull-request branch only, not merge or release.
 - What's new: none — layout and type only, no new capability
+
+## 2026-10-19 — Setup B group: calm look scoped to the Setup Wizard (Codex fix on the group PR)
+
+- User approval: pending — Paul reviews this group (parts: #747 #751 #756 #757 #760); no visible change in Setup compared with the entries above.
+- Approved customer-visible result: none yet; Settings › Display mode and Settings › AI providers keep the look they have on main (plain check, previous paddings and type, 32×18 switch). The round marks, paddings, semibold titles and 34×20 switch apply to the Setup Wizard only.
+- Visible text: none changed.
+- Scope: `apps/control-center/src/components/setup/setup-display-mode-screen.tsx`, `setup-provider-row.tsx`, `setup-providers-screen.tsx` (optional `calm` flag set by the Setup screens), `setup-selectable-card.tsx` (plain check kept for Settings), and two tests.
+- What's new: none — scope fix after a Codex finding, no new capability

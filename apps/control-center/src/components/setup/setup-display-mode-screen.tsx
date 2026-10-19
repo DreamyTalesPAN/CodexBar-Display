@@ -15,7 +15,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { SETUP_REVEAL } from "./setup-reveal";
-import { SelectionDot, selectedItemClass } from "./setup-selectable-card";
+import { SelectionCheck, SelectionDot, selectedItemClass } from "./setup-selectable-card";
 import {
   CALM_SUBTITLE_CLASS,
   CALM_TITLE_CLASS,
@@ -105,6 +105,7 @@ export function SetupDisplayModeScreen({
       <DisplayModeChoice
         automaticPreview={automaticPreview}
         automaticPreviews={automaticPreviews}
+        calm
         className="mt-8"
         manualPreview={manualPreview}
         mode={mode}
@@ -156,6 +157,8 @@ type DisplayModeChoiceProps = Pick<
 > & {
   /** Settings says so when Automatic follows a timer instead of activity. */
   automaticDescription?: string;
+  /** The Setup Wizard's calm look (variant B); Settings keeps its own. */
+  calm?: boolean;
   className?: string;
 };
 
@@ -171,6 +174,7 @@ export function DisplayModeChoice({
   automaticDescription = "VibeTV switches between your providers based on recent activity and usage.",
   automaticPreview,
   automaticPreviews,
+  calm = false,
   className,
   manualPreview,
   mode,
@@ -191,6 +195,7 @@ export function DisplayModeChoice({
     <div className={cn("flex w-full flex-col gap-4", className)}>
       <div className="grid w-full grid-cols-2 items-stretch gap-4">
         <ModeCard
+          calm={calm}
           description={automaticDescription}
           disabled={saving}
           onSelect={() => onSelectMode("automatic")}
@@ -200,6 +205,7 @@ export function DisplayModeChoice({
           <PreviewTile frames={rotation} index={index} />
         </ModeCard>
         <ModeCard
+          calm={calm}
           description="VibeTV always shows the one provider you pick — nothing else."
           disabled={saving}
           onSelect={() => onSelectMode("fixed")}
@@ -212,13 +218,15 @@ export function DisplayModeChoice({
 
       {mode === "fixed" ? (
         <div className={cn("flex w-full flex-col gap-2 text-left", SETUP_REVEAL)}>
-          <p className="text-[13px] font-semibold">Show this provider</p>
+          <p className={cn("font-semibold", calm ? "text-[13px]" : "text-sm")}>
+            Show this provider
+          </p>
           {providers.map((provider) => (
             <Item
               asChild
               className={cn(
                 selectedItemClass(provider.id === selectedProviderId),
-                "px-5 py-3",
+                calm && "px-5 py-3",
               )}
               key={provider.id}
               variant="outline"
@@ -230,10 +238,16 @@ export function DisplayModeChoice({
                 type="button"
               >
                 <ItemContent>
-                  <ItemTitle className="font-semibold">{provider.label}</ItemTitle>
+                  <ItemTitle className={cn(calm && "font-semibold")}>
+                    {provider.label}
+                  </ItemTitle>
                 </ItemContent>
                 <ItemActions>
-                  <SelectionDot selected={provider.id === selectedProviderId} />
+                  {calm ? (
+                    <SelectionDot selected={provider.id === selectedProviderId} />
+                  ) : (
+                    <SelectionCheck selected={provider.id === selectedProviderId} />
+                  )}
                 </ItemActions>
               </button>
             </Item>
@@ -308,6 +322,7 @@ function useProviderRotation(count: number): { index: number } {
 }
 
 function ModeCard({
+  calm,
   children,
   description,
   disabled = false,
@@ -315,6 +330,7 @@ function ModeCard({
   selected,
   title,
 }: {
+  calm: boolean;
   children: ReactNode;
   description: string;
   disabled?: boolean;
@@ -338,12 +354,26 @@ function ModeCard({
       >
         <ItemContent className="gap-0">
           {children}
-          <span className="flex flex-col gap-1.5 px-5 py-4">
-            <ItemTitle className="justify-between font-semibold">
+          <span
+            className={cn(
+              "flex flex-col gap-1.5",
+              calm ? "px-5 py-4" : "px-4 py-3.5",
+            )}
+          >
+            <ItemTitle className={cn("justify-between", calm && "font-semibold")}>
               <span>{title}</span>
-              <SelectionDot selected={selected} />
+              {calm ? (
+                <SelectionDot selected={selected} />
+              ) : (
+                <SelectionCheck selected={selected} />
+              )}
             </ItemTitle>
-            <ItemDescription className="line-clamp-none text-[13px] leading-[1.5]">
+            <ItemDescription
+              className={cn(
+                "line-clamp-none leading-[1.5]",
+                calm ? "text-[13px]" : "text-xs",
+              )}
+            >
               {description}
             </ItemDescription>
           </span>

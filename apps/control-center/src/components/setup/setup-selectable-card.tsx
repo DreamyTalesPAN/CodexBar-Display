@@ -40,3 +40,20 @@ export function SelectionDot({ selected }: { selected: boolean }) {
     </span>
   );
 }
+
+/**
+ * Settings keeps the plain check; only the wizard uses the round mark above.
+ * Always rendered so picking a card cannot reflow the row it sits in.
+ */
+export function SelectionCheck({ selected }: { selected: boolean }) {
+  return (
+    <Check
+      aria-hidden
+      className={cn(
+        "size-4 shrink-0 text-[var(--vibetv-support)] transition-opacity duration-150",
+        selected ? "opacity-100" : "opacity-0",
+      )}
+      data-selected={selected || undefined}
+    />
+  );
+}
