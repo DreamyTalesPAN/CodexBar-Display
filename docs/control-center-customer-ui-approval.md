@@ -8327,3 +8327,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged; the one-line notice "Screensaver is off. Turn it on in Settings." is in the entry above.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs` (two locators) and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-19 — #784: approval marker after merging main (v1.0.65 + #638), Theme Studio key dialog without close X
+
+- User approval: pending — Paul reviews (#784 matched to the approved template); merge of main (#638 Theme Studio pack); the Theme Studio AI key dialog from #638 follows the calm dialog rule (no close X, Escape/outside click still close it while no key is being checked); not seen by Paul.
+- Approved customer-visible result: as in this branch's entries and main's entries; the key dialog in Settings has no X (calm A2 dialogs have none).
+- Scope: the merge of main, `apps/control-center/src/components/theme-studio/openai-key-form.tsx` (one prop), `apps/control-center/src/components/settings-screen.test.tsx` (7 sections incl. Theme Studio AI) and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
