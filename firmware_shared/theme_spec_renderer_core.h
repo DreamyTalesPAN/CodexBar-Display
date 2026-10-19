@@ -2032,7 +2032,7 @@ inline void DrawProgressArc(const CompiledPrimitive& primitive, const PaceBar& p
       int next = 0;
       if (col < primitive.width + reach) {
         if (hasTick && distance <= (outer + 2 * reach) * (outer + 2 * reach) &&
-            distance >= (inner - 2 * reach) * (inner - 2 * reach) &&
+            (inner - 2 * reach <= 0 || distance >= (inner - 2 * reach) * (inner - 2 * reach)) &&
             planEdge.x * pixel.x + planEdge.y * pixel.y > 0 &&
             planEdge.x * pixel.y - planEdge.y * pixel.x <= 2 * 4096 &&
             planEdge.y * pixel.x - planEdge.x * pixel.y <= 2 * 4096) {

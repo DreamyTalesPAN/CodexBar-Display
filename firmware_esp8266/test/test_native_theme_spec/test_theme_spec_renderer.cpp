@@ -4663,6 +4663,31 @@ void testUsagePaceArcDrawsPieceHatchAndTick() {
   TEST_ASSERT_EQUAL_HEX16(0x2104, colourAt(30, 70));             // 270 degrees: track
 }
 
+// A ring as thick as half its box has no hole: the tick runs on through the centre
+// instead of stopping at a squared negative radius.
+void testPaceTickOnAFullyThickRingReachesTheCentre() {
+  const char* spec = R"JSON({"v":1,"id":"pace-thick","rev":1,"p":[
+    {"t":"p","x":20,"y":20,"w":100,"h":100,"b":"usageSlot1Pace","ps":"arc","as":0,"aw":360,"at":50,"c":"#808080","bg":"#202020"}
+  ]})JSON";
+  FrameData frame;
+  frame.usageMode = "remaining";
+  frame.usageSlot1Percent = frame.usageWindows[0].percent = 40;
+  frame.usageSlot1ResetSecs = frame.usageWindows[0].resetSecs = 12000;
+  frame.usageSlot1Available = frame.usageWindows[0].available = true;
+  frame.usageWindows[0].pace = {20, 3, 1};
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  bool white = false;
+  for (const RecordedCommand& command : sink.commands) {
+    // The plan is 60 % = 216 degrees: just lower left of the centre (70, 70), inside the squared radius.
+    if (command.type == CommandType::FillRect && command.color == 0xFFFF &&
+        69 >= command.x && 69 < command.x + command.width && 71 >= command.y && 71 < command.y + command.height) {
+      white = true;
+    }
+  }
+  TEST_ASSERT_TRUE(white);
+}
+
 // A repaint of a pace bar must clear its tick, which reaches 3 px beyond it.
 void testUsagePaceBarRepaintCoversItsTick() {
   const char* spec = R"JSON({"v":1,"id":"pace-bounds","rev":1,"p":[
@@ -4943,6 +4968,7 @@ int main() {
   RUN_TEST(testUsagePaceColoursAndBarMarks);
   RUN_TEST(testUsagePaceArcDrawsPieceHatchAndTick);
   RUN_TEST(testUsagePaceBarRepaintCoversItsTick);
+  RUN_TEST(testPaceTickOnAFullyThickRingReachesTheCentre);
   RUN_TEST(testUsagePaceParsesAndRepaintsOnlyThemesThatShowIt);
   RUN_TEST(testCountdownRepaintTakesTheBoundPaceAlong);
   RUN_TEST(testPaceBarRepaintsWhenOnlyTheUsageModeChanges);
