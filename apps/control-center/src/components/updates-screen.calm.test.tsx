@@ -298,6 +298,17 @@ describe("calm Updates screen", () => {
     expect(container.querySelector("i.bg-foreground")).toBeNull();
   });
 
+  it("a failed firmware check waits while the native Mac App update prompt is offered", () => {
+    render(
+      <UpdatesScreen
+        {...upToDate}
+        companionRelease={{ ...upToDate.companionRelease!, status: "available", updateAvailable: true, latestVersion: "1.0.70" }}
+        firmwareUpdate={{ checkedAt: "2026-10-19T09:10:00Z", status: "check_failed", installedFirmware: "1.0.48", updateAvailable: false }}
+      />,
+    );
+    expect(screen.queryByRole("dialog", { name: "Could not check for updates" })).toBeNull();
+  });
+
   it("a failed check outranks an available update in the headline's dot", () => {
     const { container } = render(
       <UpdatesScreen

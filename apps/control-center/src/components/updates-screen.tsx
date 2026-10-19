@@ -494,6 +494,8 @@ export function UpdatesScreen({
       !retryingFailedCheck &&
       !checkBusy &&
       !otherDialogOpen &&
+      // A Mac App update is offered: the native updater shows its own prompt, not this one.
+      !macAppUpdateAvailable &&
       !updateErrorOpen ? (
         <CheckFailedDialog
           onClose={() => setDismissedFailedCheck(failedCheckKey)}

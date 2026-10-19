@@ -8509,3 +8509,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-19 — #798: Codex fix, the failed-check dialog waits while the native Mac App update prompt is offered
+
+- User approval: pending — Paul reviews (Codex review fix); look unchanged except, before → after: when the firmware check fails and a Mac App update is offered, the "Could not check for updates" dialog waits; the native update prompt is shown alone → before both could be on screen at once.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
