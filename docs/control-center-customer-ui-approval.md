@@ -8398,6 +8398,14 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, `apps/control-center/src/components/setup/setup-providers-screen.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
+## 2026-10-19 — #784: type fix, the dialog's description is optional
+
+- User approval: none needed — no visible change: the optional `description` of the shared setup dialog (its text is unchanged where it is given) and the new test file's calls compile; the type check failed on the test file without it.
+- Approved customer-visible result: none; no visible change.
+- Scope: `apps/control-center/src/components/setup/setup-dialog.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+
 
 ## 2026-10-19 — Support: "n of 6 passed" and a Fix link for the usage engine (#795)
 
