@@ -1079,10 +1079,10 @@ func engineRowDetail(status, label, signInURL string) string {
 }
 
 // BrowserSignInGuidance is the customer sentence for a provider that needs a
-// signed-in browser session on signInURL.
+// signed-in browser session: the same fixed sentence the Setup log says. The
+// row's next action travels beside it, so it is not repeated here.
 func BrowserSignInGuidance(id, signInURL string) string {
-	result := providerResultWithSignIn(id, ProviderBrowserSignInRequired, signInURL)
-	return result.Detail + " " + result.NextAction
+	return providerResultWithSignIn(id, ProviderBrowserSignInRequired, signInURL).Detail
 }
 
 func signInHost(url string) string {
