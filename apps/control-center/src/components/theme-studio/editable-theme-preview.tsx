@@ -343,7 +343,7 @@ export function EditableThemePreview({
       ref={surfaceRef}
       aria-label="Selection workspace"
       // Three rows: the preview in the middle one, the details in the free space below it (as high as that space, scrolling inside), so the preview never moves or gets covered.
-      className="relative grid min-h-0 w-full flex-1 grid-rows-[minmax(0,1fr)_auto_minmax(3rem,1fr)] [touch-action:none]"
+      className="relative grid min-h-0 w-full flex-1 grid-rows-[minmax(0,1fr)_auto_minmax(3rem,1fr)] max-lg:grid-rows-[auto_auto_auto] [touch-action:none]"
       onPointerDown={(event) => {
         if (event.button === 0 && !(event.target as Element).closest("svg, button, input, textarea, select, a, [role=button], [data-selection-controls]")) startSelection(event);
       }}

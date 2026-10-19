@@ -8065,3 +8065,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the Details entry above and the entries of this branch; nothing else changes.
 - Scope: the merge of `main` into this branch, `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` (canvas height) and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — Theme Studio: Details take their full height in a narrow or low window (#781, build 7194, third revision)
+
+- User approval: Paul, 19.10.2026 via the communicator, decision on build 7194 (Details below the preview, never over it; checked at 960×700 and 900 px wide)
+- Approved customer-visible result: before → after: in a window narrower than 1024 px (where the left column scrolls and the preview sits at its top) the Details panel was squeezed to a few pixels high under the preview; after: it takes the height it needs under the preview and the column scrolls. In the wide layout nothing changes: the preview stays centred, Details uses the free space below it and scrolls inside itself, never over the preview.
+- Scope: `apps/control-center/src/components/theme-studio/editable-theme-preview.tsx` (one class), its test, and this record. Pull request branch only, not merge or release.
+- What's new: none — layout refinement of the Theme Studio, no new feature
