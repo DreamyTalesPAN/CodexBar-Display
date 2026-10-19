@@ -173,19 +173,19 @@ func TestBrowserSignInGuidanceNamesTheSignInHost(t *testing.T) {
 			name: "login page names the host",
 			id:   "claude",
 			url:  "https://claude.ai/login",
-			want: "Claude usage needs a signed-in claude.ai session in your browser. Sign in to claude.ai in your browser, close the browser, then check again.",
+			want: "Claude usage needs a signed-in claude.ai session in your browser. Sign in to claude.ai in your browser, close the browser.",
 		},
 		{
 			name: "path after the host is dropped",
 			id:   "claude",
 			url:  "https://claude.ai/settings/usage",
-			want: "Claude usage needs a signed-in claude.ai session in your browser. Sign in to claude.ai in your browser, close the browser, then check again.",
+			want: "Claude usage needs a signed-in claude.ai session in your browser. Sign in to claude.ai in your browser, close the browser.",
 		},
 		{
 			name: "no URL falls back to the word provider",
 			id:   "codex",
 			url:  "",
-			want: "Codex usage needs a signed-in provider session in your browser. Sign in to provider in your browser, close the browser, then check again.",
+			want: "Codex usage needs a signed-in provider session in your browser. Sign in to provider in your browser, close the browser.",
 		},
 	}
 	for _, tc := range cases {

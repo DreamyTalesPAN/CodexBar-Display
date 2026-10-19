@@ -390,6 +390,10 @@ func (s *Server) recordProviderSetupEvents(setup codexbar.ProviderSetup, provide
 		if check.Status == "pass" {
 			event = setupEvent{Stage: stage, Status: "succeeded", Message: check.Detail}
 		}
+		if stage == "usage_engine" && event.NextAction != "" {
+			// The setup log has no check button; the app re-checks by itself.
+			event.NextAction = "Repair the usage engine."
+		}
 		if last, ok := s.setupEvents.lastOfStage(s.currentTime(), stage); stage == "usage_engine" && ok && sameSetupEvent(last, event) {
 			continue
 		}
@@ -415,6 +419,7 @@ func usageEngineDiagnostics(engine codexbar.EngineReadiness) diagnosticsUsageEng
 }
 
 func usageEngineDiagnosticCheck(engine codexbar.EngineReadiness) diagnosticCheck {
+	// Diagnostics keeps "then check again": its Run diagnostics button is the customer's own check.
 	const repair = "Repair the usage engine, then check again."
 	check := diagnosticCheck{Name: "usage_engine", Status: "fail", NextAction: repair}
 	switch engine.Status {

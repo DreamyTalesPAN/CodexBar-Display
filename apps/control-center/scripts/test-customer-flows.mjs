@@ -2631,7 +2631,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
   const cases = [
     {
       status: "auth_required",
-      expected: "Sign in to Claude in CodexBar, then check again.",
+      expected: "Sign in to Claude in CodexBar.",
       healthState: "auth_required",
       reportedMessage:
         "Codex connection failed: codex account authentication required to read rate limits",
@@ -2640,7 +2640,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
     {
       status: "permission_required",
       expected:
-        "Claude needs permission to read your sign-in. Open CodexBar and allow access, then check again.",
+        "Claude needs permission to read your sign-in. Open CodexBar and allow access.",
       healthState: "permission_required",
       reportedMessage:
         "Safari cookie file is not readable. Enable Full Disk Access for CodexBar.",
@@ -11604,7 +11604,7 @@ async function routeCompanionOnline(
           ...(!ready
             ? {
                 nextAction:
-                  "Open provider setup, sign in again, then check this provider.",
+                  "Open provider setup, sign in again.",
               }
             : {}),
         };

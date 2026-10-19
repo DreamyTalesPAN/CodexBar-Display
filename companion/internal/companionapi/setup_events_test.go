@@ -31,7 +31,7 @@ func incompatibleEngineSetup() codexbar.ProviderSetup {
 		Providers: []codexbar.ProviderReadiness{{
 			ID: "codexbar", Label: "Usage service", Status: codexbar.ProviderEngineIncompatible,
 			Detail:     "Usage engine 0.17 is too old. Version 0.23 or newer is required.",
-			NextAction: "Repair the usage engine, then check again.",
+			NextAction: "Repair the usage engine.",
 		}},
 	}
 }
@@ -176,7 +176,7 @@ func TestProviderRetryLogsIncompatibleEngineOnce(t *testing.T) {
 	engine, provider := got.Events[0], got.Events[1]
 	if engine.Stage != "usage_engine" || engine.Status != "failed" || engine.Code != codexbar.ProviderEngineIncompatible ||
 		engine.Message != "Usage engine 0.17 is too old. Version 0.23 or newer is required." ||
-		engine.NextAction != "Repair the usage engine, then check again." {
+		engine.NextAction != "Repair the usage engine." {
 		t.Fatalf("unexpected engine event: %+v", engine)
 	}
 	if provider.Stage != "provider_check" || provider.Code != codexbar.ProviderEngineIncompatible || provider.Count != 2 {
@@ -205,7 +205,7 @@ func TestSetupLogRecordsProviderChoicesChecksAndDisplayMode(t *testing.T) {
 		defer close(probeDone)
 		return codexbar.ProviderSetup{Status: "setup_required", Providers: []codexbar.ProviderReadiness{{
 			ID: id, Label: "Claude", Status: codexbar.ProviderAuthRequired,
-			Detail: "This provider needs an active sign-in.", NextAction: "Open provider setup, sign in again, then check this provider.",
+			Detail: "This provider needs an active sign-in.", NextAction: "Open provider setup, sign in again.",
 		}}}
 	}
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
@@ -242,7 +242,7 @@ func TestSetupLogRecordsProviderChoicesChecksAndDisplayMode(t *testing.T) {
 
 	want := []setupEvent{
 		{Stage: "provider_choice", Status: "succeeded", Message: "Claude turned on."},
-		{Stage: "provider_check", Status: "failed", Message: "Claude: This provider needs an active sign-in.", Code: codexbar.ProviderAuthRequired, NextAction: "Open provider setup, sign in again, then check this provider."},
+		{Stage: "provider_check", Status: "failed", Message: "Claude: This provider needs an active sign-in.", Code: codexbar.ProviderAuthRequired, NextAction: "Open provider setup, sign in again."},
 		{Stage: "display_mode", Status: "failed", Message: "Always show needs one provider.", Code: "provider_display_fixed_invalid", NextAction: "Choose exactly one provider to show."},
 		{Stage: "display_mode", Status: "succeeded", Message: "Always show Codex."},
 		{Stage: "provider_choice", Status: "succeeded", Message: "Claude turned off."},
