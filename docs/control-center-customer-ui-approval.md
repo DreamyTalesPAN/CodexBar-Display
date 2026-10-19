@@ -7655,3 +7655,66 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Look only, no wording, button or state change. `Continue your unsaved theme` card: its title is 13 px semibold in the ink colour (before: 16 px bold, fixed colour), its line `… was last changed …` is 13 px in the muted colour (before: 14 px, fixed colour). `Theme is not available` notice: the icon is in the muted colour (before: olive, a colour outside the theme), the title is in the ink colour (before: fixed colour, weight unchanged).
 - Scope: `apps/control-center/src/components/theme-library-screen.tsx` (colours, size and weight of the two boxes) and this approval record. Pull request branch only, not merge or release.
 - What's new: none — colours, size and weight only, no new words
+
+## 2026-10-18 — Themes and Screensavers: errors as overlays, empty page states without a frame
+
+- User approval: pending — Paul reviews this PR (calm rules: errors as overlays, no frames on page states; Themes/Screensavers, #713); look: the two page notices open as dialogs over the page with OK, and the empty states are plain centred text with Reload catalog.
+- Approved customer-visible result: On Appearance › Themes and Appearance › Screensavers, a failed theme action (`Theme action failed`, with its sentence) opens as a dialog over the page, not as a red box under the title. A storage problem (`Theme storage needs attention`, with its reason) opens the same way, not as a grey box. Both dialogs have the title and sentence as before, one button `OK`, and the X closes them too; a new failure opens the dialog again. The icon is in the muted colour (before: red). `No screensavers yet` and `Themes unavailable` are no longer in a bordered card with a round icon; they are centred 13 px text in the list area (title in the ink colour, semibold; sentence in the muted colour), with `Reload catalog` unchanged. Words are unchanged. Not changed: `Screensaver is turned off` with its switch stays as it is, and the storage line in the editor stays as it is.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (the two notices as overlays, the two empty states), new test `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx`, `apps/control-center/src/components/theme-library-screen.custom.test.tsx` (the screensaver error is read from the page body, because the overlay is not inside the page) and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — the same sentences, now in overlays and as plain text
+
+## 2026-10-18 — Themes: a failed delete shows its error only in the delete dialog (Codex review fix on #762)
+
+- User approval: Not separately approved by Paul; a Codex review fix (P2) on the entry above, which is pending for Paul. Not seen by Paul; the visible result is unchanged.
+- Approved customer-visible result: When saving the library fails while a custom theme is deleted, the error stays in the `Delete … ?` dialog as before, and no second overlay `Theme action failed` opens on the page. Words, buttons and every other state are unchanged.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (one line in the delete failure path) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (one regression test), and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no visible change, the same dialog shows the same error
+
+## 2026-10-18 — Themes: an error or storage notice waits while another page dialog is open (Codex review fix on #762)
+
+- User approval: Not separately approved by Paul; a Codex review fix (P2) on the entry above, which is pending for Paul. Not seen by Paul; the visible result is unchanged while no other dialog is open.
+- Approved customer-visible result: When an action fails while the Preview or the Delete dialog of the Themes page is open, the `Theme action failed` overlay (and the storage notice) waits and is not shown on top of it. When that dialog is closed, the overlay shows with the same sentence and `OK`. Words, buttons and every other state are unchanged.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (the condition for the two page overlays) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (one regression test), and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no visible change, the same dialog waits for the one open
+
+## 2026-10-18 — Themes: a failed delete reports only in the delete dialog and keeps another action's error (Codex review fix on #762)
+
+- User approval: Not separately approved by Paul; a Codex review fix (P2) on the entry above, which is pending for Paul. Not seen by Paul; the visible result is unchanged.
+- Approved customer-visible result: When saving the library fails while a custom theme is deleted, the error stays in the `Delete … ?` dialog as before. The delete no longer clears or repeats an error of another action: an error that another action queued while the delete dialog was open still shows after the dialog is closed. Words, buttons and every other state are unchanged.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (the delete save writes and reports its own failure) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (one regression test), and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no visible change, the same dialogs
+
+## 2026-10-18 — Themes: an error or storage notice waits while a row's install-failure dialog is open (Codex review fix on #762)
+
+- User approval: Not separately approved by Paul; a Codex review fix (P2) on the entry above, which is pending for Paul. Not seen by Paul; the visible result is unchanged while no other dialog is open.
+- Approved customer-visible result: When an action fails while the install-failure dialog of a theme row is open, the `Theme action failed` overlay (and the storage notice) waits and is not shown on top of it. When that dialog is closed, the overlay shows with the same sentence and `OK`. Words, buttons and every other state are unchanged.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (the install-failure open state is reported to the page, which waits for it) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (one regression test), and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no visible change, the same dialog waits for the one open
+
+## 2026-10-18 — Themes: page errors wait while any install-failure dialog of the page is open (Codex review fix on #762)
+
+- User approval: Not separately approved by Paul; a Codex review fix (P2) on the entry above, which is pending for Paul. Not seen by Paul; the visible result is unchanged while no other dialog is open.
+- Approved customer-visible result: When two theme rows that share an id both show an install-failure dialog, the `Theme action failed` overlay (and the storage notice) waits until both are closed. Words, buttons and every other state are unchanged.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (each row reports its own install-failure dialog; the page keeps the list of open ones) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (one regression test), and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no visible change, the same dialogs wait for each other
+
+## 2026-10-18 — Themes: a companion-unreachable install failure does not hold back page errors (Codex review fix on #762)
+
+- User approval: Not separately approved by Paul; a Codex review fix (P2) on the entry above, which is pending for Paul. Not seen by Paul; the visible result is unchanged.
+- Approved customer-visible result: When a theme install fails because the VibeTV Companion is unreachable, that failure draws no dialog, as before, and it no longer holds back a `Theme action failed` overlay or the storage notice. Words, buttons and every other state are unchanged.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (the condition for an open install-failure dialog uses the same predicate as the dialog itself) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (one regression test), and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no visible change
+
+## 2026-10-18 — Themes: page notices follow one rule (Codex review fixes on #762)
+
+- User approval: Not separately approved by Paul; Codex review fixes (P2) on the entries above, which are pending for Paul. Not seen by Paul; the words and look are unchanged.
+- Approved customer-visible result: `Theme action failed` and `Theme storage needs attention` are shown only while no other dialog is open on the page. A failure that happens while another dialog is open is kept and shows when that dialog closes. When both are pending, `Theme action failed` is shown first and `Theme storage needs attention` after it is closed. `OK` or the X closes the notice and clears it. Words, buttons and every other state are unchanged.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (one rule for the two notices instead of per-dialog conditions) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (tests for the rule), and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no visible change in text or controls
+
+## 2026-10-18 — Themes: the busy announcement and the page notices do not wait on each other (Codex review fix on #762)
+
+- User approval: Not separately approved by Paul; a Codex review fix (P1) on the entry above, which is pending for Paul. Not seen by Paul; the visible result is unchanged.
+- Approved customer-visible result: When a page notice (`Theme action failed` or `Theme storage needs attention`) and the busy announcement both become due, the notice is shown and the busy announcement waits for it. Before, the two could take turns opening and closing. Words, buttons and every other state are unchanged.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (the page notices do not count the busy announcement as another dialog) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (one regression test), and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no visible change

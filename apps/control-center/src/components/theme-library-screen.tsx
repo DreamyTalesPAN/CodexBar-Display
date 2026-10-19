@@ -11,8 +11,8 @@ import {
   ShieldCheck,
   Wifi,
 } from "lucide-react";
-import type { ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import type { ComponentProps, ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   AlertDescription,
@@ -38,14 +38,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
 import { Field, FieldLabel } from "@/components/ui/field";
 import {
   Item,
@@ -58,6 +50,8 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Progress } from "@/components/ui/progress";
+import { SetupDialog } from "@/components/setup/setup-dialog";
+import { systemBusyCopy } from "./system-busy-dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -210,6 +204,45 @@ export type ThemeLibraryScreenProps = {
   windowsHost?: boolean;
 };
 
+// One rule for the page's notices: a notice waits while any other dialog is
+// open in the document. Not counted: this page's own notices, and the busy
+// announcement, which already waits for every other dialog (so the two never
+// wait on each other and loop).
+const OPEN_DIALOGS = '[role="dialog"], [role="alertdialog"]';
+let pageNoticesShown = 0;
+
+function otherDialogOpen(): boolean {
+  if (typeof document === "undefined") return false;
+  const others = Array.from(document.querySelectorAll(OPEN_DIALOGS)).filter(
+    (dialog) => !dialog.textContent?.includes(systemBusyCopy.title),
+  );
+  return others.length > pageNoticesShown;
+}
+
+/** Whether another dialog is open right now, kept current while mounted. */
+function useOtherDialogOpen(): boolean {
+  const [open, setOpen] = useState(otherDialogOpen);
+  useLayoutEffect(() => {
+    const check = () => setOpen(otherDialogOpen());
+    check();
+    const observer = new MutationObserver(check);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
+  return open;
+}
+
+/** A page notice: an overlay over the page, counted by useOtherDialogOpen. */
+function PageNotice(props: ComponentProps<typeof SetupDialog>) {
+  useLayoutEffect(() => {
+    pageNoticesShown += 1;
+    return () => {
+      pageNoticesShown -= 1;
+    };
+  }, []);
+  return <SetupDialog {...props} />;
+}
+
 export function ThemeLibraryScreen({
   themes,
   usage = "live",
@@ -281,6 +314,10 @@ export function ThemeLibraryScreen({
   }, [editingTheme, onStudioOpenChange]);
   const [libraryError, setLibraryError] = useState("");
   const [storageWarning, setStorageWarning] = useState("");
+  // The storage notice is shown until its OK or X; the storage itself stays
+  // locked, so the notice is kept here only as "closed for this message".
+  const [closedStorageWarning, setClosedStorageWarning] = useState("");
+  // The install-failure dialog of a row is a page dialog too; its row reports it.
   const [storageLocked, setStorageLocked] = useState(false);
   const [deleteTheme, setDeleteTheme] = useState<UserThemeRecord | null>(null);
   const [deleteError, setDeleteError] = useState("");
@@ -295,6 +332,11 @@ export function ThemeLibraryScreen({
   const [previewTheme, setPreviewTheme] = useState<ThemeLibraryItem | null>(null);
   const recoveryMatchesUsage =
     (recovery ? themeDocumentUsage(recovery.document) : "live") === usage;
+  // A page notice waits while another dialog of this page is open.
+  // Page notices wait for any other open dialog (one generic rule, see
+  // useOtherDialogOpen) and never show together: an error wins over the
+  // storage notice.
+  const otherDialogOpen = useOtherDialogOpen();
   const libraryThemes: ThemeLibraryItem[] = [
     ...userThemes
       .filter((custom) => themeDocumentUsage(custom.document) === usage)
@@ -571,18 +613,27 @@ export function ThemeLibraryScreen({
     if (!deleteTheme) {
       return false;
     }
-    try {
-      persistUserThemes(userThemes.filter((theme) => theme.id !== deleteTheme.id));
-      setDeleteTheme(null);
-      setDeleteError("");
-      window.setTimeout(() => createButtonRef.current?.focus(), 0);
-      return true;
-    } catch (error) {
+    // The delete dialog reports its own failure. It does not go through
+    // persistUserThemes, which would publish a page-level error and could
+    // clear or duplicate one that belongs to another action.
+    if (storageLocked) {
       setDeleteError(
-        error instanceof Error ? error.message : say("Theme could not be deleted."),
+        storageWarning || say("Browser storage must be repaired before saving themes."),
       );
       return false;
     }
+    const result = writeUserThemes(
+      userThemes.filter((theme) => theme.id !== deleteTheme.id),
+    );
+    if (!result.ok) {
+      setDeleteError(result.error.message);
+      return false;
+    }
+    setUserThemes(result.value.themes);
+    setDeleteTheme(null);
+    setDeleteError("");
+    window.setTimeout(() => createButtonRef.current?.focus(), 0);
+    return true;
   }
 
   function requestDeleteTheme(theme: UserThemeRecord) {
@@ -713,20 +764,6 @@ export function ThemeLibraryScreen({
       ) : null}
 
       <section className="py-8">
-        {storageWarning ? (
-          <Alert className="mb-5">
-            <Lock aria-hidden />
-            <AlertTitle>{say("Theme storage needs attention")}</AlertTitle>
-            <AlertDescription>{storageWarning}</AlertDescription>
-          </Alert>
-        ) : null}
-        {libraryError ? (
-          <Alert className="mb-5" variant="destructive">
-            <Lock aria-hidden />
-            <AlertTitle>{say("Theme action failed")}</AlertTitle>
-            <AlertDescription>{libraryError}</AlertDescription>
-          </Alert>
-        ) : null}
         {recovery && recoveryMatchesUsage ? (
           <RecoveryCard
             // The theme that takes the draft's place is on its way.
@@ -812,6 +849,41 @@ export function ThemeLibraryScreen({
             </DialogFooter>
           </DialogContent>
         </Dialog>
+      ) : null}
+      {/* Errors are overlays over the page. OK or the X clears the error; an
+          error that arrives while another dialog is open waits for it. */}
+      {libraryError && !otherDialogOpen ? (
+        <PageNotice
+          description={libraryError}
+          icon={Lock}
+          onOpenChange={(open) => {
+            if (!open) setLibraryError("");
+          }}
+          open
+          primaryAction={{ label: "OK", onSelect: () => setLibraryError("") }}
+          title={say("Theme action failed")}
+          tone="neutral"
+        />
+      ) : null}
+      {/* The storage notice shows after the error is closed, never with it. */}
+      {storageWarning &&
+      storageWarning !== closedStorageWarning &&
+      !libraryError &&
+      !otherDialogOpen ? (
+        <PageNotice
+          description={storageWarning}
+          icon={Lock}
+          onOpenChange={(open) => {
+            if (!open) setClosedStorageWarning(storageWarning);
+          }}
+          open
+          primaryAction={{
+            label: "OK",
+            onSelect: () => setClosedStorageWarning(storageWarning),
+          }}
+          title={say("Theme storage needs attention")}
+          tone="neutral"
+        />
       ) : null}
       {replacingRecovery && recovery ? (
         <ReplaceDraftDialog
@@ -948,19 +1020,14 @@ function CatalogEmptyState({
   screensavers: boolean;
   storefrontConfigured: boolean;
 }) {
+  // A page state is text in the list area, not a framed card: frames are only
+  // around objects (calm rules 5 and 7).
   if (screensavers && !catalogIssue) {
     return (
-      <Empty className="border bg-card py-10">
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <Monitor aria-hidden />
-          </EmptyMedia>
-          <EmptyTitle>No screensavers yet</EmptyTitle>
-          <EmptyDescription>
-            Create a screensaver to add it to this list.
-          </EmptyDescription>
-        </EmptyHeader>
-      </Empty>
+      <div className="py-10 text-center text-[13px] text-muted-foreground">
+        <p className="font-semibold text-foreground">No screensavers yet</p>
+        <p className="mt-1">Create a screensaver to add it to this list.</p>
+      </div>
     );
   }
 
@@ -971,21 +1038,16 @@ function CatalogEmptyState({
       : "Themes are not available from this page right now. Try again later.";
 
   return (
-    <Empty className="border bg-card py-10">
-      <EmptyHeader>
-        <EmptyMedia variant="icon">
-          <Lock aria-hidden />
-        </EmptyMedia>
-        <EmptyTitle>Themes unavailable</EmptyTitle>
-        <EmptyDescription>{detail}</EmptyDescription>
-      </EmptyHeader>
-      <EmptyContent>
-        <Button onClick={() => window.location.reload()} type="button">
-          <RefreshCw data-icon="inline-start" aria-hidden />
-          Reload catalog
-        </Button>
-      </EmptyContent>
-    </Empty>
+    <div className="grid justify-items-center gap-4 py-10 text-center text-[13px] text-muted-foreground">
+      <div>
+        <p className="font-semibold text-foreground">Themes unavailable</p>
+        <p className="mt-1">{detail}</p>
+      </div>
+      <Button onClick={() => window.location.reload()} type="button">
+        <RefreshCw data-icon="inline-start" aria-hidden />
+        Reload catalog
+      </Button>
+    </div>
   );
 }
 
