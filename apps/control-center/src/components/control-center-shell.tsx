@@ -39,6 +39,7 @@ import {
   type AppearanceSection,
   type ShellNavItem,
 } from "./control-center-types";
+import { cn } from "@/lib/utils";
 import { ControlCenterBrand } from "./control-center-brand";
 
 type ControlCenterShellProps = {
@@ -172,7 +173,11 @@ export function ControlCenterShell({
               <div className="flex min-w-0 items-center gap-3">
                 <SidebarTrigger
                   aria-label="Open navigation"
-                  className="-m-1 size-7 shrink-0 p-0 text-muted-foreground hover:bg-transparent hover:text-foreground [&_svg]:size-5"
+                  className={cn(
+                    "-m-1 size-7 shrink-0 p-0 text-muted-foreground hover:bg-transparent hover:text-foreground [&_svg]:size-5",
+                    // The template draws no toggle beside Updates and Support; a narrow window keeps it, it is the only way to the menu there.
+                    (activeTab === "updates" || activeTab === "logs") && "md:hidden",
+                  )}
                 />
                 <h1 className="truncate text-[28px] leading-none font-semibold tracking-[-0.01em] text-foreground">
                   {pageTitle}
