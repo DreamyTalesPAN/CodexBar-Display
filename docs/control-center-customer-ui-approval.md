@@ -7949,3 +7949,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — #780: Setup matched to the template (build 2 QA)
+
+- User approval: pending — Paul reviews (#780 matched to the approved template, build 2 QA); look unchanged except, each one before → after: (1) provider names in the Setup list are 13 px semibold → before 14 px; (2) in a provider row the red "Sign in needed" stands 16 px from the switch → before 8 px; (3) the IP address field in "Enter IP address" uses the normal text font → before a monospace font.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/setup/setup-provider-row.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content

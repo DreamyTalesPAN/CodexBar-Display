@@ -152,12 +152,12 @@ export function SetupProviderRow({
     >
       <ItemContent>
         <ItemTitle
-          className={cn(calm && "font-semibold", unusable && "opacity-50")}
+          className={cn(calm && "text-[13px] font-semibold", unusable && "opacity-50")}
         >
           {label}
         </ItemTitle>
       </ItemContent>
-      <ItemActions>
+      <ItemActions className={calm ? "gap-4" : undefined}>
         {signIn && calm ? (
           <Button
             className="h-9 gap-1 p-0 text-[13px] font-semibold text-destructive hover:bg-transparent dark:hover:bg-transparent"
