@@ -51,6 +51,8 @@ type ControlCenterShellProps = {
   hiddenTabs?: ActiveTab[];
   headerAction?: ReactNode;
   updateAvailable?: boolean;
+  /** Theme Studio keeps its own header ("Appearance") instead of the sub-page name. */
+  themeStudioOpen?: boolean;
 };
 
 // Hover is a weaker tint than the active fill, so a hovered entry never
@@ -101,7 +103,16 @@ export function ControlCenterShell({
   hiddenTabs = [],
   headerAction,
   updateAvailable = false,
+  themeStudioOpen = false,
 }: ControlCenterShellProps) {
+  // On Appearance the page title is the open sub-page (one title, no second
+  // heading below it); the Studio keeps the "Appearance" title.
+  const pageTitle =
+    activeTab === "theme-library" && !themeStudioOpen
+      ? activeAppearanceSection === "screensavers"
+        ? "Screensavers"
+        : "Themes"
+      : NAV_ITEMS.find((item) => item.id === activeTab)?.label || "Overview";
   const disabledTabSet = new Set(disabledTabs);
   const isTabDisabled = (tab: ActiveTab) => disabledTabSet.has(tab);
   // The window scrolls, not the tab. A link far down one tab that opens
@@ -150,11 +161,10 @@ export function ControlCenterShell({
             <div className="flex min-w-0 items-center gap-3">
               <SidebarTrigger
                 aria-label="Open navigation"
-                className="size-5 shrink-0 p-0 text-muted-foreground hover:bg-transparent hover:text-foreground [&_svg]:size-5"
+                className="-m-1 size-7 shrink-0 p-0 text-muted-foreground hover:bg-transparent hover:text-foreground [&_svg]:size-5"
               />
               <h1 className="truncate text-[28px] leading-none font-semibold tracking-[-0.01em] text-foreground">
-                {NAV_ITEMS.find((item) => item.id === activeTab)?.label ||
-                  "Overview"}
+                {pageTitle}
               </h1>
             </div>
 
@@ -311,7 +321,7 @@ function ShellNavButton({
   const button = (
     <SidebarMenuButton
       aria-current={active && current ? "page" : undefined}
-      className={`h-[34px] gap-2.5 rounded-[var(--radius-control)] px-2.5 text-[13px] font-normal text-sidebar-foreground opacity-[.72] hover:opacity-100 ${WEAK_HOVER} data-active:bg-sidebar-accent data-active:font-normal data-active:text-sidebar-accent-foreground data-active:opacity-100 group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-11! [&_svg]:size-4!`}
+      className={`h-[34px] gap-2.5 rounded-[var(--radius-control)] px-2.5 text-[13px] font-normal text-sidebar-foreground opacity-[.72] hover:opacity-100 ${active ? "" : WEAK_HOVER} data-active:bg-sidebar-accent data-active:font-normal data-active:text-sidebar-accent-foreground data-active:opacity-100 group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-11! group-data-[collapsible=icon]:justify-center [&_svg]:size-4!`}
       disabled={disabled}
       isActive={active}
       onClick={() => {
@@ -328,7 +338,7 @@ function ShellNavButton({
       {item.icon}
       <span className="min-w-0 truncate group-data-[collapsible=icon]:sr-only">{item.label}</span>
       {collapsible ? (
-        <ChevronDown className="ml-auto size-3.5! opacity-80 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-180" />
+        <ChevronDown className="ml-auto size-3.5! opacity-80 transition-transform duration-200 group-data-[collapsible=icon]:hidden group-data-[state=open]/collapsible:rotate-180" />
       ) : null}
     </SidebarMenuButton>
   );
@@ -369,7 +379,7 @@ function AppearanceNavButton({
   return (
     <SidebarMenuSubButton
       asChild
-      className={`h-[34px] w-full text-[13px] ${WEAK_HOVER} data-active:bg-transparent! data-active:font-semibold data-active:text-sidebar-accent-foreground`}
+      className={`h-[34px] w-full text-[13px]! ${active ? "" : WEAK_HOVER} data-active:bg-transparent! data-active:font-semibold data-active:text-sidebar-accent-foreground`}
       isActive={active}
     >
       <button

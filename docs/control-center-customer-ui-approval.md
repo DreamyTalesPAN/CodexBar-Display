@@ -8103,3 +8103,52 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Only the colour of the outline around the chosen card and the chosen provider changes, to ink. Same words, same places, same size and thickness. Lime stays only for primary button fills and the switch on state. The round selection mark keeps its look. The setup wizard's Display Mode step is not changed by this entry.
 - Scope: `apps/control-center/src/components/setup/setup-selectable-card.tsx` (optional ink tone for the chosen frame, default unchanged), `apps/control-center/src/components/setup/setup-display-mode-screen.tsx` (ink flag passed through `DisplayModeChoice`, only Settings sets it), `apps/control-center/src/components/settings-screen.tsx` (sets the flag), `apps/control-center/src/components/settings-screen.test.tsx` (new test for the ink frame), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — a colour change of an existing outline needs no notice.
+
+## 2026-10-18 — Collapsed sidebar: no Appearance chevron, sub-items at 13 px (#758)
+
+- User approval: pending — Paul reviews this PR (two findings from the Windows click run 1018b, notes N1 and N11, #758); look unchanged except: with the sidebar collapsed to icons, the small chevron beside the Appearance icon no longer shows; the "Themes" and "Screensavers" entries under Appearance go from 14 px to 13 px text, like the other nav entries. Before: the chevron sticks out of the active pill and the sub-items are 14 px; after: no chevron in icon-only mode, sub-items 13 px.
+- Approved customer-visible result: as in the calm shell entry of 2026-10-18 (#713): nav entries 13 px, the Appearance chevron points down and turns up when open. The chevron stays in the expanded sidebar; in icon-only mode it is hidden because it is decorative. The sub-items use the same 13 px as the nav entries. No new text, button or dialog.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, its test `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a hidden decorative icon and a text size fix
+
+## 2026-10-18 — Codex review fixes on the calm shell: active entry keeps its fill on hover; sidebar toggle hit area (#758)
+
+- User approval: pending — Paul reviews this PR (Codex review on f9c14aa7, two P2 findings, #758); look unchanged except: hovering the current nav entry no longer shows the weaker tint, it keeps the full olive fill as the active entry does. Before: the current entry looked inactive while hovered; after: it looks active while hovered. The sidebar toggle above the page keeps its 20 px icon; only its clickable area grows from 20 px to 28 px, without moving the page title.
+- Approved customer-visible result: as in the calm shell entry of 2026-10-18 (#713): hovering an inactive entry shows the weaker tint, clearly weaker than the active entry; the active entry keeps its full fill. The sidebar toggle is a muted 20 px icon. No new text, button or dialog.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, its test `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a hover correction and a larger hit area without a visible size change
+
+## 2026-10-18 — Codex review fix on the calm shell: icons centred in the icon-only pills (#758)
+
+- User approval: pending — Paul reviews this PR (Codex review on a7bd8d47, P2, #758); look unchanged except: with the sidebar collapsed to icons, each nav icon sits in the centre of its pill. Before: the icon sits about 6 px left of the pill centre; after: centred.
+- Approved customer-visible result: as in the collapsed-sidebar entry of 2026-10-18 (#758): icons only in the icon-only sidebar, each entry as a centred pill. No new text, button or dialog.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, its test `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a centring class for the icon-only pills
+
+## 2026-10-18 — Calm shell: the page title is the open Appearance sub-page (#758)
+
+- User approval: pending — Paul reviews (one page title as in the approved Appearance A picture); look unchanged except: on Appearance the page title in the header row reads "Themes" or "Screensavers". Before: "Appearance"; after: the sub-page name. Theme Studio keeps "Appearance". Other pages unchanged.
+- Approved customer-visible result: as in the approved Appearance A picture (#713): one page title, the sub-page name, in the header row next to the sidebar toggle.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, its test `apps/control-center/src/components/control-center-shell.test.tsx`, `apps/control-center/src/components/theme-library-screen.tsx` (reports whether the Studio is open), `apps/control-center/src/components/control-center-app.tsx` (passes that flag to the shell) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the page title only
+
+## 2026-10-18 — Codex review fix on the calm shell: whats-new test finds the page title as level-1 heading (#758)
+
+- User approval: pending — Paul reviews this PR (CI on a10c1af1: the whats-new test found two "Themes" headings); look unchanged except: none. Visible text, layout and controls are as in the entry above; only the test query changed.
+- Approved customer-visible result: as in the calm shell entry of 2026-10-18 (#758): one page title, the sub-page name, in the header row.
+- Scope: `apps/control-center/src/components/control-center-app.whats-new.test.tsx` (test query only) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a test query change without a visible change
+
+## 2026-10-18 — Calm shell complete: one page title, no sentence under it on Themes and Screensavers (#758)
+
+- User approval: pending — Paul reviews (one page title as in the approved Appearance A picture); look unchanged except: the page header reads "Themes" or "Screensavers" (before: "Appearance" with a second title "Themes" or "Screensavers" under it), and the sentence under that second title is removed. Removed: "Customize how your live usage screen looks while VibeTV is active." and "Choose what appears when VibeTV enters standby after being idle.". The Create Theme / Create Screensaver button stays on the right above the list (not in the header row).
+- Approved customer-visible result: as in the approved Appearance A picture (#713): one page title, the sub-page name, in the header row next to the sidebar toggle; no description sentence.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx`, its test `apps/control-center/src/components/theme-library-screen.test.tsx`, `apps/control-center/scripts/test-customer-flows.mjs` (heading waits find the header title, test file only), and this approval record. Pull request branch only, not merge or release. Touches the Themes/Screensavers page; conflicts with #754 there (Marcus resolves).
+- What's new: none — a removed duplicate title and sentence
+
+## 2026-10-18 — Codex review fix: the internal Theme Studio preview keeps the Appearance title (#758)
+
+- User approval: pending — Paul reviews this PR (Codex review on 370fe895, P2, #758); look unchanged except: the internal preview at /internal/theme-studio-preview shows the header "Appearance" as in the Studio of the app. Before: "Themes" in that preview; after: "Appearance". Development preview only, not customer-visible.
+- Approved customer-visible result: as in the calm shell entry of 2026-10-18 (#758): Theme Studio keeps its own "Appearance" header.
+- Scope: `apps/control-center/src/components/theme-studio/theme-studio-preview.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a header flag in the development preview
