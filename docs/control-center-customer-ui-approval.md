@@ -8087,3 +8087,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged from the entries above except: after "Try again" the dialog stays closed while the retry runs and opens again when that retry fails, also when its answer carries the same second as the failure before.
 - Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new feature; the Updates screen shows the entries that already exist
+
+## 2026-10-19 — Calm Updates screen: any finished check lifts a closed failed-check dialog (#752, Codex fix)
+- User approval: pending — Paul reviews (Updates built as drawn in the approved master + derived states, decided by the communicator 19.10.); Codex review fix, no visible change; not seen by Paul
+- Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged from the entries above except: a check started from the "Check for updates" button that fails again opens the dialog again, like "Try again", also when its answer carries the same second.
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new feature; the Updates screen shows the entries that already exist

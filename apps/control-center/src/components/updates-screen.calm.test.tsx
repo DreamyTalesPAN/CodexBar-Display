@@ -343,6 +343,25 @@ describe("calm Updates screen", () => {
     expect(screen.getByRole("dialog", { name: "Could not check for updates" })).toBeTruthy();
   });
 
+  it("failed check: a header retry that fails in the same second opens the dialog again", () => {
+    const failed = {
+      ...upToDate,
+      firmwareUpdate: {
+        checkedAt: "2026-10-19T09:10:00Z",
+        status: "check_failed" as const,
+        installedFirmware: "1.0.48",
+        updateAvailable: false,
+      },
+    };
+    const view = render(<UpdatesScreen {...failed} />);
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // The header button runs a check; it ends with the same checkedAt.
+    view.rerender(<UpdatesScreen {...failed} busyAction="firmware-check" />);
+    view.rerender(<UpdatesScreen {...failed} />);
+    expect(screen.getByRole("dialog", { name: "Could not check for updates" })).toBeTruthy();
+  });
+
   it("no dialog while everything checks fine", () => {
     render(<UpdatesScreen {...upToDate} />);
     expect(screen.queryByRole("dialog")).toBeNull();
