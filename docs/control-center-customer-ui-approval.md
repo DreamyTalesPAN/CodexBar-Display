@@ -7977,3 +7977,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the two screens show Back as drawn in frames 18, 19, 27 and 28 of "Calm Redesign - alle Screens".
 - Scope: `apps/control-center/src/components/setup/setup-connect.ts`, `apps/control-center/src/components/setup/setup-wizard.tsx`, `apps/control-center/src/components/setup/setup-device-screen.tsx`, `apps/control-center/src/components/setup/setup-wizard.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-19 — #780: Codex fix, Back during a pairing returns to the connection choice
+
+- User approval: pending — Paul reviews (Codex review fix, P1/P2 on Back during a pairing); look unchanged except, before → after: pressing Back while a pairing still finishes lands on the connection choice → before, when the VibeTV had already been published, the customer could be sent on to provider setup instead.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/setup/setup-wizard.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
