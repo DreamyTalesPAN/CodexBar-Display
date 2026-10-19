@@ -8250,3 +8250,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet, pending Paul's review. Look only, no new wording. (1) Body text on Usage is 14.5 px / 400 (was 13 px): "Last 30 days", the "tokens" unit, the number in words, the chart axis labels, the legend, the lane labels and their reset, the token line and the Status value. The pace line under a bar stays 13 px. (2) The Codex line, its area and its legend dot are the master's dark olive `#444933` in the light theme (was `#506600`); the dark theme keeps the light olive `#A9C76A`, which stays apart from Claude's light grey. (3) The tile no longer shows an Activity row (it showed "Activity" with a word such as "coding" or "idle" under the lanes): the master draws none. The Status value stays. (4) The chart's date axis labels the first day, then every seventh day, and the last day (before: about ten labels three days apart), for example Sep 20, Sep 27, Oct 4, Oct 11, Oct 19; a weekly day less than four days before the last day is left out; the first label starts at the axis and the last one ends at its right edge.
 - Scope: `usage-screen.tsx`, `usage-screen.test.tsx`, `globals.css` (`--chart-2` in the light theme), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — look only, no new notice
+
+## 2026-10-19 — Approval record for the merge of main into claude/group-usage (no visible change)
+
+- User approval: none needed for this entry; it records only the merge of main into `claude/group-usage`, no visible change of its own. The visible changes of the branch are in the entries above, all pending Paul's review.
+- Approved customer-visible result: as recorded in the entries above; nothing else changed.
+- Scope: the merge of main (#645, #682 and later) into this branch and this approval record. Pull request branch only, not merge or release.
+- What's new: none — merge of main, no customer-visible change of its own
