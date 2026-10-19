@@ -2,13 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { SetupDialog } from "@/components/setup/setup-dialog";
 import { Input } from "@/components/ui/input";
 import {
   deleteAIThemeCredential,
@@ -48,16 +42,18 @@ function readConsent(): boolean {
 }
 
 export function OpenAIKeyForm({
-  inSetup, onConnectingChange, onConnected, onDisconnected,
+  inSetup, initialConfigured = false, onConnectingChange, onConnected, onDisconnected,
 }: {
   inSetup: boolean;
+  /** What the opener already knows about the saved key, so the dialog has its final height from the first frame. */
+  initialConfigured?: boolean | "pending";
   onConnectingChange: (busy: boolean) => void;
   /** `kept` is the helper's answer on whether the key survives restarts; undefined when no new key was checked. */
   onConnected: (kept?: boolean) => void;
   onDisconnected: () => void;
 }) {
   const [enabled, setEnabled] = useState(false);
-  const [configured, setConfigured] = useState<boolean | "pending">(false);
+  const [configured, setConfigured] = useState<boolean | "pending">(initialConfigured);
   const [consent, setConsent] = useState(readConsent);
   const [password, setPassword] = useState("");
   const [connecting, setConnecting] = useState(false);
@@ -235,25 +231,26 @@ export function ThemeStudioKeyRow() {
       <Button variant="outline" onClick={() => setOpen(true)}>
         {hasStoredKey(configured) ? "Change key" : "Add key"}
       </Button>
-      <Dialog open={open} onOpenChange={(next) => { if (!busy) setOpen(next); }}>
-        {/* Calm rule 13: no X. The dialog keeps a visible Close in its footer instead. */}
-        <DialogContent className="[&_[data-slot=dialog-close]]:hidden" aria-describedby={undefined}>
-          <DialogHeader>
-            <DialogTitle>{hasStoredKey(configured) ? "Replace OpenAI key" : "Add OpenAI key"}</DialogTitle>
-          </DialogHeader>
-          <OpenAIKeyForm
-            inSetup={false}
-            onConnectingChange={setBusy}
-            onConnected={() => {
-              setOpen(false);
-              setVersion((v) => v + 1);
-            }}
-            onDisconnected={() => setVersion((v) => v + 1)}
-          />
-          {/* Hidden while a key is being checked, as the X was. */}
-          {!busy ? <DialogFooter showCloseButton /> : null}
-        </DialogContent>
-      </Dialog>
+      {/* The same dialog as every other overlay: no entrance animation of its own. */}
+      <SetupDialog
+        open={open}
+        onOpenChange={(next) => { if (!busy) setOpen(next); }}
+        title={hasStoredKey(configured) ? "Replace OpenAI key" : "Add OpenAI key"}
+        // Calm rule 13: no X. A visible Close sits in the footer instead, hidden while a key is checked.
+        showCloseButton={false}
+        secondaryAction={busy ? undefined : { label: "Close", onSelect: () => setOpen(false) }}
+      >
+        <OpenAIKeyForm
+          inSetup={false}
+          initialConfigured={configured}
+          onConnectingChange={setBusy}
+          onConnected={() => {
+            setOpen(false);
+            setVersion((v) => v + 1);
+          }}
+          onDisconnected={() => setVersion((v) => v + 1)}
+        />
+      </SetupDialog>
     </div>
   );
 }

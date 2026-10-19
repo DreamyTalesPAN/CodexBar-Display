@@ -23,7 +23,8 @@ export type SetupDialogAction = {
 
 type SetupDialogProps = {
   children?: ReactNode;
-  description: string;
+  /** Omit for a dialog whose title says it all; no empty description is rendered. */
+  description?: string;
   icon?: LucideIcon;
   /** Destructive tints the header icon; "neutral" is for progress dialogs. */
   tone?: "error" | "neutral";
@@ -81,6 +82,7 @@ export function SetupDialog({
       />
       <DialogContent
         style={{ animation: "none" }}
+        {...(description === undefined ? { "aria-describedby": undefined } : {})}
         onInteractOutside={(event) => event.preventDefault()}
         showCloseButton={showCloseButton}
       >
@@ -98,7 +100,7 @@ export function SetupDialog({
             ) : null}
             <span>{title}</span>
           </DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
+          {description !== undefined ? <DialogDescription>{description}</DialogDescription> : null}
         </DialogHeader>
         {children}
         {primaryAction || secondaryAction ? (

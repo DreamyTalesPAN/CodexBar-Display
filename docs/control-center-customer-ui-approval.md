@@ -8023,3 +8023,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the entry above and in the entries of #638; nothing else changes.
 - Scope: the merge of `codex/theme-studio-pack` (73788377) into this branch and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — Theme Studio: the OpenAI key dialog opens like every other overlay (#781, build 7194)
+
+- User approval: Paul, 19.10.2026 via the communicator, feedback on test build 7194 (the "Replace OpenAI key" / "Add OpenAI key" overlay slid in from the bottom and then jumped upwards, unlike all other pop-ups)
+- Approved customer-visible result: before → after: the key dialog (Settings › Theme Studio AI, and the same dialog opened from the Studio) used its own plain dialog with a fade-and-zoom entrance and grew after opening, when the saved-key state arrived (the "Disconnect OpenAI" button appeared) and re-centred it, which looked like a jump; after: it is the same dialog as Factory reset and Run setup again (`SetupDialog`): no entrance animation of its own, the same dimmed screen behind it, and it has its final height from the first frame. Texts, heading, buttons and the Close button stay as in the entries above; in the Studio the dialog still has the X while no key is being checked.
+- Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx`, `ai-theme-studio-screen.tsx` (key dialog only), `apps/control-center/src/components/setup/setup-dialog.tsx` (description is optional; no description line is drawn when it is omitted), their tests, and this record. Pull request branch only, not merge or release.
+- What's new: none — same dialog, no new text or feature

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchAIThemeCapabilities, saveAIThemeCredential } from "@/lib/ai-theme";
 import { OpenAIKeyForm, ThemeStudioKeyRow } from "./openai-key-form";
@@ -68,8 +68,21 @@ describe("Theme Studio AI row in Settings", () => {
     render(<ThemeStudioKeyRow />);
     fireEvent.click(await screen.findByRole("button", { name: "Add key" }));
     const dialog = await screen.findByRole("dialog");
-    // The X is still in the markup, but this class hides it, so it is never shown.
-    expect(dialog.className).toContain("[&_[data-slot=dialog-close]]:hidden");
+    expect(dialog.querySelector('[data-slot="dialog-close"]')).toBeNull();
+  });
+
+  it("opens through the same dialog as every other overlay, without an entrance animation and already at its final height", async () => {
+    vi.mocked(fetchAIThemeCapabilities).mockResolvedValue(capabilities(true));
+    render(<ThemeStudioKeyRow />);
+    fireEvent.click(await screen.findByRole("button", { name: "Change key" }));
+    const dialog = screen.getByRole("dialog");
+    // SetupDialog (Factory reset, Run setup again, ...) switches the entrance animation off and dims the screen with its own scrim.
+    expect(dialog.style.animation).toBe("none");
+    expect(document.querySelector('[aria-hidden="true"].fixed.inset-0')).not.toBeNull();
+    // The saved-key state comes from the row, so nothing is added after the first frame and the dialog never jumps.
+    expect(within(dialog).getByRole("heading", { name: "Replace OpenAI key" })).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "Disconnect OpenAI" })).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "Update key" })).toBeTruthy();
   });
 
   it("offers a visible Close in the footer, hidden while a key is being checked", async () => {
