@@ -521,7 +521,14 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 	// recorded, so the page keeps asking for it.
 	checked := make(chan codexbar.ProviderSetup, 1)
 	go func() {
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), exactProviderCheckTimeout)
+		// After a browser sign-in read the check may first wait out an older
+		// probe and then probe again; each may take a full exact check, and
+		// the fresh probe stays capped by its own budget (#805 Codex review).
+		budget := exactProviderCheckTimeout
+		if afterBrowserSignInRead {
+			budget = 2 * exactProviderCheckTimeout
+		}
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), budget)
 		defer cancel()
 		if afterBrowserSignInRead {
 			checked <- s.exactProviderSetupStartedAfter(ctx, providerID, requestedAt)
