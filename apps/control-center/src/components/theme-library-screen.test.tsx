@@ -472,8 +472,9 @@ describe("ThemeLibraryScreen Appearance sections", () => {
     expect(html).toContain(">Turn on first<");
     expect(html).toContain(">Turn on in Settings</a>");
     // The Design System link (dark ink, underline, olive on hover), not lime on grey.
+    // Dark mode hovers in the light olive #A9C76A: #506600 has only 1.44:1 on the dark grey.
     const link = html.match(/<a class="([^"]*)"[^>]*>Turn on in Settings<\/a>/)?.[1] ?? "";
-    expect(link.split(" ")).toEqual(expect.arrayContaining(["text-foreground", "underline", "hover:text-[var(--vibetv-support)]"]));
+    expect(link.split(" ")).toEqual(expect.arrayContaining(["text-foreground", "underline", "hover:text-[var(--vibetv-support)]", "dark:hover:text-[#A9C76A]"]));
     expect(link).not.toContain("text-primary");
   });
 
