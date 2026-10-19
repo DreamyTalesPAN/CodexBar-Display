@@ -461,7 +461,7 @@ export function SettingsScreen({
           open
           onOpenChange={(open) => { if (!open) setRequestedMode(null); }}
         >
-          <DialogContent showCloseButton={false}>
+          <DialogContent>
             <DialogHeader>
               <DialogTitle>{requestedMode === "cable" ? "Switch to USB-C?" : "Switch to WiFi?"}</DialogTitle>
               <DialogDescription>
@@ -471,7 +471,7 @@ export function SettingsScreen({
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
-              <Button onClick={() => setRequestedMode(null)} type="button" variant="outline">
+              <Button onClick={() => setRequestedMode(null)} type="button" variant="ghost">
                 {requestedMode === "cable" ? "Keep WiFi" : "Keep USB-C"}
               </Button>
               <Button
@@ -545,7 +545,7 @@ export function SettingsScreen({
               if (!open) setEraseRequested(false);
             }}
           >
-            <DialogContent showCloseButton={false}>
+            <DialogContent>
               <DialogHeader>
                 <DialogTitle>Reset VibeTV to factory settings?</DialogTitle>
                 <DialogDescription>
@@ -553,7 +553,7 @@ export function SettingsScreen({
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter>
-                <Button onClick={() => setEraseRequested(false)} type="button" variant="outline">
+                <Button onClick={() => setEraseRequested(false)} type="button" variant="ghost">
                   Cancel
                 </Button>
                 <Button
@@ -563,7 +563,6 @@ export function SettingsScreen({
                     onEraseDevice?.();
                   }}
                   type="button"
-                  variant="destructive"
                 >
                   Reset
                 </Button>

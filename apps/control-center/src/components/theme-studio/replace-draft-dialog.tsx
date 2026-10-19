@@ -35,7 +35,7 @@ export function ReplaceDraftDialog({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel autoFocus>{keepLabel}</AlertDialogCancel>
-          <AlertDialogAction onClick={onReplace} variant="destructive">
+          <AlertDialogAction onClick={onReplace}>
             Replace
           </AlertDialogAction>
         </AlertDialogFooter>
