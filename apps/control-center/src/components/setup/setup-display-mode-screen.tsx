@@ -15,8 +15,14 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { SETUP_REVEAL } from "./setup-reveal";
-import { SelectionCheck, SelectionDot, selectedItemClass } from "./setup-selectable-card";
 import {
+  SelectionCheck,
+  SelectionDot,
+  calmCardClass,
+  selectedItemClass,
+} from "./setup-selectable-card";
+import {
+  CALM_BUTTON_CLASS,
   CALM_SUBTITLE_CLASS,
   CALM_TITLE_CLASS,
   SetupWizardScreen,
@@ -91,15 +97,15 @@ export function SetupDisplayModeScreen({
   return (
     <SetupWizardScreen
       contentWidth="wide"
-      label="Display Mode"
+      label="Display mode"
       aiFixPrompt={aiFixPrompt}
       onBack={onBack}
       onCreateSupportReport={onCreateSupportReport}
       windowsHost={windowsHost}
     >
-      <SetupWizardTitle className={CALM_TITLE_CLASS}>Display Mode</SetupWizardTitle>
+      <SetupWizardTitle className={CALM_TITLE_CLASS}>Display mode</SetupWizardTitle>
       <SetupWizardSubtitle className={CALM_SUBTITLE_CLASS}>
-        Show one or multiple AI Providers. You can change this any time.
+        Show one or multiple AI providers. You can change this any time.
       </SetupWizardSubtitle>
 
       <DisplayModeChoice
@@ -133,7 +139,7 @@ export function SetupDisplayModeScreen({
           (mode === "fixed" &&
             !providers.some((provider) => provider.id === selectedProviderId))
         }
-        className="mt-6 h-11 w-full"
+        className={cn(CALM_BUTTON_CLASS, mode === "fixed" ? "mt-6" : "mt-8")}
         onClick={onContinue}
         type="button"
       >
@@ -192,7 +198,7 @@ export function DisplayModeChoice({
   const { index } = useProviderRotation(rotation.length);
 
   return (
-    <div className={cn("flex w-full flex-col gap-4", className)}>
+    <div className={cn("flex w-full flex-col", calm ? "gap-6" : "gap-4", className)}>
       <div className="grid w-full grid-cols-2 items-stretch gap-4">
         <ModeCard
           calm={calm}
@@ -202,7 +208,7 @@ export function DisplayModeChoice({
           selected={mode === "automatic"}
           title="Automatic"
         >
-          <PreviewTile frames={rotation} index={index} />
+          <PreviewTile calm={calm} frames={rotation} index={index} />
         </ModeCard>
         <ModeCard
           calm={calm}
@@ -212,7 +218,7 @@ export function DisplayModeChoice({
           selected={mode === "fixed"}
           title="Manual"
         >
-          <PreviewTile frames={manualPreview ? [manualPreview] : []} index={0} />
+          <PreviewTile calm={calm} frames={manualPreview ? [manualPreview] : []} index={0} />
         </ModeCard>
       </div>
 
@@ -221,37 +227,47 @@ export function DisplayModeChoice({
           <p className={cn("font-semibold", calm ? "text-[13px]" : "text-sm")}>
             Show this provider
           </p>
-          {providers.map((provider) => (
-            <Item
-              asChild
-              className={cn(
-                selectedItemClass(provider.id === selectedProviderId),
-                calm && "px-5 py-3",
-              )}
-              key={provider.id}
-              variant="outline"
-            >
+          <div className={cn("flex flex-col", calm ? "gap-1.5" : "gap-2")}>
+          {providers.map((provider) =>
+            calm ? (
               <button
                 aria-pressed={provider.id === selectedProviderId}
+                className={cn(
+                  calmCardClass(provider.id === selectedProviderId),
+                  "flex h-11 items-center justify-between px-5",
+                )}
                 disabled={saving}
+                key={provider.id}
                 onClick={() => onSelectProvider(provider.id)}
                 type="button"
               >
-                <ItemContent>
-                  <ItemTitle className={cn(calm && "font-semibold")}>
-                    {provider.label}
-                  </ItemTitle>
-                </ItemContent>
-                <ItemActions>
-                  {calm ? (
-                    <SelectionDot selected={provider.id === selectedProviderId} />
-                  ) : (
-                    <SelectionCheck selected={provider.id === selectedProviderId} />
-                  )}
-                </ItemActions>
+                <span className="font-semibold">{provider.label}</span>
+                <SelectionDot selected={provider.id === selectedProviderId} />
               </button>
-            </Item>
-          ))}
+            ) : (
+              <Item
+                asChild
+                className={selectedItemClass(provider.id === selectedProviderId)}
+                key={provider.id}
+                variant="outline"
+              >
+                <button
+                  aria-pressed={provider.id === selectedProviderId}
+                  disabled={saving}
+                  onClick={() => onSelectProvider(provider.id)}
+                  type="button"
+                >
+                  <ItemContent>
+                    <ItemTitle>{provider.label}</ItemTitle>
+                  </ItemContent>
+                  <ItemActions>
+                    <SelectionCheck selected={provider.id === selectedProviderId} />
+                  </ItemActions>
+                </button>
+              </Item>
+            ),
+          )}
+          </div>
         </div>
       ) : null}
     </div>
@@ -338,6 +354,33 @@ function ModeCard({
   selected: boolean;
   title: string;
 }) {
+  if (calm) {
+    return (
+      <button
+        aria-pressed={selected}
+        // The row stretches both cards to one height; a shorter description
+        // must not move its preview down.
+        className={cn(
+          calmCardClass(selected),
+          "flex flex-col items-stretch overflow-hidden p-0",
+        )}
+        disabled={disabled}
+        onClick={onSelect}
+        type="button"
+      >
+        {children}
+        <span className="flex flex-col gap-1.5 px-5 pt-3 pb-5">
+          <span className="flex items-center justify-between font-semibold">
+            <span>{title}</span>
+            <SelectionDot selected={selected} />
+          </span>
+          <span className="text-[13px] leading-normal text-muted-foreground">
+            {description}
+          </span>
+        </span>
+      </button>
+    );
+  }
   return (
     <Item
       asChild
@@ -354,26 +397,12 @@ function ModeCard({
       >
         <ItemContent className="gap-0">
           {children}
-          <span
-            className={cn(
-              "flex flex-col gap-1.5",
-              calm ? "px-5 py-4" : "px-4 py-3.5",
-            )}
-          >
-            <ItemTitle className={cn("justify-between", calm && "font-semibold")}>
+          <span className="flex flex-col gap-1.5 px-4 py-3.5">
+            <ItemTitle className="justify-between">
               <span>{title}</span>
-              {calm ? (
-                <SelectionDot selected={selected} />
-              ) : (
-                <SelectionCheck selected={selected} />
-              )}
+              <SelectionCheck selected={selected} />
             </ItemTitle>
-            <ItemDescription
-              className={cn(
-                "line-clamp-none leading-[1.5]",
-                calm ? "text-[13px]" : "text-xs",
-              )}
-            >
+            <ItemDescription className="line-clamp-none text-xs leading-[1.5]">
               {description}
             </ItemDescription>
           </span>
@@ -390,18 +419,23 @@ function ModeCard({
  * has not been read yet renders as unavailable rather than as a placeholder.
  */
 function PreviewTile({
+  calm = false,
   frames,
   index,
 }: {
+  calm?: boolean;
   frames: SetupDisplayModePreview[];
   index: number;
 }) {
+  const tileClass = calm
+    ? "min-h-[136px] bg-muted"
+    : "min-h-[140px] bg-muted/50";
   const frame = frames[index];
 
   if (!frame) {
     return (
       <span
-        className="flex min-h-[140px] w-full items-center justify-center bg-muted/50 p-4 text-center font-mono text-[10px] tracking-[0.12em] text-muted-foreground uppercase"
+        className={cn("flex w-full items-center justify-center p-4 text-center font-mono text-[10px] tracking-[0.12em] text-muted-foreground uppercase", tileClass)}
         data-slot="display-mode-preview"
       >
         No usage yet
@@ -411,7 +445,7 @@ function PreviewTile({
 
   return (
     <span
-      className="flex min-h-[140px] w-full flex-col justify-center gap-3 bg-muted/50 p-4 font-mono"
+      className={cn("flex w-full flex-col justify-center gap-3 p-4 font-mono", tileClass)}
       data-slot="display-mode-preview"
     >
       <CycledText

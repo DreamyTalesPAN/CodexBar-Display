@@ -37,7 +37,7 @@ describe("SetupThemeScreen", () => {
 
     expect(html).toContain("text-[28px]");
     expect(html).not.toContain("text-[40px]");
-    expect(html).toContain("size-20 rounded-md");
+    expect(html).toContain("size-20 shrink-0 rounded-[6px]");
   });
 
   it("keeps the install action to the one word, whichever theme is chosen", () => {

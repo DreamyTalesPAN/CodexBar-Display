@@ -25,16 +25,24 @@ import type {
 import { candidateKey, type SetupTransport } from "./setup-connection";
 import { SetupDeviceCard } from "./setup-device-card";
 import { SetupCableHelpDialog } from "./setup-device-dialogs";
-import { SelectionDot, selectedItemClass } from "./setup-selectable-card";
+import { SelectionDot, calmCardClass } from "./setup-selectable-card";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import type { ConnectPhase } from "./setup-connect-log";
 import { SetupLog, type SetupLogLine } from "./setup-log";
 import {
+  CALM_BUTTON_CLASS,
+  CALM_LINK_CLASS,
+  CALM_SUBTITLE_CLASS,
+  CALM_TITLE_CLASS,
   SetupWizardScreen,
   SetupWizardSubtitle,
   SetupWizardTitle,
 } from "./setup-wizard-screen";
+
+/** Label and field of the WiFi form: 13px, labels semibold, 44px fields. */
+const CALM_LABEL_CLASS = "text-[13px] font-semibold";
+const CALM_INPUT_CLASS = "h-11 w-full text-[13px] md:text-[13px]";
 
 type SetupDeviceScreenProps = {
   candidates: DeviceCandidate[];
@@ -110,8 +118,9 @@ export function SetupDeviceScreen({
   const [connectionChoice, setConnectionChoice] =
     useState<SetupTransport>("cable");
   const waitingForWiFi = wifiSetupPhase === "waiting" && wifiWaitingViaCable;
-  const showWiFiForm =
-    wifiSetupPhase === "credentials" || (waitingForWiFi && wifiCredentialsSent);
+  // Once the details are sent the form steps aside for the log; Edit WiFi
+  // details brings it back with what was typed.
+  const showWiFiForm = wifiSetupPhase === "credentials";
   const wifiBusy = connecting || wifiSubmitting || waitingForWiFi;
   const passwordRequired = manualWiFiName ||
     wifiNetworks.find((network) => network.ssid === wifiName)?.encrypted !== false;
@@ -159,9 +168,7 @@ export function SetupDeviceScreen({
       onCreateSupportReport={onCreateSupportReport}
       windowsHost={windowsHost}
     >
-      <SetupWizardTitle className="mt-0 text-[28px] leading-[1.15] font-semibold tracking-[-0.01em]">
-        {title}
-      </SetupWizardTitle>
+      <SetupWizardTitle className={CALM_TITLE_CLASS}>{title}</SetupWizardTitle>
       {/*
         Once a VibeTV is being connected the count is no longer what the
         customer is waiting on -- the log below is. Reporting one there also
@@ -169,7 +176,7 @@ export function SetupDeviceScreen({
         during a connect, so the count was the only thing left to render.
       */}
       {connecting ? null : (
-        <SetupWizardSubtitle className="text-[13px]">
+        <SetupWizardSubtitle className={CALM_SUBTITLE_CLASS}>
           {showModeChoice
             ? "You can change this later in Settings."
             : showWiFiForm
@@ -198,7 +205,6 @@ export function SetupDeviceScreen({
             }}
             type="single"
             value={connectionChoice}
-            variant="outline"
           >
             {(["cable", "wifi"] as const).map((mode) => {
               const Icon = mode === "cable" ? Cable : Wifi;
@@ -211,32 +217,32 @@ export function SetupDeviceScreen({
                 <ToggleGroupItem
                   aria-label={mode === "cable" ? "Cable" : "WiFi"}
                   className={cn(
-                    selectedItemClass(connectionChoice === mode),
-                    "h-auto min-w-0 flex-col items-start justify-start gap-2 p-5 whitespace-normal bg-card data-[state=on]:bg-card",
+                    calmCardClass(connectionChoice === mode),
+                    "flex h-auto min-w-0 flex-col items-start justify-start gap-2 p-5 text-[13px] font-normal whitespace-normal hover:bg-card data-[state=on]:bg-card aria-pressed:bg-card",
                   )}
                   key={mode}
                   value={mode}
                 >
-                  <span className="flex w-full items-center gap-2">
+                  <span className="flex w-full items-center gap-2.5">
                     <Icon aria-hidden />
                     <span className="font-semibold">{mode === "cable" ? "Cable" : "WiFi"}</span>
                     <span className="ml-auto">
                       <SelectionDot selected={connectionChoice === mode} />
                     </span>
                   </span>
-                  <span className="text-[13px] leading-relaxed font-normal text-muted-foreground">
+                  <span className="text-[13px] leading-normal font-normal text-muted-foreground">
                     {mode === "cable"
                       ? "Fastest and most reliable. VibeTV needs no network access."
                       : "No cable on your desk — VibeTV can stand anywhere."}
                   </span>
-                  <span className="mt-auto flex items-center gap-2 pt-1 text-[13px] font-normal text-muted-foreground">
+                  <span className="mt-auto flex items-center gap-2 pt-2 text-[13px] font-normal text-muted-foreground">
                     <span
                       aria-hidden
                       className={cn(
                         "size-2 shrink-0 rounded-full",
                         count
-                          ? "bg-[var(--vibetv-support)]"
-                          : "bg-muted-foreground",
+                          ? "bg-foreground"
+                          : "shadow-[inset_0_0_0_1px_var(--muted-foreground)]",
                       )}
                     />
                     {`${count} ${count === 1 ? "VibeTV" : "VibeTVs"} found`}
@@ -246,7 +252,7 @@ export function SetupDeviceScreen({
             })}
           </ToggleGroup>
           <Button
-            className="mt-8 h-11 w-full"
+            className={cn(CALM_BUTTON_CLASS, "mt-8")}
             disabled={connecting}
             onClick={() => onChooseTransport(connectionChoice)}
             type="button"
@@ -258,13 +264,15 @@ export function SetupDeviceScreen({
 
       {showWiFiForm ? (
         <form className="mt-8 w-full text-left" onSubmit={submitWiFi}>
-          <FieldGroup className="gap-4">
+          <FieldGroup className="gap-0">
             <Field>
-              <FieldLabel htmlFor="setup-wifi-network">WiFi network</FieldLabel>
+              <FieldLabel className={CALM_LABEL_CLASS} htmlFor="setup-wifi-network">
+                WiFi network
+              </FieldLabel>
               {manualWiFiName ? (
                 <Input
                   autoComplete="off"
-                  className="h-11"
+                  className={CALM_INPUT_CLASS}
                   disabled={wifiScanning || wifiBusy}
                   id="setup-wifi-network"
                   maxLength={32}
@@ -284,7 +292,13 @@ export function SetupDeviceScreen({
                   }}
                   value={wifiName}
                 >
-                  <SelectTrigger className="h-11 w-full" id="setup-wifi-network">
+                  <SelectTrigger
+                    className={cn(
+                      CALM_INPUT_CLASS,
+                      "flex items-center justify-between gap-2 py-0 pr-3 pl-3 text-left data-[size=default]:h-11 *:data-[slot=select-value]:flex-1 *:data-[slot=select-value]:gap-2",
+                    )}
+                    id="setup-wifi-network"
+                  >
                     <SelectValue
                       placeholder={
                         wifiScanning
@@ -299,12 +313,12 @@ export function SetupDeviceScreen({
                     <SelectGroup>
                       {wifiNetworks.map((network) => (
                         <SelectItem key={network.ssid} value={network.ssid}>
-                          <Wifi aria-hidden />
+                          <Wifi aria-hidden className="text-muted-foreground" />
                           <span className="min-w-0 flex-1 truncate">
                             {network.ssid}
                           </span>
                           {network.encrypted ? (
-                            <LockKeyhole aria-label="Encrypted" />
+                            <LockKeyhole aria-label="Encrypted" className="text-muted-foreground" />
                           ) : null}
                           <span className="sr-only">
                             {signalLabel(network.rssi)} signal
@@ -316,8 +330,9 @@ export function SetupDeviceScreen({
                 </Select>
               )}
             </Field>
-            <div className="flex flex-wrap justify-between gap-2">
+            <div className="mt-3 flex flex-wrap justify-between gap-2">
               <Button
+                className={CALM_LINK_CLASS}
                 disabled={wifiScanning || wifiBusy}
                 onClick={onScanWiFiNetworks}
                 size="sm"
@@ -327,6 +342,7 @@ export function SetupDeviceScreen({
                 Scan again
               </Button>
               <Button
+                className={CALM_LINK_CLASS}
                 disabled={wifiScanning || wifiBusy}
                 onClick={() => {
                   setManualWiFiName((current) => !current);
@@ -341,13 +357,13 @@ export function SetupDeviceScreen({
                   : "Enter hidden network"}
               </Button>
             </div>
-            <Field>
-              <FieldLabel htmlFor="setup-wifi-password">
+            <Field className="mt-6">
+              <FieldLabel className={CALM_LABEL_CLASS} htmlFor="setup-wifi-password">
                 WiFi password
               </FieldLabel>
               <Input
                 autoComplete="current-password"
-                className="h-11"
+                className={CALM_INPUT_CLASS}
                 disabled={wifiScanning || wifiBusy}
                 id="setup-wifi-password"
                 maxLength={64}
@@ -358,18 +374,13 @@ export function SetupDeviceScreen({
               />
             </Field>
             <Button
-              className="h-11 w-full"
+              className={cn(CALM_BUTTON_CLASS, "mt-8")}
               disabled={wifiScanning || wifiBusy || !wifiName.trim() || passwordMissing}
               type="submit"
             >
               {wifiBusy ? <Spinner data-icon="inline-start" /> : null}
               {wifiBusy ? "Connecting to WiFi…" : "Connect to WiFi"}
             </Button>
-            {waitingForWiFi && onEditWiFi ? (
-              <Button type="button" variant="link" onClick={onEditWiFi}>
-                Edit WiFi details
-              </Button>
-            ) : null}
           </FieldGroup>
         </form>
       ) : null}
@@ -401,7 +412,7 @@ export function SetupDeviceScreen({
 
       {showCandidates ? (
         <Button
-          className="mt-8 h-11 w-full"
+          className={cn(CALM_BUTTON_CLASS, "mt-8")}
           disabled={connecting || !selectedTarget}
           onClick={onConnect}
           type="button"
@@ -410,60 +421,10 @@ export function SetupDeviceScreen({
           <span>{connecting ? connectingLabel(connectPhase) : "Connect"}</span>
         </Button>
       ) : null}
-      {/*
-        The step's own way to try again, not a dialog's. Every dialog that
-        offered one could be dismissed, and dismissing it left a scan that had
-        answered with nothing on a screen whose only remaining control was the
-        address field. One standing control covers every way a scan can end.
-      */}
-      <div className="mt-5 flex justify-center gap-6 empty:hidden">
-        {!showModeChoice &&
-        !connecting &&
-        !searching &&
-        (!wifiSetupPhase || waitingForWiFi) ? (
-          <Button
-            disabled={connecting}
-            onClick={onSearchAgain}
-            size="sm"
-            type="button"
-            variant="link"
-          >
-            Search again
-          </Button>
-        ) : null}
-        {!showModeChoice &&
-        !showWiFiForm &&
-        !connecting &&
-        transport !== "cable" &&
-        !wifiSetupPhase ? (
-          <Button
-            disabled={connecting}
-            onClick={onEnterAddressManually}
-            size="sm"
-            type="button"
-            variant="link"
-          >
-            Enter IP address manually
-          </Button>
-        ) : null}
-      </div>
-
-      {alternativeTransport && !showWiFiForm ? (
-        <Button
-          disabled={connecting}
-          onClick={() => onChooseTransport(alternativeTransport)}
-          size="sm"
-          type="button"
-          variant="link"
-        >
-          Use {alternativeTransport === "cable" ? "Cable" : "WiFi"} instead
-        </Button>
-      ) : null}
-
       {!showModeChoice ? (
         <>
           <SetupLog
-            className="mt-8"
+            className="mt-8 empty:hidden"
             lines={
               waitingForWiFi && wifiCredentialsSent
                 ? [
@@ -487,6 +448,70 @@ export function SetupDeviceScreen({
           ) : null}
         </>
       ) : null}
+      {/*
+        The step's own way to try again, not a dialog's. Every dialog that
+        offered one could be dismissed, and dismissing it left a scan that had
+        answered with nothing on a screen whose only remaining control was the
+        address field. One standing control covers every way a scan can end.
+      */}
+      <div className="mt-5 flex justify-center gap-6 empty:hidden">
+        {waitingForWiFi && onEditWiFi ? (
+          <Button
+            className={CALM_LINK_CLASS}
+            onClick={onEditWiFi}
+            size="sm"
+            type="button"
+            variant="link"
+          >
+            Edit WiFi details
+          </Button>
+        ) : null}
+        {!showModeChoice &&
+        !connecting &&
+        !searching &&
+        (!wifiSetupPhase || waitingForWiFi) ? (
+          <Button
+            className={CALM_LINK_CLASS}
+            disabled={connecting}
+            onClick={onSearchAgain}
+            size="sm"
+            type="button"
+            variant="link"
+          >
+            Search again
+          </Button>
+        ) : null}
+        {!showModeChoice &&
+        !showWiFiForm &&
+        !connecting &&
+        transport !== "cable" &&
+        !wifiSetupPhase ? (
+          <Button
+            className={CALM_LINK_CLASS}
+            disabled={connecting}
+            onClick={onEnterAddressManually}
+            size="sm"
+            type="button"
+            variant="link"
+          >
+            Enter IP address manually
+          </Button>
+        ) : null}
+      </div>
+
+      {alternativeTransport && !showWiFiForm ? (
+        <Button
+          className={cn(CALM_LINK_CLASS, "mt-5")}
+          disabled={connecting}
+          onClick={() => onChooseTransport(alternativeTransport)}
+          size="sm"
+          type="button"
+          variant="link"
+        >
+          Use {alternativeTransport === "cable" ? "Cable" : "WiFi"} instead
+        </Button>
+      ) : null}
+
     </SetupWizardScreen>
   );
 }

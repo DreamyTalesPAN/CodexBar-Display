@@ -60,7 +60,7 @@ export function SetupLiveScreen({
       windowsHost={windowsHost}
     >
       <SetupWizardTitle className={CALM_TITLE_CLASS}>Your VibeTV is live</SetupWizardTitle>
-      <div className="mt-6 w-full">
+      <div className="mt-8 w-full">
         <LiveVibeTVPreview
           device={device}
           displayFrame={displayFrame}

@@ -64,7 +64,7 @@ describe("SetupDisplayModeScreen", () => {
 
     expect(cards).toHaveLength(2);
     for (const card of cards) {
-      expect(card).toContain("items-start");
+      expect(card).toContain("flex-col");
       expect(card).not.toContain("items-center");
     }
   });

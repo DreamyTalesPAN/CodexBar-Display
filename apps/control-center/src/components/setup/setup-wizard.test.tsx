@@ -942,15 +942,13 @@ describe("SetupWizard: direct connection", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Connect to WiFi" }));
     await waitFor(() => expect(onConfigureWiFi).toHaveBeenCalledWith("Home", "test-password"));
+    // Once the details are sent the form steps aside for the log (the
+    // approved Setup design); Edit WiFi details brings it back as typed.
+    fireEvent.click(await screen.findByRole("button", { name: "Edit WiFi details" }));
+    expect(onConfigureWiFi).toHaveBeenCalledTimes(1);
     const network = screen.getByLabelText("WiFi network") as HTMLInputElement;
     expect(network.value).toBe("Home");
-    expect(network.disabled).toBe(true);
-    const waiting = screen.getByRole("button", { name: "Connecting to WiFi…" }) as HTMLButtonElement;
-    expect(waiting.disabled).toBe(true);
-    fireEvent.submit(network.closest("form")!);
-    expect(onConfigureWiFi).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole("button", { name: "Edit WiFi details" }));
-    expect((screen.getByLabelText("WiFi network") as HTMLInputElement).disabled).toBe(false);
+    expect(network.disabled).toBe(false);
     fireEvent.change(screen.getByLabelText("WiFi password"), {
       target: { value: "corrected-password" },
     });
@@ -1186,7 +1184,7 @@ describe("SetupWizard: one enabled provider", () => {
       <SetupWizard {...baseProps({ step: "theme", onDisplayContinue })} />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    expect(shownStep()).toBe("Display Mode");
+    expect(shownStep()).toBe("Display mode");
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
 
     await act(async () => {
@@ -1251,7 +1249,7 @@ describe("SetupWizard: one enabled provider", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    expect(shownStep()).toBe("Display Mode");
+    expect(shownStep()).toBe("Display mode");
   });
 
   it("evaluates the current selection again after going back", async () => {
@@ -1273,7 +1271,7 @@ describe("SetupWizard: one enabled provider", () => {
       fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     });
     expect(onDisplayContinue).not.toHaveBeenCalled();
-    expect(shownStep()).toBe("Display Mode");
+    expect(shownStep()).toBe("Display mode");
 
     // Two became one: the remaining provider is saved and the step skipped.
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
@@ -1323,7 +1321,7 @@ describe("SetupWizard: going back", () => {
   // without ever moving.
   it("hands the screen back to the derived step once Continue is pressed", async () => {
     render(<SetupWizard {...baseProps({ step: "display" })} />);
-    expect(shownStep()).toBe("Display Mode");
+    expect(shownStep()).toBe("Display mode");
 
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(shownStep()).toBe("Choose AI providers");
@@ -1332,7 +1330,7 @@ describe("SetupWizard: going back", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     });
-    expect(shownStep()).toBe("Display Mode");
+    expect(shownStep()).toBe("Display mode");
   });
 
   // Coming back from theme leaves the derived step ahead, so a refused
@@ -1369,7 +1367,7 @@ describe("SetupWizard: going back", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     });
-    expect(shownStep()).toBe("Display Mode");
+    expect(shownStep()).toBe("Display mode");
 
     rerender(
       <SetupWizard
@@ -1382,7 +1380,7 @@ describe("SetupWizard: going back", () => {
         }}
       />,
     );
-    expect(shownStep()).toBe("Display Mode");
+    expect(shownStep()).toBe("Display mode");
     expect(
       screen.getByText("Every enabled provider must be included for display."),
     ).toBeTruthy();
@@ -1417,7 +1415,7 @@ describe("SetupWizard: going back", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Connect" }));
     });
-    expect(shownStep()).toBe("Display Mode");
+    expect(shownStep()).toBe("Display mode");
   });
 
   // A save that did not land must not read as one that did: the rollback
@@ -1431,14 +1429,14 @@ describe("SetupWizard: going back", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    expect(shownStep()).toBe("Display Mode");
+    expect(shownStep()).toBe("Display mode");
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     });
 
     expect(onDisplayContinue).toHaveBeenCalled();
-    expect(shownStep()).toBe("Display Mode");
+    expect(shownStep()).toBe("Display mode");
   });
 
   it("moves on when the save lands", async () => {
@@ -1473,7 +1471,7 @@ describe("SetupWizard: going back", () => {
       <SetupWizard {...baseProps({ step: "theme", onDisplayContinue })} />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    expect(shownStep()).toBe("Display Mode");
+    expect(shownStep()).toBe("Display mode");
 
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
@@ -1516,7 +1514,7 @@ describe("SetupWizard: going back", () => {
         {...baseProps({ step: "theme", displaySavePending: true })}
       />,
     );
-    expect(shownStep()).toBe("Display Mode");
+    expect(shownStep()).toBe("Display mode");
 
     rerender(
       <SetupWizard
@@ -1529,7 +1527,7 @@ describe("SetupWizard: going back", () => {
   it("releases the theme step the same way", async () => {
     render(<SetupWizard {...baseProps({ step: "theme" })} />);
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    expect(shownStep()).toBe("Display Mode");
+    expect(shownStep()).toBe("Display mode");
 
     // The display save is awaited before the step is released, so this one
     // settles a microtask later than the provider step's Continue.

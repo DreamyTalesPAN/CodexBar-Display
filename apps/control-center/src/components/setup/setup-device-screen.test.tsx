@@ -252,7 +252,7 @@ describe("SetupDeviceScreen device cards", () => {
     expect(selected[0][1]).toContain('data-selected="true"');
     expect(selected[0][1]).toContain("bg-foreground");
     expect(unselected[0][1]).not.toContain("data-selected");
-    expect(unselected[0][1]).toContain("border-muted-foreground/50");
+    expect(unselected[0][1]).toContain("inset_0_0_0_1px_color-mix");
   });
 });
 

@@ -20,10 +20,15 @@ import { cn } from "@/lib/utils";
 import { SETUP_REVEAL } from "./setup-reveal";
 import type { ProviderItem } from "../provider-picker";
 import { SetupLog, type SetupLogLine } from "./setup-log";
-import { SetupProviderRow, setupProviderRowVariant } from "./setup-provider-row";
+import {
+  SETUP_PROVIDER_CARD_CLASS,
+  SetupProviderRow,
+  setupProviderRowVariant,
+} from "./setup-provider-row";
 import { SetupDialog } from "./setup-dialog";
 import { displayPreviewFor } from "./setup-display-previews";
 import {
+  CALM_BUTTON_CLASS,
   CALM_SUBTITLE_CLASS,
   CALM_TITLE_CLASS,
   SetupWizardScreen,
@@ -339,7 +344,12 @@ export function ProviderList({
         />
       ) : null}
       {showIntro ? (
-      <p className="mb-8 text-[13px] text-muted-foreground">
+      <p
+        className={cn(
+          "text-[13px] text-muted-foreground",
+          calm ? "mt-2.5 mb-6 text-center" : "mb-8",
+        )}
+      >
         VibeTV reads your AI usage with CodexBar, a helper app installed with VibeTV. Turn on the providers you use below.
       </p>
       ) : null}
@@ -350,7 +360,7 @@ export function ProviderList({
         />
         <Input
           aria-label="Search providers"
-          className="pl-9"
+          className={cn("pl-9", calm && "text-[13px] md:text-[13px]")}
           onChange={(event) => {
             setQuery(event.target.value);
             setShown(PROVIDER_PAGE_SIZE);
@@ -470,7 +480,6 @@ export function SetupProvidersScreen({
 
       <ProviderList
         calm
-        className="mt-4"
         onCheckAgain={onCheckAgain}
         onOpenSignIn={onOpenSignIn}
         onOpenSetupGuide={onOpenSetupGuide}
@@ -482,7 +491,7 @@ export function SetupProvidersScreen({
       />
 
       <Button
-        className="mt-6 h-11 w-full"
+        className={cn(CALM_BUTTON_CLASS, "mt-6")}
         // Closed while the completion is on its way. A second press starts a
         // second one, and each of those forces a live provider read before it
         // writes anything -- so the customer paid for the same slow check twice
@@ -553,34 +562,34 @@ function SetupProvidersLoadingScreen({
 
       <SetupLog className="mt-8" lines={lines} running />
 
-      <div className="relative w-full">
+      <div className="relative mt-6 w-full">
         <Search
           aria-hidden
           className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
         />
         <Input
           aria-label="Search providers"
-          className="pl-9"
+          className="pl-9 text-[13px] md:text-[13px]"
           disabled
           placeholder="Search providers"
           type="search"
         />
       </div>
 
-      <ItemGroup aria-hidden className="mt-2 gap-2">
+      <ItemGroup aria-hidden className="mt-3 gap-2">
         {Array.from({ length: 3 }, (_, index) => (
           <Item
-            className="min-h-14 rounded-[var(--radius-card)] p-4"
+            className={SETUP_PROVIDER_CARD_CLASS}
             key={index}
-            variant="outline"
+            variant="default"
           >
             <Skeleton className="h-3 w-24" />
-            <Skeleton className="ml-auto h-7 w-12 rounded-full" />
+            <Skeleton className="ml-auto h-5 w-[34px] rounded-full" />
           </Item>
         ))}
       </ItemGroup>
 
-      <Button className="mt-8 h-11 w-full" disabled type="button">
+      <Button className={cn(CALM_BUTTON_CLASS, "mt-8")} disabled type="button">
         <span>Continue</span>
       </Button>
     </SetupWizardScreen>
