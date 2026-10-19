@@ -1014,7 +1014,9 @@ it("keeps the new VibeTV's theme selected when a read for the first VibeTV answe
 
   // No later read may answer and hide the result.
   window.companion.holdSettingsRead = new Promise<void>(() => {});
-  fireEvent.click(screen.getByRole("button", { name: "Themes" }));
+  fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
+  await window.wait(1);
+  fireEvent.click(screen.getByRole("radio", { name: /^Themes/ }));
   await window.wait(1);
   const row = (themeId: string) => document.getElementById(`catalog-theme-${themeId}`);
   expect(row("gauge")?.dataset.variant).toBe("muted");

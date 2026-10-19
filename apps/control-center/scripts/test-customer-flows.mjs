@@ -10610,10 +10610,8 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
     await page.evaluate(() => localStorage.removeItem("vibetv.aiTheme.consent"));
     await page.reload({ waitUntil: "domcontentloaded" });
     await navigation.waitFor({ timeout: 20000 });
-    if (!(await navigation.getByRole("button", { name: "Themes", exact: true }).isVisible())) {
-      await navigation.getByRole("button", { name: "Appearance", exact: true }).click();
-    }
-    await navigation.getByRole("button", { name: "Themes", exact: true }).click();
+    // Themes is a segment of Appearance now (see clickNavigation).
+    await clickNavigation(page, "Themes");
     await page.getByRole("button", { name: "Resume", exact: true }).click();
     await page.getByLabel("Your idea", { exact: true }).fill("Make it red");
     let release;
