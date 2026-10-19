@@ -264,13 +264,13 @@ it("keeps search, segment and filters working together", async () => {
 
 it("creates a theme or a screensaver directly in its own segment", () => {
   render(<Page start="live" />);
-  fireEvent.click(screen.getByRole("button", { name: "Create Theme" }));
+  fireEvent.click(screen.getByRole("button", { name: "Create theme" }));
   expect(screen.getByText("Editor open: New Theme")).toBeTruthy();
   expect(created.spec?.usage).toBeUndefined();
   cleanup();
 
   render(<Page start="screensaver" />);
-  fireEvent.click(screen.getByRole("button", { name: "Create Screensaver" }));
+  fireEvent.click(screen.getByRole("button", { name: "Create screensaver" }));
   expect(screen.getByText("Editor open: New Screensaver")).toBeTruthy();
   expect(created.spec?.usage).toBe("screensaver");
 });
