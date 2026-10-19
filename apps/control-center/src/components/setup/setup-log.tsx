@@ -2,14 +2,9 @@
 
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { SETUP_REVEAL } from "./setup-reveal";
+import { ProcessSteps, type ProcessStep } from "../process-steps";
 
-export type SetupLogLine = {
-  id: string;
-  text: string;
-  /** "done" dims a step the wizard has already finished. */
-  tone?: "normal" | "done" | "error";
-};
+export type SetupLogLine = ProcessStep;
 
 type SetupLogProps = {
   className?: string;
@@ -28,8 +23,9 @@ type SetupLogProps = {
  * It is as tall as its lines (24px each), centred with the rest of the step,
  * and grows to five lines; beyond that the log scrolls inside the box and the
  * top edge fades.
+ * The lines themselves are ProcessSteps (Theme Studio and Updates use the same).
  */
-export function SetupLog({ className, lines, running = false }: SetupLogProps) {
+export function SetupLog({ className, lines }: SetupLogProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -37,7 +33,7 @@ export function SetupLog({ className, lines, running = false }: SetupLogProps) {
     if (node) {
       node.scrollTop = node.scrollHeight;
     }
-  }, [lines, running]);
+  }, [lines]);
 
   return (
     <div
@@ -55,26 +51,14 @@ export function SetupLog({ className, lines, running = false }: SetupLogProps) {
       )}
       ref={scrollRef}
     >
-      {lines.map((line, index) => (
-        <div
-          className={cn(
-            // Keyed by id, so only a line that is genuinely new animates; the
-            // ones already on screen keep their node and stay still.
-            "flex items-center gap-2",
-            SETUP_REVEAL,
-            line.tone === "error"
-              ? "text-destructive"
-              : "text-muted-foreground",
-            // Everything above the newest line reads as finished.
-            (line.tone === "done" ||
-              (line.tone !== "error" && index < lines.length - 1)) &&
-              "opacity-55",
-          )}
-          key={line.id}
-        >
-          <span>&gt; {line.text}</span>
-        </div>
-      ))}
+      <ProcessSteps
+        steps={lines.map((line, index) => ({
+          ...line,
+          // Everything above the newest line reads as finished.
+          tone:
+            line.tone !== "error" && index < lines.length - 1 ? "done" : line.tone,
+        }))}
+      />
     </div>
   );
 }

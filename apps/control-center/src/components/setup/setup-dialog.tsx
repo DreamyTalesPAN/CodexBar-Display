@@ -1,5 +1,6 @@
 "use client";
 
+import type { LucideIcon } from "lucide-react";
 import type { KeyboardEvent, ReactNode } from "react";
 import {
   Dialog,
@@ -22,7 +23,12 @@ export type SetupDialogAction = {
 
 type SetupDialogProps = {
   children?: ReactNode;
+  /** Omit for a dialog whose title says it all; no empty description is rendered. */
   description?: string;
+  /** Optional header icon (Theme Studio's dialogs); the calm dialogs (A2) draw none. */
+  icon?: LucideIcon;
+  /** Destructive tints the header icon; "neutral" is for progress dialogs. */
+  tone?: "error" | "neutral";
   onOpenChange: (open: boolean) => void;
   open: boolean;
   /** The single signal action. Rendered last, on the right. */
@@ -86,6 +92,8 @@ function leaveByTab(event: KeyboardEvent<HTMLDivElement>) {
 export function SetupDialog({
   children,
   description,
+  icon: Icon,
+  tone = "error",
   onOpenChange,
   open,
   primaryAction,
@@ -115,12 +123,24 @@ export function SetupDialog({
       <DialogContent
         className={wide ? "sm:max-w-[480px]" : undefined}
         style={{ animation: "none" }}
+        {...(description === undefined ? { "aria-describedby": undefined } : {})}
         onInteractOutside={(event) => event.preventDefault()}
         onKeyDown={scrim ? undefined : leaveByTab}
       >
         <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
+          <DialogTitle className={Icon ? "flex items-center gap-2" : undefined}>
+            {Icon ? (
+              <Icon
+                aria-hidden
+                className={cn(
+                  "size-[18px] shrink-0",
+                  tone === "error" ? "text-destructive" : "text-muted-foreground",
+                )}
+              />
+            ) : null}
+            <span>{title}</span>
+          </DialogTitle>
+          {description !== undefined ? <DialogDescription>{description}</DialogDescription> : null}
         </DialogHeader>
         {children}
         {primaryAction || secondaryAction || showCloseButton ? (

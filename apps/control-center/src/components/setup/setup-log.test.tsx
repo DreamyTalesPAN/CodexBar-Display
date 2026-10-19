@@ -75,4 +75,11 @@ describe("SetupLog", () => {
       "aria-busy",
     );
   });
+
+  it("has no cursor block, also while work is in flight", () => {
+    // Paul's rule (2026-10-17): no cursor block anywhere in process steps.
+    expect(renderToStaticMarkup(<SetupLog lines={lines} />)).not.toContain(
+      "vibetv-caret-blink",
+    );
+  });
 });
