@@ -658,3 +658,35 @@ describe("feature container aliases match the device", () => {
     expect(Object.keys(exported.p[1].pa || {})).toHaveLength(assetCount);
   });
 });
+
+describe("usage-pace-v1 in a Theme Studio pack", () => {
+  const pack = (primitive: Record<string, unknown>) =>
+    buildThemePack(
+      importThemeSpec({ v: 1, id: "pace-test", rev: 1, bg: "#000000", p: [{ t: "tx", x: 0, y: 0, w: 100, ...primitive }] }),
+      "Pace",
+    );
+
+  it.each([
+    { b: "usageSlot1PaceText" },
+    { v: "{usageSlot1PaceShort}" },
+    { b: "usageModeShort" },
+    { v: "{usageSlot1Label} {usageModeShort}" },
+  ])("declares usage-pace-v1 and firmware 1.0.50 for %j", (primitive) => {
+    const built = pack(primitive);
+    expect(built.manifest.requiredCapabilities).toContain("usage-pace-v1");
+    expect(built.manifest.minFirmware).toBe("1.0.50");
+  });
+
+  it("does not for a theme without pace", () => {
+    expect(pack({ v: "{usageSlot1Percent}%" }).manifest.requiredCapabilities).not.toContain("usage-pace-v1");
+  });
+
+  it("keeps the colours of a pace bar when a pack opens and saves", () => {
+    const spec = importThemeSpec({
+      v: 1, id: "pace-bar", rev: 1, bg: "#000000",
+      p: [{ t: "p", x: 0, y: 0, w: 100, h: 10, b: "usageSlot1Pace", c: "#EDEDED", bg: "#2B2B2B", rc: "#C9F26B", dc: "#E7A3AC" }],
+    });
+    expect(spec.primitives[0]).toMatchObject({ reserveColor: "#C9F26B", deficitColor: "#E7A3AC" });
+    expect(JSON.parse(deviceThemeSpecJson(spec)).p[0]).toMatchObject({ rc: "#C9F26B", dc: "#E7A3AC" });
+  });
+});

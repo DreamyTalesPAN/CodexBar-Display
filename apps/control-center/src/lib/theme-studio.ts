@@ -870,12 +870,15 @@ export function themeStudioSpecUsesTextValign(
 }
 
 // Any usage window key containing "Pace" is a pace binding on the firmware
-// (usageSlot1PaceText, us1PaceText, usage.1.PaceText), so all of them count.
+// (usageSlot1PaceText, us1PaceText, usage.1.PaceText), so all of them count,
+// and so does usageModeShort, which arrived with usage-pace-v1.
 export function themeStudioSpecUsesUsagePace(spec: ThemeStudioSpec): boolean {
   return spec.primitives.some(
     (primitive) =>
       /Pace/.test(primitive.binding || "") ||
-      /\{[^{}]*Pace[^{}]*\}/.test(primitive.text || ""),
+      primitive.binding === "usageModeShort" ||
+      /\{[^{}]*Pace[^{}]*\}/.test(primitive.text || "") ||
+      (primitive.text || "").includes("{usageModeShort}"),
   );
 }
 

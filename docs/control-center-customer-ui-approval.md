@@ -8589,3 +8589,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Unchanged for the shipped themes. A custom theme that binds pace as `us1PaceText`, `us1Pace` or `usage.0.PaceText` is previewed with its pace, as VibeTV draws it (before: the preview showed empty text and a plain bar for those spellings).
 - Scope: `components/live-vibetv-preview.tsx` and its test, the firmware repaint rules (not screens), and this approval record.
 - What's new: none — a preview correction, no new notice
+
+## 2026-10-19 — Pace themes: Codex review fix, Theme Studio treats usageModeShort as a pace capability (#800)
+
+- User approval: Codex review fix, no visible change of the approved Pace themes; not seen by Paul.
+- Approved customer-visible result: Unchanged. A pack that Theme Studio exports and that uses only `usageModeShort` now asks for `usage-pace-v1` and firmware 1.0.50, as the Companion already requires (before: the manifest named no such capability).
+- Scope: `lib/theme-studio.ts` and its test, and this approval record.
+- What's new: none — a manifest correction, no new notice
