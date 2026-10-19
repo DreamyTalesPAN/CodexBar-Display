@@ -7656,3 +7656,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the next-step sentences listed before → after in the pending entry above, with no "then check again" tail. The unchanged Diagnostics engine sentence named in that entry is not separately approved here.
 - Scope: this approval record only; no code change in this entry. Pull request branch only, not merge or release.
 - What's new: none — approval record
+
+## 2026-10-19 — #681: click test passed, approval marker after merging main with #677 and #678
+
+- User approval: Marcus passed the click test of #681 on 2026-10-19 (Mac, build 99.0.1155 from head b4c2324e; "Klicktest 681 ok", via the orchestrator). Main moved on with #671, #682, #677, #678 and others while the branch was in review; the merge kept the entries of both sides in this file.
+- Approved customer-visible result: as approved in the #681 entries above (provider next steps without "then check again"); nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
