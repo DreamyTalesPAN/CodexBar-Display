@@ -8364,3 +8364,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the entries above; nothing else changed.
 - Scope: the merge of the base branch into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of the base branch, no customer-visible change of its own
+
+## 2026-10-19 — #800: approval marker after merging the Usage group (with main)
+
+- User approval: Merge of #783 (which brought main) into Pace; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and the merged entries; nothing else changes.
+- Scope: the merge of `claude/group-usage` into this branch and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
