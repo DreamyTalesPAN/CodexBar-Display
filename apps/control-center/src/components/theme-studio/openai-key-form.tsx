@@ -6,6 +6,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -21,6 +22,11 @@ import {
 const CONSENT_KEY = "vibetv.aiTheme.consent";
 
 export type OpenAIState = { enabled: boolean; configured: boolean | "pending" };
+
+/** A key is stored while its check is still pending too, so the label follows the stored key, not the verified one. */
+export function hasStoredKey(configured: boolean | "pending"): boolean {
+  return Boolean(configured);
+}
 
 export function openAIState(capabilities: AIThemeCapabilities): OpenAIState {
   const provider = capabilities.providers.find((p) => p.id === "openai");
@@ -130,7 +136,7 @@ export function OpenAIKeyForm({
     <div className="space-y-4">
       {configured !== true || !inSetup ? (
         <label className="grid gap-2 text-sm">
-          {configured ? "Replace OpenAI key" : "OpenAI key"}
+          {hasStoredKey(configured) ? "Replace OpenAI key" : "OpenAI key"}
           <Input
             type="password"
             autoComplete="off"
@@ -138,7 +144,7 @@ export function OpenAIKeyForm({
             value={password}
             disabled={!enabled || connecting}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder={configured ? "Paste a new key to replace it" : "Paste your key here"}
+            placeholder={hasStoredKey(configured) ? "Paste a new key to replace it" : "Paste your key here"}
             aria-invalid={Boolean(connectionError)}
             aria-describedby={connectionError ? "key-error" : undefined}
           />
@@ -148,7 +154,7 @@ export function OpenAIKeyForm({
         <label className="flex items-start gap-3 text-sm">
           <input
             type="checkbox"
-            className="mt-0.5 size-5 shrink-0"
+            className="mt-0.5 size-5 shrink-0 accent-primary"
             checked={consent}
             disabled={connecting}
             onChange={(e) => updateConsent(e.target.checked)}
@@ -174,7 +180,7 @@ export function OpenAIKeyForm({
             connecting ||
             !consent ||
             (!inSetup && configured === true && !password.trim()) ||
-            (!configured && !password.trim())
+            (!hasStoredKey(configured) && !password.trim())
           }
           onClick={() => {
             if (password.trim() || configured === "pending") void connect();
@@ -186,12 +192,14 @@ export function OpenAIKeyForm({
             : configured === "pending" && !password.trim()
               ? "Retry connection check"
               : !inSetup
-                ? "Update key"
+                ? hasStoredKey(configured)
+                  ? "Update key"
+                  : "Save key"
                 : configured === true && !password.trim()
                   ? "Continue"
                   : "Connect and continue"}
         </Button>
-        {configured ? (
+        {hasStoredKey(configured) ? (
           <Button className="h-12 w-full" variant="outline" disabled={connecting} onClick={disconnect}>
             Disconnect OpenAI
           </Button>
@@ -206,12 +214,12 @@ export function ThemeStudioKeyRow() {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [version, setVersion] = useState(0);
-  const [connected, setConnected] = useState(false);
+  const [configured, setConfigured] = useState<boolean | "pending">(false);
   useEffect(() => {
     let current = true;
     void fetchAIThemeCapabilities()
       .then((capabilities) => {
-        if (current) setConnected(openAIState(capabilities).configured === true);
+        if (current) setConfigured(openAIState(capabilities).configured);
       })
       .catch(() => {});
     return () => {
@@ -222,13 +230,14 @@ export function ThemeStudioKeyRow() {
   return (
     <div className="flex items-center justify-between gap-4 rounded-xl border px-4 py-3">
       <div className="min-w-0">
-        <p className="text-sm">{connected ? "Connected" : "Not connected"}</p>
+        <p className="text-sm">{configured === true ? "Connected" : "Not connected"}</p>
       </div>
       <Button variant="outline" onClick={() => setOpen(true)}>
-        {connected ? "Change key" : "Add key"}
+        {hasStoredKey(configured) ? "Change key" : "Add key"}
       </Button>
       <Dialog open={open} onOpenChange={(next) => { if (!busy) setOpen(next); }}>
-        <DialogContent showCloseButton={!busy}>
+        {/* Calm rule 13: no X. The dialog keeps a visible Close in its footer instead. */}
+        <DialogContent className="[&_[data-slot=dialog-close]]:hidden">
           <DialogHeader>
             <DialogTitle>Theme Studio AI</DialogTitle>
             <DialogDescription>Connect OpenAI to create your design.</DialogDescription>
@@ -242,6 +251,8 @@ export function ThemeStudioKeyRow() {
             }}
             onDisconnected={() => setVersion((v) => v + 1)}
           />
+          {/* Hidden while a key is being checked, as the X was. */}
+          {!busy ? <DialogFooter showCloseButton /> : null}
         </DialogContent>
       </Dialog>
     </div>

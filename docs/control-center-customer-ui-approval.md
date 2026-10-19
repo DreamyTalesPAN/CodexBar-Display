@@ -7661,3 +7661,66 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet — no visible change in this entry; it corrects the approval lines above, which said "pending" or "as approved in that entry".
 - Scope: `docs/control-center-customer-ui-approval.md` (this record only). Pull request branch only, not merge or release.
 - What's new: none — correction of the approval record, not announced to customers
+
+## 2026-10-17 — Calm Theme Studio, variant A (#713): look only
+
+- User approval: pending — Paul reviews this PR (calm redesign Theme Studio, variant A, #713); look: the design canvas is the one framed object, the chat has no frame or divider line, the File menu has no icons, sent images sit inside the message bubble.
+- Approved customer-visible result: same texts and behaviour; look only. Before → after:
+  - Design name in the header: 16 px → 28 px, semibold.
+  - File menu: icons removed from the five entries; the entries and their order stay.
+  - Design canvas: the frame loses its border and shadow, corners 16 px → 12 px, one thin ring.
+  - Chat: the vertical line between canvas and chat is removed; the gap between them is 48 px and the page starts 32 px under the header.
+  - Sent message with reference images: thumbnails 40 px above the text → 32 px thumbnails inside the same bubble, left of the text.
+  - Message composer: the shadow is removed; the border stays.
+  - Notices under ← and the Send reason line: unchanged.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, `apps/control-center/src/components/theme-studio/editable-theme-preview.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — look only, no new wording
+
+## 2026-10-17 — Calm Theme Studio, variant A (#713): Codex review fix, bubble stays content-sized
+
+- User approval: none needed for this entry; it is a Codex review fix (P2) to the sent-message bubble of the entry above: a finished message is a compact bubble on the right, as in the approved picture, not a bar across the chat. Not seen by Paul; the entry above stays pending.
+- Approved customer-visible result: as in the entry above; the sent bubble keeps its width to its text (up to 88% of the chat column) and sits on the right.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and this record. Pull request branch only, not merge or release.
+- What's new: none — refinement of the entry above
+
+## 2026-10-17 — Calm Theme Studio, variant A (#713): Codex review fix, design name stays 28 px on desktop
+
+- User approval: none needed for this entry; it is a Codex review fix (P2) to the design name of the entry above: the shared input sets a smaller size from the desktop width up, which the name now overrides, so the name is 28 px at every width as in the approved picture. Not seen by Paul; the entry above stays pending.
+- Approved customer-visible result: as in the entry above; the design name is 28 px at desktop widths too.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and this record. Pull request branch only, not merge or release.
+- What's new: none — refinement of the entry above
+
+## 2026-10-18 — Calm Theme Studio, variant A (#749): AI key dialog follows calm rule 13
+
+- User approval: pending — Paul reviews this PR; look unchanged except: the AI key dialog (Settings › AI providers › Theme Studio AI) loses its X in the top-right corner and gets a visible "Close" button under the form, hidden while a key is being checked; the consent checkbox in the key form turns lime instead of browser blue (also in the Theme Studio setup panel, which uses the same form).
+- Approved customer-visible result: none yet; proposed exactly as in the line above. Before → after: X → no X; no close button → "Close" button; browser-blue checkbox → lime checkbox.
+- Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx` and its test, and this record. Pull request branch only, not merge or release.
+- What's new: none — look and close control only, no new feature.
+
+## 2026-10-18 — Calm Theme Studio, variant A (#749): key dialog says Save key without a stored key
+
+- User approval: pending — Paul reviews (key dialog: "Save key" without a stored key, "Update key" with one; decided by the communicator 18.10.)
+- Approved customer-visible result: none yet; proposed: the primary button of the AI key dialog (Settings › AI providers › Theme Studio AI) reads "Save key" when no key is stored and "Update key" when a key is stored. Before → after: "Update key" → "Save key" (no key stored); "Update key" unchanged (key stored). The setup flow ("Connect and continue") is unchanged.
+- Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx` and its test, and this record. Pull request branch only, not merge or release.
+- What's new: none — button wording only, no new feature.
+
+## 2026-10-18 — Calm Theme Studio, variant A (#749): Codex fix, saved key still checking says Update key
+
+- User approval: pending — Paul reviews (key dialog: "Update key" also while a saved key is still being checked; decided by the communicator 18.10.)
+- Approved customer-visible result: none yet; the same button wording as the entry above, now also for a saved key that still needs its check. Before → after: "Save key" → "Update key" (saved key, check still pending, new key typed). No other change.
+- Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx` and its test, and this record. Pull request branch only, not merge or release.
+- What's new: none — button wording only, no new feature.
+
+## 2026-10-18 — Calm Theme Studio, variant A (#749): row button follows a stored key still being checked
+
+- User approval: pending — Paul reviews (row button follows a stored-but-pending key)
+- Approved customer-visible result: none yet; proposed: the Theme Studio AI row in Settings › AI providers reads "Change key" while a saved key is still being checked, as the key dialog already does. Before → after: "Add key" → "Change key" (saved key, check still pending). Stored key: "Change key" unchanged. No key stored: "Add key" unchanged.
+- Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx` and its test, and this record. Pull request branch only, not merge or release.
+- What's new: none — button wording only, no new feature.
+
+## 2026-10-18 — Calm Theme Studio, variant A (#749): chat input stays visible below 1024 px width
+
+- User approval: pending — Paul reviews (finding N14 from the Windows click run 18.10.: at 960x640 the chat input sat below the fold and the preview filled the first screen; placeholder colour not changed in this entry).
+- Approved customer-visible result: none yet; proposed: below 1024 px width the Theme Studio preview scrolls inside its own area and the chat column (message list and prompt box) stays at the bottom of the window, at most 40% of the window height, so the prompt box is in view at 960x640. At 1024 px and wider nothing changes. Before → after: prompt box below the preview (needs scrolling) → prompt box in view at the bottom; no text changes.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, and this record. Pull request branch only, not merge or release.
+- What's new: none — layout only, no new feature.

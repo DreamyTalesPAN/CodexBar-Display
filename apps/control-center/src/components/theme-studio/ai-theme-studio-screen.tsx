@@ -7,20 +7,15 @@ import {
   ArrowRight,
   ArrowUp,
   BringToFront,
-  FileDown,
-  FileUp,
   Type,
   TimerReset,
   ChartNoAxesColumn,
   ChevronDown,
   ImagePlus,
-  Package,
   Paperclip,
   Square,
   SquarePlus,
-  FolderOpen,
   X,
-  Plus,
   Redo2,
   SendToBack,
   Trash2,
@@ -130,18 +125,14 @@ function planningContext(document: ThemeStudioDocument, selected: number[] = [])
   }));
 }
 
-// The customer's turn: its reference images as small thumbnails above the text.
+// The customer's turn: its reference images as small thumbnails inside the same bubble, left of the text.
 function userTurn(text: string | null, images: { name: string; data: string }[] = []) {
   return (
-    <div className="ml-8 flex flex-col items-end gap-1.5 self-end">
-      {images.length ? (
-        <div className="flex flex-wrap justify-end gap-1.5">
-          {images.map((image, i) => (
-            <span key={i} role="img" aria-label={image.name} title={image.name} className="size-10 rounded-lg bg-cover bg-center" style={{ backgroundImage: `url(data:image/png;base64,${image.data})` }} />
-          ))}
-        </div>
-      ) : null}
-      <p className="whitespace-pre-wrap rounded-xl bg-muted px-3 py-2 text-sm [overflow-wrap:anywhere]">{text}</p>
+    <div className="ml-auto flex w-fit max-w-[88%] items-center gap-2.5 rounded-xl bg-muted px-3 py-2">
+      {images.map((image, i) => (
+        <span key={i} role="img" aria-label={image.name} title={image.name} className="size-8 shrink-0 rounded-md bg-cover bg-center" style={{ backgroundImage: `url(data:image/png;base64,${image.data})` }} />
+      ))}
+      <p className="min-w-0 whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{text}</p>
     </div>
   );
 }
@@ -977,7 +968,7 @@ export function AIThemeStudioScreen({
   return (
     <div
       data-theme-studio-root
-      className="flex min-h-[calc(100svh-86px)] flex-col pb-6 text-foreground lg:h-[calc(100svh-86px)]"
+      className="flex min-h-[calc(100svh-86px)] h-[calc(100svh-86px)] flex-col pb-6 text-foreground"
       onKeyDown={(event) => {
         if (isTypingTarget(event.target) || locked || panel || pending || leaving || event.nativeEvent.isComposing)
           return;
@@ -1023,7 +1014,7 @@ export function AIThemeStudioScreen({
           <Input
             aria-label="Design name"
             title="Design name"
-            className="h-9 min-w-0 max-w-xs border-transparent bg-transparent px-2 text-base font-semibold shadow-none hover:border-input focus-visible:border-ring"
+            className="h-10 min-w-0 max-w-xs border-transparent bg-transparent px-2 text-[28px] leading-none font-semibold md:text-[28px] shadow-none hover:border-input focus-visible:border-ring"
             value={document.packName}
             maxLength={48}
             disabled={locked}
@@ -1044,25 +1035,20 @@ export function AIThemeStudioScreen({
               <PopoverContent align="start" className="w-64 p-1.5">
                 <div className="flex flex-col gap-0.5" onClick={() => setFileMenu(false)}>
                   <Button size="sm" variant="ghost" className="w-full justify-start font-medium" onClick={() => requestLoad({ document: blank() })}>
-                    <Plus data-icon="inline-start" />
-                    <span>New design</span>
+                    New design
                   </Button>
                   <Button size="sm" variant="ghost" className="w-full justify-start font-medium" onClick={() => openPanel("library")}>
-                    <FolderOpen data-icon="inline-start" />
-                    <span>Open saved design…</span>
+                    Open saved design…
                   </Button>
                   <div aria-hidden className="my-1 h-px bg-border" />
                   <Button size="sm" variant="ghost" className="w-full justify-start font-medium" onClick={() => jsonInput.current?.click()}>
-                    <FileUp data-icon="inline-start" />
-                    <span>Open design file…</span>
+                    Open design file…
                   </Button>
                   <Button size="sm" variant="ghost" className="w-full justify-start font-medium" disabled={!document.spec.primitives.length} onClick={() => download(JSON.stringify(document, null, 2), "vibetv-scene.json", "application/json")}>
-                    <FileDown data-icon="inline-start" />
-                    <span>Download editable design</span>
+                    Download editable design
                   </Button>
                   <Button size="sm" variant="ghost" className="w-full justify-start font-medium" disabled={!document.spec.primitives.length || validation.errors.length > 0} onClick={exportPack}>
-                    <Package data-icon="inline-start" />
-                    <span>Export theme pack</span>
+                    Export theme pack
                   </Button>
                 </div>
               </PopoverContent>
@@ -1112,8 +1098,8 @@ export function AIThemeStudioScreen({
             {sendBlockedReason ? <p id="send-blocked-reason" role="status" className="text-sm text-muted-foreground [overflow-wrap:anywhere]">{sendBlockedReason}</p> : null}
           </div>
         ) : null}
-          <main className="flex min-h-0 flex-1 flex-col gap-6 pt-2 lg:flex-row">
-            <div className="min-h-0 min-w-0 flex-1 lg:overflow-y-auto">
+          <main className="flex min-h-0 flex-1 flex-col gap-6 pt-8 lg:flex-row lg:gap-12">
+            <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
             <div
               id="theme-design-canvas"
               role="region"
@@ -1469,7 +1455,7 @@ export function AIThemeStudioScreen({
               </EditableThemePreview>
             </div>
             </div>
-            <div className="mx-auto flex min-h-0 w-full max-w-[680px] flex-col lg:w-[420px] lg:shrink-0 lg:overflow-y-auto lg:border-l lg:pl-6">
+            <div className="mx-auto flex min-h-0 w-full max-w-[680px] flex-col max-lg:max-h-[40svh] max-lg:shrink-0 lg:w-[420px] lg:shrink-0 lg:overflow-y-auto">
             <div className="flex min-h-24 flex-1 flex-col gap-3 overflow-y-auto pb-4" role="log" aria-label="Conversation">
               {messages.length || asking !== null ? messages.map((message, i) => (
                 message.role === "user" ? <div key={i}>{userTurn(message.content, message.images)}</div> : <p
@@ -1506,7 +1492,7 @@ export function AIThemeStudioScreen({
               </label>
               <div className="flex items-center gap-3">
               <div
-                className="relative min-w-0 flex-1 overflow-hidden rounded-xl border border-input bg-background shadow-sm focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40"
+                className="relative min-w-0 flex-1 overflow-hidden rounded-xl border border-input bg-background focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40"
                 onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
                 onDrop={(event) => { event.preventDefault(); void attachImages(event.dataTransfer.files); }}
               >
