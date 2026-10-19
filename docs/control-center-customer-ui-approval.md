@@ -7921,3 +7921,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/overview-screen.theme-name.test.tsx` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no new content
+
+## 2026-10-19 — Calm redesign matched to the master: weak WiFi notice and What's new never together (#784, Codex fix for option #772)
+
+- User approval: pending — Paul reviews (#784 matched to the approved master design "Calm Redesign - alle Screens", 19.10.); look unchanged except: when the weak WiFi (or theme not shown) notice and the What's new notice are both due on the Overview at once, only the weak WiFi notice shows; What's new follows after it is closed. Before, both could be on screen together for a moment.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (one condition), `apps/control-center/src/components/control-center-app.whats-new.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
