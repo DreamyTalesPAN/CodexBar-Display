@@ -24,6 +24,8 @@ import { SetupProviderRow, setupProviderRowVariant } from "./setup-provider-row"
 import { SetupDialog } from "./setup-dialog";
 import { displayPreviewFor } from "./setup-display-previews";
 import {
+  CALM_SUBTITLE_CLASS,
+  CALM_TITLE_CLASS,
   SetupWizardScreen,
   SetupWizardSubtitle,
   SetupWizardTitle,
@@ -334,7 +336,7 @@ export function ProviderList({
         />
       ) : null}
       {showIntro ? (
-      <p className="mb-3 text-sm text-muted-foreground">
+      <p className="mb-8 text-[13px] text-muted-foreground">
         VibeTV reads your AI usage with CodexBar, a helper app installed with VibeTV. Turn on the providers you use below.
       </p>
       ) : null}
@@ -460,7 +462,7 @@ export function SetupProvidersScreen({
       onCreateSupportReport={onCreateSupportReport}
       windowsHost={windowsHost}
     >
-      <SetupWizardTitle>Choose AI providers</SetupWizardTitle>
+      <SetupWizardTitle className={CALM_TITLE_CLASS}>Choose AI providers</SetupWizardTitle>
 
       <ProviderList
         className="mt-4"
@@ -475,7 +477,7 @@ export function SetupProvidersScreen({
       />
 
       <Button
-        className="mt-4 w-full"
+        className="mt-6 h-11 w-full"
         // Closed while the completion is on its way. A second press starts a
         // second one, and each of those forces a live provider read before it
         // writes anything -- so the customer paid for the same slow check twice
@@ -539,12 +541,12 @@ function SetupProvidersLoadingScreen({
       onCreateSupportReport={onCreateSupportReport}
       windowsHost={windowsHost}
     >
-      <SetupWizardTitle>Choose AI providers</SetupWizardTitle>
-      <SetupWizardSubtitle>
+      <SetupWizardTitle className={CALM_TITLE_CLASS}>Choose AI providers</SetupWizardTitle>
+      <SetupWizardSubtitle className={CALM_SUBTITLE_CLASS}>
         This can take up to 5 minutes. We&apos;re sorry.
       </SetupWizardSubtitle>
 
-      <SetupLog className="mt-4" lines={lines} running />
+      <SetupLog className="mt-8" lines={lines} running />
 
       <div className="relative w-full">
         <Search
@@ -573,7 +575,7 @@ function SetupProvidersLoadingScreen({
         ))}
       </ItemGroup>
 
-      <Button className="mt-4 w-full" disabled type="button">
+      <Button className="mt-8 h-11 w-full" disabled type="button">
         <span>Continue</span>
       </Button>
     </SetupWizardScreen>

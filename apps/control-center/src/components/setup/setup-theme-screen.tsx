@@ -11,10 +11,13 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
+import { cn } from "@/lib/utils";
 import { ThemeRenderPreview } from "../theme-render-preview";
 import { SetupLog, type SetupLogLine } from "./setup-log";
-import { SelectionCheck, selectedItemClass } from "./setup-selectable-card";
+import { SelectionDot, selectedItemClass } from "./setup-selectable-card";
 import {
+  CALM_SUBTITLE_CLASS,
+  CALM_TITLE_CLASS,
   SetupWizardScreen,
   SetupWizardSubtitle,
   SetupWizardTitle,
@@ -66,16 +69,14 @@ export function SetupThemeScreen({
       onCreateSupportReport={onCreateSupportReport}
       windowsHost={windowsHost}
     >
-      <SetupWizardTitle className="text-[40px]">
-        Choose your theme
-      </SetupWizardTitle>
-      <SetupWizardSubtitle className="text-lg">
+      <SetupWizardTitle className={CALM_TITLE_CLASS}>Choose your theme</SetupWizardTitle>
+      <SetupWizardSubtitle className={CALM_SUBTITLE_CLASS}>
         You can always switch themes later.
       </SetupWizardSubtitle>
 
       <ItemGroup
         aria-label="Themes"
-        className="mt-4 gap-3"
+        className="mt-8 gap-2"
         role="radiogroup"
       >
         {themes.map((theme) => (
@@ -95,7 +96,7 @@ export function SetupThemeScreen({
       </ItemGroup>
 
       <Button
-        className="mt-4 w-full"
+        className="mt-6 h-11 w-full"
         disabled={installing || !selected || Boolean(selected.blockedReason)}
         onClick={onInstall}
         type="button"
@@ -139,7 +140,12 @@ function SetupThemeCard({
   return (
     <Item
       asChild
-      className={`${selectedItemClass(selected)} p-4`}
+      className={cn(
+        selectedItemClass(selected),
+        "p-3",
+        // While one installs, the cards not picked fade back.
+        disabled && !selected && "opacity-50",
+      )}
       variant="outline"
     >
       <button
@@ -151,16 +157,16 @@ function SetupThemeCard({
       >
         <ItemMedia>
           <ThemeRenderPreview
-            className="h-[72px] w-[100px] rounded-md"
+            className="size-20 rounded-md"
             themeId={theme.id}
             themeSpecPath={theme.themeSpecPath}
           />
         </ItemMedia>
         <ItemContent>
-          <ItemTitle className="text-lg font-semibold">{theme.name}</ItemTitle>
+          <ItemTitle className="font-semibold">{theme.name}</ItemTitle>
         </ItemContent>
         <ItemActions>
-          <SelectionCheck selected={selected} />
+          <SelectionDot selected={selected} />
         </ItemActions>
       </button>
     </Item>

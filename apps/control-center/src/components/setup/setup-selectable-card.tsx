@@ -19,6 +19,28 @@ export function selectedItemClass(selected: boolean): string {
 }
 
 /**
+ * Round radio mark for the display-mode and theme steps (variant B): an empty
+ * ring when not picked, an ink disc with a check when picked. Always rendered,
+ * so picking a card does not reflow it.
+ */
+export function SelectionDot({ selected }: { selected: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "grid size-5 shrink-0 place-items-center rounded-full border transition-colors duration-150",
+        selected
+          ? "border-foreground bg-foreground text-background"
+          : "border-muted-foreground/50",
+      )}
+      data-selected={selected || undefined}
+    >
+      {selected ? <Check className="size-3" strokeWidth={3} /> : null}
+    </span>
+  );
+}
+
+/**
  * Always rendered so picking a card cannot reflow the row it sits in; only its
  * opacity changes.
  */
