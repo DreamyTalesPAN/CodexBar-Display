@@ -8347,3 +8347,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — #802: Appearance page matched to the template (build 2 QA)
+
+- User approval: pending — Paul reviews (#802 matched to the approved template, build 2 QA); look unchanged except, each one before → after: (1) the lime Create button is 36 px high with 17 px sides → before 44 px high; (2) the cards in the list stand 24 px apart sideways and 28 px apart downwards and are 275 px wide → before 10 px apart both ways and 284 px wide; (3) the theme preview dialog is 520 px wide, shows the picture 240 px wide, and its Close button is a plain text button → before 440 px, a picture as wide as the dialog, and a lime Close button.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content

@@ -804,7 +804,7 @@ export function ThemeLibraryScreen({
           <Popover onOpenChange={setCreateMenuOpen} open={createMenuOpen}>
             <PopoverTrigger asChild>
               <Button
-                className="pointer-events-auto"
+                className="pointer-events-auto h-9 gap-2 px-[17px]"
                 ref={createButtonRef}
                 type="button"
               >
@@ -836,7 +836,7 @@ export function ThemeLibraryScreen({
         ) : (
           <Button
             aria-label={createLabel}
-            className="pointer-events-auto"
+            className="pointer-events-auto h-9 gap-2 px-[17px]"
             onClick={() => openInEditor(() => openBlankTheme(usage))}
             ref={createButtonRef}
             type="button"
@@ -931,7 +931,8 @@ export function ThemeLibraryScreen({
                 Nothing matches your search or filters.
               </p>
             ) : null}
-            <ItemGroup className="grid grid-cols-1 gap-x-6 gap-y-7 sm:grid-cols-2 lg:grid-cols-3">
+            {/* gap-x-6! gap-y-7!: ItemGroup's own gap for small items (gap-2.5) would win. */}
+            <ItemGroup className="grid grid-cols-1 gap-x-6! gap-y-7! sm:grid-cols-2 lg:grid-cols-3">
               {listedItems.map((theme) => (
                 <ThemeListItem
                   busyAction={busyAction}
@@ -980,7 +981,7 @@ export function ThemeLibraryScreen({
         <Dialog open onOpenChange={(open) => !open && setPreviewTheme(null)}>
           <DialogContent
             aria-describedby="theme-library-example-data"
-            className="max-h-[calc(100dvh-2rem)] overflow-y-auto"
+            className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-[520px]"
           >
             <DialogHeader>
               <DialogTitle className="truncate">{previewTheme.title}</DialogTitle>
@@ -991,10 +992,12 @@ export function ThemeLibraryScreen({
             >
               Example data · This is a catalog preview, not live VibeTV data.
             </p>
-            <ThemePreview large theme={previewTheme} />
+            <div className="w-60 max-w-full">
+              <ThemePreview large theme={previewTheme} />
+            </div>
             <DialogFooter>
               <DialogClose asChild>
-                <Button>Close</Button>
+                <Button variant="ghost">Close</Button>
               </DialogClose>
             </DialogFooter>
           </DialogContent>
