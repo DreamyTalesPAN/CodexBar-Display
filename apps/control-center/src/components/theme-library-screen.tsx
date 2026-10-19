@@ -873,10 +873,10 @@ function RecoveryCard({
   return (
     <div className="mb-6 grid gap-4 rounded-[var(--radius-card)] border border-border bg-card p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
       <div className="min-w-0">
-        <div className="text-base font-bold text-[#1B1B1B]">
+        <div className="text-[13px] font-semibold text-foreground">
           {title}
         </div>
-        <p className="mt-1 text-sm leading-6 text-[#444933]">
+        <p className="mt-1 text-[13px] leading-6 text-muted-foreground">
           {recovery.document.packName} was last changed {formatRecoveryTime(recovery.updatedAt)}.
         </p>
       </div>
@@ -1001,12 +1001,12 @@ function MissingRequestedThemeNotice({
   return (
     <div className="mb-6 flex gap-3 rounded-[var(--radius-card)] border border-border bg-card p-4 text-sm text-muted-foreground">
       <Library
-        className="mt-0.5 shrink-0 text-[#5E7200]"
+        className="mt-0.5 shrink-0 text-muted-foreground"
         size={18}
         aria-hidden
       />
       <div className="min-w-0">
-        <div className="font-semibold text-[#1B1B1B]">
+        <div className="font-semibold text-foreground">
           Theme is not available
         </div>
         <div className="mt-1 break-words">
