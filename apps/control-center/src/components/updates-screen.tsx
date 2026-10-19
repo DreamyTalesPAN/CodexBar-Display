@@ -17,7 +17,7 @@ import {
   type CompanionReleaseInfo,
 } from "@/lib/companion-release";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
-import { statusForHost } from "@/lib/customer-platform";
+import { copyForHost, statusForHost } from "@/lib/customer-platform";
 import { WHATS_NEW } from "@/lib/whats-new";
 import type { CompanionInfo } from "./control-center-types";
 import { ProcessSteps } from "./process-steps";
@@ -373,9 +373,7 @@ export function UpdatesScreen({
             macAppUpdateAvailable &&
             (companionRelease?.latestVersion || companionRelease?.release)
               ? `Version ${companionRelease.latestVersion || companionRelease.release} is available`
-              : windowsHost
-                ? "Software on this computer"
-                : "Software on this Mac"
+              : copyForHost("App on this Mac", windowsHost)
           }
           icon={<Monitor aria-hidden />}
           status={
@@ -391,7 +389,7 @@ export function UpdatesScreen({
                       ? undefined
                       : "ok"
           }
-          title={windowsHost ? "App" : "Mac App"}
+          title="Control Center"
           version={companionInstalled}
         />
 

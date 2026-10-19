@@ -40,7 +40,7 @@ describe("calm Updates screen", () => {
 
     expect(screen.getByRole("heading", { level: 2, name: "Everything is up to date" })).toBeTruthy();
     const rows = screen.getAllByRole("heading", { level: 3 });
-    expect(rows.map((row) => row.textContent)).toEqual(["Mac App", "VibeTV firmware"]);
+    expect(rows.map((row) => row.textContent)).toEqual(["Control Center", "VibeTV firmware"]);
     expect(screen.getAllByText("Up to date")).toHaveLength(2);
     expect(screen.getByText("1.0.64", { selector: "span" })).toBeTruthy();
     expect(screen.getByText("1.0.48")).toBeTruthy();
@@ -58,12 +58,13 @@ describe("calm Updates screen", () => {
     expect(check).toHaveBeenCalledTimes(1);
   });
 
-  it("names the Windows app 'App' and never says Mac", () => {
+  it("titles the Windows row 'Control Center' too and never says Mac", () => {
     const { container } = render(<UpdatesScreen {...upToDate} windowsHost />);
     expect(screen.getAllByRole("heading", { level: 3 }).map((row) => row.textContent)).toEqual([
-      "App",
+      "Control Center",
       "VibeTV firmware",
     ]);
+    expect(screen.getByText("App on this computer")).toBeTruthy();
     expect(container.textContent).not.toContain("Mac");
   });
 

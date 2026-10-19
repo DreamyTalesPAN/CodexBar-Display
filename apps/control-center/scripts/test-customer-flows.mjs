@@ -8352,7 +8352,7 @@ async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
     "Updates must not expose manual Mac App installation mechanics",
   );
   await page
-    .getByRole("heading", { name: "Mac App", level: 3 })
+    .getByRole("heading", { name: "Control Center", level: 3 })
     .waitFor({ timeout: 10_000 });
   await page
     .getByRole("heading", { name: "VibeTV firmware", level: 3 })
@@ -8460,7 +8460,7 @@ async function testNativeMacAppUpdateUsesSparkleAction(browser, appUrl) {
   );
   await page.getByText("1.0.32", { exact: true }).waitFor({ timeout: 10_000 });
   await page
-    .getByRole("heading", { name: "Mac App", level: 3 })
+    .getByRole("heading", { name: "Control Center", level: 3 })
     .waitFor({ timeout: 10_000 });
   await page
     .getByRole("heading", { name: "VibeTV firmware", level: 3 })
@@ -8721,7 +8721,7 @@ async function testUpdatesShowLegacyCompanionReleaseFallback(browser, appUrl) {
   await clickNavigation(page, "Updates");
   await page.getByRole("link", { name: "Update" }).waitFor({ timeout: 10_000 });
   const macAppSection = page
-    .getByRole("heading", { name: "Mac App", level: 3 })
+    .getByRole("heading", { name: "Control Center", level: 3 })
     .locator("xpath=../..");
   await macAppSection
     .getByText("1.0.32", { exact: true })
