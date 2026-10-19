@@ -8377,6 +8377,21 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/src/components/setup/setup-recovery-dialogs.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.tsx`, `apps/control-center/src/components/setup/setup-providers-screen.tsx`, their tests (`setup-device-dialogs.test.tsx`, `setup-providers-screen.test.tsx`) and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
+## 2026-10-19 — #784: Codex fix, grey backdrop of the outage and busy dialogs stays visual
+
+- User approval: pending — Paul reviews (Codex review fix, P1 on the outage dialog; the orchestrator's decision: grey backdrop as in the template); look: the outage dialog ("Repairing VibeTV Control Center" / "VibeTV Control Center needs attention") and the busy-computer dialog show the grey backdrop as in the template → before no backdrop; the page behind stays usable as approved before (sidebar and tabs take clicks while the dialog is open).
+- Approved customer-visible result: grey backdrop as in the template; the page behind stays usable as approved before.
+- Scope: `apps/control-center/src/components/setup/setup-dialog.tsx`, the new test `apps/control-center/src/components/setup/setup-dialog.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #784: customer flow follows the Theme Studio's own header row
+
+- User approval: pending — Paul reviews (CI fix of the customer flow for the header change in 9c18d75f); no visible change: the flow checks that the open Studio draws its own header row and not the shell's Appearance header.
+- Approved customer-visible result: none; the test only.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+
 
 
 ## 2026-10-19 — Calm Updates screen as drawn in the approved master, plus the states derived from the calm rules (#752)
