@@ -5203,7 +5203,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     needsRuntimeRecovery ||
     lostDevicePickerOpen ||
     (usageFailure && !usageFailureHidden) ||
-    systemBusyOpen;
+    systemBusyOpen ||
+    // The Overview notice (#265, #498) asks first; What's new follows it.
+    (activeShellTab === "overview" && overviewNotice.notice !== null);
   const whatsNewEntries = (somethingElseAsks
     ? []
     : whatsNewReopened && activeShellTab === "updates"

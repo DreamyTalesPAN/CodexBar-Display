@@ -74,6 +74,7 @@ function startWindow({
   os = "darwin",
   appVersion = "1.0.63",
   newVibeTV = false,
+  weakWifi = false,
 } = {}) {
   // `usageBroken`: the usage service cannot start, which the app says in a
   // dialog of its own.
@@ -147,7 +148,7 @@ function startWindow({
             firmware: "9999.0.524",
             activeTheme: newVibeTV ? "theme-missing" : "codex",
             display: newVibeTV ? undefined : { themeSpec },
-            health: { ok: true },
+            health: weakWifi ? { ok: true, wifi: { rssi: -85, weak: true } } : { ok: true },
           },
         });
       }
@@ -747,4 +748,20 @@ it("lets the customer's own question come before a busy computer", async () => {
   );
   await app.wait(1);
   expect(busyDialog()).not.toBeNull();
+});
+
+// Codex review (#772 with the What's new notice): both are due on the first
+// render of the Overview. The weak WiFi notice asks first; What's new follows
+// once it is closed, and the two are never on screen together.
+it("tells a weak WiFi signal first and What's new after it, never both at once", async () => {
+  const app = startWindow({ weakWifi: true });
+  await app.wait(10);
+  const wifiDialog = () => screen.queryByRole("dialog", { name: "Weak WiFi signal" });
+  expect(wifiDialog()).not.toBeNull();
+  expect(notice()).toBeNull();
+
+  fireEvent.click(within(wifiDialog()!).getByRole("button", { name: "Not now" }));
+  await app.wait(1);
+  expect(wifiDialog()).toBeNull();
+  expect(notice()).not.toBeNull();
 });

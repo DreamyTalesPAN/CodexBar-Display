@@ -370,5 +370,10 @@ function activeThemeLabel(
   if (own) {
     return own;
   }
+  // A catalog theme is called by its title, as the Themes page calls it.
+  const listed = themes.find((product) => product.themeId === theme);
+  if (listed) {
+    return listed.title;
+  }
   return theme.split(/[-_]+/).filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
 }
