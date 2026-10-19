@@ -1051,7 +1051,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testOverviewSeparatesMacAppAndFirmwareVersions(
+    await testOverviewShowsOnlyTheVibeTV(
       browser,
       appContext.appUrl,
     );
@@ -2713,7 +2713,10 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
     await page
       .getByRole("heading", { name: "VibeTV is connected" })
       .waitFor({ timeout: 10_000 });
-    await page.getByText("Live", { exact: true }).waitFor({ timeout: 10_000 });
+    // The Overview shows the live VibeTV; without a hardware GPU it is the flat preview (#713).
+    // The rendered theme (its image label starts "Rendered VibeTV") is the proof: the
+    // loading state has no such image, so the checks below run after the preview drew.
+    await page.getByRole("img", { name: /^Rendered VibeTV / }).waitFor({ timeout: 15_000 });
     assert(
       (await page.getByText("AI provider", { exact: true }).count()) === 0,
       "Overview must not guess or show an AI provider",
@@ -3430,7 +3433,7 @@ async function testRunningCompanionOutageKeepsControlCenterOpen(
   await recovery.waitFor({ state: "detached", timeout: 10_000 });
 
   await clickNavigation(page, "Overview");
-  await page.getByText("Not reachable", { exact: true }).waitFor({
+  await page.getByRole("heading", { name: "VibeTV status", exact: true }).waitFor({
     timeout: 12_000,
   });
   await clickNavigation(page, "Usage");
@@ -3888,9 +3891,10 @@ async function testEnteredControlCenterOpensPairingRecovery(browser, appUrl) {
   await page.getByRole("navigation", { name: "Control Center" }).waitFor({
     timeout: 15_000,
   });
+  // The Overview has no status tiles any more (calm Overview, #713); the
+  // not-connected state is its heading.
   await page
-    .getByText("Not connected", { exact: true })
-    .first()
+    .getByRole("heading", { name: "VibeTV status", exact: true })
     .waitFor({ timeout: 20_000 });
   assert(
     selectRequests.length === 0,
@@ -6079,10 +6083,14 @@ async function testLocalOverviewRecoversWhenDeviceBecomesReady(
   const installRequests = [];
   const repairRequests = [];
   const deviceReadRequests = [];
+  let statusPolls = 0;
   await routeCompanionOnline(page, installRequests, () => {}, {
     device: reachableUnreadyDevice,
     statusDeviceSequence: [reachableUnreadyDevice, companionDevice],
     onRequest: (pathname, method) => {
+      if (pathname === "/v1/status") {
+        statusPolls += 1;
+      }
       if (pathname === "/v1/device/repair" && method === "POST") {
         repairRequests.push(pathname);
       }
@@ -6096,7 +6104,15 @@ async function testLocalOverviewRecoversWhenDeviceBecomesReady(
   await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
     timeout: 10_000,
   });
-  await page.getByText("Live", { exact: true }).waitFor({
+  // The heading shows before the ready status is polled: wait for that poll.
+  await waitForCondition(
+    () => statusPolls >= 2,
+    "expected the ready status response to be served",
+    15_000,
+  );
+  // The Overview shows the live VibeTV (calm Overview, #713): no offline placeholder.
+  await page.getByLabel("VibeTV live preview is offline").waitFor({
+    state: "detached",
     timeout: 12_000,
   });
   assert(
@@ -6253,8 +6269,8 @@ async function testWindowsAppDoesNotSpeakOfAMac(browser, appUrl) {
   await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
     timeout: 10_000,
   });
+  // The calm Overview has no "App" tile any more (#713); the heading above is the wait.
   const main = page.getByRole("main");
-  await main.getByText("App", { exact: true }).first().waitFor();
   assert(
     !(await main.innerText()).includes("Mac"),
     "The Windows Overview must not name a Mac",
@@ -9869,7 +9885,7 @@ async function testSavedAddressReconnectsReadOnly(browser, appUrl) {
   await page.close();
 }
 
-async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
+async function testOverviewShowsOnlyTheVibeTV(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
   });
@@ -9940,10 +9956,15 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByText("VibeTV is connected").waitFor({ timeout: 10_000 });
-  await page.getByText("Mac App").waitFor({ timeout: 10_000 });
-  await page.getByText("Online 1.0.33").waitFor({ timeout: 10_000 });
-  await page.getByText("VibeTV firmware").waitFor({ timeout: 10_000 });
-  await page.getByText("1.0.32").waitFor({ timeout: 10_000 });
+  // The calm Overview shows only the VibeTV: no Mac App or firmware tiles (#713).
+  assert(
+    (await page.getByText("Mac App", { exact: true }).count()) === 0,
+    "Overview must not show a Mac App tile",
+  );
+  assert(
+    (await page.getByText("VibeTV firmware", { exact: true }).count()) === 0,
+    "Overview must not show a firmware tile",
+  );
   await page
     .getByRole("img", {
       name: /Rendered VibeTV theme synthwave showing Codex, Weekly 0% used, Codex Spark Weekly 63% used/,

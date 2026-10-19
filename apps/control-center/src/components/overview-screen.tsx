@@ -1,36 +1,24 @@
 "use client";
 
-import {
-  AppWindow,
-  ArrowUpFromLine,
-  Check,
-  CircleHelp,
-  Monitor,
-} from "lucide-react";
-import type { ReactNode } from "react";
-import { Badge } from "@/components/ui/badge";
-import {
-  Item,
-  ItemContent,
-  ItemDescription,
-  ItemGroup,
-  ItemMedia,
-  ItemTitle,
-} from "@/components/ui/item";
+import dynamic from "next/dynamic";
+import { useCallback, useEffect, useState } from "react";
 import type {
   CompanionStatus,
   DeviceInfo,
   UsageSnapshot,
 } from "./control-center-types";
-import {
-  deviceIsCustomerConnected,
-  deviceIsReady,
-  deviceIsWaitingForUsage,
-} from "./control-center-types";
+import { deviceIsCustomerConnected } from "./control-center-types";
 import {
   LiveVibeTVPreview,
   type DisplayFrameSnapshot,
 } from "./live-vibetv-preview";
+import { hardwareWebGLAvailable } from "./vibetv-3d-support";
+
+// three.js and the model are their own chunk, loaded only on Overview.
+const VibeTV3DPreview = dynamic(
+  () => import("./vibetv-3d-preview").then((module) => module.VibeTV3DPreview),
+  { ssr: false },
+);
 
 type OverviewScreenProps = {
   companionVersion?: string;
@@ -42,198 +30,90 @@ type OverviewScreenProps = {
     stage?: string;
   } | null;
   usage?: UsageSnapshot | null;
-  /** The app runs on Windows; the Mac wording stays exactly as it is. */
+  /** The app runs on Windows; the wording says "computer" instead of "Mac". */
   windowsHost?: boolean;
 };
 
+/**
+ * Overview shows only the VibeTV, centered in 3D. The status line above it is
+ * the only text. The Mac App, VibeTV, Display and firmware tiles are gone (the
+ * approved calm Overview, #713). Calm rule 12 is deliberately not applied to
+ * this page: the device is centered, not left-aligned.
+ */
 export function OverviewScreen({
-  companionVersion,
-  companionStatus,
   device,
   displayFrame = null,
   firmwareUpdateStatus = null,
   usage,
-  windowsHost = false,
 }: OverviewScreenProps) {
   const connected = deviceIsCustomerConnected(device);
-  const displayReady = deviceIsReady(device);
-  const waitingForUsage = deviceIsWaitingForUsage(device);
-  // Issue #498: the Companion names a theme the VibeTV cannot draw.
-  const themeNotShown =
-    connected && device?.connectionState === "display_render_failed";
-  // Issue #265: the Mac App names a WiFi signal too weak for reliable updates.
-  const weakWiFiSignal = connected && device?.health?.wifi?.weak === true;
   const updateOwnedDisconnect = Boolean(
     !connected && firmwareUpdateStatus?.phase === "installing",
   );
-  const hero = buildHeroCopy(
-    companionStatus,
-    connected,
-    updateOwnedDisconnect,
-    windowsHost,
-  );
+  // The heading and the flat live preview come first. The 3D case starts after
+  // the first paint, only on a hardware WebGL, and replaces the flat preview
+  // once its model is on screen; the device screen inside shows the live
+  // state, or the offline placeholder when VibeTV has no live frame.
+  const [use3D, setUse3D] = useState(false);
+  const [threeReady, setThreeReady] = useState(false);
+  // Stable, so the flat preview's handover timer is not restarted on each poll.
+  const onThreeReady = useCallback(() => setThreeReady(true), []);
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => setUse3D(hardwareWebGLAvailable()),
+      0,
+    );
+    return () => window.clearTimeout(timer);
+  }, []);
 
   return (
     <div className="mx-auto max-w-[1180px] py-4">
       <section aria-labelledby="vibetv-overview-title">
-        <div className="mx-auto flex w-full max-w-[1040px] flex-col items-center gap-5">
-          <div className="flex flex-col items-center gap-2 text-center">
-            <Badge variant={hero.badgeVariant}>
-              {hero.icon}
-              <span>{hero.badge}</span>
-            </Badge>
-            <h2
-              className="text-4xl font-black tracking-tight md:text-5xl"
-              id="vibetv-overview-title"
-            >
-              {connected
-                ? "VibeTV is connected"
-                : updateOwnedDisconnect
-                  ? "VibeTV is restarting"
-                  : "VibeTV status"}
-            </h2>
-          </div>
+        <h2
+          className="text-[28px] font-semibold leading-tight tracking-tight text-foreground"
+          id="vibetv-overview-title"
+        >
+          {connected
+            ? "VibeTV is connected"
+            : updateOwnedDisconnect
+              ? "VibeTV is restarting"
+              : "VibeTV status"}
+        </h2>
 
-          <div className="flex w-full justify-center">
+        <div className="relative mt-6 flex w-full justify-center">
+          {use3D ? (
+            <div
+              // Until the 3D is revealed it is only drawn in the background:
+              // the flat preview is the one screen readers get.
+              aria-hidden={threeReady ? undefined : true}
+              className={
+                threeReady
+                  ? "flex w-full justify-center"
+                  : "absolute inset-0 flex justify-center opacity-0"
+              }
+              inert={threeReady ? undefined : true}
+            >
+              <VibeTV3DPreview
+                className="aspect-[14/9] max-w-[900px]"
+                device={device}
+                displayFrame={displayFrame}
+                onReady={onThreeReady}
+                updateOwnedDisconnect={updateOwnedDisconnect}
+                usage={usage || null}
+              />
+            </div>
+          ) : null}
+          {threeReady ? null : (
             <LiveVibeTVPreview
               device={device}
               displayFrame={displayFrame}
               updateOwnedDisconnect={updateOwnedDisconnect}
               usage={usage || null}
             />
-          </div>
-
-          <ItemGroup className="grid w-full gap-3 lg:grid-cols-4">
-            <StatusItem
-              icon={<AppWindow aria-hidden />}
-              label={windowsHost ? "App" : "Mac App"}
-              value={labelForCompanion(
-                companionStatus,
-                companionVersion,
-                windowsHost,
-              )}
-            />
-            <StatusItem
-              detail={
-                weakWiFiSignal ? "Move VibeTV closer to your router." : undefined
-              }
-              icon={<ArrowUpFromLine aria-hidden />}
-              label="VibeTV"
-              value={
-                weakWiFiSignal
-                  ? "Weak WiFi signal"
-                  : connected
-                  ? "Connected"
-                  : updateOwnedDisconnect
-                    ? "Restarting"
-                    : "Not connected"
-              }
-            />
-            <StatusItem
-              detail={
-                displayReady
-                  ? undefined
-                  : updateOwnedDisconnect
-                    ? "No action is required. Keep VibeTV connected to power and wait."
-                  : themeNotShown
-                    ? "VibeTV can't show this theme. Choose another theme."
-                  : waitingForUsage
-                    ? "This can take up to 60 seconds."
-                    : "Waiting for a fresh image from VibeTV."
-              }
-              icon={<Monitor aria-hidden />}
-              label="Display"
-              value={
-                displayReady
-                  ? device?.standby?.active === true
-                    ? "Screensaver"
-                    : "Live"
-                  : updateOwnedDisconnect
-                    ? "Update running"
-                  : themeNotShown
-                    ? "Theme not shown"
-                  : waitingForUsage
-                    ? "Waiting for usage"
-                    : "Waiting for first image"
-              }
-            />
-            <StatusItem
-              icon={<Monitor aria-hidden />}
-              label="VibeTV firmware"
-              value={device?.firmware || "Waiting for VibeTV"}
-            />
-          </ItemGroup>
+          )}
         </div>
       </section>
+
     </div>
   );
-}
-
-function StatusItem({
-  detail,
-  icon,
-  label,
-  value,
-}: {
-  detail?: string;
-  icon: ReactNode;
-  label: string;
-  value: string;
-}) {
-  return (
-    <Item className="min-w-0 flex-nowrap items-start" role="listitem" variant="muted">
-      <ItemMedia variant="icon">{icon}</ItemMedia>
-      <ItemContent>
-        <ItemDescription>{label}</ItemDescription>
-        <ItemTitle>{value}</ItemTitle>
-        {detail ? <ItemDescription>{detail}</ItemDescription> : null}
-      </ItemContent>
-    </Item>
-  );
-}
-
-function buildHeroCopy(
-  companionStatus: CompanionStatus,
-  connected: boolean,
-  updateOwnedDisconnect = false,
-  windowsHost = false,
-) {
-  if (connected) {
-    return {
-      badge: "Connected",
-      badgeVariant: "default" as const,
-      icon: <Check data-icon="inline-start" aria-hidden />,
-    };
-  }
-  if (updateOwnedDisconnect) {
-    return {
-      badge: "Updating",
-      badgeVariant: "default" as const,
-      icon: <ArrowUpFromLine data-icon="inline-start" aria-hidden />,
-    };
-  }
-  return {
-    badge:
-      companionStatus === "missing"
-        ? windowsHost
-          ? "App offline"
-          : "Mac App offline"
-        : "Not connected",
-    badgeVariant: "outline" as const,
-    icon: <CircleHelp data-icon="inline-start" aria-hidden />,
-  };
-}
-
-function labelForCompanion(
-  status: CompanionStatus,
-  companionVersion?: string,
-  windowsHost = false,
-): string {
-  if (status === "online") {
-    return companionVersion ? `Online ${companionVersion}` : "Online";
-  }
-  if (status === "missing") {
-    return "Not reachable";
-  }
-  return windowsHost ? "Waiting for app" : "Waiting for Mac App";
 }

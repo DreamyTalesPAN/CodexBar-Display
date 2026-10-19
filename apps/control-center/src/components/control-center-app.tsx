@@ -103,6 +103,7 @@ import { useCompanionRelease } from "./companion-installer-actions";
 import { LogsScreen } from "./logs-screen";
 import { WithLatestDisplayFrame } from "./live-vibetv-preview";
 import { OverviewScreen } from "./overview-screen";
+import { VibeTVNotFoundDialog, vibetvNotFound } from "./vibetv-not-found-dialog";
 import {
   PROVIDER_RECONCILE_WINDOW_MS,
   providerUsageNeedsReconcile,
@@ -600,6 +601,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [systemBusyDismissed, dismissSystemBusy] = useSystemBusyDismissal(systemBusySince);
   // "Run setup again" asks first, from Settings and from Support alike.
   const [setupAgainRequested, setSetupAgainRequested] = useState(false);
+  const [vibetvNotFoundDismissed, setVibetvNotFoundDismissed] = useState(false);
   // The "What's new" entries this customer has seen, null while nothing is
   // stored, and whether Updates has opened the notice again.
   const [whatsNewSeen, setWhatsNewSeen] = useState(seenWhatsNew);
@@ -5174,7 +5176,26 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // nothing else asks for the customer: not during setup or a firmware update,
   // and under no other dialog. It stays on the page it was opened on: other
   // pages have dialogs of their own.
+  // Not found is one dialog like the others: it waits behind the same
+  // higher-priority dialogs, and it is not shown during a firmware update.
+  // A "Not now" comes back the next time VibeTV is found and lost again.
+  if (!vibetvNotFound(device) && vibetvNotFoundDismissed) {
+    setVibetvNotFoundDismissed(false);
+  }
+  const vibetvNotFoundOpen =
+    activeShellTab === "overview" &&
+    vibetvNotFound(device) &&
+    !vibetvNotFoundDismissed &&
+    !systemBusyOpen &&
+    !setupAgainRequested &&
+    !setupOwnsScreen &&
+    !firmwareUpdateInProgress &&
+    !needsRuntimeRecovery &&
+    !lostDevicePickerOpen &&
+    !(usageFailure && !usageFailureHidden);
   const somethingElseAsks =
+    vibetvNotFoundOpen ||
+    setupAgainRequested ||
     setupOwnsScreen ||
     firmwareUpdateInProgress ||
     needsRuntimeRecovery ||
@@ -5866,6 +5887,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         />
       ) : null}
       {systemBusyOpen ? <SystemBusyDialog onClose={dismissSystemBusy} /> : null}
+      {vibetvNotFoundOpen ? (
+        <VibeTVNotFoundDialog
+          onDismiss={() => setVibetvNotFoundDismissed(true)}
+          onRunSetupAgain={() => {
+            setVibetvNotFoundDismissed(true);
+            setSetupAgainRequested(true);
+          }}
+          windowsHost={windowsHost}
+        />
+      ) : null}
       {setupAgainRequested ? (
         <SetupDialog
           description="You connect VibeTV and choose your AI providers and display mode again. VibeTV keeps its WiFi details, settings and themes."
