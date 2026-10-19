@@ -115,15 +115,20 @@ export function SetupLog({
 
 /**
  * "Refreshing display stream." becomes "Still refreshing display stream – hang
- * tight." Only the first sentence counts, and a " · " or " — " tail (a
- * percentage, a version) is left out, so the line does not go stale as that
- * number changes. A dot inside a number ("192.168") is kept.
+ * tight." Only the last sentence counts ("Upload interrupted. Retrying." reads
+ * "retrying"), and a " · " or " — " tail (a percentage, a version) is left out,
+ * so the line does not go stale as that number changes. A dot inside a number
+ * ("192.168") is kept. A past-tense text ("Uploaded theme layout.") says
+ * nothing about what is running, so it gets the generic line.
  */
 function stillText(text: string): string {
-  const step = text.split(/\. | · | — |\.$/)[0];
-  const doing = step
-    ? `${step.charAt(0).toLowerCase()}${step.slice(1)}`
-    : "working on it";
+  const sentences = text.replace(/\.$/, "").split(/\. /);
+  const step = sentences[sentences.length - 1].split(/ · | — /)[0];
+  if (!step || /\b\w+ed\b/i.test(step)) {
+    return "Still working on it – hang tight.";
+  }
+  // Lower-case a capitalised first word, but not a name such as VibeTV.
+  const doing = step.replace(/^[A-Z][a-z]+\b/, (word) => word.toLowerCase());
   return `Still ${doing} – hang tight.`;
 }
 

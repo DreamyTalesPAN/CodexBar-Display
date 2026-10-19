@@ -120,7 +120,7 @@ describe("SetupLog while a step runs long", () => {
     ]);
   });
 
-  it("keeps the first sentence only, and a dot inside a number", () => {
+  it("keeps the last sentence, and a dot inside a number", () => {
     const { container, rerender } = render(
       <SetupLog
         lines={[{ id: "retry", text: "Upload interrupted. Retrying." }]}
@@ -129,7 +129,7 @@ describe("SetupLog while a step runs long", () => {
     );
     advance(8000);
     expect(stillRows(container)).toEqual([
-      "> Still upload interrupted – hang tight.",
+      "> Still retrying – hang tight.",
     ]);
 
     rerender(
@@ -142,6 +142,43 @@ describe("SetupLog while a step runs long", () => {
     expect(stillRows(container)).toContain(
       "> Still connecting to 192.168.178.153 – hang tight.",
     );
+  });
+
+  it("gives a past-tense text the generic line", () => {
+    const { container, rerender } = render(
+      <SetupLog
+        lines={[{ id: "layout", text: "Uploaded theme layout." }]}
+        running
+      />,
+    );
+    advance(8000);
+    expect(stillRows(container)).toEqual([
+      "> Still working on it – hang tight.",
+    ]);
+
+    rerender(
+      <SetupLog
+        lines={[{ id: "shown", text: "Display stream refreshed." }]}
+        running
+      />,
+    );
+    advance(8000);
+    expect(stillRows(container)).toContain(
+      "> Still working on it – hang tight.",
+    );
+  });
+
+  it("keeps a product name capitalised at the start", () => {
+    const { container } = render(
+      <SetupLog
+        lines={[{ id: "wait", text: "VibeTV shows it once AI usage is ready." }]}
+        running
+      />,
+    );
+    advance(8000);
+    expect(stillRows(container)).toEqual([
+      "> Still VibeTV shows it once AI usage is ready – hang tight.",
+    ]);
   });
 
   it("adds nothing when the screen writes its own lines", () => {
