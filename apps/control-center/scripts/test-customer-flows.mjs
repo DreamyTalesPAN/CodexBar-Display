@@ -8654,7 +8654,7 @@ async function testLegacyMigrationCanRetryFailedRelease(
   await page.getByRole("heading", { name: "Update check failed" }).waitFor({
     timeout: 10_000,
   });
-  const retry = page.getByRole("button", { name: "Check again" });
+  const retry = page.getByRole("button", { name: "Try again" });
   await retry.waitFor({ timeout: 10_000 });
   assert(
     await retry.isEnabled(),
@@ -8670,7 +8670,7 @@ async function testLegacyMigrationCanRetryFailedRelease(
     timeout: 10_000,
   });
   assert(
-    await page.getByRole("button", { name: "Check again" }).isEnabled(),
+    await page.getByRole("button", { name: "Try again" }).isEnabled(),
     "A repeated hosted release failure must leave retry available",
   );
   assert(

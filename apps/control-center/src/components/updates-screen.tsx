@@ -450,7 +450,7 @@ function PrimaryUpdateAction({
       ? "Update"
       : macAppMigrationRequired
         ? macAppCheckFailed
-          ? "Check again"
+          ? "Try again"
           : "Update"
         : macAppUpdateAvailable
           ? "Update"

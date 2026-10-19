@@ -58,7 +58,7 @@ const STATUS: Record<
   succeeded: { icon: CircleCheck, text: "Done" },
   skipped: { icon: CircleMinus, text: "Skipped", className: "text-muted-foreground" },
   retry: { icon: RotateCw, text: "Retrying" },
-  failed: { icon: CircleX, text: "Failed", className: "text-destructive" },
+  failed: { icon: CircleX, text: "Failed" },
 };
 
 /**
