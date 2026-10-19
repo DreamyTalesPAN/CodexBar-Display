@@ -79,6 +79,15 @@ export function onNativeDownloadFinished(
   return () => window.removeEventListener("vibetv:download-finished", handle);
 }
 
+// Opens the Mac App's update prompt (issue #566). The Mac App runs a background
+// Sparkle check for it: a dialog only when Sparkle finds the update, never
+// "You're up to date" in the middle of setup (#570). Windows keeps its own check.
+export function openMacAppUpdatePrompt(windowsHost: boolean): void {
+  window.location.href = windowsHost
+    ? "vibetv://check-for-updates"
+    : "vibetv://check-for-updates-in-background";
+}
+
 export function isNativeControlCenterApp(): boolean {
   return (
     typeof navigator !== "undefined" &&
