@@ -8404,3 +8404,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none; no visible change.
 - Scope: `apps/control-center/src/components/setup/setup-dialog.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-19 — #784: Codex/CI fix, the outage dialogs' grey backdrop takes no clicks
+
+- User approval: none needed — no visible change: the grey backdrop of "Repairing VibeTV Control Center" and "VibeTV Control Center needs attention" is unchanged (Paul's build-2 decision, frames 32 and 33); it only takes no clicks any more, so the sidebar and tabs stay usable while the dialog is open, as approved before (the customer flow "background service outage" failed on the backdrop catching the click on Usage).
+- Approved customer-visible result: none; no visible change.
+- Scope: `apps/control-center/src/components/setup/setup-recovery-dialogs.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.test.tsx`, the comment in `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content

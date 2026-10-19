@@ -3406,9 +3406,8 @@ async function testRunningCompanionOutageKeepsControlCenterOpen(
     "a service outage must stay quiet while it can still come back on its own",
   );
   // Once the grace is over the app steps in, and then it says so -- over
-  // whatever the customer was doing. Its scrim swallows clicks, so the session
-  // is only usable again once it is dismissed -- which it must be, rather than
-  // trapping the customer behind it.
+  // whatever the customer was doing. Its grey backdrop is a look only and
+  // takes no clicks, and the dialog can be dismissed as well.
   const recovery = page.locator('[role="dialog"][data-state="open"]');
   await recovery.waitFor({ timeout: 45_000 });
   const recoveryTitle = (
