@@ -88,11 +88,6 @@ func FetchProviderTokenStatsWithReport(ctx context.Context) (map[string]Provider
 	return fetchProviderTokenStatsWithReport(ctx, bin, report)
 }
 
-func fetchProviderTokenStats(ctx context.Context, bin string) (map[string]ProviderTokenStats, bool) {
-	stats, report := fetchProviderTokenStatsWithReport(ctx, bin, ProviderTokenStatsReport{})
-	return stats, report.OK
-}
-
 func fetchProviderTokenStatsWithReport(ctx context.Context, bin string, report ProviderTokenStatsReport) (map[string]ProviderTokenStats, ProviderTokenStatsReport) {
 	costStarted := time.Now()
 	raw, err := runCostCommandFn(ctx, tokenStatsCommandTimeout, bin, tokenStatsArgs(runtime.GOOS)...)
@@ -140,11 +135,6 @@ func tokenStatsFailureReason(ctx context.Context, err error, elapsed, timeout ti
 		return "timeout"
 	}
 	return fallback
-}
-
-func parseProviderTokenStats(raw []byte) (map[string]ProviderTokenStats, error) {
-	parsed, _, err := parseProviderTokenStatsWithFailures(raw)
-	return parsed, err
 }
 
 func parseProviderTokenStatsWithFailures(raw []byte) (map[string]ProviderTokenStats, []string, error) {

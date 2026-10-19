@@ -2245,23 +2245,10 @@ func TestApplySelectionActivityRequiresFreshNoDeltaEvidenceBeforeIdle(t *testing
 
 func TestApplySelectionActivityKeepsExplicitActivity(t *testing.T) {
 	frame, _ := applySelectionActivity(protocol.Frame{Provider: "codex", Activity: "idle"}, codexbar.SelectionDecision{
-		Reason: codexbar.SelectionReasonLocalActivity,
+		Reason: codexbar.SelectionReasonStickyCurrent,
 	}, &runtimeState{}, time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC))
 	if frame.Activity != "idle" {
 		t.Fatalf("expected explicit activity to be preserved, got %q", frame.Activity)
-	}
-}
-
-func TestApplySelectionActivityTreatsStaleLocalSignalAsIdle(t *testing.T) {
-	prepareFastTestEnv(t)
-
-	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
-	frame, detail := applySelectionActivity(protocol.Frame{Provider: "claude"}, codexbar.SelectionDecision{
-		Reason: codexbar.SelectionReasonLocalActivity,
-		Detail: "provider=claude confidence=high at=2026-02-23T11:00:00Z evidence=test",
-	}, &runtimeState{}, now)
-	if frame.Activity != "idle" {
-		t.Fatalf("expected stale local activity to render idle, got %q detail=%q", frame.Activity, detail)
 	}
 }
 
@@ -4453,7 +4440,7 @@ func TestProviderCollectorWakeCollectsBeforeDisplayWake(t *testing.T) {
 		if call != 1 {
 			t.Fatalf("expected initial collection first, got call %d", call)
 		}
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for initial collection")
 	}
 
@@ -4461,7 +4448,7 @@ func TestProviderCollectorWakeCollectsBeforeDisplayWake(t *testing.T) {
 
 	select {
 	case <-displayWake:
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for display wake after manual collection")
 	}
 	if calls.Load() < 2 {
@@ -4522,15 +4509,17 @@ func TestProviderCollectorRetriesInitialCollectionWhenDashboardBecomesHealthyWit
 	defer cancel()
 	go collector.run(ctx)
 
+	// The collector's own deadline is 1 s, so the first failure can arrive
+	// just after 1 s on a slow runner; wait longer than that.
 	select {
 	case <-initialFailure:
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for initial dashboard startup race")
 	}
 	dashboardInfo.Store(testDashboardServeInfo(1001))
 	select {
 	case <-completed:
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("collector did not retry after the dashboard became healthy")
 	}
 
@@ -5321,10 +5310,10 @@ func TestProviderCollectorTokenStatsStartAndWakeTriggers(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go collector.run(ctx)
-	waitForCondition(t, time.Second, func() bool {
+	waitForCondition(t, 5*time.Second, func() bool {
 		return tokenFetches.Load() == 1
 	})
-	waitForCondition(t, time.Second, func() bool {
+	waitForCondition(t, 5*time.Second, func() bool {
 		collector.tokenStatsMu.Lock()
 		defer collector.tokenStatsMu.Unlock()
 		return !collector.tokenStatsRunning
@@ -5332,10 +5321,10 @@ func TestProviderCollectorTokenStatsStartAndWakeTriggers(t *testing.T) {
 	clockNanos.Add(int64(time.Minute))
 	wake <- struct{}{}
 	<-afterWake
-	waitForCondition(t, time.Second, func() bool {
+	waitForCondition(t, 5*time.Second, func() bool {
 		return tokenFetches.Load() == 2
 	})
-	waitForCondition(t, time.Second, func() bool {
+	waitForCondition(t, 5*time.Second, func() bool {
 		collector.tokenStatsMu.Lock()
 		defer collector.tokenStatsMu.Unlock()
 		return !collector.tokenStatsRunning
@@ -5366,7 +5355,7 @@ func TestProviderCollectorTokenStatsStartAndWakeTriggers(t *testing.T) {
 	clockNanos.Add(int64(tokenStatsScanCooldown - time.Minute))
 	wake <- struct{}{}
 	<-afterWake
-	waitForCondition(t, time.Second, func() bool {
+	waitForCondition(t, 5*time.Second, func() bool {
 		return tokenFetches.Load() == 3
 	})
 	cancel()

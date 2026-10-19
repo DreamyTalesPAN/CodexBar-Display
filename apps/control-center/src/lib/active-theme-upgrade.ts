@@ -179,7 +179,7 @@ export function ownThemePaths(userThemes: UserThemeRecord[]): string[] {
 // other path is a catalog screensaver's when the catalog names it, revision 1
 // included, because catalog screensavers were shipped at revision 1 too (Token
 // Fire as tf-1-874fd8e2) and VibeTVs that still hold one must get the update.
-export function resolveInstalledScreensaver(
+function resolveInstalledScreensaver(
   themes: ThemeProduct[],
   screensaverPath: string | null | undefined,
   ownPaths: string[] = [],

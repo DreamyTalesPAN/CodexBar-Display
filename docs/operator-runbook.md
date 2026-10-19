@@ -142,7 +142,7 @@ disconnect power for 10 seconds, and then let `install-update` repeat the full
 preflight before retrying once.
 
 Do not use `scripts/vibetv-provision.sh` or `POST /update` when `/hello` already
-identifies a VibeTV runtime. Those are GeekMagic factory-provisioning paths.
+identifies a VibeTV runtime. Those are provisioning paths for units before their first VibeTV firmware.
 
 ### USB recovery flash path
 
@@ -395,8 +395,8 @@ Examples:
 - `setup failed at flash-firmware [setup/flash-firmware] ...`
 
 Daemon logs:
-- `/tmp/codexbar-display-daemon.out.log`
-- `/tmp/codexbar-display-daemon.err.log`
+- `~/Library/Application Support/codexbar-display/logs/daemon.out.log`
+- `~/Library/Application Support/codexbar-display/logs/daemon.err.log`
 
 ## Backup and Restore (ESP8266)
 
@@ -445,7 +445,7 @@ Minimal runtime smoke:
 
 Optional args:
 1. plist path (default: `~/Library/LaunchAgents/com.codexbar-display.daemon.plist`)
-2. out log path (default: `/tmp/codexbar-display-daemon.out.log`)
+2. out log path (default: `~/Library/Application Support/codexbar-display/logs/daemon.out.log`)
 3. timeout seconds (default: `90`)
 
 ## Soak Gate (ESP8266)
@@ -528,7 +528,7 @@ lsof /dev/cu.usbserial-10
 
 ```bash
 launchctl print gui/$(id -u)/com.codexbar-display.daemon
-tail -n 100 /tmp/codexbar-display-daemon.err.log
+tail -n 100 "$HOME/Library/Application Support/codexbar-display/logs/daemon.err.log"
 ```
 
 ### No new frames

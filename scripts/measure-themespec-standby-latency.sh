@@ -102,6 +102,7 @@ activate_and_wait() {
       echo "timed out waiting for ${path} to render" >&2
       return 1
     fi
+    sleep 0.1
   done
 }
 

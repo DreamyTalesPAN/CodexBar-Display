@@ -1247,6 +1247,16 @@ PY
   [[ ! -f "$dmg" ]] \
     || die "DMG dry-run must not create a real DMG"
 
+  # --output before --version (the AGENTS.md recipe) must keep the --output path.
+  dmg_trace="$(bash -x "${ROOT}/scripts/build-macos-control-center-dmg.sh" \
+    --dry-run \
+    --app "$app" \
+    --output "$dmg" \
+    --version 1.2.3 \
+    --staging-dir "${stage}-version" 2>&1 >/dev/null)"
+  [[ "$(grep -E '^\++ DMG_PATH=' <<<"$dmg_trace" | tail -n 1)" == *"DMG_PATH=${dmg}"* ]] \
+    || die "--version must not replace an explicit --output DMG path"
+
   sign_output="$("${ROOT}/scripts/sign-notarize-macos-control-center.sh" \
     --dry-run \
     --app "$app" \

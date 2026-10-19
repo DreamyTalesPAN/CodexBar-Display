@@ -18,7 +18,6 @@ struct SharedState {
   app::RuntimeContext* ctx = nullptr;
   TFT_eSPI tft = TFT_eSPI();
   GifCoreESP8266 gifCore;
-  String themeSpecUpdateNoticeText;
   uint16_t displayTransactionDepth = 0;
 };
 
@@ -61,14 +60,6 @@ inline GifCoreESP8266& GifCore() {
   return State().gifCore;
 }
 
-inline void SetThemeSpecUpdateNoticeText(const String& text) {
-  State().themeSpecUpdateNoticeText = text;
-}
-
-inline const char* ThemeSpecUpdateNoticeText() {
-  return State().themeSpecUpdateNoticeText.c_str();
-}
-
 bool BeginDisplayTransaction();
 void EndDisplayTransaction();
 
@@ -86,10 +77,6 @@ class DisplayTransaction {
 
 inline int64_t CurrentRemainingSecs() {
   return codexbar_display::core::CurrentRemainingSecs(RuntimeState(), millis());
-}
-
-inline String FormatDuration(int64_t secs) {
-  return codexbar_display::core::FormatDuration(secs);
 }
 
 primitive::Sink& PrimitiveLayer();

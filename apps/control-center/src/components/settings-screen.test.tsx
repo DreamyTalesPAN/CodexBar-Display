@@ -125,8 +125,12 @@ function render(
 }
 
 describe("Provider settings", () => {
-  it("explains the included usage service in the shared provider list", () => {
-    expect(render(standbyDevice)).toContain("VibeTV reads your AI usage with CodexBar, a helper app installed with VibeTV.");
+  // Paul, 16.10.2026: the setup intro does not belong above Settings › AI providers.
+  it("shows the provider list without the setup intro", () => {
+    const html = render(standbyDevice);
+    expect(html).toContain("Search providers");
+    expect(html).not.toContain("VibeTV reads your AI usage with CodexBar");
+    expect(html).not.toContain("Turn on the providers you use below.");
   });
 });
 
@@ -333,7 +337,7 @@ describe("SettingsScreen standby controls", () => {
     ]);
   });
 
-  it("keeps enabled providers first in Settings without reordering either group", () => {
+  it("puts the common subscription tools first in Settings, then switched-on providers", () => {
     const html = render(standbyDevice, savedStandby, {
       ...providerPicker,
       onOpenSignIn: vi.fn(),
@@ -351,11 +355,11 @@ describe("SettingsScreen standby controls", () => {
     });
     const providerSection = html.slice(html.indexOf(">AI providers</h2>"));
     const positions = [
-      "Claude Code",
       "Codex",
-      "OpenAI",
-      "Antigravity",
+      "Claude Code",
       "Cursor",
+      "Antigravity",
+      "OpenAI",
       "Gemini",
     ].map((label) => providerSection.indexOf(`>${label}</`));
 

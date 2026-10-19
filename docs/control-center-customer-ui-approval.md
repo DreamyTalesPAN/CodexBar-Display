@@ -5,6 +5,20 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-10-16 — Subscription providers first in the provider list (#651)
+
+- User approval: Marcus, 16.10.2026, channel Abstimmungschat (question 27, answer "ja").
+- Approved customer-visible result: In "Choose AI providers" (setup) and in Settings › AI providers, Codex, Claude, Cursor and Antigravity are listed first, followed by OpenAI (API), Azure OpenAI and the other providers. Within the other providers, switched-on ones stay above switched-off ones. No new texts or controls.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test, `settings-screen.test.tsx`, and this approval record. No merge, release, or device write is implied.
+- What's new: none — the same providers in a different order needs no notice.
+
+## 2026-10-16 — Provider list: OpenAI (API) and Azure OpenAI right after the subscription tools (#651, follow-up to b5fd6748)
+
+- User approval: Marcus, 16.10.2026, channel Abstimmungschat (question 27, answer "ja"), the same approval as the entry above. This entry records the implementation of that exact text, which the first commit did not yet match: OpenAI (API) and Azure OpenAI now follow Codex, Claude, Cursor and Antigravity directly.
+- Approved customer-visible result: As above. Codex, Claude, Cursor, Antigravity, then OpenAI (API), Azure OpenAI, then the other providers; switched-on ones stay above switched-off ones within the other providers. No new texts or controls.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test, and this approval record.
+- What's new: none — same as above.
+
 ## 2026-10-15 — "Your VibeTV is live" without Back, set up once is remembered (#611)
 
 - User approval: Paul decided the behavior in issue #611 on 2026-10-15 ("Decision by Paul, 2026-10-15"). He has not personally previewed this exact build.
@@ -6971,6 +6985,10 @@ issue scope, or release permission never implies UI permission.
 - User approval: Paul supplied a reference row and explicitly requested: "also der toggle muss dann verschwinden und stattdessen das so aussehen. ändere das mac und windows." His reference shows the provider name on the left and "Sign in to Claude" with a circular chevron on the right.
 - Approved customer-visible result: In the shared provider list in setup and Settings on both platforms, an available sign-in action replaces the toggle, warning triangle, retry and lime button. The only action is muted "Sign in to <Provider>" text and an outlined circular chevron. Existing automatic sign-in checks restore the normal toggle once the provider is ready. Other provider states retain their existing controls. This supersedes the earlier always-visible switch rule for these sign-in rows only.
 - What's new: none — provider row correction from #590, not announced to customers (line added when main joined the review bundle #600)
+- Amendment 2026-10-15 (#647): the toggle comes back on these sign-in rows. Without it a provider switched on without a sign-in (Cursor on the Mac, found in Marcus' test of #644) could not be switched off again.
+- User approval: Marcus decided on 2026-10-15: the switch always stays visible, with "Sign in to <Provider>" next to it. This changes Paul's approval above on this one point.
+- Approved customer-visible result: In the shared provider list in setup and Settings on Mac and Windows, a row that offers a sign-in shows muted "Sign in to <Provider>" with the outlined circular chevron and, to its right, the provider's normal switch. Switching it off works without signing in and the row then shows only the switch. Everything else above holds: no warning triangle, no retry and no lime button on a sign-in row, and no message opens by itself.
+- What's new: none — provider row correction (#647), not announced to customers
 
 ## 2026-10-13 - Preserve the provider retry race check
 
@@ -7178,3 +7196,274 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as approved in the #607 entries above; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-14 — Overnight audit (#614): dead UI code removed, preview poll scoped
+
+- User approval: Paul asked on 2026-10-14 for an unattended overnight audit of the whole repository (epic #614), with the rule that nothing the product does today is lost and nothing customer-visible changes unless needed. He has not seen this entry or the branch.
+- Approved customer-visible result: No text, control or layout changes. Deleted files and exports were never rendered: the panels of the native Theme Studio replaced by the AI editor (#422), the Overview `ReconnectNotice`, an unused shell status component and an unused device image. The 1 s display-frame poll now re-renders only Overview and the setup wizard instead of the whole app, runs one request at a time with a 5 s limit and pauses while the window is hidden; the Usage reset countdown keeps moving on its own 15 s tick (it shows whole minutes); background usage polls share one request. The installer served from app.vibetv.shop gives each status check at most 30 s instead of waiting without limit.
+- Scope: `apps/control-center/src/components/{live-vibetv-preview,control-center-app,usage-screen,overview-screen,mac-app-install-command,control-center-types,diagnostics-panel,control-center-runtime,setup-event-log}.ts(x)`, the deleted Theme Studio files, `src/lib/{theme-studio,theme-studio-assets,active-theme-upgrade}.ts`, `public/install-control-center-companion.sh`, `public/images/vibetv-device-overview.png`, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change
+
+## 2026-10-14 — Overnight audit (#614): app helpers moved into modules
+
+- User approval: Paul asked on 2026-10-14 for the unattended overnight audit (epic #614), including splitting the monolithic files, with nothing customer-visible changing. He has not seen this entry.
+- Approved customer-visible result: None. The pure helpers of `control-center-app.tsx` (error normalization, device merging, device-target storage, theme-install and firmware-update job helpers, runtime surface, event log) moved unchanged into six modules beside it; the rendered app is identical.
+- Scope: `apps/control-center/src/components/control-center-app.tsx`, the new `control-center-errors.ts`, `device-merge.ts`, `device-target-storage.ts`, `update-jobs.ts`, `runtime-surface.ts`, `event-log.ts`, the two tests that import them, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change
+
+## 2026-10-14 — Overnight audit (#614): unused props, dead CSS, unique activity ids
+
+- User approval: Paul asked on 2026-10-14 for the unattended overnight audit (epic #614) with nothing customer-visible changing. He has not seen this entry.
+- Approved customer-visible result: None. Props nothing read (`ThemeLibraryScreen.installEntry`, `ControlCenterShell.device`) are gone; `globals.css` loses the unused `.vibetv-status-icon*` rules and tokens and theme aliases nothing references (compiled CSS differs only by those); one progress clamp and one theme-spec hash normalizer replace identical copies; Recent activity rows get ids from a counter, so two events in the same millisecond no longer share a React key. Text and layout are unchanged.
+- Scope: `apps/control-center/src/app/globals.css`, `src/components/{control-center-app,control-center-shell,theme-library-screen,updates-screen,update-jobs,live-vibetv-preview,control-center-runtime,theme-studio-preview}.tsx/.ts`, `theme-studio/ai-theme-studio-screen.tsx`, the shell tests, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change
+
+## 2026-10-14 — Overnight audit (#614): the kept preview frame belongs to one VibeTV
+
+- User approval: Paul asked on 2026-10-14 for the unattended overnight audit (epic #614) with nothing customer-visible changing. This follows the automated review of the scoped preview poll; he has not seen it.
+- Approved customer-visible result: The frame kept across a tab switch is reused only for the VibeTV it came from. After switching to another VibeTV, Overview and setup start with an empty preview until that VibeTV's first frame arrives, instead of briefly showing the previous one. No text or control changes.
+- Scope: `apps/control-center/src/components/live-vibetv-preview.tsx`, `control-center-app.tsx`, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change
+
+## 2026-10-15 — Keep the hosted device overview image (#615)
+
+- User approval: Paul's rule for the overnight audit of 2026-10-14: nothing the product does today is lost, and anything an outside caller can reach stays.
+- Approved customer-visible result: `public/images/vibetv-device-overview.png` stays published under `/images/`, as on main. The audit had deleted it because nothing in the repository links it, but a mail or page outside the repository may. No screen changes.
+- Scope: `apps/control-center/public/images/vibetv-device-overview.png` (restored unchanged) and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — nothing changes for the customer
+
+## 2026-10-15 — Overnight audit (#614): approval marker after merging main with #607, #620 and #629
+
+- User approval: Paul asked on 2026-10-15 to bring #615 to ready (CI green, tested on Mac and Windows). Main moved on with #607, #620 and #629 while the branch was in review, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #614 entries above and in the entries of #607, #620 and #629; nothing else changes.
+
+## 2026-10-14 — The automatic Mac App update prompt never ends in "You're up to date" (#570)
+
+- User approval: Paul asked on 2026-10-14 that the overnight session, once its audit was done, continue open issues that had no branch or pull request yet. This one changes no text; he has not seen it.
+- Approved customer-visible result: When the background service reports a newer Mac App, the Mac App now runs Sparkle's background check for that prompt: Sparkle shows its update dialog only when it finds the update itself, and otherwise nothing appears — no "Checking for updates…" and no "You're up to date" alert in the middle of setup. While the launch update check is still running, the prompt does nothing (that check owns updates). "Check for Updates…" in the menu and the Update button still run the visible check. Windows is unchanged.
+- Scope: `macos/VibeTVControlCenter/main.swift` (new action `vibetv://check-for-updates-in-background`), `URLSchemeTests.swift`, `apps/control-center/src/components/control-center-app.tsx`, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no new feature, the prompt only stops showing a pointless alert
+
+## 2026-10-15 — #619: approval marker after merging main with #607, #620 and #629
+
+- User approval: Paul asked on 2026-10-15 to bring #619 to ready. Main moved on with #607, #620 and #629 while the branch was in review, so main is merged in. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #570 entry above and in the entries of #607, #620 and #629; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — #619: approval marker after merging main with #615
+
+- User approval: Paul asked on 2026-10-15 to keep #619 ready. Main moved on with #615, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the #570 entry above and in the #615 entries; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+
+## 2026-10-15 — Busy computer dialog and VibeTV label (#606)
+
+- User approval: Paul approved this wording in chat on 2026-10-15 after seeing the mockup, and asked that it say "computer" so the same text works on the Mac and on Windows (the proposal said "Your Mac is very busy" / "Mac busy").
+- Approved customer-visible result: While the usage engine is running but has not answered for three collection intervals and the computer is low on memory, a dialog over the page reads exactly: title "Your computer is very busy", text "VibeTV can't get new usage right now because your computer is low on memory. Close apps you don't need or restart your computer.", one button "OK". It does not hold the page behind it, waits behind the runtime repair, a lost VibeTV, setup and a broken usage service, and once closed stays closed until the condition has gone and come back. The same words on Mac and Windows. VibeTV shows "Computer busy" in place of the provider name for as long as the condition lasts; the values under it stay the last good ones.
+- Scope: `apps/control-center/src/components/system-busy-dialog.tsx`, its wiring in `control-center-app.tsx`, the tests in `control-center-app.whats-new.test.tsx`, the Companion detection (`companion/internal/systemload`, `companion/internal/daemon`, `/v1/status` and `/v1/diagnostics`), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — an error dialog, not a feature to announce
+
+## 2026-10-15 — Busy computer dialog: review fixes (#606)
+
+- User approval: Paul approved the wording and behaviour of the busy computer dialog in chat on 2026-10-15 (entry above). This follow-up applies two review findings and changes no wording.
+- Approved customer-visible result: As above, with two refinements: a closed dialog opens again for every new incident, also when no status read saw the previous one end (the window was hidden); and the `Run setup again?` question the customer asked for is shown alone, the busy dialog returning after it if the customer had not closed it.
+- Scope: `system-busy-dialog.tsx`, `control-center-app.tsx`, `control-center-app.whats-new.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fixes to an error dialog
+
+## 2026-10-15 — Busy computer dialog: waits for any other dialog (#606)
+
+- User approval: Paul approved the wording and behaviour of the busy computer dialog in chat on 2026-10-15 (entries above). This follow-up applies a review finding and changes no wording.
+- Approved customer-visible result: The busy computer dialog no longer stacks with a page's own dialog (Run setup again?, a theme preview, a factory reset or connection change in Settings). While one of them is open, the busy dialog waits and returns after it if the customer had not closed it. It also no longer appears when the usage engine answers with an error of its own; that error keeps its existing message.
+- Scope: `system-busy-dialog.tsx`, `control-center-app.tsx`, `control-center-app.whats-new.test.tsx`, the Companion's silence check (`companion/internal/daemon/collector.go`, `companion/internal/codexbar/dashboard_fetch.go`), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fixes to an error dialog
+
+## 2026-10-15 — Busy computer dialog also waits for confirmations (#606)
+
+- User approval: Paul approved the wording and behaviour of the busy computer dialog in chat on 2026-10-15 (entries above). This follow-up applies a review finding and changes no wording.
+- Approved customer-visible result: As in "Busy computer dialog: waits for any other dialog" above, now also for confirmations such as deleting a theme (`alertdialog`). Nothing else changes.
+- Scope: `system-busy-dialog.tsx`, its new test `system-busy-dialog.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to an error dialog
+
+## 2026-10-15 — Busy computer: VibeTV label "Busy" (#606)
+
+- User approval: Paul approved "Computer busy" as VibeTV's label on 2026-10-15, with "Busy" as the label if "Computer busy" does not fit the title line of every catalog theme (as given in the #606 task). On the bench VibeTV 16199235 (Windows, 9999.0.2268) "Computer busy" fit Mini Classic and Claude Creature but ran into the window buttons of Clippy's title bar.
+- Approved customer-visible result: While the busy computer condition lasts, VibeTV shows "Busy" in place of the provider name; everything else as recorded in the busy computer entries above.
+- Scope: `SystemBusyLabel` in `companion/internal/daemon/daemon.go` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the label of an error state
+
+## 2026-10-15 — Busy computer: last good values stay on VibeTV (#606)
+
+- User approval: Paul decided on 2026-10-15 for #628, about the screensavers (Night Clock and the others): "nein, das sind ja screensaver. wenn die aktiv sind, muss der kunde gerade ja eh keine usage daten sehen, sonst wäre ja nicht der screensaver an. da einfach last good provider und data nehmen".
+- Approved customer-visible result: While the busy computer condition lasts, VibeTV keeps the last good provider and its values instead of losing the percentages and the reset line after ten minutes. Screensavers (Night Clock, Reset Countdown, Token Fire) show no "Busy" and just keep that last good provider and data; live themes show the same values under "Busy". The reset countdown keeps its own five-hour limit. Without a busy computer nothing changes.
+- Scope: `sendCycleResult` in `companion/internal/daemon/daemon.go`, its tests in `system_busy_test.go`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the behaviour of an error state
+
+## 2026-10-15 — #628 brought up to date with main after #607 and #629
+
+- User approval: Paul approved the busy computer dialog, its wording and VibeTV's behaviour on 2026-10-15 (entries above). This update only merges main (#607, #629) into `claude/issue-606-busy-computer`; the customer-visible result approved above stays the same.
+- Approved customer-visible result: as recorded in the busy computer entries above; nothing else changes.
+- Scope: merge of main into `claude/issue-606-busy-computer`, the approval record conflict resolved by keeping main's entries and appending this branch's, and this approval record.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-15 — Busy computer dialog: checks for an open dialog before it appears (#606)
+
+- User approval: Paul approved the wording and behaviour of the busy computer dialog in chat on 2026-10-15 (entries above). This follow-up applies a review finding and changes no wording.
+- Approved customer-visible result: As in "Busy computer dialog: waits for any other dialog" above; the check now happens before the dialog first appears, so it never shows for a moment over a question that was already open.
+- Scope: `system-busy-dialog.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to an error dialog
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — #628 merged with current main (#606)
+
+- User approval: Paul approved the busy computer dialog, its wording, the VibeTV label and the last good values on 2026-10-15 (entries above). This entry records only the merge of main into `claude/issue-606-busy-computer`; it adds no wording and no new visible behaviour.
+- Approved customer-visible result: as recorded in the busy computer entries above; nothing else changes.
+- Scope: the merge of main (with #615 and #620) into this branch and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+## 2026-10-16 — Approval record: newest marker after the squash merges of #628 and #619
+
+- User approval: Paul approved the wording and behaviour of the busy computer dialog, the VibeTV label and the last good values for #628 on 2026-10-15 (entries above). Marcus gave the click tests "628 OK" and "619 OK" on 2026-10-16. This entry records these approvals after the squash merges and adds no wording and no new visible behaviour.
+- Approved customer-visible result: as recorded in the entries above; nothing else changes.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — Windows alignment of the provider list order (#651, follow-up to 67cb9dcd)
+
+- User approval: Marcus, 16.10.2026, channel Abstimmungschat (question 27, answer "ja"), the same approval as the two entries above. This entry records the implementation of that exact text on Windows: Windows CodexBar names OpenAI (API) `openaiapi`, which the priority list did not match, so OpenAI API fell behind the other providers. The fix puts it right after `openai`.
+- Approved customer-visible result: Windows angleichung an die freigegebene Mac-Reihenfolge (OpenAI API vor Azure OpenAI). Codex, Claude, Cursor, Antigravity, then OpenAI (API), Azure OpenAI, then the other providers, on Mac and Windows alike. Within the other providers, switched-on ones stay above switched-off ones. No new texts or controls.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx` (two lines), and this approval record.
+- What's new: none — the same providers in the already approved order.
+
+## 2026-10-16 — Provider list order merged with current main (#651)
+
+- User approval: Marcus, 16.10.2026, channel Abstimmungschat (question 27, answer "ja"), as recorded in the Windows alignment entry above. This entry records only the merge of main (#628) into `codex/provider-list-order`; it adds no wording and no new visible behaviour.
+- Approved customer-visible result: as recorded in the Windows alignment entry above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — Provider list order merged with current main again (#651)
+
+- User approval: Marcus, 16.10.2026, channel Abstimmungschat (question 27, answer "ja"), as recorded in the Windows alignment entry above. This entry records only the merge of current main into `codex/provider-list-order`; the approval record conflict was resolved by keeping main's entries in order and appending this branch's entries unchanged. It adds no wording and no new visible behaviour; not seen by Paul.
+- Approved customer-visible result: as recorded in the Windows alignment entry above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — Settings › AI providers without the setup intro (#651)
+
+- User approval: Paul approved the provider order on 2026-10-16 after his own test (via the review orchestrator) on the condition that the Settings › AI providers intro paragraph is removed; this entry records that removal.
+- Approved customer-visible result: Settings › AI providers no longer shows the paragraph "VibeTV reads your AI usage with CodexBar, a helper app installed with VibeTV. Turn on the providers you use below. If one needs a sign-in, its row shows a Sign in button." above the provider search. The list, its order and every other text stay as approved above. "Choose AI providers" in setup keeps its intro unchanged in this pull request.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx` (a `showIntro` prop on the shared provider list), `apps/control-center/src/components/settings-screen.tsx`, `settings-screen.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a removed explanation paragraph in Settings needs no notice.
+
+## 2026-10-16 — Provider switch stays beside the sign-in action (#648)
+
+- User approval: Paul decided on 2026-10-16 to keep the PR state; Paul chose the PR state over the Claude Design variants A–D (page "Setup Wizard Redesign - 648 Provider sign-in"). This replaces his 2026-10-13 rule that the switch disappears while a sign-in shows.
+- Approved customer-visible result: As in the amendment of 2026-10-15 (#647) under the 2026-10-13 entry: in the shared provider list in setup and Settings on Mac and Windows, a row that offers a sign-in shows muted "Sign in to <Provider>" with the outlined circular chevron and, to its right, the provider's normal switch. Switching it off works without signing in and the row then shows only the switch. No warning triangle, no retry and no lime button on a sign-in row, and no message opens by itself.
+- Scope: `setup-provider-row.tsx`, its tests `setup-provider-row.test.tsx` and `setup-providers-screen.test.tsx`, `apps/control-center/scripts/test-customer-flows.mjs`, the sign-in sentence in `docs/control-center-ui-principles.md`, the merge of main into `codex/provider-signin-switch`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — provider row correction (#648), not announced to customers
+
+## 2026-10-15 — Setup waits for every switched-on provider, Automatic rotates every 2 s (#627, #631)
+
+- User approval: Paul described the expected behavior in issue #627 (2026-10-15: Continue only once every provider switched on has delivered usage or a definite answer) and in issue #631 ("every 2 seconds it switches to the next switched-on provider"). Marcus assigned both issues for this pull request on 2026-10-15. Neither has personally previewed this exact build.
+- Approved customer-visible result: on "Choose AI providers", Continue stays closed while a provider the customer switched on is still on its first reading; that row keeps its existing spinner. A provider whose row names a sign-in or another failure, or that the usage collection included without anything to show, does not hold the step. Display Mode then lists every provider that has usage. The Automatic card in setup and in Settings moves to the next provider every 2 seconds (was 1 second) and holds while the window is hidden. No new text, button or dialog.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, `setup-display-mode-screen.tsx`, their tests, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — setup corrections, not announced to customers
+
+## 2026-10-15 — #627: a reading kept from before a restart does not open Continue
+
+- User approval: follows the #627 entry above; the Codex review on #642 found that a provider shown as checking after a usage-service restart still had its old, stale reading, which opened Continue too early. No new wording.
+- Approved customer-visible result: as in the #627 entry above; a stale reading kept from before a restart counts as no reading, so Continue waits for the current one.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a correction of the unreleased change above
+
+## 2026-10-15 — #234: a kept theme the catalog no longer offers is dropped
+
+- User approval: follows the #234 entries above; the Codex review on #642 (f4ed9664) found that a kept theme the catalog no longer offers for install stayed stored and could come back with a later catalog. No new wording.
+- Approved customer-visible result: as in the #234 entries above; when the loaded catalog no longer offers the kept theme for install, it is forgotten and setup preselects as without a shop link. A catalog that could not be loaded forgets nothing.
+- Scope: `apps/control-center/src/components/control-center-app.tsx`, the customer-flow test, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a correction of the unreleased change above
+
+## 2026-10-15 — #627: a provider still checking holds Continue
+
+- User approval: follows the #627 entry above; the second Codex review on #642 found that usage can arrive before the provider row turns from checking to healthy, which opened Continue while Display Mode still left that provider out. No new wording.
+- Approved customer-visible result: as in the #627 entry above; Continue also waits while a switched-on provider's row still shows checking.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a correction of the unreleased change above
+
+## 2026-10-15 — Setup keeps the theme of the VibeTV the customer bought (#234)
+
+- User approval: Marcus decided on 2026-10-15 (through the VibeTV orchestrator chat) that the app preselects the bought theme in setup and the customer confirms it with Install; the shop link still never installs a theme by itself (the 2026-10-09 rule stays). This entry also stands for the merge of main (#640, #641) into this branch. No new wording.
+- Approved customer-visible result: after the app was opened through `/install/<theme>` for a live theme, "Choose your theme" in setup has that theme selected, also after the app restarted during setup without the link. Install is still the customer's click. The kept choice is dropped once any theme install completes or VibeTV already shows that theme. Unknown, screensaver or unavailable theme IDs are not kept.
+- Scope: `apps/control-center/src/lib/ordered-theme.ts`, `apps/control-center/src/components/control-center-app.tsx`, the customer-flow test, and this approval record. Pull-request branch only, not merge or release. Shop metafield and shipping mail are separate.
+- What's new: none — part of first setup, not announced to customers
+
+## 2026-10-15 — Display Mode in setup skips a saved provider that shows nothing
+
+- User approval: found in the Windows walk-through of #642 on 2026-10-15 and reported to Marcus through the VibeTV orchestrator chat, which asked to fix it in this pull request and to keep the rule identical to Settings. No new wording.
+- Approved customer-visible result: when the saved selection names a provider that has no usage (for example a signed-out Codex listed first), the Display Mode step in setup uses the first provider that has usage, as Settings already does. The Manual card previews that provider instead of "No usage yet", and Continue is open with Manual chosen.
+- Scope: `apps/control-center/src/components/setup/setup-wizard.tsx`, its test, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — setup correction, not announced to customers
+## 2026-10-15 — #234: an install from before the order does not drop the bought theme
+
+- User approval: follows the #234 entry above; the Codex review on #642 (70e8b0da) found that an install the Companion still reports from earlier counted as the customer's answer to the shop link and dropped the bought theme, so a restart during setup lost the preselection. No new wording.
+- Approved customer-visible result: as in the #234 entry above; only an install that finished after the shop link was opened drops the kept theme.
+- Scope: `apps/control-center/src/lib/ordered-theme.ts`, `apps/control-center/src/components/control-center-app.tsx`, the customer-flow test, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a correction of the unreleased change above
+
+## 2026-10-15 — #234: only an installable theme is kept as the bought theme
+
+- User approval: follows the #234 entries above; the Codex review on #642 (a1c90761) found that a shop link to a catalog theme that cannot be installed (paid, or missing its download, checksum or size) was still kept and preselected after a restart, although its Install button shows it as unavailable. No new wording.
+- Approved customer-visible result: as in the #234 entry above; a theme is kept only if its Install button would be enabled by the catalog, by the same check. A shop link to any other theme keeps an earlier kept theme, and an install from before that earlier order still does not drop it.
+- Scope: `apps/control-center/src/components/control-center-app.tsx`, the export of the existing check in `apps/control-center/src/components/theme-library-screen.tsx`, the customer-flow test, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a correction of the unreleased change above
+
+## 2026-10-15 — #627: Continue waits exactly while a switched-on row spins
+
+- User approval: follows the #627 entries above; the Codex review on #642 (d1bbaa0e) found that a switched-on provider whose reading had no percentages kept its row spinning while Continue was already open. The Companion reports such a reading also before the first real reading and after one expired, so it is not a final answer. No new wording.
+- Approved customer-visible result: as in the #627 entries above; Continue stays closed while any switched-on provider row shows its spinner, and opens when that row shows a reading, asks the customer to do something (for example sign in), or is switched off. This replaces the earlier rule that a reading without percentages released the step.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a correction of the unreleased change above
+## 2026-10-16 — #642 merged with current main (#615, #619, #628)
+
+- User approval: Marcus approved the setup changes of #642 in his click test on 2026-10-16 (entries above). Main moved on with #615, #619 and #628 while #642 was in review, so main is merged in. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as recorded in the #627, #631 and #234 entries above and in the entries of #615, #619 and #628; nothing else changes.
+- Scope: the merge of main into `codex/setup-display-mode-pack` and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+## 2026-10-16 — #642 merged with current main (#657)
+
+- User approval: Marcus approved the setup changes of #642 in his click test on 2026-10-16 (entries above). Main moved on with #657 (an approval record only) while #642 was in review, so main is merged in. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording; not seen by Paul.
+- Approved customer-visible result: as recorded in the #627, #631 and #234 entries above and in the entries of #615, #619 and #628; nothing else changes.
+- Scope: the merge of main into `codex/setup-display-mode-pack` and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+## 2026-10-16 — #642: provider popup says one sentence, intro without the sign-in sentence
+
+- User approval: Paul requested these exact changes on 2026-10-16 after testing #642 (via the review orchestrator): "Choose AI providers" drops the sentence "If one needs a sign-in, its row shows a Sign in button."; the provider popup ("wieso hab ich hier so viele optionen?") shows, for every provider, no engine text and no status line, no "then click Check again" (the open window reads provider health again every 30 s by itself), a ⚠ title with one fixed sentence per state, no "Copy provider message for <Provider>", and "Open setup guide" as the signal button beside "OK" where a guide exists, otherwise "OK" alone.
+- Approved customer-visible result: intro on "Choose AI providers" and in Settings: "VibeTV reads your AI usage with CodexBar, a helper app installed with VibeTV. Turn on the providers you use below." Provider popup, title "⚠ <Provider>", one sentence per state the row shows:
+  - signed out, provider whose sign-in the app starts (Codex, Claude, Cursor, Antigravity): "Sign in to <Provider> so VibeTV can read its usage." (button "Sign in to <Provider>" where the shell can start it, otherwise "OK")
+  - signed out, any other provider: "VibeTV reads <Provider> usage from <Provider>'s own app, so make sure it is installed and signed in on this computer." (buttons "OK" and "Open setup guide" as signal button where the guide exists, otherwise "OK")
+  - browser sign-in: "Sign in to <Provider> in your browser, then close the browser."
+  - permission: "Allow access on this computer so VibeTV can read <Provider> usage."
+  - account no longer supported: "<Provider> no longer works with this account, so switch it off and use another provider."
+  - no usage on the account: "This <Provider> account has no usage yet."
+  - service outage: "<Provider> has a service outage, and VibeTV tries again by itself."
+  - stale (last reading kept): "VibeTV shows the last <Provider> reading until a new one arrives."
+  - usage engine too old: "The usage engine is too old and needs a repair."
+  - rate limited: "Nothing to fix: <Provider> is busy right now, and VibeTV tries again by itself."
+  - check timed out: "<Provider> did not answer in time, and VibeTV tries again by itself."
+  - any other failed check: "VibeTV could not read <Provider> usage right now and tries again by itself."
+  Removed from the popup: the engine's own text (for example "No available fetch strategy for openai."), the reading line ("No usage reading yet." / "No usage reading for …"), "Copy provider message for <Provider>" and the underlined "Open setup guide" link. Rows, switches, "Check again" on the row and the sign-in row are unchanged.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test, `apps/control-center/scripts/check-customer-ui-copy.mjs`, `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — simpler popup wording, no new capability
+
+## 2026-10-16 — Boxes on Appearance › Themes use the design-system radius
+- User approval: Paul ordered on 2026-10-16 (via the review orchestrator) that boxes, cards and dialogs use the design-system radius token; a pure design-system correction, no new approval needed; he will see before/after in his test.
+- Approved customer-visible result: On Appearance › Themes, the "Continue your unsaved theme" box (Discard/Resume) and the "Theme is not available" notice get the card radius (`--radius-card`, 0.75rem) that Card and Alert already use, instead of square corners. Layout, colors, wording and buttons stay the same. A sweep of `apps/control-center/src` found no other box, card, banner, dialog or panel without a radius or with a hard-coded one; theme render previews and the VibeTV device mockup stay as they are.
+- Scope: `RecoveryCard` and `MissingRequestedThemeNotice` in `apps/control-center/src/components/theme-library-screen.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a design-system correction of two boxes
+
+## 2026-10-16 — Merge of main (#648, #667) into #665
+
+- User approval: none needed for this entry; it records only the merge of main into `claude/ui-radius-tokens`, no visible change of this PR; not seen by Paul.
+- Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
+- What's new: none — merge of main, no customer-visible change of its own
