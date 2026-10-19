@@ -61,7 +61,7 @@ export function DiagnosticsPanel({
       <div className="flex items-center justify-between gap-4">
         <h2 className="text-[15px] leading-5 font-semibold">Diagnostics</h2>
         <Button
-          className="text-sm"
+          className="gap-2 px-3.5 text-sm has-data-[icon=inline-start]:pl-3.5 [&_svg:not([class*='size-'])]:size-4"
           disabled={running || !onRun}
           onClick={onRun}
           size="sm"
