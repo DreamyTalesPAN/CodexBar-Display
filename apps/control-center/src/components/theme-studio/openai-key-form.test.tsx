@@ -46,9 +46,21 @@ describe("Theme Studio AI row in Settings", () => {
     render(<ThemeStudioKeyRow />);
     fireEvent.click(await screen.findByRole("button", { name: "Change key" }));
     const dialog = await screen.findByRole("dialog");
-    await waitFor(() => expect(dialog.textContent).toContain("Replace OpenAI key"));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Replace OpenAI key" })).toBeTruthy());
+    expect(dialog.textContent).not.toContain("Theme Studio AI");
+    expect(dialog.textContent).not.toContain("Connect OpenAI");
     expect(screen.getByRole("button", { name: "Disconnect OpenAI" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Update key" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("titles the dialog Add OpenAI key when no key is saved, without a subtitle", async () => {
+    vi.mocked(fetchAIThemeCapabilities).mockResolvedValue(capabilities(false));
+    render(<ThemeStudioKeyRow />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add key" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add OpenAI key" });
+    expect(dialog.textContent).not.toContain("Theme Studio AI");
+    expect(dialog.textContent).not.toContain("Connect OpenAI");
+    expect(dialog.hasAttribute("aria-describedby")).toBe(false);
   });
 
   it("has no close X in the key dialog", async () => {
@@ -94,7 +106,7 @@ describe("Theme Studio AI row in Settings", () => {
     render(<ThemeStudioKeyRow />);
     fireEvent.click(await screen.findByRole("button", { name: "Change key" }));
     await screen.findByRole("dialog");
-    fireEvent.change(await screen.findByLabelText("Replace OpenAI key"), { target: { value: "sk-new-key" } });
+    fireEvent.change(await screen.findByLabelText("Replace OpenAI key", { selector: "input" }), { target: { value: "sk-new-key" } });
     fireEvent.click(screen.getByRole("checkbox"));
     expect(screen.getByRole("button", { name: "Update key" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Save key" })).toBeNull();

@@ -137,15 +137,30 @@ describe("Theme Studio progress line", () => {
 });
 
 describe("Theme Studio notices", () => {
-  it("shows a notice under the toolbar, not at the bottom of the chat column", async () => {
+  it("shows a notice in the header row, right-aligned and left of Save, not in the chat column", async () => {
     render(<AIThemeStudioScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Add manually" }));
     fireEvent.click(await screen.findByRole("button", { name: /^Text/ }));
 
     const notice = await screen.findByText("Element added. Select it on the display to make it yours.");
     const header = document.querySelector("header") as HTMLElement;
-    expect(header.nextElementSibling?.contains(notice)).toBe(true);
+    expect(header.contains(notice)).toBe(true);
+    expect(notice.parentElement?.className).toContain("text-right");
+    expect(notice.className).toContain("font-normal");
+    expect(notice.compareDocumentPosition(screen.getByRole("button", { name: "Save" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByRole("region", { name: "AI creation" }).contains(notice)).toBe(false);
+    // The buttons keep their width, so a long notice wraps instead of pushing them out of the window.
+    expect(screen.getByRole("button", { name: "Save" }).parentElement?.className).toContain("shrink-0");
+  });
+
+  it("opens the key dialog with a plain heading and no subtitle", async () => {
+    vi.mocked(fetchAIThemeCapabilities).mockResolvedValue({ enabled: true, providers: [{ id: "openai", configured: false }] } as never);
+    vi.mocked(planAIThemeLayout).mockReturnValue(new Promise(() => {}));
+    render(<AIThemeStudioScreen />);
+    await sendIdea();
+    const dialog = await screen.findByRole("dialog", { name: "Add OpenAI key" });
+    expect(dialog.textContent).not.toContain("Create with AI");
+    expect(dialog.textContent).not.toContain("Connect OpenAI to create your design.");
   });
 });
 
@@ -184,6 +199,19 @@ describe("Theme Studio small window", () => {
     // The chat column keeps its height, so the message list scrolls and the input stays visible.
     expect(classes(chatColumn)).toEqual(expect.arrayContaining(["max-lg:max-h-[40svh]", "max-lg:shrink-0"]));
     expect(chatColumn.contains(document.getElementById("ai-scene-request"))).toBe(true);
+  });
+
+  it("splits the wide editor 50/50, centers the preview and starts the chat at the top", async () => {
+    render(<AIThemeStudioScreen />);
+    const classes = (element: Element) => element.getAttribute("class")?.split(/\s+/) ?? [];
+    const preview = document.getElementById("theme-design-canvas")!.parentElement!;
+    const chatColumn = (await screen.findByRole("region", { name: "AI creation" })).parentElement!;
+    for (const column of [preview, chatColumn]) expect(classes(column)).toEqual(expect.arrayContaining(["lg:flex-1", "lg:basis-0"]));
+    expect(classes(chatColumn)).not.toContain("lg:w-[464px]");
+    const frame = document.querySelector('[aria-label="Selection workspace"]')!.querySelector(":scope > div") as HTMLElement;
+    expect(classes(frame)).toContain("my-auto");
+    expect(classes(frame.firstElementChild!)).toContain("mx-auto");
+    expect(classes(screen.getByRole("log", { name: "Conversation" }))).not.toContain("[&>:first-child]:mt-auto");
   });
 });
 
@@ -272,21 +300,21 @@ describe("Theme Studio send reason", () => {
   // The tooltip sits on the wrapper: a disabled button takes no hover.
   const tooltipOf = (button: HTMLElement) => button.parentElement;
 
-  it("says why an empty design cannot be sent, under the toolbar and on the button", () => {
+  it("says why an empty design cannot be sent, in the header and on the button", () => {
     render(<AIThemeStudioScreen />);
 
     expect(sendButton().hasAttribute("disabled")).toBe(true);
     const reason = reasonLine();
     expect(reason?.textContent).toBe("Add at least one visual element.");
     const header = document.querySelector("header") as HTMLElement;
-    expect(header.nextElementSibling?.contains(reason)).toBe(true);
+    expect(header.contains(reason)).toBe(true);
     expect(reason?.getAttribute("role")).toBe("status");
     expect(tooltipOf(sendButton())?.getAttribute("title")).toBe("Add at least one visual element.");
     expect(sendButton().hasAttribute("title")).toBe(false);
     expect(sendButton().getAttribute("aria-describedby")).toBe("send-blocked-reason");
   });
 
-  it("shows a design limit reason once, under the toolbar, not again in the chat alert", () => {
+  it("shows a design limit reason once, in the header, not again in the chat alert", () => {
     const text = { ...createDesignElement("text", 1), text: "x".repeat(1100) };
     render(<AIThemeStudioScreen initialTheme={{ packName: "Long text", source: "custom", spec: { ...createBlankThemeSpec(), primitives: [text] } }} />);
 

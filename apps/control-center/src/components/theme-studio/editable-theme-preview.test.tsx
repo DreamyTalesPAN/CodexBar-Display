@@ -167,3 +167,10 @@ it("keeps toolbar buttons and element fields usable without starting selection",
   expect(props.onSelectMany).not.toHaveBeenCalled();
   expect(props.onMoveMany).not.toHaveBeenCalled();
 });
+
+it("gives the preview frame no coloured ring, also while the canvas has focus after a drag", () => {
+  const { svg } = renderCafe();
+  const frame = svg.parentElement!.parentElement!;
+  expect(frame.className).toContain("bg-muted");
+  expect(frame.className).not.toMatch(/ring-ring|focus|outline|border-(?!transparent)/);
+});

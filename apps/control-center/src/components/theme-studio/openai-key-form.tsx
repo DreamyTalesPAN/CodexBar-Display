@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -136,7 +135,8 @@ export function OpenAIKeyForm({
     <div className="space-y-4">
       {configured !== true || !inSetup ? (
         <label className="grid gap-2 text-sm">
-          {hasStoredKey(configured) ? "Replace OpenAI key" : "OpenAI key"}
+          {/* The dialog heading already says "Add OpenAI key" or "Replace OpenAI key". */}
+          <span className="sr-only">{hasStoredKey(configured) ? "Replace OpenAI key" : "OpenAI key"}</span>
           <Input
             type="password"
             autoComplete="off"
@@ -237,10 +237,9 @@ export function ThemeStudioKeyRow() {
       </Button>
       <Dialog open={open} onOpenChange={(next) => { if (!busy) setOpen(next); }}>
         {/* Calm rule 13: no X. The dialog keeps a visible Close in its footer instead. */}
-        <DialogContent className="[&_[data-slot=dialog-close]]:hidden">
+        <DialogContent className="[&_[data-slot=dialog-close]]:hidden" aria-describedby={undefined}>
           <DialogHeader>
-            <DialogTitle>Theme Studio AI</DialogTitle>
-            <DialogDescription>Connect OpenAI to create your design.</DialogDescription>
+            <DialogTitle>{hasStoredKey(configured) ? "Replace OpenAI key" : "Add OpenAI key"}</DialogTitle>
           </DialogHeader>
           <OpenAIKeyForm
             inSetup={false}

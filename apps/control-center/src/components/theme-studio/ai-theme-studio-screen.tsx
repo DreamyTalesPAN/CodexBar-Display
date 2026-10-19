@@ -271,7 +271,7 @@ export function AIThemeStudioScreen({
   const locked = busy || sending || saving || installStatus?.phase === "installing";
   const canCancel = busy && !loadingSample;
   // Every notice of the editor (saved, exported, sent, cancelled) shows in one
-  // place under the toolbar, not at the bottom of the chat column.
+  // place, right in the header row left of Save, not in the chat column.
   const notices = [visibleInstallStatus ? copyForHost(visibleInstallStatus.error || visibleInstallStatus.message || "Sending…", windowsHost) : transferStatus, busy ? "" : status].filter(Boolean);
   // Connecting needs the consent box ticked, so a saved key is that consent
   // (#633); Disconnect removes both.
@@ -1014,13 +1014,13 @@ export function AIThemeStudioScreen({
         }
       }}
     >
-        <header className="flex items-center gap-3">
+        <header className="flex flex-wrap items-center gap-x-3 gap-y-2">
           {onBackToLibrary ? <Button variant="ghost" size="icon" aria-label="Back to library" title="Back to library" disabled={locked} onClick={() => { if (dirty && persistedDraft.current !== document) setLeaving(true); else onBackToLibrary(); }}><ArrowLeft /></Button> : null}
           <h2 className="sr-only">{document.usage === "screensaver" ? "Screensaver Studio" : "Theme Studio"}</h2>
           <Input
             aria-label="Design name"
             title="Design name"
-            className="h-10 min-w-0 max-w-xs border-transparent bg-transparent px-2 text-[28px] leading-none font-semibold md:text-[28px] shadow-none hover:border-input focus-visible:border-ring"
+            className="h-10 min-w-24 max-w-xs flex-[2_1_0%] border-transparent bg-transparent px-2 text-[28px] leading-none font-semibold md:text-[28px] shadow-none hover:border-input focus-visible:border-ring"
             value={document.packName}
             maxLength={48}
             disabled={locked}
@@ -1080,7 +1080,13 @@ export function AIThemeStudioScreen({
               <Redo2 />
             </Button>
           </div>
-          <div className="ml-auto flex items-center gap-2">
+          {notices.length || sendBlockedReason ? (
+            <div className="flex flex-[1_1_0%] flex-col items-end gap-0.5 text-right">
+              {notices.map((text, i) => <p key={i} role="status" className="text-[13px] font-normal text-muted-foreground [overflow-wrap:break-word]">{text}</p>)}
+              {sendBlockedReason ? <p id="send-blocked-reason" role="status" className="text-[13px] font-normal text-muted-foreground [overflow-wrap:break-word]">{sendBlockedReason}</p> : null}
+            </div>
+          ) : null}
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             <Button
               variant="outline"
               disabled={locked || Boolean(saveBlockedReason) || !document.spec.primitives.length || validation.errors.length > 0}
@@ -1098,14 +1104,8 @@ export function AIThemeStudioScreen({
             </span>
           </div>
         </header>
-        {notices.length || sendBlockedReason ? (
-          <div className="flex flex-col gap-1 pt-3">
-            {notices.map((text, i) => <p key={i} role="status" className="text-[13px] text-muted-foreground [overflow-wrap:anywhere]">{text}</p>)}
-            {sendBlockedReason ? <p id="send-blocked-reason" role="status" className="text-[13px] text-muted-foreground [overflow-wrap:anywhere]">{sendBlockedReason}</p> : null}
-          </div>
-        ) : null}
           <main className="flex min-h-0 flex-1 flex-col gap-6 pt-8 lg:flex-row lg:gap-12">
-            <div className="min-h-0 min-w-0 overflow-y-auto lg:w-[464px] lg:flex-none">
+            <div className="min-h-0 min-w-0 overflow-y-auto lg:flex-1 lg:basis-0">
             <div
               id="theme-design-canvas"
               role="region"
@@ -1461,8 +1461,8 @@ export function AIThemeStudioScreen({
               </EditableThemePreview>
             </div>
             </div>
-            <div className="mx-auto flex min-h-0 w-full max-w-[680px] flex-col max-lg:max-h-[40svh] max-lg:shrink-0 lg:flex-1 lg:overflow-y-auto">
-            <div className="flex min-h-24 flex-1 flex-col gap-4 overflow-y-auto pb-4 [&>:first-child]:mt-auto" role="log" aria-label="Conversation">
+            <div className="flex min-h-0 w-full min-w-0 flex-col max-lg:max-h-[40svh] max-lg:shrink-0 lg:flex-1 lg:basis-0 lg:overflow-y-auto">
+            <div className="flex min-h-24 flex-1 flex-col gap-4 overflow-y-auto pb-4" role="log" aria-label="Conversation">
               {messages.length || asking !== null ? messages.map((message, i) => (
                 message.role === "user" ? <div key={i}>{userTurn(message.content, message.images)}</div> : <p
                   key={i}
@@ -1624,6 +1624,7 @@ export function AIThemeStudioScreen({
         <DialogContent
           className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md"
           showCloseButton={!connecting}
+          {...(panel === "setup" ? { "aria-describedby": undefined } : {})}
           onEscapeKeyDown={(event) => {
             if (connecting) event.preventDefault();
           }}
@@ -1640,18 +1641,18 @@ export function AIThemeStudioScreen({
           <DialogHeader>
             <DialogTitle>
               {panel === "setup"
-                ? "Create with AI"
+                ? configured ? "Replace OpenAI key" : "Add OpenAI key"
                 : panel === "add"
                   ? "Add an element"
                   : "Your saved designs"}
             </DialogTitle>
-            <DialogDescription className="sr-only">
-              {panel === "setup"
-                ? "Connect OpenAI to create your design."
-                : panel === "add"
+            {panel !== "setup" ? (
+              <DialogDescription className="sr-only">
+                {panel === "add"
                   ? "Choose what you want to show. You can move and change it afterwards."
                   : "Your saved designs."}
-            </DialogDescription>
+              </DialogDescription>
+            ) : null}
           </DialogHeader>
           {panel === "setup" ? (
             <OpenAIKeyForm

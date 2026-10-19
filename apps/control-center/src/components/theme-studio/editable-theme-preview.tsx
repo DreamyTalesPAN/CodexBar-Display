@@ -351,8 +351,8 @@ export function EditableThemePreview({
       onPointerUp={finishPointer}
     >
     {toolbar ? <div className="[touch-action:auto]">{toolbar}</div> : null}
-    <div>
-    <div className="w-full max-w-[464px] rounded-xl bg-muted p-8 ring-1 ring-foreground/10 group-focus-visible/canvas:ring-2 group-focus-visible/canvas:ring-ring">
+    <div className="my-auto">
+    <div className="mx-auto w-full max-w-[464px] rounded-xl bg-muted p-8 ring-1 ring-foreground/10">
     <div className="relative mx-auto aspect-square w-full max-w-[480px] overflow-hidden rounded-lg border border-[#1B1B1B] bg-black p-0">
       <ThemeSpecPreview
         animate={animate ?? !prefersReducedMotion}
