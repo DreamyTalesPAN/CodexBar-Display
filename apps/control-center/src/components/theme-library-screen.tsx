@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  Edit3,
+  Check,
   Info,
   Library,
   Lock,
@@ -9,7 +9,6 @@ import {
   Plus,
   RefreshCw,
   ShieldCheck,
-  Trash2,
   Wifi,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -753,7 +752,7 @@ export function ThemeLibraryScreen({
               />
             ) : null}
 
-            <ItemGroup>
+            <ItemGroup className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
               {libraryThemes.map((theme) => (
                 <ThemeListItem
                   busyAction={busyAction}
@@ -1162,14 +1161,28 @@ function ThemeListItem({
         )
       : `${updateAvailable ? "Update" : "Install"} ${item.title}`;
   const loadingEdit = loadingEditorRow === rowKey(item);
+  const installLabel = labelForInstallButton({
+    actionInFlight,
+    blockedLabel: blocker ? blockedLabel : "",
+    installInFlight: installInFlight || preparingInstall,
+    // The row's notice says "Installed" from here on; the button says
+    // the same while the app still reads VibeTV's settings (#579).
+    installFinished:
+      visibleInstallStatus && installStatus?.phase === "complete" && !preparingInstall,
+    installed,
+    selected: item.themeId === selectedThemeId,
+    disabled,
+    updateAvailable,
+  });
 
   return (
     <Item
+      className="gap-3 rounded-[var(--radius-card)] p-4"
       id={item.kind === "published" ? catalogThemeRowId(item.themeId) : undefined}
       role="listitem"
       variant={item.themeId === displayThemeId ? "muted" : "outline"}
     >
-      <ItemMedia className="w-28 sm:w-36">
+      <ItemMedia className="basis-full w-full">
         <Button
           aria-label={`Preview ${item.title}`}
           className="h-auto w-full justify-start p-0"
@@ -1180,8 +1193,8 @@ function ThemeListItem({
           <ThemePreview onPack={setPublishedPack} theme={item} />
         </Button>
       </ItemMedia>
-      <ItemContent className="min-w-[180px]">
-        <ItemTitle className="text-lg font-bold">{item.title}</ItemTitle>
+      <ItemContent className="min-w-[11rem] flex-1">
+        <ItemTitle className="text-[13px] font-semibold">{item.title}</ItemTitle>
         {isCustom ? (
           <Badge variant="secondary">Custom</Badge>
         ) : null}
@@ -1191,54 +1204,22 @@ function ThemeListItem({
           </ItemDescription>
         ) : null}
       </ItemContent>
-      <ItemActions
-        className={cn(
-          "basis-full grid w-full gap-2 sm:basis-auto sm:w-auto",
-          isCustom ? "sm:grid-cols-3" : "sm:grid-cols-2",
-        )}
-      >
+      <ItemActions className="ml-auto flex items-center justify-end gap-3">
         <Button
+          className="px-0"
           disabled={Boolean(loadingEditorRow)}
           onClick={() => void onEditTheme(item)}
           size="sm"
           type="button"
-          variant="outline"
+          variant="link"
         >
-          {loadingEdit ? (
-            <Spinner data-icon="inline-start" />
-          ) : (
-            <Edit3 data-icon="inline-start" aria-hidden />
-          )}
+          {loadingEdit ? <Spinner data-icon="inline-start" /> : null}
           <span>{loadingEdit ? "Opening" : "Edit"}</span>
-        </Button>
-        <Button
-          disabled={disabled}
-          onClick={() => {
-            if (!blocker) {
-              onInstallTheme(item);
-            }
-          }}
-          title={title}
-          type="button"
-          size="sm"
-        >
-          {labelForInstallButton({
-            actionInFlight,
-            blockedLabel: blocker ? blockedLabel : "",
-            installInFlight: installInFlight || preparingInstall,
-            // The row's notice says "Installed" from here on; the button says
-            // the same while the app still reads VibeTV's settings (#579).
-            installFinished:
-              visibleInstallStatus && installStatus?.phase === "complete" && !preparingInstall,
-            installed,
-            selected: item.themeId === selectedThemeId,
-            disabled,
-            updateAvailable,
-          })}
         </Button>
         {item.kind === "custom" ? (
           <Button
             aria-label={`Delete ${item.title}`}
+            className="px-0"
             disabled={themeStorageLocked}
             onClick={() => onDeleteTheme(item.custom)}
             title={
@@ -1248,15 +1229,32 @@ function ThemeListItem({
             }
             type="button"
             size="sm"
-            variant="destructive"
+            variant="link"
           >
-            <Trash2 data-icon="inline-start" aria-hidden />
             <span>Delete</span>
           </Button>
         ) : null}
+        {/* Install is the primary (lime) action at the right edge. Once the
+            row has nothing to install, the same slot shows the status as text. */}
+        <Button
+          className={cn(disabled && "px-0 disabled:opacity-100 disabled:text-muted-foreground")}
+          disabled={disabled}
+          onClick={() => {
+            if (!blocker) {
+              onInstallTheme(item);
+            }
+          }}
+          title={title}
+          type="button"
+          size="sm"
+          variant={disabled ? "ghost" : "default"}
+        >
+          {installLabel === "Installed" ? <Check data-icon="inline-start" aria-hidden /> : null}
+          {installLabel}
+        </Button>
       </ItemActions>
       {visibleInstallStatus ? (
-        <ItemFooter className="block">
+        <ItemFooter className="basis-full block">
           <InlineInstallProgress
             canRetry={!disabled}
             // While Show screensaver is off VibeTV shows none, so "ready on
@@ -1828,7 +1826,7 @@ function ThemePreview({
       className={
         large
           ? "aspect-square w-full"
-          : "size-28 rounded-lg sm:size-36"
+          : "aspect-square w-full rounded-lg"
       }
       onPack={onPack}
       // A Theme Studio theme has no published pack to load: its spec only

@@ -7623,3 +7623,28 @@ issue scope, or release permission never implies UI permission.
   - Codex review fixes: the What's New, theme preview and delete dialogs keep the uniform 440 px width (their own wider widths are gone). The WiFi setup failed dialog keeps its single OK, no Close. Create with AI shows "Not now" on the setup panel and "Close" on the other panels.
 - Scope: `apps/control-center/src/components/ui/dialog.tsx`, `ui/alert-dialog.tsx`, `setup/setup-dialog.tsx`, `setup/setup-device-dialogs.tsx`, `setup/setup-provider-dialogs.tsx`, `setup/setup-providers-screen.tsx` and its test, `setup/setup-recovery-dialogs.tsx`, `setup/setup-wizard.test.tsx`, `setup/setup-device-dialogs.test.tsx`, `updates-screen.test.tsx`, `apps/control-center/scripts/test-customer-flows.mjs` (dismiss by Escape where the X was), `settings-screen.tsx`, `whats-new-dialog.tsx`, `theme-library-screen.tsx`, `theme-studio/ai-theme-studio-screen.tsx`, `theme-studio/replace-draft-dialog.tsx`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — look change of existing dialogs only (variant A2 after Codex review and CI test updates), no new capability
+
+## 2026-10-17 — Appearance (calm redesign A): Themes and Screensavers as cards
+- User approval: Paul 17.10. approved Appearance A; Themes per themes-A2-oneRow with Install as lime primary at the right edge after Edit; status texts in the Install slot (#713).
+- Approved customer-visible result: On Appearance › Themes and Appearance › Screensavers each theme or screensaver is a card, up to three in a row, with its picture on top and its name below, in 13 px semibold. The page title is 28 px semibold. On a row, Edit is an underlined text link, Delete (own themes only) is an underlined text link instead of a red button, and Install is the lime primary button at the right edge. A row with nothing to install shows its status in the same slot as text, `Installed` with a check mark, or the same disabled reason as before. Words unchanged. Not as in the picture: on Screensavers, Edit stays on the name row (the picture puts it below); the install progress keeps its progress bar and notice (no process-step list yet); an update keeps the word `Update` on the button (the picture shows `Update needed`); the notice `Screensaver is turned off` with the switch stays as it is (#645 is still open).
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (row layout, buttons, title size, picture size) and its test `theme-library-screen.test.tsx` (the label matcher allows the check mark before the label), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — layout and button variants only, no new words
+
+## 2026-10-17 — Appearance cards: three columns from 1280 px, card corner radius (Codex review fix on #754)
+- User approval: Not separately approved by Paul; a fix of two findings of the Codex review of #754 on the entry above, which Paul approved. Paul will see it in his Windows test.
+- Approved customer-visible result: On Appearance › Themes and Appearance › Screensavers the cards are in three columns only from 1280 px wide (before: from 1024 px), in two columns from 640 px, and in one below that. On a narrow card the name and the row's buttons stack instead of overlapping. The card corners use the card radius token (0.75 rem), as the other cards do (before: 0.875 rem). Words, buttons and states are unchanged.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (grid breakpoint, row wrapping, card radius) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — layout breakpoint and corner radius only
+
+## 2026-10-17 — Appearance cards: name wraps above the row's buttons at narrow widths (Codex review fix on #754)
+- User approval: Not separately approved by Paul; a fix of a Codex review finding on the entry above, which Paul approved. Paul will see it in his Windows test.
+- Approved customer-visible result: On Appearance › Themes and Appearance › Screensavers, at a narrow card width the name, and its Custom mark, get at least 11 rem, and the row's buttons move to a line of their own below the name instead of covering it (before: the name could shrink to a few pixels). Words, buttons and states are unchanged.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (minimum width of the name) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — layout only, no new words
+
+## 2026-10-18 — Revert of the page-title change on Appearance: the tree is back to the previous clean head (#754)
+
+- User approval: pending — Paul reviews this PR (the page title change moved completely into #758); look unchanged except: none. The tree is the same as the previous clean head 314a265d: the two Appearance pages show the in-page title and the sentence as before.
+- Approved customer-visible result: as in the approved Appearance A picture (#713), once #758 is in: one page title, the sub-page name, and no sentence under it. This branch alone keeps the earlier look.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx`, its tests, and this approval record (revert of 74cdbd62). Pull request branch only, not merge or release.
+- What's new: none — a revert without a visible change
