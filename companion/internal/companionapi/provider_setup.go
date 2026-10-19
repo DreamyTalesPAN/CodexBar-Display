@@ -550,6 +550,11 @@ func (s *Server) finishProviderRetry(providerID string, providerRevision uint64,
 	label := ""
 	if providerID != "" {
 		s.recordExactProviderSetup(providerID, providerRevision, setup)
+		// A check the customer overtook by switching the provider again is
+		// not news, and must not touch the usage service either (#805 review).
+		if s.currentProviderRevision(providerID) != providerRevision {
+			return
+		}
 		// A too-old engine puts its own row first; name the provider asked for.
 		for _, provider := range setup.Providers {
 			if strings.EqualFold(provider.ID, providerID) {

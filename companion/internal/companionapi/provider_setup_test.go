@@ -836,6 +836,59 @@ func TestExactProviderRetryOutlastingTheRequestFinishesInTheBackground(t *testin
 	}
 }
 
+// The customer can switch the provider off while its check runs on after the
+// request answered. Its result then speaks for a choice that no longer holds:
+// it must neither land in the setup log nor replace the usage service
+// (#805 Codex review).
+func TestExactProviderRetryOvertakenBySwitchingOffLeavesNoTrace(t *testing.T) {
+	previousWait := exactProviderRetryWait
+	exactProviderRetryWait = 20 * time.Millisecond
+	t.Cleanup(func() { exactProviderRetryWait = previousWait })
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthUnavailable}}, nil
+	}
+	server.providerPreferences.set = func(context.Context, string, bool) error { return nil }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
+	var restarts atomic.Int32
+	server.restartUsageService = func(context.Context) error { restarts.Add(1); return nil }
+	release := make(chan struct{})
+	probed := make(chan struct{})
+	server.probeExactProvider = func(_ context.Context, _ string, providerID string) codexbar.ProviderSetup {
+		<-release
+		defer close(probed)
+		return exactSetupFixture(server.currentTime(), providerID, codexbar.ProviderReady)
+	}
+	if _, err := server.cachedProviderSettings(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/providers/retry?provider=claude", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"checking"`) {
+		t.Fatalf("a check that outlasts the wait must answer checking: %d %s", rec.Code, rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPatch, "/v1/preferences/codexbar.providers.claude.enabled", strings.NewReader(`{"value":false}`)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Claude could not be switched off: %d %s", rec.Code, rec.Body.String())
+	}
+
+	close(release)
+	select {
+	case <-probed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the check never finished")
+	}
+	time.Sleep(100 * time.Millisecond)
+	if event, ok := server.setupEvents.lastOfStage(server.currentTime(), "provider_check"); ok {
+		t.Fatalf("an overtaken check reached the setup log: %+v", event)
+	}
+	if restarts.Load() != 0 {
+		t.Fatalf("an overtaken check replaced the usage service %d times", restarts.Load())
+	}
+}
+
 func TestExactProviderRetryPreservesFreshFailureOverLastGoodUsage(t *testing.T) {
 	for _, status := range []string{
 		codexbar.ProviderAuthRequired,
