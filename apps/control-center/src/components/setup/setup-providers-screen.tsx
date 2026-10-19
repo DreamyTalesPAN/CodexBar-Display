@@ -126,7 +126,7 @@ export function setupProviderOffersSignIn(
 /**
  * The prerequisite notice for a signed-out provider the app cannot sign in
  * itself: CodexBar reads its usage from the provider's own app, so that app
- * has to be installed and signed in on this computer.
+ * has to be installed and running.
  */
 function setupProviderNeedsOwnApp(
   provider: Pick<ProviderItem, "health" | "providerId">,
@@ -153,7 +153,7 @@ export function setupProviderDialogSentence(
   if (variant === "toggle" || variant === "checking") return null;
   if (variant === "sign_in") {
     return setupProviderNeedsOwnApp(provider)
-      ? `VibeTV reads ${label} usage from ${label}'s own app, so make sure it is installed and signed in on this computer.`
+      ? `VibeTV can't read ${label} until the ${label} app is installed and running.`
       : `Sign in to ${label} so VibeTV can read its usage.`;
   }
   if (variant === "browser_sign_in") {
