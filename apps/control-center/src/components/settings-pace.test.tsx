@@ -8,6 +8,7 @@ import type {
   UsageSnapshot,
 } from "./control-center-types";
 import type { ProviderPickerProps } from "./provider-picker";
+import { activeLiveThemeId } from "@/lib/active-theme-upgrade";
 import { paceSetting, SHOW_PACE_PREFERENCE_ID } from "./settings-pace";
 import { SettingsScreen } from "./settings-screen";
 
@@ -65,12 +66,12 @@ describe("the Settings section Pace", () => {
     expect(note(true, undefined)).toBeNull();
   });
 
-  const render = (displayPreferences: PreferenceDescriptor[], snapshot: UsageSnapshot, active: string) => {
+  const render = (displayPreferences: PreferenceDescriptor[], snapshot: UsageSnapshot, active: string, standby?: DeviceInfo["standby"]) => {
     const picker: ProviderPickerProps = {
       usage: snapshot, display: null, items: [], pendingCheckIds: new Set(),
       pendingPreferenceIds: new Set(), onDisplayChange: vi.fn(), onPreferenceChange: vi.fn(),
     };
-    const device: DeviceInfo = { active: true, connected: true, paired: true, ready: true, activeTheme: active };
+    const device: DeviceInfo = { active: true, connected: true, paired: true, ready: true, activeTheme: active, ...(standby ? { standby } : {}) };
     return renderToStaticMarkup(
       <SettingsScreen
         automaticPreviews={[]} brightness={70} busyAction={null} connectionMode="cable"
@@ -94,6 +95,29 @@ describe("the Settings section Pace", () => {
     const off = render([showPace(false)], usage("farAhead"), "token-counter");
     expect(off).not.toContain("has no place for it");
     expect(off).toMatch(/aria-checked="false"/);
+  });
+
+  // During standby the device draws the screensaver; the note names the live theme.
+  it("names the live theme, not the screensaver, while VibeTV is in standby", () => {
+    const withPath = (id: string, themeSpecPath: string) => ({
+      ...themes.find((item) => item.id === id)!, themeSpecPath,
+    });
+    const catalog = [
+      withPath("mini-classic", "/themes/u/mini-5-aaaaaa.json"),
+      withPath("token-counter", "/themes/u/tc-3-bbbbbb.json"),
+    ];
+    const screensaver = { ...theme("night-clock", "Night Clock", []), usage: "screensaver" as const };
+    const note = (livePath: string) =>
+      paceSetting(
+        [showPace(true)], usage("ahead"),
+        activeLiveThemeId([...catalog, screensaver], {
+          activeTheme: "night-clock",
+          standby: { active: true, liveThemePath: livePath },
+        } as DeviceInfo),
+        [...catalog, screensaver],
+      )?.note;
+    expect(note("/themes/u/mini-5-aaaaaa.json")).toBeNull();
+    expect(note("/themes/u/tc-3-bbbbbb.json")).toBe("Token Counter has no place for it. Pace Meter shows it.");
   });
 
   it("is not drawn on an engine without pace", () => {

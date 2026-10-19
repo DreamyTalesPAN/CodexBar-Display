@@ -8617,3 +8617,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Unchanged while the lane's reset is ahead. When the reset time of a lane has passed since the reading (the countdown of the page reaches zero before the next poll), its tick, piece and pace line go with it instead of staying until the next reading.
 - Scope: `components/usage-screen.tsx`, `components/usage-pace.test.tsx`, and this approval record.
 - What's new: none — a stale-data correction, no new notice
+
+## 2026-10-19 — Settings Pace: Codex review fix, the note names the live theme during standby (#800)
+
+- User approval: Codex review fix to the Settings section Pace above; not seen by Paul.
+- Approved customer-visible result: Unchanged. While VibeTV shows its screensaver, the muted line under the switch is worked out from the customer's live theme, not from the screensaver (before: a screensaver could be named as "has no place for it").
+- Scope: `components/settings-screen.tsx`, `components/settings-pace.test.tsx`, and this approval record.
+- What's new: none — a correction, no new notice

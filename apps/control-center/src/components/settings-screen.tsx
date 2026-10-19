@@ -25,7 +25,7 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
-import { installedScreensaver } from "@/lib/active-theme-upgrade";
+import { activeLiveThemeId, installedScreensaver } from "@/lib/active-theme-upgrade";
 import { errorForHost } from "@/lib/customer-platform";
 import { loadUserThemes } from "@/lib/theme-studio-storage";
 import type { ThemeProduct } from "@/lib/themes";
@@ -216,7 +216,7 @@ export function SettingsScreen({
   const pace = paceSetting(
     displayPreferences,
     providerPicker.usage,
-    device?.activeTheme,
+    activeLiveThemeId(themes, device),
     themes,
   );
 
