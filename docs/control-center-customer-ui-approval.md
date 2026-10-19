@@ -8467,3 +8467,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none; no visible change.
 - Scope: merge of `origin/claude/group-calm-redesign` (`apps/control-center/src/components/setup/setup-recovery-dialogs.tsx`, its test, the flow comment) and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-19 — #802: customer flow follows the template's preview dialog and card size
+
+- User approval: none needed — no visible change: the flow no longer demands that the 520 px preview dialog shows a larger preview than a card on a wide window (the approved template draws it that way, 238 px against 275 px), and the card-size goldens follow the card gaps already in this pull request (284.7 → 275.3 px); the vector hashes are unchanged.
+- Approved customer-visible result: none; the test and its goldens only.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs`, `apps/control-center/test-fixtures/theme-preview-vector-goldens.json` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content

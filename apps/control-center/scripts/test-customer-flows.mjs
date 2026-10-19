@@ -10449,11 +10449,11 @@ async function testThemeLibraryRendersThemeSpecPreviews(browser, appUrl) {
       cardSnapshot.svgSha256 === largeSnapshot.svgSha256,
       `${themeId} card and large preview should render the same SVG`,
     );
+    // The template draws the preview dialog 520 px wide, so on a wide window
+    // its preview is no longer larger than a card's; it only stays a square.
     assert(
-      largeSnapshot.width >= cardSnapshot.width &&
-        largeSnapshot.height >= cardSnapshot.height &&
-        largeSnapshot.width === largeSnapshot.height,
-      `${themeId} dialog preview should remain a larger square`,
+      largeSnapshot.width === largeSnapshot.height,
+      `${themeId} dialog preview should remain a square`,
     );
     vectorGoldens[themeId] = {
       svgSha256: cardSnapshot.svgSha256,
