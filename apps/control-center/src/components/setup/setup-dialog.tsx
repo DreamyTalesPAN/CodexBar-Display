@@ -22,7 +22,8 @@ export type SetupDialogAction = {
 
 type SetupDialogProps = {
   children?: ReactNode;
-  description: string;
+  /** Omit for a dialog whose title says it all; no empty description is rendered. */
+  description?: string;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   /** The single signal action. Rendered last, on the right. */
@@ -111,12 +112,13 @@ export function SetupDialog({
       <DialogContent
         className={wide ? "sm:max-w-[480px]" : undefined}
         style={{ animation: "none" }}
+        {...(description === undefined ? { "aria-describedby": undefined } : {})}
         onInteractOutside={(event) => event.preventDefault()}
         onKeyDown={scrim ? undefined : leaveByTab}
       >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
+          {description !== undefined ? <DialogDescription>{description}</DialogDescription> : null}
         </DialogHeader>
         {children}
         {primaryAction || secondaryAction || showCloseButton ? (

@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/dialog";
 import { ProcessSteps } from "../process-steps";
 import { EditableThemePreview } from "./editable-theme-preview";
+import { SetupDialog } from "../setup/setup-dialog";
 import { OpenAIKeyForm, openAIState } from "./openai-key-form";
 import { friendlyElementName } from "./theme-studio-customer-labels";
 import { createDesignElement, isTypingTarget, LIVE_READINGS, moveLayer, pinnedElement, readingKey, setReading, usageSectionIndices, type AddElementKind } from "./design-controls";
@@ -1039,8 +1040,8 @@ export function AIThemeStudioScreen({
           <h2 className="sr-only">{document.usage === "screensaver" ? "Screensaver Studio" : "Theme Studio"}</h2>
           <Input
             aria-label="Design name"
-            title="Design name"
-            className="h-10 min-w-24 max-w-xs flex-[2_1_0%] border-transparent bg-transparent px-2 text-[28px] leading-none font-semibold md:text-[28px] shadow-none hover:border-input focus-visible:border-ring"
+            title={document.packName || "Design name"}
+            className="h-10 min-w-24 max-w-xs flex-[2_1_0%] text-ellipsis border-transparent bg-transparent px-2 text-[28px] leading-none font-semibold md:text-[28px] shadow-none hover:border-input focus-visible:border-ring"
             value={document.packName}
             maxLength={48}
             disabled={locked}
@@ -1235,14 +1236,15 @@ export function AIThemeStudioScreen({
               </div>
             ) : null}
             {primitive && !isAttachedSceneAnimation(primitive.assetPath) ? (
-              <Collapsible data-selection-controls className="mx-auto mt-4 w-full max-w-[460px]">
+              <Collapsible data-selection-controls className="relative mx-auto w-full max-w-[460px]">
                 <CollapsibleTrigger asChild>
                   <Button variant="ghost" className="group w-full justify-between">
                     Details
                     <ChevronDown className="transition-transform group-data-[state=open]:rotate-180" />
                   </Button>
                 </CollapsibleTrigger>
-                <CollapsibleContent className="pt-3">
+                {/* An overlay over the lower part of the preview: it scrolls inside its own area and the preview stays put. */}
+                <CollapsibleContent className="absolute inset-x-0 bottom-full mb-2 max-h-[22rem] overflow-y-auto rounded-xl bg-popover p-3 text-popover-foreground shadow-lg ring-1 ring-foreground/10">
               <section className="space-y-3" aria-label="Selected element tools">
                 <div className="flex items-center justify-between gap-2">
                   <h2 className="min-w-0 truncate font-medium">
@@ -1635,8 +1637,35 @@ export function AIThemeStudioScreen({
             </div>
           </main>
 
+      {/* The key dialog is the same dialog as every other overlay, not this editor's own. */}
+      <SetupDialog
+        open={panel === "setup"}
+        onOpenChange={(open) => {
+          if (!open) closePanel();
+        }}
+        title={configured ? "Replace OpenAI key" : "Add OpenAI key"}
+        showCloseButton={!connecting}
+      >
+          <OpenAIKeyForm
+              inSetup
+              initialConfigured={configured}
+              onConnectingChange={setConnecting}
+              onConnected={(kept) => {
+                setConfigured(true);
+                if (kept !== undefined)
+                  setStatus(kept || !nativeInstall ? "AI is ready." : copyForHost("AI is ready. The key could not be saved on this Mac, so it is needed again after the Mac App restarts.", windowsHost));
+                setPanel(null);
+                if (prompt.trim()) void generate(true);
+              }}
+              onDisconnected={() => {
+                setConfigured(false);
+                setStatus("OpenAI disconnected. You can keep editing by hand.");
+              }}
+            />
+      </SetupDialog>
+
       <Dialog
-        open={panel !== null}
+        open={panel === "add" || panel === "library"}
         onOpenChange={(open) => {
           if (!open) closePanel();
         }}
@@ -1658,38 +1687,13 @@ export function AIThemeStudioScreen({
           }}
         >
           <DialogHeader>
-            <DialogTitle>
-              {panel === "setup"
-                ? configured ? "Replace OpenAI key" : "Add OpenAI key"
-                : panel === "add"
-                  ? "Add an element"
-                  : "Your saved designs"}
-            </DialogTitle>
-            {panel !== "setup" ? (
-              <DialogDescription className="sr-only">
-                {panel === "add"
-                  ? "Choose what you want to show. You can move and change it afterwards."
-                  : "Your saved designs."}
-              </DialogDescription>
-            ) : null}
+            <DialogTitle>{panel === "add" ? "Add an element" : "Your saved designs"}</DialogTitle>
+            <DialogDescription className="sr-only">
+              {panel === "add"
+                ? "Choose what you want to show. You can move and change it afterwards."
+                : "Your saved designs."}
+            </DialogDescription>
           </DialogHeader>
-          {panel === "setup" ? (
-            <OpenAIKeyForm
-              inSetup
-              onConnectingChange={setConnecting}
-              onConnected={(kept) => {
-                setConfigured(true);
-                if (kept !== undefined)
-                  setStatus(kept || !nativeInstall ? "AI is ready." : copyForHost("AI is ready. The key could not be saved on this Mac, so it is needed again after the Mac App restarts.", windowsHost));
-                setPanel(null);
-                if (prompt.trim()) void generate(true);
-              }}
-              onDisconnected={() => {
-                setConfigured(false);
-                setStatus("OpenAI disconnected. You can keep editing by hand.");
-              }}
-            />
-          ) : null}
           {panel === "add" ? (
             <div className="grid gap-2">
               {[
