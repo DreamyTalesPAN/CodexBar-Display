@@ -10544,7 +10544,8 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
   await page.getByRole("button", { name: screensaver ? "Create screensaver" : "Create theme", exact: true }).click();
   await page.getByLabel("Your idea", { exact: true }).waitFor();
   await page.locator('[data-slot="sidebar"][data-state="collapsed"]').waitFor();
-  assert(await page.locator(".control-center-shell__header").isVisible(), "Studio stays inside the native shell");
+  // The open Studio draws its own header row; the shell's Appearance header is not drawn.
+  assert(!(await page.locator(".control-center-shell__header").isVisible()), "Studio draws its own header, not the shell's");
   await page.getByLabel("Your idea", { exact: true }).fill("Make it blue");
   await page.getByRole("button", { name: "Create", exact: true }).click();
   await page.getByLabel("OpenAI key", { exact: true }).fill("fixture-key-not-a-secret");
