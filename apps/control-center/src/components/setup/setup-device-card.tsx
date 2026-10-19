@@ -11,7 +11,7 @@ import {
 import Image from "next/image";
 import type { DeviceCandidate } from "../control-center-types";
 import { candidateAddress } from "../device-target-copy";
-import { SelectionCheck, selectedItemClass } from "./setup-selectable-card";
+import { SelectionDot, selectedItemClass } from "./setup-selectable-card";
 import { cn } from "@/lib/utils";
 
 type SetupDeviceCardProps = {
@@ -65,7 +65,7 @@ export function SetupDeviceCard({
           </ItemDescription>
         </ItemContent>
         <ItemActions>
-          <SelectionCheck className="text-foreground" selected={selected} />
+          <SelectionDot selected={selected} />
         </ItemActions>
       </button>
     </Item>

@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "@/test/axe";
 import type { DeviceCandidate } from "../control-center-types";
+import { candidateKey } from "./setup-connection";
 import { SetupDeviceScreen } from "./setup-device-screen";
 
 const known: DeviceCandidate = {
@@ -234,6 +235,24 @@ describe("SetupDeviceScreen connection method and firmware progress", () => {
     const html = render({ connecting: true, connectPhase: "checking-firmware", firmwarePercent: 42 });
 
     expect(html).not.toContain('role="progressbar"');
+  });
+});
+
+// Calm Setup Wizard variant B, step 2 (picture B-02, #713): the device cards use the round mark.
+describe("SetupDeviceScreen device cards", () => {
+  it("puts the round mark on the selected device card and an empty ring on the others", () => {
+    const html = render({ selectedTarget: candidateKey(known) });
+    const cards = [...html.matchAll(/<button[^>]*role="radio"[^>]*>([\s\S]*?)<\/button>/g)];
+
+    expect(cards).toHaveLength(2);
+    const selected = cards.filter((card) => card[0].includes('aria-checked="true"'));
+    const unselected = cards.filter((card) => card[0].includes('aria-checked="false"'));
+    expect(selected).toHaveLength(1);
+    expect(unselected).toHaveLength(1);
+    expect(selected[0][1]).toContain('data-selected="true"');
+    expect(selected[0][1]).toContain("bg-foreground");
+    expect(unselected[0][1]).not.toContain("data-selected");
+    expect(unselected[0][1]).toContain("border-muted-foreground/50");
   });
 });
 
