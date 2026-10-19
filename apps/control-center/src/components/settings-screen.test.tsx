@@ -791,6 +791,15 @@ describe("SettingsScreen standby controls", () => {
       expect(unknown).toContain(">A custom screensaver is installed.</span>");
     });
 
+    it("turns the Choose screensaver link olive on hover, never lime", () => {
+      const none = block(true, { active: false });
+
+      expect(none).toMatch(
+        /<a [^>]*hover:text-\[var\(--vibetv-support\)\][^>]*>Choose screensaver<\/a>/,
+      );
+      expect(none).not.toContain("hover:text-primary");
+    });
+
     it("says that none is installed, with Choose screensaver as the way out", () => {
       const none = block(true, { active: false });
 

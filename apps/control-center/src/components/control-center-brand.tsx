@@ -30,7 +30,7 @@ export function ControlCenterBrand({
           className,
         )}
       >
-        VIBE<span className="text-primary">TV</span>
+        VIBE<span className="text-[var(--vibetv-support)]">TV</span>
       </div>
     );
   }
