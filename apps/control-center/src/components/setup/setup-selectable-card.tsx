@@ -75,7 +75,7 @@ const CARD_RING_SELECTED =
  */
 export function calmCardClass(selected: boolean): string {
   return cn(
-    "block w-full cursor-pointer rounded-[var(--radius-card)] bg-card text-left text-[13px] outline-none transition-shadow duration-150 ease-out focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-default",
+    "block w-full cursor-pointer rounded-[var(--radius-card)] bg-card text-left text-[13px] outline-none transition-shadow duration-150 ease-out focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default",
     selected ? CARD_RING_SELECTED : CARD_RING,
   );
 }
