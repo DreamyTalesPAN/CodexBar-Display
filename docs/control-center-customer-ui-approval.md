@@ -8089,3 +8089,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Support › Setup log: the fade at the top edge applies only while older entries are above the view. No new text, screen, button or dialog.
 - Scope: `setup-event-log.tsx`, its test `setup-event-log.test.tsx`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no new wording
+
+## 2026-10-18 — Revert of the page-title change on Appearance: the tree is back to the previous clean head (#754)
+
+- User approval: pending — Paul reviews this PR (the page title change moved completely into #758); look unchanged except: none. The tree is the same as the previous clean head 314a265d: the two Appearance pages show the in-page title and the sentence as before.
+- Approved customer-visible result: as in the approved Appearance A picture (#713), once #758 is in: one page title, the sub-page name, and no sentence under it. This branch alone keeps the earlier look.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx`, its tests, and this approval record (revert of 74cdbd62). Pull request branch only, not merge or release.
+- What's new: none — a revert without a visible change
