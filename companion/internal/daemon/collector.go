@@ -951,9 +951,11 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 		}
 		if label := strings.TrimSpace(frame.Label); label == "" || label == key {
 			// Empty, or a raw id left by an older build's placeholder, takes the
-			// inventory name. Without one it stays empty and the Companion API
-			// names it like a reading does.
+			// inventory name; without one, the readable name for the id (#682).
 			frame.Label = c.inventoryLabels[key]
+			if frame.Label == "" {
+				frame.Label = codexbar.HumanLabel(key)
+			}
 		}
 		frame.SessionTokens = stats.SessionTokens
 		frame.WeekTokens = stats.WeekTokens
