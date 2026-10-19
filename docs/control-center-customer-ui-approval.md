@@ -7893,3 +7893,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entry above.
 - Scope: `apps/control-center/src/components/logs-screen.tsx`, `apps/control-center/src/components/theme-library-screen.tsx` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no new content
+
+## 2026-10-19 — Calm redesign matched to the master: CI fix 2, selected theme card keeps its tint (#784)
+
+- User approval: pending — Paul reviews (#784 matched to the approved master design "Calm Redesign - alle Screens", 19.10.); look unchanged except: none beyond the entries above. The card of the theme VibeTV shows now, or the one a link points at, keeps its light grey tint as before; the new card look does not remove it.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
