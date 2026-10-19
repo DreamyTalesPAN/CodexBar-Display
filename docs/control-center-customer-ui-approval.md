@@ -8178,3 +8178,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. See this branch's entries above, in particular the two entries of 2026-10-19 "every remaining difference to the approved template" and "merge of main (f2e8904c)".
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — Calm redesign: the slider handle gets the full-strength focus ring (#784, Codex fix after merging main)
+
+- User approval: pending — Paul reviews (#784 matched to the approved Claude Design template "Calm Redesign - alle Screens", design QA 19.10.); Codex review fix, keyboard focus only; not seen by Paul
+- Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged except: with keyboard focus the brightness slider handle shows the full-strength ink focus ring instead of a 40 % ring; mouse users see no change.
+- Scope: `apps/control-center/src/components/ui/slider.tsx` (one class) and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
