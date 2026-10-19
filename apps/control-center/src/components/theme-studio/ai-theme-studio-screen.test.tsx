@@ -219,7 +219,7 @@ describe("Theme Studio small window", () => {
     for (const column of [preview, chatColumn]) expect(classes(column)).toEqual(expect.arrayContaining(["lg:flex-1", "lg:basis-0"]));
     expect(classes(chatColumn)).not.toContain("lg:w-[464px]");
     const frame = document.querySelector('[aria-label="Selection workspace"]')!.querySelector(":scope > div") as HTMLElement;
-    expect(classes(frame)).toContain("row-start-2");
+    expect(classes(frame)).toContain("my-auto");
     expect(classes(frame.firstElementChild!)).toContain("mx-auto");
     expect(classes(screen.getByRole("log", { name: "Conversation" }))).not.toContain("[&>:first-child]:mt-auto");
   });
