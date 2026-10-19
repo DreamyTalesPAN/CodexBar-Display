@@ -471,12 +471,23 @@ fn centre_on_a_work_area(rect: WindowRect, work_areas: &[WindowRect]) -> bool {
     })
 }
 
-// Worker threads only: the getters wait for the event loop. None while
-// minimized, because its position says nothing about where it was used.
-fn window_geometry(window: &tauri::WebviewWindow, previous: Option<Remembered>) -> Option<Remembered> {
-    if window.is_minimized().ok()? {
+// None while minimized, because its position says nothing about where it was
+// used; None means "keep the previous one".
+fn remembered_after(
+    current: WindowRect,
+    minimized: bool,
+    maximized: bool,
+    previous: Option<Remembered>,
+) -> Option<Remembered> {
+    if minimized {
         return None;
     }
+    Some(remembered_for(current, maximized, previous))
+}
+
+// Worker threads only: the getters wait for the event loop.
+fn window_geometry(window: &tauri::WebviewWindow, previous: Option<Remembered>) -> Option<Remembered> {
+    let minimized = window.is_minimized().ok()?;
     let position = window.outer_position().ok()?;
     let size = window.inner_size().ok()?;
     let maximized = window.is_maximized().ok()?;
@@ -486,7 +497,18 @@ fn window_geometry(window: &tauri::WebviewWindow, previous: Option<Remembered>) 
         width: size.width,
         height: size.height,
     };
-    Some(remembered_for(current, maximized, previous))
+    remembered_after(current, minimized, maximized, previous)
+}
+
+// Worker threads only. Called on every move and resize, so a close while the
+// window is maximized still has the last normal place (Tauri reports only the
+// maximized bounds then).
+fn remember_window_geometry(app: &AppHandle, window: &tauri::WebviewWindow) {
+    let shell = app.state::<Shell>();
+    let previous = *shell.window_geometry.lock().unwrap();
+    if let Some(geometry) = window_geometry(window, previous) {
+        *shell.window_geometry.lock().unwrap() = Some(geometry);
+    }
 }
 
 // Worker threads only (it asks for the monitors). The monitors are asked
@@ -565,10 +587,16 @@ fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tau
     }
     app.state::<Shell>().windows_created.fetch_add(1, Ordering::SeqCst);
     let handle = app.clone();
+    let tracked = window.clone();
     window.on_window_event(move |event| match event {
         WindowEvent::CloseRequested { api, .. } => {
             api.prevent_close();
             hide_after_flush(&handle);
+        }
+        WindowEvent::Moved(_) | WindowEvent::Resized(_) => {
+            let handle = handle.clone();
+            let window = tracked.clone();
+            std::thread::spawn(move || remember_window_geometry(&handle, &window));
         }
         // A present that came between hide_after_flush's check and the
         // destroy showed the old window just before it went away: create it
@@ -822,10 +850,7 @@ fn hide_after_flush(app: &AppHandle) {
         let presented_now = shell.presentations.load(Ordering::SeqCst);
         if close_stands(presented, presented_now) {
             // Kept for the window built next; a minimized one keeps the last.
-            let previous = *shell.window_geometry.lock().unwrap();
-            if let Some(geometry) = window_geometry(&window, previous) {
-                *shell.window_geometry.lock().unwrap() = Some(geometry);
-            }
+            remember_window_geometry(&handle, &window);
             // Stored as count + 1, so a release before the first present
             // (count 0) is still told apart from "no release".
             shell.released_at.store(presented + 1, Ordering::SeqCst);
@@ -1587,7 +1612,7 @@ fn show_message(message: &str) {
 mod tests {
     use super::{
         centre_on_a_work_area, choose_placement, clear_loaded_theme, close_stands, label_for_generation,
-        theme_id_from_deep_link, Placement, WindowRect, remembered_for,
+        theme_id_from_deep_link, Placement, WindowRect, remembered_after, remembered_for,
     };
     use url::Url;
 
@@ -1699,5 +1724,43 @@ mod tests {
         assert_eq!(remembered_for(maximized_bounds, true, None), (None, true));
         // Not maximized: the current rectangle is kept.
         assert_eq!(remembered_for(normal, false, Some((None, true))), (Some(normal), false));
+    }
+
+    #[test]
+    fn a_window_moved_while_normal_keeps_that_place_through_a_maximized_close() {
+        let rect = |x, y, width, height| WindowRect {
+            x,
+            y,
+            width,
+            height,
+        };
+        let released_before = rect(0, 0, 1000, 700);
+        let moved = rect(100, 80, 1280, 900);
+        let maximized_bounds = rect(0, 0, 1920, 1040);
+        // Closed normal at an older place, then moved and resized, then maximized.
+        let at_last_release = Some(remembered_for(released_before, false, None));
+        let after_move = remembered_after(moved, false, false, at_last_release);
+        let after_maximize = remembered_after(maximized_bounds, false, true, after_move);
+        // Closed while maximized: the release keeps the moved place.
+        let at_close = remembered_after(maximized_bounds, false, true, after_maximize);
+        assert_eq!(at_close, Some((Some(moved), true)));
+    }
+
+    #[test]
+    fn a_restored_window_tracks_its_new_place_and_a_minimized_one_keeps_the_last() {
+        let rect = |x, y, width, height| WindowRect {
+            x,
+            y,
+            width,
+            height,
+        };
+        let before = rect(100, 80, 1280, 900);
+        let restored = rect(300, 120, 1100, 800);
+        let maximized_bounds = rect(0, 0, 1920, 1040);
+        let kept = Some((Some(before), true));
+        // Restored from maximized: the new normal place is the one to keep.
+        assert_eq!(remembered_after(restored, false, false, kept), Some((Some(restored), false)));
+        // Minimized: its position says nothing, nothing is stored.
+        assert_eq!(remembered_after(maximized_bounds, true, false, kept), None);
     }
 }
