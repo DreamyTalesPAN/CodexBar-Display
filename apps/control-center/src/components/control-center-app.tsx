@@ -664,7 +664,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       id: "session-start",
       label: "Control Center opened",
       detail: "This session started.",
-      at: "Session",
+      at: formatTime(),
       tone: "unknown",
     },
   ]);

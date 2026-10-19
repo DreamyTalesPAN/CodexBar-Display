@@ -865,7 +865,7 @@ it("enters a changed display mode, provider switching and provider under Recent 
   fireEvent.click(screen.getByRole("button", { name: "Support" }));
   await window.wait(1);
   const entries = within(
-    screen.getByText("Recent activity").closest('[data-slot="card"]') as HTMLElement,
+    screen.getByText("Recent activity").closest("section") as HTMLElement,
   )
     .getAllByRole("listitem")
     .map((entry) => entry.textContent?.replace(/\d\d:\d\d:\d\d$/, ""));
@@ -873,8 +873,13 @@ it("enters a changed display mode, provider switching and provider under Recent 
     "AI provider savedClaude turned off.",
     "Display mode savedAlways show Claude.",
     "Switch providers savedSwitch providers is set to Every 30 seconds.",
-    "Control Center openedThis session started.Session",
+    "Control Center openedThis session started.",
   ]);
+  // The first entry is written when the app opens, so it has a time too.
+  const first = within(
+    screen.getByText("Recent activity").closest("section") as HTMLElement,
+  ).getAllByRole("listitem").at(-1);
+  expect(first?.textContent).toMatch(/\d\d:\d\d:\d\d$/);
 });
 
 // The refusal stands on the page; the list keeps it for the support report.

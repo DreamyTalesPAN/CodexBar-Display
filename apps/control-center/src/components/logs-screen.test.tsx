@@ -213,3 +213,16 @@ it("tells the customer's theme from a catalog theme of the same id by the file V
   expect(catalog).toContain("Mini Classic");
   expect(catalog).not.toContain("Night Shift");
 });
+
+// Support showed the word "Session" in the time column of an entry that has
+// no write time, which reads like a column header with its value missing.
+it("writes no placeholder in the time column of an entry without a time", () => {
+  const html = renderToStaticMarkup(
+    <LogsScreen
+      events={[{ id: "no-time", label: "Control Center opened", detail: "This session started." }]}
+    />,
+  );
+
+  expect(html).toContain("Control Center opened");
+  expect(html).not.toContain(">Session<");
+});

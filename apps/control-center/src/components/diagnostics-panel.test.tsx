@@ -200,8 +200,8 @@ describe("customer support text", () => {
       return text;
     };
 
-    expect(row("cable://vibetv")).toBe("ConnectionPassUSB-C cable");
-    expect(row("192.168.1.42")).toBe("VibeTV addressPass192.168.1.42");
+    expect(row("cable://vibetv")).toBe("ConnectionUSB-C cablePass");
+    expect(row("192.168.1.42")).toBe("VibeTV address192.168.1.42Pass");
   });
 
   it("says App instead of Mac App in the Windows app", () => {

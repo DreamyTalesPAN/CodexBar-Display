@@ -7578,3 +7578,30 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Only the colour of the outline around the chosen card and the chosen provider changes, to ink. Same words, same places, same size and thickness. Lime stays only for primary button fills and the switch on state. The round selection mark keeps its look. The setup wizard's Display Mode step is not changed by this entry.
 - Scope: `apps/control-center/src/components/setup/setup-selectable-card.tsx` (optional ink tone for the chosen frame, default unchanged), `apps/control-center/src/components/setup/setup-display-mode-screen.tsx` (ink flag passed through `DisplayModeChoice`, only Settings sets it), `apps/control-center/src/components/settings-screen.tsx` (sets the flag), `apps/control-center/src/components/settings-screen.test.tsx` (new test for the ink frame), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — a colour change of an existing outline needs no notice.
+## 2026-10-17 — Support page in the calm look, variant A (#713)
+
+- User approval: pending — Paul reviews this PR (calm redesign Support, variant A, #713); look: sections with the heading on the left and the content on the right, divided by lines instead of boxes; facts and checks as rows; Create report in lime, Refresh as an underlined link under the activity list.
+- Approved customer-visible result: Support page, variant A of the calm redesign (`ui/calm/updates-support/support-A.png`). Texts stay the same. The "Connected" badge becomes a Status row ("Connected" or "Not connected"). Connected VibeTV, Support report, Diagnostics, Setup log and Recent activity are sections with the heading and its note on the left, the content on the right, a line between sections. Fact rows have a line between them and no tiles. Diagnostic checks are one row each: name, detail, status. The support report buttons and Run diagnostics are smaller; Create report or Create again is the lime button. Refresh moves under the activity list as an underlined link. The Setup log keeps its frame until the setup area PR. Updates is not changed.
+- Scope: `apps/control-center/src/components/logs-screen.tsx`, `diagnostics-panel.tsx`, `support-report-actions.tsx`, its test `diagnostics-panel.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — look only, no new capability
+
+## 2026-10-17 — Support page calm look: narrow-width follow-up to Codex review (#713, #750)
+
+- User approval: pending — Paul reviews this PR (calm redesign Support, variant A, #713); look: at desktop widths unchanged from the entry above; below 1024px the sections stack (heading above content), and below 1280px each diagnostic check stacks as name, detail, status instead of three columns.
+- Approved customer-visible result: the same as the entry above at desktop widths. On narrow windows the section label no longer sits beside its content and the diagnostic checks no longer squeeze the detail text into a narrow column. Texts, buttons and behaviour unchanged.
+- Scope: `apps/control-center/src/components/logs-screen.tsx`, `diagnostics-panel.tsx`, the test `control-center-app.display-preferences.test.tsx` (Recent activity scope is now the section, not the card) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — layout breakpoints only, no new capability
+
+## 2026-10-18 — Support: no placeholder in the Recent activity time column; Setup log fades its top edge (#750)
+
+- User approval: pending — Paul reviews this PR (Support page calm look, variant A, #750); look: the first Recent activity entry `Control Center opened` shows the time the app opened instead of the word `Session`, and the top edge of the Setup log fades instead of cutting a row in half.
+- Approved customer-visible result: Support › Recent activity: the entry `Control Center opened` / `This session started.` shows its clock time instead of `Session`; no other text changes. Support › Setup log: the top edge of the box fades like the Setup wizard log, so no row is shown cut in half. No new text, screen, button or dialog.
+- Scope: `logs-screen.tsx`, `control-center-app.tsx` (the initial session entry only), `setup-event-log.tsx`, their tests `logs-screen.test.tsx`, `setup-event-log.test.tsx` and `control-center-app.display-preferences.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new wording
+
+## 2026-10-18 — Support Setup log: the top fade only while older entries are above the view (#750, Codex review)
+
+- User approval: pending — Paul reviews this PR (Support page calm look, variant A, #750); look: at the oldest entry the Setup log's top row is shown whole, not faded; while older entries are scrolled out of view the top edge fades as in the entry above.
+- Approved customer-visible result: Support › Setup log: the fade at the top edge applies only while older entries are above the view. No new text, screen, button or dialog.
+- Scope: `setup-event-log.tsx`, its test `setup-event-log.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new wording
