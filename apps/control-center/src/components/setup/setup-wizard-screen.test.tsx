@@ -43,8 +43,8 @@ describe("SetupWizardScreen", () => {
     // Back top left, Help bottom right.
     const has = (corner: string, ...tokens: string[]) =>
       tokens.every((token) => corner.split(" ").includes(token));
-    expect(corners.some((corner) => has(corner, "top-5", "left-5"))).toBe(true);
-    expect(corners.some((corner) => has(corner, "bottom-5", "right-5"))).toBe(
+    expect(corners.some((corner) => has(corner, "top-5", "left-[22px]"))).toBe(true);
+    expect(corners.some((corner) => has(corner, "bottom-5", "right-[22px]"))).toBe(
       true,
     );
   });

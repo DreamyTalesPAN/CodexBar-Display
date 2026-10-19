@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import type { SupportDiagnostics } from "../control-center-types";
 import { SetupLog, type SetupLogLine } from "./setup-log";
 import { ControlCenterBrand } from "../control-center-brand";
-import { SetupWizardScreen } from "./setup-wizard-screen";
+import { cn } from "@/lib/utils";
+import { CALM_LINK_CLASS, SetupWizardScreen } from "./setup-wizard-screen";
 
 type SetupWelcomeScreenProps = {
   lines: SetupLogLine[];
@@ -40,14 +41,12 @@ export function SetupWelcomeScreen({
       onCreateSupportReport={onCreateSupportReport}
       windowsHost={windowsHost}
     >
-      <p className="text-xs font-semibold tracking-[0.3em] text-muted-foreground uppercase">
-        Welcome to
-      </p>
-      <ControlCenterBrand variant="hero" />
-      <SetupLog className="mt-3" lines={lines} running />
+      <p className="text-[13px] text-muted-foreground">Welcome to</p>
+      <ControlCenterBrand className="mt-3.5" variant="hero" />
+      <SetupLog className="mt-8" lines={lines} running />
       {onEnterAddressManually ? (
         <Button
-          className="text-foreground"
+          className={cn(CALM_LINK_CLASS, "mt-5")}
           onClick={onEnterAddressManually}
           size="sm"
           type="button"

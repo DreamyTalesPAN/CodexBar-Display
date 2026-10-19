@@ -2,19 +2,16 @@
 
 import type { SupportDiagnostics } from "../control-center-types";
 import { Button } from "@/components/ui/button";
-import {
-  Item,
-  ItemActions,
-  ItemContent,
-  ItemGroup,
-  ItemMedia,
-  ItemTitle,
-} from "@/components/ui/item";
+import { ItemGroup } from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
+import { cn } from "@/lib/utils";
 import { ThemeRenderPreview } from "../theme-render-preview";
 import { SetupLog, type SetupLogLine } from "./setup-log";
-import { SelectionCheck, selectedItemClass } from "./setup-selectable-card";
+import { SelectionDot, calmCardClass } from "./setup-selectable-card";
 import {
+  CALM_BUTTON_CLASS,
+  CALM_SUBTITLE_CLASS,
+  CALM_TITLE_CLASS,
   SetupWizardScreen,
   SetupWizardSubtitle,
   SetupWizardTitle,
@@ -66,16 +63,14 @@ export function SetupThemeScreen({
       onCreateSupportReport={onCreateSupportReport}
       windowsHost={windowsHost}
     >
-      <SetupWizardTitle className="text-[40px]">
-        Choose your theme
-      </SetupWizardTitle>
-      <SetupWizardSubtitle className="text-lg">
+      <SetupWizardTitle className={CALM_TITLE_CLASS}>Choose your theme</SetupWizardTitle>
+      <SetupWizardSubtitle className={CALM_SUBTITLE_CLASS}>
         You can always switch themes later.
       </SetupWizardSubtitle>
 
       <ItemGroup
         aria-label="Themes"
-        className="mt-4 gap-3"
+        className="mt-6 gap-2"
         role="radiogroup"
       >
         {themes.map((theme) => (
@@ -95,7 +90,7 @@ export function SetupThemeScreen({
       </ItemGroup>
 
       <Button
-        className="mt-4 w-full"
+        className={cn(CALM_BUTTON_CLASS, "mt-6")}
         disabled={installing || !selected || Boolean(selected.blockedReason)}
         onClick={onInstall}
         type="button"
@@ -105,7 +100,7 @@ export function SetupThemeScreen({
       </Button>
       {selected?.blockedReason ? (
         <p
-          className="mt-2 text-sm text-muted-foreground"
+          className="mt-2 text-[13px] text-muted-foreground"
           data-slot="theme-blocked-reason"
         >
           {selected.blockedReason}
@@ -113,7 +108,7 @@ export function SetupThemeScreen({
       ) : null}
 
       <SetupLog
-        className="mt-4"
+        className="mt-3 empty:hidden"
         lines={installLogLines(installLogs)}
         running={installing}
       />
@@ -137,32 +132,26 @@ function SetupThemeCard({
   theme: SetupThemeOption;
 }) {
   return (
-    <Item
-      asChild
-      className={`${selectedItemClass(selected)} p-4`}
-      variant="outline"
+    <button
+      aria-checked={selected}
+      className={cn(
+        calmCardClass(selected),
+        "flex items-center gap-4 py-2.5 pr-5 pl-2.5",
+        // While one installs, the cards not picked fade back.
+        disabled && !selected && "opacity-50",
+      )}
+      disabled={disabled}
+      onClick={onSelect}
+      role="radio"
+      type="button"
     >
-      <button
-        aria-checked={selected}
-        disabled={disabled}
-        onClick={onSelect}
-        role="radio"
-        type="button"
-      >
-        <ItemMedia>
-          <ThemeRenderPreview
-            className="h-[72px] w-[100px] rounded-md"
-            themeId={theme.id}
-            themeSpecPath={theme.themeSpecPath}
-          />
-        </ItemMedia>
-        <ItemContent>
-          <ItemTitle className="text-lg font-semibold">{theme.name}</ItemTitle>
-        </ItemContent>
-        <ItemActions>
-          <SelectionCheck selected={selected} />
-        </ItemActions>
-      </button>
-    </Item>
+      <ThemeRenderPreview
+        className="size-20 shrink-0 rounded-[6px]"
+        themeId={theme.id}
+        themeSpecPath={theme.themeSpecPath}
+      />
+      <span className="min-w-0 flex-1 font-semibold">{theme.name}</span>
+      <SelectionDot selected={selected} />
+    </button>
   );
 }
