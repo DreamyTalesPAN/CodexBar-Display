@@ -1375,7 +1375,7 @@ func testParsedFrame(provider string, session, weekly int, reset int64) ParsedFr
 		Source:   "web",
 		Frame: protocol.Frame{
 			Provider: provider,
-			Label:    humanLabel(provider),
+			Label:    HumanLabel(provider),
 			Session:  session,
 			Weekly:   weekly,
 			ResetSec: reset,

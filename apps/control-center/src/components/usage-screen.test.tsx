@@ -10,6 +10,7 @@ import {
   usageTokenHistoryUnavailable,
   usageTokenHistoryUnavailableOnVibeTV,
   buildProviderTokenChart,
+  weeklyDayTicks,
 } from "./usage-screen";
 
 const usage: UsageSnapshot = {
@@ -874,7 +875,7 @@ describe("UsageScreen", () => {
   });
 
   // Calm type on the provider tiles (master 19.10.: title 15 / 600, main number
-  // 32 / 600, body stays 13 from #777). The big total above is not part of this.
+  // 32 / 600, body 14.5 / 400 as in the master). The big total above is not part of this.
   it("sets a tile title in 15 px / 600 and its main number in 32 px / 600", () => {
     render(
       <UsageScreen
@@ -907,7 +908,7 @@ describe("UsageScreen", () => {
     expect(mainNumber.className).toContain("font-semibold");
   });
 
-  it("sets the tile's secondary text in 13 px / 400 and muted, values included", () => {
+  it("sets the tile's body text in 14.5 px / 400 and muted, without an Activity row", () => {
     render(
       <UsageScreen
         companionStatus="online"
@@ -932,14 +933,16 @@ describe("UsageScreen", () => {
       />,
     );
 
+    // The master draws no Activity row.
+    expect(screen.queryByText("Activity")).toBeNull();
+    expect(screen.queryByText("Coding")).toBeNull();
     // The token line sits in the token row, which carries the type (the plan
     // and extra-usage lines share it).
     for (const element of [
       screen.getByText("All systems operational"),
-      screen.getByText("Coding"),
       screen.getByText(/^Tokens:/).parentElement as HTMLElement,
     ]) {
-      expect(element.className).toContain("text-[13px]");
+      expect(element.className).toContain("text-[14.5px]");
       expect(element.className).not.toMatch(/\bfont-(semibold|bold|black|medium)\b/);
       expect(element.className).toContain("text-muted-foreground");
     }
@@ -1456,5 +1459,39 @@ describe("UsageScreen plan name and extra-usage cap", () => {
     expect(
       renderUsage(null, claude({ spend: { limit: 100, used: 0, currency: "Credits" } })),
     ).not.toContain("Extra usage");
+  });
+});
+
+describe("weekly axis ticks", () => {
+  const days = (first: string, count: number) =>
+    Array.from({ length: count }, (_, index) => {
+      const date = new Date(`${first}T00:00:00Z`);
+      date.setUTCDate(date.getUTCDate() + index);
+      return date.toISOString().slice(0, 10);
+    });
+
+  it("labels the first day, every seventh day and the last day, as the master", () => {
+    expect(weeklyDayTicks(days("2026-09-20", 30))).toEqual([
+      "2026-09-20",
+      "2026-09-27",
+      "2026-10-04",
+      "2026-10-11",
+      "2026-10-19",
+    ]);
+  });
+
+  it("leaves out a weekly day that would crowd the last day", () => {
+    expect(weeklyDayTicks(days("2026-09-20", 30).slice(0, 29))).toEqual([
+      "2026-09-20",
+      "2026-09-27",
+      "2026-10-04",
+      "2026-10-11",
+      "2026-10-18",
+    ]);
+  });
+
+  it("has no tick without days and one for a single day", () => {
+    expect(weeklyDayTicks([])).toEqual([]);
+    expect(weeklyDayTicks(["2026-10-19"])).toEqual(["2026-10-19"]);
   });
 });

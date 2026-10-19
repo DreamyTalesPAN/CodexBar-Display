@@ -141,14 +141,30 @@ func TestPreparePinnedCLIRelease(t *testing.T) {
 	testenv.Home(t, home)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
+	oldRun := pinnedRun
+	t.Cleanup(func() { pinnedRun = oldRun })
+	var assessed int
+	pinnedRun = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		if name == "/usr/sbin/spctl" {
+			assessed++
+		}
+		return oldRun(ctx, name, args...)
+	}
 	for _, running := range []bool{false, false, true} {
 		input := archive
 		if running {
 			input = "missing.zip" // a verified running payload needs no archive
 		}
+		assessed = 0
 		bin, err := PreparePinnedCLI(ctx, input, running)
 		if err != nil {
 			t.Fatal(err)
+		}
+		// Issue #556: Gatekeeper is the step a busy Mac starves. The first
+		// install asks it once for the unpacked copy, a later start once for
+		// the installed one; the fresh install used to ask twice.
+		if assessed != 1 {
+			t.Fatalf("Gatekeeper asked %d times, want 1", assessed)
 		}
 		if _, err := os.Stat(bin); err != nil {
 			t.Fatal(err)

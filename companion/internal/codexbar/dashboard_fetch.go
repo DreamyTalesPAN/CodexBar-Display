@@ -268,7 +268,7 @@ func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider,
 	id := strings.TrimSpace(strings.ToLower(provider.ID))
 	label := strings.TrimSpace(provider.Name)
 	if label == "" {
-		label = humanLabel(id)
+		label = HumanLabel(id)
 	}
 	countdownAt := collectedAt
 	if countdownAt.IsZero() {

@@ -28,6 +28,11 @@ type SenderConfig struct {
 
 type Sender struct {
 	mu sync.Mutex
+	// resolveMu lets one port search run at a time. Status reads search
+	// every port while the stream resolves its VibeTV; asking another port
+	// between the stream's hello and its identity check closed the VibeTV
+	// port (issue #537). Frames and other serial calls take only mu.
+	resolveMu sync.Mutex
 
 	// openPath mirrors path for checks that must not wait on mu. A serial
 	// call stuck on an unplugged device can hold mu for a long time.
@@ -304,6 +309,8 @@ func (s *Sender) ResolvePort(explicit, expectedDeviceID string) (string, error) 
 	if err := s.openPortVanished(explicit); err != nil {
 		return "", err
 	}
+	s.resolveMu.Lock()
+	defer s.resolveMu.Unlock()
 	path, ok := s.currentMatchingPort(explicit, expectedDeviceID, false)
 	if !ok {
 		var err error
@@ -333,10 +340,38 @@ func (s *Sender) ResolveControlPort(explicit, expectedDeviceID string) (string, 
 	if err := s.openPortVanished(explicit); err != nil {
 		return "", err
 	}
+	s.resolveMu.Lock()
+	defer s.resolveMu.Unlock()
 	if path, ok := s.currentMatchingPort(explicit, expectedDeviceID, true); ok {
 		return resolveVibeTVCandidatesForControl([]string{path}, path, expectedDeviceID, s.DeviceHello, true)
 	}
-	return resolveVibeTVPortForControl(explicit, expectedDeviceID, s.DeviceHello, true)
+	path, err := resolveVibeTVPortForControl(explicit, expectedDeviceID, s.DeviceHello, true)
+	s.forgetAmbiguousPort(err)
+	return path, err
+}
+
+// OpenVibeTVPort returns the open port when it holds a hello-verified VibeTV,
+// without probing any other port. The status path uses it to avoid a rescan.
+func (s *Sender) OpenVibeTVPort() (string, bool) {
+	s.mu.Lock()
+	path := strings.TrimSpace(s.path)
+	s.mu.Unlock()
+	if path == "" {
+		return "", false
+	}
+	return s.currentMatchingPort(path, "", true)
+}
+
+// forgetAmbiguousPort closes the port that a scan left open when it found
+// several VibeTVs. Otherwise OpenVibeTVPort would take that last device as the
+// only one and hide the ambiguity from the next call.
+func (s *Sender) forgetAmbiguousPort(err error) {
+	if errcode.Of(err) != errcode.TransportMultipleDevices {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.closeCurrentLocked()
 }
 
 // openPortVanished reports an open port that left the system's port list.
