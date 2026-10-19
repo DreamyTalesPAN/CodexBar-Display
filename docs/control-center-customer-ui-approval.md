@@ -7998,3 +7998,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/setup/setup-wizard.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #780: build 2b QA, the selected-card focus ring of the Setup Wizard is full strength
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the keyboard focus ring around a wizard choice card (connection, display mode, theme) was drawn at 40 % strength → it is drawn at full strength like every other focus ring of the app (the calm redesign forbids reduced-opacity focus rings).
+- Approved customer-visible result: a wizard card reached by Tab shows the same ring as the other controls.
+- Scope: `apps/control-center/src/components/setup/setup-selectable-card.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
