@@ -8362,3 +8362,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/setup/setup-recovery-dialogs.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-19 — #784: open Theme Studio shows one header row (build 2 QA)
+
+- User approval: pending — Paul reviews (Theme Studio header as one row per the approved template, build 2 QA); look unchanged except, before → after: while the Theme Studio is open, the window shows one header row — the Studio's own (back arrow, design name, File, undo and redo, status line, Save, Send to VibeTV) — with the sidebar open → before a second row "Appearance" with the sidebar button sat above it; the page title "Appearance" stays for screen readers.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
