@@ -229,4 +229,17 @@ describe("pace in the lane bar", () => {
     expect(ticks(container)).toHaveLength(0);
     expect(container.textContent).not.toMatch(/in reserve/);
   });
+
+  it("draws no pace once the lane's reset has passed since the reading", () => {
+    const lane = (resetSecs: number) => ({
+      id: "session", label: "Session", usedPercent: 40, resetSecs,
+      stage: "slightlyBehind", deltaPercent: -10, expectedUsedPercent: 50,
+    });
+    const collectedAt = new Date(Date.now() - 3_600_000).toISOString();
+    const gone = renderProvider({ collectedAt, windows: [lane(60)] });
+    expect(ticks(gone.container)).toHaveLength(0);
+    cleanup();
+    const running = renderProvider({ collectedAt, windows: [lane(7200)] });
+    expect(ticks(running.container)).toHaveLength(1);
+  });
 });

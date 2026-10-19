@@ -8610,3 +8610,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Unchanged while the reading is fresh. When a collection failed or the reset trust has run out, VibeTV and its preview show no reserve or deficit (before: the preview, and a retained last-good frame on the device, kept the old pace), like Usage.
 - Scope: `components/live-vibetv-preview.tsx` and its test, the Companion frame (`daemon/send.go`, not a screen), and this approval record.
 - What's new: none — a stale-data correction, no new notice
+
+## 2026-10-19 — Usage pace: Codex review fix, a lane's pace goes when its reset countdown has run out (#800)
+
+- User approval: Codex review fix to the Usage pace of the entries above; not seen by Paul.
+- Approved customer-visible result: Unchanged while the lane's reset is ahead. When the reset time of a lane has passed since the reading (the countdown of the page reaches zero before the next poll), its tick, piece and pace line go with it instead of staying until the next reading.
+- Scope: `components/usage-screen.tsx`, `components/usage-pace.test.tsx`, and this approval record.
+- What's new: none — a stale-data correction, no new notice

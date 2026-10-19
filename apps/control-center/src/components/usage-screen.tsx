@@ -784,7 +784,14 @@ function usageLines(
             window,
             remainingResetSecs(window.etaSeconds, provider.collectedAt, now),
           ),
-      pace: quiet ? null : lanePace(window),
+      // The pace belongs to the window the engine paced: once its countdown has
+      // run out here, before the next reading, the pace goes with it.
+      pace:
+        quiet ||
+        ((window.resetSecs ?? 0) > 0 &&
+          !remainingResetSecs(window.resetSecs, provider.collectedAt, now))
+          ? null
+          : lanePace(window),
       unavailable: laneUnavailable(provider.windowsRetained),
     }));
   }
