@@ -14,7 +14,11 @@ export type SetupLogLine = {
 type SetupLogProps = {
   className?: string;
   lines: SetupLogLine[];
-  /** Work is in flight: the log tells assistive technology it is still busy. */
+  /**
+   * Work is in flight. The log is not marked aria-busy: that would hold back
+   * its announcements, and a step that advances by unmounting would never be
+   * heard. It only keeps the log scrolled to its newest line.
+   */
   running?: boolean;
 };
 
@@ -37,7 +41,6 @@ export function SetupLog({ className, lines, running = false }: SetupLogProps) {
 
   return (
     <div
-      aria-busy={running || undefined}
       aria-live="polite"
       role="status"
       className={cn(

@@ -67,12 +67,12 @@ describe("SetupLog", () => {
     expect(html).not.toContain("vibetv-caret-blink");
   });
 
-  it("tells assistive technology it is busy only while running", () => {
+  it("never holds back its announcements with aria-busy", () => {
     expect(renderToStaticMarkup(<SetupLog lines={lines} />)).not.toContain(
       "aria-busy",
     );
-    expect(renderToStaticMarkup(<SetupLog lines={lines} running />)).toContain(
-      'aria-busy="true"',
+    expect(renderToStaticMarkup(<SetupLog lines={lines} running />)).not.toContain(
+      "aria-busy",
     );
   });
 });
