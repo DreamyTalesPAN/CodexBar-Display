@@ -7991,3 +7991,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the Back button reads "Stopping…" with a spinner while the running step finishes.
 - Scope: `apps/control-center/src/components/setup/setup-connect.ts`, `apps/control-center/src/components/setup/setup-wizard.tsx`, `apps/control-center/src/components/setup/setup-wizard-screen.tsx`, `apps/control-center/src/components/setup/setup-device-screen.tsx`, `apps/control-center/src/components/setup/setup-wizard.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-19 — #780: Codex fix, a typed VibeTV address keeps Back available during its pairing
+
+- User approval: pending — Paul reviews (Codex review fix); look unchanged except, before → after: after "Enter IP address manually" and a found VibeTV, Back is shown during pairing, firmware check and update, as after a card choice → before Back was hidden there.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/setup/setup-wizard.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content

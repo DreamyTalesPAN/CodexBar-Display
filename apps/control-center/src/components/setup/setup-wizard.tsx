@@ -631,6 +631,8 @@ export function SetupWizard(props: SetupWizardProps) {
           // the connecting screen, because the search state only clears once
           // the connect answers.
           setAddressDialogOpen(false);
+          // A typed address is a choice too: Back stays available during its pairing.
+          setConnectChosen(true);
           void connect.run(candidate);
           return null;
         } catch (error) {
