@@ -22,6 +22,8 @@ type Props = {
   diagnostics?: SupportDiagnostics | null;
   emphasis?: "primary" | "secondary";
   onCreate?: () => void;
+  /** The Support page's quiet row: Copy and Download as text, an outline Create. */
+  quiet?: boolean;
   /** The app runs on Windows, which saves a download without asking where. */
   windowsHost?: boolean;
 };
@@ -33,6 +35,7 @@ export function SupportReportActions({
   diagnostics,
   emphasis = "primary",
   onCreate,
+  quiet = false,
   size = "default",
   windowsHost = false,
 }: Props) {
@@ -61,7 +64,11 @@ export function SupportReportActions({
   const diagnosticsText = diagnostics
     ? serializeSupportReport(diagnostics)
     : "";
-  const createButtonVariant = emphasis === "secondary" ? "secondary" : "default";
+  const createButtonVariant = quiet
+    ? "outline"
+    : emphasis === "secondary"
+      ? "secondary"
+      : "default";
   const statusMessage = creating
     ? "Creating report"
     : copyState === "copied"
@@ -123,21 +130,21 @@ export function SupportReportActions({
         ) : diagnosticsText ? (
           <>
             <Button
-              className="w-full sm:w-auto"
+              className={cn("w-full sm:w-auto", quiet && "text-muted-foreground")}
               onClick={copyDiagnostics}
               size={size} type="button"
-              variant="outline"
+              variant={quiet ? "ghost" : "outline"}
             >
-              <Clipboard data-icon="inline-start" aria-hidden />
+              {quiet ? null : <Clipboard data-icon="inline-start" aria-hidden />}
               <span>{copyState === "copied" ? "Copied" : "Copy"}</span>
             </Button>
             <Button
-              className="w-full sm:w-auto"
+              className={cn("w-full sm:w-auto", quiet && "text-muted-foreground")}
               onClick={downloadDiagnostics}
               size={size} type="button"
-              variant="outline"
+              variant={quiet ? "ghost" : "outline"}
             >
-              <Download data-icon="inline-start" aria-hidden />
+              {quiet ? null : <Download data-icon="inline-start" aria-hidden />}
               <span>{downloaded ? "Downloaded" : "Download"}</span>
             </Button>
             {onCreate ? (
@@ -148,8 +155,8 @@ export function SupportReportActions({
                 size={size} type="button"
                 variant={createButtonVariant}
               >
-                <RefreshCw data-icon="inline-start" aria-hidden />
-                <span>Create again</span>
+                {quiet ? null : <RefreshCw data-icon="inline-start" aria-hidden />}
+                <span>{quiet ? "Create new" : "Create again"}</span>
               </Button>
             ) : null}
           </>
@@ -161,7 +168,7 @@ export function SupportReportActions({
             size={size} type="button"
             variant={createButtonVariant}
           >
-            <FileText data-icon="inline-start" aria-hidden />
+            {quiet ? null : <FileText data-icon="inline-start" aria-hidden />}
             <span>{createLabel}</span>
           </Button>
         ) : null}

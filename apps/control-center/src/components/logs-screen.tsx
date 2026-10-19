@@ -7,13 +7,6 @@ import {
 import type { ReactNode } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import {
-  Item,
-  ItemContent,
-  ItemDescription,
-  ItemGroup,
-  ItemTitle,
-} from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
 import { activeLiveThemeId } from "@/lib/active-theme-upgrade";
 import { copyForHost } from "@/lib/customer-platform";
@@ -31,7 +24,7 @@ import {
   type SupportDiagnostics,
 } from "./control-center-types";
 import { formatCustomerSupportText } from "./customer-support-text";
-import { DiagnosticsPanel } from "./diagnostics-panel";
+import { DiagnosticsPanel, SUPPORT_FRAME as FRAME } from "./diagnostics-panel";
 import { SetupEventLog } from "./setup-event-log";
 import { SupportReportActions } from "./support-report-actions";
 
@@ -87,7 +80,7 @@ export function LogsScreen({
     copyForHost(formatCustomerSupportText(value), windowsHost);
 
   return (
-    <div className="mx-auto grid max-w-[1180px] py-6">
+    <div className="grid max-w-[760px] gap-10 pt-8 pb-10 text-sm">
       <SupportSection
         description={
           deviceConnected
@@ -99,7 +92,7 @@ export function LogsScreen({
         }
         title="Connected VibeTV"
       >
-        <dl className="grid">
+        <dl className={`grid px-5 py-1.5 ${FRAME}`}>
           <SupportFact
             label="Status"
             value={deviceConnected ? "Connected" : "Not connected"}
@@ -153,36 +146,53 @@ export function LogsScreen({
         ) : null}
       </SupportSection>
 
-      <SupportSection
-        description="Create a diagnostic file when support asks for it."
-        title="Support report"
+      <div
+        className={`flex flex-wrap items-center justify-between gap-x-6 gap-y-3 p-5 ${FRAME}`}
       >
+        <div className="min-w-0">
+          <h2 className="text-[15px] font-semibold">Support report</h2>
+          <p className="text-muted-foreground">
+            A diagnostic file for the support team.
+          </p>
+        </div>
         <SupportReportActions
           creating={supportReportBusy}
           diagnostics={diagnostics}
           onCreate={onLoadDiagnostics}
+          quiet
           size="sm"
           windowsHost={windowsHost}
         />
-      </SupportSection>
+      </div>
 
-      <SupportSection title="Diagnostics">
-        <DiagnosticsPanel
-          diagnostics={diagnostics}
-          onRepairUsageEngine={onRepairUsageEngine}
-          onRun={onLoadDiagnostics}
-          repairing={repairingUsageEngine}
-          running={supportReportBusy}
-          windowsHost={windowsHost}
-        />
-      </SupportSection>
+      <DiagnosticsPanel
+        diagnostics={diagnostics}
+        onRepairUsageEngine={onRepairUsageEngine}
+        onRun={onLoadDiagnostics}
+        repairing={repairingUsageEngine}
+        running={supportReportBusy}
+        windowsHost={windowsHost}
+      />
 
       <SupportSection title="Setup log">
         <SetupEventLog windowsHost={windowsHost} />
       </SupportSection>
 
       <SupportSection
-        description="Connection and setup changes from this session."
+        action={
+          onRefresh ? (
+            <Button
+              className="h-auto px-0 font-semibold"
+              disabled={busyAction === "logs"}
+              onClick={onRefresh}
+              size="sm"
+              variant="link"
+            >
+              {busyAction === "logs" ? <Spinner data-icon="inline-start" /> : null}
+              {busyAction === "logs" ? "Refreshing" : "Refresh"}
+            </Button>
+          ) : null
+        }
         title="Recent activity"
       >
         {lastError ? (
@@ -192,63 +202,58 @@ export function LogsScreen({
             <AlertDescription>{supportText(lastError.nextAction)}</AlertDescription>
           </Alert>
         ) : null}
-        {events.length ? (
-          <div className="max-h-[320px] overflow-y-auto">
-            <ItemGroup className="gap-0 divide-y">
-              {events.map((event) => (
-                <Item className="rounded-none border-0 px-0" key={event.id} role="listitem" size="sm">
-                  <ItemContent>
-                    <ItemTitle>{supportText(event.label)}</ItemTitle>
-                    {event.detail ? <ItemDescription className="line-clamp-none break-words">{supportText(event.detail)}</ItemDescription> : null}
-                  </ItemContent>
-                  <span className="shrink-0 self-start text-sm text-muted-foreground">
-                    {event.timestamp}
+        <div className={`px-5 py-3.5 ${FRAME}`}>
+          {events.length ? (
+            <ul className="max-h-[320px] overflow-y-auto font-mono text-[13px] leading-[22px]">
+              {events.map((event, index) => (
+                <li
+                  className={`grid grid-cols-[72px_minmax(0,1fr)] gap-x-3 ${index === 0 ? "text-foreground" : "text-muted-foreground"}`}
+                  key={event.id}
+                >
+                  <span className="text-muted-foreground">{event.timestamp}</span>
+                  <span className="truncate">
+                    <span>{supportText(event.label)}</span>
+                    {event.detail ? (
+                      <>
+                        <span aria-hidden> · </span>
+                        <span>{supportText(event.detail)}</span>
+                      </>
+                    ) : null}
                   </span>
-                </Item>
+                </li>
               ))}
-            </ItemGroup>
-          </div>
-        ) : (
-          <div className="grid gap-1">
-            <p className="text-sm font-semibold">No recent activity</p>
-            <p className="text-sm text-muted-foreground">Connection activity will appear here.</p>
-          </div>
-        )}
-        {onRefresh ? (
-          <div>
-            <Button
-              className="h-auto px-0"
-              disabled={busyAction === "logs"}
-              onClick={onRefresh}
-              size="sm"
-              variant="link"
-            >
-              {busyAction === "logs" ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" aria-hidden />}
-              {busyAction === "logs" ? "Refreshing" : "Refresh"}
-            </Button>
-          </div>
-        ) : null}
+            </ul>
+          ) : (
+            <div className="grid gap-1">
+              <p className="font-semibold">No recent activity</p>
+              <p className="text-muted-foreground">Connection activity will appear here.</p>
+            </div>
+          )}
+        </div>
       </SupportSection>
     </div>
   );
 }
 
-/** One Support section: the heading and its note on the left, the content on the right, a divider above. */
+/** One Support section: its heading (with an optional action) above the content. */
 function SupportSection({
+  action,
   title,
   description,
   children,
 }: {
+  action?: ReactNode;
   title: string;
   description?: string;
   children: ReactNode;
 }) {
   return (
-    <section className="grid gap-4 border-t py-8 first:border-t-0 first:pt-0 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-10">
-      <div className="grid content-start gap-1">
-        <h2 className="text-sm font-semibold">{title}</h2>
-        {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
+    <section className="grid content-start gap-3">
+      <div className="flex items-baseline justify-between gap-4">
+        <h2 className="text-[15px] leading-5 font-semibold">{title}</h2>
+        {action}
       </div>
+      {description ? <p className="-mt-2 text-muted-foreground">{description}</p> : null}
       <div className="grid min-w-0 content-start gap-4">{children}</div>
     </section>
   );
@@ -256,7 +261,7 @@ function SupportSection({
 
 function SupportFact({ label, value }: { label: string; value: string }) {
   return (
-    <div className="grid min-w-0 grid-cols-[minmax(0,180px)_minmax(0,1fr)] gap-4 border-b py-2.5 text-sm last:border-b-0">
+    <div className="grid min-w-0 grid-cols-[minmax(0,180px)_minmax(0,1fr)] gap-4 border-b border-foreground/10 py-2.5 text-sm last:border-b-0">
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="break-words">{value}</dd>
     </div>
@@ -268,7 +273,7 @@ function formatDeviceAddress(value?: string): string {
 }
 
 
-function activeThemeLabel(
+export function activeThemeLabel(
   themes: ThemeProduct[],
   device: DeviceInfo | null | undefined,
 ): string {

@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleCheck, CircleX, Stethoscope, TriangleAlert, Wrench } from "lucide-react";
+import { CircleCheck, CircleX, RefreshCw, TriangleAlert, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { copyForHost } from "@/lib/customer-platform";
@@ -9,6 +9,10 @@ import {
   formatCustomerSupportText,
   humanize,
 } from "./customer-support-text";
+
+/** The frame around one object on Support: a card with a hairline ring. */
+export const SUPPORT_FRAME =
+  "overflow-hidden rounded-[var(--radius-card)] bg-card ring-1 ring-foreground/10";
 
 type Check = NonNullable<SupportDiagnostics["checks"]>[number];
 
@@ -69,20 +73,19 @@ export function DiagnosticsPanel({
     diagnostics?.reportType === "control_center_fallback";
 
   return (
-    <div className="grid gap-4" data-testid="diagnostics-panel">
-      <div>
+    <section className="grid gap-3" data-testid="diagnostics-panel">
+      <div className="flex items-center justify-between gap-4">
+        <h2 className="text-[15px] leading-5 font-semibold">Diagnostics</h2>
         <Button
-          className="w-full sm:w-auto"
           disabled={running || !onRun}
           onClick={onRun}
           size="sm"
           type="button"
-          variant="outline"
         >
           {running ? (
             <Spinner data-icon="inline-start" />
           ) : (
-            <Stethoscope data-icon="inline-start" aria-hidden />
+            <RefreshCw data-icon="inline-start" aria-hidden />
           )}
           <span>{running ? "Running diagnostics" : "Run diagnostics"}</span>
         </Button>
@@ -104,7 +107,7 @@ export function DiagnosticsPanel({
             />
           ) : null}
           {checks.length ? (
-            <ul aria-label="Diagnostic checks" className="grid">
+            <ul aria-label="Diagnostic checks" className={SUPPORT_FRAME}>
               {checks.map((check, index) => (
                 <CheckRow
                   check={check}
@@ -116,7 +119,7 @@ export function DiagnosticsPanel({
           ) : null}
         </>
       ) : null}
-    </div>
+    </section>
   );
 }
 
@@ -160,7 +163,7 @@ function UsageEngineBlock({
   const tooOld = engine.status === "engine_incompatible";
   return (
     <section aria-label="Usage engine" className="grid gap-3">
-      <h3 className="text-sm font-semibold">Usage engine</h3>
+      <h3 className="font-semibold">Usage engine</h3>
       {tooOld ? (
         <div className="grid gap-2">
           <StatusLine icon="fail" text={usageEngineTooOldText(engine)} />
@@ -203,26 +206,39 @@ function CheckRow({ check, windowsHost }: { check: Check; windowsHost: boolean }
   // A VibeTV on the cable has no address; the report keeps "cable://vibetv".
   const cable =
     check.name === "device_target" && /^cable:/i.test(check.detail ?? "");
+  const Icon =
+    state === "pass" ? CircleCheck : state === "fail" ? CircleX : TriangleAlert;
   return (
-    <li className="grid gap-1 border-b py-3 last:border-b-0 xl:grid-cols-[180px_minmax(0,1fr)_auto] xl:gap-x-4">
-      <span className="text-sm font-semibold">
+    <li className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3.5 gap-y-0.5 border-t border-foreground/10 px-5 py-3 first:border-t-0 sm:grid-cols-[auto_160px_minmax(0,1fr)]">
+      <Icon
+        aria-hidden
+        className={
+          "size-[18px] shrink-0 " +
+          (state === "pass"
+            ? "text-[oklch(0.68_0.15_150)]"
+            : state === "fail"
+              ? "text-destructive"
+              : "text-[oklch(0.75_0.16_70)]")
+        }
+      />
+      <span className="font-semibold">
         {cable
           ? "Connection"
           : hostText(CHECK_LABELS[check.name] ?? humanize(check.name))}
       </span>
-      <div className="grid min-w-0 gap-1">
+      <div className="col-start-2 grid min-w-0 gap-1 text-muted-foreground sm:col-start-3">
         {check.detail ? (
-          <p className="break-words text-sm">
+          <p className="break-words">
             {cable ? "USB-C cable" : hostText(formatCustomerSupportText(check.detail))}
           </p>
         ) : null}
         {state !== "pass" && check.nextAction ? (
-          <p className="break-words text-sm">
+          <p className="break-words">
             {hostText(formatCustomerSupportText(check.nextAction))}
           </p>
         ) : null}
       </div>
-      <StatusLine icon={state} text={CHECK_STATE_TEXT[state]} />
+      <span className="sr-only">{CHECK_STATE_TEXT[state]}</span>
     </li>
   );
 }
@@ -258,7 +274,7 @@ function StatusLine({ icon, text }: { icon: CheckState; text: string }) {
 
 function Fact({ label, value }: { label: string; value?: string }) {
   return (
-    <div className="grid min-w-0 grid-cols-[minmax(0,180px)_minmax(0,1fr)] gap-4 border-b py-2.5 text-sm last:border-b-0">
+    <div className="grid min-w-0 grid-cols-[minmax(0,180px)_minmax(0,1fr)] gap-4 border-b border-foreground/10 py-2.5 text-sm last:border-b-0">
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="break-words">{value || "Not available"}</dd>
     </div>

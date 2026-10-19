@@ -719,9 +719,11 @@ export function ThemeLibraryScreen({
         "mx-auto w-full max-w-[1180px]",
       )}
     >
-      {/* The page title (Themes / Screensavers) is the shell's header. */}
-      <section className="flex justify-end py-5">
+      {/* The page title (Themes / Screensavers) is the shell's header; the
+          button sits in that row, at its right end, as in the calm picture. */}
+      <section className="pointer-events-none -mt-10 flex h-10 items-center justify-end">
         <Button
+          className="pointer-events-auto"
           onClick={() => openInEditor(openBlankTheme)}
           ref={createButtonRef}
           type="button"
@@ -789,13 +791,12 @@ export function ThemeLibraryScreen({
               />
             ) : null}
 
-            <ItemGroup className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+            <ItemGroup className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
               {libraryThemes.map((theme) => (
                 <ThemeListItem
                   busyAction={busyAction}
                   screensaverInstallBlockedReason={screensaverInstallBlockedReason}
                   device={device}
-                  displayThemeId={displayTheme?.themeId}
                   item={theme}
                   installStatus={statusForHost(installStatus, windowsHost)}
                   key={rowKey(theme)}
@@ -1088,7 +1089,6 @@ function rowKey(item: ThemeLibraryItem): string {
 function ThemeListItem({
   busyAction,
   device,
-  displayThemeId,
   heldPath,
   sentOwnPaths,
   item,
@@ -1113,7 +1113,6 @@ function ThemeListItem({
 }: {
   busyAction: string | null;
   device: ThemeLibraryDeviceInfo | null;
-  displayThemeId?: string;
   heldPath?: string;
   sentOwnPaths: string[];
   item: ThemeLibraryItem;
@@ -1239,10 +1238,10 @@ function ThemeListItem({
 
   return (
     <Item
-      className="gap-3 rounded-[var(--radius-card)] p-4"
+      className="gap-2.5 rounded-[var(--radius-card)] p-2.5"
       id={item.kind === "published" ? catalogThemeRowId(item.themeId) : undefined}
       role="listitem"
-      variant={item.themeId === displayThemeId ? "muted" : "outline"}
+      variant="outline"
     >
       <ItemMedia className="basis-full w-full">
         <Button
@@ -1255,7 +1254,7 @@ function ThemeListItem({
           <ThemePreview onPack={setPublishedPack} theme={item} />
         </Button>
       </ItemMedia>
-      <ItemContent className="min-w-[11rem] flex-1">
+      <ItemContent className="basis-full gap-0.5 px-0.5">
         <ItemTitle className="text-[13px] font-semibold">{item.title}</ItemTitle>
         {isCustom ? (
           <Badge variant="secondary">Custom</Badge>
@@ -1266,7 +1265,8 @@ function ThemeListItem({
           </ItemDescription>
         ) : null}
       </ItemContent>
-      <ItemActions className="ml-auto flex items-center justify-end gap-3">
+      <ItemActions className="basis-full justify-between gap-3 px-0.5">
+        <span className="flex items-center gap-3">
         <Button
           className="px-0"
           disabled={Boolean(loadingEditorRow)}
@@ -1296,6 +1296,7 @@ function ThemeListItem({
             <span>Delete</span>
           </Button>
         ) : null}
+        </span>
         {/* Install is the primary (lime) action at the right edge. Once the
             row has nothing to install, the same slot shows the status as text. */}
         <Button
@@ -1888,7 +1889,7 @@ function ThemePreview({
       className={
         large
           ? "aspect-square w-full"
-          : "aspect-square w-full rounded-lg"
+          : "aspect-square w-full rounded-md"
       }
       onPack={onPack}
       // A Theme Studio theme has no published pack to load: its spec only

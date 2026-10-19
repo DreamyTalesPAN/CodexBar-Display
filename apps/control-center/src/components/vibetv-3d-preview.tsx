@@ -136,7 +136,8 @@ export function VibeTV3DPreview({
     cssScene.add(screenPivot);
 
     const camera = new PerspectiveCamera(28, 1, 0.1 * U, 50 * U);
-    camera.position.set(1.55 * U, 1.05 * U, 3.4 * U);
+    // A little lower than the first 3D build, as in the approved calm Overview.
+    camera.position.set(1.55 * U, 0.7 * U, 3.4 * U);
 
     const key = new DirectionalLight(0xffffff, 1.6);
     key.position.set(2.5 * U, 4 * U, 3 * U);

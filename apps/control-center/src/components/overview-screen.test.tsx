@@ -49,23 +49,57 @@ const connectedDevice = {
 };
 
 describe("OverviewScreen", () => {
-  it("shows only the VibeTV in 3D, with the status line as the only text", () => {
+  it("shows the status line, the VibeTV and four quiet figures", () => {
     const html = renderToStaticMarkup(
-      <OverviewScreen companionStatus="online" device={connectedDevice} />,
+      <OverviewScreen
+        companionStatus="online"
+        companionVersion="1.0.64"
+        device={{
+          ...connectedDevice,
+          firmware: "1.0.48",
+          target: "cable://vibetv",
+        }}
+      />,
     );
 
     expect(html).toContain("VibeTV is connected");
-    // The former tiles and the badge are gone.
-    for (const removed of [
+    // The figures: label, value, line (calm master).
+    for (const shown of [
       "Mac App",
-      "Online",
+      "1.0.64",
+      "VibeTV</dt>",
+      "14799300",
+      "USB-C cable · connected",
+      "Display",
+      "Active theme",
       "Firmware",
-      "Connected</",
-      "Live</",
-      "Connected by Cable",
+      "1.0.48",
     ]) {
+      expect(html).toContain(shown);
+    }
+    expect(html.match(/Up to date/g)).toHaveLength(2);
+    // The old badge words stay gone.
+    for (const removed of ["Online", "Connected by Cable"]) {
       expect(html).not.toContain(removed);
     }
+  });
+
+  it("says an update is waiting and uses App on Windows", () => {
+    const html = renderToStaticMarkup(
+      <OverviewScreen
+        companionStatus="online"
+        companionVersion="1.0.64"
+        device={{ ...connectedDevice, firmware: "1.0.48" }}
+        firmwareUpdateAvailable
+        macAppUpdateAvailable
+        windowsHost
+      />,
+    );
+
+    expect(html.match(/Update available/g)).toHaveLength(2);
+    expect(html).not.toContain("Up to date");
+    expect(html).toContain(">App</dt>");
+    expect(html).not.toContain("Mac App");
   });
 
   it("uses the status line for each VibeTV state", () => {
