@@ -13,6 +13,8 @@ export type AIThemeMessage = {
   content: string;
   createdAt: string;
   role: "assistant" | "user";
+  /** Reference images the customer sent with this turn; shown, never sent as history. */
+  images?: { name: string; data: string }[];
 };
 export type AIThemeStyle = {
   animationMode: "four_frame" | "static" | "scene_loop";
@@ -78,6 +80,10 @@ export type AIThemeCompanion = {
 };
 export function isCompanionSprite(path?: string): boolean {
   return /^\/themes\/u\/ai-pet-[12]\.cba$/.test(path || "");
+}
+// A companion that moves: fps above zero, where the export uses 4 when none is set.
+export function hasMovingCompanion(primitives: { assetPath?: string; fps?: number }[]): boolean {
+  return primitives.some((p) => isCompanionSprite(p.assetPath) && (p.fps ?? 4) > 0);
 }
 export type AIThemeSession = {
   candidate: AIThemeCandidate;

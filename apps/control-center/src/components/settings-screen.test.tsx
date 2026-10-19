@@ -307,15 +307,16 @@ describe("SettingsScreen standby controls", () => {
     const html = render(standbyDevice);
     const headings = html.match(/<h2[^>]*>([^<]+)<\/h2>/g) || [];
 
-    expect(headings).toHaveLength(6);
+    expect(headings).toHaveLength(7);
     expect(html).toContain(">Display</h2>");
     expect(html).toContain(">Display mode</h2>");
     expect(html).toContain(">AI providers</h2>");
     expect(html).toContain(">Screensaver</h2>");
     expect(html).toContain(">Connection</h2>");
     expect(html).toContain(">Setup</h2>");
+    expect(html).toContain(">Theme Studio AI</h2>");
     expect(html).toContain("Connect this Mac to another VibeTV.");
-    expect(html.match(/<section /g)).toHaveLength(6);
+    expect(html.match(/<section /g)).toHaveLength(7);
   });
 
   // The provider list is the longest thing on the page, so it closes it rather
@@ -332,8 +333,21 @@ describe("SettingsScreen standby controls", () => {
       "Display mode",
       "Screensaver",
       "Setup",
+      "Theme Studio AI",
       "AI providers",
     ]);
+  });
+
+  // The Theme Studio key row sits under its own name, not inside the provider
+  // list: a row without a left-hand label broke the section rule.
+  it("gives the Theme Studio AI row its own section above AI providers", () => {
+    const html = render(standbyDevice);
+    const themeSection = html.slice(html.indexOf(">Theme Studio AI</h2>"), html.indexOf(">AI providers</h2>"));
+
+    expect(themeSection).toContain("Add key");
+    // The section label already names the row; the row shows no second title.
+    expect(themeSection).not.toContain(">Theme Studio AI</p>");
+    expect(themeSection).not.toContain("Search providers");
   });
 
   it("puts the common subscription tools first in Settings, then switched-on providers", () => {
