@@ -8370,6 +8370,14 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
+## 2026-10-19 — #784: dialogs 32, 33, 39 and 47 follow the template (build 2 decision)
+
+- User approval: Paul, 19.10.2026 via the communicator: build-2 decision — app follows the template (frames 32, 33, 39, 47); each one before → after: (1) the dialogs "Repairing VibeTV Control Center" and "VibeTV Control Center needs attention" dim the screen behind them with the grey backdrop like every other dialog → before no backdrop, the page stayed bright and clickable; (2) the provider dialog for a provider that needs its own app has the title "<Provider> needs its own app" (e.g. "Ollama needs its own app") and the buttons Close and Open setup guide → before the title was only the provider's name and the buttons were OK and Open setup guide (the sentence below the title is unchanged; the other provider messages keep the provider's name as title and OK); (3) the dialog for a lost VibeTV has the title "Your VibeTV is not reachable" and the line "Choose it to connect again." → before the title "Choose your VibeTV" and the line "Your VibeTV is not reachable. Choose it to connect again." (a failed connect still shows its own message as the title).
+- Approved customer-visible result: the four dialogs look as drawn in frames 32, 33, 39 and 47 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/setup/setup-recovery-dialogs.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.tsx`, `apps/control-center/src/components/setup/setup-providers-screen.tsx`, their tests (`setup-device-dialogs.test.tsx`, `setup-providers-screen.test.tsx`) and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+
 
 ## 2026-10-19 — Calm Updates screen as drawn in the approved master, plus the states derived from the calm rules (#752)
 - User approval: pending — Paul reviews (Updates built as drawn in the approved master + derived states, decided by the communicator 19.10.)
