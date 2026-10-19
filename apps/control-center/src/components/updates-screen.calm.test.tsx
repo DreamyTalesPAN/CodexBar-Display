@@ -322,6 +322,27 @@ describe("calm Updates screen", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("failed check: a retry that fails in the same second opens the dialog again", () => {
+    const failed = {
+      ...upToDate,
+      firmwareUpdate: {
+        checkedAt: "2026-10-19T09:10:00Z",
+        status: "check_failed" as const,
+        installedFirmware: "1.0.48",
+        updateAvailable: false,
+      },
+      onCheckUpdates: vi.fn(),
+    };
+    const view = render(<UpdatesScreen {...failed} />);
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    view.rerender(<UpdatesScreen {...failed} busyAction="firmware-check" />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // The retry ends with the same checkedAt (second resolution): still a new failure.
+    view.rerender(<UpdatesScreen {...failed} />);
+    expect(screen.getByRole("dialog", { name: "Could not check for updates" })).toBeTruthy();
+  });
+
   it("no dialog while everything checks fine", () => {
     render(<UpdatesScreen {...upToDate} />);
     expect(screen.queryByRole("dialog")).toBeNull();

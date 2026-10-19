@@ -106,6 +106,11 @@ export function UpdatesScreen({
   // dialog unmounts while another dialog is open, and only a newer failed
   // check may open it again.
   const [dismissedFailedCheck, setDismissedFailedCheck] = useState<string | null>(null);
+  // "Try again" hides the dialog until that retry has run. Its answer can
+  // carry the same second as the failure before, so the end of the retry --
+  // not a new timestamp -- is what lets a failure open the dialog again.
+  const [retryingFailedCheck, setRetryingFailedCheck] = useState(false);
+  const [retrySeenBusy, setRetrySeenBusy] = useState(false);
   const firmwareUpdateCompleted = updateStatus?.phase === "complete";
   // Installed firmware always comes from device truth (live hello or the
   // firmware update check), never from an update job result: a failed job
@@ -226,6 +231,13 @@ export function UpdatesScreen({
         : "ok";
 
   const checkBusy = checkingUpdates || refreshing;
+  if (retryingFailedCheck && checkBusy && !retrySeenBusy) {
+    setRetrySeenBusy(true);
+  } else if (retryingFailedCheck && !checkBusy && retrySeenBusy) {
+    setRetryingFailedCheck(false);
+    setRetrySeenBusy(false);
+    setDismissedFailedCheck(null);
+  }
   const actionsLocked =
     installingAnyUpdate ||
     Boolean(busyAction && busyAction !== "firmware-check");
@@ -446,12 +458,20 @@ export function UpdatesScreen({
 
       {(macAppCheckFailed || firmwareCheckFailed) &&
       failedCheckKey !== dismissedFailedCheck &&
+      !retryingFailedCheck &&
       !checkBusy &&
       !otherDialogOpen &&
       visibleUpdateStatus?.phase !== "error" ? (
         <CheckFailedDialog
           onClose={() => setDismissedFailedCheck(failedCheckKey)}
-          onTryAgain={onCheckUpdates}
+          onTryAgain={
+            onCheckUpdates
+              ? () => {
+                  setRetryingFailedCheck(true);
+                  return onCheckUpdates();
+                }
+              : undefined
+          }
         />
       ) : null}
     </div>
@@ -578,7 +598,6 @@ function CheckFailedDialog({
         label: "Try again",
         disabled: !onTryAgain,
         onSelect: () => {
-          onClose();
           void onTryAgain?.();
         },
       }}
