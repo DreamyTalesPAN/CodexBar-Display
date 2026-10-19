@@ -296,7 +296,8 @@ describe("Dialogs as drawn in the template", () => {
       const scrim = scrimOf(container);
       expect(scrim?.className).toContain("bg-black/10");
       expect(scrim?.className).toContain("opacity-100");
-      expect(scrim?.className).not.toContain("pointer-events-none");
+      // A look only: the sidebar and tabs behind it stay clickable.
+      expect(scrim?.className).toContain("pointer-events-none");
     },
   );
 

@@ -19,7 +19,9 @@ type SetupRecoveryDialogsProps = {
  * meant a service that died later said nothing at all.
  *
  * It dims the screen behind it like every other dialog (the approved template
- * draws the same grey backdrop on both).
+ * draws the same grey backdrop on both), but the dim takes no clicks: an
+ * announcement about the background service must leave the app usable --
+ * taking it away is the very thing this is reporting.
  */
 export function SetupRecoveryDialogs({
   onHide,
@@ -38,6 +40,7 @@ export function SetupRecoveryDialogs({
         onOpenChange={(open) => !open && onHide()}
         open={phase === "repairing"}
         primaryAction={{ label: "Hide", onSelect: onHide }}
+        scrim={false}
         showCloseButton={false}
         title="Repairing VibeTV Control Center"
       />
@@ -54,6 +57,7 @@ export function SetupRecoveryDialogs({
           label: "Restart Control Center",
           onSelect: onRestart,
         }}
+        scrim={false}
         title="VibeTV Control Center needs attention"
         wide
       />
