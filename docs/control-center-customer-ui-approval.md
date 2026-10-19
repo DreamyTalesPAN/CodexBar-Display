@@ -7928,3 +7928,10 @@ issue scope, or release permission never implies UI permission.
   7. Preview frame while dragging (Paul's report: an olive edge around the grey frame at the top corners and along the bottom after moving an element): before: after a drag or a key nudge the canvas has focus and the grey frame gets a 2 px olive ring (the focus ring colour); after: the frame never gets a coloured ring, border or outline; only the lime dashed selection box around the element stays. The frame keeps its quiet neutral hairline.
 - Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, `editable-theme-preview.tsx`, `openai-key-form.tsx`, their tests, `apps/control-center/scripts/test-ai-theme-preview.mjs` and `test-customer-flows.mjs` (expected dialog name and notice place), and this record. Pull request branch only, not merge or release.
 - What's new: none — layout and wording refinement of the Theme Studio (status line next to Save, buttons always in view, dialog title), no new feature
+
+## 2026-10-19 — #781: approval marker after merging #638 again (8759ac73)
+
+- User approval: Paul, 19.10.2026 via the communicator, feedback on test build 7193 (the entry above); the merge itself has no visible change of its own and was not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: as in the entry above and in the entry of #638 (finished turns keep a small thumbnail); nothing else changes.
+- Scope: the merge of `codex/theme-studio-pack` (8759ac73) into this branch and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
