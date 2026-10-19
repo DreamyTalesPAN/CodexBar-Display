@@ -489,9 +489,9 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	}
 	var stream displayStreamInfo
 	if pairedDuringThemeInstall {
-		stream = s.waitForFreshDisplayStreamAfterPair(ctx, displayTarget, streamStartedAt, themeInstallStreamWaitTime)
+		stream = s.waitForFreshDisplayStreamAfterPair(ctx, displayTarget, streamStartedAt, themeInstallStreamWaitTime, true)
 	} else {
-		stream = s.waitForFreshDisplayStreamUpTo(ctx, displayTarget, streamStartedAt, themeInstallStreamWaitTime)
+		stream = s.waitForFreshDisplayStreamUpTo(ctx, displayTarget, streamStartedAt, themeInstallStreamWaitTime, true)
 	}
 	logThemeInstallTiming(out, "stream-refresh", streamRefreshStartedAt)
 	// A stream that restarted, owns this exact VibeTV, and is only held back by
@@ -501,6 +501,14 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	// firmware update path makes the same call for the same reason.
 	if providerSetupStreamForTarget(&stream, displayTarget) {
 		fmt.Fprintln(out, "Display stream: waiting for AI provider")
+		return result, nil
+	}
+	// Same for a stream that is only waiting for the collector to warm up: it
+	// sends no frame until usage exists, which can take minutes after a fresh
+	// install. The theme is already on the device; the stream shows it as soon
+	// as usage arrives.
+	if usageWaitingStreamForTarget(&stream, displayTarget) {
+		fmt.Fprintln(out, "Display stream: waiting for usage")
 		return result, nil
 	}
 	renderVerificationStartedAt := time.Now()

@@ -531,6 +531,14 @@ func providerSetupStreamForTarget(stream *displayStreamInfo, target string) bool
 		strings.TrimSpace(stream.Target) != "" && samePublicTarget(target, stream.Target)
 }
 
+// usageWaitingStreamForTarget is a running stream of this exact VibeTV that
+// sent no frame only because the collector is still warming up.
+func usageWaitingStreamForTarget(stream *displayStreamInfo, target string) bool {
+	return stream != nil && stream.Running && stream.UsageWaiting &&
+		strings.TrimSpace(stream.ErrorCode) == "" &&
+		strings.TrimSpace(stream.Target) != "" && samePublicTarget(target, stream.Target)
+}
+
 func displayStreamLostResponseForTarget(stream *displayStreamInfo, target string) bool {
 	return displayStreamSafeForProof(stream, target) &&
 		!stream.Healthy && strings.TrimSpace(stream.ErrorCode) == "display_send_failed"

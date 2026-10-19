@@ -26,6 +26,9 @@ type displayStreamInfo struct {
 	LastTarget string `json:"lastTarget,omitempty"`
 	Detail     string `json:"detail,omitempty"`
 	ErrorCode  string `json:"errorCode,omitempty"`
+	// UsageWaiting marks a running stream that has sent no frame because the
+	// collector is still warming up. Internal only: no new state for the UI.
+	UsageWaiting bool `json:"-"`
 }
 
 func (s *Server) startDisplayStream(ctx context.Context, target string) error {
@@ -134,6 +137,9 @@ func inspectDisplayStreamAfterRunning(ctx context.Context, target string, notBef
 			stream.ErrorCode = errorCode
 			return stream
 		}
+		if waitingAt, ok := streamLog.lastUsageWaitingAfter(boundary); ok && time.Since(waitingAt) <= displayStreamReadyAge {
+			stream.UsageWaiting = true
+		}
 		stream.Detail = "Display stream has not sent usage yet."
 		return stream
 	}
@@ -177,6 +183,7 @@ func (s *Server) waitForDisplayStreamMode(
 	notBefore time.Time,
 	stopOnPairingError bool,
 	waitTime time.Duration,
+	settleOnUsageWaiting bool,
 ) displayStreamInfo {
 	return waitForDisplayStreamAfterProbe(
 		ctx, target, notBefore, stopOnPairingError, waitTime,
@@ -184,8 +191,9 @@ func (s *Server) waitForDisplayStreamMode(
 			return inspectDisplayStreamAfterRunning(ctx, target, notBefore, s.displayStreamRunning)
 		},
 		func(stream displayStreamInfo) bool {
-			return providerSetupStreamForTarget(&stream, target) &&
-				providerSetupNeedsCustomerAction(s.providerSetupForStatus())
+			return (settleOnUsageWaiting && usageWaitingStreamForTarget(&stream, target)) ||
+				(providerSetupStreamForTarget(&stream, target) &&
+					providerSetupNeedsCustomerAction(s.providerSetupForStatus()))
 		},
 	)
 }
@@ -247,24 +255,24 @@ func waitForDisplayStreamAfterProbe(
 }
 
 func (s *Server) waitForFreshDisplayStream(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
-	return s.waitForFreshDisplayStreamUpTo(ctx, target, notBefore, displayStreamWaitTime)
+	return s.waitForFreshDisplayStreamUpTo(ctx, target, notBefore, displayStreamWaitTime, false)
 }
 
-func (s *Server) waitForFreshDisplayStreamUpTo(ctx context.Context, target string, notBefore time.Time, waitTime time.Duration) displayStreamInfo {
+func (s *Server) waitForFreshDisplayStreamUpTo(ctx context.Context, target string, notBefore time.Time, waitTime time.Duration, settleOnUsageWaiting bool) displayStreamInfo {
 	if s.waitStreamAfter != nil {
 		return s.waitStreamAfter(ctx, target, notBefore)
 	}
 	if s.waitStream != nil {
 		return s.waitStream(ctx, target)
 	}
-	return s.waitForDisplayStreamMode(ctx, target, notBefore, true, waitTime)
+	return s.waitForDisplayStreamMode(ctx, target, notBefore, true, waitTime, settleOnUsageWaiting)
 }
 
-func (s *Server) waitForFreshDisplayStreamAfterPair(ctx context.Context, target string, notBefore time.Time, waitTime time.Duration) displayStreamInfo {
+func (s *Server) waitForFreshDisplayStreamAfterPair(ctx context.Context, target string, notBefore time.Time, waitTime time.Duration, settleOnUsageWaiting bool) displayStreamInfo {
 	if s.waitStreamAfterPair != nil {
 		return s.waitStreamAfterPair(ctx, target, notBefore)
 	}
-	return s.waitForDisplayStreamMode(ctx, target, notBefore, false, waitTime)
+	return s.waitForDisplayStreamMode(ctx, target, notBefore, false, waitTime, settleOnUsageWaiting)
 }
 
 func parseDisplayStreamLaunchState(output string) string {

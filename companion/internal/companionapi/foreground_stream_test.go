@@ -43,7 +43,7 @@ func TestForegroundStreamRequiresCurrentSessionFrameWithLegacyLabel(t *testing.T
 			}
 			for _, stream := range []displayStreamInfo{
 				server.streamStatus(context.Background(), target),
-				server.waitForDisplayStreamMode(context.Background(), target, time.Time{}, false, 0),
+				server.waitForDisplayStreamMode(context.Background(), target, time.Time{}, false, 0, false),
 			} {
 				if !stream.Running || stream.Healthy != tc.healthy || (!tc.healthy && stream.LastSentAt != "") {
 					t.Fatalf("current session proof mismatch: %+v", stream)
@@ -76,7 +76,7 @@ func TestForegroundStreamUsesWorkerLifecycleAndFrameProof(t *testing.T) {
 		if status.Running != wantRunning || status.Healthy != wantHealthy {
 			t.Fatalf("stream=%+v", status)
 		}
-		waited := server.waitForDisplayStreamMode(ctx, target, time.Time{}, false, 0)
+		waited := server.waitForDisplayStreamMode(ctx, target, time.Time{}, false, 0, false)
 		if waited.Running != wantRunning || waited.Healthy != wantHealthy {
 			t.Fatalf("wait disagrees: %+v", waited)
 		}
@@ -94,7 +94,7 @@ func TestForegroundStreamUsesWorkerLifecycleAndFrameProof(t *testing.T) {
 	}
 	write(now, target)
 	check(true, true)
-	if result := server.waitForDisplayStreamMode(ctx, target, now.Add(time.Second), false, 0); result.Healthy || result.LastSentAt != "" {
+	if result := server.waitForDisplayStreamMode(ctx, target, now.Add(time.Second), false, 0, false); result.Healthy || result.LastSentAt != "" {
 		t.Fatalf("ignored notBefore boundary: %+v", result)
 	}
 	write(now, "http://192.0.2.11")

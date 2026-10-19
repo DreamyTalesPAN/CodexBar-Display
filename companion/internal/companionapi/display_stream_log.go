@@ -151,6 +151,29 @@ func (l displayStreamLog) lastErrorAfter(boundary time.Time) (time.Time, string,
 	return time.Time{}, "", "", false
 }
 
+// lastUsageWaitingAfter finds the runtime's "collector is still warming up,
+// nothing to send yet" notice, which is neither a frame nor an error.
+func (l displayStreamLog) lastUsageWaitingAfter(boundary time.Time) (time.Time, bool) {
+	for _, lines := range l {
+		for i := len(lines) - 1; i >= 0; i-- {
+			line := strings.TrimSpace(lines[i])
+			if !strings.Contains(line, "runtime event=usage-waiting") {
+				continue
+			}
+			parts := strings.Fields(line)
+			if len(parts) == 0 {
+				continue
+			}
+			when, err := time.Parse(time.RFC3339Nano, parts[0])
+			if err != nil || (!boundary.IsZero() && when.Before(boundary)) {
+				continue
+			}
+			return when, true
+		}
+	}
+	return time.Time{}, false
+}
+
 func (l displayStreamLog) boundary() (time.Time, bool) {
 	if !runtimepaths.DisplayStreamRequiresStartMarker() {
 		return time.Time{}, true
