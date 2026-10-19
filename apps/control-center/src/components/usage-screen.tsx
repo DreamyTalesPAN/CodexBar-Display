@@ -42,6 +42,7 @@ import {
   remainingResetSecs,
 } from "@/lib/reset-countdown";
 import { isProviderItem, type ProviderItem } from "./provider-picker";
+import { SetupDialog } from "./setup/setup-dialog";
 import {
   providerRowHealthState,
   setupProviderOffersSignIn,
@@ -81,6 +82,11 @@ type UsageScreenProps = {
   providerActions?: Record<string, UsageProviderAction>;
   /** Providers that get no tile: switched off, unsupported, or without usage data. */
   hiddenProviderIds?: string[];
+  /** The owner keeps the token history notice closed until it clears (see the dialog below). */
+  tokenHistoryDismissed?: boolean;
+  onDismissTokenHistory?: () => void;
+  /** Another centred dialog is open: the notice waits for it. */
+  centredDialogOpen?: boolean;
 };
 
 export function UsageScreen({
@@ -92,6 +98,9 @@ export function UsageScreen({
   windowsHost = false,
   providerActions = {},
   hiddenProviderIds = [],
+  tokenHistoryDismissed = false,
+  onDismissTokenHistory,
+  centredDialogOpen = false,
 }: UsageScreenProps) {
   const refreshing = busyAction === "usage";
   const providers = filterVisibleProviders(
@@ -130,14 +139,9 @@ export function UsageScreen({
   const shownProviders = providers.filter(
     (provider) => !hiddenProviderIds.includes(provider.id),
   );
-  const tokenHistoryUnavailable = usageTokenHistoryUnavailable(
-    usage && {
-      ...usage,
-      providers: usage.providers.filter(
-        (provider) => !hiddenProviderIds.includes(provider.id),
-      ),
-    },
-  );
+  const tokenHistoryUnavailable = usageTokenHistoryNotice(usage, hiddenProviderIds);
+  const tokenHistoryDialogOpen =
+    tokenHistoryUnavailable && !tokenHistoryDismissed && !centredDialogOpen;
   const hasUsableVisibleUsageContent =
     hasProviders || usageProvidersHaveTokenResult(providers);
   // An action tile is content: no loading state beside it.
@@ -202,41 +206,8 @@ export function UsageScreen({
             loading
             windowsHost={windowsHost}
           />
-        ) : tokenHistoryUnavailable ? (
-          <Alert className="mb-6 bg-muted">
-            <Info />
-            <AlertTitle>Token history is unavailable</AlertTitle>
-            <AlertDescription className="grid justify-items-start gap-3">
-              <span>
-                {/* With one provider on there is no "every" (issue #558). */}
-                {shownProviders.length === 1
-                  ? copyForHost(
-                      `No token history was found for ${shownProviders[0].label || shownProviders[0].id} on this Mac. Your usage limits are shown below.`,
-                      windowsHost,
-                    )
-                  : "Complete local token history is not available for every selected provider. Available usage limits are shown below."}
-              </span>
-              {onRefresh ? (
-                <Button
-                  aria-label="Refresh token usage"
-                  aria-busy={refreshing || refreshPending}
-                  disabled={refreshing || refreshPending}
-                  onClick={onRefresh}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  {refreshing || refreshPending ? (
-                    <Spinner />
-                  ) : (
-                    <RefreshCw aria-hidden />
-                  )}
-                  {refreshing || refreshPending ? "Refreshing" : "Refresh"}
-                </Button>
-              ) : null}
-            </AlertDescription>
-          </Alert>
-        ) : tokenUsageReady && hasProviders ? (
+        ) : // The notice is a dialog over this page (below), not a box in it.
+        tokenHistoryUnavailable ? null : tokenUsageReady && hasProviders ? (
           <TokenUsageOverTimePanel
             onRefresh={onRefresh}
             providers={providers}
@@ -264,6 +235,41 @@ export function UsageScreen({
           />
         ) : null}
       </section>
+      {/* A page's own dialog, not an announcement: it does not use data-announcement. */}
+      {tokenHistoryDialogOpen ? (
+        <SetupDialog
+          description={
+            /* With one provider on there is no "every" (issue #558). */
+            shownProviders.length === 1
+              ? copyForHost(
+                  `No token history was found for ${shownProviders[0].label || shownProviders[0].id} on this Mac. Your usage limits are shown below.`,
+                  windowsHost,
+                )
+              : "Complete local token history is not available for every selected provider. Available usage limits are shown below."
+          }
+          icon={Info}
+          onOpenChange={(open) => {
+            if (!open) onDismissTokenHistory?.();
+          }}
+          open
+          primaryAction={{
+            label: "OK",
+            onSelect: () => onDismissTokenHistory?.(),
+          }}
+          secondaryAction={
+            onRefresh
+              ? {
+                  busy: refreshing || refreshPending,
+                  disabled: refreshing || refreshPending,
+                  label: refreshing || refreshPending ? "Refreshing" : "Refresh",
+                  onSelect: onRefresh,
+                }
+              : undefined
+          }
+          title="Token history is unavailable"
+          tone="neutral"
+        />
+      ) : null}
     </div>
   );
 }
@@ -966,6 +972,22 @@ export function usageTokenHistoryUnavailable(usage: UsageSnapshot | null): boole
   return (
     (usage?.tokenUsageReady === true || usageProvidersHaveTokenResult(providers)) &&
     providers.some((provider) => provider.cost == null)
+  );
+}
+
+// The Usage notice: a provider that is shown and has no token history. Hidden
+// providers do not count, so the notice and the tiles agree.
+export function usageTokenHistoryNotice(
+  usage: UsageSnapshot | null,
+  hiddenProviderIds: string[] = [],
+): boolean {
+  return usageTokenHistoryUnavailable(
+    usage && {
+      ...usage,
+      providers: usage.providers.filter(
+        (provider) => !hiddenProviderIds.includes(provider.id),
+      ),
+    },
   );
 }
 

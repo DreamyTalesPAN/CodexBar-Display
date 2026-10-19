@@ -7883,6 +7883,39 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
 - Approved customer-visible result: none beyond the entries above; this record restates the merge of the #714 colour fixes and changes no screen.
+
+## 2026-10-17 — Usage: the token history notice opens as an overlay dialog, not a box at the top (stacked on #724)
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect: warnings are dialogs over the page, not inline text; winclick-1017 item 1, seen on Windows); look unchanged except: on Usage, the box at the top of the page "Token history is unavailable" → the same title and the same sentence in an overlay dialog with "OK" (and the X) to close it; the "Refresh" button moves into that dialog.
+- Approved customer-visible result: On Usage, when a shown provider has no token history, the notice is a dialog over the page instead of a box at its top. Its title is "Token history is unavailable", its sentence is the same as before (one provider: "No token history was found for … on this Mac. Your usage limits are shown below."; several: "Complete local token history is not available for every selected provider. Available usage limits are shown below."). Its buttons are "Refresh" (it reads "Refreshing" and is closed while a refresh runs), "OK" and the X, both of which close it. Closed, it stays closed while the notice stands, also after leaving Usage and coming back; it comes back once the notice has cleared and happens again. It waits while another centred dialog is open (runtime repair, lost VibeTV picker, usage failure, system busy, Run setup again?, What's new). The tiles stay usable under it. The token chart is not shown in this state, as before. Before → after: the box at the top with the title, the sentence and "Refresh" → the same title, sentence and "Refresh" in an overlay dialog with "OK". Nothing else changes.
+- Scope: `apps/control-center/src/components/usage-screen.tsx`, `apps/control-center/src/components/control-center-app.tsx` (the dismissal, the wait and the reset), the tests `usage-screen.test.tsx`, `usage-screen.warning-overlay.test.tsx` (new) and `control-center-app.usage-refresh.test.tsx` (button names), and this approval record. Stacked on #724; pull request branch only, not merge or release.
+- What's new: none — the same sentences in a dialog, no new capability
+
+## 2026-10-17 — Usage notice: the page behind it is not dimmed, so the tiles can be pressed (Codex review on #745)
+
+- User approval: pending — Paul reviews this PR (fix of a Codex finding on #745: the dimmed page behind the Usage notice blocked the tiles, although they stay usable under it); look unchanged except: the page behind the Usage notice "Token history is unavailable" is not dimmed any more, and its tiles can be pressed while the notice is open.
+- Approved customer-visible result: The Usage notice of the previous entry (same title, sentence, "Refresh" and "OK") no longer dims the page behind it. The tiles and the rest of Usage can be pressed under the notice; "OK" or the X closes it as before. Before → after: page behind the notice dimmed and not clickable → not dimmed and clickable. Nothing else changes.
+- Scope: `apps/control-center/src/components/usage-screen.tsx` (the notice's scrim), `apps/control-center/src/components/usage-screen.warning-overlay.test.tsx` (a test that the page behind is not held), and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no new capability, the same dialog without the dimming
+
+## 2026-10-17 — Usage notice: a provider's action dialog comes first (Codex review on #745)
+
+- User approval: pending — Paul reviews this PR (fix of a Codex finding on #745: the Usage notice could open over a provider's action dialog and hide it); look unchanged except: when a provider needs the customer on Usage (its action dialog), that dialog is shown alone, and the notice "Token history is unavailable" waits until it is closed.
+- Approved customer-visible result: On Usage, the provider's action dialog is shown first, as before, and the token history notice is not shown on top of it. Once that dialog is closed, the notice shows, unless it was already closed. The text of both dialogs is unchanged. Before → after: the notice over the provider's action dialog → the provider's action dialog alone, the notice after it. Nothing else changes.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (the condition the notice waits for) and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no new capability, the same dialogs in a fixed order
+
+## 2026-10-17 — Approval record: #724 merged into the stack (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the #724 branch and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-17 — Approval record: the skeleton head merged into this branch (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the skeleton head and changes no screen.
 - Scope: this approval record only. Pull request branch only, not merge or release.
 - What's new: none — approval record only
 
@@ -7899,3 +7932,38 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none beyond the loading blocks of the entries above. Only the height of the grey legend row changes (one line of the legend's height per row); no text, no other layout.
 - Scope: `usage-screen.tsx` (loading legend row only), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — loading state only, no new notice
+
+## 2026-10-17 — Approval record: the #724 loading-legend fix merged into this branch (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the #724 head and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-18 — Approval record: the skeleton head merged into this branch (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the skeleton head and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-18 — Codex review fix on #745: Tab leaves the token history notice for the page (no visible change)
+
+- User approval: pending — Paul reviews this PR; Codex review fix, no visible change; not seen by Paul. Keyboard Tab from the last control of the notice moves to the page behind it instead of wrapping inside the notice.
+- Approved customer-visible result: none. Focus order only; nothing looks different.
+- Scope: `setup/setup-dialog.tsx` (non-modal dialogs, scrim off) and `usage-screen.warning-overlay.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — focus fix only, no new notice
+
+## 2026-10-18 — Codex review fix on #745: Tab skips the focus guards Radix adds around a notice (no visible change)
+
+- User approval: pending — Paul reviews this PR; Codex review fix, no visible change; not seen by Paul. Keyboard Tab from the notice reaches the page control, not an invisible focus guard.
+- Approved customer-visible result: none. Focus order only; nothing looks different.
+- Scope: `setup/setup-dialog.tsx` (non-modal dialogs, scrim off) and `usage-screen.warning-overlay.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — focus fix only, no new notice
+
+## 2026-10-18 — Usage notices: the standard dialog darkening (visible change)
+
+- User approval: pending — Paul reviews (Usage notices use the standard dialog darkening, decided by the communicator 18.10.)
+- Approved customer-visible result: none yet; Paul's yes is pending. Visible change: the page behind the token history notice is darkened like every other dialog (was: not darkened, tiles usable under it). Words and buttons unchanged.
+- Scope: `usage-screen.tsx` (token history notice: standard backdrop) and `usage-screen.warning-overlay.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — look change only, no new notice
