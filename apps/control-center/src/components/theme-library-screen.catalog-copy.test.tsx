@@ -103,6 +103,7 @@ it("keeps the customer's own theme when a catalog theme with its id is edited an
         device={null}
         onInstallCustomTheme={async () => false}
         onInstallTheme={vi.fn()}
+        onOpenScreensaverSettings={vi.fn()}
         onSelectTheme={vi.fn()}
         selectedThemeId=""
         storefrontConfigured={false}

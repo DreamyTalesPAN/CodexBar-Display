@@ -84,6 +84,7 @@ function renderLibrary(
       device={null}
       onInstallCustomTheme={async () => false}
       onInstallTheme={vi.fn()}
+      onOpenScreensaverSettings={vi.fn()}
       onSelectTheme={vi.fn()}
       selectedThemeId=""
       storefrontConfigured={false}
@@ -164,6 +165,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
         device={null}
         onInstallCustomTheme={async () => false}
         onInstallTheme={vi.fn()}
+        onOpenScreensaverSettings={vi.fn()}
         onSelectTheme={vi.fn()}
         selectedThemeId=""
         storefrontConfigured={false}
@@ -193,6 +195,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
           }}
           onInstallCustomTheme={async () => false}
           onInstallTheme={vi.fn()}
+          onOpenScreensaverSettings={vi.fn()}
           onSelectTheme={vi.fn()}
           selectedThemeId=""
           storefrontConfigured={false}
@@ -226,6 +229,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
           }}
           onInstallCustomTheme={async () => false}
           onInstallTheme={vi.fn()}
+          onOpenScreensaverSettings={vi.fn()}
           onSelectTheme={vi.fn()}
           selectedThemeId=""
           storefrontConfigured={false}
@@ -291,6 +295,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
           }}
           onInstallCustomTheme={async () => false}
           onInstallTheme={vi.fn()}
+          onOpenScreensaverSettings={vi.fn()}
           onSelectTheme={vi.fn()}
           selectedThemeId=""
           // The settings are read: without them a screensaver is not installed.
@@ -358,6 +363,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
           }}
           onInstallCustomTheme={async () => false}
           onInstallTheme={vi.fn()}
+          onOpenScreensaverSettings={vi.fn()}
           onSelectTheme={vi.fn()}
           selectedThemeId=""
           standby={{ enabled: true, timeoutMinutes: 10, brightnessPercent: 20 }}
@@ -390,6 +396,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
           device={{ ...device, firmware: "9.9.9", connectionState }}
           onInstallCustomTheme={async () => false}
           onInstallTheme={vi.fn()}
+          onOpenScreensaverSettings={vi.fn()}
           onSelectTheme={vi.fn()}
           selectedThemeId=""
           storefrontConfigured={false}
@@ -449,6 +456,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
         }}
         onInstallCustomTheme={async () => false}
         onInstallTheme={vi.fn()}
+        onOpenScreensaverSettings={vi.fn()}
         onSelectTheme={vi.fn()}
         selectedThemeId=""
         storefrontConfigured={false}
@@ -470,6 +478,11 @@ describe("ThemeLibraryScreen Appearance sections", () => {
     expect(install).toContain('data-variant="default"');
     expect(install).toContain(">Install<");
     expect(html).not.toContain("Turn on first");
+    // The Design System link (dark ink, underline, olive on hover), not lime on grey.
+    // Dark mode hovers in the light olive #A9C76A: #506600 has only 1.44:1 on the dark grey.
+    const link = html.match(/<button class="([^"]*)"[^>]*role="link"[^>]*>Settings<\/button>/)?.[1] ?? "";
+    expect(link.split(" ")).toEqual(expect.arrayContaining(["text-foreground", "underline", "hover:text-[var(--vibetv-support)]", "dark:hover:text-[#A9C76A]"]));
+    expect(link).not.toContain("text-primary");
   });
 
   it("removes the warning without hiding the library when enabled", () => {

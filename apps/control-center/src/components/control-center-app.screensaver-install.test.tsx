@@ -151,6 +151,7 @@ function startApp(install?: Record<string, unknown>) {
         return jsonResponse({
           ok: true,
           settings: { standby: { enabled: true, timeoutMinutes: 10, brightnessPercent: 20 } },
+          device: { deviceId: "16199235" },
         });
       }
       // What setup's last screen waits for before it hands over to the app.

@@ -887,7 +887,7 @@ export function ThemeLibraryScreen({
         <p className="mt-6 text-body text-muted-foreground">
           Screensaver is off. Turn it on in{" "}
           <button
-            className="underline underline-offset-4 hover:text-foreground"
+            className="text-foreground underline underline-offset-4 hover:text-[var(--vibetv-support)] focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none dark:hover:text-[#A9C76A]"
             onClick={onOpenScreensaverSettings}
             // It goes to another page, so it is a link, not a second "Settings" button.
             role="link"

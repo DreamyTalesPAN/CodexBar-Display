@@ -89,6 +89,8 @@ const claude = {
 // VibeTV holds for brightness, screensaver and display mode.
 function startWindow(themes: unknown[] = []) {
   const companion = {
+    // The VibeTV the Mac App is connected to.
+    device: device as typeof device,
     stored: rotation,
     // What VibeTV reports about its screensaver slot, if it reports it.
     slot: undefined as { screensaverPath?: string } | undefined,
@@ -109,6 +111,12 @@ function startWindow(themes: unknown[] = []) {
     // While set, a read of VibeTV's settings answers late, with what it found
     // when it started.
     holdSettingsRead: null as Promise<void> | null,
+    // When set, a held read answers with this VibeTV instead of the one the
+    // companion is connected to when the read was asked.
+    settingsAnswerDevice: null as typeof device | null,
+    // While set, a status answers late, with the VibeTV it found when it
+    // started.
+    holdStatus: null as Promise<void> | null,
   };
   const takeHeldWrite = () => {
     const held = companion.holdWrite;
@@ -141,16 +149,18 @@ function startWindow(themes: unknown[] = []) {
       const method = init?.method || "GET";
       companion.requests.push(`${method} ${url} ${init?.body ?? ""}`.trim());
       if (url.endsWith("/v1/status")) {
+        const found = { ...companion.device, standby: companion.slot };
+        await companion.holdStatus;
         return jsonResponse({
           ok: true,
           companion: { version: "9.9.9", installationMode: "dmg" },
-          device: { ...device, standby: companion.slot },
+          device: found,
         });
       }
       if (url.endsWith("/v1/display-frame/latest")) {
         return jsonResponse({
           ok: true,
-          deviceId: device.deviceId,
+          deviceId: companion.device.deviceId,
           frame: {
             v: 2,
             provider: "codex",
@@ -207,11 +217,17 @@ function startWindow(themes: unknown[] = []) {
             ? { ...companion.settings, standby }
             : { ...companion.settings, display: { brightnessPercent } };
         }
+        // The companion answers for the VibeTV it was talking to when asked.
         const found = companion.settings;
+        const answeredBy = companion.device;
         if (!init?.body) {
           await companion.holdSettingsRead;
         }
-        return jsonResponse({ ok: true, settings: init?.body ? companion.settings : found });
+        return jsonResponse({
+          ok: true,
+          settings: init?.body ? companion.settings : found,
+          device: companion.settingsAnswerDevice ?? answeredBy,
+        });
       }
       if (url.endsWith("/v1/provider-display")) {
         if (init?.body && companion.refuseDisplayWrites) {
@@ -747,6 +763,128 @@ it("keeps Show screensaver in Settings focused while it is saved", async () => {
   expectKeepsFocus(toggle);
   expect(toggle.getAttribute("aria-checked")).toBe("true");
   expect(window.companion.settings.standby.enabled).toBe(true);
+});
+
+// Issue #643 (variant 645-A): Show screensaver has its switch in Settings
+// only. Screensavers says in one line when it is off and opens Settings at
+// the switch.
+const screensaverSwitch = () =>
+  screen.getByRole("switch", { name: "Show screensaver" });
+const openSettings = async (window: ReturnType<typeof startWindow>) => {
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+};
+const openScreensavers = async (window: ReturnType<typeof startWindow>) => {
+  fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
+  await window.wait(1);
+  fireEvent.click(screen.getByRole("radio", { name: /^Screensavers/ }));
+  await window.wait(1);
+};
+
+it("opens Settings at Show screensaver from the line under Screensavers", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  await openScreensavers(window);
+  expect(screen.queryByRole("switch", { name: "Show screensaver" })).toBeNull();
+  expect(window.text()).toContain("Screensaver is off.");
+
+  fireEvent.click(screen.getByRole("link", { name: "Settings" }));
+  await window.wait(1);
+  expect(screen.getByRole("heading", { name: "Screensaver" }).closest("section")?.id).toBe(
+    "settings-screensaver",
+  );
+  await window.step(() => fireEvent.click(screensaverSwitch()));
+  await window.wait(1);
+  expect(window.companion.settings.standby.enabled).toBe(true);
+
+  fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
+  await window.wait(1);
+  // The segment is kept; the line is gone now.
+  expect(screen.getByRole("radio", { name: /^Screensavers/ }).getAttribute("aria-checked")).toBe("true");
+  expect(window.text()).not.toContain("Screensaver is off.");
+  expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
+});
+
+// Codex review of #645: the screensaver values belong to one VibeTV. When the
+// Mac App is connected to another one, the switch stays closed until that
+// VibeTV's own setting is read; a click must not send the first VibeTV's time
+// and brightness to it.
+it("closes Show screensaver when another VibeTV is connected until its own setting is read", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  await openSettings(window);
+  expect(screensaverSwitch().hasAttribute("disabled")).toBe(false);
+
+  let answer = () => {};
+  window.companion.holdSettingsRead = new Promise<void>((resolve) => {
+    answer = resolve;
+  });
+  window.companion.settings = {
+    ...window.companion.settings,
+    standby: { enabled: true, timeoutMinutes: 30, brightnessPercent: 50 },
+  };
+  window.companion.device = { ...device, deviceId: "16198106", target: "http://192.168.178.183" };
+  await window.wait(30);
+  expect(screensaverSwitch().hasAttribute("disabled")).toBe(true);
+
+  answer();
+  await window.wait(1);
+  expect(screensaverSwitch().hasAttribute("disabled")).toBe(false);
+  expect(screensaverSwitch().getAttribute("aria-checked")).toBe("true");
+  expect(window.settingsWrites()).toEqual([]);
+});
+
+it("keeps Show screensaver closed when a read for the first VibeTV answers after another one is connected", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  await openSettings(window);
+  const hold = () => {
+    let answer = () => {};
+    const held = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    return { held, answer };
+  };
+  const other = { ...device, deviceId: "16198106", target: "http://192.168.178.183" };
+
+  // The Mac App is connected to another VibeTV; the status that says so is on
+  // its way...
+  const status = hold();
+  window.companion.holdStatus = status.held;
+  window.companion.device = other;
+  await window.wait(5);
+  window.companion.holdStatus = null;
+
+  // ...while a read of the first VibeTV's settings is on its way. Its answer
+  // is held and names the first VibeTV, the one the read was asked for.
+  const firstRead = hold();
+  window.companion.holdSettingsRead = firstRead.held;
+  await openScreensavers(window);
+  await openSettings(window);
+  window.companion.settings = {
+    ...window.companion.settings,
+    standby: { enabled: true, timeoutMinutes: 30, brightnessPercent: 50 },
+  };
+  // The read of the new VibeTV, issued once the status is in, is held too.
+  const secondRead = hold();
+  window.companion.holdSettingsRead = secondRead.held;
+  status.answer();
+  await window.wait(1);
+
+  // The first VibeTV's answer arrives late and is ignored: the switch stays
+  // closed until the new VibeTV's own read arrives.
+  window.companion.settingsAnswerDevice = device;
+  firstRead.answer();
+  await window.wait(1);
+  window.companion.settingsAnswerDevice = null;
+  expect(screensaverSwitch().hasAttribute("disabled")).toBe(true);
+
+  // The new VibeTV's own answer is applied.
+  secondRead.answer();
+  await window.wait(1);
+  expect(screensaverSwitch().hasAttribute("disabled")).toBe(false);
+  expect(screensaverSwitch().getAttribute("aria-checked")).toBe("true");
+  expect(window.settingsWrites()).toEqual([]);
 });
 
 it("keeps the display mode cards focused while the mode is saved", async () => {

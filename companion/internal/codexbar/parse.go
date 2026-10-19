@@ -60,7 +60,7 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 		}
 		label := firstString(payload, "label", "displayName")
 		if label == "" {
-			label = humanLabel(provider)
+			label = HumanLabel(provider)
 		}
 		return ParsedFrame{
 			Frame: protocol.Frame{
@@ -78,7 +78,7 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 
 	provider := firstString(payload, "provider", "id", "slug", "name")
 	source := firstString(payload, "source")
-	label := humanLabel(provider)
+	label := HumanLabel(provider)
 	if l := firstString(payload, "label", "displayName", "name"); l != "" {
 		label = l
 	}
@@ -501,7 +501,7 @@ func parseExtraUsageWindows(raw any) []UsageWindow {
 			}
 			label := firstString(itemMap, "label", "title", "name")
 			if label == "" {
-				label = humanLabel(id)
+				label = HumanLabel(id)
 			}
 			windowMap := itemMap
 			if nested, ok := itemMap["window"].(map[string]any); ok {
@@ -526,7 +526,7 @@ func parseExtraUsageWindows(raw any) []UsageWindow {
 			}
 			label := firstString(itemMap, "label", "title", "name")
 			if label == "" {
-				label = humanLabel(key)
+				label = HumanLabel(key)
 			}
 			if window, ok := parseUsageWindowMap(itemMap, key, label); ok {
 				out = append(out, window)
@@ -817,7 +817,7 @@ func decodeProvidersFromRaw(raw []byte) ([]any, error) {
 	return providers, nil
 }
 
-func humanLabel(provider string) string {
+func HumanLabel(provider string) string {
 	p := strings.TrimSpace(strings.ToLower(provider))
 	switch p {
 	case "":

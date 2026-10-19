@@ -6586,7 +6586,7 @@ async function testAppearanceSidebarNavigation(browser, appUrl) {
       .getByRole("link", { name: "Settings", exact: true })
       .click();
     await page
-      .getByRole("heading", { name: "Settings", exact: true })
+      .getByRole("heading", { name: "Screensaver", exact: true })
       .waitFor({ timeout: 10_000 });
     await page
       .locator("main.control-center-shell")
