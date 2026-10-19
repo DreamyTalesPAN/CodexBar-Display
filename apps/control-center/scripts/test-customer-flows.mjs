@@ -6558,7 +6558,16 @@ async function testAppearanceSidebarNavigation(browser, appUrl) {
 
     await clickNavigation(page, "Screensavers");
     await page.getByText("Fixture Night Clock Screensaver").waitFor();
+    // The switch is in Settings only (#643): Screensavers says it is off
+    // and links there.
     await page.getByText("Screensaver is off.").waitFor();
+    assert(
+      (await page
+        .locator("main.control-center-shell")
+        .getByRole("switch", { name: "Show screensaver" })
+        .count()) === 0,
+      "Screensavers must not have a Show screensaver switch of its own",
+    );
     assert(
       (await page.getByText("Fixture Synthwave Theme").count()) === 0,
       "Screensavers must not include live theme packs",
