@@ -1,6 +1,8 @@
 package protocol
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -396,7 +398,8 @@ func (f Frame) MarshalNormalizedLine() ([]byte, error) {
 
 // ResetSourceKey identifies the provider plus usage window a reset deadline was
 // derived from. A changed key means a different countdown, so the device must
-// drop the previous deadline instead of continuing it.
+// drop the previous deadline instead of continuing it. An identity longer than
+// the device limit is shortened to a prefix plus a hash, never to "".
 func ResetSourceKey(provider string, window string) string {
 	provider = strings.TrimSpace(provider)
 	window = strings.TrimSpace(window)
@@ -478,9 +481,17 @@ func (f Frame) ApplyResetTrust(collectedAt time.Time, sendAt time.Time, sourceLi
 	return f.Normalize()
 }
 
+// resetSourceMaxBytes is the firmware limit for resetSource (IsSafeIdentifier in
+// firmware_shared/codexbar_display_core.h). The device drops anything longer.
+const resetSourceMaxBytes = 31
+
+// resetSourceHashChars is how many hex characters of the identity hash replace
+// the tail of an identity that does not fit.
+const resetSourceHashChars = 12
+
 func normalizeResetSource(raw string) string {
 	source := strings.TrimSpace(strings.ToLower(raw))
-	if source == "" || len(source) > 31 {
+	if source == "" {
 		return ""
 	}
 	for _, r := range source {
@@ -489,7 +500,15 @@ func normalizeResetSource(raw string) string {
 		}
 		return ""
 	}
-	return source
+	if len(source) <= resetSourceMaxBytes {
+		return source
+	}
+	// Too long for the device: keep a readable start and add a hash of the whole
+	// identity. Different windows stay different countdowns, and the same
+	// identity always gets the same key.
+	sum := sha256.Sum256([]byte(source))
+	prefix := resetSourceMaxBytes - 1 - resetSourceHashChars
+	return source[:prefix] + "-" + hex.EncodeToString(sum[:])[:resetSourceHashChars]
 }
 
 func normalizeActivity(raw string) string {
