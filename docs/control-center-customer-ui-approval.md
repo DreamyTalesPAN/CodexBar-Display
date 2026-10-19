@@ -7663,3 +7663,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Support › Run diagnostics no longer changes the Support report card. After it the card still says "Create report"; before, it showed "Copy", "Download" and "Create again" without a click on "Create report". Run diagnostics no longer shows the card as "Creating report" either, and the card's Create report does not show Run diagnostics as running. Create report, Create again, all texts and the layout stay as they are; the diagnostics results still appear under Diagnostics.
 - Scope: `apps/control-center/src/components/control-center-app.tsx`, `apps/control-center/src/components/logs-screen.tsx`, the tests `logs-screen-support-report.test.tsx` and `control-center-app.support-report-card.test.tsx`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — a fix of a reported defect, no new text or control.
+
+## 2026-10-18 — #591 option: the Copilot popup says VibeTV cannot start the GitHub sign-in yet
+
+- User approval: pending — Paul decides #591 (Copilot sentence: "GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet."); look: same popup, new sentence.
+- Approved customer-visible result: none yet. Option to decide, stacked on #740: the provider popup for a switched-on GitHub Copilot that CodexBar cannot read changes from "Sign in to GitHub Copilot so VibeTV can read its usage." → "GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet." Same title and buttons ("Open setup guide" beside "OK" stays as it is).
+- Scope: the sentence in `setupProviderDialogSentence` in `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its tests, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — wording only
