@@ -6244,7 +6244,7 @@ async function testWindowsAppDoesNotSpeakOfAMac(browser, appUrl) {
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   const welcome = setupScreen(page, SETUP_WELCOME_SCREEN);
   await welcome
-    .getByText("reading your AI providers")
+    .getByText("starting the app")
     .waitFor({ timeout: 10_000 });
   assert(
     !(await welcome.innerText()).includes("Mac"),
