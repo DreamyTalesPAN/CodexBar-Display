@@ -2856,6 +2856,9 @@ func TestStatusSeparatesMacAppAndRuntimeVersions(t *testing.T) {
 }
 
 func TestStatusReportsMacAppUpdateCheckFailure(t *testing.T) {
+	original := providerCopyGOOS
+	t.Cleanup(func() { providerCopyGOOS = original })
+	providerCopyGOOS = "darwin"
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
 		return githubRelease{}, errors.New("release api unavailable")
@@ -14094,6 +14097,33 @@ func TestStatusKeepsExactFinalMacAppReleaseCurrent(t *testing.T) {
 	}
 	if got.Companion.Update.UpdateAvailable {
 		t.Fatalf("expected exact final release to stay current, got %+v", got.Companion.Update)
+	}
+}
+
+// Issue #558: the Windows app's update card and report said "Mac App".
+func TestMacAppReleaseMessageNamesTheWindowsApp(t *testing.T) {
+	original := providerCopyGOOS
+	t.Cleanup(func() { providerCopyGOOS = original })
+	t.Setenv(macAppVersionEnv, "1.0.44")
+	t.Setenv(macAppBuildEnv, "4400")
+
+	cases := []struct {
+		goos, latest, want string
+	}{
+		{"darwin", "v1.0.44", "Mac App is up to date."},
+		{"windows", "v1.0.44", "App is up to date."},
+		{"darwin", "v1.0.45", "Mac App update is available."},
+		{"windows", "v1.0.45", "App update is available."},
+	}
+	for _, tc := range cases {
+		providerCopyGOOS = tc.goos
+		server := newTestServer(t, runtimeconfig.Config{})
+		server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
+			return githubRelease{TagName: tc.latest}, nil
+		}
+		if got := server.macAppReleaseInfo(context.Background()).Message; got != tc.want {
+			t.Fatalf("%s with latest %s: message = %q, want %q", tc.goos, tc.latest, got, tc.want)
+		}
 	}
 }
 
