@@ -8091,3 +8091,10 @@ issue scope, or release permission never implies UI permission.
   5. The export notice ("Theme pack exported. No device was contacted.") shows in the header row, right, left of Save (unchanged since the entry above; now covered by a test and a picture).
 - Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx`, `ai-theme-studio-screen.tsx`, their tests, the copy guard `apps/control-center/scripts/check-customer-ui-copy.mjs` ("API key" is the approved label of the Settings row), and this record. Pull request branch only, not merge or release. The one header row without the extra "Appearance" title needs the shell of #784 and is delivered as a patch for that branch.
 - What's new: none — matched to the approved design, no new feature
+
+## 2026-10-19 — Customer flow test follows the open navigation in the Studio (#781, build 2 QA)
+
+- User approval: none needed for this entry; it records a test expectation of the entry above ("matched to the approved template, build 2 QA", point 3): the customer flow now expects the navigation to stay open while the Studio is open instead of collapsed. No visible change beyond that entry; not seen by Paul.
+- Approved customer-visible result: as in the entry above; nothing else changes.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this record. Pull request branch only, not merge or release.
+- What's new: none — test expectation only, no customer-visible change
