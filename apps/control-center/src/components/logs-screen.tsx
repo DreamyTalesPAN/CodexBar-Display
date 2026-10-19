@@ -212,8 +212,13 @@ export function LogsScreen({
                 >
                   <span className="text-muted-foreground">{event.timestamp}</span>
                   <span className="truncate">
-                    {supportText(event.label)}
-                    {event.detail ? ` · ${supportText(event.detail)}` : ""}
+                    <span>{supportText(event.label)}</span>
+                    {event.detail ? (
+                      <>
+                        <span aria-hidden> · </span>
+                        <span>{supportText(event.detail)}</span>
+                      </>
+                    ) : null}
                   </span>
                 </li>
               ))}

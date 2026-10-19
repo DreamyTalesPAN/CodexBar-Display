@@ -721,8 +721,9 @@ export function ThemeLibraryScreen({
     >
       {/* The page title (Themes / Screensavers) is the shell's header; the
           button sits in that row, at its right end, as in the calm picture. */}
-      <section className="-mt-10 flex h-10 items-center justify-end">
+      <section className="pointer-events-none -mt-10 flex h-10 items-center justify-end">
         <Button
+          className="pointer-events-auto"
           onClick={() => openInEditor(openBlankTheme)}
           ref={createButtonRef}
           type="button"
