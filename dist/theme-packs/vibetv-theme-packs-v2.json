@@ -135,8 +135,8 @@
       "title": "Pace Meter",
       "usage": "live",
       "version": "1.0.0",
-      "themeRev": 1,
-      "themeSpecPath": "/themes/u/pm-1-22c83e.json",
+      "themeRev": 2,
+      "themeSpecPath": "/themes/u/pm-2-09a741.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -144,7 +144,7 @@
         "usage-pace-v1"
       ],
       "downloadAsset": "vibetv-theme-pace-meter-v1.0.0.zip",
-      "sha256": "6f3710bba5b75984005aaf09dd0bb9e79b59e6aa70417fbfd80fda296ba69b31",
+      "sha256": "b4336b43f02afa241171cf30ed60c2a6dad69212ef3fa198b15d9c43ee75179c",
       "bytes": 936,
       "earlierThemeSpecPaths": []
     },
