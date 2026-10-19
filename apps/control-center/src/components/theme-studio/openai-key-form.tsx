@@ -228,7 +228,7 @@ export function ThemeStudioKeyRow() {
         {connected ? "Change key" : "Add key"}
       </Button>
       <Dialog open={open} onOpenChange={(next) => { if (!busy) setOpen(next); }}>
-        <DialogContent showCloseButton={!busy}>
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Theme Studio AI</DialogTitle>
             <DialogDescription>Connect OpenAI to create your design.</DialogDescription>

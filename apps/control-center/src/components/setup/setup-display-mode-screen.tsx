@@ -166,6 +166,8 @@ type DisplayModeChoiceProps = Pick<
   /** The Setup Wizard's calm look (variant B); Settings keeps its own. */
   calm?: boolean;
   className?: string;
+  /** Settings frames the chosen card and provider in ink, not lime. */
+  ink?: boolean;
 };
 
 /**
@@ -182,6 +184,7 @@ export function DisplayModeChoice({
   automaticPreviews,
   calm = false,
   className,
+  ink = false,
   manualPreview,
   mode,
   onSelectMode,
@@ -204,6 +207,7 @@ export function DisplayModeChoice({
           calm={calm}
           description={automaticDescription}
           disabled={saving}
+          ink={ink}
           onSelect={() => onSelectMode("automatic")}
           selected={mode === "automatic"}
           title="Automatic"
@@ -214,6 +218,7 @@ export function DisplayModeChoice({
           calm={calm}
           description="VibeTV always shows the one provider you pick — nothing else."
           disabled={saving}
+          ink={ink}
           onSelect={() => onSelectMode("fixed")}
           selected={mode === "fixed"}
           title="Manual"
@@ -247,7 +252,7 @@ export function DisplayModeChoice({
             ) : (
               <Item
                 asChild
-                className={selectedItemClass(provider.id === selectedProviderId)}
+                className={selectedItemClass(provider.id === selectedProviderId, ink)}
                 key={provider.id}
                 variant="outline"
               >
@@ -342,6 +347,7 @@ function ModeCard({
   children,
   description,
   disabled = false,
+  ink = false,
   onSelect,
   selected,
   title,
@@ -350,6 +356,7 @@ function ModeCard({
   children: ReactNode;
   description: string;
   disabled?: boolean;
+  ink?: boolean;
   onSelect: () => void;
   selected: boolean;
   title: string;
@@ -386,7 +393,7 @@ function ModeCard({
       asChild
       // The row stretches both cards to one height; a shorter description
       // must not move its preview down.
-      className={cn(selectedItemClass(selected), "items-start overflow-hidden p-0")}
+      className={cn(selectedItemClass(selected, ink), "items-start overflow-hidden p-0")}
       variant="outline"
     >
       <button

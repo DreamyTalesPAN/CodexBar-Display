@@ -665,8 +665,8 @@ it("leaves the Brightness in screensaver thumb where it is dragged when an earli
 // A brightness change that was still on its way, and one waiting behind it,
 // reached VibeTV during or after the reset.
 it.each([
-  ["Run setup again", "Run setup again", "/v1/setup/reset"],
-  ["Reset to factory settings", "Reset", "/v1/device/factory-reset"],
+  ["Run setup", "Run setup again", "/v1/setup/reset"],
+  ["Reset…", "Reset", "/v1/device/factory-reset"],
 ])("%s waits until a brightness change is saved", async (button, confirm, reset) => {
   const window = startWindow();
   await window.wait(10);
@@ -790,7 +790,7 @@ it("opens Settings at Show screensaver from the line under Screensavers", async 
   expect(screen.queryByRole("switch", { name: "Show screensaver" })).toBeNull();
   expect(window.text()).toContain("Screensaver is off.");
 
-  fireEvent.click(screen.getByRole("link", { name: "Turn on in Settings" }));
+  fireEvent.click(screen.getByRole("link", { name: "Settings" }));
   await window.wait(1);
   expect(screen.getByRole("heading", { name: "Screensaver" }).closest("section")?.id).toBe(
     "settings-screensaver",
@@ -803,7 +803,7 @@ it("opens Settings at Show screensaver from the line under Screensavers", async 
   await window.wait(1);
   expect(screen.getByRole("heading", { name: "Screensavers" })).toBeTruthy();
   expect(window.text()).not.toContain("Screensaver is off.");
-  expect(screen.queryByRole("link", { name: "Turn on in Settings" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
 });
 
 // Codex review of #645: the screensaver values belong to one VibeTV. When the
@@ -1069,8 +1069,8 @@ it("names the installed screensaver in Settings, or says that there is none", as
   expect(window.text()).not.toContain("No screensaver is installed yet.");
 });
 
-// Issue #546: "Run setup again" started at once, from Settings and from
-// Support; the factory reset beside it asked first.
+// Issue #546: "Run setup again" started at once; the factory reset beside it
+// asked first. Support no longer has the button (calm master, Paul 19.10.).
 it("asks before running setup again and lets the customer cancel", async () => {
   const window = startWindow();
   await window.wait(10);
@@ -1080,7 +1080,7 @@ it("asks before running setup again and lets the customer cancel", async () => {
 
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   await window.wait(1);
-  fireEvent.click(screen.getByRole("button", { name: "Run setup again" }));
+  fireEvent.click(screen.getByRole("button", { name: "Run setup" }));
   expect(question()?.textContent).toContain(
     "VibeTV keeps its WiFi details, settings and themes.",
   );
@@ -1088,9 +1088,7 @@ it("asks before running setup again and lets the customer cancel", async () => {
   expect(question()).toBeNull();
   expect(resets()).toEqual([]);
 
-  fireEvent.click(screen.getByRole("button", { name: "Support" }));
-  await window.wait(1);
-  fireEvent.click(screen.getByRole("button", { name: "Run setup again" }));
+  fireEvent.click(screen.getByRole("button", { name: "Run setup" }));
   fireEvent.click(within(question()!).getByRole("button", { name: "Run setup again" }));
   await window.wait(1);
   expect(question()).toBeNull();
@@ -1131,16 +1129,21 @@ it("enters a changed display mode, provider switching and provider under Recent 
   fireEvent.click(screen.getByRole("button", { name: "Support" }));
   await window.wait(1);
   const entries = within(
-    screen.getByText("Recent activity").closest('[data-slot="card"]') as HTMLElement,
+    screen.getByText("Recent activity").closest("section") as HTMLElement,
   )
     .getAllByRole("listitem")
-    .map((entry) => entry.textContent?.replace(/\d\d:\d\d:\d\d$/, ""));
+    .map((entry) => entry.textContent?.replace(/^\d\d:\d\d:\d\d/, ""));
   expect(entries).toEqual([
-    "AI provider savedClaude turned off.",
-    "Display mode savedAlways show Claude.",
-    "Switch providers savedSwitch providers is set to Every 30 seconds.",
-    "Control Center openedThis session started.Session",
+    "AI provider saved · Claude turned off.",
+    "Display mode saved · Always show Claude.",
+    "Switch providers saved · Switch providers is set to Every 30 seconds.",
+    "Control Center opened · This session started.",
   ]);
+  // The first entry is written when the app opens, so it has a time too.
+  const first = within(
+    screen.getByText("Recent activity").closest("section") as HTMLElement,
+  ).getAllByRole("listitem").at(-1);
+  expect(first?.textContent).toMatch(/^\d\d:\d\d:\d\d/);
 });
 
 // The refusal stands on the page; the list keeps it for the support report.
@@ -1154,7 +1157,7 @@ it("enters a refused change of the provider switching under Recent activity", as
 
   fireEvent.click(screen.getByRole("button", { name: "Support" }));
   await window.wait(1);
-  expect(window.text()).toContain("Switch providers save needs attentionTry again in a moment.");
+  expect(window.text()).toContain("Switch providers save needs attention · Try again in a moment.");
   expect(window.text()).not.toContain("Switch providers saved");
 });
 
@@ -1181,7 +1184,7 @@ it("enters nothing under Recent activity for what the app writes by itself", asy
 
   fireEvent.click(screen.getByRole("button", { name: "Support" }));
   await window.wait(1);
-  expect(window.text()).toContain("AI provider savedClaude turned on.");
+  expect(window.text()).toContain("AI provider saved · Claude turned on.");
   expect(window.text()).not.toContain("Display mode save");
 });
 
@@ -1195,7 +1198,9 @@ it("has no accessibility violations on any tab or in the setup question", async 
     await window.wait(1);
     pages.push(document.body.innerHTML);
   }
-  fireEvent.click(screen.getByRole("button", { name: "Run setup again" }));
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  fireEvent.click(screen.getByRole("button", { name: "Run setup" }));
   expect(screen.getByRole("dialog", { name: "Run setup again?" })).toBeTruthy();
   pages.push(document.body.innerHTML);
 

@@ -21,6 +21,7 @@ import {
   SetupCableHelpDialog,
   SetupConnectFailedDialog,
   SetupDeviceNotFoundDialog,
+  SetupDevicePickerDialog,
 } from "./setup-device-dialogs";
 import { SetupRecoveryDialogs } from "./setup-recovery-dialogs";
 import { SetupWizardTitle } from "./setup-wizard-screen";
@@ -56,7 +57,7 @@ describe("Setup WiFi recovery", () => {
     expect(dialog.textContent).not.toContain("VibeTV-Setup");
     expect(dialog.textContent).not.toContain("192.168.4.1");
     expect(dialog.textContent).not.toContain("phone");
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(
       screen.getByRole("button", { name: "How to connect VibeTV" }),
@@ -269,5 +270,48 @@ describe("Focus when a dialog closes while focus is already elsewhere", () => {
     await settle();
 
     expect(document.activeElement).toBe(field);
+  });
+});
+
+// Build-2 decision (19.10.2026): the app follows the approved template.
+describe("Dialogs as drawn in the template", () => {
+  // Each dialog keeps its own scrim mounted; only the open one is visible.
+  const scrimOf = (container: HTMLElement) =>
+    Array.from(
+      container.querySelectorAll('div[aria-hidden][class*="fixed"]'),
+    ).find((scrim) => scrim.className.includes("opacity-100"));
+
+  it.each([["repairing" as const], ["failed" as const]])(
+    "dims the screen behind the %s dialog like every other dialog (frames 32, 33)",
+    (phase) => {
+      const { container } = render(
+        <SetupRecoveryDialogs
+          onHide={vi.fn()}
+          onRestart={vi.fn()}
+          onRetry={vi.fn()}
+          phase={phase}
+          retrying={false}
+        />,
+      );
+      const scrim = scrimOf(container);
+      expect(scrim?.className).toContain("bg-black/10");
+      expect(scrim?.className).toContain("opacity-100");
+      // A look only: the sidebar and tabs behind it stay clickable.
+      expect(scrim?.className).toContain("pointer-events-none");
+    },
+  );
+
+  it("names the lost VibeTV's dialog \"Your VibeTV is not reachable\" (frame 47)", () => {
+    render(
+      <SetupDevicePickerDialog
+        candidates={[{ deviceId: "4F2A", target: "192.168.178.163", transport: "wifi" }]}
+        error={null}
+        onConnect={vi.fn()}
+        onOpenChange={vi.fn()}
+      />,
+    );
+    const dialog = screen.getByRole("dialog", { name: "Your VibeTV is not reachable" });
+    expect(dialog.textContent).toContain("Choose it to connect again.");
+    expect(dialog.textContent).not.toContain("Choose your VibeTV");
   });
 });

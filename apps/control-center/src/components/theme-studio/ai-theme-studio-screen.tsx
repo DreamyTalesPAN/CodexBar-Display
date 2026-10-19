@@ -38,6 +38,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -1519,7 +1520,7 @@ export function AIThemeStudioScreen({
               </label>
               <div className="flex items-center gap-3">
               <div
-                className="relative min-w-0 flex-1 overflow-hidden rounded-xl border border-input bg-background shadow-sm focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40"
+                className="relative min-w-0 flex-1 overflow-hidden rounded-xl border border-input bg-background shadow-sm focus-within:border-ring focus-within:ring-2 focus-within:ring-ring"
                 onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
                 onDrop={(event) => { event.preventDefault(); void attachImages(event.dataTransfer.files); }}
               >
@@ -1642,8 +1643,7 @@ export function AIThemeStudioScreen({
         }}
       >
         <DialogContent
-          className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md"
-          showCloseButton={!connecting}
+          className="max-h-[calc(100dvh-2rem)] overflow-y-auto"
           onEscapeKeyDown={(event) => {
             if (connecting) event.preventDefault();
           }}
@@ -1784,6 +1784,13 @@ export function AIThemeStudioScreen({
               )}
             </div>
           ) : null}
+          {connecting ? null : (
+            <DialogFooter>
+              <Button onClick={closePanel} variant="ghost">
+                {panel === "setup" ? "Not now" : "Close"}
+              </Button>
+            </DialogFooter>
+          )}
         </DialogContent>
       </Dialog>
       <input
@@ -1831,17 +1838,14 @@ export function AIThemeStudioScreen({
               continue.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-3">
+          <DialogFooter>
             <Button
-              variant="outline"
-              className="h-12 w-full"
+              variant="ghost"
               onClick={() => { setPending(undefined); setLeaving(false); }}
             >
               Keep editing
             </Button>
             <Button
-              variant="destructive"
-              className="h-12 w-full"
               onClick={() => {
                 // Discarding is final: the draft must not be offered again later.
                 clearThemeStudioRecovery();
@@ -1852,7 +1856,7 @@ export function AIThemeStudioScreen({
             >
               Discard and continue
             </Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

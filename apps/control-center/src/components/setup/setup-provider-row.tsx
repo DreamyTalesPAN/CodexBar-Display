@@ -151,9 +151,7 @@ export function SetupProviderRow({
       variant={calm ? "default" : "outline"}
     >
       <ItemContent>
-        <ItemTitle
-          className={cn(calm && "text-[13px] font-semibold", unusable && "opacity-50")}
-        >
+        <ItemTitle className={cn("text-[13px] font-semibold", unusable && "opacity-50")}>
           {label}
         </ItemTitle>
       </ItemContent>
