@@ -29,6 +29,8 @@ type LiveVibeTVPreviewProps = {
   device: DeviceInfo | null;
   displayFrame: DisplayFrameSnapshot | null;
   onPreviewReady?: () => void;
+  /** Called once the screen no longer reads "Loading preview" (its theme pack is in, or failed). */
+  onScreenSettled?: () => void;
   /** Render only the real display output when a 3D case provides the housing. */
   screenOnly?: boolean;
   updateOwnedDisconnect?: boolean;
@@ -409,6 +411,7 @@ export function LiveVibeTVPreview({
   device,
   displayFrame,
   onPreviewReady,
+  onScreenSettled,
   screenOnly = false,
   updateOwnedDisconnect = false,
   usage,
@@ -568,6 +571,20 @@ export function LiveVibeTVPreview({
     themeSpecHash,
     themeSpecPath,
   ]);
+
+  // Whether the screen below is the "Loading preview" placeholder.
+  const showsPackLoading =
+    packStatus === "loading" &&
+    !updateOwnedDisconnect &&
+    deviceConnected &&
+    !(pack?.spec && frame) &&
+    (frame ||
+      (!awaitingProviderSetup && deviceReady && !waitingForUsage));
+  useEffect(() => {
+    if (!showsPackLoading) {
+      onScreenSettled?.();
+    }
+  }, [onScreenSettled, showsPackLoading]);
 
   const screen = updateOwnedDisconnect ? (
     <FirmwareUpdateRestarting />
