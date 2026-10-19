@@ -3,10 +3,11 @@ import { describe, expect, it } from "vitest";
 import { ControlCenterBrand } from "./control-center-brand";
 
 describe("ControlCenterBrand hero on light pages", () => {
-  it("sets the TV of the wordmark in the design-system olive, not lime", () => {
+  // Paul, 19.10.: lime TV everywhere, as in the calm master (overrules #710).
+  it("sets the TV of the wordmark in lime, also on light pages", () => {
     const html = renderToStaticMarkup(<ControlCenterBrand variant="hero" />);
 
-    expect(html).toContain('<span class="text-[var(--vibetv-support)]">TV</span>');
-    expect(html).not.toContain("text-primary");
+    expect(html).toContain('<span class="text-primary">TV</span>');
+    expect(html).not.toContain("vibetv-support");
   });
 });

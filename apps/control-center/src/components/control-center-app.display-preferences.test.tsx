@@ -803,8 +803,8 @@ it("names the installed screensaver in Settings, or says that there is none", as
   expect(window.text()).not.toContain("No screensaver is installed yet.");
 });
 
-// Issue #546: "Run setup again" started at once, from Settings and from
-// Support; the factory reset beside it asked first.
+// Issue #546: "Run setup again" started at once; the factory reset beside it
+// asked first. Support no longer has the button (calm master, Paul 19.10.).
 it("asks before running setup again and lets the customer cancel", async () => {
   const window = startWindow();
   await window.wait(10);
@@ -822,9 +822,7 @@ it("asks before running setup again and lets the customer cancel", async () => {
   expect(question()).toBeNull();
   expect(resets()).toEqual([]);
 
-  fireEvent.click(screen.getByRole("button", { name: "Support" }));
-  await window.wait(1);
-  fireEvent.click(screen.getByRole("button", { name: "Run setup again" }));
+  fireEvent.click(screen.getByRole("button", { name: "Run setup" }));
   fireEvent.click(within(question()!).getByRole("button", { name: "Run setup again" }));
   await window.wait(1);
   expect(question()).toBeNull();
@@ -934,7 +932,9 @@ it("has no accessibility violations on any tab or in the setup question", async 
     await window.wait(1);
     pages.push(document.body.innerHTML);
   }
-  fireEvent.click(screen.getByRole("button", { name: "Run setup again" }));
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  fireEvent.click(screen.getByRole("button", { name: "Run setup" }));
   expect(screen.getByRole("dialog", { name: "Run setup again?" })).toBeTruthy();
   pages.push(document.body.innerHTML);
 

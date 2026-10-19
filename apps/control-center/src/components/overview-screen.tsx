@@ -8,12 +8,18 @@ import type {
   UsageSnapshot,
 } from "./control-center-types";
 import { Check } from "lucide-react";
+import { activeLiveThemeId } from "@/lib/active-theme-upgrade";
+import { validateThemeSpec } from "@/lib/theme-studio";
+import {
+  loadUserThemes,
+  type ThemeStudioDocument,
+} from "@/lib/theme-studio-storage";
 import type { ThemeProduct } from "@/lib/themes";
 import {
   deviceIsCustomerConnected,
+  deviceIsReady,
   deviceUsesCable,
 } from "./control-center-types";
-import { activeThemeLabel } from "./logs-screen";
 import { SetupDialog } from "./setup/setup-dialog";
 import {
   LiveVibeTVPreview,
@@ -318,4 +324,51 @@ function Fact({
       {line ? <dd className="text-muted-foreground">{line}</dd> : null}
     </div>
   );
+}
+
+function activeThemeLabel(
+  themes: ThemeProduct[],
+  device: DeviceInfo | null | undefined,
+): string {
+  // The customer's own themes are saved in this browser, by Theme Studio, with
+  // the name they gave them.
+  const saved = loadUserThemes();
+  const ownName = (matches: (document: ThemeStudioDocument) => boolean) =>
+    (saved.ok ? saved.value.themes : saved.data?.themes || []).find(
+      ({ document }) => document.usage !== "screensaver" && matches(document),
+    )?.document.packName;
+  // The file in the live slot says whose theme it is: a saved theme is sent
+  // under a path only it has, also when a later catalog gave one of its themes
+  // the same id. During standby that file is all VibeTV reports of the slot;
+  // the screensaver on screen is not it.
+  const standbyActive = device?.standby?.active === true;
+  const livePath = (
+    standbyActive
+      ? device.standby?.liveThemePath
+      : device?.display?.themeSpec?.path
+  )?.trim();
+  const ownByFile =
+    livePath &&
+    ownName(
+      (document) =>
+        validateThemeSpec(document.spec, document.assets, "live")
+          .themeSpecPath === livePath,
+    );
+  if (ownByFile) {
+    return ownByFile;
+  }
+  const theme = activeLiveThemeId(themes, device)?.trim();
+  if (!theme) {
+    if (standbyActive && livePath) {
+      return "Custom theme";
+    }
+    return deviceIsReady(device) ? "Default" : "Not available";
+  }
+  const own =
+    !themes.some((listed) => listed.themeId === theme) &&
+    ownName((document) => document.spec.themeId === theme);
+  if (own) {
+    return own;
+  }
+  return theme.split(/[-_]+/).filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
 }

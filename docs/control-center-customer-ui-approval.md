@@ -7900,3 +7900,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/theme-library-screen.tsx` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no new content
+
+## 2026-10-19 — Calm redesign matched to the master: Support without the table and the Setup log, lime TV wordmark (#784, Paul's answers 19.10.)
+
+- User approval: pending — Paul reviews (#784 matched to the approved master design "Calm Redesign - alle Screens", 19.10.); look unchanged except: (1) Support no longer has the "Connected VibeTV" section (Status, Device, Connection or Address, Firmware, Active theme, WiFi signal, and the "Run setup again" button under it) and no "Setup log" section; the page starts with the Support report card, then Diagnostics, then Recent activity. "Run setup again" stays in Settings (button "Run setup"); the Setup log stays in the Help menu of the setup screens. The active theme is named under "Display" on the Overview. (2) The "TV" of the VIBETV wordmark on the light setup welcome page and the download page is lime `#CCFF00` again (Paul, 19.10.: lime TV everywhere, as in the master) instead of the olive `#506600` from #710; the sidebar wordmark is one colour, as in the master picture. The other olive link and hover colours from #710 stay.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/{logs-screen,overview-screen,control-center-app,control-center-brand}.tsx` and their tests, `docs/control-center-accessibility.md` (wording of the manual checks), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
