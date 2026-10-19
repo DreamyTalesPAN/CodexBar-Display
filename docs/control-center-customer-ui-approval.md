@@ -8491,3 +8491,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/usage-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-19 — #783: Codex fixes, first day on short charts and plan-only providers
+
+- User approval: pending — Paul reviews (Codex review fix); look unchanged except, each one before → after: (1) the usage chart of 2 to 4 days labels its first day too → before only its last day; (2) a provider with a plan name or an extra-usage cap but zero use stays in the usage list → before it was hidden.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/usage-screen.tsx`, `apps/control-center/src/components/usage-screen.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
