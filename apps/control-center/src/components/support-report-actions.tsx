@@ -114,6 +114,7 @@ export function SupportReportActions({
       <div
         className={cn(
           "grid w-full gap-3 sm:flex sm:w-auto sm:flex-wrap",
+          quiet && "sm:gap-1",
           align === "center" && "sm:justify-center",
         )}
       >
