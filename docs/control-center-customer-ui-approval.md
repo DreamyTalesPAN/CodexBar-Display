@@ -8072,3 +8072,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: before → after: in a window narrower than 1024 px (where the left column scrolls and the preview sits at its top) the Details panel was squeezed to a few pixels high under the preview; after: it takes the height it needs under the preview and the column scrolls. In the wide layout nothing changes: the preview stays centred, Details uses the free space below it and scrolls inside itself, never over the preview.
 - Scope: `apps/control-center/src/components/theme-studio/editable-theme-preview.tsx` (one class), its test, and this record. Pull request branch only, not merge or release.
 - What's new: none — layout refinement of the Theme Studio, no new feature
+
+## 2026-10-19 — Theme Studio: Details panel height in the narrow layout, follow-up (#781, build 7194)
+
+- User approval: Paul, 19.10.2026 via the communicator, decision on build 7194 (the third revision entry above: Details take their full height in a narrow or low window)
+- Approved customer-visible result: before → after: the class of the third revision alone left the panel squeezed to 12 px in a window narrower than 1024 px, because the panel's own scroll rule still applied; after: below 1024 px the panel has its natural height (about 170 px for the selected element) and the column scrolls; in the wide layout it is unchanged.
+- Scope: `apps/control-center/src/components/theme-studio/editable-theme-preview.tsx`, `ai-theme-studio-screen.tsx` (the Details block: the scroll rule applies from 1024 px up), and this record. Pull request branch only, not merge or release.
+- What's new: none — layout refinement of the Theme Studio, no new feature
