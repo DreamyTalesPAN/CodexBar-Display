@@ -52,6 +52,10 @@ describe("keyboard focus ring colour", () => {
     expect(contrast(token(dark, "ring"), token(dark, "background"))).toBeGreaterThanOrEqual(3);
   });
 
+  it("draws the default outline of native controls at full strength", () => {
+    expect(css).not.toMatch(/outline-ring\/\d+/);
+  });
+
   it("uses the light ink on the always-dark sidebar, in both themes", () => {
     expect(token(light, "sidebar-ring")).toBe(token(light, "sidebar-foreground"));
     expect(token(dark, "sidebar-ring")).toBe(token(dark, "sidebar-foreground"));
