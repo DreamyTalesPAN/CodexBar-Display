@@ -135,6 +135,7 @@ it.each([
           : jsonResponse({
               ok: true,
               settings: { standby: { enabled: true, timeoutMinutes: 10, brightnessPercent: 20 } },
+              device: { deviceId: "16199235" },
             });
       }
       if (url.endsWith("/v1/display-frame/latest")) {
@@ -190,5 +191,4 @@ it.each([
     .getAllByRole("listitem")
     .find((item) => within(item).queryByText("Retro 3D"))!;
   expect((within(row).getByRole("button", { name: "Install" }) as HTMLButtonElement).disabled).toBe(false);
-  expect(screen.getByRole("switch", { name: /Show screensaver/ })).toBeTruthy();
 });

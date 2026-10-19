@@ -2,7 +2,6 @@
 
 import {
   Check,
-  Info,
   Library,
   Lock,
   Monitor,
@@ -38,7 +37,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Field, FieldLabel } from "@/components/ui/field";
 import {
   Item,
   ItemActions,
@@ -53,7 +51,6 @@ import { Progress } from "@/components/ui/progress";
 import { SetupDialog } from "@/components/setup/setup-dialog";
 import { systemBusyCopy } from "./system-busy-dialog";
 import { Spinner } from "@/components/ui/spinner";
-import { Switch } from "@/components/ui/switch";
 import {
   activeLiveThemeId,
   installedScreensaver,
@@ -197,9 +194,10 @@ export type ThemeLibraryScreenProps = {
   onSelectTheme: (themeId: string) => void;
   onInstallCustomTheme: (payload: ThemeStudioInstallPayload) => Promise<boolean>;
   onInstallTheme: (theme: ThemeProduct) => Promise<unknown> | void;
-  onSaveStandby?: (value: StandbySettings) => Promise<void> | void;
   /** Tells the shell whether the Theme Studio is open (it keeps its own title). */
   onStudioOpenChange?: (open: boolean) => void;
+  /** Opens Settings at its Screensaver group, where the switch is. */
+  onOpenScreensaverSettings?: () => void;
   /** The app runs on Windows, where "Mac App" reads "app". */
   windowsHost?: boolean;
 };
@@ -262,8 +260,8 @@ export function ThemeLibraryScreen({
   onInstallCustomTheme,
   onSelectTheme,
   onInstallTheme,
-  onSaveStandby,
   onStudioOpenChange,
+  onOpenScreensaverSettings,
   windowsHost = false,
 }: ThemeLibraryScreenProps) {
   const visibleThemes = themes.filter(
@@ -736,35 +734,22 @@ export function ThemeLibraryScreen({
       </section>
 
       {/* Installing a screensaver only makes sense while the screensaver is
-          turned on; management (create, edit, preview) stays available. */}
-      {screensavers && standby ? (
-        <section className="space-y-3 pb-5">
-          <Field className="border-y py-4" orientation="horizontal">
-            <FieldLabel htmlFor="vibetv-library-standby">
-              Show screensaver
-            </FieldLabel>
-            <Switch
-              aria-label="Show screensaver"
-              checked={standby.enabled}
-              // Not closed while its own change is saved: that drops keyboard
-              // focus to the page (issue #558). The app queues these writes.
-              disabled={device?.ready !== true}
-              id="vibetv-library-standby"
-              onCheckedChange={(enabled) =>
-                onSaveStandby?.({ ...standby, enabled })
-              }
-            />
-          </Field>
-          {!standby.enabled ? (
-            <Alert>
-              <Info aria-hidden />
-              <AlertTitle>Screensaver is turned off</AlertTitle>
-              <AlertDescription>
-                Turn on Show screensaver to install and use a screensaver.
-              </AlertDescription>
-            </Alert>
-          ) : null}
-        </section>
+          turned on; management (create, edit, preview) stays available. Its
+          switch is in Settings only (issue #643). */}
+      {screensavers && standby && !standby.enabled ? (
+        <p className="mb-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-lg bg-muted px-4 py-3 text-sm">
+          <span>Screensaver is off.</span>
+          <a
+            className="font-medium text-foreground underline underline-offset-4 hover:text-[var(--vibetv-support)] dark:hover:text-[#A9C76A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            href="#settings-screensaver"
+            onClick={(event) => {
+              event.preventDefault();
+              onOpenScreensaverSettings?.();
+            }}
+          >
+            Turn on in Settings
+          </a>
+        </p>
       ) : null}
 
       <section className="py-8">
