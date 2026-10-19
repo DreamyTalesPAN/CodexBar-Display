@@ -21,6 +21,15 @@ const providerSetupCacheTTL = 30 * time.Second
 // a timeout while CodexBar is still answering.
 const providerCheckTimeout = codexbar.ProviderCheckBudget + 5*time.Second
 
+// exactProviderCheckTimeout bounds one exact provider check. It runs without
+// a waiting request, so it may outlast the Control Center's 60 s (#786).
+const exactProviderCheckTimeout = codexbar.ExactProviderCheckBudget + 5*time.Second
+
+// exactProviderRetryWait is how long a retry request waits for its exact
+// check before it answers that the provider is still checking. A variable so
+// tests can run it out quickly.
+var exactProviderRetryWait = providerCheckTimeout
+
 type providerSetupResponse struct {
 	OK            bool                   `json:"ok"`
 	ProviderSetup codexbar.ProviderSetup `json:"providerSetup"`
@@ -488,8 +497,6 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), providerCheckTimeout)
-	defer cancel()
 	providerID := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("provider")))
 	// The Mac app reports here that CodexBar just read the provider's browser
 	// sign-in into its cookie cache.
@@ -498,17 +505,50 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 	if afterBrowserSignInRead && providerID != "" {
 		s.noteBrowserSignInRead(providerID, requestedAt)
 	}
-	var setup codexbar.ProviderSetup
-	label := ""
 	if providerID == "" {
-		setup = s.currentProviderSetup(ctx, true)
-	} else {
-		providerRevision := s.currentProviderRevision(providerID)
+		ctx, cancel := context.WithTimeout(r.Context(), providerCheckTimeout)
+		defer cancel()
+		setup := s.currentProviderSetup(ctx, true)
+		s.finishProviderRetry("", 0, false, requestedAt, setup)
+		writeJSON(w, http.StatusOK, providerSetupResponse{OK: true, ProviderSetup: setup})
+		return
+	}
+	providerRevision := s.currentProviderRevision(providerID)
+	// One provider's check may outlast the Control Center's 60 s request: a
+	// Mac Claude check through Claude Code took 55 s (#786). The check runs on
+	// without the request. When the wait is over, the request answers that the
+	// provider is still checking and the row shows that until the result is
+	// recorded, so the page keeps asking for it.
+	checked := make(chan codexbar.ProviderSetup, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), exactProviderCheckTimeout)
+		defer cancel()
 		if afterBrowserSignInRead {
-			setup = s.exactProviderSetupStartedAfter(ctx, providerID, requestedAt)
+			checked <- s.exactProviderSetupStartedAfter(ctx, providerID, requestedAt)
 		} else {
-			setup = s.currentExactProviderSetup(ctx, providerID)
+			checked <- s.currentExactProviderSetup(ctx, providerID)
 		}
+	}()
+	wait, cancel := context.WithTimeout(r.Context(), exactProviderRetryWait)
+	defer cancel()
+	select {
+	case setup := <-checked:
+		s.finishProviderRetry(providerID, providerRevision, afterBrowserSignInRead, requestedAt, setup)
+		writeJSON(w, http.StatusOK, providerSetupResponse{OK: true, ProviderSetup: setup})
+	case <-wait.Done():
+		s.markExactProviderChecking(providerID, providerRevision)
+		go func() {
+			s.finishProviderRetry(providerID, providerRevision, afterBrowserSignInRead, requestedAt, <-checked)
+		}()
+		writeJSON(w, http.StatusOK, providerSetupResponse{OK: true, ProviderSetup: checkingProviderSetup(s.currentTime())})
+	}
+}
+
+// finishProviderRetry records what a requested check found and lets the usage
+// service follow a provider that is ready now.
+func (s *Server) finishProviderRetry(providerID string, providerRevision uint64, afterBrowserSignInRead bool, requestedAt time.Time, setup codexbar.ProviderSetup) {
+	label := ""
+	if providerID != "" {
 		s.recordExactProviderSetup(providerID, providerRevision, setup)
 		// A too-old engine puts its own row first; name the provider asked for.
 		for _, provider := range setup.Providers {
@@ -544,7 +584,34 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 			s.wakeDisplayStream()
 		}
 	}
-	writeJSON(w, http.StatusOK, providerSetupResponse{OK: true, ProviderSetup: setup})
+}
+
+// markExactProviderChecking shows a switched-on provider as checking while its
+// exact check runs on after the request answered. The earlier result no longer
+// speaks for it, and a health scan that was already running must not replace
+// the mark before the check is recorded.
+func (s *Server) markExactProviderChecking(providerID string, providerRevision uint64) {
+	s.providerPreferences.mu.Lock()
+	defer s.providerPreferences.mu.Unlock()
+	if s.providerPreferences.providerRev[providerID] != providerRevision {
+		return
+	}
+	for i := range s.providerPreferences.cached {
+		setting := &s.providerPreferences.cached[i]
+		if setting.ID != providerID || !setting.Enabled {
+			continue
+		}
+		setting.Health = codexbar.ProviderHealthChecking
+		setting.Service = codexbar.ProviderServiceUnknown
+		setting.Reported = ""
+		setting.SignInURL = ""
+		s.providerPreferences.revision++
+		s.providerPreferences.at = s.currentTime().UTC()
+		s.providerReadinessMu.Lock()
+		delete(s.providerReadiness, providerID)
+		s.providerReadinessMu.Unlock()
+		return
+	}
 }
 
 // requestUsageServiceReplace asks the supervisor to check the usage service.

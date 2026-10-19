@@ -240,7 +240,7 @@ func (a providerPreferenceAdapter) Write(ctx context.Context, settingID string, 
 }
 
 func (s *Server) verifyEnabledProvider(providerID, label string, providerRevision uint64) {
-	ctx, cancel := context.WithTimeout(context.Background(), providerCheckTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), exactProviderCheckTimeout)
 	defer cancel()
 	setup := s.currentExactProviderSetup(ctx, providerID)
 	s.recordExactProviderSetup(providerID, providerRevision, setup)

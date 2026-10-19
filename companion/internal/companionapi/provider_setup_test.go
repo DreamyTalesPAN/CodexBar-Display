@@ -770,6 +770,72 @@ func TestProviderRetryAfterBrowserSignInReadDoesNotJoinAnOlderProbe(t *testing.T
 	}
 }
 
+// A Mac Claude check through Claude Code took 55 s, longer than the Control
+// Center waits for its request (#786). The request answers that the provider
+// is still checking, the row shows that instead of the last failure, and the
+// check runs on after the request ended until its result lands on the row.
+func TestExactProviderRetryOutlastingTheRequestFinishesInTheBackground(t *testing.T) {
+	previousWait := exactProviderRetryWait
+	exactProviderRetryWait = 20 * time.Millisecond
+	t.Cleanup(func() { exactProviderRetryWait = previousWait })
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthUnavailable}}, nil
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
+	claudeState := func() string {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+		var response preferencesResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil || len(response.Items) != 1 {
+			t.Fatalf("unexpected preferences: %v %s", err, rec.Body.String())
+		}
+		return response.Items[0].Health.State
+	}
+	claudeState()
+	server.recordExactProviderSetup("claude", 0, exactSetupFixture(server.currentTime(), "claude", codexbar.ProviderTimeout))
+	if state := claudeState(); state == "checking" {
+		t.Fatalf("the earlier timeout must show before the retry, got %q", state)
+	}
+	release := make(chan struct{})
+	probeErr := make(chan error, 1)
+	server.probeExactProvider = func(ctx context.Context, _ string, providerID string) codexbar.ProviderSetup {
+		<-release
+		probeErr <- ctx.Err()
+		return exactSetupFixture(server.currentTime(), providerID, codexbar.ProviderReady)
+	}
+
+	requestCtx, endRequest := context.WithCancel(context.Background())
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/providers/retry?provider=claude", nil).WithContext(requestCtx))
+	endRequest()
+	var got providerSetupResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != http.StatusOK || got.ProviderSetup.Status != "checking" {
+		t.Fatalf("a check that outlasts the wait must answer checking: %d %s", rec.Code, rec.Body.String())
+	}
+	if state := claudeState(); state != "checking" {
+		t.Fatalf("the row must show the running check, got %q", state)
+	}
+
+	close(release)
+	select {
+	case err := <-probeErr:
+		if err != nil {
+			t.Fatalf("the check ended with its request: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the check never finished")
+	}
+	waitForCachedProviderHealth(t, server, "claude", codexbar.ProviderHealthHealthy)
+	if state := claudeState(); state != "healthy" {
+		t.Fatalf("the finished check must land on the row, got %q", state)
+	}
+}
+
 func TestExactProviderRetryPreservesFreshFailureOverLastGoodUsage(t *testing.T) {
 	for _, status := range []string{
 		codexbar.ProviderAuthRequired,
