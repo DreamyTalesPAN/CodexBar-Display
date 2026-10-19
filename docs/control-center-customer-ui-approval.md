@@ -7562,3 +7562,11 @@ issue scope, or release permission never implies UI permission.
 - Visible text: `starting background service` → `starting the Mac App` (Windows: `starting the app`); `reading provider usage on this Mac` / `…on this computer` (welcome step only) → `reading your AI providers`; the welcome line `scanning your WiFi` is removed; `Display Mode` → `Display mode` (title and window name); `Show one or multiple AI Providers.` → `Show one or multiple AI providers.`; provider sign-in row `Sign in to <Provider>` + arrow button → `Sign in needed ↗` (decided for Paul by the communicator, 19.10.).
 - Scope: `apps/control-center/src/components/setup/*` (wizard frame, welcome, device, providers, display mode, theme, live, help menu, log, cards, provider row, preview gallery), `setup-event-log.tsx` (calm variant used by the Setup Help menu only), `control-center-app.tsx` (welcome log lines), `scripts/test-customer-flows.mjs` and `docs/customer-setup.md` (the changed words), and the matching tests. Settings and the Logs screen keep their look.
 - What's new: none — look and the words above only. Not in this PR: the 3D VibeTV on "Your VibeTV is live" and the 3D device picture on the device cards (wait for #784), theme screenshots in the Display mode cards, and the dialog redesign.
+
+## 2026-10-19 — Setup master match: customer-flow script follows the Windows welcome words (group #780)
+
+- User approval: pending — Paul reviews (Setup matched to the approved master design "Calm Redesign - alle Screens", 19.10.)
+- Approved customer-visible result: none yet; no visible change beyond the entry above.
+- Visible text: none changed.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` only (the Windows welcome check now waits for `starting the app`, the first line that differs by host).
+- What's new: none — test script only
