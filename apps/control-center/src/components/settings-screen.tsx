@@ -401,7 +401,7 @@ export function SettingsScreen({
                   className={
                     standbyDetailsDisabled
                       ? "pointer-events-none inline-block py-1 text-sm font-normal text-foreground underline underline-offset-4 opacity-50"
-                      : "inline-block py-1 text-sm font-normal text-foreground underline underline-offset-4 hover:text-[var(--vibetv-support)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                      : "inline-block py-1 text-sm font-normal text-foreground underline underline-offset-4 hover:text-[var(--vibetv-support)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   }
                   href="#screensavers"
                   onClick={(event) => {
@@ -441,7 +441,7 @@ export function SettingsScreen({
             <button
               aria-label={label}
               aria-pressed={connectionMode === mode}
-              className="grid w-full grid-cols-[16px_minmax(0,1fr)] items-start gap-3 rounded-md text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
+              className="grid w-full grid-cols-[16px_minmax(0,1fr)] items-start gap-3 rounded-md text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
               disabled={connectionModeDisabled || !supported}
               key={mode}
               onClick={() => {
