@@ -391,13 +391,13 @@ describe("SetupProvidersScreen", () => {
       onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
       pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
-    expect(within(screen.getByRole("dialog")).getByText("GitHub Copilot")).toBeTruthy();
+    expect(within(screen.getByRole("dialog")).getByText("GitHub Copilot needs its own app")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "OK" }));
     expect(within(screen.getByRole("dialog")).getByText("OpenAI")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "OK" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Show provider message for GitHub Copilot" }));
-    expect(within(screen.getByRole("dialog")).getByText("GitHub Copilot")).toBeTruthy();
+    expect(within(screen.getByRole("dialog")).getByText("GitHub Copilot needs its own app")).toBeTruthy();
   });
 
   // The Companion can start the sign-in of these four only; every other
@@ -429,7 +429,9 @@ describe("SetupProvidersScreen", () => {
     expect(dialog.queryByText("No available fetch strategy for copilot.")).toBeNull();
     expect(dialog.queryByRole("button", { name: /Copy provider message/ })).toBeNull();
     expect(dialog.getAllByRole("button").map((button) => button.textContent))
-      .toEqual(["OK", "Open setup guide"]);
+      .toEqual(["Close", "Open setup guide"]);
+    // Frame 39 of the template: "<Provider> needs its own app", Close beside the guide.
+    expect(dialog.getByRole("heading", { name: "GitHub Copilot needs its own app" })).toBeTruthy();
     fireEvent.click(dialog.getByRole("button", { name: "Open setup guide" }));
     expect(onOpenSetupGuide).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -441,16 +443,18 @@ describe("SetupProvidersScreen", () => {
     const timedOut = provider({ providerId: "copilot", label: "GitHub Copilot",
       health: "timeout", message: "The provider check timed out." });
     const signedOut = { ...copilot, value: true };
-    for (const [item, guide, sentence] of [
-      [claudeSignedOut, vi.fn(), "Sign in to Claude so VibeTV can read its usage."],
-      [timedOut, vi.fn(), "GitHub Copilot did not answer in time, and VibeTV tries again by itself."],
-      [signedOut, undefined, "VibeTV reads GitHub Copilot usage from GitHub Copilot's own app, so make sure it is installed and signed in on this computer."],
+    for (const [item, guide, sentence, title] of [
+      [claudeSignedOut, vi.fn(), "Sign in to Claude so VibeTV can read its usage.", "Claude"],
+      // Only the own-app case is drawn in the template; the others keep the provider's name.
+      [timedOut, vi.fn(), "GitHub Copilot did not answer in time, and VibeTV tries again by itself.", "GitHub Copilot"],
+      [signedOut, undefined, "VibeTV reads GitHub Copilot usage from GitHub Copilot's own app, so make sure it is installed and signed in on this computer.", "GitHub Copilot needs its own app"],
     ] as const) {
       const { unmount } = renderDom(<SetupProvidersScreen usage={usage} providers={[item]}
         onOpenSetupGuide={guide} onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
         pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
       const dialog = within(screen.getByRole("dialog"));
       expect(dialog.getByText(sentence)).toBeTruthy();
+      expect(dialog.getByRole("heading", { name: title })).toBeTruthy();
       expect(dialog.queryByRole("button", { name: "Open setup guide" })).toBeNull();
       unmount();
     }
