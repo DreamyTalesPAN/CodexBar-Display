@@ -9116,7 +9116,6 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in this branch's entries and main's entries; the key dialog in Settings has no X (calm A2 dialogs have none).
 - Scope: the merge of main, `apps/control-center/src/components/theme-studio/openai-key-form.tsx` (one prop), `apps/control-center/src/components/settings-screen.test.tsx` (7 sections incl. Theme Studio AI) and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
-<<<<<<< HEAD
 ## 2026-10-19 — Calm Updates screen as drawn in the approved master, plus the states derived from the calm rules (#752)
 - User approval: pending — Paul reviews (Updates built as drawn in the approved master + derived states, decided by the communicator 19.10.)
 - Approved customer-visible result: none yet; waits for Paul's yes. Before: two cards "Mac App" and "VibeTV" with Installed / Available version chips, "Last checked <date, time with seconds>" per card, an "Alert" box for the Mac-App-first rule and the update progress, a heading "Up to date" with a "What's new" link, and one full-width lime button ("Check for updates" / "Update"). After: one headline with a dot ("Everything is up to date", "Update available", "Checking for updates", "Update check failed", "Updating VibeTV", "VibeTV is restarting"); one framed card with a row "Mac App" ("App" on Windows) and a row "VibeTV firmware", each with an icon, one version number (the installed one) and "Up to date"; "Checked today, 08:44" (or "yesterday" / the date) and an outline "Check for updates" button beside the page title; a grey "What's new in <version>" note card with the newest entry's title and "Read notes" (opens the existing What's new dialog). Update available: the row that has the update shows a lime "Update" button (Mac App: Sparkle updater or verified download; firmware: starts the update) and says "Version <x> is available"; the firmware row keeps "Update Mac App first" / "Checking Mac App" inside its row while the app comes first. Installing: a thin progress bar and one "> step" line (shared process steps) inside the firmware row. Update complete / attention: title and sentence inside the firmware row. Failed check: a dialog "Could not check for updates" with "Check the internet connection, then try again.", a lime "Try again" and "Close" (no X); the failed update dialog is unchanged.
@@ -9626,8 +9625,6 @@ issue scope, or release permission never implies UI permission.
 - User approval: pending — Paul reviews (#802 matched to the approved template, build 2 QA); look unchanged except, each one before → after: (1) the lime Create button is 36 px high with 17 px sides → before 44 px high; (2) the cards in the list stand 24 px apart sideways and 28 px apart downwards and are 275 px wide → before 10 px apart both ways and 284 px wide; (3) the theme preview dialog is 520 px wide, shows the picture 240 px wide, and its Close button is a plain text button → before 440 px, a picture as wide as the dialog, and a lime Close button.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/theme-library-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
-=======
->>>>>>> origin/claude/appearance-one-page
 
 ## 2026-10-19 — #784: Support page matched to the template (build 2 QA)
 
@@ -9667,8 +9664,6 @@ issue scope, or release permission never implies UI permission.
 - User approval: pending — Paul reviews (#784 matched to the approved template, build 2 QA); look unchanged except, each one before → after: the dialog "VibeTV Control Center needs attention" is 480 px wide, so Restart Control Center and Try automatic repair again stand side by side → before 440 px wide with the two buttons one under the other.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/setup/setup-recovery-dialogs.tsx` and this approval record. Pull request branch only, not merged, not released.
-<<<<<<< HEAD
-=======
 - What's new: none — no new content
 
 ## 2026-10-19 — Appearance: one page with type switch, search, filters and one Create button (#790, #791, #792, #794)
@@ -9697,7 +9692,6 @@ issue scope, or release permission never implies UI permission.
 - User approval: pending — Paul reviews (Codex review fix, tests and flow script only); no visible change: the display preference test and the customer flow reach the Themes segment of Appearance, as the other flows already do.
 - Approved customer-visible result: none; no visible change.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs`, `apps/control-center/src/components/control-center-app.display-preferences.test.tsx` and this approval record. Pull request branch only, not merged, not released.
->>>>>>> origin/claude/appearance-one-page
 - What's new: none — no new content
 
 ## 2026-10-19 — #780: Setup selected-card ring matched to the template (build 2 QA)
