@@ -52,7 +52,7 @@ describe("Gauge 2.0 theme pack", () => {
     expect(manifest).toMatchObject({ usage: "live", assets: [], minFirmware: "1.0.50", version: "0.2.0" });
     expect(manifest.requiredCapabilities).toEqual(["usage-slots-v1", "color-stops-v1", "progress-arc-v1", "usage-pace-v1"]);
     // Two letters, so no theme a customer saves can share the file name.
-    expect(manifest.themeSpec.path).toMatch(/^\/themes\/u\/ga-4-[0-9a-f]{8}\.json$/);
+    expect(manifest.themeSpec.path).toMatch(/^\/themes\/u\/ga-5-[0-9a-f]{8}\.json$/);
     expect(manifest.themeSpec.bytes).toBe(Buffer.byteLength(rawSpec));
     expect(pack.specPath).toBe(manifest.themeSpec.path);
   });
