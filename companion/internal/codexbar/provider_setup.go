@@ -42,7 +42,7 @@ const (
 	ProviderTimeout          = "timeout"
 	// ProviderRateLimited: the provider's own usage endpoint refused this
 	// check for being too frequent. The sign-in is fine and nothing needs
-	// repairing, so the only correct advice is to wait and check again.
+	// repairing, so the only correct advice is to wait.
 	// Anthropic answers 429 during first-run setup, and routing that into
 	// engine_error told customers to repair a healthy usage service.
 	ProviderRateLimited = "rate_limited"
@@ -265,7 +265,7 @@ func initializeConfigFile(path, bin string) (bool, error) {
 		"json",
 	)
 	if err != nil {
-		return false, fmt.Errorf("render CodexBar default config: %w", err)
+		return false, fmt.Errorf("render CodexBar default config: %w", engineRunError{err})
 	}
 	if !json.Valid(raw) {
 		return false, errors.New("CodexBar default config is not valid JSON")
@@ -282,7 +282,7 @@ func initializeConfigFile(path, bin string) (bool, error) {
 		"--format",
 		"json",
 	); err != nil {
-		return false, fmt.Errorf("validate CodexBar default config: %w", err)
+		return false, fmt.Errorf("validate CodexBar default config: %w", engineRunError{err})
 	}
 	// A hard link publishes without replacing a config another process may
 	// have created while CodexBar was rendering its defaults.
@@ -294,6 +294,14 @@ func initializeConfigFile(path, bin string) (bool, error) {
 	}
 	return true, nil
 }
+
+// engineRunError marks a failed run of CodexBar while it renders or checks the
+// first config, as opposed to a failure to write the config file.
+type engineRunError struct{ err error }
+
+func (e engineRunError) Error() string { return e.err.Error() }
+
+func (e engineRunError) Unwrap() error { return e.err }
 
 func runConfigBootstrapCommand(
 	ctx context.Context,
@@ -409,14 +417,16 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 	result.Engine.ConfigPath = configPath
 	result.Engine.Writable = configErr == nil
 	if configErr != nil {
-		// The first config is rendered by CodexBar itself under a time limit.
-		// Running out of it on a busy computer says nothing about the settings.
-		status := ProviderConfigError
-		if cutShort(configErr) {
-			status = ProviderTimeout
+		// The first config is rendered by CodexBar itself. A CodexBar run that
+		// fails takes the inventory's rule (#527); only a file that cannot be
+		// written or read is a settings error.
+		status, detail := ProviderConfigError, configErr.Error()
+		var run engineRunError
+		if errors.As(configErr, &run) {
+			status, detail = engineFailure(nil, run.err, nil)
 		}
 		row := providerResult("codexbar", status)
-		row.Cause = "config bootstrap: " + configErr.Error()
+		row.Cause = "config bootstrap: " + detail
 		result.Engine.Status = status
 		result.Providers = []ProviderReadiness{row}
 		return result
@@ -530,16 +540,22 @@ func cutShort(err error) bool {
 // A call that was cut short, could not start or answered anything else is not
 // a settings error -- every such failure used to be reported as one.
 func inventoryFailure(raw []byte, runErr, parseErr error) (status, cause string) {
+	status, detail := engineFailure(raw, runErr, parseErr)
+	return status, "inventory: " + detail
+}
+
+// engineFailure is the one rule for a CodexBar call that gave no usable answer.
+func engineFailure(raw []byte, runErr, parseErr error) (status, detail string) {
 	if message := engineSettingsError(raw, runErr); message != "" {
-		return ProviderConfigError, "inventory: " + message
+		return ProviderConfigError, message
 	}
 	if cutShort(runErr) {
-		return ProviderTimeout, "inventory: " + runErr.Error()
+		return ProviderTimeout, runErr.Error()
 	}
 	if runErr == nil {
 		runErr = parseErr
 	}
-	return ProviderEngineError, "inventory: " + commandErrorDetail(runErr)
+	return ProviderEngineError, commandErrorDetail(runErr)
 }
 
 // engineSettingsError returns CodexBar's own settings failure, or "".
@@ -964,7 +980,7 @@ func providerDisplayName(id string) string {
 	if name, ok := providerDisplayNames[id]; ok {
 		return name
 	}
-	return humanLabel(id)
+	return HumanLabel(id)
 }
 
 // providerSignInSentence is the signed-out sentence of a provider.
@@ -995,17 +1011,17 @@ func providerResultWithSignIn(id, status, signInURL string) ProviderReadiness {
 		result.Detail = "Usage data is available."
 	case ProviderAuthRequired:
 		result.Detail = providerSignInSentence(id, label)
-		result.NextAction = "Sign in to this provider, then check again."
+		result.NextAction = "Sign in to this provider."
 	case ProviderBrowserSignInRequired:
 		host := signInHost(signInURL)
 		result.Detail = "Sign in to " + label + " in your browser, then close the browser."
-		result.NextAction = "Sign in to " + host + " in your browser, close the browser, then check again."
+		result.NextAction = "Sign in to " + host + " in your browser, close the browser."
 		result.SignInURL = signInURL
 	case ProviderPermissionRequired:
 		result.Detail = "Allow access on this computer so VibeTV can read " + label + " usage."
-		result.NextAction = "Allow the requested macOS permission, then check again."
+		result.NextAction = "Allow the requested macOS permission."
 		if providerCopyGOOS == "windows" {
-			result.NextAction = "Allow the requested access, then check again."
+			result.NextAction = "Allow the requested access."
 		}
 	case ProviderUnsupported:
 		// No sign-in wording: the account cannot use this provider at all, so
@@ -1018,16 +1034,16 @@ func providerResultWithSignIn(id, status, signInURL string) ProviderReadiness {
 		result.NextAction = "Choose another provider that exposes usage limits."
 	case ProviderTimeout:
 		result.Detail = label + " did not answer in time, and VibeTV tries again by itself."
-		result.NextAction = "Confirm the provider sign-in, then check again."
+		result.NextAction = "Confirm the provider sign-in."
 	case ProviderRateLimited:
 		result.Detail = "Nothing to fix: " + label + " is busy right now, and VibeTV tries again by itself."
 		result.NextAction = RateLimitedNextAction
 	case ProviderConfigError:
 		result.Detail = providerCouldNotReadSentence(label)
-		result.NextAction = "Repair the usage service, then check again."
+		result.NextAction = "Repair the usage service."
 	case ProviderEngineIncompatible:
 		result.Detail = "The usage engine is too old and needs a repair."
-		result.NextAction = "Repair the usage engine, then check again."
+		result.NextAction = "Repair the usage engine."
 	case ProviderNotConfigured:
 		// The popup's sentence for this state (setup_required). The usage
 		// engine row keeps the setup-level sentence (engineRowDetail).
@@ -1035,7 +1051,7 @@ func providerResultWithSignIn(id, status, signInURL string) ProviderReadiness {
 		result.NextAction = "Open provider setup and connect an AI provider."
 	default:
 		result.Detail = providerCouldNotReadSentence(label)
-		result.NextAction = "Check this provider, then try again."
+		result.NextAction = "Wait a moment."
 	}
 	if id == "codexbar" {
 		// The engine row is not a provider: it keeps the sentences it had.

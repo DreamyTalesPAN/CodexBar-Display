@@ -49,11 +49,9 @@ try {
   await page.getByRole("button", { name: "Select Hello 10", exact: true }).waitFor();
   const canvas = page.getByRole("region", { name: "Design canvas", exact: true });
   const idea = page.getByLabel("Your idea", { exact: true });
-  const openTools = async () => page.getByRole("button",{name:"Design settings",exact:true}).click();
+  const openTools = async () => page.getByRole("button",{name:"File",exact:true}).click();
   async function snapshot() {
     if (!await page.getByRole("dialog").count()) await openTools();
-    const details = page.getByRole("button", { name: "Import & export", exact: true });
-    if (await details.getAttribute("aria-expanded") !== "true") await details.click();
     const download = page.waitForEvent("download");
     await page.getByRole("button", { name: "Download editable design", exact: true }).click();
     const file = await download;

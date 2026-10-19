@@ -72,6 +72,48 @@ describe("ControlCenterShell", () => {
     expect(onTabChange).not.toHaveBeenCalledWith("settings");
   });
 
+  // Clicking the tab that is already open is a request to start over at its
+  // top; the page does not change tab, so only the click can move it back.
+  it("scrolls to the top when the current sidebar entry is clicked again", () => {
+    vi.stubGlobal("matchMedia", () => ({
+      matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }));
+    const onTabChange = vi.fn();
+    const { getByRole } = render(
+      <TooltipProvider>
+        <ControlCenterShell activeTab="settings" onTabChange={onTabChange}>
+          <div>Content</div>
+        </ControlCenterShell>
+      </TooltipProvider>,
+    );
+    const page = document.documentElement;
+    page.scrollTop = 1086;
+    fireEvent.click(getByRole("button", { name: "Settings" }));
+    expect(page.scrollTop).toBe(0);
+    expect(onTabChange).toHaveBeenCalledWith("settings");
+  });
+
+  // Codex review of #677: Appearance is open and its entry is clicked again;
+  // the submenu toggles and the page starts over at the top.
+  it("scrolls the open Appearance entry to the top when it is clicked again", () => {
+    vi.stubGlobal("matchMedia", () => ({
+      matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }));
+    const onTabChange = vi.fn();
+    const { getByRole } = render(
+      <TooltipProvider>
+        <ControlCenterShell activeTab="theme-library" onTabChange={onTabChange}>
+          <div>Content</div>
+        </ControlCenterShell>
+      </TooltipProvider>,
+    );
+    const page = document.documentElement;
+    page.scrollTop = 1086;
+    fireEvent.click(getByRole("button", { name: "Appearance" }));
+    expect(page.scrollTop).toBe(0);
+    expect(onTabChange).toHaveBeenCalledWith("theme-library");
+  });
+
   it("does not duplicate transient device status in the header", () => {
     const html = renderToStaticMarkup(
       <TooltipProvider>

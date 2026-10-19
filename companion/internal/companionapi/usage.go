@@ -88,6 +88,10 @@ type usageProviderInfo struct {
 	TokenStatsCollectedAt time.Time                `json:"-"`
 	Pace                  []usagePaceInfo          `json:"pace,omitempty"`
 	UsageOverTime         []usageOverTimePointInfo `json:"usageOverTime,omitempty"`
+
+	// NeverRead: no usage reading has ever arrived for this provider. Its
+	// zeros are unknown, not used, so a display mode change must not flip them.
+	NeverRead bool `json:"-"`
 }
 
 type usageWindowInfo struct {
@@ -532,6 +536,7 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 	if id == "" {
 		return usageProviderInfo{}, false
 	}
+	neverRead := snapshot.NoReading || snapshot.CollectedAt.IsZero()
 	return usageProviderInfo{
 		ID:                    id,
 		Label:                 usageProviderLabel(id, frame.Label),
@@ -560,6 +565,7 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 		TokenStatsCollectedAt: snapshot.TokenStatsCollectedAt,
 		Pace:                  usagePaceFromMeta(snapshot.Meta),
 		UsageOverTime:         usageOverTimeFromMeta(snapshot.Meta),
+		NeverRead:             neverRead,
 	}, true
 }
 
@@ -819,15 +825,16 @@ func usageResponseForDisplayMode(resp usageResponse, showUsed bool) usageRespons
 	for i := range resp.Providers {
 		resp.Providers[i] = usageProviderForDisplayMode(resp.Providers[i], targetMode)
 	}
-	if len(resp.Providers) == 0 {
-		resp.UsageMode = targetMode
-	} else {
-		resp.UsageMode = usageModeForProviders(resp.Providers)
-	}
+	resp.UsageMode = targetMode
 	return resp
 }
 
 func usageProviderForDisplayMode(provider usageProviderInfo, targetMode string) usageProviderInfo {
+	if provider.NeverRead {
+		// No reading yet: the zeros are unknown, so there is nothing to flip and
+		// no direction to claim. A "remaining" mode would read 0 as real usage.
+		return provider
+	}
 	currentMode := usageModeOrDefault(provider.UsageMode)
 	if currentMode != targetMode {
 		provider.Session = 100 - clampUsagePercent(provider.Session)

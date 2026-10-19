@@ -31,7 +31,7 @@ func incompatibleEngineSetup() codexbar.ProviderSetup {
 		Providers: []codexbar.ProviderReadiness{{
 			ID: "codexbar", Label: "Usage service", Status: codexbar.ProviderEngineIncompatible,
 			Detail:     "Usage engine 0.17 is too old. Version 0.23 or newer is required.",
-			NextAction: "Repair the usage engine, then check again.",
+			NextAction: "Repair the usage engine.",
 		}},
 	}
 }
@@ -176,7 +176,7 @@ func TestProviderRetryLogsIncompatibleEngineOnce(t *testing.T) {
 	engine, provider := got.Events[0], got.Events[1]
 	if engine.Stage != "usage_engine" || engine.Status != "failed" || engine.Code != codexbar.ProviderEngineIncompatible ||
 		engine.Message != "Usage engine 0.17 is too old. Version 0.23 or newer is required." ||
-		engine.NextAction != "Repair the usage engine, then check again." {
+		engine.NextAction != "Repair the usage engine." {
 		t.Fatalf("unexpected engine event: %+v", engine)
 	}
 	if provider.Stage != "provider_check" || provider.Code != codexbar.ProviderEngineIncompatible || provider.Count != 2 {
@@ -205,7 +205,7 @@ func TestSetupLogRecordsProviderChoicesChecksAndDisplayMode(t *testing.T) {
 		defer close(probeDone)
 		return codexbar.ProviderSetup{Status: "setup_required", Providers: []codexbar.ProviderReadiness{{
 			ID: id, Label: "Claude", Status: codexbar.ProviderAuthRequired,
-			Detail: "This provider needs an active sign-in.", NextAction: "Open provider setup, sign in again, then check this provider.",
+			Detail: "This provider needs an active sign-in.", NextAction: "Open provider setup, sign in again.",
 		}}}
 	}
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
@@ -242,7 +242,7 @@ func TestSetupLogRecordsProviderChoicesChecksAndDisplayMode(t *testing.T) {
 
 	want := []setupEvent{
 		{Stage: "provider_choice", Status: "succeeded", Message: "Claude turned on."},
-		{Stage: "provider_check", Status: "failed", Message: "Claude: This provider needs an active sign-in.", Code: codexbar.ProviderAuthRequired, NextAction: "Open provider setup, sign in again, then check this provider."},
+		{Stage: "provider_check", Status: "failed", Message: "Claude: This provider needs an active sign-in.", Code: codexbar.ProviderAuthRequired, NextAction: "Open provider setup, sign in again."},
 		{Stage: "display_mode", Status: "failed", Message: "Always show needs one provider.", Code: "provider_display_fixed_invalid", NextAction: "Choose exactly one provider to show."},
 		{Stage: "display_mode", Status: "succeeded", Message: "Always show Codex."},
 		{Stage: "provider_choice", Status: "succeeded", Message: "Claude turned off."},
@@ -756,6 +756,34 @@ func TestSetupLogFilesAScreensaverInstallUnderItsOwnStage(t *testing.T) {
 	t.Setenv(themeInstallDisableEnv, "1")
 	if got := filed(install("screensaver", nil)); got != "screensaver_install/started/Installing screensaver. | screensaver_install/failed" {
 		t.Fatalf("refused screensaver install was filed as %s", got)
+	}
+}
+
+// Issue #579: the setup log said "Installing theme." without the name of the
+// theme, while Recent activity names it. The start line names it too.
+func TestSetupLogNamesTheThemeBeingInstalled(t *testing.T) {
+	device := newThemeInstallReadyDeviceServer(t)
+	defer device.Close()
+
+	for _, tc := range []struct{ slot, body, want string }{
+		{"live", `{"themeId":"gauge","themeName":"Gauge","packUrl":"https://example.com/gauge.zip","async":true}`, "Installing Gauge."},
+		{"screensaver", `{"themeId":"stars","themeName":"Starfield","packUrl":"https://example.com/stars.zip","slot":"screensaver","async":true}`, "Installing Starfield."},
+	} {
+		server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+		server.installTheme = func(_ context.Context, opts themeinstall.Options) (themeinstall.Result, error) {
+			return themeinstall.Result{ThemeID: opts.ThemeID, Slot: opts.Slot}, nil
+		}
+		req := httptest.NewRequest(http.MethodPost, "/v1/themes/install", strings.NewReader(tc.body))
+		req.Header.Set("Content-Type", "application/json")
+		server.Handler().ServeHTTP(httptest.NewRecorder(), req)
+		var events []setupEvent
+		for attempt := 0; attempt < 100 && len(events) < 2; attempt++ {
+			time.Sleep(10 * time.Millisecond)
+			events = getSetupLog(t, server).Events
+		}
+		if len(events) != 2 || events[0].Message != tc.want {
+			t.Fatalf("install in slot %q was logged as %+v, want the start line %q", tc.slot, events, tc.want)
+		}
 	}
 }
 

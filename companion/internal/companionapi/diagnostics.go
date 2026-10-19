@@ -297,7 +297,7 @@ func appendDisplayStreamDiagnostic(checks []diagnosticCheck, stream *displayStre
 			Status:     "attention",
 			Detail:     stream.Detail,
 			ErrorCode:  "provider_setup_required",
-			NextAction: "Finish AI setup in the Mac App, then click Check again.",
+			NextAction: "Finish AI setup in the Mac App.",
 		})
 	}
 	return append(checks, diagnosticCheck{

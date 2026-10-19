@@ -631,7 +631,7 @@ func (s *Server) handleProviderSignIn(w http.ResponseWriter, r *http.Request) {
 	providerID := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("provider")))
 	if url := s.providerSignInURL(providerID); url != "" {
 		if err := openProviderSignInFn(url); err != nil {
-			writeError(w, http.StatusInternalServerError, "provider_sign_in_failed", "The browser could not be opened.", "Open "+url+" in your browser, sign in, then check again.")
+			writeError(w, http.StatusInternalServerError, "provider_sign_in_failed", "The browser could not be opened.", "Open "+url+" in your browser, sign in.")
 			return
 		}
 		if !s.useBrowserCookies(w, providerID) {
@@ -643,13 +643,13 @@ func (s *Server) handleProviderSignIn(w http.ResponseWriter, r *http.Request) {
 	home, _ := os.UserHomeDir()
 	plan, ok := planProviderSignIn(providerID, runtime.GOOS, home, exec.LookPath, fileExists)
 	if !ok {
-		writeError(w, http.StatusNotFound, "provider_sign_in_unavailable", "This provider has no sign-in VibeTV can start.", "Sign in to the provider's app, then check again.")
+		writeError(w, http.StatusNotFound, "provider_sign_in_unavailable", "This provider has no sign-in VibeTV can start.", "Sign in to the provider's app.")
 		return
 	}
 	if err := launchProviderSignInFn(plan); err != nil {
-		nextAction := "Sign in to the provider's app, then check again."
+		nextAction := "Sign in to the provider's app."
 		if plan.URL != "" {
-			nextAction = "Open " + plan.URL + " in your browser, then check again."
+			nextAction = "Open " + plan.URL + " in your browser."
 		}
 		writeError(w, http.StatusInternalServerError, "provider_sign_in_failed", "The sign-in could not be started.", nextAction)
 		return
@@ -811,7 +811,7 @@ func providerDiagnosticCheck(setup codexbar.ProviderSetup, engine bool) diagnost
 		Status:     "attention",
 		Detail:     "No AI provider is delivering usage data yet.",
 		ErrorCode:  "provider_setup_required",
-		NextAction: "Open provider setup, connect a provider, then click Check again.",
+		NextAction: "Open provider setup, connect a provider.",
 	}
 	if len(setup.Providers) > 0 {
 		provider := setup.Providers[0]

@@ -1,12 +1,20 @@
 // Fixed-size cells and translation-only registration. No independently scaled
-// poses, guessed body rigs or edits to the background.
+// poses, guessed body rigs or edits to the background. A shift never moves a
+// pose past its cell edge: when full alignment would clip a pose (a raised arm,
+// a long tail), the frame gets the best alignment that keeps every pixel.
 export function registerCompanionFrames(frames: Uint8ClampedArray[], side = 80): Uint8ClampedArray[] {
   if (frames.length !== 8 || frames.some(p => p.length !== side * side * 4))
     throw new Error("A companion needs eight complete sprite frames.");
   const limit = Math.floor(side / 8), reference = frames[0];
   return frames.map((pixels, frame) => {
+    let left = side, right = -1, top = side, bottom = -1;
+    for (let y = 0; y < side; y++) for (let x = 0; x < side; x++) if (pixels[(y * side + x) * 4 + 3]) {
+      left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y);
+    }
+    const minX = Math.max(-limit, -left), maxX = Math.min(limit, side - 1 - right);
+    const minY = Math.max(-limit, -top), maxY = Math.min(limit, side - 1 - bottom);
     let best = Infinity, shiftX = 0, shiftY = 0;
-    for (let dy = -limit; dy <= limit; dy++) for (let dx = -limit; dx <= limit; dx++) {
+    for (let dy = minY; dy <= maxY; dy++) for (let dx = minX; dx <= maxX; dx++) {
       if (frame === 0 && (dx || dy)) continue;
       let score = 0, count = 0;
       for (let y = 4; y < side - 4; y += 2) for (let x = 4; x < side - 4; x += 2) {
@@ -25,10 +33,7 @@ export function registerCompanionFrames(frames: Uint8ClampedArray[], side = 80):
     for (let y = 0; y < side; y++) for (let x = 0; x < side; x++) {
       const a = (y * side + x) * 4;
       if (!pixels[a + 3]) continue;
-      const xx = x + shiftX, yy = y + shiftY;
-      if (xx < 0 || yy < 0 || xx >= side || yy >= side)
-        throw new Error("The generated companion needs more space around its poses. Your design is unchanged.");
-      output.set(pixels.subarray(a, a + 4), (yy * side + xx) * 4);
+      output.set(pixels.subarray(a, a + 4), ((y + shiftY) * side + x + shiftX) * 4);
     }
     return output;
   });
@@ -91,13 +96,28 @@ export function normalizeCompanionSheet(bitmap: ImageBitmap, size: number): Uint
   if (bitmap.width <= 0 || bitmap.height <= 0 || bitmap.width !== bitmap.height * 2)
     throw new Error("The companion sheet must use a 4-column, 2-row grid of square frames. Your design is unchanged.");
   const side = 80;
-  const frames = Array.from({ length: 8 }, (_, frame) => {
+  let firstFailure: unknown;
+  const cleaned = Array.from({ length: 8 }, (_, frame) => {
     const canvas = document.createElement("canvas"); canvas.width = side; canvas.height = side;
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) throw new Error("Image preparation is unavailable.");
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(bitmap, frame % 4 * bitmap.width / 4, Math.floor(frame / 4) * bitmap.height / 2, bitmap.width / 4, bitmap.height / 2, 0, 0, side, side);
-    return removeCompanionBackground(ctx.getImageData(0, 0, side, side).data, side, frame);
+    try {
+      return removeCompanionBackground(ctx.getImageData(0, 0, side, side).data, side, frame);
+    } catch (error) {
+      firstFailure ??= error;
+      return undefined;
+    }
+  });
+  // A pose whose background cannot be separated cleanly is never guessed at:
+  // it repeats the nearest clean pose (the one before it in the loop first),
+  // so one bad cell holds a pose briefly instead of failing the whole design.
+  if (cleaned.every(pixels => !pixels)) throw firstFailure;
+  const frames = cleaned.map((pixels, frame) => {
+    for (let distance = 0; !pixels; distance++)
+      pixels = cleaned[(frame - distance + 8) % 8] ?? cleaned[(frame + distance) % 8];
+    return pixels;
   });
   return registerCompanionFrames(frames, side).map(pixels => {
     const output = new Uint8ClampedArray(size * size * 4);
