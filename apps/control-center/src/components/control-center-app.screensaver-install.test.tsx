@@ -199,7 +199,7 @@ it.each([
   await wait(10);
   fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
   await wait(1);
-  fireEvent.click(screen.getByRole("button", { name: section }));
+  fireEvent.click(screen.getByRole("radio", { name: new RegExp(`^${section}`) }));
   await wait(2);
 
   const row = screen

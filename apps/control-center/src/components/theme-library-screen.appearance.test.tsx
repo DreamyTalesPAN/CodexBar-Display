@@ -1,0 +1,304 @@
+// @vitest-environment jsdom
+//
+// One Appearance page: a segment switch (All / Themes / Screensavers), a name
+// search, a Filters popover with chips, and one Create button.
+
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { useState } from "react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { ThemeProduct } from "@/lib/themes";
+import {
+  ThemeLibraryScreen,
+  type ThemeLibraryScreenProps,
+  type ThemeLibraryUsage,
+} from "./theme-library-screen";
+
+vi.mock("@/lib/theme-studio-storage", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  loadUserThemes: () => ({ ok: true, value: { themes: [] } }),
+  loadThemeStudioRecovery: () => ({ ok: true, value: null }),
+}));
+
+const created = vi.hoisted(() => ({ spec: undefined as undefined | { usage?: string } }));
+vi.mock("./theme-studio-screen", () => ({
+  ThemeStudioScreen: ({ initialTheme }: { initialTheme?: { usage?: string; packName: string } }) => {
+    created.spec = initialTheme;
+    return <p>Editor open: {initialTheme?.packName}</p>;
+  },
+}));
+
+beforeEach(() => {
+  vi.stubGlobal("fetch", async () => ({ ok: false }));
+});
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  created.spec = undefined;
+});
+
+const product = (
+  themeId: string,
+  title: string,
+  usage: "live" | "screensaver",
+  extra: Partial<ThemeProduct> & { tags?: string[] } = {},
+): ThemeProduct =>
+  ({
+    id: themeId,
+    isFree: true,
+    packSha256: "a".repeat(64),
+    packSizeBytes: 100,
+    packUrl: `https://example.com/${themeId}.zip`,
+    priceLabel: "Free",
+    source: "github-catalog",
+    themeId,
+    title,
+    usage,
+    ...extra,
+  }) as ThemeProduct;
+
+const plain = [
+  product("claude-creature", "Claude Creature", "live"),
+  product("clippy", "Clippy", "live"),
+  product("gauge", "Gauge", "live"),
+  product("night-clock", "Night Clock", "screensaver"),
+  product("reset-countdown", "Reset Countdown", "screensaver"),
+];
+
+// What a catalog with tags carries (protocol/theme_tags.json).
+const withTags = [
+  product("claude-creature", "Claude Creature", "live", { tags: ["animated", "pixel-art", "providers-1"] }),
+  product("clippy", "Clippy", "live", { tags: ["animated", "agent-states", "providers-2"] }),
+  product("gauge", "Gauge", "live", { tags: ["providers-1"] }),
+  product("night-clock", "Night Clock", "screensaver", { tags: ["clock", "providers-2"] }),
+  product("reset-countdown", "Reset Countdown", "screensaver", { tags: ["pixel-art", "providers-1"] }),
+];
+
+function Page(props: Partial<ThemeLibraryScreenProps> & { start?: ThemeLibraryUsage }) {
+  const { start = "all", ...rest } = props;
+  const [usage, setUsage] = useState<ThemeLibraryUsage>(start);
+  return (
+    <ThemeLibraryScreen
+      busyAction={null}
+      companionStatus="online"
+      device={null}
+      onInstallCustomTheme={async () => false}
+      onInstallTheme={vi.fn()}
+      onSelectTheme={vi.fn()}
+      onUsageChange={setUsage}
+      selectedThemeId=""
+      storefrontConfigured={false}
+      themeInstallEnabled={false}
+      themes={plain}
+      usage={usage}
+      {...rest}
+    />
+  );
+}
+
+const names = () =>
+  screen
+    .queryAllByRole("listitem")
+    .map((item) => within(item).getByRole("button", { name: /^Preview / }).getAttribute("aria-label"));
+
+const filtersButton = () => screen.getByRole("button", { name: /^Filters/ });
+async function openFilters() {
+  fireEvent.click(filtersButton());
+  return await screen.findByRole("group", { name: "Status" });
+}
+
+it("lists both types on All, with the count of each type in the segment", () => {
+  render(<Page />);
+  expect(screen.getByRole("radio", { name: "All 5" }).getAttribute("aria-checked")).toBe("true");
+  expect(screen.getByRole("radio", { name: "Themes 3" })).toBeTruthy();
+  expect(screen.getByRole("radio", { name: "Screensavers 2" })).toBeTruthy();
+  expect(names()).toEqual([
+    "Preview Claude Creature",
+    "Preview Clippy",
+    "Preview Gauge",
+    "Preview Night Clock",
+    "Preview Reset Countdown",
+  ]);
+  // Each card says what it is, so All is readable.
+  const items = screen.getAllByRole("listitem");
+  expect(within(items[0]).getByText("Theme")).toBeTruthy();
+  expect(within(items[3]).getByText("Screensaver")).toBeTruthy();
+});
+
+it("switches the list with the segment by click; the arrow keys move between the segments", async () => {
+  render(<Page />);
+  fireEvent.click(screen.getByRole("radio", { name: "Screensavers 2" }));
+  expect(names()).toEqual(["Preview Night Clock", "Preview Reset Countdown"]);
+  fireEvent.click(screen.getByRole("radio", { name: "Themes 3" }));
+  expect(names()).toHaveLength(3);
+  const themes = screen.getByRole("radio", { name: "Themes 3" });
+  themes.focus();
+  fireEvent.keyDown(themes, { key: "ArrowRight" });
+  await waitFor(() =>
+    expect(document.activeElement).toBe(screen.getByRole("radio", { name: "Screensavers 2" })),
+  );
+});
+
+it("shows the screensaver-off notice, with a link to Settings, only under Screensavers", () => {
+  const onOpenScreensaverSettings = vi.fn();
+  const off = { brightnessPercent: 20, enabled: false, timeoutMinutes: 10 };
+  render(<Page onOpenScreensaverSettings={onOpenScreensaverSettings} standby={off} />);
+  expect(screen.queryByText(/Screensaver is off\./)).toBeNull();
+  fireEvent.click(screen.getByRole("radio", { name: "Themes 3" }));
+  expect(screen.queryByText(/Screensaver is off\./)).toBeNull();
+  fireEvent.click(screen.getByRole("radio", { name: "Screensavers 2" }));
+  expect(screen.getByText(/Screensaver is off\./).textContent).toBe(
+    "Screensaver is off. Turn it on in Settings.",
+  );
+  fireEvent.click(screen.getByRole("link", { name: "Settings" }));
+  expect(onOpenScreensaverSettings).toHaveBeenCalledTimes(1);
+});
+
+it("searches by name only, ignoring case, and Esc clears the field", () => {
+  render(<Page themes={withTags} />);
+  const search = screen.getByRole("searchbox", { name: "Search" });
+  fireEvent.change(search, { target: { value: "CLI" } });
+  expect(names()).toEqual(["Preview Clippy"]);
+  // Tags and type words are not searched.
+  fireEvent.change(search, { target: { value: "pixel" } });
+  expect(names()).toEqual([]);
+  expect(screen.getByText("Nothing matches your search or filters.")).toBeTruthy();
+  fireEvent.keyDown(search, { key: "Escape" });
+  expect((search as HTMLInputElement).value).toBe("");
+  expect(names()).toHaveLength(5);
+});
+
+it("searches inside the chosen segment", () => {
+  render(<Page />);
+  fireEvent.click(screen.getByRole("radio", { name: "Screensavers 2" }));
+  fireEvent.change(screen.getByRole("searchbox", { name: "Search" }), { target: { value: "c" } });
+  expect(names()).toEqual(["Preview Night Clock", "Preview Reset Countdown"]);
+  fireEvent.change(screen.getByRole("searchbox", { name: "Search" }), { target: { value: "gauge" } });
+  expect(names()).toEqual([]);
+});
+
+it("offers only the Status group while the catalog carries no tags", async () => {
+  render(<Page />);
+  await openFilters();
+  expect(screen.queryByRole("group", { name: "Features" })).toBeNull();
+  expect(screen.queryByRole("group", { name: "Providers shown" })).toBeNull();
+  const status = screen.getByRole("group", { name: "Status" });
+  expect(within(status).getByRole("checkbox", { name: "Installed" })).toBeTruthy();
+  expect(within(status).getByRole("checkbox", { name: "Update available" })).toBeTruthy();
+});
+
+it("filters by status from what VibeTV holds", async () => {
+  render(
+    <Page device={{ connected: true, paired: true, ready: true, activeTheme: "clippy" }} />,
+  );
+  const status = await openFilters();
+  expect(within(status).getByRole("checkbox", { name: "Installed" }).closest("label")?.textContent).toBe(
+    "Installed1",
+  );
+  fireEvent.click(within(status).getByRole("checkbox", { name: "Installed" }));
+  expect(names()).toEqual(["Preview Clippy"]);
+});
+
+it("groups the tags, counts for the current segment, ORs within a group and ANDs across", async () => {
+  render(<Page themes={withTags} />);
+  fireEvent.click(screen.getByRole("radio", { name: "Themes 3" }));
+  await openFilters();
+  const features = screen.getByRole("group", { name: "Features" });
+  const providers = screen.getByRole("group", { name: "Providers shown" });
+  const label = (group: HTMLElement, name: string) =>
+    within(group).getByRole("checkbox", { name }).closest("label")?.textContent;
+  // Counts are for the Themes segment only.
+  expect(label(features, "Agent states")).toBe("Agent states1");
+  expect(label(features, "Animated")).toBe("Animated2");
+  expect(label(features, "Clock")).toBe("Clock0");
+  expect(label(features, "Pixel art")).toBe("Pixel art1");
+  expect(label(providers, "1 provider")).toBe("1 provider2");
+  expect(label(providers, "2 providers")).toBe("2 providers1");
+  expect(label(providers, "3 or more")).toBe("3 or more0");
+
+  // OR within a group.
+  fireEvent.click(within(features).getByRole("checkbox", { name: "Agent states" }));
+  fireEvent.click(within(features).getByRole("checkbox", { name: "Pixel art" }));
+  expect(names()).toEqual(["Preview Claude Creature", "Preview Clippy"]);
+  // AND across groups.
+  fireEvent.click(within(providers).getByRole("checkbox", { name: "2 providers" }));
+  expect(names()).toEqual(["Preview Clippy"]);
+  expect(screen.getByText("1 result")).toBeTruthy();
+  expect(filtersButton().textContent).toContain("3");
+});
+
+it("shows the picked options as chips that remove one, and Clear all removes all", async () => {
+  render(<Page themes={withTags} />);
+  await openFilters();
+  fireEvent.click(screen.getByRole("checkbox", { name: "Animated" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "2 providers" }));
+  expect(names()).toEqual(["Preview Clippy"]);
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+  expect(screen.queryByRole("group", { name: "Status" })).toBeNull();
+
+  // The chips stay under the bar when the popover is closed.
+  expect(screen.getByRole("button", { name: "Remove filter Animated" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Remove filter 2 providers" }));
+  expect(names()).toEqual(["Preview Claude Creature", "Preview Clippy"]);
+  expect(screen.queryByRole("button", { name: "Remove filter 2 providers" })).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "Clear all" }));
+  expect(names()).toHaveLength(5);
+  expect(screen.queryByRole("button", { name: /^Remove filter/ })).toBeNull();
+  expect(filtersButton().textContent).toBe("Filters");
+});
+
+it("keeps search, segment and filters working together", async () => {
+  render(<Page themes={withTags} />);
+  await openFilters();
+  fireEvent.click(screen.getByRole("checkbox", { name: "1 provider" }));
+  expect(names()).toEqual([
+    "Preview Claude Creature",
+    "Preview Gauge",
+    "Preview Reset Countdown",
+  ]);
+  fireEvent.click(screen.getByRole("radio", { name: "Screensavers 2" }));
+  expect(names()).toEqual(["Preview Reset Countdown"]);
+  fireEvent.change(screen.getByRole("searchbox", { name: "Search" }), { target: { value: "night" } });
+  expect(names()).toEqual([]);
+});
+
+it("creates a theme or a screensaver directly in its own segment", () => {
+  render(<Page start="live" />);
+  fireEvent.click(screen.getByRole("button", { name: "Create theme" }));
+  expect(screen.getByText("Editor open: New Theme")).toBeTruthy();
+  expect(created.spec?.usage).toBeUndefined();
+  cleanup();
+
+  render(<Page start="screensaver" />);
+  fireEvent.click(screen.getByRole("button", { name: "Create screensaver" }));
+  expect(screen.getByText("Editor open: New Screensaver")).toBeTruthy();
+  expect(created.spec?.usage).toBe("screensaver");
+});
+
+// Build 2 QA: the shell hides its header row while the Studio draws its own,
+// so it has to be told when the Studio opens and when the screen goes away.
+it("tells the shell while the Studio is open and resets it when the screen goes away", () => {
+  const onStudioOpenChange = vi.fn();
+  const { unmount } = render(<Page start="live" onStudioOpenChange={onStudioOpenChange} />);
+  expect(onStudioOpenChange).toHaveBeenLastCalledWith(false);
+  fireEvent.click(screen.getByRole("button", { name: "Create theme" }));
+  expect(onStudioOpenChange).toHaveBeenLastCalledWith(true);
+  unmount();
+  expect(onStudioOpenChange).toHaveBeenLastCalledWith(false);
+});
+
+it("asks Theme or Screensaver when Create is pressed on All", async () => {
+  render(<Page />);
+  fireEvent.click(screen.getByRole("button", { name: "Create" }));
+  const menu = await screen.findByRole("button", { name: "Screensaver" });
+  expect(screen.getByRole("button", { name: "Theme" })).toBeTruthy();
+  fireEvent.click(menu);
+  expect(screen.getByText("Editor open: New Screensaver")).toBeTruthy();
+  expect(created.spec?.usage).toBe("screensaver");
+});
+
+it("keeps the search, the Filters button and the segments able to wrap on a narrow window", () => {
+  render(<Page />);
+  const row = screen.getByRole("searchbox", { name: "Search" }).closest("div")!.parentElement!;
+  expect(row.className).toContain("flex-wrap");
+});
