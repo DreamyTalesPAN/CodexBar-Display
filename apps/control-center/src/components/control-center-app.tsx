@@ -611,6 +611,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // One token history notice is one occurrence: closed once, it stays closed
   // on Usage until the notice has cleared (the reset is below).
   const [usageHistoryDismissed, setUsageHistoryDismissed] = useState(false);
+  // A usage error is one occurrence too: closed once, it stays closed on Usage
+  // until the error has cleared (the reset is below, with the notice's).
+  const [usageErrorDismissed, setUsageErrorDismissed] = useState(false);
   // The computer is too starved for the usage engine to answer (#606).
   // Its start time keys the incident; null while there is none.
   const [systemBusySince, setSystemBusySince] = useState<string | null>(null);
@@ -5284,6 +5287,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setUsageHistoryDismissed(false);
     }
   }
+  // The same reset for the usage error: it comes back only after it has cleared.
+  const usageErrorShown = Boolean(usageError);
+  const [usageErrorWasShown, setUsageErrorWasShown] = useState(usageErrorShown);
+  if (usageErrorWasShown !== usageErrorShown) {
+    setUsageErrorWasShown(usageErrorShown);
+    if (!usageErrorShown) {
+      setUsageErrorDismissed(false);
+    }
+  }
   // Opened from Updates and taken away by something else, or by the window
   // moving to another page, the notice does not come back by itself: what
   // follows may be a dialog this condition does not know, as the one Updates
@@ -5748,7 +5760,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             centredDialogOpen={centredDialogOpen}
             hiddenProviderIds={hiddenUsageProviderIds}
             onDismissTokenHistory={() => setUsageHistoryDismissed(true)}
+            onDismissUsageError={() => setUsageErrorDismissed(true)}
             tokenHistoryDismissed={usageHistoryDismissed}
+            usageErrorDismissed={usageErrorDismissed}
             usage={usage}
             usageError={errorForHost(usageError, windowsHost)}
             windowsHost={windowsHost}

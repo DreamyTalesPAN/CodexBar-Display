@@ -7961,9 +7961,79 @@ issue scope, or release permission never implies UI permission.
 - Scope: `setup/setup-dialog.tsx` (non-modal dialogs, scrim off) and `usage-screen.warning-overlay.test.tsx`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — focus fix only, no new notice
 
+## 2026-10-17 — Usage: a usage error opens as an overlay dialog, not a box at the top (stacked on #745)
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect: errors are dialogs over the page, not inline text at the top; the follow-up named in #745); look unchanged except: on Usage, the box at the top of the page with the usage error title, its sentence and "Try again" → the same title, sentence and "Try again" in an overlay dialog with "OK" (and the X) to close it.
+- Approved customer-visible result: On Usage, when a usage refresh fails, the error is a dialog over the page instead of a box at its top. Its title and sentence are the same as before. Its buttons are "Try again" (it reads "Trying again" and is closed while a refresh runs) and "OK"; "OK" or the X closes it. Closed, it stays closed while the error stands, and it comes back only after the error has cleared and happens again. It waits while another centred dialog is open (runtime repair, lost VibeTV picker, usage failure, system busy, Run setup again?, What's new), and the token history notice waits until it is closed. The tiles stay usable under it. Before → after: the box at the top with the title, the sentence and "Try again" → the same title, sentence and "Try again" in an overlay dialog with "OK". Nothing else changes.
+- Scope: `apps/control-center/src/components/usage-screen.tsx`, `apps/control-center/src/components/control-center-app.tsx` (the dismissal, the wait and the reset), the tests `usage-screen.error-overlay.test.tsx` (new) and `usage-screen.test.tsx`, and this approval record. Stacked on #745; pull request branch only, not merge or release.
+- What's new: none — the same sentences in a dialog, no new capability
+
+## 2026-10-17 — Approval record: #745 merged into the stack (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the #745 branch and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-17 — Approval record: the #745 head merged into the stack again (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the current #745 head and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-17 — Approval record: the merge record above, on its own commit (no visible change)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record only moves the merge record of the entry above onto a commit of its own.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-17 — Approval record: the #745 head merged into the stack again (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the current #745 head and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-17 — Approval record: the #745 head with the #724 loading-legend fix merged into the stack (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the current #745 head and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-17 — Approval record: the merge record above, on its own commit (no visible change)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record only moves the merge record of the entry above onto a commit of its own.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-18 — Approval record: the #745 head with the loading-legend fixes merged into the stack (no visible change of its own)
+
+- User approval: pending — Paul reviews the entries above on this stack; nothing new is asked here.
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the current #745 head and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-18 — Codex review fix on #746: after OK on a usage error with no usage yet, the page shows its empty state, not a blank page
+
+- User approval: pending — Paul reviews this PR (fix of a Codex finding on #746); look unchanged except: when a usage error has no usage data behind it and the customer presses OK, the page shows the existing empty state ("No provider usage is available yet." / "Manage providers in Settings, then refresh usage.") instead of a blank page.
+- Approved customer-visible result: none beyond the existing empty state. No new text; the blank page after OK is replaced by the empty state that Usage already shows without an error.
+- Scope: `apps/control-center/src/components/usage-screen.tsx` (one condition) and `usage-screen.error-overlay.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the same empty state, no new notice
+
 ## 2026-10-18 — Usage notices: the standard dialog darkening (visible change)
 
 - User approval: pending — Paul reviews (Usage notices use the standard dialog darkening, decided by the communicator 18.10.)
 - Approved customer-visible result: none yet; Paul's yes is pending. Visible change: the page behind the token history notice is darkened like every other dialog (was: not darkened, tiles usable under it). Words and buttons unchanged.
 - Scope: `usage-screen.tsx` (token history notice: standard backdrop) and `usage-screen.warning-overlay.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — look change only, no new notice
+
+## 2026-10-18 — Usage error: the standard dialog darkening (visible change)
+
+- User approval: pending — Paul reviews (Usage notices use the standard dialog darkening, decided by the communicator 18.10.)
+- Approved customer-visible result: none yet; Paul's yes is pending. Visible change: the page behind the usage error dialog is darkened like every other dialog (was: not darkened, tiles usable under it). Words and buttons unchanged.
+- Scope: `usage-screen.tsx` (usage error: standard backdrop) and `usage-screen.error-overlay.test.tsx`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — look change only, no new notice

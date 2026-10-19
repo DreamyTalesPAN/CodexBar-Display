@@ -130,7 +130,8 @@ describe("UsageScreen", () => {
     expect(html).not.toContain("No provider usage is available yet.");
   });
 
-  it("offers a generic retry for a real usage error", () => {
+  it("does not show a real usage error as a box on the page", () => {
+    // The error is a dialog over the page (usage-screen.error-overlay.test.tsx).
     const html = renderToStaticMarkup(
       <UsageScreen
         companionStatus="online"
@@ -144,8 +145,8 @@ describe("UsageScreen", () => {
       />,
     );
 
-    expect(html).toContain("Usage needs attention.");
-    expect(html).toContain("Try again</button>");
+    expect(html).not.toContain("Usage needs attention.");
+    expect(html).not.toContain("Try again</button>");
     expect(html).not.toContain("Loading usage");
     expect(html).not.toContain("CodexBar");
   });
