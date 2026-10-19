@@ -7918,3 +7918,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged from the entries above except: the firmware "Update" stays closed while a check runs and after the Mac App check failed (as the old single button did); a theme-only update says "A theme update is available" instead of a firmware version; a firmware check that answered with neither "current" nor an update (no release for this board, not supported over this connection) shows its own message in the row and the headline "No update available" instead of "Up to date".
 - Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new feature; the Updates screen shows the entries that already exist
+
+## 2026-10-19 — Calm Updates screen: failed-check dialog waits for the notes and for a retry (#752)
+- User approval: pending — Paul reviews (Updates built as drawn in the approved master + derived states, decided by the communicator 19.10.)
+- Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged from the entries above except: the "Could not check for updates" dialog does not open while the "What's new" notice is open (it opens after the notice is closed), and not while a retry runs; a retry that succeeds leaves no dialog behind.
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/control-center-app.tsx` (passes whether the notice is open), their tests, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new feature; the Updates screen shows the entries that already exist

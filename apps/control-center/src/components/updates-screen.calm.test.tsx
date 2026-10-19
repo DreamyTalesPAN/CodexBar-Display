@@ -285,6 +285,25 @@ describe("calm Updates screen", () => {
     expect(screen.getByRole("dialog", { name: "Could not check for updates" })).toBeTruthy();
   });
 
+  it("failed check: waits while the notes are open and while a retry runs", () => {
+    const failed = {
+      ...upToDate,
+      firmwareUpdate: {
+        checkedAt: "2026-10-19T09:10:00Z",
+        status: "check_failed" as const,
+        installedFirmware: "1.0.48",
+        updateAvailable: false,
+      },
+    };
+    const view = render(<UpdatesScreen {...failed} whatsNewOpen />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    view.rerender(<UpdatesScreen {...failed} />);
+    expect(screen.getByRole("dialog", { name: "Could not check for updates" })).toBeTruthy();
+    // A retry is running: no dialog, and the Mac App's new answer does not reopen the old failure.
+    view.rerender(<UpdatesScreen {...failed} busyAction="firmware-check" />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("no dialog while everything checks fine", () => {
     render(<UpdatesScreen {...upToDate} />);
     expect(screen.queryByRole("dialog")).toBeNull();

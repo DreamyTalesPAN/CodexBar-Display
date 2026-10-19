@@ -5806,6 +5806,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             onShowWhatsNew={
               somethingElseAsks ? undefined : () => setWhatsNewReopened(true)
             }
+            whatsNewOpen={whatsNewEntries.length > 0}
             requiresMacAppMigration={requiresMacAppMigration}
             supportReportBusy={supportReportBusy}
             themeUpdateAvailable={activeThemeUpdateAvailable}

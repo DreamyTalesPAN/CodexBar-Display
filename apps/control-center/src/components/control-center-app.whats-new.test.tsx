@@ -208,6 +208,17 @@ function startWindow({
           ],
         });
       }
+      // Both update checks answer: a failed one opens its own dialog on Updates.
+      if (url.includes("/api/companion/latest") || url.includes("/api/firmware/latest")) {
+        return jsonResponse({
+          checkedAt: "2026-10-07T12:00:00Z",
+          status: url.includes("/api/firmware/latest") ? "current" : "available",
+          installedFirmware: "9999.0.524",
+          latestFirmware: "9999.0.524",
+          updateAvailable: false,
+          message: "Up to date.",
+        });
+      }
       return jsonResponse({ ok: false, error: { code: "HTTP_404" } }, 404);
     }),
   );
