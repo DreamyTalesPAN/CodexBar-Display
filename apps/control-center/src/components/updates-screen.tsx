@@ -498,7 +498,7 @@ export function UpdatesScreen({
         <CheckFailedDialog
           onClose={() => setDismissedFailedCheck(failedCheckKey)}
           onTryAgain={
-            onCheckUpdates
+            onCheckUpdates && !actionsLocked
               ? () => {
                   setRetryingFailedCheck(true);
                   return onCheckUpdates();

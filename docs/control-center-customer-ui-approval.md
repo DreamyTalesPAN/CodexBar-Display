@@ -8539,3 +8539,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-19 — #798: Codex fix, the failed-check retry waits while another action runs
+
+- User approval: pending — Paul reviews (Codex review fix); look unchanged except, before → after: while an install or another action holds the Updates page, the retry "Try again" in the "Could not check for updates" dialog is disabled → before it was enabled and could start a second check.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/updates-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
