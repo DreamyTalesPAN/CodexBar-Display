@@ -286,6 +286,25 @@ describe("calm Updates screen", () => {
     expect(screen.getByRole("dialog", { name: "Could not check for updates" })).toBeTruthy();
   });
 
+  it("a failed check outranks an available update in the headline's dot", () => {
+    const { container } = render(
+      <UpdatesScreen
+        {...upToDate}
+        companionRelease={{ ...upToDate.companionRelease!, status: "check_failed", updateAvailable: false }}
+        firmwareUpdate={{
+          checkedAt: "2026-10-19T09:10:00Z",
+          status: "update_available",
+          installedFirmware: "1.0.48",
+          latestFirmware: "1.0.50",
+          updateAvailable: true,
+        }}
+      />,
+    );
+    expect(screen.getByText("Update check failed")).toBeTruthy();
+    expect(container.querySelector("i.bg-destructive")).not.toBeNull();
+    expect(container.querySelector("i.bg-foreground")).toBeNull();
+  });
+
   it("a disabled Mac App check is never shown as up to date", () => {
     render(
       <UpdatesScreen
