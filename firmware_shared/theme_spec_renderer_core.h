@@ -245,6 +245,8 @@ struct CompiledPrimitive {
   uint16_t color = 0xFFFF;
   uint16_t bg = 0x0000;
   uint16_t border = 0x7BEF;
+  uint16_t reserveColor = 0x07E0;  // pace bar: the piece of a reserve
+  uint16_t deficitColor = 0xF800;  // pace bar: the hatch of a deficit
   bool hasBg = false;
   bool fitShrink = false;
   uint8_t colorStopCount = 0;
@@ -786,7 +788,8 @@ inline const char* RootResetUnavailableText(const FrameData& frame) {
 
 // The pace texts behind usageSlotN<suffix>. Text: "6% in reserve", "On pace",
 // "14% in deficit"; Short: "6% reserve", "on pace", "14% deficit"; Lasts:
-// "lasts until reset" or "runs out"; RunsOut: "runs out" only. Each is empty
+// "lasts until reset" or "runs out" (LastsSep: the same followed by " - ");
+// RunsOut: "runs out" only. Each is empty
 // without a pace, for a window whose countdown is gone, and for a suffix it
 // does not know (the bar's own key is a plain "Pace").
 inline void FormatBoundPace(
@@ -810,7 +813,10 @@ inline void FormatBoundPace(
                     usage_window_contract::PaceState(pace.state));
     }
   } else if (kind == 'L' && pace.lasts != 0) {
-    std::snprintf(out, outSize, "%s", pace.lasts == usage_window_contract::kPaceRunsOut ? "runs out" : "lasts until reset");
+    // LastsSep ends in " - " so "{usageSlot1PaceLastsSep}resets {usageSlot1Reset}" reads
+    // "lasts until reset - resets 3h 34m", and plain "resets 3h 34m" without a pace.
+    std::snprintf(out, outSize, pace.lasts == usage_window_contract::kPaceRunsOut ? "runs out%s" : "lasts until reset%s",
+                  std::strcmp(suffix, "LastsSep") == 0 ? " - " : "");
   } else if (kind == 'R' && pace.lasts == usage_window_contract::kPaceRunsOut) {
     std::snprintf(out, outSize, "runs out");
   }
@@ -917,6 +923,12 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
     std::snprintf(out, outSize, "%s", SafeText(frame.usageMode));
     return;
   }
+  if (std::strcmp(key, "usageModeShort") == 0) {
+    // "left" for what remains, else the mode itself ("used"): "Session left".
+    std::snprintf(out, outSize, "%s",
+                  std::strcmp(SafeText(frame.usageMode), "remaining") == 0 ? "left" : SafeText(frame.usageMode));
+    return;
+  }
   if (std::strcmp(key, "activity") == 0 || std::strcmp(key, "act") == 0) {
     std::snprintf(out, outSize, "%s", SafeText(frame.activity));
     return;
@@ -1011,9 +1023,12 @@ inline const char* TemplateCountdownOnlyText(const char* raw, const FrameData& f
     // With a slot index found, a four-character key ending in "r" is one of
     // us1r, us2r, pv1r, pv2r.
     const bool isShortReset = keyLen == 4 && key[3] == 'r';
+    // PaceLastsSep leads into the reset sentence ("lasts until reset - resets 3h"),
+    // and is empty exactly when the countdown is, so it collapses with it.
     const bool isCountdown =
         ((providerSlotIndex >= 0 || usageSlotIndex >= 0) &&
-         (isShortReset || std::strcmp(UsageWindowField(key), "reset") == 0));
+         (isShortReset || std::strcmp(UsageWindowField(key), "reset") == 0)) ||
+        (usageSlotIndex >= 0 && std::strcmp(UsageWindowField(key), "PaceLastsSep") == 0);
     if (!isCountdown) {
       // Any other substitution carries its own information.
       return nullptr;
@@ -1147,7 +1162,7 @@ inline uint32_t BindingFieldMask(const char* binding) {
            (UsageWindowKeyFollowsReset(binding) ? kThemeSpecFieldUsageWindowReset : 0) |
            (UsageWindowKeyShowsPace(binding) ? kThemeSpecFieldUsageWindowPace : 0);
   }
-  if (StringEqualsAny(binding, "usageMode", "u")) {
+  if (StringEqualsAny(binding, "usageMode", "u", "usageModeShort")) {
     return kThemeSpecFieldUsageMode;
   }
   if (StringEqualsAny(binding, "activity", "act")) {
@@ -1539,6 +1554,8 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
     out.color = ParseColor(JsonStringFor(primitive, "color", "c"), 0xFFFF);
     out.bg = ParseColor(JsonStringFor(primitive, "bgColor", "bg"), 0x0000);
     out.border = ParseColor(JsonStringFor(primitive, "borderColor", "bc"), 0x7BEF);
+    out.reserveColor = ParseColor(JsonStringFor(primitive, "reserveColor", "rc"), 0x07E0);
+    out.deficitColor = ParseColor(JsonStringFor(primitive, "deficitColor", "dc"), 0xF800);
     if (!CompileProgressColorStops(primitive, out)) {
       return false;
     }
@@ -1892,7 +1909,7 @@ inline PaceBar PaceBarFor(const CompiledPrimitive& primitive, const FrameData& f
   }
   const bool used = std::strcmp(SafeText(frame.usageMode), "used") == 0;
   bar.planAt = ClampPct(percent + (used ? -pace->delta : pace->delta));
-  bar.pieceColor = ResolvePaceColor(primitive, frame);
+  bar.pieceColor = pace->state == usage_window_contract::kPaceDeficit ? primitive.deficitColor : primitive.reserveColor;
   bar.hatched = pace->state == usage_window_contract::kPaceDeficit;
   if (pace->state != usage_window_contract::kPaceOnPace) {
     bar.fillTo = percent < bar.planAt ? percent : bar.planAt;
@@ -2206,10 +2223,8 @@ inline bool DrawCompiledPrimitive(
       return false;
     }
     const int percent = CompiledProgressPercentFor(primitive, frame);
-    const bool paceBar = IsPaceBarBinding(primitive.binding);
     const PaceBar pace = PaceBarFor(primitive, frame, percent);
-    const uint16_t fillColor =
-        paceBar ? primitive.color : ResolveProgressFillColor(primitive, percent, frame.usageMode);
+    const uint16_t fillColor = ResolveProgressFillColor(primitive, percent, frame.usageMode);
     if (primitive.style == kProgressStyleArc) {
       DrawProgressArc(primitive, pace, fillColor, sink);
       return true;

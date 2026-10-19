@@ -90,6 +90,10 @@ type Primitive struct {
 	ShortBg             string            `json:"bg,omitempty"`
 	BorderColor         string            `json:"borderColor,omitempty"`
 	ShortBorder         string            `json:"bc,omitempty"`
+	ReserveColor        string            `json:"reserveColor,omitempty"`
+	ShortReserve        string            `json:"rc,omitempty"`
+	DeficitColor        string            `json:"deficitColor,omitempty"`
+	ShortDeficit        string            `json:"dc,omitempty"`
 	BorderRadius        int               `json:"borderRadius,omitempty"`
 	ShortRadius         int               `json:"br,omitempty"`
 	AssetPath           string            `json:"assetPath,omitempty"`
@@ -410,10 +414,12 @@ func specUsesProgressArc(spec Spec) bool {
 // Older firmware renders an unknown usage window key as that window's
 // percent, so a pace binding must never reach it. The firmware reads any
 // usage window key containing "Pace" as pace (usageSlot1PaceDelta,
-// us1PaceDelta, usage.1.PaceDelta), so every such key counts here too.
+// us1PaceDelta, usage.1.PaceDelta), so every such key counts here too, and so
+// does usageModeShort, which only pace themes use ("Session left").
 func specUsesUsagePace(spec Spec) bool {
 	for _, primitive := range spec.Primitives {
-		if strings.Contains(primitive.Binding, "Pace") || usagePaceTextKey.MatchString(primitive.Text) {
+		if strings.Contains(primitive.Binding, "Pace") || primitive.Binding == "usageModeShort" ||
+			usagePaceTextKey.MatchString(primitive.Text) || strings.Contains(primitive.Text, "{usageModeShort}") {
 			return true
 		}
 	}
@@ -503,6 +509,8 @@ func normalizeSpec(spec Spec) Spec {
 		spec.Primitives[i].Color = strings.TrimSpace(spec.Primitives[i].Color)
 		spec.Primitives[i].BgColor = strings.TrimSpace(spec.Primitives[i].BgColor)
 		spec.Primitives[i].BorderColor = strings.TrimSpace(spec.Primitives[i].BorderColor)
+		spec.Primitives[i].ReserveColor = strings.TrimSpace(spec.Primitives[i].ReserveColor)
+		spec.Primitives[i].DeficitColor = strings.TrimSpace(spec.Primitives[i].DeficitColor)
 		spec.Primitives[i].AssetPath = strings.TrimSpace(spec.Primitives[i].AssetPath)
 		spec.Primitives[i].StateAssets = normalizeStateAssets(spec.Primitives[i].StateAssets)
 		spec.Primitives[i].ProviderAssets = normalizeProviderAssets(spec.Primitives[i].ProviderAssets)
@@ -557,6 +565,12 @@ func normalizePrimitive(p Primitive) Primitive {
 	}
 	if p.BorderColor == "" {
 		p.BorderColor = p.ShortBorder
+	}
+	if p.ReserveColor == "" {
+		p.ReserveColor = p.ShortReserve
+	}
+	if p.DeficitColor == "" {
+		p.DeficitColor = p.ShortDeficit
 	}
 	if p.BorderRadius == 0 {
 		p.BorderRadius = p.ShortRadius
@@ -823,6 +837,10 @@ func validatePrimitive(p Primitive) error {
 	if p.BorderColor != "" && !colorPattern.MatchString(p.BorderColor) {
 		return errUnsupportedColor
 	}
+	if p.ReserveColor != "" && !colorPattern.MatchString(p.ReserveColor) ||
+		p.DeficitColor != "" && !colorPattern.MatchString(p.DeficitColor) {
+		return errUnsupportedColor
+	}
 	if err := validateColorStops(p); err != nil {
 		return err
 	}
@@ -931,6 +949,10 @@ func rejectNonCanonicalInstalledValues(spec Spec) error {
 			{"bg", primitive.ShortBg},
 			{"borderColor", primitive.BorderColor},
 			{"bc", primitive.ShortBorder},
+			{"reserveColor", primitive.ReserveColor},
+			{"rc", primitive.ShortReserve},
+			{"deficitColor", primitive.DeficitColor},
+			{"dc", primitive.ShortDeficit},
 		} {
 			if err := rejectCanonicalColor(color.value, i, color.key); err != nil {
 				return err

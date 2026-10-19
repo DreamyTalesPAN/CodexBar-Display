@@ -151,15 +151,14 @@ A `text` primitive bound to a pace text (one binding, not a template) may carry
 `deficit` 0. Without a pace the solid `c` is used.
 
 A `progress` primitive bound to `usageSlot1Pace` is a pace bar, on a plain bar,
-a segmented bar (`ps: "segments"`) and a ring (`ps: "arc"`). `c` is the fill
-and `bg` the track. The fill runs to the smaller of use and plan, the piece up
-to the larger, and a 2 px white tick stands on the plan, 4 px beyond the bar or
-ring on each side (leave that room). `colorStops` colour the piece by state,
-the same way as for text: the `100` stop is the reserve colour, the `0` stop the
-deficit colour. A reserve piece is solid; a deficit piece is hatched with
-diagonal stripes in the deficit colour over the track, tinted a little towards
-the stripe colour. On pace has the tick and no piece. Without a pace it is a
-plain bar of `c` with no piece and no tick (so a pace theme still reads as a
+a segmented bar (`ps: "segments"`) and a ring (`ps: "arc"`). `c` or `cs` is the
+fill as for any bar (colour stops on the quota) and `bg` the track. The fill
+runs to the smaller of use and plan, the piece up to the larger, and a 2 px
+white tick stands on the plan, 3 px beyond the bar or ring on each side (leave
+that room). `rc` is the colour of a reserve piece (solid) and `dc` the colour of
+a deficit piece, which is hatched with diagonal stripes of `dc` over the track
+tinted a little towards `dc`. On pace has the tick and no piece. Without a pace
+it is a plain bar with no piece and no tick (so a pace theme still reads as a
 usage theme on an engine that sends no pace). A segmented bar shows the piece
 as whole segments.
 

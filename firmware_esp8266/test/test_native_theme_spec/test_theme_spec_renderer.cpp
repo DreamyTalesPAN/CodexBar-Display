@@ -4475,9 +4475,12 @@ void testUsagePaceTextsRenderCodexBarPace() {
     {"t":"tx","x":0,"y":80,"b":"usageSlot2PaceLasts"},
     {"t":"tx","x":0,"y":100,"b":"usageSlot2PaceRunsOut"},
     {"t":"tx","x":0,"y":120,"b":"usageSlot1PaceRunsOut"},
-    {"t":"tx","x":0,"y":140,"v":"{usageSlot1Percent}%"}
+    {"t":"tx","x":0,"y":140,"v":"{usageSlot1Percent}%"},
+    {"t":"tx","x":0,"y":160,"v":"{usageSlot1PaceLastsSep}resets {usageSlot1Reset}"},
+    {"t":"tx","x":0,"y":180,"v":"{usageSlot1Label} {usageModeShort}"}
   ]})JSON";
   FrameData frame;
+  frame.usageMode = "remaining";
   frame.usageSlot1Label = frame.usageWindows[0].label = "Session";
   frame.usageSlot2Label = frame.usageWindows[1].label = "Weekly";
   frame.usageSlot1Percent = frame.usageWindows[0].percent = 92;
@@ -4489,11 +4492,13 @@ void testUsagePaceTextsRenderCodexBarPace() {
 
   // No pace from CodexBar: every pace text stays empty, usage still renders.
   std::vector<std::string> none = renderedTexts(spec, frame);
-  TEST_ASSERT_EQUAL_UINT32(8, none.size());
+  TEST_ASSERT_EQUAL_UINT32(10, none.size());
   for (size_t i = 0; i < 7; ++i) {
     TEST_ASSERT_EQUAL_STRING(i == 3 ? " | " : "", none[i].c_str());
   }
   TEST_ASSERT_EQUAL_STRING("92%", none[7].c_str());
+  TEST_ASSERT_EQUAL_STRING("resets 3h 20m", none[8].c_str());
+  TEST_ASSERT_EQUAL_STRING("Session left", none[9].c_str());
 
   // Slot 1 in reserve and lasting, slot 2 in deficit and running out.
   frame.usageWindows[0].pace = {-6, 1, codexbar_display::usage_window_contract::kPaceLastsToReset};
@@ -4506,6 +4511,7 @@ void testUsagePaceTextsRenderCodexBarPace() {
   TEST_ASSERT_EQUAL_STRING("runs out", both[4].c_str());
   TEST_ASSERT_EQUAL_STRING("runs out", both[5].c_str());
   TEST_ASSERT_EQUAL_STRING("", both[6].c_str());
+  TEST_ASSERT_EQUAL_STRING("lasts until reset - resets 3h 20m", both[8].c_str());
 
   // On pace without a projection: CodexBar names no outcome, neither do we.
   frame.usageWindows[0].pace = {-1, 2, 0};
@@ -4514,12 +4520,18 @@ void testUsagePaceTextsRenderCodexBarPace() {
   TEST_ASSERT_EQUAL_STRING("on pace", onPace[1].c_str());
   TEST_ASSERT_EQUAL_STRING("", onPace[2].c_str());
 
+  // A reset sentence led by PaceLastsSep collapses with its countdown, like "Reset in {..}".
+  frame.usageSlot1ResetSecs = frame.usageWindows[0].resetSecs = 0;
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", renderedTexts(spec, frame)[8].c_str());
+  frame.usageSlot1ResetSecs = frame.usageWindows[0].resetSecs = 12000;
   // Reset boundary: once window 2's countdown is gone, so is its pace.
   frame.usageSlot2ResetSecs = frame.usageWindows[1].resetSecs = 0;
   std::vector<std::string> expired = renderedTexts(spec, frame);
   TEST_ASSERT_EQUAL_STRING(" | ", expired[3].c_str());
   TEST_ASSERT_EQUAL_STRING("", expired[4].c_str());
 
+  frame.usageMode = "used";
+  TEST_ASSERT_EQUAL_STRING("Session used", renderedTexts(spec, frame)[9].c_str());
   // An unavailable window shows no pace either.
   frame.usageSlot1Available = frame.usageWindows[0].available = false;
   TEST_ASSERT_EQUAL_STRING("", renderedTexts(spec, frame)[0].c_str());
@@ -4540,10 +4552,10 @@ std::vector<RecordedCommand> paceCommands(const char* spec, const FrameData& fra
 
 // A pace-bound text colours by CodexBar's state; a bar bound to usageSlotNPace
 // fills to the smaller of use and plan, lays the piece up to the larger, puts
-// the tick at the plan and takes the piece colour from the state.
+// the tick at the plan and takes the piece colour (rc, dc) from the state.
 void testUsagePaceColoursAndBarMarks() {
   const char* spec = R"JSON({"v":1,"id":"pace","rev":1,"p":[
-    {"t":"p","x":0,"y":0,"w":100,"h":10,"b":"usageSlot1Pace","c":"#808080","cs":[{"gte":100,"c":"#00FF00"},{"gte":0,"c":"#FF0000"}]},
+    {"t":"p","x":0,"y":0,"w":100,"h":10,"b":"usageSlot1Pace","c":"#808080","rc":"#00FF00","dc":"#FF0000"},
     {"t":"tx","x":0,"y":40,"b":"usageSlot1PaceText","c":"#808080","cs":[{"gte":100,"c":"#00FF00"},{"gte":50,"c":"#FFFF00"},{"gte":0,"c":"#FF0000"}]},
     {"t":"p","x":0,"y":60,"w":100,"h":10,"b":"usageSlot1Percent","c":"#808080","cs":[{"gte":50,"c":"#00FF00"},{"gte":0,"c":"#FF0000"}]}
   ]})JSON";
@@ -4619,7 +4631,7 @@ void testUsagePaceColoursAndBarMarks() {
 // tick is white and reaches past the ring, the hatch alternates two colours.
 void testUsagePaceArcDrawsPieceHatchAndTick() {
   const char* spec = R"JSON({"v":1,"id":"pace-arc","rev":1,"p":[
-    {"t":"p","x":20,"y":20,"w":100,"h":100,"b":"usageSlot1Pace","ps":"arc","as":0,"aw":360,"at":16,"c":"#808080","bg":"#202020","cs":[{"gte":100,"c":"#00FF00"},{"gte":0,"c":"#FF0000"}]}
+    {"t":"p","x":20,"y":20,"w":100,"h":100,"b":"usageSlot1Pace","ps":"arc","as":0,"aw":360,"at":16,"c":"#808080","bg":"#202020","rc":"#00FF00","dc":"#FF0000"}
   ]})JSON";
   FrameData frame;
   frame.usageMode = "remaining";
@@ -4642,16 +4654,16 @@ void testUsagePaceArcDrawsPieceHatchAndTick() {
   };
   // The ring's centre is (70, 70). 40% left is 144 degrees clockwise from 12
   // o'clock, the plan at 60% is 216: lower left. Bottom (180 degrees) is in the
-  // piece, the tick stands at 216 degrees across the ring and 4 px beyond it.
+  // piece, the tick stands at 216 degrees across the ring and 3 px beyond it.
   TEST_ASSERT_EQUAL_HEX16(0x8410, colourAt(110, 70));           // 90 degrees: filled
   TEST_ASSERT_TRUE(colourAt(70, 70 + 40) == 0xF800 || colourAt(70, 70 + 41) == 0xF800 ||
                    colourAt(71, 70 + 40) == 0xF800 || colourAt(69, 70 + 40) == 0xF800);  // hatch stripe
   TEST_ASSERT_EQUAL_HEX16(0xFFFF, colourAt(47, 102));            // the tick, inside the ring
-  TEST_ASSERT_EQUAL_HEX16(0xFFFF, colourAt(40, 111));            // the tick, 4 px beyond the ring (r 54 -> 58)
+  TEST_ASSERT_EQUAL_HEX16(0xFFFF, colourAt(39, 112));            // the tick, beyond the ring (outer radius 50, tick to 53)
   TEST_ASSERT_EQUAL_HEX16(0x2104, colourAt(30, 70));             // 270 degrees: track
 }
 
-// A repaint of a pace bar must clear its tick, which reaches 4 px beyond it.
+// A repaint of a pace bar must clear its tick, which reaches 3 px beyond it.
 void testUsagePaceBarRepaintCoversItsTick() {
   const char* spec = R"JSON({"v":1,"id":"pace-bounds","rev":1,"p":[
     {"t":"p","x":14,"y":78,"w":212,"h":12,"b":"usageSlot1Pace"},
@@ -4662,10 +4674,10 @@ void testUsagePaceBarRepaintCoversItsTick() {
   TEST_ASSERT_TRUE(CompileThemeSpec(spec, doc, scene));
   Bounds bounds;
   TEST_ASSERT_TRUE(CompiledPrimitiveBounds(scene, scene.primitives[0], testFrame(), false, bounds));
-  TEST_ASSERT_EQUAL_INT(10, bounds.x);
-  TEST_ASSERT_EQUAL_INT(74, bounds.y);
-  TEST_ASSERT_EQUAL_INT(220, bounds.width);
-  TEST_ASSERT_EQUAL_INT(20, bounds.height);
+  TEST_ASSERT_EQUAL_INT(11, bounds.x);
+  TEST_ASSERT_EQUAL_INT(75, bounds.y);
+  TEST_ASSERT_EQUAL_INT(218, bounds.width);
+  TEST_ASSERT_EQUAL_INT(18, bounds.height);
   TEST_ASSERT_TRUE(CompiledPrimitiveBounds(scene, scene.primitives[1], testFrame(), false, bounds));
   TEST_ASSERT_EQUAL_INT(2, bounds.x);
   TEST_ASSERT_EQUAL_INT(50, bounds.width);

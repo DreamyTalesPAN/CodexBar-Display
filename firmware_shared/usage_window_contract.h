@@ -31,7 +31,7 @@ inline const char* PaceState(uint8_t state) {
 }
 
 // How far a pace bar's plan tick reaches beyond the bar or ring it marks.
-constexpr int kPaceTickOverhang = 4;
+constexpr int kPaceTickOverhang = 3;
 
 // What CodexBar projects for a window's quota; 0: nothing.
 constexpr uint8_t kPaceRunsOut = 1;

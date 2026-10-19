@@ -1210,6 +1210,8 @@ func TestUsagePaceBindingsRequireUsagePaceCapability(t *testing.T) {
 		`{"t":"tx","x":0,"y":0,"v":"Pace {usageSlot1PaceLasts}"}`,
 		`{"t":"tx","x":0,"y":0,"b":"us1PaceRunsOut","cs":[{"gte":100,"c":"#00FF00"},{"gte":0,"c":"#FF0000"}]}`,
 		`{"t":"tx","x":0,"y":0,"v":"{usage.2.PaceText}"}`,
+		`{"t":"tx","x":0,"y":0,"v":"{usageSlot1Label} {usageModeShort}"}`,
+		`{"t":"tx","x":0,"y":0,"v":"{usageSlot1PaceLastsSep}resets {usageSlot1Reset}"}`,
 		`{"t":"p","x":0,"y":0,"w":100,"h":10,"b":"usageSlot1Pace","cs":[{"gte":100,"c":"#00FF00"},{"gte":0,"c":"#FF0000"}]}`,
 		`{"t":"p","x":0,"y":0,"w":100,"h":100,"b":"usageSlot2Pace","ps":"arc","aw":360,"at":10,"cs":[{"gte":100,"c":"#00FF00"},{"gte":0,"c":"#FF0000"}]}`,
 		`{"t":"p","x":0,"y":0,"w":100,"h":10,"b":"usageSlot2Pace","ps":"segments","s":10}`,
