@@ -131,6 +131,23 @@ function planningContext(document: ThemeStudioDocument, selected: number[] = [])
   }));
 }
 
+// A reference image while it waits in the composer or in the request: the full
+// picture for the AI, and a small thumbnail for the bubble once the turn is kept.
+type ReferenceImage = { name: string; data: string; thumb: string };
+const REFERENCE_THUMBNAIL_PX = 96;
+
+// The small picture a finished turn keeps, at most 96 px on its long side.
+function referenceThumbnail(source: HTMLCanvasElement) {
+  const scale = Math.min(1, REFERENCE_THUMBNAIL_PX / Math.max(source.width, source.height));
+  const canvas = window.document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(source.width * scale));
+  canvas.height = Math.max(1, Math.round(source.height * scale));
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Could not read this image.");
+  context.drawImage(source, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/png").split(",")[1];
+}
+
 // The customer's turn: its reference images as small thumbnails above the text.
 function userTurn(text: string | null, images: { name: string; data: string }[] = []) {
   return (
@@ -208,7 +225,7 @@ export function AIThemeStudioScreen({
   // away, and added to the conversation for good once it has an answer.
   const [asking, setAsking] = useState<string | null>(null);
   // The reference images of the request in progress, shown in its bubble.
-  const [askingImages, setAskingImages] = useState<{ name: string; data: string }[]>([]);
+  const [askingImages, setAskingImages] = useState<ReferenceImage[]>([]);
   // One status line shows the words of the step the AI is in; `at` counts the
   // swaps so each word flies in again.
   const [progress, setProgress] = useState<{ words: string[]; at: number }>({ words: [], at: 0 });
@@ -224,7 +241,7 @@ export function AIThemeStudioScreen({
   useEffect(() => {
     chatEnd.current?.scrollIntoView({ block: "nearest" });
   }, [messages, asking]);
-  const [attachments, setAttachments] = useState<{ name: string; data: string }[]>([]);
+  const [attachments, setAttachments] = useState<ReferenceImage[]>([]);
   const [attaching, setAttaching] = useState(false);
   const attachmentInput = useRef<HTMLInputElement>(null);
   const [enabled, setEnabled] = useState(false);
@@ -697,7 +714,7 @@ export function AIThemeStudioScreen({
     setError("");
     try {
       if (attachments.length + files.length > 3) throw new Error("Add up to three reference images.");
-      const images: { name: string; data: string }[] = [];
+      const images: ReferenceImage[] = [];
       for (const file of Array.from(files)) {
         if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) throw new Error("Choose a PNG, JPG or WebP image.");
         if (file.size > 10 * 1024 * 1024) throw new Error("Choose an image smaller than 10 MB.");
@@ -712,7 +729,7 @@ export function AIThemeStudioScreen({
         bitmap.close();
         const data = canvas.toDataURL("image/png").split(",")[1];
         if (data.length > Math.ceil(2 * 1024 * 1024 * 4 / 3)) throw new Error("This image is too large. Choose a smaller image.");
-        images.push({ name: file.name, data });
+        images.push({ name: file.name, data, thumb: referenceThumbnail(canvas) });
       }
       if (version === documentVersion.current) setAttachments((current) => [...current, ...images]);
     } catch (error) {
@@ -754,7 +771,9 @@ export function AIThemeStudioScreen({
     progressTo(PLANNING_WORDS);
     const reply = (content: string) => {
       replied = true;
-      setMessages((all) => [...all, ...([["user", asked], ["assistant", content]] as const).map(([role, text]) => ({ role, content: text.slice(0, 2000), createdAt: new Date().toISOString(), ...(role === "user" && images.length ? { images } : {}) }))].slice(-AI_THEME_LOCAL_HISTORY_LIMIT));
+      // The finished turn keeps only the thumbnails; the full pictures went with the request.
+      const shown = images.map(({ name, thumb }) => ({ name, data: thumb }));
+      setMessages((all) => [...all, ...([["user", asked], ["assistant", content]] as const).map(([role, text]) => ({ role, content: text.slice(0, 2000), createdAt: new Date().toISOString(), ...(role === "user" && shown.length ? { images: shown } : {}) }))].slice(-AI_THEME_LOCAL_HISTORY_LIMIT));
     };
     try {
       const capabilities = await fetchAIThemeCapabilities(controller.signal);

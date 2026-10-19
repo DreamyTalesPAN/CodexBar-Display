@@ -7690,3 +7690,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the Theme Studio AI row in Settings shows only its status ("Connected" / "Not connected") and its key button, under the section label "Theme Studio AI". The key dialog keeps its title.
 - Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx` (the row), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — refinement of #638
+
+## 2026-10-19 — #638: finished turns keep only small thumbnails (Codex review fix, no visible change)
+
+- User approval: Codex review fix, no visible change; not seen by Paul.
+- Approved customer-visible result: unchanged. The image bubble of a finished turn still shows the picture at the same 40 px size; only the kept copy is now a 96 px thumbnail instead of the full 768 px picture.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no customer-visible change
