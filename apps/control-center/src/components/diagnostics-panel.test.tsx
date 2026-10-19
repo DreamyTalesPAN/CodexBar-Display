@@ -112,6 +112,27 @@ describe("DiagnosticsPanel", () => {
     expect(repair).toHaveBeenCalledTimes(1);
   });
 
+  it("counts the passed checks and offers Fix only where the app can repair", () => {
+    const repair = vi.fn();
+    show(
+      {
+        checks: [
+          { name: "companion_api", status: "pass", detail: "Companion API is running." },
+          { name: "usage_engine", status: "fail", detail: "Usage engine 0.17.0 is too old.", nextAction: "Repair the usage engine, then check again." },
+          { name: "device_hello", status: "attention", detail: "VibeTV target did not answer.", nextAction: "Check that VibeTV is on." },
+        ],
+      },
+      { onRepairUsageEngine: repair },
+    );
+    expect(screen.getByText("1 of 3 passed")).toBeTruthy();
+    const rows = screen.getAllByRole("listitem");
+    expect(within(rows[0]).queryByRole("button", { name: "Fix" })).toBeNull();
+    expect(within(rows[2]).queryByRole("button", { name: "Fix" })).toBeNull();
+    expect(rows[2].textContent).toContain("Check that VibeTV is on.");
+    fireEvent.click(within(rows[1]).getByRole("button", { name: "Fix" }));
+    expect(repair).toHaveBeenCalledTimes(1);
+  });
+
   it("names the next action when no repair is reachable", () => {
     const text = show({ providerSetup: { engine: { status: "engine_incompatible", version: "0.17.0", minimumVersion: "0.23.0" } } });
     expect(text).toContain("Repair the usage engine, then check again.");
