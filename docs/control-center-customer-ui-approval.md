@@ -7515,3 +7515,15 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: As in the 2026-10-15 entry (#561) above: the update hint with `Update the Mac App` appears on the "VibeTV not found" pages only in a Mac window and only when a newer Mac App exists. The WiFi-waiting not-found page shows the same hint. Windows shows nothing new. Look and copy unchanged.
 - Scope: `apps/control-center/src/components/control-center-app.mac-app-offer.test.tsx` (new test: Mac shows the offer, Windows gets none) and this approval record. The WiFi-waiting forwarding (`setup-device-screen.tsx`) is covered by the existing test in `setup-device-dialogs.test.tsx`. No merge, release, or device write is implied.
 - What's new: none — the hint appears only while a problem is being solved, nothing a customer needs to learn.
+
+## 2026-10-17 — Finished update and theme notices: no progress bar; a failed firmware check replaces "Update complete" (#579)
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #579); look unchanged except: the progress bar above "Update complete" (Updates) and above "Installed" (Appearance › Themes) is removed once the install has finished → no bar; the "Update complete" notice is removed when a firmware check fails after that update, the heading "Update check failed" stays alone.
+- Approved customer-visible result: a finished install shows its notice without the dark progress line; while the install runs, the bar stays as before. A failed firmware check that came after a finished update no longer leaves "Update complete" below "Update check failed". Wording, buttons and layout stay the same.
+- Scope: `apps/control-center/src/components/updates-screen.tsx` (finished-update notice and failed-check replacement), `apps/control-center/src/components/theme-library-screen.tsx` (theme install notice), their tests and this approval record. Pull request branch only, not merge or release.
+- What's new: none — removed progress line and a stale notice, no new capability
+
+## 2026-10-17 — #579 review fix: a failed firmware check replaces the finished-update notice without comparing times
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #579, Codex review); look unchanged from the entry above except: a failed firmware check now replaces the "Update complete" notice whenever that notice is shown, also when the check result is older than the update → before: that older failure left "Update complete" visible; after: the notice is removed and only "Update check failed" stays.
+- Approved customer-visible result: the same as in the entry above, except for the case in the "before" line of this entry; the earlier entry's words "came after a finished update" are not exact any more, since no times are compared. Wording, buttons and layout stay the same.
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — same removed notice as in the entry above, no new capability
