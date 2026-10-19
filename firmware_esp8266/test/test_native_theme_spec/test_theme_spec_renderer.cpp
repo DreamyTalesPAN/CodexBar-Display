@@ -4684,6 +4684,19 @@ void testUsagePaceBarRepaintCoversItsTick() {
   ReleaseCompiledThemeSpec(scene);
 }
 
+// The periodic countdown repaint (no frame arrived, the countdown ran out) also
+// repaints the pace of a theme that binds only pace, and nothing for one that does not.
+void testCountdownRepaintTakesTheBoundPaceAlong() {
+  const auto fieldsFor = [](const char* raw) {
+    return codexbar_display::core::ThemeSpecCountdownFields(codexbar_display::core::ThemeSpecLiveUseForRaw(String(raw)));
+  };
+  TEST_ASSERT_TRUE((fieldsFor(R"JSON({"p":[{"t":"p","w":10,"h":4,"b":"usageSlot1Pace"}]})JSON") &
+                    codexbar_display::themespec::kThemeSpecFieldUsageWindowPace) != 0);
+  TEST_ASSERT_TRUE((fieldsFor(R"JSON({"p":[{"t":"tx","b":"usageSlot2PaceText"}]})JSON") &
+                    codexbar_display::themespec::kThemeSpecFieldUsageWindowPace) != 0);
+  TEST_ASSERT_EQUAL_UINT32(0, fieldsFor(R"JSON({"p":[{"t":"tx","v":"{usageSlot1Percent}%"}]})JSON"));
+}
+
 void testUsagePaceParsesAndRepaintsOnlyThemesThatShowIt() {
   RuntimeState state;
   SerialConsumeEvent event;
@@ -4911,5 +4924,6 @@ int main() {
   RUN_TEST(testUsagePaceArcDrawsPieceHatchAndTick);
   RUN_TEST(testUsagePaceBarRepaintCoversItsTick);
   RUN_TEST(testUsagePaceParsesAndRepaintsOnlyThemesThatShowIt);
+  RUN_TEST(testCountdownRepaintTakesTheBoundPaceAlong);
   return UNITY_END();
 }

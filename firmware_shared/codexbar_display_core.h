@@ -729,7 +729,11 @@ inline const ThemeSpecLiveUse& ThemeSpecLiveUseForFrame(const RuntimeState& runt
 // that field is requested only when the theme draws a slot countdown.
 inline uint32_t ThemeSpecCountdownFields(const ThemeSpecLiveUse& use) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  // A pace is only true while its window's countdown runs, so the countdown's
+  // repaint takes the pace-bound fields along: a pace whose countdown ended
+  // while no frame arrived (a sleeping Mac) goes with it.
   return (use.fields & (themespec::kThemeSpecFieldReset | themespec::kThemeSpecFieldUsageWindowReset)) |
+         (use.usageWindowPaces != 0 ? themespec::kThemeSpecFieldUsageWindowPace : 0) |
          (use.providerSlotResets != 0 ? themespec::kThemeSpecFieldProviderSlots : 0);
 #else
   (void)use;
