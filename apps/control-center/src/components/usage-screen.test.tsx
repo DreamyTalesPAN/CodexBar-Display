@@ -203,9 +203,9 @@ describe("UsageScreen", () => {
     expect(loading.match(/data-slot="skeleton"/g)).toHaveLength(5);
     expect(loading).not.toContain('data-slot="spinner"');
     // Same chart wrapper and legend row as the finished panel, so the tiles below do not move.
-    expect(loading).toContain("relative mt-8 min-h-96");
-    expect(renderUsage()).toContain("relative mt-8 min-h-96");
-    expect(loading.indexOf("relative mt-8 min-h-96")).toBeLessThan(loading.lastIndexOf("gap-x-[18px]"));
+    expect(loading).toContain("relative mt-5 min-h-56");
+    expect(renderUsage()).toContain("relative mt-5 min-h-56");
+    expect(loading.indexOf("relative mt-5 min-h-56")).toBeLessThan(loading.lastIndexOf("gap-x-[18px]"));
     // The skeleton shows no figures and no finished headings.
     expect(loading).not.toContain("Last 30 days");
     expect(loading).not.toContain("Tokens used over time");
@@ -324,6 +324,13 @@ describe("UsageScreen", () => {
     expect(html).toContain("<span>1,234</span>");
     expect(html).toContain(">tokens</span>");
     expect(html).toContain(">one thousand two hundred thirty-four</p>");
+  });
+
+  it("draws the lane bars 12 px high with a 4 px corner (master 19.10.)", () => {
+    const html = renderUsage();
+
+    expect(html).toContain("h-3 rounded-[4px] [&amp;_[data-slot=progress-indicator]]:rounded-[4px]");
+    expect(html).not.toContain("h-1.5");
   });
 
   it("sets the 30-day total in the hero size and nothing else in the head", () => {
@@ -866,9 +873,9 @@ describe("UsageScreen", () => {
     expect(html).not.toContain('aria-label="Updating"');
   });
 
-  // Calm type on the provider tiles (17.10.: sizes 28 and 13, weights 400 and
-  // 600). The big total above the tiles is not part of this.
-  it("sets a tile title in 13 px / 600 and its main number in 28 px / 600", () => {
+  // Calm type on the provider tiles (master 19.10.: title 15 / 600, main number
+  // 32 / 600, body stays 13 from #777). The big total above is not part of this.
+  it("sets a tile title in 15 px / 600 and its main number in 32 px / 600", () => {
     render(
       <UsageScreen
         companionStatus="online"
@@ -891,12 +898,12 @@ describe("UsageScreen", () => {
     );
 
     const title = screen.getByRole("heading", { name: "Claude" });
-    expect(title.className).toContain("text-[13px]");
+    expect(title.className).toContain("text-[15px]");
     expect(title.className).toContain("font-semibold");
     expect(title.className).not.toMatch(/\b(text-base|text-xl|font-medium|font-black|font-bold)\b/);
 
     const mainNumber = screen.getByText("40%");
-    expect(mainNumber.className).toContain("text-[28px]");
+    expect(mainNumber.className).toContain("text-[32px]");
     expect(mainNumber.className).toContain("font-semibold");
   });
 
@@ -963,8 +970,11 @@ describe("UsageScreen", () => {
       />,
     );
 
-    const weeklyLabel = screen.getByText("20% weekly used");
+    // The number in ink, its words muted (master 19.10.).
+    const weeklyLabel = screen.getByText("weekly used").parentElement as HTMLElement;
+    expect(weeklyLabel.textContent).toBe("20% weekly used");
     expect(weeklyLabel.className).toContain("whitespace-nowrap");
+    expect(screen.getByText("weekly used").className).toContain("text-muted-foreground");
     // A reset that has no room beside the label moves under it, never clipped.
     expect(weeklyLabel.parentElement?.className).toContain("flex-wrap");
     // Wrapped alone on its line, the reset keeps its place on the right.

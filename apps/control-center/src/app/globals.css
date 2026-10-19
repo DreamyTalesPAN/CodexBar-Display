@@ -91,9 +91,9 @@
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
   /* The one hero size: the 30-day total in Usage only. Calm rules allow no other size. */
-  --text-hero: 46px;
+  --text-hero: 48px;
   --text-hero--line-height: 1.05;
-  --text-hero--letter-spacing: -0.01em;
+  --text-hero--letter-spacing: -0.02em;
 }
 
 body {

@@ -8064,3 +8064,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none beyond the entries above; this record restates that the listed parts are combined into one pull request and changes no screen. Not yet seen by Paul as a whole.
 - Scope: this approval record, and one test line in `usage-screen.test.tsx` (the option #777 type test reads the token row, which #708 made a container). Pull request branch only, not merge or release.
 - What's new: none — approval record only
+
+## 2026-10-19 — Usage page matched to the approved calm master (#783)
+
+- User approval: pending — Paul reviews (#783 matched to the approved master design, 19.10.)
+- Approved customer-visible result: none yet, pending Paul's review. Look only, no wording change: the 30-day total is 48 px (was 46 px) with the "tokens" unit and the words line set closer to it; the token chart is 224 px high (was 384 px) with a 2.5 px line, fewer date labels and a visible baseline; the legend sits closer under the chart and the tiles closer under the legend; tile padding and gaps are 22 px; the tile name is 15 px / 600 (was 13 px); the first lane's number is 32 px (was 28 px); the number of each later lane is in ink and its words muted; the lane bars are 12 px high with a 4 px corner (were 6 px, fully round). Body text stays 13 px (#777); the master's 14.5 px waits for Paul. Not part of this change: the pace bar (target tick, reserve and deficit pieces, line under each bar), which is a separate feature.
+- Scope: `usage-screen.tsx`, `usage-screen.test.tsx` (look-pinning assertions), `globals.css` (hero size 48 px, letter spacing -0.02em), and this approval record.
+- What's new: none — look only, no new notice

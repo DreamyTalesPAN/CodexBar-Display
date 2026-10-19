@@ -383,20 +383,20 @@ function TokenUsageSkeleton({ providerCount }: { providerCount: number }) {
             {/* The Refresh button's place. */}
             <div className="size-8 shrink-0" />
           </div>
-          <div className="mt-3.5">
-            {/* The hero size's line box: 46 px at line height 1.05. */}
-            <div className="flex h-[48.3px] items-center">
+          <div className="mt-1.5">
+            {/* The hero size's line box: 48 px at line height 1.05. */}
+            <div className="flex h-[50.4px] items-center">
               <Skeleton className="h-9 w-56 max-w-full motion-reduce:animate-none" />
             </div>
-            <div className="mt-2 flex h-[19.5px] items-center">
+            <div className="mt-1.5 flex h-[19.5px] items-center">
               <Skeleton className="h-3.5 w-52 max-w-full motion-reduce:animate-none" />
             </div>
           </div>
         </section>
-        <div className="relative mt-8 min-h-96">
-          <Skeleton className="h-96 w-full motion-reduce:animate-none" />
+        <div className="relative mt-5 min-h-56">
+          <Skeleton className="h-56 w-full motion-reduce:animate-none" />
         </div>
-        <div className="mt-4 mb-10 flex flex-wrap items-center gap-x-[18px] gap-y-1">
+        <div className="mt-1.5 mb-7 flex flex-wrap items-center gap-x-[18px] gap-y-1">
           {/* Each chip reserves the legend's line box (19.5 px), so a wrapped row is as tall as the loaded one. */}
           {Array.from({ length: providerCount }, (_, index) => (
             <div className="flex h-[19.5px] items-center" key={index}>
@@ -479,25 +479,25 @@ function TokenUsageOverTimePanel({
             {refreshing ? <Spinner /> : <RefreshCw aria-hidden />}
           </Button>
         </div>
-        <div className="mt-3.5">
+        <div className="mt-1.5">
           <p className="text-hero break-words font-semibold text-foreground tabular-nums">
             <span>{formatFullTokenCount(last30DaysTokens)}</span>
-            <span className="ml-1.5 text-[13px] font-normal tracking-normal text-muted-foreground">
+            <span className="ml-2.5 text-[13px] font-normal tracking-normal text-muted-foreground">
               tokens
             </span>
           </p>
-          <p className="mt-2 text-[13px] leading-normal text-muted-foreground">
+          <p className="mt-1.5 text-[13px] leading-normal text-muted-foreground">
             {formatTokenCountInWords(last30DaysTokens)}
           </p>
         </div>
       </section>
 
-      <div className="relative mt-8 min-h-96">
+      <div className="relative mt-5 min-h-56">
         <ChartContainer
           aria-hidden={!hasCurrentData}
           aria-label={`Daily tokens used over time for ${providerNames.join(", ")}`}
           className={cn(
-            "h-96 w-full overflow-hidden transition-opacity",
+            "h-56 w-full overflow-hidden transition-opacity",
             !hasCurrentData && "pointer-events-none opacity-25 grayscale",
           )}
           config={chartConfig}
@@ -510,14 +510,14 @@ function TokenUsageOverTimePanel({
           >
             <CartesianGrid
               stroke="var(--foreground)"
-              strokeOpacity={0.08}
+              strokeOpacity={0.09}
               vertical={false}
             />
             <XAxis
-              axisLine={false}
+              axisLine={{ stroke: "var(--foreground)", strokeOpacity: 0.22 }}
               dataKey="day"
               interval="preserveStartEnd"
-              minTickGap={28}
+              minTickGap={96}
               tick={{ fill: "var(--muted-foreground)", fontSize: 13 }}
               tickFormatter={formatDayLabel}
               tickLine={false}
@@ -550,7 +550,7 @@ function TokenUsageOverTimePanel({
                 isAnimationActive={false}
                 key={item.dataKey}
                 stroke={`var(--color-${item.dataKey})`}
-                strokeWidth={1.5}
+                strokeWidth={2.5}
                 type="monotone"
               />
             ))}
@@ -575,7 +575,7 @@ function TokenUsageOverTimePanel({
         ) : null}
       </div>
       <div
-        className="mt-4 mb-10 flex flex-wrap items-center gap-x-[18px] gap-y-1 text-[13px] text-muted-foreground"
+        className="mt-1.5 mb-7 flex flex-wrap items-center gap-x-[18px] gap-y-1 text-[13px] text-muted-foreground"
         data-testid="usage-legend"
       >
         {series.map((item) => (
@@ -622,7 +622,7 @@ function UsageProviderTile({ provider }: { provider: UsageProviderInfo }) {
   return (
     <UsageTileFrame name={provider.label || provider.id} plan={provider.plan}>
       {usageHasNumbers(provider) ? (
-        <div className="grid gap-4">
+        <div className="grid gap-[22px]">
           {lines.map((line, index) => (
             <UsageLineView
               index={index}
@@ -695,9 +695,9 @@ function UsageTileFrame({
   plan?: string;
 }) {
   return (
-    <Card className="h-full min-h-[248px] [--card-spacing:--spacing(5)]">
+    <Card className="h-full min-h-[196px] [--card-spacing:22px]">
       <CardHeader>
-        <CardTitle className="flex flex-wrap items-baseline gap-x-2 break-words text-[13px] font-semibold">
+        <CardTitle className="flex flex-wrap items-baseline gap-x-2 break-words text-[15px] font-semibold">
           <span>
             {name}
             {plan ? (
@@ -707,7 +707,7 @@ function UsageTileFrame({
           {action}
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-1 flex-col">{children}</CardContent>
+      <CardContent className="flex flex-1 flex-col gap-[22px]">{children}</CardContent>
     </Card>
   );
 }
@@ -721,12 +721,12 @@ function UsageSkeleton({ status }: { status?: ReactNode }) {
         {status}
       </div>
       <div aria-hidden className="grid gap-3">
-        <Skeleton className="h-1.5 w-full" />
+        <Skeleton className="h-3 w-full rounded-[4px]" />
         <div className="flex justify-between">
           <Skeleton className="h-3 w-24" />
           <Skeleton className="h-3 w-20" />
         </div>
-        <Skeleton className="h-1.5 w-full" />
+        <Skeleton className="h-3 w-full rounded-[4px]" />
         <Skeleton className="h-3 w-40" />
       </div>
     </div>
@@ -839,7 +839,7 @@ function UsageLineView({
           <Skeleton aria-hidden className="h-3 w-24" />
           {right}
         </div>
-        <Skeleton aria-hidden className="h-1.5 w-full" />
+        <Skeleton aria-hidden className="h-3 w-full rounded-[4px]" />
       </div>
     );
   }
@@ -850,17 +850,26 @@ function UsageLineView({
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-[13px] text-foreground">
         {index === 0 ? (
           <span className="whitespace-nowrap text-muted-foreground">
-            <span className="text-[28px] leading-none font-semibold text-foreground">
+            <span className="text-[32px] leading-none font-semibold text-foreground">
               {line.percent}%
             </span>{" "}
             {line.label} {modeLabel}
           </span>
         ) : (
-          <span className="whitespace-nowrap">{text}</span>
+          <span className="whitespace-nowrap">
+            {line.percent}%{" "}
+            <span className="text-muted-foreground">
+              {line.label} {modeLabel}
+            </span>
+          </span>
         )}
         {right}
       </div>
-      <Progress aria-label={text} className="h-1.5" value={line.percent} />
+      <Progress
+        aria-label={text}
+        className="h-3 rounded-[4px] [&_[data-slot=progress-indicator]]:rounded-[4px]"
+        value={line.percent}
+      />
       {line.runsOutText ? (
         <p className="text-[13px] text-destructive">{line.runsOutText}</p>
       ) : null}
@@ -902,7 +911,7 @@ function TokenRow({ provider }: { provider: UsageProviderInfo }) {
   }
 
   return (
-    <div className="mt-auto grid gap-1 pt-5 text-[13px] text-muted-foreground">
+    <div className="mt-auto grid gap-1 text-[13px] text-muted-foreground">
       {parts.length > 0 ? <p>Tokens: {parts.join(" · ")}</p> : null}
       {spend ? <p>{spend}</p> : null}
     </div>
@@ -922,7 +931,7 @@ function UsageMetaGrid({ provider }: { provider: UsageProviderInfo }) {
   }
 
   return (
-    <dl className="mt-5 grid gap-3 sm:grid-cols-3">
+    <dl className="grid gap-3 sm:grid-cols-3">
       {items.map(([label, value]) => (
         <div className="min-w-0" key={label}>
           <dt className="text-[13px] text-muted-foreground">{label}</dt>
