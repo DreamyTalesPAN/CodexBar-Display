@@ -33,3 +33,12 @@ for (const role of ["dialog", "alertdialog"]) {
     expect(busy()).not.toBeNull();
   });
 }
+
+// Build-2 decision (19.10.2026, frame 49): the grey backdrop like every other dialog.
+it("dims the screen behind the dialog", () => {
+  const { container } = render(page(null));
+  const scrim = container.querySelector('div[aria-hidden][class*="fixed"]');
+  expect(scrim?.className).toContain("bg-black/10");
+  expect(scrim?.className).toContain("opacity-100");
+  expect(scrim?.className).not.toContain("pointer-events-none");
+});
