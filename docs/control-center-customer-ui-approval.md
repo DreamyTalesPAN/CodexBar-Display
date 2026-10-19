@@ -8038,3 +8038,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/live-vibetv-preview.tsx` (one callback), `apps/control-center/src/components/vibetv-3d-preview.tsx`, `apps/control-center/src/components/live-vibetv-preview.recovery.test.tsx` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no new content
+
+## 2026-10-19 — Calm redesign: the "Turn on in Settings" link from #645 gets the ink focus ring (#784, CI fix after merging main)
+
+- User approval: pending — Paul reviews (#784 matched to the approved master design "Calm Redesign - alle Screens", 19.10.); CI fix, keyboard focus only; not seen by Paul
+- Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged except: with keyboard focus the link shows the full ink focus ring (option #776) instead of a 40 % ring; mouse users see no change.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (one class) and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content

@@ -740,7 +740,7 @@ export function ThemeLibraryScreen({
         <p className="mb-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-lg bg-muted px-4 py-3 text-sm">
           <span>Screensaver is off.</span>
           <a
-            className="font-medium text-foreground underline underline-offset-4 hover:text-[var(--vibetv-support)] dark:hover:text-[#A9C76A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            className="font-medium text-foreground underline underline-offset-4 hover:text-[var(--vibetv-support)] dark:hover:text-[#A9C76A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             href="#settings-screensaver"
             onClick={(event) => {
               event.preventDefault();
