@@ -7963,3 +7963,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/setup/setup-selectable-card.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-19 — #780: Codex fix, empty setup log keeps its live region
+
+- User approval: pending — Paul reviews (Codex review fix, no visible change; not seen by Paul); no visible change: an empty setup log (device and theme step) stays in the page as the live region for the status text, and only loses its top margin while it is empty (before: `display: none` while empty). The screen looks the same.
+- Approved customer-visible result: none; no visible change.
+- Scope: `apps/control-center/src/components/setup/setup-device-screen.tsx`, `apps/control-center/src/components/setup/setup-theme-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content

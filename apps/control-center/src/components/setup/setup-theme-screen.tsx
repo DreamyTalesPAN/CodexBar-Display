@@ -112,7 +112,7 @@ export function SetupThemeScreen({
       ) : null}
 
       <SetupLog
-        className="mt-3 empty:hidden"
+        className="mt-3 empty:mt-0"
         lines={installLogLines(installLogs)}
         running={installing}
       />
