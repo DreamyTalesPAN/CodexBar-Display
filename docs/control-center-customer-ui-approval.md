@@ -7643,3 +7643,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: On Updates, the button that retries a failed Mac App check reads "Try again" (before: "Check again"); its placement and behaviour are unchanged. On setup's display step the heading reads "Display mode" (before: "Display Mode"). In the setup log (Logs and the Help menu), a step that failed in the past shows its "Failed" word, message and next-step line in the normal text colour (before: red). Nothing else changes.
 - Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/setup/setup-display-mode-screen.tsx`, `apps/control-center/src/components/setup-event-log.tsx`, their tests, `apps/control-center/scripts/test-customer-flows.mjs` (button name only) and this approval record. Pull request branch only, not merge or release.
 - What's new: none — sentence case and one colour, no new copy
+
+## 2026-10-18 — Setup log: the wheel at its end no longer moves the page (walk-through leftovers, #579)
+
+- User approval: pending — Paul reviews this PR (fix of a point from the Mac walk-through reported in #579: with the pointer over the Setup log at its end, the page scrolled instead of stopping).
+- Approved customer-visible result: No visible change. On Support › Setup log, the mouse wheel or trackpad scroll stops at the end of the list instead of moving the page behind it. Wording, layout and colours stay as they are.
+- Scope: the class of the Setup log list in `apps/control-center/src/components/setup-event-log.tsx` and one test in `setup-event-log.test.tsx`; this approval record. Pull request branch only, not merge or release.
+- What's new: none — a scroll-chaining fix
