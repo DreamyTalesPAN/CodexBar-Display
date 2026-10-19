@@ -48,3 +48,15 @@ it("writes no placeholder in the time column of an entry without a time", () => 
   expect(html).toContain("Control Center opened");
   expect(html).not.toContain(">Session<");
 });
+
+// The calm master names when the report was made: "Last created today at 16:42."
+it("says when the support report was last created, and nothing before one exists", () => {
+  expect(renderToStaticMarkup(<LogsScreen />)).not.toContain("Last created");
+
+  const html = renderToStaticMarkup(
+    <LogsScreen
+      diagnostics={{ ok: true, generatedAt: new Date().toISOString(), checks: [] }}
+    />,
+  );
+  expect(html).toMatch(/Last created today at \d{2}:\d{2}\./);
+});

@@ -4,7 +4,7 @@ import type {
   SupportDiagnostics,
   UsageSnapshot,
 } from "../control-center-types";
-import { Search, SearchX, TriangleAlert } from "lucide-react";
+import { Search, SearchX } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -313,7 +313,6 @@ export function ProviderList({
           open
           title={issue.provider.label}
           description={issue.message}
-          icon={TriangleAlert}
           onOpenChange={(open) => { if (!open) dismissIssue(); }}
           primaryAction={issueSignIn ? {
             label: `Sign in to ${issueSignIn.label}`,
