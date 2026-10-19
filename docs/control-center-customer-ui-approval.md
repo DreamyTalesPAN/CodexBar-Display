@@ -7473,3 +7473,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none. The theme catalog gets an optional `tags` field and the readers keep it; no screen, copy, control or layout changes.
 - Scope: `apps/control-center/src/lib/themes.ts`, the new `apps/control-center/src/lib/theme-tags.ts` and its test, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — data only, no customer-visible change
+
+## 2026-10-19 — Theme tag vocabulary: provider count instead of provider names (data only, #793)
+- User approval: none needed; data only, no visible change; not seen by Paul. The provider groups are "1 provider", "2 providers" and "3 or more" in the later Appearance filter PR, and Paul's yes is needed there.
+- Approved customer-visible result: none. The provider tags become `providers-1`, `providers-2` and `providers-3plus` (how many providers a theme shows at once); no screen, copy or layout changes.
+- Scope: `apps/control-center/src/lib/theme-tags.ts`, its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — data only, no customer-visible change

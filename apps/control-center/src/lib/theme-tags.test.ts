@@ -21,7 +21,7 @@ const catalog = JSON.parse(
 
 describe("theme tag schema", () => {
   it("accepts tags from the vocabulary", () => {
-    expect(findUnknownThemeTags(["animated", "clock", "claude"])).toEqual([]);
+    expect(findUnknownThemeTags(["animated", "clock", "providers-2"])).toEqual([]);
   });
 
   it("rejects an unknown tag", () => {
@@ -29,7 +29,7 @@ describe("theme tag schema", () => {
   });
 
   it("ignores unknown tags and non-string values at read time", () => {
-    expect(readThemeTags(["animated", "wizard", 3, null, "codex"])).toEqual(["animated", "codex"]);
+    expect(readThemeTags(["animated", "wizard", 3, null, "providers-1"])).toEqual(["animated", "providers-1"]);
   });
 
   it("gives no tags when the catalog has none", () => {
@@ -48,6 +48,13 @@ describe("theme pack tags", () => {
     for (const [themeId, tags] of Object.entries(registry.packs)) {
       expect(findUnknownThemeTags(tags), themeId).toEqual([]);
       expect(new Set(tags).size, themeId).toBe(tags.length);
+    }
+  });
+
+  it("gives each pack at most one provider-count tag", () => {
+    for (const [themeId, tags] of Object.entries(registry.packs)) {
+      const counts = tags.filter((tag) => tag.startsWith("providers-"));
+      expect(counts.length, themeId).toBeLessThanOrEqual(1);
     }
   });
 

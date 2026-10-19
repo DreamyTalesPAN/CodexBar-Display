@@ -9,7 +9,8 @@ export const THEME_FEATURE_TAGS = [
   "pixel-art",
 ] as const;
 
-export const THEME_PROVIDER_TAGS = ["claude", "codex", "cursor"] as const;
+// How many providers the theme shows at once: one provider line, or two provider slots.
+export const THEME_PROVIDER_TAGS = ["providers-1", "providers-2", "providers-3plus"] as const;
 
 export type ThemeTag =
   | (typeof THEME_FEATURE_TAGS)[number]
