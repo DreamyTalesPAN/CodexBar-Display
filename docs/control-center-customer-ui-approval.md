@@ -8582,3 +8582,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Before: no such section. After: directly under `Display mode` a section `Pace` (label on the left, a divider like the other sections) with one row, `Show reserve or deficit` and a switch, on by default. While the switch is on and the active catalog theme has no place for pace, one muted line under it: `<Theme name> has no place for it. Pace Meter shows it.` (for example `Token Counter has no place for it. Pace Meter shows it.`). Off: VibeTV is sent no pace, so no pace theme shows tick, piece or sentence; Usage keeps its pace. The section is not shown when the usage engine sends no pace (today's Windows engine). The page's example line names Mini Classic, which now has a place for pace after this PR; the line follows the active theme.
 - Scope: `components/settings-pace.tsx` (new), one block in `components/settings-screen.tsx`, `components/settings-pace.test.tsx`, the Companion preference `vibetv.display.showPace` (`runtimeconfig` `hidePace`, `display_preferences.go`, `daemon/send.go`) with tests, and this approval record.
 - What's new: none — a setting for the Pace themes, no new notice
+
+## 2026-10-19 — Pace themes: Codex review fix, the preview reads every spelling of a pace binding (#800)
+
+- User approval: Codex review fix, no visible change of the approved Pace themes; not seen by Paul. The look of the entries above stands as approved on the page "Pace - alle Themes".
+- Approved customer-visible result: Unchanged for the shipped themes. A custom theme that binds pace as `us1PaceText`, `us1Pace` or `usage.0.PaceText` is previewed with its pace, as VibeTV draws it (before: the preview showed empty text and a plain bar for those spellings).
+- Scope: `components/live-vibetv-preview.tsx` and its test, the firmware repaint rules (not screens), and this approval record.
+- What's new: none — a preview correction, no new notice
