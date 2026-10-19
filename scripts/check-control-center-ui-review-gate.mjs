@@ -191,15 +191,20 @@ function namesPath(text, file) {
   return new RegExp(`(^|[^\\w./-])${escaped}(?![\\w/-]|\\.\\w)`).test(text);
 }
 
-// The text of the entries the diff adds: only "## " blocks name a path.
+// The text of the entries the diff adds: only "## " blocks name a path. Each
+// hunk is read on its own, so a line added under an older entry further down
+// does not join a new entry added above it.
 function addedApprovalText(diff) {
-  const added = lines(diff)
-    .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
-    .map((line) => line.slice(1))
-    .join("\n");
-  return added
-    .split(/^(?=## )/m)
-    .filter((block) => block.startsWith("## "))
+  return diff
+    .split(/^(?=@@ )/m)
+    .flatMap((hunk) =>
+      lines(hunk)
+        .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
+        .map((line) => line.slice(1))
+        .join("\n")
+        .split(/^(?=## )/m)
+        .filter((block) => block.startsWith("## ")),
+    )
     .join("\n");
 }
 

@@ -542,6 +542,27 @@ test_path_outside_entry_does_not_name_ui_file() {
   expect_gate_due "$repo"
 }
 
+# A path added under an older entry further down the record does not name the
+# UI file for a new entry that the same commit adds above it.
+test_path_under_older_entry_does_not_name_ui_file() {
+  local repo="${TMP_ROOT}/path-under-older-entry"
+  setup_repo "$repo"
+  local record="$repo/docs/control-center-customer-ui-approval.md"
+  printf '\nexport const visibleLabel = "Install";\n' \
+    >> "$repo/apps/control-center/src/components/overview-screen.tsx"
+  {
+    head -n 1 "$record"
+    approval_entry "Updated overview"
+    tail -n +2 "$record"
+    printf -- '- Note: apps/control-center/src/components/overview-screen.tsx\n'
+  } > "${record}.new"
+  mv "${record}.new" "$record"
+  git -C "$repo" add apps/control-center/src/components/overview-screen.tsx \
+    docs/control-center-customer-ui-approval.md
+  git -C "$repo" commit -q -m "Approve overview at the top, note its path below"
+  expect_gate_due "$repo"
+}
+
 # A merge that brings a UI change from the branch and records a scoped approval
 # for it passes: the approval is read against the first parent, not as a combined diff.
 test_scoped_merge_approval_passes() {
@@ -675,6 +696,7 @@ test_named_path_must_match_whole_file
 test_merge_of_approved_base_needs_no_rescope
 test_merged_parent_approval_is_judged_on_its_own_tree
 test_path_outside_entry_does_not_name_ui_file
+test_path_under_older_entry_does_not_name_ui_file
 test_ui_file_renamed_out_of_ui_folders_is_due
 test_approval_commit_before_cutoff_keeps_old_rule
 test_scoped_merge_approval_passes
