@@ -68,7 +68,6 @@ import {
   providerSetupNeedsEngineRecovery,
   providerSetupRequiresRecovery,
   type ActiveTab,
-  type AppearanceSection,
   type ApiError,
   type CompanionInfo,
   type CompanionStatus,
@@ -153,6 +152,7 @@ import { collectSupportReport } from "./support-report";
 import {
   buildThemeInstallBlocker,
   ThemeLibraryScreen,
+  type ThemeLibraryUsage,
   themeMetadataBlocker,
   themeNeedsUpgradeableFirmware,
 } from "./theme-library-screen";
@@ -316,10 +316,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [selectedScreensaverId, setSelectedScreensaverId] = useState(
     initialThemeIsScreensaver ? initialTheme?.themeId || "" : "",
   );
-  const [appearanceSection, setAppearanceSection] = useState<AppearanceSection>(
-    initialThemeIsScreensaver ? "screensavers" : "themes",
+  // Which rows Appearance lists; kept while the app is open. A theme link
+  // opens the list that holds the theme.
+  const [appearanceUsage, setAppearanceUsage] = useState<ThemeLibraryUsage>(
+    initialThemeId
+      ? initialThemeIsScreensaver
+        ? "screensaver"
+        : "live"
+      : "all",
   );
-  const [themeStudioOpen, setThemeStudioOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>(
     initialThemeId ? "theme-library" : "overview",
   );
@@ -1174,7 +1179,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const screensaverSettingMissing =
     standby === null && Boolean(device?.standby) && deviceIsReady(device);
   const screensaversOpen =
-    activeTab === "theme-library" && appearanceSection === "screensavers";
+    activeTab === "theme-library" && appearanceUsage !== "live";
   const screensaversWereOpen = useRef(screensaversOpen);
   useEffect(() => {
     // Leaving Screensavers is no reason to read them again.
@@ -1212,12 +1217,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           catalog.themes.find((theme) => theme.themeId === status.themeId)
             ?.usage ||
           "live";
+        // The list follows the install, except on All, which holds both.
+        setAppearanceUsage((current) => (current === "all" ? current : usage));
         if (usage === "screensaver") {
           setSelectedScreensaverId(status.themeId);
-          setAppearanceSection("screensavers");
         } else {
           setSelectedThemeId(status.themeId);
-          setAppearanceSection("themes");
         }
       }
       if (job.phase === "complete" && job.result) {
@@ -5273,7 +5278,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       window.addEventListener(act, stop, listening),
     );
     return stop;
-  }, [activeShellTab, appearanceSection]);
+  }, [activeShellTab, appearanceUsage]);
   const closeWhatsNew = () => {
     setWhatsNewSeen(markWhatsNewSeen());
     setWhatsNewReopened(false);
@@ -5648,11 +5653,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     return (
       <ControlCenterShell
         activeTab={activeShellTab}
-        activeAppearanceSection={appearanceSection}
         disabledTabs={disabledTabs}
-        themeStudioOpen={themeStudioOpen}
         updateAvailable={anyUpdateAvailable}
-        onAppearanceSectionChange={setAppearanceSection}
         onTabChange={(tab) => {
           if (disabledTabs.includes(tab)) {
             return;
@@ -5731,7 +5733,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             standby={standby}
             onBrightnessChange={changeBrightness}
             onChooseScreensaver={() => {
-              setAppearanceSection("screensavers");
+              setAppearanceUsage("screensaver");
               setActiveTab("theme-library");
             }}
             onConnectionModeChange={(mode) => {
@@ -5768,34 +5770,29 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             lastInstall={lastInstall}
             onInstallCustomTheme={installCustomTheme}
             onInstallTheme={installTheme}
-            onSelectTheme={
-              appearanceSection === "screensavers"
-                ? setSelectedScreensaverId
-                : setSelectedThemeId
+            onOpenScreensaverSettings={() => {
+              shownAfterPageOpensRef.current = "settings-screensaver";
+              setActiveTab("settings");
+            }}
+            onSelectTheme={(themeId, usage) =>
+              usage === "screensaver"
+                ? setSelectedScreensaverId(themeId)
+                : setSelectedThemeId(themeId)
             }
+            onUsageChange={setAppearanceUsage}
             requestedThemeId={
-              appearanceSection === "themes" ? initialThemeId : undefined
+              appearanceUsage !== "screensaver" ? initialThemeId : undefined
             }
-            selectedTheme={
-              appearanceSection === "screensavers"
-                ? selectedScreensaver
-                : selectedTheme
-            }
-            selectedThemeId={
-              appearanceSection === "screensavers"
-                ? selectedScreensaverId
-                : selectedThemeId
-            }
+            selectedScreensaver={selectedScreensaver}
+            selectedScreensaverId={selectedScreensaverId}
+            selectedTheme={selectedTheme}
+            selectedThemeId={selectedThemeId}
             standby={standby}
             storefrontConfigured={catalog.storefrontConfigured}
             themeInstallEnabled={themeInstallEnabled}
             themes={catalog.themes}
             tokenHistoryUnavailable={usageTokenHistoryUnavailableOnVibeTV(usage)}
-            usage={
-              appearanceSection === "screensavers" ? "screensaver" : "live"
-            }
-            onSaveStandby={saveStandby}
-            onStudioOpenChange={setThemeStudioOpen}
+            usage={appearanceUsage}
             windowsHost={windowsHost}
           />
         ) : null}
@@ -5943,7 +5940,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             closeWhatsNew();
             shownAfterPageOpensRef.current = id;
             if (page === "themes") {
-              setAppearanceSection("themes");
+              setAppearanceUsage("all");
             }
             setActiveTab(page === "themes" ? "theme-library" : "settings");
           }}

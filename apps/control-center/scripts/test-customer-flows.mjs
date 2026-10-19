@@ -6500,7 +6500,7 @@ async function testSetupUnlocksWhenThemeInstallGateDisabled(browser, appUrl) {
   });
   await clickNavigation(page, "Themes");
   await page
-    .getByRole("heading", { level: 1, name: "Themes", exact: true })
+    .getByRole("heading", { level: 1, name: "Appearance", exact: true })
     .waitFor({ timeout: 10_000 });
   await page.getByText("Fixture Synthwave Theme").waitFor({ timeout: 10_000 });
   await page.getByText("Fixture Clippy Theme").waitFor({ timeout: 10_000 });
@@ -6536,10 +6536,29 @@ async function testAppearanceSidebarNavigation(browser, appUrl) {
 
     await page.goto(appUrl, { waitUntil: "domcontentloaded" });
     await clickNavigation(page, "Appearance");
-    await clickNavigation(page, "Themes");
     await page
-      .getByRole("heading", { name: "Themes", exact: true })
+      .getByRole("heading", { name: "Appearance", exact: true })
       .waitFor({ timeout: 10_000 });
+    // One Appearance entry; Themes and Screensavers are not sidebar entries.
+    const sidebar = page.getByRole("navigation", {
+      name: "Control Center",
+      exact: true,
+    });
+    assert(
+      (await sidebar.getByRole("button", { name: "Themes", exact: true }).count()) === 0 &&
+        (await sidebar.getByRole("button", { name: "Screensavers", exact: true }).count()) === 0,
+      "Appearance must be one sidebar entry without a submenu",
+    );
+    // All lists both types; each segment shows only its own.
+    await page.getByRole("radio", { name: /^All/ }).waitFor();
+    await page.getByText("Fixture Synthwave Theme").waitFor();
+    await page.getByText("Fixture Night Clock Screensaver").waitFor();
+    assert(
+      (await page.getByText("Screensaver is off.").count()) === 0,
+      "The screensaver-off notice belongs to the Screensavers segment only",
+    );
+
+    await clickNavigation(page, "Themes");
     await page.getByText("Fixture Synthwave Theme").waitFor();
     assert(
       (await page.getByText("Fixture Night Clock Screensaver").count()) === 0,
@@ -6547,14 +6566,8 @@ async function testAppearanceSidebarNavigation(browser, appUrl) {
     );
 
     await clickNavigation(page, "Screensavers");
-    await page
-      .getByRole("heading", { name: "Screensavers", exact: true })
-      .waitFor({ timeout: 10_000 });
     await page.getByText("Fixture Night Clock Screensaver").waitFor();
-    const screensaverSwitch = page
-      .locator("main.control-center-shell")
-      .getByRole("switch", { name: "Show screensaver" });
-    await page.getByText("Screensaver is turned off").waitFor();
+    await page.getByText("Screensaver is off.").waitFor();
     assert(
       (await page.getByText("Fixture Synthwave Theme").count()) === 0,
       "Screensavers must not include live theme packs",
@@ -6562,28 +6575,40 @@ async function testAppearanceSidebarNavigation(browser, appUrl) {
     assert(
       (await page
         .locator("main.control-center-shell")
-        .getByRole("button", { name: "Screensavers", exact: true })
+        .getByRole("switch", { name: "Show screensaver" })
         .count()) === 0,
-      "Appearance sections must stay in the sidebar, not become content tabs",
+      "The Show screensaver switch lives in Settings, not on Appearance",
     );
-    await screensaverSwitch.click();
+
+    // The notice's "Settings" link opens Settings, where the switch is.
+    await page
+      .locator("main.control-center-shell")
+      .getByRole("link", { name: "Settings", exact: true })
+      .click();
+    await page
+      .getByRole("heading", { name: "Settings", exact: true })
+      .waitFor({ timeout: 10_000 });
+    await page
+      .locator("main.control-center-shell")
+      .getByRole("switch", { name: "Show screensaver" })
+      .click();
     await waitForCondition(
       () => settingsWrites.length === 1,
-      "Screensaver library toggle should write once",
+      "Screensaver toggle should write once",
     );
     assert(
       settingsWrites[0]?.standby?.enabled === true,
-      `Screensaver library toggle should enable standby, got ${JSON.stringify(settingsWrites[0])}`,
+      `Screensaver toggle should enable standby, got ${JSON.stringify(settingsWrites[0])}`,
     );
-    await page
-      .getByText("Screensaver is turned off")
-      .waitFor({ state: "detached", timeout: 10_000 });
+
+    // The segment is remembered; the notice is gone now.
+    await clickNavigation(page, "Appearance");
     await page.getByText("Fixture Night Clock Screensaver").waitFor();
+    await page
+      .getByText("Screensaver is off.")
+      .waitFor({ state: "detached", timeout: 10_000 });
 
     await clickNavigation(page, "Themes");
-    await page
-      .getByRole("heading", { name: "Themes", exact: true })
-      .waitFor({ timeout: 10_000 });
     await page.getByText("Fixture Synthwave Theme").waitFor();
 
     companion.setStandby({
@@ -6597,8 +6622,12 @@ async function testAppearanceSidebarNavigation(browser, appUrl) {
       .getByRole("link", { name: "Choose screensaver", exact: true })
       .click();
     await page
-      .getByRole("heading", { name: "Screensavers", exact: true })
+      .getByRole("radio", { name: /^Screensavers/ })
       .waitFor({ timeout: 10_000 });
+    assert(
+      (await page.getByRole("radio", { name: /^Screensavers/ }).getAttribute("aria-checked")) === "true",
+      "Choose screensaver must open the Screensavers segment",
+    );
 
     assertNoInstallRequests(installRequests);
     await page.close();
@@ -8861,7 +8890,7 @@ async function testReloadRestoresRunningThemeInstall(browser, appUrl) {
     timeout: 10_000,
   });
   await page
-    .getByRole("heading", { name: "Screensavers", exact: true })
+    .getByRole("heading", { name: "Appearance", exact: true })
     .waitFor({ timeout: 10_000 });
   await page
     .getByText("Screensaver is ready on VibeTV.", { exact: true })
@@ -10501,7 +10530,7 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
   await page.getByRole("navigation", { name: "Control Center", exact: true }).waitFor({ timeout: 20000 });
   const navigation = page.getByRole("navigation", { name: "Control Center", exact: true });
   await navigation.getByRole("button", { name: "Appearance", exact: true }).click();
-  await navigation.getByRole("button", { name: screensaver ? "Screensavers" : "Themes", exact: true }).click();
+  await page.getByRole("radio", { name: new RegExp(screensaver ? "^Screensavers" : "^Themes") }).click();
   await page.getByRole("button", { name: screensaver ? "Create Screensaver" : "Create Theme", exact: true }).click();
   await page.getByLabel("Your idea", { exact: true }).waitFor();
   await page.locator('[data-slot="sidebar"][data-state="collapsed"]').waitFor();
@@ -10525,7 +10554,7 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
   assert(writes[0].headers["content-type"] === "application/zip");
   assert(requests.filter(isDirectDeviceWriteUrl).length === 0, "All hardware traffic stays mocked");
   await page.getByRole("button", { name: "Back to library", exact: true }).click();
-  await page.getByRole("heading", { name: screensaver ? "Screensavers" : "Themes", exact: true }).waitFor();
+  await page.getByRole("heading", { name: "Appearance", exact: true }).waitFor();
   await page.evaluate((document) => localStorage.setItem("vibetv.controlCenter.themeStudioDraft", JSON.stringify({
     schemaVersion: 1, recovery: { document: { ...document, packName: "Unsaved other design" }, source: "blank", updatedAt: new Date().toISOString() },
   })), saved.themes[0].document);
@@ -10542,7 +10571,7 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
     await page.getByRole("heading", { name: "Screensaver Studio", exact: true }).waitFor();
   }
   await page.getByRole("button", { name: "Back to library", exact: true }).click();
-  await page.getByRole("heading", { name: screensaver ? "Screensavers" : "Themes", exact: true }).waitFor();
+  await page.getByRole("heading", { name: "Appearance", exact: true }).waitFor();
   assert(await page.evaluate(() => JSON.parse(localStorage.getItem("vibetv.controlCenter.themeStudioDraft"))?.recovery?.document?.packName) === "Unsaved other design", "Opening a clean design preserves unrelated recovery");
   assert(errors.length === 0, errors.join("\n"));
   await page.unrouteAll({ behavior: "ignoreErrors" });
@@ -10949,7 +10978,7 @@ async function testUnpairedThemeDeepLinkWaitsForWifiConfirmation(
     waitUntil: "domcontentloaded",
   });
   await connectDiscoveredVibeTV(page);
-  await page.getByRole("heading", { level: 1, name: "Themes", exact: true }).waitFor({
+  await page.getByRole("heading", { level: 1, name: "Appearance", exact: true }).waitFor({
     timeout: 20_000,
   });
   assert(
@@ -13431,11 +13460,13 @@ async function getNavigationButton(page, name) {
 }
 
 async function clickNavigation(page, name) {
+  // Themes and Screensavers are the segments of the one Appearance page.
   if (name === "Themes" || name === "Screensavers") {
-    const appearance = await getNavigationButton(page, "Appearance");
-    if ((await appearance.getAttribute("aria-expanded")) !== "true") {
-      await appearance.click({ timeout: 10_000 });
-    }
+    await clickNavigation(page, "Appearance");
+    await page
+      .getByRole("radio", { name: new RegExp(`^${name}`) })
+      .click({ timeout: 10_000 });
+    return;
   }
   await page.waitForTimeout(350);
   await (await getNavigationButton(page, name)).click({ timeout: 10_000 });

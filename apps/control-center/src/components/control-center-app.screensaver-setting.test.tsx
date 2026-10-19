@@ -176,12 +176,12 @@ it.each([
 
   fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
   await wait(1);
-  fireEvent.click(screen.getByRole("button", { name: "Screensavers" }));
+  fireEvent.click(screen.getByRole("radio", { name: /^Screensavers/ }));
   await wait(2);
 
   expect(settingsReads).toBe(reads);
   if (failures >= reads) {
-    fireEvent.click(screen.getByRole("button", { name: "Themes" }));
+    fireEvent.click(screen.getByRole("radio", { name: /^Themes/ }));
     await wait(2);
     expect(settingsReads).toBe(reads);
     return;
@@ -190,5 +190,4 @@ it.each([
     .getAllByRole("listitem")
     .find((item) => within(item).queryByText("Retro 3D"))!;
   expect((within(row).getByRole("button", { name: "Install" }) as HTMLButtonElement).disabled).toBe(false);
-  expect(screen.getByRole("switch", { name: /Show screensaver/ })).toBeTruthy();
 });

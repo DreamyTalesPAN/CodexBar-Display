@@ -80,7 +80,6 @@ async function renderLibrary(
         device={null}
         onInstallCustomTheme={async () => false}
         onInstallTheme={vi.fn()}
-        onSaveStandby={vi.fn()}
         onSelectTheme={vi.fn()}
         selectedThemeId=""
         storefrontConfigured={false}
@@ -324,7 +323,6 @@ describe("ThemeLibraryScreen custom themes", () => {
         installStatus={installStatus}
         onInstallCustomTheme={async () => false}
         onInstallTheme={install}
-        onSaveStandby={vi.fn()}
         onSelectTheme={vi.fn()}
         selectedThemeId=""
         storefrontConfigured={false}
@@ -411,7 +409,6 @@ describe("ThemeLibraryScreen custom themes", () => {
               throw new Error(`${payload.packName} uses a theme file that is too large.`);
             }}
             onInstallTheme={vi.fn()}
-            onSaveStandby={vi.fn()}
             onSelectTheme={vi.fn()}
             selectedThemeId=""
             standby={{ enabled: true, timeoutMinutes: 10, brightnessPercent: 20 }}

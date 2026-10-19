@@ -729,16 +729,11 @@ it("keeps Brightness in screensaver focused through two arrow keys", async () =>
   ]);
 });
 
-it.each([
-  ["Settings", ["Settings"]],
-  ["Screensavers", ["Appearance", "Screensavers"]],
-])("keeps Show screensaver in %s focused while it is saved", async (_, tabs) => {
+it("keeps Show screensaver in Settings focused while it is saved", async () => {
   const window = startWindow();
   await window.wait(10);
-  for (const tab of tabs) {
-    fireEvent.click(screen.getByRole("button", { name: tab }));
-    await window.wait(1);
-  }
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
   const toggle = screen.getByRole("switch", { name: "Show screensaver" });
   toggle.focus();
 
@@ -926,9 +921,16 @@ it("has no accessibility violations on any tab or in the setup question", async 
   const window = startWindow();
   await window.wait(10);
   const pages: string[] = [];
-  // "Appearance" opens the submenu that holds Themes and Screensavers.
-  for (const tab of ["Overview", "Usage", "Settings", "Appearance", "Themes", "Screensavers", "Updates", "Support"]) {
+  for (const tab of ["Overview", "Usage", "Settings", "Appearance", "Updates", "Support"]) {
     fireEvent.click(screen.getByRole("button", { name: tab }));
+    await window.wait(1);
+    pages.push(document.body.innerHTML);
+  }
+  // Appearance lists everything; its two other lists are checked as well.
+  fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
+  await window.wait(1);
+  for (const segment of [/^Themes/, /^Screensavers/]) {
+    fireEvent.click(screen.getByRole("radio", { name: segment }));
     await window.wait(1);
     pages.push(document.body.innerHTML);
   }
