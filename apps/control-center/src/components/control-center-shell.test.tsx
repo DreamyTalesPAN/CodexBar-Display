@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "@/test/axe";
@@ -49,6 +49,27 @@ describe("ControlCenterShell", () => {
     page.scrollTop = 300;
     rerender(shell("theme-library", "screensavers"));
     expect(page.scrollTop).toBe(0);
+  });
+
+  // Issue #579: Settings stayed highlighted while the Appearance group opened
+  // beside it. Opening the group now opens its tab, so one entry is active.
+  it("opens the Appearance tab when its group is clicked", () => {
+    vi.stubGlobal("matchMedia", () => ({
+      matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }));
+    const onTabChange = vi.fn();
+    render(
+      <TooltipProvider>
+        <ControlCenterShell activeTab="settings" onTabChange={onTabChange}>
+          <div>Settings content</div>
+        </ControlCenterShell>
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
+
+    expect(onTabChange).toHaveBeenCalledWith("theme-library");
+    expect(onTabChange).not.toHaveBeenCalledWith("settings");
   });
 
   it("does not duplicate transient device status in the header", () => {

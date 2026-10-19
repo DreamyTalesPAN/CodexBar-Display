@@ -183,7 +183,7 @@ export function LogsScreen({
               Create a diagnostic file when support asks for it.
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-1 items-center">
+          <CardContent>
             <SupportReportActions
               creating={supportReportBusy}
               diagnostics={diagnostics}

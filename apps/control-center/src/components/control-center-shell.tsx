@@ -294,11 +294,7 @@ function ShellNavButton({
   notify?: boolean;
   onClick: () => void;
 }) {
-  const { isMobile, setOpenMobile, state } = useSidebar();
-  // In the icon-collapsed sidebar the Appearance submenu is hidden, so the
-  // collapsed click must navigate directly instead of toggling an invisible
-  // Collapsible.
-  const collapsedToIcons = !isMobile && state === "collapsed";
+  const { isMobile, setOpenMobile } = useSidebar();
 
   const button = (
     <SidebarMenuButton
@@ -307,9 +303,9 @@ function ShellNavButton({
       disabled={disabled}
       isActive={active}
       onClick={() => {
-        if (!collapsible || collapsedToIcons) {
-          onClick();
-        }
+        // Opening the Appearance group also opens its tab, so only one entry
+        // is highlighted (issue #579). The group still toggles beside it.
+        onClick();
         if (isMobile && !collapsible) {
           setOpenMobile(false);
         }
