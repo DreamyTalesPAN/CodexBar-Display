@@ -55,7 +55,7 @@ export function LogsScreen({
     copyForHost(formatCustomerSupportText(value), windowsHost);
 
   return (
-    <div className="grid max-w-[760px] gap-10 pt-8 pb-10 text-sm">
+    <div className="grid max-w-[760px] gap-10 pt-8 pb-10 text-sm leading-normal">
       <div
         className={`flex items-center justify-between gap-6 p-5 ${FRAME}`}
       >
@@ -91,7 +91,7 @@ export function LogsScreen({
         action={
           onRefresh ? (
             <Button
-              className="h-auto px-0 font-semibold"
+              className="h-auto px-0 text-sm font-semibold"
               disabled={busyAction === "logs"}
               onClick={onRefresh}
               size="sm"
