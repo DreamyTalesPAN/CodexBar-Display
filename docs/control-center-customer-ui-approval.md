@@ -7474,3 +7474,73 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. Proposed: text in every button, card, card title, label, input, textarea, select and alert is 13 px (was 14 px; button sizes xs 12 px, sm 12.8 px and lg 16 px become 13 px too); card titles, labels and alert titles are 600 (was 500); inputs and textareas stay 16 px on phones and are 13 px from the tablet width up (was 14 px); select group labels 13 px (was 12 px). Words, layout and colours stay the same. Not changed: the Update buttons on the Updates tab (updates-screen.tsx, size lg, own class text-base font-bold, three places) keep 16 px until Paul decides.
 - Scope: `apps/control-center/src/app/globals.css` (theme token `--text-body`), `apps/control-center/src/lib/utils.ts` (the class merge keeps the token), `apps/control-center/src/components/ui/{button,card,label,input,textarea,select,alert}.tsx`, `apps/control-center/src/components/ui/calm-type.test.tsx` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — same words, one smaller size and two weights
+
+## 2026-10-18 — Calm shell: sidebar and page header as in the approved pictures (#713)
+
+- User approval: Paul 17.10. approved the variant-A pictures (shell shown in overview-A/settings-A/overview-A2-center); this applies their sidebar and page header (#713).
+- Approved customer-visible result: The left sidebar is 232 px wide with no line under the brand; the brand is "VIBETV" in one colour at 16 px with "Control Center" below it. Nav entries are 34 px high with 13 px text, the active entry has the olive fill with full-strength text and the other entries are muted; the icons no longer turn lime. Hovering a nav entry shows a weaker tint of the same olive fill (not in the pictures; it is clearly weaker than the active entry). The Appearance chevron points down and turns up when open. The page title is 28 px semibold with the sidebar toggle as a muted 20 px icon above the page, 36 px from the top and 48 px from the sides on wide screens. The update dot is ink instead of lime. Same entries, order, wording, icons and behaviour.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/control-center-brand.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — look only, no new capability
+
+## 2026-10-18 — Codex review fix: the hover tint of the calm shell applies to every nav entry (#713)
+
+- User approval: none needed for this entry; it records a Codex review fix that makes the hover tint of the entry above apply (the Appearance subentries and an open Appearance group were still full-strength on hover); not seen by Paul.
+- Approved customer-visible result: as in the entry above; hovering an inactive entry or a subentry shows the weaker tint, not the full olive fill. No other change.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a hover correction of the calm shell
+
+## 2026-10-18 — Collapsed sidebar: icons only, no label letters beside them (#758)
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, Mac click run 7161, finding 1, #758); look unchanged except: with the sidebar collapsed to icons, the first letter of each nav label (for example "O", "U", "S") no longer shows beside its icon. Before: the letter shows beside the icon; after: icons only.
+- Approved customer-visible result: With the sidebar collapsed to icons, each nav entry shows only its icon, as the collapsed sidebar was meant to. The label stays in the page for screen readers and in the tooltip on hover. The expanded sidebar is unchanged. No new text, button or dialog.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, its test `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a hidden label, no new capability
+
+## 2026-10-18 — Collapsed sidebar: no Appearance chevron, sub-items at 13 px (#758)
+
+- User approval: pending — Paul reviews this PR (two findings from the Windows click run 1018b, notes N1 and N11, #758); look unchanged except: with the sidebar collapsed to icons, the small chevron beside the Appearance icon no longer shows; the "Themes" and "Screensavers" entries under Appearance go from 14 px to 13 px text, like the other nav entries. Before: the chevron sticks out of the active pill and the sub-items are 14 px; after: no chevron in icon-only mode, sub-items 13 px.
+- Approved customer-visible result: as in the calm shell entry of 2026-10-18 (#713): nav entries 13 px, the Appearance chevron points down and turns up when open. The chevron stays in the expanded sidebar; in icon-only mode it is hidden because it is decorative. The sub-items use the same 13 px as the nav entries. No new text, button or dialog.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, its test `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a hidden decorative icon and a text size fix
+
+## 2026-10-18 — Codex review fixes on the calm shell: active entry keeps its fill on hover; sidebar toggle hit area (#758)
+
+- User approval: pending — Paul reviews this PR (Codex review on f9c14aa7, two P2 findings, #758); look unchanged except: hovering the current nav entry no longer shows the weaker tint, it keeps the full olive fill as the active entry does. Before: the current entry looked inactive while hovered; after: it looks active while hovered. The sidebar toggle above the page keeps its 20 px icon; only its clickable area grows from 20 px to 28 px, without moving the page title.
+- Approved customer-visible result: as in the calm shell entry of 2026-10-18 (#713): hovering an inactive entry shows the weaker tint, clearly weaker than the active entry; the active entry keeps its full fill. The sidebar toggle is a muted 20 px icon. No new text, button or dialog.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, its test `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a hover correction and a larger hit area without a visible size change
+
+## 2026-10-18 — Codex review fix on the calm shell: icons centred in the icon-only pills (#758)
+
+- User approval: pending — Paul reviews this PR (Codex review on a7bd8d47, P2, #758); look unchanged except: with the sidebar collapsed to icons, each nav icon sits in the centre of its pill. Before: the icon sits about 6 px left of the pill centre; after: centred.
+- Approved customer-visible result: as in the collapsed-sidebar entry of 2026-10-18 (#758): icons only in the icon-only sidebar, each entry as a centred pill. No new text, button or dialog.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, its test `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a centring class for the icon-only pills
+
+## 2026-10-18 — Calm shell: the page title is the open Appearance sub-page (#758)
+
+- User approval: pending — Paul reviews (one page title as in the approved Appearance A picture); look unchanged except: on Appearance the page title in the header row reads "Themes" or "Screensavers". Before: "Appearance"; after: the sub-page name. Theme Studio keeps "Appearance". Other pages unchanged.
+- Approved customer-visible result: as in the approved Appearance A picture (#713): one page title, the sub-page name, in the header row next to the sidebar toggle.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, its test `apps/control-center/src/components/control-center-shell.test.tsx`, `apps/control-center/src/components/theme-library-screen.tsx` (reports whether the Studio is open), `apps/control-center/src/components/control-center-app.tsx` (passes that flag to the shell) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the page title only
+
+## 2026-10-18 — Codex review fix on the calm shell: whats-new test finds the page title as level-1 heading (#758)
+
+- User approval: pending — Paul reviews this PR (CI on a10c1af1: the whats-new test found two "Themes" headings); look unchanged except: none. Visible text, layout and controls are as in the entry above; only the test query changed.
+- Approved customer-visible result: as in the calm shell entry of 2026-10-18 (#758): one page title, the sub-page name, in the header row.
+- Scope: `apps/control-center/src/components/control-center-app.whats-new.test.tsx` (test query only) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a test query change without a visible change
+
+## 2026-10-18 — Calm shell complete: one page title, no sentence under it on Themes and Screensavers (#758)
+
+- User approval: pending — Paul reviews (one page title as in the approved Appearance A picture); look unchanged except: the page header reads "Themes" or "Screensavers" (before: "Appearance" with a second title "Themes" or "Screensavers" under it), and the sentence under that second title is removed. Removed: "Customize how your live usage screen looks while VibeTV is active." and "Choose what appears when VibeTV enters standby after being idle.". The Create Theme / Create Screensaver button stays on the right above the list (not in the header row).
+- Approved customer-visible result: as in the approved Appearance A picture (#713): one page title, the sub-page name, in the header row next to the sidebar toggle; no description sentence.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx`, its test `apps/control-center/src/components/theme-library-screen.test.tsx`, `apps/control-center/scripts/test-customer-flows.mjs` (heading waits find the header title, test file only), and this approval record. Pull request branch only, not merge or release. Touches the Themes/Screensavers page; conflicts with #754 there (Marcus resolves).
+- What's new: none — a removed duplicate title and sentence
+
+## 2026-10-18 — Codex review fix: the internal Theme Studio preview keeps the Appearance title (#758)
+
+- User approval: pending — Paul reviews this PR (Codex review on 370fe895, P2, #758); look unchanged except: the internal preview at /internal/theme-studio-preview shows the header "Appearance" as in the Studio of the app. Before: "Themes" in that preview; after: "Appearance". Development preview only, not customer-visible.
+- Approved customer-visible result: as in the calm shell entry of 2026-10-18 (#758): Theme Studio keeps its own "Appearance" header.
+- Scope: `apps/control-center/src/components/theme-studio/theme-studio-preview.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a header flag in the development preview
