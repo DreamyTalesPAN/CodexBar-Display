@@ -3171,7 +3171,7 @@ func TestUsageManualRefreshReportsRefreshingForOldCollectorSnapshot(t *testing.T
 			Providers: []daemon.ProviderUsageSnapshot{{
 				Provider:    "codex",
 				Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 36, UsageMode: "used"},
-				CollectedAt: now.Add(-time.Minute),
+				CollectedAt: now.Add(-2 * time.Minute),
 			}},
 		}, true
 	}
@@ -3198,7 +3198,7 @@ func TestUsageManualRefreshExpiresWithoutNewCollectorSnapshot(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	requestedAt := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
 	now := requestedAt
-	collectedAt := requestedAt.Add(-time.Minute)
+	collectedAt := requestedAt.Add(-2 * time.Minute)
 	server.now = func() time.Time { return now }
 	server.wakeDisplayStream = func() {}
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
@@ -3258,7 +3258,7 @@ func TestUsageManualRefreshExpiresWithoutNewCollectorSnapshot(t *testing.T) {
 	}
 }
 
-func TestUsageManualRefreshDoesNotCompleteForCachedDashboardSnapshotReread(t *testing.T) {
+func TestUsageManualRefreshCompletesForRecentCachedDashboardSnapshot(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
 	snapshotProducedAt := now.Add(-15 * time.Second)
@@ -3284,8 +3284,48 @@ func TestUsageManualRefreshDoesNotCompleteForCachedDashboardSnapshotReread(t *te
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if rec.Code != http.StatusOK || got.Refresh.State != "refreshing" || got.Providers[0].Weekly != 42 {
-		t.Fatalf("cached dashboard reread must not complete manual refresh, status=%d got %+v", rec.Code, got)
+	if rec.Code != http.StatusOK || got.Refresh.State != "fresh" || got.Providers[0].Weekly != 42 {
+		t.Fatalf("recent cached dashboard reading must complete manual refresh, status=%d got %+v", rec.Code, got)
+	}
+}
+
+// A reading up to 60 s old ends a manual refresh even when it predates the
+// click; an older one keeps the refresh running (#579).
+func TestUsageManualRefreshKeepsRefreshingForReadingOlderThan60Seconds(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	collectedAt := now.Add(-61 * time.Second)
+	server.now = func() time.Time { return now }
+	server.wakeDisplayStream = func() {}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         collectedAt,
+			CurrentProvider: "codex",
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:    "codex",
+				Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 36, UsageMode: "used"},
+				CollectedAt: collectedAt,
+			}},
+		}, true
+	}
+
+	read := func(path string) usageResponse {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		var got usageResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode %s: %v", path, err)
+		}
+		return got
+	}
+
+	if got := read("/v1/usage?refresh=1"); got.Refresh.State != "refreshing" || got.Providers[0].Weekly != 36 {
+		t.Fatalf("reading 61 s old must keep manual refresh running, got %+v", got.Refresh)
+	}
+	collectedAt = now.Add(-60 * time.Second)
+	if got := read("/v1/usage"); got.Refresh.State != "fresh" {
+		t.Fatalf("reading 60 s old must end manual refresh, got %+v", got.Refresh)
 	}
 }
 
@@ -3318,6 +3358,38 @@ func TestUsageManualRefreshReportsFreshForNewCollectorSnapshot(t *testing.T) {
 	}
 }
 
+// A failed attempt recorded shortly before the click is not a reading, so it
+// must not end the refresh by age (#579).
+func TestUsageManualRefreshKeepsRefreshingForRecentNoReadingSnapshot(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.wakeDisplayStream = func() {}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         now,
+			CurrentProvider: "codex",
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:    "codex",
+				Frame:       protocol.Frame{Provider: "codex", Label: "Codex", UsageMode: "used"},
+				CollectedAt: now.Add(-15 * time.Second),
+				NoReading:   true,
+			}},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
+
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if rec.Code != http.StatusOK || got.Refresh.State != "refreshing" {
+		t.Fatalf("recent NoReading snapshot must not end manual refresh, status=%d got %+v", rec.Code, got.Refresh)
+	}
+}
+
 // A second click on Refresh while the first is still waiting must not move the
 // request: the reading that answers the first click would otherwise count as
 // too old, and the wait would start again (#579).
@@ -3325,7 +3397,7 @@ func TestUsageManualRefreshSecondClickKeepsTheFirstRequest(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	firstClick := time.Date(2026, 10, 8, 14, 0, 0, 0, time.UTC)
 	now := firstClick
-	collectedAt := firstClick.Add(-time.Minute)
+	collectedAt := firstClick.Add(-2 * time.Minute)
 	server.now = func() time.Time { return now }
 	var wakeCount int
 	server.wakeDisplayStream = func() { wakeCount++ }
@@ -3364,8 +3436,9 @@ func TestUsageManualRefreshSecondClickKeepsTheFirstRequest(t *testing.T) {
 		t.Fatalf("each click must wake the collector, got %d", wakeCount)
 	}
 
-	// With no request pending, the next click starts a new one.
-	now = firstClick.Add(20 * time.Second)
+	// With no request pending, the next click starts a new one. The reading
+	// from the first click is older than 60 s by then, so it cannot end this one.
+	now = firstClick.Add(80 * time.Second)
 	if got := read("/v1/usage?refresh=1"); got.State != "refreshing" || got.RequestedAt != now.Format(time.RFC3339) {
 		t.Fatalf("a click after a finished refresh must start a new one, got %+v", got)
 	}
@@ -3382,7 +3455,7 @@ func TestUsageManualRefreshWaitsForEveryProvider(t *testing.T) {
 	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
 	server.now = func() time.Time { return now }
 	server.wakeDisplayStream = func() {}
-	old := now.Add(-time.Minute)
+	old := now.Add(-2 * time.Minute)
 	usage := daemon.PersistedUsage{
 		SavedAt: now,
 		Providers: []daemon.ProviderUsageSnapshot{
