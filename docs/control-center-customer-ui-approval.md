@@ -7598,3 +7598,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as approved in the #677 entries above and the #645 entries from main. Appearance › Screensavers shows "Create screensaver" together with #645's "Screensaver is off." line; nothing else changes.
 - Scope: the merge of main into this branch, the Screensavers expectation in `theme-library-screen.test.tsx` (both sides kept) and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — #677: approval marker after merging main with #674
+
+- User approval: as in the marker entry above (Marcus's click test of #677 on 2026-10-19). Main moved on with #674 right after #645, so main is merged in again (orchestrator, Paul not active). The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. The conflict was only in this record; both sides are kept. No new wording.
+- Approved customer-visible result: as approved in the #677 entries above and the #645 and #674 entries from main; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
