@@ -218,7 +218,11 @@ export function UpdatesScreen({
         updateStatus?.stage === "rediscovering"
         ? "VibeTV is restarting"
         : "Updating VibeTV"
-      : macAppCheckFailed || firmwareCheckFailed
+      : // A check the customer started keeps the old answers until it
+        // answers; it says what is happening now, not the old result.
+        refreshing
+        ? "Checking for updates"
+        : macAppCheckFailed || firmwareCheckFailed
         ? "Update check failed"
         : anyUpdateAvailable
           ? "Update available"
@@ -227,9 +231,13 @@ export function UpdatesScreen({
             : firmwareNoAnswer
               ? "No update available"
               : "Everything is up to date";
-  const headingTone: Tone = installingUpdate || anyUpdateAvailable
+  const headingTone: Tone = installingUpdate
     ? "ink"
-    : macAppCheckFailed || firmwareCheckFailed
+    : refreshing
+      ? "muted"
+      : anyUpdateAvailable
+        ? "ink"
+        : macAppCheckFailed || firmwareCheckFailed
       ? "failed"
       : checkingUpdates || firmwareNoAnswer
         ? "muted"

@@ -8099,3 +8099,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged from the entries above except: after the customer closed "Update failed", a later failed update check opens "Could not check for updates" although the old job still reports its error.
 - Scope: `apps/control-center/src/components/updates-screen.tsx` (the closed update error is kept in the screen), `apps/control-center/src/components/updates-screen.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new feature; the Updates screen shows the entries that already exist
+
+## 2026-10-19 — Calm Updates screen: the heading says "Checking for updates" while a started check runs (#752, Codex fix)
+- User approval: pending — Paul reviews (Updates built as drawn in the approved master + derived states, decided by the communicator 19.10.); Codex review fix; not seen by Paul
+- Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged from the entries above except: while a check the customer started runs, the headline reads "Checking for updates" (muted dot) instead of the old "Update check failed" / "Update available"; it matches the button "Checking updates".
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new feature; the Updates screen shows the entries that already exist

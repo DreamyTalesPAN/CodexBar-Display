@@ -362,6 +362,20 @@ describe("calm Updates screen", () => {
     expect(screen.getByRole("dialog", { name: "Could not check for updates" })).toBeTruthy();
   });
 
+  it("failed check: the heading says Checking while a retry runs", () => {
+    const failed = {
+      ...upToDate,
+      firmwareUpdate: {
+        checkedAt: "2026-10-19T09:10:00Z",
+        status: "check_failed" as const,
+        installedFirmware: "1.0.48",
+        updateAvailable: false,
+      },
+    };
+    render(<UpdatesScreen {...failed} busyAction="firmware-check" />);
+    expect(screen.getByRole("heading", { level: 2, name: "Checking for updates" })).toBeTruthy();
+  });
+
   it("no dialog while everything checks fine", () => {
     render(<UpdatesScreen {...upToDate} />);
     expect(screen.queryByRole("dialog")).toBeNull();
