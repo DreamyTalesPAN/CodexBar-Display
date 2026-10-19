@@ -7497,3 +7497,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Not decided; this extends the option above after the Codex review. Look unchanged except: in dark mode, an input that is marked invalid and has keyboard focus (for example the IP address field in the setup dialog) keeps the ink focus ring `#EDEDED` at full strength instead of the translucent red ring. The light theme already did this. The internal UI kit page (not customer-facing) keeps its `Support` swatch on the support colour `#506600`, as on main. Nothing else changes.
 - Scope: `apps/control-center/src/components/ui/input.tsx` (one dark variant class), `apps/control-center/src/components/vibetv-ui-kit.tsx` (internal swatch restored to the support token), `apps/control-center/src/app/globals.focus-ring.test.ts` (dark invalid assertion added), and this approval record. Not merged, not released.
 - What's new: none — no new text, screen or control; only focus ring colour and strength change
+
+## 2026-10-19 — Option exact result: selected setup card and keyboard focus ring (#776 review)
+- User approval: pending — Paul decides (keyboard focus ring ink instead of lime, app-wide; selected setup card as stated here)
+- Approved customer-visible result: Not decided. Exact rendered result of this option: a selected setup card has an ink border (`#1B1B1B` light, `#EDEDED` dark) and a soft 20 % ink halo (before: 20 % olive `#506600` light, 20 % lime `#CCFF00` dark). The selected card is not changed to a full-strength ring in this option; that is the topic of option #775. Keyboard focus is a full-strength ink ring (`#1B1B1B` light, `#EDEDED` dark).
+- Scope: this approval record only. No code change to `setup-selectable-card.tsx` in this commit. Not merged, not released.
+- What's new: none — no new text, screen or control; only the colour of the selected card border and halo and of the keyboard focus ring change
