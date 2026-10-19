@@ -42,11 +42,13 @@ function readConsent(): boolean {
 }
 
 export function OpenAIKeyForm({
-  inSetup, initialConfigured = false, onConnectingChange, onConnected, onDisconnected,
+  inSetup, initialConfigured = false, onConfiguredChange, onConnectingChange, onConnected, onDisconnected,
 }: {
   inSetup: boolean;
   /** What the opener already knows about the saved key, so the dialog has its final height from the first frame. */
   initialConfigured?: boolean | "pending";
+  /** Tells the opener whenever the stored-key state changes, e.g. a key was saved but its check failed, so its label and the dialog title follow. */
+  onConfiguredChange?: (configured: boolean | "pending") => void;
   onConnectingChange: (busy: boolean) => void;
   /** `kept` is the helper's answer on whether the key survives restarts; undefined when no new key was checked. */
   onConnected: (kept?: boolean) => void;
@@ -59,6 +61,7 @@ export function OpenAIKeyForm({
   const [connecting, setConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState("");
 
+  useEffect(() => onConfiguredChange?.(configured), [configured]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const controller = new AbortController();
     void fetchAIThemeCapabilities(controller.signal)
@@ -223,12 +226,6 @@ export function ThemeStudioKeyRow() {
     };
   }, [version]);
 
-  // A key can be saved while its check failed; closing reads the stored-key state again, so the row and the next heading follow it.
-  function close(next: boolean) {
-    setOpen(next);
-    if (!next) setVersion((v) => v + 1);
-  }
-
   return (
     <div className="flex items-center justify-between gap-4 rounded-xl border px-4 py-3">
       <div className="min-w-0">
@@ -240,15 +237,16 @@ export function ThemeStudioKeyRow() {
       {/* The same dialog as every other overlay: no entrance animation of its own. */}
       <SetupDialog
         open={open}
-        onOpenChange={(next) => { if (!busy) close(next); }}
+        onOpenChange={(next) => { if (!busy) setOpen(next); }}
         title={hasStoredKey(configured) ? "Replace OpenAI key" : "Add OpenAI key"}
         // Calm rule 13: no X. A visible Close sits in the footer instead, hidden while a key is checked.
         showCloseButton={false}
-        secondaryAction={busy ? undefined : { label: "Close", onSelect: () => close(false) }}
+        secondaryAction={busy ? undefined : { label: "Close", onSelect: () => setOpen(false) }}
       >
         <OpenAIKeyForm
           inSetup={false}
           initialConfigured={configured}
+          onConfiguredChange={setConfigured}
           onConnectingChange={setBusy}
           onConnected={() => {
             setOpen(false);

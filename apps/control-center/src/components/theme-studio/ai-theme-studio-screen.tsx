@@ -1648,6 +1648,7 @@ export function AIThemeStudioScreen({
           <OpenAIKeyForm
               inSetup
               initialConfigured={configured}
+              onConfiguredChange={setConfigured}
               onConnectingChange={setConnecting}
               onConnected={(kept) => {
                 setConfigured(true);

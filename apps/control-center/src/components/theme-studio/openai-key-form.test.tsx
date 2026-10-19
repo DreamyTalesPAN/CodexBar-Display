@@ -80,6 +80,20 @@ describe("Theme Studio AI row in Settings", () => {
     expect(await screen.findByRole("button", { name: "Change key" })).toBeTruthy();
   });
 
+  it("tells the opener when a key was saved but its check failed, so the dialog title follows while it is open", async () => {
+    vi.mocked(fetchAIThemeCapabilities)
+      .mockResolvedValueOnce(capabilities(false))
+      .mockResolvedValue({ enabled: true, providers: [{ id: "openai", configured: true, verificationRequired: true }] } as unknown as Awaited<ReturnType<typeof fetchAIThemeCapabilities>>);
+    vi.mocked(saveAIThemeCredential).mockResolvedValue(undefined as never);
+    vi.mocked(verifyAIThemeCredential).mockRejectedValue(new Error("Check failed."));
+    const onConfiguredChange = vi.fn();
+    render(<OpenAIKeyForm inSetup onConfiguredChange={onConfiguredChange} onConnectingChange={() => {}} onConnected={() => {}} onDisconnected={() => {}} />);
+    fireEvent.change(await screen.findByLabelText("OpenAI key", { selector: "input" }), { target: { value: "sk-test-key" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Connect and continue" }));
+    await waitFor(() => expect(onConfiguredChange).toHaveBeenLastCalledWith("pending"));
+  });
+
   it("has no close X in the key dialog", async () => {
     vi.mocked(fetchAIThemeCapabilities).mockResolvedValue(capabilities(false));
     render(<ThemeStudioKeyRow />);

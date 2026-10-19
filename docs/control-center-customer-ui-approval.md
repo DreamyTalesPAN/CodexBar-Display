@@ -8044,3 +8044,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the entries above; only the text of the row button and the dialog title after such a failed check changes.
 - Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx` (ThemeStudioKeyRow), its test, and this record. Pull request branch only, not merge or release.
 - What's new: none — fix of a review finding, no new text or feature
+
+## 2026-10-19 — Codex fix: the key dialog title follows a failed check at once, in Settings and in the Studio (#781)
+
+- User approval: none needed for this entry; it records a second Codex review fix (P2) to the key dialog entries above: the key form now tells its opener whenever the stored-key state changes, so after a key was saved but its check failed the dialog title says "Replace OpenAI key" at once (before: it kept "Add OpenAI key" while the form already offered retry and disconnect), also in the Studio, and the Settings row says "Change key". Not seen by Paul.
+- Approved customer-visible result: as in the entries above; only the dialog title and the row button text after such a failed check change.
+- Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx`, `ai-theme-studio-screen.tsx` (key dialog), the test of the form, and this record. Pull request branch only, not merge or release.
+- What's new: none — fix of a review finding, no new text or feature
