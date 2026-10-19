@@ -63,6 +63,18 @@ const rebuiltLegacyThemeSpecPaths = {
 
 await mkdir(distRoot, { recursive: true });
 
+// Tags live in protocol/theme_tags.json, not in manifest.json: the manifest is
+// inside each ZIP, so a tag there would change every published ZIP and force a
+// version bump. The vocabulary is the schema enum; unknown tags fail the build.
+const tagRegistry = JSON.parse(await readFile(path.join(repoRoot, "protocol/theme_tags.json"), "utf8"));
+const knownTags = new Set([...tagRegistry.vocabulary.features, ...tagRegistry.vocabulary.providers]);
+for (const [themeId, tags] of Object.entries(tagRegistry.packs)) {
+  const unknown = tags.filter((tag) => !knownTags.has(tag));
+  if (unknown.length > 0 || new Set(tags).size !== tags.length) {
+    throw new Error(`theme ${themeId} has unknown or repeated tags in protocol/theme_tags.json: ${unknown.join(", ") || tags.join(", ")}`);
+  }
+}
+
 const themeDirs = [];
 for (const name of await readdir(sourceRoot)) {
   if (name.startsWith(".")) {
@@ -112,6 +124,7 @@ for (const theme of themeDirs) {
   const zipPath = path.join(distRoot, zipName);
   const zipBytes = await buildImmutableZip(theme.dir, manifest.id, zipPath);
   const spec = JSON.parse(specRaw);
+  const tags = tagRegistry.packs[manifest.id] || [];
   catalog.themes.push({
     id: manifest.id,
     title: manifest.name || manifest.id,
@@ -121,6 +134,7 @@ for (const theme of themeDirs) {
     themeSpecPath: manifest.themeSpec?.path,
     requiresFirmware: manifest.minFirmware,
     requiredCapabilities: manifest.requiredCapabilities,
+    ...(tags.length > 0 ? { tags } : {}),
     downloadAsset: zipName,
     sha256: createHash("sha256").update(zipBytes).digest("hex"),
     bytes: zipBytes.byteLength,

@@ -7467,3 +7467,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as recorded in the #648 entry above and in the entries before it; nothing else changes.
 - Scope: the merge of main into this branch and this approval record. Pull request branch only, not merge or release.
 - What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-19 — Theme tags in the catalog (data only, #793)
+- User approval: none needed; data only, no visible change; not seen by Paul. The Features and Providers filter groups come in the later Appearance filter PR and need his yes there.
+- Approved customer-visible result: none. The theme catalog gets an optional `tags` field and the readers keep it; no screen, copy, control or layout changes.
+- Scope: `apps/control-center/src/lib/themes.ts`, the new `apps/control-center/src/lib/theme-tags.ts` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — data only, no customer-visible change

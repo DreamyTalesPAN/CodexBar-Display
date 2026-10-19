@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "vocabulary": {
+    "features": ["agent-states", "animated", "clock", "usage-stats", "pixel-art"],
+    "providers": ["claude", "codex", "cursor"]
+  },
+  "packs": {
+    "claude-creature": ["animated", "pixel-art", "claude"],
+    "clippy": ["animated", "pixel-art"],
+    "mini-classic": ["animated"],
+    "night-clock": ["clock"],
+    "pixel-battery": ["pixel-art", "claude", "codex", "cursor"],
+    "reset-countdown": ["pixel-art"],
+    "synthwave": ["pixel-art"],
+    "tiny-office": ["animated", "pixel-art"],
+    "token-counter": ["usage-stats"],
+    "token-fire": ["animated", "pixel-art", "usage-stats"]
+  }
+}
