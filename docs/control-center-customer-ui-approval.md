@@ -8037,3 +8037,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: before → after: "Details" hangs directly below the preview without taking any space, so the preview keeps its centred place when an element is selected or deselected and when Details opens or closes; when opened, the Details panel is an overlay above its bar, over the lower part of the preview, at most 22 rem high, and scrolls inside itself (this replaces the "reserved space" wording of the 7194 entry above, which gave the panel too little room in a window 800 px high). Texts and controls inside Details are unchanged.
 - Scope: `apps/control-center/src/components/theme-studio/editable-theme-preview.tsx`, `ai-theme-studio-screen.tsx` (the Details block), their tests, and this record. Pull request branch only, not merge or release.
 - What's new: none — layout refinement of the Theme Studio, no new feature
+
+## 2026-10-19 — Codex fix: the key dialog row follows a key saved while its check failed (#781)
+
+- User approval: none needed for this entry; it records a Codex review fix (P2) to the key dialog entry above: when a new key was saved but its check failed, closing the dialog now reads the stored-key state again, so the row says "Change key" and the next dialog title says "Replace OpenAI key" (before: the row kept "Add key" and the title "Add OpenAI key" while the form already offered retry and disconnect). Not seen by Paul.
+- Approved customer-visible result: as in the entries above; only the text of the row button and the dialog title after such a failed check changes.
+- Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx` (ThemeStudioKeyRow), its test, and this record. Pull request branch only, not merge or release.
+- What's new: none — fix of a review finding, no new text or feature

@@ -223,6 +223,12 @@ export function ThemeStudioKeyRow() {
     };
   }, [version]);
 
+  // A key can be saved while its check failed; closing reads the stored-key state again, so the row and the next heading follow it.
+  function close(next: boolean) {
+    setOpen(next);
+    if (!next) setVersion((v) => v + 1);
+  }
+
   return (
     <div className="flex items-center justify-between gap-4 rounded-xl border px-4 py-3">
       <div className="min-w-0">
@@ -234,11 +240,11 @@ export function ThemeStudioKeyRow() {
       {/* The same dialog as every other overlay: no entrance animation of its own. */}
       <SetupDialog
         open={open}
-        onOpenChange={(next) => { if (!busy) setOpen(next); }}
+        onOpenChange={(next) => { if (!busy) close(next); }}
         title={hasStoredKey(configured) ? "Replace OpenAI key" : "Add OpenAI key"}
         // Calm rule 13: no X. A visible Close sits in the footer instead, hidden while a key is checked.
         showCloseButton={false}
-        secondaryAction={busy ? undefined : { label: "Close", onSelect: () => setOpen(false) }}
+        secondaryAction={busy ? undefined : { label: "Close", onSelect: () => close(false) }}
       >
         <OpenAIKeyForm
           inSetup={false}
