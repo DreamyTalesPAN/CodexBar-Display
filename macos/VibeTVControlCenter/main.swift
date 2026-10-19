@@ -3345,8 +3345,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             return
         }
         pageKeepAlive = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: controlCenterPageKeepAliveInterval)
+            while (try? await Task.sleep(for: controlCenterPageKeepAliveInterval)) != nil {
                 _ = try? await self?.webView?.evaluateJavaScript("0")
             }
         }
@@ -3780,6 +3779,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
         scheduledReload?.cancel()
         scheduledReload = nil
+        // A closed window has no page to keep running; createWindow starts a new one.
+        pageKeepAlive?.cancel()
+        pageKeepAlive = nil
         closePreparationInFlight = false
         allowPreparedWindowClose = false
         scheduledCloseFallback?.cancel()
