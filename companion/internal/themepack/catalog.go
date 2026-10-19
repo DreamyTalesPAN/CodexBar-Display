@@ -26,16 +26,19 @@ type Catalog struct {
 	Themes        []CatalogTheme `json:"themes"`
 }
 
+// CatalogTheme tags are filter data for the Control Center; readers ignore tags
+// they do not know, so an unknown tag is never a catalog error.
 type CatalogTheme struct {
-	ID            string `json:"id"`
-	Title         string `json:"title"`
-	Description   string `json:"description,omitempty"`
-	Usage         string `json:"usage,omitempty"`
-	ThemeRev      int    `json:"themeRev,omitempty"`
-	DownloadURL   string `json:"downloadUrl,omitempty"`
-	DownloadAsset string `json:"downloadAsset,omitempty"`
-	SHA256        string `json:"sha256,omitempty"`
-	Bytes         int64  `json:"bytes,omitempty"`
+	ID            string   `json:"id"`
+	Title         string   `json:"title"`
+	Description   string   `json:"description,omitempty"`
+	Usage         string   `json:"usage,omitempty"`
+	Tags          []string `json:"tags,omitempty"`
+	ThemeRev      int      `json:"themeRev,omitempty"`
+	DownloadURL   string   `json:"downloadUrl,omitempty"`
+	DownloadAsset string   `json:"downloadAsset,omitempty"`
+	SHA256        string   `json:"sha256,omitempty"`
+	Bytes         int64    `json:"bytes,omitempty"`
 }
 
 func LoadCatalog(catalogRef string) (*Catalog, error) {
