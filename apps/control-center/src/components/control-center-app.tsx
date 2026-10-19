@@ -455,6 +455,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       busyAction === "firmware-update" || busyAction === "install";
   }, [busyAction]);
   const [supportReportBusy, setSupportReportBusy] = useState(false);
+  // Run diagnostics has its own busy flag, so it never shows the report card busy.
+  const [supportDiagnosticsRunning, setSupportDiagnosticsRunning] =
+    useState(false);
   const [lastError, setLastError] = useState<ApiError | null>(null);
   // One error object is one occurrence. Once a surface has closed it, no
   // surface shows it again (Support and Settings alike).
@@ -613,6 +616,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [whatsNewReopened, setWhatsNewReopened] = useState(false);
   const lastFirmwareErrorRef = useRef<ApiError | null>(null);
   const [supportDiagnostics, setSupportDiagnostics] =
+    useState<SupportDiagnostics | null>(null);
+  // The report the Support report card created. Only its Create report actions
+  // set it; Run diagnostics refreshes supportDiagnostics and leaves this alone.
+  const [supportReport, setSupportReport] =
     useState<SupportDiagnostics | null>(null);
   // The brightness the customer chose and VibeTV has not confirmed yet.
   const brightnessDirtyRef = useRef<number | null>(null);
@@ -4154,7 +4161,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const loadSupportDiagnostics =
     useCallback(async (): Promise<SupportDiagnostics | null> => {
       const setupGeneration = setupGenerationRef.current;
-      setSupportReportBusy(true);
       try {
         const payload = await collectSupportReport(
           () => runCompanion<SupportDiagnostics>("/v1/diagnostics"),
@@ -4233,8 +4239,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           tone: "attention",
         });
         return null;
-      } finally {
-        setSupportReportBusy(false);
       }
     }, [
       addEvent,
@@ -4260,6 +4264,28 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       usage,
       windowsHost,
     ]);
+
+  // Create report: the card, Updates and the setup screens. Shows the report on the card.
+  const createSupportReport = useCallback(async () => {
+    setSupportReportBusy(true);
+    try {
+      const payload = await loadSupportDiagnostics();
+      setSupportReport(payload);
+      return payload;
+    } finally {
+      setSupportReportBusy(false);
+    }
+  }, [loadSupportDiagnostics]);
+
+  // Run diagnostics: the same snapshot, but the Support report card stays as it is.
+  const runSupportDiagnostics = useCallback(async () => {
+    setSupportDiagnosticsRunning(true);
+    try {
+      await loadSupportDiagnostics();
+    } finally {
+      setSupportDiagnosticsRunning(false);
+    }
+  }, [loadSupportDiagnostics]);
 
   const retryProviderSetup = useCallback(async () => {
     const setupGeneration = setupGenerationRef.current;
@@ -5468,7 +5494,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         <SetupWelcomeScreen
           aiFixPrompt={setupAiFixPrompt}
           lines={setupWelcomeLines}
-          onCreateSupportReport={loadSupportDiagnostics}
+          onCreateSupportReport={createSupportReport}
           windowsHost={windowsHost}
         />
       );
@@ -5477,7 +5503,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     if (runtimeSurface === "hosted-setup") {
       return (
         <MacAppDownloadScreen
-          onCreateSupportReport={loadSupportDiagnostics}
+          onCreateSupportReport={createSupportReport}
           platform={customerPlatform}
           release={companionRelease}
           theme={initialTheme}
@@ -5559,7 +5585,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               }
               onFindManualTarget={findManualTarget}
               onConfigureWiFi={configureSetupWiFi}
-              onCreateSupportReport={loadSupportDiagnostics}
+              onCreateSupportReport={createSupportReport}
               onFinished={finishSetup}
               alreadySetUp={
                 !setupFinishedThisSession && setupCompletedFor(device?.deviceId)
@@ -5786,7 +5812,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             onCheckUpdates={checkUpdates}
             onCreateReport={() => {
               setActiveTab("logs");
-              void loadSupportDiagnostics();
+              void createSupportReport();
             }}
             onInstallUpdate={installFirmwareUpdate}
             onRetryThemeUpdate={retryActiveThemeUpgrade}
@@ -5806,10 +5832,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             device={device}
             themes={catalog.themes}
             diagnostics={supportDiagnostics}
+            diagnosticsRunning={supportDiagnosticsRunning}
+            supportReport={supportReport}
             events={logs}
             lastError={centredDialogOpen ? null : supportError}
+            onCreateSupportReport={createSupportReport}
             onDismissError={() => setDismissedError(lastError)}
-            onLoadDiagnostics={loadSupportDiagnostics}
+            onLoadDiagnostics={runSupportDiagnostics}
             onRefresh={checkCompanion}
             onRepairUsageEngine={retryUsageService}
             onRunSetupAgain={() => setSetupAgainRequested(true)}
@@ -5873,7 +5902,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       !setupOwnsScreen ? (
         <SetupUsageDialog
           cause={usageFailure}
-          onCreateSupportReport={() => void loadSupportDiagnostics()}
+          onCreateSupportReport={() => void createSupportReport()}
           onOpenChange={(open) => setUsageFailureHidden(!open)}
           onRepair={retryUsageService}
           open
