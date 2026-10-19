@@ -28,8 +28,8 @@ export function useSystemBusyDismissal(
 }
 
 /**
- * Whether a dialog other than this one is open. The busy dialog leaves the
- * page usable, so a page's own dialog (Run setup again, a theme preview, a
+ * Whether a dialog other than this one is open. The busy dialog comes up on
+ * its own, so a page's own dialog (Run setup again, a theme preview, a
  * factory reset, a delete confirmation) can open under it, or be open when it
  * comes; it waits for that one instead of covering it, and returns once it is
  * closed. The first answer is read before the first render, so the busy dialog
@@ -81,9 +81,6 @@ export function SystemBusyDialog({ onClose }: { onClose: () => void }) {
       }}
       open
       primaryAction={{ label: systemBusyCopy.action, onSelect: onClose }}
-      // An announcement over whatever the customer is doing: the app behind
-      // it keeps working.
-      scrim={false}
       showCloseButton={false}
       title={systemBusyCopy.title}
     />
