@@ -8631,3 +8631,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Gauge 2.0 (replaces its look in the entry above). Before: the provider name stood in 18 px type at the top of the ring and the notice that replaces it (`Update available`, `Open VibeTV Mac App`) ran over the ring. After: the provider name (and the notice in its place) is in the small device type lower in the ring, so `Update available` and `Open VibeTV Mac App` stay inside the opening of the ring; the percentage is in the 32 px device font (before 52 px) below it, then `Session left`, the pace line and the reset line as before. The separator in the reset line stays ` - `: the device font used there has only the characters 32 to 127, so it has no middle dot. The What's new entry of Pace Meter now reads: title `New theme: Pace Meter`, text `New: Pace shows whether your session and weekly limits will last – in reserve, on pace or in deficit.` (before: `Session and weekly use against your plan: a tick marks where you should be, in reserve or in deficit.`)
 - Scope: `theme-packs/gauge/` (revision 5, version 0.2.0 unchanged, still unpublished) with its ZIP, render packs and catalog entry, `theme-packs/gauge-theme.test.ts`, `lib/whats-new.ts`, `components/control-center-app.whats-new.test.tsx`, and this approval record.
 - What's new: none — corrects the entry `theme-pace-meter` above
+
+## 2026-10-19 — Gauge 2.0: more room for the update notice, revision 5 (#800)
+
+- User approval: communicator decision on the Gauge notice (see the entry above); not seen by Paul.
+- Approved customer-visible result: As in the entry above, with the provider name and the notice 4 px lower and the percentage and `Session left` 4 and 3 px lower, so that `Open VibeTV Mac App` keeps about 3 px clear of the ring on both sides (before: under 1 px). Pictures: `review-1016/ui/pace-vs-vorlage/gauge.png`.
+- Scope: `theme-packs/gauge/` (revision 5), its ZIP, render packs and catalog entry, `theme-packs/gauge-theme.test.ts`, and this approval record.
+- What's new: none — layout correction of an unpublished theme
