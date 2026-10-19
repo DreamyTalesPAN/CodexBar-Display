@@ -1235,7 +1235,7 @@ export function AIThemeStudioScreen({
               </div>
             ) : null}
             {primitive && !isAttachedSceneAnimation(primitive.assetPath) ? (
-              <Collapsible data-selection-controls className="mx-auto flex min-h-0 w-full max-w-[460px] flex-col">
+              <Collapsible data-selection-controls className="mx-auto flex w-full max-w-[460px] flex-col lg:min-h-0">
                 <CollapsibleTrigger asChild>
                   <Button variant="ghost" className="group w-full justify-between">
                     Details
@@ -1243,7 +1243,7 @@ export function AIThemeStudioScreen({
                   </Button>
                 </CollapsibleTrigger>
                 {/* The panel is as high as the free space below the preview and scrolls inside itself. */}
-                <CollapsibleContent className="min-h-0 flex-1 overflow-y-auto pt-3">
+                <CollapsibleContent className="pt-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
               <section className="space-y-3" aria-label="Selected element tools">
                 <div className="flex items-center justify-between gap-2">
                   <h2 className="min-w-0 truncate font-medium">

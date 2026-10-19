@@ -439,7 +439,7 @@ export function EditableThemePreview({
     </div>
     </div>
     </div>
-    {children ? <div className="row-start-3 flex min-h-0 flex-col pt-2 [touch-action:auto]">{children}</div> : null}
+    {children ? <div className="row-start-3 flex flex-col pt-2 lg:min-h-0 [touch-action:auto]">{children}</div> : null}
     {selectionBox ? (
       <div aria-hidden="true" data-testid="selection-box"
         className="pointer-events-none absolute z-10 border border-dashed border-[#CCFF00] bg-[#CCFF0033]"
