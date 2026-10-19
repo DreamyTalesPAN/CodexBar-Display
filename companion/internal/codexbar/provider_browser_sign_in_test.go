@@ -83,17 +83,17 @@ func TestBrowserSignInStaysNarrow(t *testing.T) {
 		"OAuth error: not logged in [claude:browser-sign-in-required http://claude.ai/login]": ProviderAuthRequired,
 	}
 	for detail, want := range cases {
-		if got := classifyProviderErrorFor("claude", detail); got != want {
+		if got := ProviderErrorKind("claude", detail); got != want {
 			t.Fatalf("%q: got %s want %s", detail, got, want)
 		}
 	}
 	// The marker names its provider; another provider's summary never inherits it.
-	if got := classifyProviderErrorFor("codex", windowsClaudeOAuthRefused); got != ProviderAuthRequired {
+	if got := ProviderErrorKind("codex", windowsClaudeOAuthRefused); got != ProviderAuthRequired {
 		t.Fatalf("codex must stay auth_required: %s", got)
 	}
 	// CodexBar's marker beats incidental wording in the summary around it.
 	mixed := "Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: request timed out; CLI: permission denied [claude:browser-sign-in-required https://claude.ai/login]"
-	if got := classifyProviderErrorFor("claude", mixed); got != ProviderBrowserSignInRequired {
+	if got := ProviderErrorKind("claude", mixed); got != ProviderBrowserSignInRequired {
 		t.Fatalf("marker must win over timeout/permission wording, got %s", got)
 	}
 }

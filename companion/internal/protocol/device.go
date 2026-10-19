@@ -283,9 +283,6 @@ type DeviceCapabilities struct {
 	BuiltinThemes              []string
 	CachedThemeID              string
 	CachedThemeRev             int
-	DisplayWidthPx             int
-	DisplayHeightPx            int
-	DisplayColorDepthBits      int
 	SupportsBrightness         bool
 	MinBrightnessPercent       int
 	MaxBrightnessPercent       int
@@ -357,9 +354,6 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 		BuiltinThemes:              append([]string(nil), h.Capabilities.Theme.BuiltinThemes...),
 		CachedThemeID:              h.Capabilities.Theme.CachedThemeID,
 		CachedThemeRev:             h.Capabilities.Theme.CachedThemeRev,
-		DisplayWidthPx:             h.Capabilities.Display.WidthPx,
-		DisplayHeightPx:            h.Capabilities.Display.HeightPx,
-		DisplayColorDepthBits:      h.Capabilities.Display.ColorDepthBits,
 		SupportsBrightness:         h.Capabilities.Display.Brightness.Supported,
 		MinBrightnessPercent:       h.Capabilities.Display.Brightness.MinPercent,
 		MaxBrightnessPercent:       h.Capabilities.Display.Brightness.MaxPercent,
