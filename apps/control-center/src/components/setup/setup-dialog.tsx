@@ -40,8 +40,15 @@ type SetupDialogProps = {
    * app it is reporting on.
    */
   scrim?: boolean;
+  /**
+   * There is no close X. When true and there is no secondary action, a
+   * visible "Close" (ghost) is the footer's secondary button. Otherwise the
+   * secondary action is the way out.
+   */
   showCloseButton?: boolean;
   title: string;
+  /** 480 px instead of 440, for the dialogs that carry a list. */
+  wide?: boolean;
 };
 
 /**
@@ -65,6 +72,7 @@ export function SetupDialog({
   secondaryAction,
   showCloseButton = true,
   title,
+  wide = false,
 }: SetupDialogProps) {
   return (
     <Dialog modal={false} onOpenChange={onOpenChange} open={open}>
@@ -81,10 +89,10 @@ export function SetupDialog({
         )}
       />
       <DialogContent
+        className={wide ? "sm:max-w-[480px]" : undefined}
         style={{ animation: "none" }}
         {...(description === undefined ? { "aria-describedby": undefined } : {})}
         onInteractOutside={(event) => event.preventDefault()}
-        showCloseButton={showCloseButton}
       >
         <DialogHeader className="gap-1.5">
           <DialogTitle className="flex items-center gap-2 pr-6">
@@ -103,13 +111,18 @@ export function SetupDialog({
           {description !== undefined ? <DialogDescription>{description}</DialogDescription> : null}
         </DialogHeader>
         {children}
-        {primaryAction || secondaryAction ? (
+        {primaryAction || secondaryAction || showCloseButton ? (
           // Two long labels, e.g. "Copy provider message for Claude" and
           // "Sign in to Claude", are wider than the popup: the main action
           // moves to its own line instead of sticking out on the right.
           <DialogFooter className="sm:flex-wrap">
+            {showCloseButton && !secondaryAction ? (
+              <Button onClick={() => onOpenChange(false)} type="button" variant="ghost">
+                Close
+              </Button>
+            ) : null}
             {secondaryAction ? (
-              <SetupDialogButton action={secondaryAction} variant="outline" />
+              <SetupDialogButton action={secondaryAction} variant="ghost" />
             ) : null}
             {primaryAction ? (
               <SetupDialogButton action={primaryAction} variant="default" />
@@ -126,7 +139,7 @@ function SetupDialogButton({
   variant,
 }: {
   action: SetupDialogAction;
-  variant: "default" | "outline";
+  variant: "default" | "ghost";
 }) {
   return (
     <Button
