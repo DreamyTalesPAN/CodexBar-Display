@@ -58,6 +58,7 @@ export function SetupRecoveryDialogs({
           onSelect: onRestart,
         }}
         title="VibeTV Control Center needs attention"
+        wide
       />
     </>
   );
