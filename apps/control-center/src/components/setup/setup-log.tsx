@@ -44,34 +44,34 @@ export function SetupLog({
   stillLines = true,
 }: SetupLogProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const lastId = lines[lines.length - 1]?.id;
-  // How many "Still …" lines each step has got, keyed by the step's line id.
+  const lastKey = lines.length ? stepKey(lines[lines.length - 1]) : undefined;
+  // How many "Still …" lines each step has got, keyed by stepKey.
   const [stillCounts, setStillCounts] = useState<Record<string, number>>({});
   // A retry reuses the step's id: a step that starts running again counts from zero.
-  const [prevRun, setPrevRun] = useState({ id: lastId, running });
-  if (prevRun.id !== lastId || prevRun.running !== running) {
-    setPrevRun({ id: lastId, running });
-    if (running && lastId !== undefined) {
-      setStillCounts((counts) => ({ ...counts, [lastId]: 0 }));
+  const [prevRun, setPrevRun] = useState({ key: lastKey, running });
+  if (prevRun.key !== lastKey || prevRun.running !== running) {
+    setPrevRun({ key: lastKey, running });
+    if (running && lastKey !== undefined) {
+      setStillCounts((counts) => ({ ...counts, [lastKey]: 0 }));
     }
   }
 
   useEffect(() => {
-    if (!stillLines || !running || lastId === undefined) {
+    if (!stillLines || !running || lastKey === undefined) {
       return;
     }
     const timer = window.setInterval(() => {
       setStillCounts((counts) => ({
         ...counts,
-        [lastId]: Math.min((counts[lastId] ?? 0) + 1, STILL_MAX_LINES),
+        [lastKey]: Math.min((counts[lastKey] ?? 0) + 1, STILL_MAX_LINES),
       }));
     }, STILL_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [stillLines, running, lastId]);
+  }, [stillLines, running, lastKey]);
 
   const rows: SetupLogLine[] = lines.flatMap((line) => [
     line,
-    ...Array.from({ length: stillCounts[line.id] ?? 0 }, (_, index) => ({
+    ...Array.from({ length: stillCounts[stepKey(line)] ?? 0 }, (_, index) => ({
       id: `${line.id}-still-${index + 1}`,
       text: stillText(line.text),
     })),
@@ -120,6 +120,21 @@ export function SetupLog({
   );
 }
 
+/** The step's words: its last sentence, without a ": …", " · " or " — " tail. */
+function stepWording(text: string): string {
+  const sentences = text.replace(/\.$/, "").split(/\. /);
+  return sentences[sentences.length - 1].split(/: | · | — /)[0];
+}
+
+/**
+ * Identifies one step for counting its Still lines. The id alone is not
+ * enough: a restored log numbers its lines by position, so a new step can
+ * take an old id. The wording stays put while a percentage changes.
+ */
+function stepKey(line: SetupLogLine): string {
+  return `${line.id}\u0000${stepWording(line.text)}`;
+}
+
 /**
  * "Refreshing display stream." becomes "Still refreshing display stream – hang
  * tight." Only the last sentence counts ("Upload interrupted. Retrying." reads
@@ -129,9 +144,11 @@ export function SetupLog({
  * nothing about what is running, so it gets the generic line.
  */
 function stillText(text: string): string {
-  const sentences = text.replace(/\.$/, "").split(/\. /);
-  const step = sentences[sentences.length - 1].split(/: | · | — /)[0];
-  if (!step || /\b\w+ed\b/i.test(step)) {
+  const step = stepWording(text);
+  // Past tense at the start or the end ("Uploaded theme layout.",
+  // "Display stream refreshed.") is not what runs now; "installed" inside
+  // "Checking installed firmware." is.
+  if (!step || /^\w+ed\b|\b\w+ed$/i.test(step)) {
     return "Still working on it – hang tight.";
   }
   // Lower-case a capitalised first word, but not a name such as VibeTV.

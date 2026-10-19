@@ -7832,3 +7832,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the entry above, plus two details: a progress text with a colon ("Updating VibeTV: 40%.") gives "> Still updating VibeTV – hang tight." without the percentage, and a step that is retried starts its Still lines from zero.
 - Scope: `apps/control-center/src/components/setup/setup-log.tsx`, `apps/control-center/src/components/setup/setup-log-still.test.tsx`. Pull request branch only, not merge or release.
 - What's new: none — review fix inside the approved step-line change.
+
+## 2026-10-19 — Step lists: second Codex review fix for the Still lines (no new approval)
+
+- User approval: none for this fix itself. It narrows the approved result of the entry "Step lists: "Still … – hang tight." lines and no cursor block" above; Paul has not seen it separately.
+- Approved customer-visible result: as in the entry above. Only the counting changes: a restored log that reuses a line's position for a new step starts its Still lines from zero; a past-tense word inside a running step ("Checking installed firmware.") no longer gets the generic line.
+- Scope: `apps/control-center/src/components/setup/setup-log.tsx`, `apps/control-center/src/components/setup/setup-log-still.test.tsx`. Pull request branch only, not merge or release.
+- What's new: none — review fix inside the approved step-line change.

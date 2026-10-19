@@ -219,4 +219,60 @@ describe("SetupLog while a step runs long", () => {
       "> Still updating VibeTV – hang tight.",
     ]);
   });
+  it("does not take a past-participle word inside the step for a finished step", () => {
+    const { container } = render(
+      <SetupLog
+        lines={[{ id: "check", text: "Checking installed firmware." }]}
+        running
+      />,
+    );
+    advance(8000);
+    expect(stillRows(container)).toEqual([
+      "> Still checking installed firmware – hang tight.",
+    ]);
+  });
+
+  it("starts counting again when a restored log reuses the id for a new step", () => {
+    const { container, rerender } = render(
+      <SetupLog
+        lines={[{ id: "11", text: "Uploading theme files." }]}
+        running
+      />,
+    );
+    advance(16000);
+    expect(stillRows(container)).toHaveLength(2);
+
+    rerender(
+      <SetupLog
+        lines={[{ id: "11", text: "Refreshing display stream." }]}
+        running
+      />,
+    );
+    expect(stillRows(container)).toEqual([]);
+
+    advance(8000);
+    expect(stillRows(container)).toEqual([
+      "> Still refreshing display stream – hang tight.",
+    ]);
+  });
+
+  it("keeps counting while a percentage in the same step changes", () => {
+    const { container, rerender } = render(
+      <SetupLog
+        lines={[{ id: "fw", text: "updating firmware · 40% — keep VibeTV powered on" }]}
+        running
+      />,
+    );
+    advance(16000);
+
+    rerender(
+      <SetupLog
+        lines={[{ id: "fw", text: "updating firmware · 41% — keep VibeTV powered on" }]}
+        running
+      />,
+    );
+    advance(8000);
+
+    expect(stillRows(container)).toHaveLength(3);
+  });
 });
