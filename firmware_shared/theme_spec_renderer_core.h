@@ -36,6 +36,9 @@ constexpr uint32_t kThemeSpecFieldProviderSlots = 1UL << 13;
 constexpr uint32_t kThemeSpecFieldUsageWindowReset = 1UL << 14;
 // CodexBar's pace for a usage window; unlike its countdown it does not tick.
 constexpr uint32_t kThemeSpecFieldUsageWindowPace = 1UL << 15;
+// usageProviderName: the provider's label without the notice. Not the Label field,
+// which marks a primitive that shows the update notice itself.
+constexpr uint32_t kThemeSpecFieldProviderName = 1UL << 16;
 constexpr size_t kMaxThemeSpecProviderSlots = 2;
 constexpr int kThemeSpecCanvasSize = 240;
 constexpr size_t kMaxThemeSpecGifAssets = 1;
@@ -838,6 +841,10 @@ inline void FormatPaceFooter(
     std::snprintf(out, outSize, "%s", frame.updateNotice);
     return;
   }
+  if (!window.available) {
+    out[0] = '\0';
+    return;
+  }
   if (window.resetSecs <= 0) {
     std::snprintf(out, outSize, "%s", ResetTextFor(ResetSecsAreIdle(window.resetSecs)));
     return;
@@ -931,6 +938,9 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
     const char* field = UsageWindowField(key);
     if (std::strcmp(field, "available") == 0 || std::strcmp(key, availableShort) == 0) {
       std::snprintf(out, outSize, "%s", available ? "true" : "false");
+    } else if (std::strcmp(field, "PaceFooter") == 0) {
+      // The notice shows whether or not a window exists.
+      FormatPaceFooter(frame, window, UsageWindowFor(frame, slotIndex).pace, out, outSize);
     } else if (!available) {
       out[0] = '\0';
     } else if (std::strcmp(field, "label") == 0 || std::strcmp(key, labelShort) == 0) {
@@ -944,11 +954,7 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
     } else if (std::strncmp(field, "Pace", 4) == 0) {
       // CodexBar computed this pace for the running window; once its
       // countdown expired or lost trust, the pace is unknown again.
-      if (std::strcmp(field, "PaceFooter") == 0) {
-        FormatPaceFooter(frame, window, UsageWindowFor(frame, slotIndex).pace, out, outSize);
-      } else {
-        FormatBoundPace(UsageWindowFor(frame, slotIndex).pace, window.resetSecs > 0, field + 4, out, outSize);
-      }
+      FormatBoundPace(UsageWindowFor(frame, slotIndex).pace, window.resetSecs > 0, field + 4, out, outSize);
     } else {
       std::snprintf(out, outSize, "%d", ClampPct(window.percent));
     }
@@ -1178,8 +1184,11 @@ inline uint32_t BindingFieldMask(const char* binding) {
   if (StringEqualsAny(binding, "provider", "pr")) {
     return kThemeSpecFieldProvider;
   }
-  if (StringEqualsAny(binding, "label", "providerLabel", "l") || std::strcmp(SafeText(binding), "usageProviderName") == 0) {
+  if (StringEqualsAny(binding, "label", "providerLabel", "l")) {
     return kThemeSpecFieldLabel;
+  }
+  if (std::strcmp(SafeText(binding), "usageProviderName") == 0) {
+    return kThemeSpecFieldProviderName;
   }
   if (StringEqualsAny(binding, "session", "sessionPercent", "s")) {
     return kThemeSpecFieldSession;

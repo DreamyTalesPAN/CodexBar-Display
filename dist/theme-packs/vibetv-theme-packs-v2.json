@@ -65,8 +65,8 @@
       "title": "Gauge",
       "usage": "live",
       "version": "0.2.0",
-      "themeRev": 9,
-      "themeSpecPath": "/themes/u/ga-9-8ac35294.json",
+      "themeRev": 10,
+      "themeSpecPath": "/themes/u/ga-10-317f5a1b.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -75,8 +75,8 @@
         "usage-pace-v1"
       ],
       "downloadAsset": "vibetv-theme-gauge-v0.2.0.zip",
-      "sha256": "b61efe77e0c40384c218005975d1caca5aeeeb56a8c962fcff29824e373dded9",
-      "bytes": 929,
+      "sha256": "370de9875a6dbab14bf67568a5d2aee98b259e9138630d91eeae4fcadb2b107a",
+      "bytes": 932,
       "earlierThemeSpecPaths": [
         "/themes/u/ga-2-ad19500f.json"
       ]

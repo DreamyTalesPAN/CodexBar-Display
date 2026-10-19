@@ -4775,8 +4775,37 @@ void testProviderNameAndPaceFooterAroundTheNotice() {
   // The theme counts as one that shows the notice itself, and repaints with it.
   TEST_ASSERT_TRUE(codexbar_display::core::ThemeSpecLiveUseForRaw(
       String(R"JSON({"p":[{"t":"tx","b":"usageSlot1PaceFooter"}]})JSON")).Uses(codexbar_display::themespec::kThemeSpecFieldLabel));
-  TEST_ASSERT_TRUE(codexbar_display::core::ThemeSpecLiveUseForRaw(
-      String(R"JSON({"p":[{"t":"tx","b":"usageProviderName"}]})JSON")).Uses(codexbar_display::themespec::kThemeSpecFieldLabel));
+  // The provider name is not a primitive that shows the notice: the notice surface
+  // must not pick the Label field for a theme that only names the provider with it.
+  const auto nameUse = codexbar_display::core::ThemeSpecLiveUseForRaw(
+      String(R"JSON({"p":[{"t":"tx","b":"usageProviderName"}]})JSON"));
+  TEST_ASSERT_FALSE(nameUse.Uses(codexbar_display::themespec::kThemeSpecFieldLabel));
+  TEST_ASSERT_TRUE(nameUse.Uses(codexbar_display::themespec::kThemeSpecFieldProviderName));
+  // The footer shows the notice also when no usage window exists, so a notice during
+  // startup or a provider error is visible.
+  FrameData bare;
+  bare.label = "Claude";
+  bare.updateAvailable = true;
+  bare.showUpdateNotice = true;
+  bare.updateNotice = "Update available";
+  std::vector<std::string> startup = renderedTexts(spec, bare);
+  TEST_ASSERT_EQUAL_STRING("Claude", startup[0].c_str());
+  TEST_ASSERT_EQUAL_STRING("Update available", startup[2].c_str());
+  bare.updateAvailable = false;
+  TEST_ASSERT_EQUAL_STRING("", renderedTexts(spec, bare)[2].c_str());
+}
+
+// A label change repaints the provider name, a notice toggle does not.
+void testProviderNameRepaintsWithItsLabelOnly() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* first =
+      R"JSON({"v":2,"provider":"claude","label":"Claude","themeSpec":{"v":1,"id":"name-only","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"usageProviderName"}]}})JSON";
+  const char* busy = R"JSON({"v":2,"provider":"claude","label":"Busy"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, first, 1000, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, busy, 2000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldProviderName) != 0);
 }
 
 // A window whose countdown ran out here lost its pace on screen; the frame that
@@ -5045,6 +5074,7 @@ int main() {
   RUN_TEST(testUsagePaceParsesAndRepaintsOnlyThemesThatShowIt);
   RUN_TEST(testCountdownRepaintTakesTheBoundPaceAlong);
   RUN_TEST(testProviderNameAndPaceFooterAroundTheNotice);
+  RUN_TEST(testProviderNameRepaintsWithItsLabelOnly);
   RUN_TEST(testPaceRepaintsAfterTheCountdownRanOutAndTrustReturns);
   RUN_TEST(testPaceBarRepaintsWhenOnlyTheUsageModeChanges);
   return UNITY_END();

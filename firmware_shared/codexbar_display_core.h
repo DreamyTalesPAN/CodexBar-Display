@@ -796,6 +796,7 @@ inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& 
   return (use.Uses(themespec::kThemeSpecFieldProvider) && previous.provider != next.provider) ||
          (use.Uses(themespec::kThemeSpecFieldLabel) &&
           (previous.label != next.label || previous.updateAvailable != next.updateAvailable)) ||
+         (use.Uses(themespec::kThemeSpecFieldProviderName) && previous.label != next.label) ||
          (use.Uses(themespec::kThemeSpecFieldSession) && previous.session != next.session) ||
          (use.Uses(themespec::kThemeSpecFieldWeekly) && previous.weekly != next.weekly) ||
          (use.Uses(themespec::kThemeSpecFieldReset) &&
@@ -828,6 +829,9 @@ inline uint32_t ThemeSpecLiveChangedFields(
   }
   if (previous.label != next.label || previous.updateAvailable != next.updateAvailable) {
     fields |= themespec::kThemeSpecFieldLabel;
+  }
+  if (previous.label != next.label) {
+    fields |= themespec::kThemeSpecFieldProviderName;
   }
   if (previous.session != next.session) {
     fields |= themespec::kThemeSpecFieldSession;

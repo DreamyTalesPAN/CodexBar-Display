@@ -1914,11 +1914,11 @@ function usagePaceText(binding: string, kind: string, frame: FrameData): string 
 // unavailable text without a countdown).
 function paceFooterText(key: string, index: number, frame: FrameData): string {
   const window = frame.usageWindows[index];
-  if (!window?.available) {
-    return "";
-  }
   if (frame.updateNotice) {
     return frame.updateNotice;
+  }
+  if (!window?.available) {
+    return "";
   }
   if (window.resetSecs <= 0) {
     return formatReset(window.resetSecs, window.idle);

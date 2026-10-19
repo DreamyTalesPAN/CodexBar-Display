@@ -54,7 +54,7 @@ describe("Gauge 2.0 theme pack", () => {
     expect(manifest).toMatchObject({ usage: "live", assets: [], minFirmware: "1.0.50", version: "0.2.0" });
     expect(manifest.requiredCapabilities).toEqual(["usage-slots-v1", "color-stops-v1", "progress-arc-v1", "usage-pace-v1"]);
     // Two letters, so no theme a customer saves can share the file name.
-    expect(manifest.themeSpec.path).toMatch(/^\/themes\/u\/ga-9-[0-9a-f]{8}\.json$/);
+    expect(manifest.themeSpec.path).toMatch(/^\/themes\/u\/ga-10-[0-9a-f]{8}\.json$/);
     expect(manifest.themeSpec.bytes).toBe(Buffer.byteLength(rawSpec));
     expect(pack.specPath).toBe(manifest.themeSpec.path);
   });
@@ -104,6 +104,8 @@ describe("Gauge 2.0 theme pack", () => {
       expect.arrayContaining([texts.find((p) => p.b === "usageProviderName")]),
     );
     expect(render(none)).not.toContain("<circle");
+    // A notice during startup or a provider error still shows, under the (absent) ring.
+    expect(shown(render({ ...none, updateNotice: "Update available" }))).toBe("ClaudeUpdate available");
     const one = frame(64, { usageSlots: [{ id: "session", label: "Session", percent: 64, resetSecs: 8078 }] });
     expect(shown(render(one))).toBe("Claude64%Session leftresets 2h 14m");
     expect(shown(render(frame(64)))).toContain("Weekly 87%");
