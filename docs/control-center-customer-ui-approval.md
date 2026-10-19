@@ -8355,3 +8355,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/support-report-actions.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-19 — #784: Control Center needs attention dialog matched to the template (build 2 QA)
+
+- User approval: pending — Paul reviews (#784 matched to the approved template, build 2 QA); look unchanged except, each one before → after: the dialog "VibeTV Control Center needs attention" is 480 px wide, so Restart Control Center and Try automatic repair again stand side by side → before 440 px wide with the two buttons one under the other.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/setup/setup-recovery-dialogs.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
