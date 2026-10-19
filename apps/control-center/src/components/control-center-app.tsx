@@ -622,6 +622,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // Last standby settings the device confirmed (loaded or saved). A failed
   // save rolls back to this, never to the in-flight slider value.
   const lastSavedStandbyRef = useRef<StandbySettings | null>(null);
+  // The VibeTV the settings on screen belong to (see mergeDevice).
+  const settingsDeviceIdRef = useRef<string | undefined>(undefined);
   const setupGenerationRef = useRef(0);
   const deviceSearchAttemptRef = useRef(0);
   // A VibeTV on firmware from before USB-C support is offered as the VibeTV
@@ -696,7 +698,29 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     companionStatus === "online" && companionInstallationMode === "legacy",
   );
 
+  // The screensaver values of the VibeTV on screen: unsaved and saved ones,
+  // and the shown setting. Dropped when the VibeTV they belong to goes.
+  const resetStandbySettings = useCallback(() => {
+    standbyDirtyRef.current = null;
+    lastSavedStandbyRef.current = null;
+    setStandby(null);
+  }, []);
+
   const mergeDevice = useCallback((next: DeviceInfo) => {
+    // The screensaver values belong to one VibeTV. When another one is
+    // connected they go, a read still on its way for the first one no longer
+    // counts (readSettings) and the next read starts anew, so the Show
+    // screensaver switch stays closed until the new VibeTV's own setting is
+    // read: a click would send the first VibeTV's time and brightness to it
+    // (Codex review of #645).
+    const deviceId = next.deviceId?.trim();
+    if (deviceId && deviceId !== settingsDeviceIdRef.current) {
+      if (settingsDeviceIdRef.current) {
+        settingsReadRef.current = null;
+        resetStandbySettings();
+      }
+      settingsDeviceIdRef.current = deviceId;
+    }
     if (deviceIsReady(next)) {
       didRunAutomaticDeviceSearch.current = false;
       setLastError((current) => isConnectionRecoveryError(current) ? null : current);
@@ -714,7 +738,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         ),
       };
     });
-  }, []);
+  }, [resetStandbySettings]);
 
   useEffect(() => {
     providerPreferencesRef.current = providerPreferences;
@@ -1085,7 +1109,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       if (
         standbyDirtyRef.current === null &&
-        writes.standby === standbyWrites
+        writes.standby === standbyWrites &&
+        payload.device?.deviceId === settingsDeviceIdRef.current
       ) {
         lastSavedStandbyRef.current = payload.settings?.standby ?? null;
         setStandby(payload.settings?.standby ?? null);
@@ -2106,9 +2131,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       );
       brightnessDirtyRef.current = null;
       setBrightness(null);
-      standbyDirtyRef.current = null;
-      lastSavedStandbyRef.current = null;
-      setStandby(null);
+      resetStandbySettings();
       setLastInstall(undefined);
       setThemeInstallStatus(null);
       setSupportDiagnostics(null);
@@ -2190,6 +2213,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     addEvent,
     markCompanionAccessBlocked,
     markCompanionUnavailable,
+    resetStandbySettings,
     runCompanion,
     setDeviceRecoveryGate,
   ]);
@@ -5794,8 +5818,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             usage={
               appearanceSection === "screensavers" ? "screensaver" : "live"
             }
-            onSaveStandby={saveStandby}
             onStudioOpenChange={setThemeStudioOpen}
+            onOpenScreensaverSettings={() => {
+              shownAfterPageOpensRef.current = "settings-screensaver";
+              setActiveTab("settings");
+            }}
             windowsHost={windowsHost}
           />
         ) : null}

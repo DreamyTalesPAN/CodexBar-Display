@@ -84,7 +84,7 @@ function renderLibrary(
       device={null}
       onInstallCustomTheme={async () => false}
       onInstallTheme={vi.fn()}
-      onSaveStandby={vi.fn()}
+      onOpenScreensaverSettings={vi.fn()}
       onSelectTheme={vi.fn()}
       selectedThemeId=""
       storefrontConfigured={false}
@@ -165,7 +165,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
         device={null}
         onInstallCustomTheme={async () => false}
         onInstallTheme={vi.fn()}
-        onSaveStandby={vi.fn()}
+        onOpenScreensaverSettings={vi.fn()}
         onSelectTheme={vi.fn()}
         selectedThemeId=""
         storefrontConfigured={false}
@@ -195,7 +195,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
           }}
           onInstallCustomTheme={async () => false}
           onInstallTheme={vi.fn()}
-          onSaveStandby={vi.fn()}
+          onOpenScreensaverSettings={vi.fn()}
           onSelectTheme={vi.fn()}
           selectedThemeId=""
           storefrontConfigured={false}
@@ -229,7 +229,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
           }}
           onInstallCustomTheme={async () => false}
           onInstallTheme={vi.fn()}
-          onSaveStandby={vi.fn()}
+          onOpenScreensaverSettings={vi.fn()}
           onSelectTheme={vi.fn()}
           selectedThemeId=""
           storefrontConfigured={false}
@@ -295,7 +295,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
           }}
           onInstallCustomTheme={async () => false}
           onInstallTheme={vi.fn()}
-          onSaveStandby={vi.fn()}
+          onOpenScreensaverSettings={vi.fn()}
           onSelectTheme={vi.fn()}
           selectedThemeId=""
           // The settings are read: without them a screensaver is not installed.
@@ -363,7 +363,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
           }}
           onInstallCustomTheme={async () => false}
           onInstallTheme={vi.fn()}
-          onSaveStandby={vi.fn()}
+          onOpenScreensaverSettings={vi.fn()}
           onSelectTheme={vi.fn()}
           selectedThemeId=""
           standby={{ enabled: true, timeoutMinutes: 10, brightnessPercent: 20 }}
@@ -396,7 +396,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
           device={{ ...device, firmware: "9.9.9", connectionState }}
           onInstallCustomTheme={async () => false}
           onInstallTheme={vi.fn()}
-          onSaveStandby={vi.fn()}
+          onOpenScreensaverSettings={vi.fn()}
           onSelectTheme={vi.fn()}
           selectedThemeId=""
           storefrontConfigured={false}
@@ -431,19 +431,18 @@ describe("ThemeLibraryScreen Appearance sections", () => {
       "Choose what appears when VibeTV enters standby after being idle.",
     );
     expect(html).toContain("Create Screensaver");
-    expect(html).toContain('aria-label="Show screensaver"');
-    expect(html).toContain("Screensaver is turned off");
+    // The switch is in Settings only (#643, variant 645-A).
+    expect(html).not.toContain('aria-label="Show screensaver"');
+    expect(html).toContain("Screensaver is off.");
     expect(html).toContain("Night Clock");
     expect(html).not.toContain("Live Theme");
-    // Switched off is a normal state, not an error (#548).
-    const notice = html
-      .split('data-slot="alert"')
-      .find((part) => part.includes("Screensaver is turned off"));
-    expect(notice?.slice(0, notice.indexOf(">"))).toContain("text-card-foreground");
-    expect(notice?.slice(0, notice.indexOf(">"))).not.toContain("text-destructive");
+    // Switched off is a normal state, not an error (#548): one muted line.
+    const line = html.match(/<p [^>]*>(?=<span>Screensaver is off\.)/)?.[0];
+    expect(line).toContain("bg-muted");
+    expect(line).not.toContain("destructive");
   });
 
-  it("locks installs while the screensaver is off but keeps the toggle usable", () => {
+  it("locks installs while the screensaver is off and links to its switch in Settings", () => {
     const html = renderToStaticMarkup(
       <ThemeLibraryScreen
         busyAction={null}
@@ -456,7 +455,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
         }}
         onInstallCustomTheme={async () => false}
         onInstallTheme={vi.fn()}
-        onSaveStandby={vi.fn()}
+        onOpenScreensaverSettings={vi.fn()}
         onSelectTheme={vi.fn()}
         selectedThemeId=""
         storefrontConfigured={false}
@@ -472,13 +471,14 @@ describe("ThemeLibraryScreen Appearance sections", () => {
       />,
     );
 
-    const standbySwitch = html.match(
-      /<button[^>]*id="vibetv-library-standby"[^>]*>/,
-    )?.[0];
-    expect(standbySwitch).not.toContain('disabled=""');
     // Sentence case, like every other button of the app.
     expect(html).toContain(">Turn on first<");
-    expect(html).toContain("Turn on Show screensaver to install");
+    expect(html).toContain(">Turn on in Settings</a>");
+    // The Design System link (dark ink, underline, olive on hover), not lime on grey.
+    // Dark mode hovers in the light olive #A9C76A: #506600 has only 1.44:1 on the dark grey.
+    const link = html.match(/<a class="([^"]*)"[^>]*>Turn on in Settings<\/a>/)?.[1] ?? "";
+    expect(link.split(" ")).toEqual(expect.arrayContaining(["text-foreground", "underline", "hover:text-[var(--vibetv-support)]", "dark:hover:text-[#A9C76A]"]));
+    expect(link).not.toContain("text-primary");
   });
 
   it("removes the warning without hiding the library when enabled", () => {
@@ -489,8 +489,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
       screensaverPath: "/themes/s/night.json",
     });
 
-    expect(html).toContain('aria-checked="true"');
-    expect(html).not.toContain("Screensaver is turned off");
+    expect(html).not.toContain("Screensaver is off.");
     expect(html).toContain("Night Clock");
   });
 
