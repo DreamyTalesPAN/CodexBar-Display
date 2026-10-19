@@ -49,7 +49,7 @@ export const WHATS_NEW: WhatsNewEntry[] = [
     id: "theme-pace-meter",
     icon: PanelsTopLeft,
     title: "New theme: Pace Meter",
-    body: "Session and weekly use against your plan: a tick marks where you should be, in reserve or in deficit.",
+    body: "New: Pace shows whether your session and weekly limits will last – in reserve, on pace or in deficit.",
     theme: "pace-meter",
   },
   {
