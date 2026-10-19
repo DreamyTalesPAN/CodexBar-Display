@@ -25,6 +25,8 @@ type SetupDialogProps = {
   children?: ReactNode;
   description: ReactNode;
   icon?: LucideIcon;
+  /** An announcement, not a page's own dialog: it waits for those (#632). */
+  announcement?: boolean;
   /** Destructive tints the header icon; "neutral" is for progress dialogs. */
   tone?: "error" | "neutral";
   onOpenChange: (open: boolean) => void;
@@ -58,6 +60,7 @@ export function SetupDialog({
   children,
   description,
   icon: Icon,
+  announcement,
   tone = "error",
   onOpenChange,
   onOpenAutoFocus,
@@ -83,6 +86,7 @@ export function SetupDialog({
         )}
       />
       <DialogContent
+        data-announcement={announcement ? "" : undefined}
         style={{ animation: "none" }}
         onInteractOutside={(event) => event.preventDefault()}
         onOpenAutoFocus={onOpenAutoFocus}

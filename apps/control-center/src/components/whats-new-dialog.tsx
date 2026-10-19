@@ -11,11 +11,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { catalogThemeRowId, type WhatsNewEntry } from "@/lib/whats-new";
+import { pageDialogOpen, useWaitsForPageDialog } from "./announcement-gate";
 import { providerShortcutKeys } from "./settings-screen";
 
 /**
  * What changed in the app: told once on Overview after an update, and again
- * on request under Updates. Every way of closing it is `onClose`.
+ * on request under Updates. Every way of closing it is `onClose`. An
+ * announcement: it waits while a page dialog is open (#632).
  */
 export function WhatsNewDialog({
   appVersion,
@@ -32,6 +34,9 @@ export function WhatsNewDialog({
   windowsHost: boolean;
 }) {
   const gotIt = useRef<HTMLButtonElement>(null);
+  if (useWaitsForPageDialog()) {
+    return null;
+  }
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent
@@ -39,10 +44,14 @@ export function WhatsNewDialog({
         // In a short window only the list scrolls: the title stays on top and
         // `Got it`, which has the focus, stays in view below it.
         className="flex max-h-[calc(100dvh-2rem)] flex-col sm:max-w-lg"
+        data-announcement=""
         onOpenAutoFocus={(event) => {
           // Enter closes the notice. The first control would open Settings.
           event.preventDefault();
-          gotIt.current?.focus();
+          // Opened together with a page dialog, the page dialog keeps the focus.
+          if (!pageDialogOpen()) {
+            gotIt.current?.focus();
+          }
         }}
         showCloseButton={false}
       >
