@@ -9407,4 +9407,134 @@ issue scope, or release permission never implies UI permission.
 - User approval: pending — Paul reviews (#784 matched to the approved template); merge of main (#638 Theme Studio pack); the Theme Studio AI key dialog from #638 follows the calm dialog rule (no close X, Escape/outside click still close it while no key is being checked); not seen by Paul.
 - Approved customer-visible result: as in this branch's entries and main's entries; the key dialog in Settings has no X (calm A2 dialogs have none).
 - Scope: the merge of main, `apps/control-center/src/components/theme-studio/openai-key-form.tsx` (one prop), `apps/control-center/src/components/settings-screen.test.tsx` (7 sections incl. Theme Studio AI) and this approval record. Pull request branch only, not merged, not released.
+## 2026-10-17 — Calm redesign of the Setup Wizard, steps 1–8 (variant B, #713)
+
+- User approval: pending — Paul reviews this PR (calm redesign Setup Wizard, variant B, #713); look: one centred column, 28px title and 13px text in one font, 56px wordmark with the TV in the olive support colour, 44px primary buttons, device cards with the device picture, check marks in ink instead of lime.
+- Approved customer-visible result: none yet; this is the look Paul picked as variant B and is waiting for his review of this PR. Approved means the look is accepted, not that the layout is merged.
+- Visible text: "Welcome to" is no longer set in capitals with wide tracking (the words are unchanged). No other text changes.
+- Scope: `apps/control-center/src/components/control-center-brand.tsx` (hero variant, also used by the Mac App step), `apps/control-center/src/components/setup/setup-wizard-screen.tsx`, `setup-welcome-screen.tsx`, `setup-device-screen.tsx`, `setup-device-card.tsx`, `setup-selectable-card.tsx`, their tests, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — layout and type only, no new capability
+
+## 2026-10-17 — Calm Setup Wizard, steps 1–8: restyle scoped to the device screen (Codex fix)
+
+- User approval: pending — Paul reviews this PR (calm redesign Setup Wizard, variant B, #713); look unchanged from the entry above: the 28px title and 13px subtitle apply to the device screen steps (choose, connect, WiFi) only.
+- Approved customer-visible result: none yet; the same look as above, only the scope changes. The shared title and subtitle keep their old size and weight for the providers, display-mode, theme and live screens (steps 9–17), which this PR does not change.
+- Visible text: none changed.
+- Scope: `apps/control-center/src/components/setup/setup-wizard-screen.tsx` (shared title and subtitle defaults restored) and `apps/control-center/src/components/setup/setup-device-screen.tsx` (title and subtitle classes set on this screen only), plus this approval record. Pull-request branch only, not merge or release.
+- What's new: none — scope fix after a Codex finding, no new capability
+
+## 2026-10-17 — Calm Setup Wizard, steps 1–8: check mark colour scoped to device cards (Codex fix)
+
+- User approval: pending — Paul reviews this PR (calm redesign Setup Wizard, variant B, #713); look unchanged from the entries above: the selected check on the device cards is ink instead of the support colour.
+- Approved customer-visible result: none yet; only the device cards (steps 2 to 8) change, the check marks of Display Mode and Choose your theme keep their support colour.
+- Visible text: none changed.
+- Scope: `apps/control-center/src/components/setup/setup-selectable-card.tsx` (optional colour class on the shared check; default kept) and `apps/control-center/src/components/setup/setup-device-card.tsx` (passes ink), plus this approval record. Pull-request branch only, not merge or release.
+- What's new: none — scope fix after a Codex finding, no new capability
+## 2026-10-17 — Calm redesign of the Setup Wizard, steps 9–17 (variant B, #713)
+
+- User approval: pending — Paul reviews this PR (calm redesign Setup Wizard steps 9–17, variant B, #713); look: one centred column, 28px titles and 13px text, 44px lime buttons, round check marks on the display-mode and theme cards, provider switches 34×20, display-mode column 640px wide, help menu items semibold, setup log popover 340px wide.
+- Approved customer-visible result: none yet; this is the look Paul picked as variant B and is waiting for his review of this PR. Approved means the look is accepted, not that the layout is merged.
+- Visible text: none changed. Copy stays as it is, including "Display Mode" and "Sign in to <provider>", which the picture words differently (see the PR body).
+- Scope: `apps/control-center/src/components/setup/setup-wizard-screen.tsx` (wide column only), `setup-providers-screen.tsx`, `setup-provider-row.tsx`, `setup-display-mode-screen.tsx`, `setup-theme-screen.tsx`, `setup-selectable-card.tsx` (new round mark only), `setup-help-menu.tsx` (menu items and log width), `setup-live-screen.tsx`, the theme test that pinned the old classes, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — layout and type only, no new capability
+
+## 2026-10-17 — Calm redesign Setup Wizard steps 9–17, switch size fix (#713, Codex review on #751)
+
+- User approval: pending — Paul reviews this PR (calm redesign Setup Wizard steps 9–17, variant B, #713); look: provider switches 34×20 as in the picture (the Codex fix makes the size apply; before this fix the switch rendered at 32×18.4).
+- Approved customer-visible result: none yet; this is the look Paul picked as variant B and is waiting for his review of this PR.
+- Visible text: none changed.
+- Scope: `apps/control-center/src/components/setup/setup-provider-row.tsx` (switch size classes only).
+- What's new: none — layout only.
+
+## 2026-10-17 — Calm redesign Setup Wizard steps 9–17, switch thumb fix (#713, Codex review on #751)
+
+- User approval: pending — Paul reviews this PR (calm redesign Setup Wizard steps 9–17, variant B, #713); look: provider switches 34×20 with the thumb at the right edge when on (before this fix the thumb was about 3px short of the edge).
+- Approved customer-visible result: none yet; this is the look Paul picked as variant B and is waiting for his review of this PR.
+- Visible text: none changed.
+- Scope: `apps/control-center/src/components/setup/setup-provider-row.tsx` (switch classes only).
+- What's new: none — layout only.
+
+## 2026-10-17 — Calm redesign Setup Wizard steps 9–17, calm title on these screens only (#713, base merge)
+
+- User approval: pending — Paul reviews this PR (calm redesign Setup Wizard steps 9–17, variant B, #713); look: 28px semibold titles and 13px subtitles on the providers, display mode, theme and live screens, as in the pictures B-09 to B-17.
+- Approved customer-visible result: none yet. Paul's latest commit on the base (096d3769) keeps the shared title old and puts the calm title on the device screen only; this PR puts the calm title on steps 9 to 17 through the exported constants and leaves the shared title as it is. Paul decides which one stays.
+- Visible text: none changed.
+- Scope: `apps/control-center/src/components/setup/setup-wizard-screen.tsx` (two exported class constants only), `setup-providers-screen.tsx`, `setup-display-mode-screen.tsx`, `setup-theme-screen.tsx`, `setup-live-screen.tsx`.
+- What's new: none — layout and type only.
+
+## 2026-10-18 — Calm Setup Wizard variant B: step 4 check mark and step 8 progress bar (#713)
+
+- User approval: Paul 17.10. approved Setup B pictures; this adds the step-4 check mark and step-8 progress bar shown there (#713).
+- Approved customer-visible result: the round check mark on the selected connection method (B-04) and the firmware progress bar under the update log (B-08), as in the pictures.
+- Visible text: none changed.
+- Scope: `apps/control-center/src/components/setup/setup-device-screen.tsx` (check mark on the connection cards, progress bar under the log), `setup-wizard.tsx` (passes the existing written percent through), `setup-device-screen.test.tsx`.
+- What's new: none — a check mark and a progress bar on existing steps, no new capability (the bar appears only when the update reports a real percent, the same value as the "42%" in the log line).
+
+## 2026-10-18 — Calm Setup Wizard variant B: step 2 round device-card marks (#713)
+
+- User approval: Paul 17.10. approved Setup B pictures; this adds the step-2 round device-card marks shown in B-02 (#713).
+- Approved customer-visible result: the round dark mark on the selected VibeTV card and an empty ring on the others (B-02), in place of the plain check.
+- Visible text: none changed.
+- Scope: `apps/control-center/src/components/setup/setup-device-card.tsx` (uses the shared `SelectionDot`), `setup-selectable-card.tsx` (removes the now unused `SelectionCheck`), `setup-device-screen.test.tsx`.
+- What's new: none — the same round mark as the connection cards of step 4.
+
+## 2026-10-18 — Calm Mac App download page: the Setup B look (#713)
+
+- User approval: Paul 17.10. approved Setup B; this applies the same calm treatment to the Mac App download page that shares its hero (#713).
+- Approved customer-visible result: Look only, no text changes. "Welcome to" is no longer set in capitals with wide tracking; it reads as on the Setup welcome screen (13 px, muted). The subtitle under the hero is 13 px instead of 14 px. The Download and Open Control Center buttons are the standard 44 px instead of 48 px. The words are unchanged.
+- Visible text: none changed.
+- Scope: `apps/control-center/src/components/setup/mac-app-download-screen.tsx`, its test `mac-app-download-screen.test.tsx` (one look test), and this approval record. Stacked on #747. Pull-request branch only, not merge or release.
+- What's new: none — layout and type only, no new capability
+
+## 2026-10-19 — Setup B group: calm look scoped to the Setup Wizard (Codex fix on the group PR)
+
+- User approval: pending — Paul reviews this group (parts: #747 #751 #756 #757 #760); no visible change in Setup compared with the entries above.
+- Approved customer-visible result: none yet; Settings › Display mode and Settings › AI providers keep the look they have on main (plain check, previous paddings and type, 32×18 switch). The round marks, paddings, semibold titles and 34×20 switch apply to the Setup Wizard only.
+- Visible text: none changed.
+- Scope: `apps/control-center/src/components/setup/setup-display-mode-screen.tsx`, `setup-provider-row.tsx`, `setup-providers-screen.tsx` (optional `calm` flag set by the Setup screens), `setup-selectable-card.tsx` (plain check kept for Settings), and two tests.
+- What's new: none — scope fix after a Codex finding, no new capability
+
+## 2026-10-19 — Setup matched to the approved master design "Calm Redesign - alle Screens" (group #780)
+
+- User approval: pending — Paul reviews (Setup matched to the approved master design "Calm Redesign - alle Screens", 19.10.)
+- Approved customer-visible result: none yet. Look of all 17 Setup steps brought to the master frames: content centred as one block (no reserved log space), 13 px type, 28 px titles, 10 px under the title, cards with a 10 % ink ring and a soft 3 px brand ring when picked, 44 px buttons, plain 13 px underlined links, 36 px Back and Help, calm Help menu with the setup log as plain "> time stage · status" lines, log lines above the newest dimmed and no blinking block, "Sign in needed ↗" in red on the AI provider row.
+- Visible text: `starting background service` → `starting the Mac App` (Windows: `starting the app`); `reading provider usage on this Mac` / `…on this computer` (welcome step only) → `reading your AI providers`; the welcome line `scanning your WiFi` is removed; `Display Mode` → `Display mode` (title and window name); `Show one or multiple AI Providers.` → `Show one or multiple AI providers.`; provider sign-in row `Sign in to <Provider>` + arrow button → `Sign in needed ↗` (decided for Paul by the communicator, 19.10.).
+- Scope: `apps/control-center/src/components/setup/*` (wizard frame, welcome, device, providers, display mode, theme, live, help menu, log, cards, provider row, preview gallery), `setup-event-log.tsx` (calm variant used by the Setup Help menu only), `control-center-app.tsx` (welcome log lines), `scripts/test-customer-flows.mjs` and `docs/customer-setup.md` (the changed words), and the matching tests. Settings and the Logs screen keep their look.
+- What's new: none — look and the words above only. Not in this PR: the 3D VibeTV on "Your VibeTV is live" and the 3D device picture on the device cards (wait for #784), theme screenshots in the Display mode cards, and the dialog redesign.
+
+## 2026-10-19 — Setup master match: customer-flow script follows the Windows welcome words (group #780)
+
+- User approval: pending — Paul reviews (Setup matched to the approved master design "Calm Redesign - alle Screens", 19.10.)
+- Approved customer-visible result: none yet; no visible change beyond the entry above.
+- Visible text: none changed.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` only (the Windows welcome check now waits for `starting the app`, the first line that differs by host).
+- What's new: none — test script only
+
+## 2026-10-19 — Setup wordmark TV lime (group #780)
+
+- User approval: pending — Paul reviews (Setup wordmark "TV" lime, Paul's decision 19.10.)
+- Approved customer-visible result: none yet. On the Setup welcome and Mac App download screens the hero wordmark reads "VIBE" in ink and "TV" in the lime brand colour, on light backgrounds too (was olive #506600). Nothing else changes; the sidebar wordmark is unchanged.
+- Visible text: none changed.
+- Scope: `apps/control-center/src/components/control-center-brand.tsx` (hero variant only, the class of the TV span) and its new test `control-center-brand.test.tsx`.
+- What's new: none — colour of one word only
+
+## 2026-10-19 — #780: approval marker after merging main (#214 arrow keys and the release round) into the calm Setup Wizard
+
+- User approval: Merge of main (#214 arrow keys and the release round) into #780; no visible change of its own; not seen by Paul
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and main's entries; nothing else changes. In the calm look the arrow keys move between the VibeTVs and the themes, and through the Help menu, as on main.
+- Scope: the merge of main into this branch (setup-device-card.tsx, setup-device-screen.tsx, setup-help-menu.tsx, setup-theme-screen.tsx) and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — #780: Codex review fix, the setup log is no longer marked aria-busy
+
+- User approval: Codex review fix (P2, thread on setup-log.tsx), no visible change; not seen by Paul
+- Approved customer-visible result: none; nothing on screen changes. A screen reader now announces the progress lines of a setup step while it runs instead of holding them back.
+- Scope: `setup-log.tsx`, its test and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — #780: approval marker after merging main (v1.0.65 release round + #638)
+
+- User approval: Merge of main into this branch; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
