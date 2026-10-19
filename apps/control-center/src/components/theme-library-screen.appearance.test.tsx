@@ -284,3 +284,9 @@ it("asks Theme or Screensaver when Create is pressed on All", async () => {
   expect(screen.getByText("Editor open: New Screensaver")).toBeTruthy();
   expect(created.spec?.usage).toBe("screensaver");
 });
+
+it("keeps the search, the Filters button and the segments able to wrap on a narrow window", () => {
+  render(<Page />);
+  const row = screen.getByRole("searchbox", { name: "Search" }).closest("div")!.parentElement!;
+  expect(row.className).toContain("flex-wrap");
+});

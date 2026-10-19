@@ -489,6 +489,8 @@ it("opens Themes from a new theme at that theme and counts the notice as read", 
   expect(notice()).toBeNull();
   expect(seen()).toEqual(allIds);
   expect(screen.getByRole("heading", { level: 1, name: "Appearance" })).toBeTruthy();
+  // A new theme is shown in the Themes segment, not among the screensavers.
+  expect(screen.getByRole("radio", { name: /^Themes/ }).getAttribute("aria-checked")).toBe("true");
   // Issue #584: the list is longer than the window; the row of the theme the
   // entry announces is brought into view.
   expect(shown).toEqual([

@@ -1203,8 +1203,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // Screensavers is opened in it. The customer must not have to visit Settings.
   const screensaverSettingMissing =
     standby === null && Boolean(device?.standby) && deviceIsReady(device);
-  const screensaversOpen =
-    activeTab === "theme-library" && appearanceUsage !== "live";
+  // The list the Appearance page shows, while it is open: both types or the
+  // screensavers show screensaver installs, so both read the setting.
+  const screensaverList =
+    activeTab === "theme-library" && appearanceUsage !== "live"
+      ? appearanceUsage
+      : null;
+  const screensaversOpen = screensaverList !== null;
   const screensaversWereOpen = useRef(screensaversOpen);
   useEffect(() => {
     // Leaving Screensavers is no reason to read them again.
@@ -1217,7 +1222,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       void loadSettings();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [loadSettings, screensaverSettingMissing, screensaversOpen]);
+  }, [loadSettings, screensaverSettingMissing, screensaversOpen, screensaverList]);
 
   useEffect(() => {
     if (activeTab !== "settings" || !deviceConnectedForSettings) {
@@ -5964,7 +5969,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             closeWhatsNew();
             shownAfterPageOpensRef.current = id;
             if (page === "themes") {
-              setAppearanceUsage("all");
+              setAppearanceUsage("live");
             }
             setActiveTab(page === "themes" ? "theme-library" : "settings");
           }}

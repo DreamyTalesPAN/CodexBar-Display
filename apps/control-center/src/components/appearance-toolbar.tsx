@@ -61,7 +61,7 @@ export function AppearanceToolbar({
   );
   return (
     <div>
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <ToggleGroup
           aria-label="Show"
           className="rounded-[10px] bg-muted p-[3px]"
@@ -84,7 +84,7 @@ export function AppearanceToolbar({
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
-        <span className="flex-1" />
+        <span className="hidden flex-1 sm:block" />
         <div className="relative w-[220px]">
           <Search
             aria-hidden
