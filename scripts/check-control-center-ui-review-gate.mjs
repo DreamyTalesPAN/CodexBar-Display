@@ -138,7 +138,7 @@ function appliesPathRule(commit) {
 // passes the gate on its own (its approval history), so the merge record need
 // not name base UI that is already approved.
 function uncoveredApprovalCommitUiFiles(commit) {
-  if (!appliesPathRule(commit)) {
+  if (!appliesPathRule(commit) || onBaseBranch(commit)) {
     return [];
   }
   const entryText = addedApprovalText(commitDiff(commit));
@@ -152,6 +152,24 @@ function uncoveredApprovalCommitUiFiles(commit) {
 function coveredByMergedParent(file, commit, parent) {
   const changedSinceParent = lines(tryGit(["diff", "--no-renames", "--name-only", parent, commit, "--", file]));
   return changedSinceParent.length === 0 && unapprovedUiFilesAt(parent).length === 0;
+}
+
+// An approval commit that is already on main was gated in its own pull request.
+// main takes squash merges, which put a pull request's UI files and its entry
+// into one commit; checking that commit again would turn main and every later
+// pull request without its own entry red.
+function onBaseBranch(commit) {
+  const base = pullRequestBase() || tryGit(["rev-parse", "--verify", "origin/main"]);
+  return Boolean(base) && isAncestor(commit, base);
+}
+
+function isAncestor(commit, ref) {
+  try {
+    execFileSync("git", ["merge-base", "--is-ancestor", commit, ref], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // The gate's verdict for a committed ref, as a list of unapproved UI files.

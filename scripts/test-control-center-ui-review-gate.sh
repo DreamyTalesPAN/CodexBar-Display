@@ -564,6 +564,63 @@ test_scoped_merge_approval_passes() {
   expect_gate_success "$repo"
 }
 
+# main takes squash merges, so a pull request's UI change and its entry become
+# one commit there. That commit was gated in its pull request: neither main nor
+# a later pull request is due because of it. A pull request's own approval
+# commit with an unnamed UI file stays due.
+test_squash_merge_on_main_does_not_block_later_pull_requests() {
+  local repo="${TMP_ROOT}/squash-merge-on-main"
+  setup_repo "$repo"
+  local base_branch output status
+  base_branch="$(git -C "$repo" symbolic-ref --short HEAD)"
+
+  printf '\nexport const visibleLabel = "Install";\n' \
+    >> "$repo/apps/control-center/src/components/overview-screen.tsx"
+  approval_entry "Squashed overview" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" add apps/control-center/src/components/overview-screen.tsx \
+    docs/control-center-customer-ui-approval.md
+  git -C "$repo" commit -q -m "Squash merge of a UI pull request"
+  git -C "$repo" update-ref refs/remotes/origin/main HEAD
+  expect_gate_success "$repo"
+
+  git -C "$repo" checkout -q -b docs-only
+  commit_file "$repo" "docs/notes.md" "Non-UI pull request"
+  local docs_head
+  docs_head="$(git -C "$repo" rev-parse HEAD)"
+
+  git -C "$repo" checkout -q -b unscoped "$base_branch"
+  printf '\nexport const otherLabel = "Open";\n' \
+    >> "$repo/apps/control-center/src/components/overview-screen.tsx"
+  approval_entry "Unscoped overview" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" add apps/control-center/src/components/overview-screen.tsx \
+    docs/control-center-customer-ui-approval.md
+  git -C "$repo" commit -q -m "Change overview and approve it"
+  local unscoped_head
+  unscoped_head="$(git -C "$repo" rev-parse HEAD)"
+
+  git -C "$repo" checkout -q --detach refs/remotes/origin/main
+  git -C "$repo" merge -q --no-ff "$docs_head" -m "Merge pull request"
+  output="$(run_gate_pull_request "$repo")" || {
+    printf '%s\n' "$output" >&2
+    die "expected a later pull request to pass after a squash merge on main"
+  }
+  assert_contains "$output" "Control Center UI review gate: ok"
+
+  git -C "$repo" checkout -q --detach refs/remotes/origin/main
+  git -C "$repo" merge -q --no-ff "$unscoped_head" -m "Merge pull request"
+  set +e
+  output="$(run_gate_pull_request "$repo")"
+  status=$?
+  set -e
+  [[ "$status" -ne 0 ]] || {
+    printf '%s\n' "$output" >&2
+    die "expected the pull request's own unscoped approval commit to stay due"
+  }
+  assert_contains "$output" "Control Center UI review gate: due"
+}
+
 # An approval commit committed before the cutoff keeps the old rule: its own
 # unnamed UI file passes, as it did before the path rule.
 test_approval_commit_before_cutoff_keeps_old_rule() {
@@ -621,5 +678,6 @@ test_path_outside_entry_does_not_name_ui_file
 test_ui_file_renamed_out_of_ui_folders_is_due
 test_approval_commit_before_cutoff_keeps_old_rule
 test_scoped_merge_approval_passes
+test_squash_merge_on_main_does_not_block_later_pull_requests
 
 printf 'control-center UI review gate tests passed\n'
