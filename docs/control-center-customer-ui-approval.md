@@ -7852,3 +7852,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet, pending Paul's review. Look only: the preview panel is 464 px wide with the picture 400 px inside (32 px around it), sits at the top-left under the header and no longer floats in the middle; the chat column takes the rest of the width; messages sit at the bottom of the chat, 16 px apart; the input is one frame with the Add (Cancel while working) and Attach buttons and the round ink-coloured Send button (32 px) inside it, at the bottom; the notice under the header is 13 px (was 14 px). One wording change: the input hint, a typed rotating idea (e.g. "A fox resting in an autumn forest…") → "Describe your design or what to change…" once the chat has a message; an empty studio keeps the rotating ideas. Not changed: the collapsed sidebar while the Studio is open, the grey look of the header while a request runs, and the shell header "Appearance" (the master draws none, that is the shell, #784).
 - Scope: `ai-theme-studio-screen.tsx`, `editable-theme-preview.tsx`, `ai-theme-studio-screen.test.tsx` (two look-pinning tests), and this approval record.
 - What's new: none — look only, no new notice
+
+## 2026-10-19 — #781: approval marker after merging #638 (now containing main)
+
+- User approval: Merge of #638 (which brought main: #617 #645 #662 #664 #671 #674 #682 #729) for Paul's Theme Studio test build; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: as in the entries of this branch (pending, Paul reviews) and in the entries of the merged pull requests; nothing else changes.
+- Scope: the merge of `codex/theme-studio-pack` into this branch and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
