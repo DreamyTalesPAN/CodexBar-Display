@@ -421,6 +421,18 @@ func nativeControlCenterUserAgent(shortVersion: String?, buildVersion: String?) 
     return nativeControlCenterUserAgentPrefix + (version.isEmpty ? "unknown" : version)
 }
 
+/// The window's page drives the setup, a firmware update included. WebKit's
+/// default suspends the page's process a few seconds after it loaded in a
+/// window that is behind other windows: the page then stops, the setup waits
+/// for it, and a capture of the window stays dark (#655).
+@MainActor
+func makeControlCenterWebViewConfiguration() -> WKWebViewConfiguration {
+    let configuration = WKWebViewConfiguration()
+    configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+    configuration.preferences.inactiveSchedulingPolicy = .none
+    return configuration
+}
+
 func makeLocalNetworkPrivacyProbeRequest(
     urlString: String = localNetworkPrivacyProbeURLString,
     timeout: TimeInterval = localNetworkPrivacyProbeTimeout
@@ -3280,10 +3292,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     private func createWindow() {
-        let configuration = WKWebViewConfiguration()
-        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-
-        let webView = WKWebView(frame: .zero, configuration: configuration)
+        let webView = WKWebView(
+            frame: .zero,
+            configuration: makeControlCenterWebViewConfiguration()
+        )
         webView.customUserAgent = nativeControlCenterUserAgent(
             shortVersion: Bundle.main.object(
                 forInfoDictionaryKey: "CFBundleShortVersionString"

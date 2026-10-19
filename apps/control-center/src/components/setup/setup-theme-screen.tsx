@@ -7,7 +7,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { ThemeRenderPreview } from "../theme-render-preview";
 import { SetupLog, type SetupLogLine } from "./setup-log";
-import { SelectionDot, calmCardClass } from "./setup-selectable-card";
+import { SelectionDot, calmCardClass, moveAmongRadios } from "./setup-selectable-card";
 import {
   CALM_BUTTON_CLASS,
   CALM_SUBTITLE_CLASS,
@@ -54,6 +54,8 @@ export function SetupThemeScreen({
   themes,
 }: SetupThemeScreenProps) {
   const selected = themes.find((theme) => theme.id === selectedThemeId) || null;
+  // The Tab stop of the group: the selected theme, or the first one.
+  const selectedIndex = themes.findIndex((theme) => theme.id === selectedThemeId);
 
   return (
     <SetupWizardScreen
@@ -71,9 +73,10 @@ export function SetupThemeScreen({
       <ItemGroup
         aria-label="Themes"
         className="mt-6 gap-2"
+        onKeyDown={moveAmongRadios}
         role="radiogroup"
       >
-        {themes.map((theme) => (
+        {themes.map((theme, index) => (
           <SetupThemeCard
             // Install is closed while one is running, so a new pick has nothing
             // to act on: the running install still activates the theme it
@@ -84,6 +87,7 @@ export function SetupThemeScreen({
             key={theme.id}
             onSelect={() => onSelect(theme)}
             selected={theme.id === selectedThemeId}
+            tabStop={index === Math.max(selectedIndex, 0)}
             theme={theme}
           />
         ))}
@@ -124,11 +128,13 @@ function SetupThemeCard({
   disabled = false,
   onSelect,
   selected,
+  tabStop,
   theme,
 }: {
   disabled?: boolean;
   onSelect: () => void;
   selected: boolean;
+  tabStop: boolean;
   theme: SetupThemeOption;
 }) {
   return (
@@ -143,6 +149,7 @@ function SetupThemeCard({
       disabled={disabled}
       onClick={onSelect}
       role="radio"
+      tabIndex={tabStop ? 0 : -1}
       type="button"
     >
       <ThemeRenderPreview

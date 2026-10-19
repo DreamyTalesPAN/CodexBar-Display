@@ -1,7 +1,13 @@
 "use client";
 
 import { Check, CircleAlert, CircleHelp, FileText, ScrollText, Sparkles } from "lucide-react";
-import { useContext, useEffect, useRef, useState } from "react";
+import {
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
@@ -18,6 +24,13 @@ const OUTCOME_MS = 5000;
 const HELP_ITEM_CLASS =
   "h-9 w-full justify-start gap-2.5 px-2.5 text-[13px] font-semibold has-data-[icon=inline-start]:pl-2.5";
 const HELP_ICON_CLASS = "size-4 text-muted-foreground";
+
+/** The entries the customer can act on, in the order they are shown. */
+function menuEntries(menu: HTMLElement | null): HTMLElement[] {
+  return Array.from(
+    menu?.querySelectorAll<HTMLElement>('[role^="menuitem"]:not(:disabled)') ?? [],
+  );
+}
 
 export type Outcome =
   | "prompt-copied"
@@ -103,6 +116,7 @@ export function SetupHelpMenu({
   const [showLog, setShowLog] = useState(false);
   const setupLogAvailable = useContext(SetupEventsContext) !== null;
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const outcomeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -113,6 +127,20 @@ export function SetupHelpMenu({
       }
     };
   }, []);
+
+  // The menu is opened by the keyboard as well, so focus goes into it.
+  useEffect(() => {
+    if (open) {
+      menuEntries(menuRef.current)[0]?.focus();
+    }
+  }, [open]);
+  // An entry that was just used gives way to its outcome; focus went with it
+  // and is put back on the first entry that is left.
+  useEffect(() => {
+    if (open && document.activeElement === document.body) {
+      menuEntries(menuRef.current)[0]?.focus();
+    }
+  }, [open, outcome]);
 
   useEffect(() => {
     if (!open) {
@@ -136,6 +164,26 @@ export function SetupHelpMenu({
       document.removeEventListener("keydown", onKeyDown);
     };
   }, [open]);
+
+  function onMenuKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    const entries = menuEntries(event.currentTarget);
+    const at = entries.indexOf(event.target as HTMLElement);
+    if (at < 0) {
+      return;
+    }
+    const last = entries.length - 1;
+    const next = {
+      ArrowDown: at === last ? 0 : at + 1,
+      ArrowUp: at === 0 ? last : at - 1,
+      End: last,
+      Home: 0,
+    }[event.key];
+    if (next === undefined) {
+      return;
+    }
+    event.preventDefault();
+    entries[next]?.focus();
+  }
 
   function reportOutcome(next: Outcome) {
     setOutcome(next);
@@ -214,6 +262,8 @@ export function SetupHelpMenu({
             SETUP_REVEAL,
           )}
           id="setup-help-menu"
+          onKeyDown={onMenuKeyDown}
+          ref={menuRef}
           role="menu"
         >
           {aiFixPrompt && outcome !== "prompt-copied" ? (

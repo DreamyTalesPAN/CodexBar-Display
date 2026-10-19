@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils";
 
 type SetupDeviceCardProps = {
   candidate: DeviceCandidate;
+  /** The one radio of its group that Tab reaches. */
+  tabStop: boolean;
   onSelect: () => void;
   selected: boolean;
 };
@@ -19,6 +21,7 @@ export function SetupDeviceCard({
   candidate,
   onSelect,
   selected,
+  tabStop,
 }: SetupDeviceCardProps) {
   const address = candidateAddress(candidate.target);
   const cable = candidate.transport === "cable";
@@ -28,6 +31,7 @@ export function SetupDeviceCard({
       className={cn(calmCardClass(selected), "flex items-center gap-4 py-3 pr-5 pl-3")}
       onClick={onSelect}
       role="radio"
+      tabIndex={tabStop ? 0 : -1}
       type="button"
     >
       <Image
