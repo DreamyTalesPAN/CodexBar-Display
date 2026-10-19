@@ -2284,10 +2284,13 @@ describe("SetupWizard: Back while connecting or waiting for WiFi", () => {
     expect(screen.getByRole("heading", { name: "Connecting to VibeTV" })).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    // Not left yet: the running pairing is not abandoned half way.
+    // Not left yet: the running pairing is not abandoned half way. The press shows.
     expect(screen.getByRole("heading", { name: "Connecting to VibeTV" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
+    expect((screen.getByRole("button", { name: "Stopping…" }) as HTMLButtonElement).disabled).toBe(true);
 
     await act(async () => pairing.resolve({ firmware: "1.0.41" }));
+    expect(screen.queryByRole("button", { name: "Stopping…" })).toBeNull();
     expect(props.connectSteps.checkFirmware).not.toHaveBeenCalled();
     expect(props.connectSteps.installFirmware).not.toHaveBeenCalled();
     expect(props.onConnectionComplete).not.toHaveBeenCalled();
@@ -2305,8 +2308,11 @@ describe("SetupWizard: Back while connecting or waiting for WiFi", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.getByRole("heading", { name: "Connecting to VibeTV" })).toBeTruthy();
+    // Registered at once and kept until the write is over.
+    expect(screen.getByRole("button", { name: "Stopping…" })).toBeTruthy();
 
     await act(async () => write.resolve());
+    expect(screen.queryByRole("button", { name: "Stopping…" })).toBeNull();
     expect(props.connectSteps.installFirmware).toHaveBeenCalledTimes(1);
     expect(props.onConnectionComplete).not.toHaveBeenCalled();
     choiceShown();

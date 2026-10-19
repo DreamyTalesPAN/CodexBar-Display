@@ -56,6 +56,8 @@ type SetupDeviceScreenProps = {
   aiFixPrompt?: () => string;
   onConnect: () => void;
   onBack?: () => void;
+  /** Back was pressed while a step runs: it shows "Stopping…" until that step is over. */
+  stopping?: boolean;
   onChooseTransport: (transport: SetupTransport) => void;
   onConfigureWiFi: (ssid: string, password: string) => Promise<void>;
   onEditWiFi?: () => void;
@@ -90,6 +92,7 @@ export function SetupDeviceScreen({
   aiFixPrompt,
   onConnect,
   onBack,
+  stopping,
   onChooseTransport,
   onConfigureWiFi,
   onEditWiFi,
@@ -170,6 +173,7 @@ export function SetupDeviceScreen({
       aiFixPrompt={aiFixPrompt}
       // The details are being sent: nothing to leave yet.
       onBack={wifiSubmitting ? undefined : onBack}
+      stopping={stopping}
       onCreateSupportReport={onCreateSupportReport}
       windowsHost={windowsHost}
     >

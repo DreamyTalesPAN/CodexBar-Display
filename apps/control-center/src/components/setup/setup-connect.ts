@@ -64,6 +64,8 @@ export function useSetupConnect(
   // pairing or a firmware write, so the step that is running finishes and no
   // further one starts; then the sequence ends quietly and this is called.
   const leaveRef = useRef<(() => void) | null>(null);
+  // The same, for the screen: Back has been pressed and has not left yet.
+  const [leaving, setLeaving] = useState(false);
 
   useEffect(() => {
     progressRef.current = firmwareProgress;
@@ -77,6 +79,7 @@ export function useSetupConnect(
     }
     leaveRef.current = null;
     candidateRef.current = null;
+    setLeaving(false);
     setFailure(null);
     setState(IDLE);
     leave();
@@ -208,6 +211,7 @@ export function useSetupConnect(
   const dismissFailure = useCallback(() => setFailure(null), []);
   const reset = useCallback(() => {
     leaveRef.current = null;
+    setLeaving(false);
     setFailure(null);
     candidateRef.current = null;
     setState(IDLE);
@@ -216,6 +220,7 @@ export function useSetupConnect(
   /** Back during the sequence: `leave` runs once the running step is over. */
   const leaveWhenSettled = useCallback((leave: () => void) => {
     leaveRef.current = leave;
+    setLeaving(true);
   }, []);
 
   /** Runs the sequence again against the device it last ran against. */
@@ -226,5 +231,5 @@ export function useSetupConnect(
     }
   }, [run]);
 
-  return { dismissFailure, failure, leaveWhenSettled, reset, retry, run, state };
+  return { dismissFailure, failure, leaving, leaveWhenSettled, reset, retry, run, state };
 }

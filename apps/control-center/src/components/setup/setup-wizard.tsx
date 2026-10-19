@@ -769,6 +769,7 @@ export function SetupWizard(props: SetupWizardProps) {
           logLines={connectLogLines(connect.state, props.firmwareWrittenPercent)}
           onConnect={startConnect}
           onBack={onBack}
+          stopping={connect.leaving}
           onChooseTransport={(transport) => void chooseTransport(transport)}
           onEditWiFi={() => setWiFiSetup((current) =>
             current ? { ...current, phase: "credentials" } : current,

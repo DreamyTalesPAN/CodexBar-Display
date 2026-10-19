@@ -4,6 +4,7 @@ import type { SupportDiagnostics } from "../control-center-types";
 import { ChevronLeft } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { SetupHelpMenu } from "./setup-help-menu";
 
@@ -14,6 +15,8 @@ type SetupWizardScreenProps = {
   label: string;
   aiFixPrompt?: () => string;
   onBack?: () => void;
+  /** Back was pressed and the running step is still finishing. */
+  stopping?: boolean;
   onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
   /** The app runs on Windows, where "Mac App" reads "app". */
   windowsHost?: boolean;
@@ -30,6 +33,7 @@ export function SetupWizardScreen({
   label,
   aiFixPrompt,
   onBack,
+  stopping = false,
   onCreateSupportReport,
   windowsHost,
 }: SetupWizardScreenProps) {
@@ -57,13 +61,18 @@ export function SetupWizardScreen({
         <div className="fixed top-5 left-[22px] z-60">
           <Button
             className="h-9 gap-1.5 pr-2.5 pl-1.5 text-[13px] text-muted-foreground has-data-[icon=inline-start]:pl-1.5"
+            disabled={stopping}
             onClick={onBack}
             size="sm"
             type="button"
             variant="ghost"
           >
-            <ChevronLeft className="size-4" data-icon="inline-start" />
-            <span>Back</span>
+            {stopping ? (
+              <Spinner data-icon="inline-start" />
+            ) : (
+              <ChevronLeft className="size-4" data-icon="inline-start" />
+            )}
+            <span>{stopping ? "Stopping…" : "Back"}</span>
           </Button>
         </div>
       ) : null}
