@@ -8487,3 +8487,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-19 — #798: Codex fix, the dot of an inconclusive Mac App check is muted
+
+- User approval: pending — Paul reviews (Codex review fix); look unchanged except, before → after: when the Mac App check answers with a disabled or missing asset result and the firmware is current, the dot beside "No update available" is grey → before the dot was green, as for "Everything is up to date".
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content

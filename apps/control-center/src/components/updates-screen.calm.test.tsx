@@ -286,6 +286,18 @@ describe("calm Updates screen", () => {
     expect(screen.getByRole("dialog", { name: "Could not check for updates" })).toBeTruthy();
   });
 
+  it("an inconclusive Mac App check shows a muted dot, never the green one", () => {
+    const { container } = render(
+      <UpdatesScreen
+        {...upToDate}
+        companionRelease={{ ...upToDate.companionRelease!, status: "disabled", updateAvailable: false }}
+      />,
+    );
+    expect(screen.getByText("No update available")).toBeTruthy();
+    expect(container.querySelector("i.bg-muted-foreground")).not.toBeNull();
+    expect(container.querySelector("i.bg-foreground")).toBeNull();
+  });
+
   it("a failed check outranks an available update in the headline's dot", () => {
     const { container } = render(
       <UpdatesScreen

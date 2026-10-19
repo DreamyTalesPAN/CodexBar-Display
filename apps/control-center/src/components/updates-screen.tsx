@@ -246,7 +246,7 @@ export function UpdatesScreen({
         ? "failed"
         : anyUpdateAvailable
           ? "ink"
-      : checkingUpdates || firmwareNoAnswer
+      : checkingUpdates || firmwareNoAnswer || macAppNoAnswer
         ? "muted"
         : "ok";
 
