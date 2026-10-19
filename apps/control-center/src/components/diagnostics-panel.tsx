@@ -68,6 +68,7 @@ export function DiagnosticsPanel({
 }: Props) {
   const engine = diagnosticsEngine(diagnostics);
   const checks = diagnostics?.checks ?? [];
+  const passed = checks.filter((check) => check.status === "pass").length;
   const partial =
     Boolean(diagnostics?.collectionErrors?.length) ||
     diagnostics?.reportType === "control_center_fallback";
@@ -76,19 +77,26 @@ export function DiagnosticsPanel({
     <section className="grid gap-3" data-testid="diagnostics-panel">
       <div className="flex items-center justify-between gap-4">
         <h2 className="text-[15px] leading-5 font-semibold">Diagnostics</h2>
-        <Button
-          disabled={running || !onRun}
-          onClick={onRun}
-          size="sm"
-          type="button"
-        >
-          {running ? (
-            <Spinner data-icon="inline-start" />
-          ) : (
-            <RefreshCw data-icon="inline-start" aria-hidden />
-          )}
-          <span>{running ? "Running diagnostics" : "Run diagnostics"}</span>
-        </Button>
+        <div className="flex items-center gap-3.5">
+          {checks.length ? (
+            <span className="text-muted-foreground">
+              {`${passed} of ${checks.length} passed`}
+            </span>
+          ) : null}
+          <Button
+            disabled={running || !onRun}
+            onClick={onRun}
+            size="sm"
+            type="button"
+          >
+            {running ? (
+              <Spinner data-icon="inline-start" />
+            ) : (
+              <RefreshCw data-icon="inline-start" aria-hidden />
+            )}
+            <span>{running ? "Running diagnostics" : "Run diagnostics"}</span>
+          </Button>
+        </div>
       </div>
       <p aria-live="polite" className="sr-only" role="status">
         {running ? "Running diagnostics" : diagnostics ? "Diagnostics ready" : ""}
@@ -109,9 +117,14 @@ export function DiagnosticsPanel({
           {checks.length ? (
             <ul aria-label="Diagnostic checks" className={SUPPORT_FRAME}>
               {checks.map((check, index) => (
+                // Only the usage engine has a repair the app can start today.
                 <CheckRow
                   check={check}
                   key={check.name + "-" + index}
+                  onRepair={
+                    check.name === "usage_engine" ? onRepairUsageEngine : undefined
+                  }
+                  repairing={repairing}
                   windowsHost={windowsHost}
                 />
               ))}
@@ -200,7 +213,17 @@ function UsageEngineBlock({
   );
 }
 
-function CheckRow({ check, windowsHost }: { check: Check; windowsHost: boolean }) {
+function CheckRow({
+  check,
+  onRepair,
+  repairing,
+  windowsHost,
+}: {
+  check: Check;
+  onRepair?: () => void;
+  repairing: boolean;
+  windowsHost: boolean;
+}) {
   const state = checkState(check.status);
   const hostText = (value: string) => copyForHost(value, windowsHost);
   // A VibeTV on the cable has no address; the report keeps "cable://vibetv".
@@ -238,6 +261,18 @@ function CheckRow({ check, windowsHost }: { check: Check; windowsHost: boolean }
           </p>
         ) : null}
       </div>
+      {state !== "pass" && onRepair ? (
+        <Button
+          className="col-start-2 h-auto justify-self-start px-0 font-semibold sm:col-start-4 sm:row-start-1 sm:justify-self-end"
+          disabled={repairing}
+          onClick={onRepair}
+          size="sm"
+          type="button"
+          variant="link"
+        >
+          Fix
+        </Button>
+      ) : null}
       <span className="sr-only">{CHECK_STATE_TEXT[state]}</span>
     </li>
   );
