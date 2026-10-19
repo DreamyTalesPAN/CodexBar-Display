@@ -59,9 +59,9 @@ export function DiagnosticsPanel({
 
   return (
     <section className="grid gap-3" data-testid="diagnostics-panel">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
         <h2 className="text-[15px] leading-5 font-semibold">Diagnostics</h2>
-        <div className="flex items-center gap-3.5">
+        <div className="flex flex-wrap items-center gap-3.5">
           {checks.length ? (
             <span className="text-muted-foreground">
               {`${passed} of ${checks.length} passed`}
