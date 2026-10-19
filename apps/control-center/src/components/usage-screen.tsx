@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import type { XAxisTickContentProps } from "recharts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -518,8 +519,7 @@ function TokenUsageOverTimePanel({
               dataKey="day"
               interval={0}
               ticks={weeklyDayTicks(chartData.map((row) => String(row.day)))}
-              tick={{ fill: "var(--muted-foreground)", fontSize: 14.5 }}
-              tickFormatter={formatDayLabel}
+              tick={WeekTick}
               tickLine={false}
               tickMargin={8}
             />
@@ -1356,6 +1356,34 @@ function providerStatusLabel(description?: string): string {
     return "Status ready";
   }
   return value;
+}
+
+// The first label starts at the axis and the last one ends at its right edge, as in the master.
+function WeekTick({
+  index,
+  payload,
+  visibleTicksCount,
+  x,
+  y,
+}: XAxisTickContentProps) {
+  return (
+    <text
+      dy="0.71em"
+      fill="var(--muted-foreground)"
+      fontSize={14.5}
+      textAnchor={
+        index === 0
+          ? "start"
+          : index === visibleTicksCount - 1
+            ? "end"
+            : "middle"
+      }
+      x={x}
+      y={y}
+    >
+      {formatDayLabel(String(payload.value))}
+    </text>
+  );
 }
 
 // The master's week axis: the first day, then every seventh day, and the last
