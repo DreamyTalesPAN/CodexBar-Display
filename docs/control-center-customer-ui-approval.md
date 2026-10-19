@@ -9568,3 +9568,44 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
+## 2026-10-19 — Theme Studio: Details open over the preview, the preview never moves (#781, build 7194, revision)
+
+- User approval: Paul, 19.10.2026 via the communicator, feedback on test build 7194 (the preview must keep exactly its centred place when an element is selected; "Details" appears directly below it, or as an overlay, and scrolls inside its own area)
+- Approved customer-visible result: before → after: "Details" hangs directly below the preview without taking any space, so the preview keeps its centred place when an element is selected or deselected and when Details opens or closes; when opened, the Details panel is an overlay above its bar, over the lower part of the preview, at most 22 rem high, and scrolls inside itself (this replaces the "reserved space" wording of the 7194 entry above, which gave the panel too little room in a window 800 px high). Texts and controls inside Details are unchanged.
+- Scope: `apps/control-center/src/components/theme-studio/editable-theme-preview.tsx`, `ai-theme-studio-screen.tsx` (the Details block), their tests, and this record. Pull request branch only, not merge or release.
+- What's new: none — layout refinement of the Theme Studio, no new feature
+
+## 2026-10-19 — Codex fix: the key dialog row follows a key saved while its check failed (#781)
+
+- User approval: none needed for this entry; it records a Codex review fix (P2) to the key dialog entry above: when a new key was saved but its check failed, closing the dialog now reads the stored-key state again, so the row says "Change key" and the next dialog title says "Replace OpenAI key" (before: the row kept "Add key" and the title "Add OpenAI key" while the form already offered retry and disconnect). Not seen by Paul.
+- Approved customer-visible result: as in the entries above; only the text of the row button and the dialog title after such a failed check changes.
+- Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx` (ThemeStudioKeyRow), its test, and this record. Pull request branch only, not merge or release.
+- What's new: none — fix of a review finding, no new text or feature
+
+## 2026-10-19 — Codex fix: the key dialog title follows a failed check at once, in Settings and in the Studio (#781)
+
+- User approval: none needed for this entry; it records a second Codex review fix (P2) to the key dialog entries above: the key form now tells its opener whenever the stored-key state changes, so after a key was saved but its check failed the dialog title says "Replace OpenAI key" at once (before: it kept "Add OpenAI key" while the form already offered retry and disconnect), also in the Studio, and the Settings row says "Change key". Not seen by Paul.
+- Approved customer-visible result: as in the entries above; only the dialog title and the row button text after such a failed check change.
+- Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx`, `ai-theme-studio-screen.tsx` (key dialog), the test of the form, and this record. Pull request branch only, not merge or release.
+- What's new: none — fix of a review finding, no new text or feature
+
+## 2026-10-19 — Theme Studio: Details open below the preview, never over it (#781, build 7194, second revision)
+
+- User approval: Paul, 19.10.2026 via the communicator, decision on build 7194 (he edits the preview while Details is open, so the preview must stay fully visible: Details uses the free space below the preview and scrolls inside itself)
+- Approved customer-visible result: before → after: the overlay of the previous revision, which covered the lower part of the preview while Details was open, is gone. The preview keeps its centred place and is never covered. "Details" and its panel sit in the free space below the preview in the same column; the panel is as high as that free space (it gets smaller in a lower window, never larger than the space) and scrolls inside itself. In a window so low that the left column scrolls, the preview and the Details bar scroll together as before. Texts and controls inside Details are unchanged.
+- Scope: `apps/control-center/src/components/theme-studio/editable-theme-preview.tsx` (three-row layout), `ai-theme-studio-screen.tsx` (the Details block), their tests, and this record. Pull request branch only, not merge or release.
+- What's new: none — layout refinement of the Theme Studio, no new feature
+
+## 2026-10-19 — #781: approval marker after merging main with the squashed #638 (58ae7cc8)
+
+- User approval: Paul, 19.10.2026 via the communicator, decision on build 7194 (the Details entry above: the preview stays fully visible and centred, Details uses the free space below it and scrolls inside itself); the merge of main (the squash of #638, same content as `codex/theme-studio-pack` 73788377) has no visible change of its own and was not seen by Paul. The canvas of the Studio now has the height of its column so the Details row cannot grow it. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: as in the Details entry above and the entries of this branch; nothing else changes.
+- Scope: the merge of `main` into this branch, `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` (canvas height) and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — Theme Studio: Details take their full height in a narrow or low window (#781, build 7194, third revision)
+
+- User approval: Paul, 19.10.2026 via the communicator, decision on build 7194 (Details below the preview, never over it; checked at 960×700 and 900 px wide)
+- Approved customer-visible result: before → after: in a window narrower than 1024 px (where the left column scrolls and the preview sits at its top) the Details panel was squeezed to a few pixels high under the preview; after: it takes the height it needs under the preview and the column scrolls. In the wide layout nothing changes: the preview stays centred, Details uses the free space below it and scrolls inside itself, never over the preview.
+- Scope: `apps/control-center/src/components/theme-studio/editable-theme-preview.tsx` (one class), its test, and this record. Pull request branch only, not merge or release.
+- What's new: none — layout refinement of the Theme Studio, no new feature

@@ -42,11 +42,13 @@ function readConsent(): boolean {
 }
 
 export function OpenAIKeyForm({
-  inSetup, initialConfigured = false, onConnectingChange, onConnected, onDisconnected,
+  inSetup, initialConfigured = false, onConfiguredChange, onConnectingChange, onConnected, onDisconnected,
 }: {
   inSetup: boolean;
   /** What the opener already knows about the saved key, so the dialog has its final height from the first frame. */
   initialConfigured?: boolean | "pending";
+  /** Tells the opener whenever the stored-key state changes, e.g. a key was saved but its check failed, so its label and the dialog title follow. */
+  onConfiguredChange?: (configured: boolean | "pending") => void;
   onConnectingChange: (busy: boolean) => void;
   /** `kept` is the helper's answer on whether the key survives restarts; undefined when no new key was checked. */
   onConnected: (kept?: boolean) => void;
@@ -59,6 +61,7 @@ export function OpenAIKeyForm({
   const [connecting, setConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState("");
 
+  useEffect(() => onConfiguredChange?.(configured), [configured]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const controller = new AbortController();
     void fetchAIThemeCapabilities(controller.signal)
@@ -243,6 +246,7 @@ export function ThemeStudioKeyRow() {
         <OpenAIKeyForm
           inSetup={false}
           initialConfigured={configured}
+          onConfiguredChange={setConfigured}
           onConnectingChange={setBusy}
           onConnected={() => {
             setOpen(false);

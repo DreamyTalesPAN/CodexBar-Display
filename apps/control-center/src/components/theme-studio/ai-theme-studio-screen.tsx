@@ -33,7 +33,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -1137,7 +1136,7 @@ export function AIThemeStudioScreen({
                   event.currentTarget.focus({ preventScroll: true });
                 }
               }}
-              className="group/canvas flex min-h-full w-full flex-col outline-none"
+              className="group/canvas flex h-full w-full flex-col outline-none"
               inert={locked}
               aria-busy={busy}
             >
@@ -1236,15 +1235,15 @@ export function AIThemeStudioScreen({
               </div>
             ) : null}
             {primitive && !isAttachedSceneAnimation(primitive.assetPath) ? (
-              <Collapsible data-selection-controls className="relative mx-auto w-full max-w-[460px]">
+              <Collapsible data-selection-controls className="mx-auto flex min-h-0 w-full max-w-[460px] flex-col">
                 <CollapsibleTrigger asChild>
                   <Button variant="ghost" className="group w-full justify-between">
                     Details
                     <ChevronDown className="transition-transform group-data-[state=open]:rotate-180" />
                   </Button>
                 </CollapsibleTrigger>
-                {/* An overlay over the lower part of the preview: it scrolls inside its own area and the preview stays put. */}
-                <CollapsibleContent className="absolute inset-x-0 bottom-full mb-2 max-h-[22rem] overflow-y-auto rounded-xl bg-popover p-3 text-popover-foreground shadow-lg ring-1 ring-foreground/10">
+                {/* The panel is as high as the free space below the preview and scrolls inside itself. */}
+                <CollapsibleContent className="min-h-0 flex-1 overflow-y-auto pt-3">
               <section className="space-y-3" aria-label="Selected element tools">
                 <div className="flex items-center justify-between gap-2">
                   <h2 className="min-w-0 truncate font-medium">
@@ -1520,7 +1519,7 @@ export function AIThemeStudioScreen({
               </label>
               <div className="flex items-center gap-3">
               <div
-                className="relative min-w-0 flex-1 overflow-hidden rounded-xl border border-input bg-card focus-within:border-ring focus-within:ring-2 focus-within:ring-ring"
+                className="relative min-w-0 flex-1 overflow-hidden rounded-xl border border-input bg-card focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40"
                 onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
                 onDrop={(event) => { event.preventDefault(); void attachImages(event.dataTransfer.files); }}
               >
@@ -1649,6 +1648,7 @@ export function AIThemeStudioScreen({
           <OpenAIKeyForm
               inSetup
               initialConfigured={configured}
+              onConfiguredChange={setConfigured}
               onConnectingChange={setConnecting}
               onConnected={(kept) => {
                 setConfigured(true);
@@ -1671,8 +1671,7 @@ export function AIThemeStudioScreen({
         }}
       >
         <DialogContent
-          className="max-h-[calc(100dvh-2rem)] overflow-y-auto"
-          {...(panel === "setup" ? { "aria-describedby": undefined } : {})}
+          className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md"
           onEscapeKeyDown={(event) => {
             if (connecting) event.preventDefault();
           }}
@@ -1788,13 +1787,6 @@ export function AIThemeStudioScreen({
               )}
             </div>
           ) : null}
-          {connecting ? null : (
-            <DialogFooter>
-              <Button onClick={closePanel} variant="ghost">
-                {panel === "setup" ? "Not now" : "Close"}
-              </Button>
-            </DialogFooter>
-          )}
         </DialogContent>
       </Dialog>
       <input
@@ -1842,14 +1834,17 @@ export function AIThemeStudioScreen({
               continue.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
+          <div className="grid gap-3">
             <Button
-              variant="ghost"
+              variant="outline"
+              className="h-12 w-full"
               onClick={() => { setPending(undefined); setLeaving(false); }}
             >
               Keep editing
             </Button>
             <Button
+              variant="destructive"
+              className="h-12 w-full"
               onClick={() => {
                 // Discarding is final: the draft must not be offered again later.
                 clearThemeStudioRecovery();
@@ -1860,7 +1855,7 @@ export function AIThemeStudioScreen({
             >
               Discard and continue
             </Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

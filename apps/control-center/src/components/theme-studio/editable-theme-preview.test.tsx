@@ -175,16 +175,22 @@ it("gives the preview frame no coloured ring, also while the canvas has focus af
   expect(frame.className).not.toMatch(/ring-ring|focus|outline|border-(?!transparent)/);
 });
 
-it("keeps the preview in its own row, so the details below it never move it", () => {
+it("puts the details in their own row below the preview, never over it and never moving it", () => {
   const { props, view, svg } = renderCafe();
   const surface = view.getByLabelText("Selection workspace");
-  const frame = svg.parentElement!.parentElement!.parentElement!;
-  const before = frame.className;
-  expect(surface.className).toContain("grid-rows-[minmax(0,1fr)_auto_minmax(8rem,1fr)]");
-  expect(frame.className).toContain("row-start-2");
+  const wrapper = svg.parentElement!.parentElement!.parentElement!;
+  const before = wrapper.className;
+  // Free space above and below the preview is the same, and the details row is as high as that space.
+  expect(surface.className).toContain("grid-rows-[minmax(0,1fr)_auto_minmax(3rem,1fr)]");
+  expect(before).toContain("row-start-2");
+  // Below the wide layout the column scrolls, so the details take the height they need.
+  expect(surface.className).toContain("max-lg:grid-rows-[auto_auto_auto]");
   view.rerender(<EditableThemePreview {...props} selectedIndex={2} selectedIndices={[2]}><p>Details</p></EditableThemePreview>);
   const details = view.getByText("Details").parentElement!;
+  expect(details.parentElement).toBe(surface);
   expect(details.className).toContain("row-start-3");
-  expect(details.className).toContain("overflow-y-auto");
-  expect(svg.parentElement!.parentElement!.parentElement!.className).toBe(before);
+  expect(details.className).toContain("min-h-0");
+  expect(details.className).not.toMatch(/absolute|fixed/);
+  expect(wrapper.contains(details)).toBe(false);
+  expect(wrapper.className).toBe(before);
 });
