@@ -304,6 +304,24 @@ describe("calm Updates screen", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("failed check: a closed failure stays closed after another dialog opens and closes", () => {
+    const failed = {
+      ...upToDate,
+      firmwareUpdate: {
+        checkedAt: "2026-10-19T09:10:00Z",
+        status: "check_failed" as const,
+        installedFirmware: "1.0.48",
+        updateAvailable: false,
+      },
+    };
+    const view = render(<UpdatesScreen {...failed} />);
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    view.rerender(<UpdatesScreen {...failed} otherDialogOpen />);
+    view.rerender(<UpdatesScreen {...failed} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("no dialog while everything checks fine", () => {
     render(<UpdatesScreen {...upToDate} />);
     expect(screen.queryByRole("dialog")).toBeNull();

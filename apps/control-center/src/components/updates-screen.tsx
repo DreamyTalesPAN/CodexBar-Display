@@ -102,6 +102,10 @@ export function UpdatesScreen({
   themeUpdateAvailable = false,
   windowsHost = false,
 }: UpdatesScreenProps) {
+  // The failed check the customer closed. Kept here, not in the dialog: the
+  // dialog unmounts while another dialog is open, and only a newer failed
+  // check may open it again.
+  const [dismissedFailedCheck, setDismissedFailedCheck] = useState<string | null>(null);
   const firmwareUpdateCompleted = updateStatus?.phase === "complete";
   // Installed firmware always comes from device truth (live hello or the
   // firmware update check), never from an update job result: a failed job
@@ -181,6 +185,11 @@ export function UpdatesScreen({
     (companionRelease?.status === "check_failed" ||
       companionRelease?.dmgDownloadStatus === "check_failed");
   const firmwareCheckFailed = firmwareUpdate?.status === "check_failed";
+  // A newer failed check is a new failure and opens again; a check that
+  // answered is not part of it.
+  const failedCheckKey = `${macAppCheckFailed ? companionRelease?.checkedAt : ""}|${
+    firmwareCheckFailed ? firmwareUpdate?.checkedAt : ""
+  }`;
   const companionInstalled =
     companionStatus === "missing"
       ? "Not running"
@@ -436,15 +445,12 @@ export function UpdatesScreen({
       ) : null}
 
       {(macAppCheckFailed || firmwareCheckFailed) &&
+      failedCheckKey !== dismissedFailedCheck &&
       !checkBusy &&
       !otherDialogOpen &&
       visibleUpdateStatus?.phase !== "error" ? (
         <CheckFailedDialog
-          // A newer failed check is a new failure and opens again; a check
-          // that answered is not part of it.
-          key={`${macAppCheckFailed ? companionRelease?.checkedAt : ""}|${
-            firmwareCheckFailed ? firmwareUpdate?.checkedAt : ""
-          }`}
+          onClose={() => setDismissedFailedCheck(failedCheckKey)}
           onTryAgain={onCheckUpdates}
         />
       ) : null}
@@ -555,21 +561,24 @@ function RowStatusLabel({ status }: { status: RowStatus }) {
 }
 
 function CheckFailedDialog({
+  onClose,
   onTryAgain,
 }: {
+  onClose: () => void;
   onTryAgain?: () => Promise<void> | void;
 }) {
-  const [open, setOpen] = useState(true);
   return (
     <SetupDialog
       description="Check the internet connection, then try again."
-      onOpenChange={setOpen}
-      open={open}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      open
       primaryAction={{
         label: "Try again",
         disabled: !onTryAgain,
         onSelect: () => {
-          setOpen(false);
+          onClose();
           void onTryAgain?.();
         },
       }}
