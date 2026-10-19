@@ -8078,3 +8078,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet, pending Paul's review. New: in the lane bars of Claude and Codex (session and weekly), a thin tick marks where CodexBar expects the use to be; the gap between the bar and the tick is a green piece for a reserve and a red hatched piece for a deficit; one 13 px line under the bar says "6% in reserve", "12% in deficit", or "On pace", with CodexBar's run-out time after it when CodexBar gives one ("12% in deficit · runs out in 2d 15h"; before: a red "Runs out in 2d 15h" line on its own). The words follow CodexBar: "ahead of plan" is a deficit, "behind plan" is a reserve; "ahead" and "behind" are never printed. A lane CodexBar sends no pace for (for example "Fable only", and every lane where the engine sends none, such as today's Windows engine) shows no tick, no piece and no line.
 - Scope: `usage-pace.tsx` and `usage-pace.test.tsx` (new), `usage-screen.tsx`, `usage-screen.test.tsx` (the bar sits in a wrapper; the run-out line is now bold), `control-center-types.ts`, `globals.css` (two pace colours), the Companion usage window fields (`usage.go`, `usage_pace_test.go`), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — pace in the bars is the feature itself, no new notice
+
+## 2026-10-19 — Pace on Usage: Codex review fix (#789)
+
+- User approval: pending — Paul reviews (pace on Usage per the approved master + 19.10. decisions); this entry restates the entry above after a Codex review fix.
+- Approved customer-visible result: none yet, pending Paul's review. Visible result unchanged from the entry above, except one edge: when CodexBar sends a stage but not its gap or expected-use number, the lane shows no tick, no piece and no line (before this fix the tick would sit at 0%). Not seen by Paul.
+- Scope: `usage-pace.tsx` and `usage-pace.test.tsx`, plus Companion files (`parse.go`, `types.go`, `usage.go` and their tests) that are not screens, and this approval record.
+- What's new: none — edge case of the pace feature, no new notice
