@@ -28,6 +28,8 @@ type SetupDialogProps = {
   /** Destructive tints the header icon; "neutral" is for progress dialogs. */
   tone?: "error" | "neutral";
   onOpenChange: (open: boolean) => void;
+  /** Lets an announcement leave focus where it is (#632). */
+  onOpenAutoFocus?: (event: Event) => void;
   open: boolean;
   /** The single signal action. Rendered last, on the right. */
   primaryAction?: SetupDialogAction;
@@ -58,6 +60,7 @@ export function SetupDialog({
   icon: Icon,
   tone = "error",
   onOpenChange,
+  onOpenAutoFocus,
   open,
   primaryAction,
   scrim = true,
@@ -82,6 +85,7 @@ export function SetupDialog({
       <DialogContent
         style={{ animation: "none" }}
         onInteractOutside={(event) => event.preventDefault()}
+        onOpenAutoFocus={onOpenAutoFocus}
         showCloseButton={showCloseButton}
       >
         <DialogHeader className="gap-1.5">
