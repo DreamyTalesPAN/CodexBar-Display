@@ -7606,6 +7606,19 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
 
+## 2026-10-16 — Setup: arrow keys move between choices and through the Help menu (#214)
+- User approval: Carried from the overnight batch of 13.10. (#603), which Paul's blanket approval for that night covered; not yet seen by him in this form.
+- Approved customer-visible result: no visible change. Keyboard only: in setup, Tab reaches each group of choices (VibeTVs, themes) once, and the arrow keys move between the choices and select the one they reach. In the Help menu, focus moves into the menu when it opens, the arrow keys, Home and End move between its entries, focus stays in the menu after an entry was used, and Escape returns focus to Help.
+- Scope: `apps/control-center/src/components/setup/setup-help-menu.tsx`, `setup-help-menu-log.test.tsx`, `setup-choice-keyboard.test.tsx`, `setup-selectable-card.tsx`, `setup-device-card.tsx`, `setup-device-dialogs.tsx`, `setup-device-screen.tsx`, `setup-theme-screen.tsx`, `docs/control-center-accessibility.md` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — keyboard handling only, no new capability
+
+## 2026-10-19 — #676: approval marker after merging main up to #677
+
+- User approval: the orchestrator on 2026-10-19, for Marcus: merge main into this branch after #677 (merge order for this file: #645 > #674 > #677 > #676 > #681) and keep both sets of entries. Marcus' click test of #676 runs on the head that carries this merge. The UI review gate cannot read a merge commit as approval, so this entry marks it.
+- Approved customer-visible result: as recorded in the "Setup: arrow keys move between choices and through the Help menu" entry above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — merge of main, no customer-visible change of its own
+
 ## 2026-10-16 — Provider next steps no longer say "then check again"
 - User approval: follows Paul's rule of 2026-10-16 "no Check again — the app re-checks by itself" (via the review orchestrator); the exact sentences are shown to him for approval on 2026-10-17.
 - Approved customer-visible result: The next-step sentence a customer reads for a provider (in the setup log and in the provider message) no longer ends with ", then check again"; the sentence ends with a period and says only what the customer does. The app re-checks by itself. Before → after:
