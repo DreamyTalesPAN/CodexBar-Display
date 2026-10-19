@@ -52,6 +52,15 @@ describe("keyboard focus ring colour", () => {
     expect(contrast(token(dark, "ring"), token(dark, "background"))).toBeGreaterThanOrEqual(3);
   });
 
+  it("keeps the ink ring on invalid inputs with keyboard focus, in both themes", () => {
+    const input = readFileSync(
+      path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "components", "ui", "input.tsx"),
+      "utf8",
+    );
+    expect(input).toContain("aria-invalid:focus-visible:ring-ring");
+    expect(input).toContain("dark:aria-invalid:focus-visible:ring-ring");
+  });
+
   it("draws the default outline of native controls at full strength", () => {
     expect(css).not.toMatch(/outline-ring\/\d+/);
   });
