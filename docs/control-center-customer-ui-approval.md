@@ -7530,3 +7530,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: in the "Screensaver is off." line under Appearance › Screensavers, the link "Turn on in Settings" is the Design System link (the Button link variant): dark ink with an underline, olive on hover, instead of lime. Same text, same place, same action. Contrast (WCAG 2.x): rest 14.85:1 light, 7.98:1 dark; hover olive #506600 5.58:1 light, 1.44:1 dark. The dark hover fails 4.5:1 and is open, not approved as final until the orchestrator decides.
 - Scope: `theme-library-screen.tsx`, its test and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — a colour fix of an existing link, not announced to customers
+
+## 2026-10-19 — #645: dark-mode hover of "Turn on in Settings" reaches 4.5:1
+
+- User approval: Marcus, answers 54b and 55a on 2026-10-19 (via the orchestrator): fix the dark-mode hover contrast of "Turn on in Settings" now, in #645 (54b). Because the Control Center does not switch dark mode on, the evidence is a unit test, a contrast calculation and a rendered image with dark mode on, without a new device test (55a).
+- Approved customer-visible result: in dark mode the link "Turn on in Settings" in the "Screensaver is off." line under Appearance › Screensavers hovers in the light olive #A9C76A, 4.92:1 on the dark grey #444933, instead of olive #506600 with 1.44:1. Light mode is unchanged: olive #506600 on hover, 5.58:1. Same text, same place, same action. The Control Center does not switch dark mode on today, so customers see no change yet.
+- Scope: `theme-library-screen.tsx`, its test and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a colour fix of an existing link, not announced to customers
