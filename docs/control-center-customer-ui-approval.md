@@ -7914,3 +7914,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/{overview-screen,logs-screen,control-center-app}.tsx`, `apps/control-center/src/components/overview-screen.test.tsx` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no new content
+
+## 2026-10-19 — Calm redesign matched to the master: Overview names a catalog theme by its title (#784, Codex fix)
+
+- User approval: pending — Paul reviews (#784 matched to the approved master design "Calm Redesign - alle Screens", 19.10.); look unchanged except: the "Display" figure on the Overview names a catalog theme by its title on the Themes page (for example "Synthwave Shop") instead of a name made up from its id (before → after: "Synthwave" → "Synthwave Shop" only where the two differ).
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/overview-screen.theme-name.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content

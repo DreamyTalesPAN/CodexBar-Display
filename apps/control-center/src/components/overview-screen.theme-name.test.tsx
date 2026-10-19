@@ -174,3 +174,23 @@ it("tells the customer's theme from a catalog theme of the same id by the file V
   expect(catalog).not.toContain("Night Shift");
 });
 
+
+// Codex review: a catalog theme is called by its title, not by a name made up
+// from its id.
+it("calls a catalog theme by its title", () => {
+  const html = renderToStaticMarkup(
+    <OverviewScreen
+      companionStatus="online"
+      device={{ active: true, connected: true, paired: true, ready: true, activeTheme: "synthwave" }}
+      themes={[
+        {
+          id: "synthwave", isFree: true, priceLabel: "Free", source: "github-catalog",
+          themeId: "synthwave", title: "Synthwave Shop",
+        },
+      ]}
+    />,
+  );
+
+  expect(html).toContain("Synthwave Shop");
+  expect(html).not.toContain(">Synthwave<");
+});
