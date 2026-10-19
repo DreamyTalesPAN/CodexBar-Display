@@ -78,9 +78,7 @@ func (s *Server) handleDeviceSelect(w http.ResponseWriter, r *http.Request) {
 	}
 	target := strings.TrimSpace(req.Target)
 	expectedDeviceID := strings.TrimSpace(req.ExpectedDeviceID)
-	// Exact match: publicTarget would strip credentials, query and fragment
-	// and let a malformed selector reach the Cable pairing flow.
-	if target == cableDeviceTarget {
+	if isCableTarget(target) {
 		s.selectCableDevice(w, r, expectedDeviceID)
 		return
 	}
@@ -90,6 +88,103 @@ func (s *Server) handleDeviceSelect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.clearAmbiguousDeviceSelection()
+	writeJSON(w, http.StatusOK, deviceActionResponse{OK: true, Device: device})
+}
+
+// isCableTarget reports whether target is the Cable selector. Exact match on
+// purpose: publicTarget would strip credentials, query and fragment and let a
+// malformed selector reach the Cable pairing flow.
+func isCableTarget(target string) bool {
+	return target == cableDeviceTarget
+}
+
+// cableIdentityDevice answers for the saved Cable VibeTV without changing any
+// config. It runs the same identity check the Cable controls already use.
+func (s *Server) cableIdentityDevice(
+	w http.ResponseWriter,
+	r *http.Request,
+	cfg runtimeconfig.Config,
+	expectedDeviceID string,
+) (deviceInfo, bool) {
+	_, hello, ok := s.requireCableControlDevice(w, cfg)
+	if !ok {
+		return deviceInfo{}, false
+	}
+	if err := validateRepairIdentity(cfg, hello, true, expectedDeviceID); err != nil {
+		writeRepairError(w, err)
+		return deviceInfo{}, false
+	}
+	return s.cableDeviceInfo(r.Context(), cfg, hello), true
+}
+
+// repairCableDevice: a Cable has no WiFi repair steps (IP search, WiFi token
+// pairing, render check). Repair on the Cable re-runs the Cable identity check
+// and only answers for a Cable that is the active connection. forcePair runs
+// the same Cable pairing as the connection choice and saves the new token.
+func (s *Server) repairCableDevice(w http.ResponseWriter, r *http.Request, expectedDeviceID string, forcePair bool) {
+	s.firmwareUpdateStartMu.Lock()
+	defer s.firmwareUpdateStartMu.Unlock()
+	if s.rejectBusyDevice(w, "Wait for the update to finish, then repair the connection again.") {
+		return
+	}
+	defer s.holdDeviceForMaintenance()()
+	cfg, err := s.config()
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) != "cable" {
+		writeError(w, http.StatusConflict, "cable_setup_required", "VibeTV is not connected by Cable.", "Choose Cable for this VibeTV, then try again.")
+		return
+	}
+	port, hello, ok := s.requireCableControlDevice(w, cfg)
+	if !ok {
+		return
+	}
+	if err := validateRepairIdentity(cfg, hello, true, expectedDeviceID); err != nil {
+		writeRepairError(w, err)
+		return
+	}
+	if forcePair && hello.Capabilities.Auth != nil {
+		token, err := s.pairCableDevice(port, hello.DeviceID)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, "cable_pairing_failed", "VibeTV could not pair through Cable.", "Keep VibeTV connected by Cable, then try again.")
+			return
+		}
+		cfg, err = s.updateConfig(func(current *runtimeconfig.Config) {
+			current.SetActiveDevice(runtimeconfig.KnownDevice{
+				DeviceID:    hello.DeviceID,
+				DeviceToken: token,
+			})
+			current.ConnectionMode = "cable"
+		})
+		if err != nil {
+			writeInternalError(w, err)
+			return
+		}
+	}
+	device := s.cableDeviceInfo(r.Context(), cfg, hello)
+	s.recordRepairResult(device)
+	writeJSON(w, http.StatusOK, deviceActionResponse{OK: true, Device: device})
+}
+
+// discoverCableDevice answers for the saved Cable VibeTV. It takes the same
+// firmware-update gate as search, so a queued update never shares the port.
+func (s *Server) discoverCableDevice(w http.ResponseWriter, r *http.Request) {
+	s.firmwareUpdateStartMu.Lock()
+	defer s.firmwareUpdateStartMu.Unlock()
+	if s.rejectBusyDevice(w, "Wait for the update to finish, then search again.") {
+		return
+	}
+	cfg, err := s.config()
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	device, ok := s.cableIdentityDevice(w, r, cfg, "")
+	if !ok {
+		return
+	}
 	writeJSON(w, http.StatusOK, deviceActionResponse{OK: true, Device: device})
 }
 
@@ -121,12 +216,18 @@ func (s *Server) handleDeviceRepair(w http.ResponseWriter, r *http.Request) {
 	if !decodeOptionalJSON(w, r, &req) {
 		return
 	}
+	target := strings.TrimSpace(req.Target)
+	expectedDeviceID := strings.TrimSpace(req.ExpectedDeviceID)
+	if isCableTarget(target) {
+		s.repairCableDevice(w, r, expectedDeviceID, req.ForcePair)
+		return
+	}
 	repairCtx, cancel := context.WithTimeout(r.Context(), repairRequestTimeout)
 	defer cancel()
 	device, err := s.repairDevice(
 		repairCtx,
-		strings.TrimSpace(req.Target),
-		strings.TrimSpace(req.ExpectedDeviceID),
+		target,
+		expectedDeviceID,
 		req.ForcePair,
 	)
 	if err != nil {
