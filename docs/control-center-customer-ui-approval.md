@@ -8058,3 +8058,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: before → after: the overlay of the previous revision, which covered the lower part of the preview while Details was open, is gone. The preview keeps its centred place and is never covered. "Details" and its panel sit in the free space below the preview in the same column; the panel is as high as that free space (it gets smaller in a lower window, never larger than the space) and scrolls inside itself. In a window so low that the left column scrolls, the preview and the Details bar scroll together as before. Texts and controls inside Details are unchanged.
 - Scope: `apps/control-center/src/components/theme-studio/editable-theme-preview.tsx` (three-row layout), `ai-theme-studio-screen.tsx` (the Details block), their tests, and this record. Pull request branch only, not merge or release.
 - What's new: none — layout refinement of the Theme Studio, no new feature
+
+## 2026-10-19 — #781: approval marker after merging main with the squashed #638 (58ae7cc8)
+
+- User approval: Paul, 19.10.2026 via the communicator, decision on build 7194 (the Details entry above: the preview stays fully visible and centred, Details uses the free space below it and scrolls inside itself); the merge of main (the squash of #638, same content as `codex/theme-studio-pack` 73788377) has no visible change of its own and was not seen by Paul. The canvas of the Studio now has the height of its column so the Details row cannot grow it. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: as in the Details entry above and the entries of this branch; nothing else changes.
+- Scope: the merge of `main` into this branch, `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` (canvas height) and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
