@@ -3,16 +3,18 @@
   "schemaVersion": 1,
   "id": "clippy",
   "name": "Clippy",
-  "version": "1.1.3",
-  "minFirmware": "1.0.40",
+  "version": "1.2.0",
+  "minFirmware": "1.0.50",
   "requiredCapabilities": [
-    "usage-slots-v1"
+    "usage-slots-v1",
+    "usage-pace-v1",
+    "color-stops-v1"
   ],
   "themeSpec": {
-    "path": "/themes/u/clippy-5-4f3746.json",
+    "path": "/themes/u/clippy-6-21abe3.json",
     "file": "theme.json",
-    "bytes": 1033,
-    "sha256": "460b32d22dcab196481967590cc760640f539234e8b02f8afc16079bab2f5d76",
+    "bytes": 1487,
+    "sha256": "21abe32bc44ad5e12aed8980548fc5e2fbbafb6a3c7365ffc524ad8e4fb1ce4e",
     "contentType": "application/json"
   },
   "assets": [

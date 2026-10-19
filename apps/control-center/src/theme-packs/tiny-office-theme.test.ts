@@ -97,8 +97,10 @@ describe("Tiny Office theme pack", () => {
     expect(themeTextFittedSize(text(label, data), label.f!, label.s!, label.w!, true)).toBe(1);
     expect(centers).toEqual([186, 186]);
     const manifest = JSON.parse(readFileSync(path.join(root, "theme-packs/tiny-office/manifest.json"), "utf8"));
-    expect(manifest.minFirmware).toBe("1.0.42");
+    // The first firmware that ships usage-pace-v1.
+    expect(manifest.minFirmware).toBe("1.0.50");
     expect(manifest.requiredCapabilities).toContain("text-valign-v1");
+    expect(manifest.requiredCapabilities).toContain("usage-pace-v1");
   });
 
   it("shows unavailable reset once instead of inventing a countdown", () => {

@@ -46,6 +46,13 @@ export const WHATS_NEW: WhatsNewEntry[] = [
     theme: "token-counter",
   },
   {
+    id: "theme-pace-meter",
+    icon: PanelsTopLeft,
+    title: "New theme: Pace Meter",
+    body: "Session and weekly use against your plan: a tick marks where you should be, in reserve or in deficit.",
+    theme: "pace-meter",
+  },
+  {
     id: "provider-shortcut",
     icon: Keyboard,
     title: "Switch providers with a shortcut",

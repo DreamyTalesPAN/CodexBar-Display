@@ -1,0 +1,22 @@
+{
+  "kind": "vibetv-theme-pack",
+  "schemaVersion": 1,
+  "id": "pace-meter",
+  "name": "Pace Meter",
+  "version": "1.0.0",
+  "minFirmware": "1.0.50",
+  "usage": "live",
+  "requiredCapabilities": [
+    "usage-slots-v1",
+    "color-stops-v1",
+    "usage-pace-v1"
+  ],
+  "themeSpec": {
+    "path": "/themes/u/pm-1-22c83e.json",
+    "file": "theme.json",
+    "bytes": 1840,
+    "sha256": "22c83ef7d9dc276af155b15b18990c15e87b0cff406a380cc4e3321729bc3f10",
+    "contentType": "application/json"
+  },
+  "assets": []
+}
