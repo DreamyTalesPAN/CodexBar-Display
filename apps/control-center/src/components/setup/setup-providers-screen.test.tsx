@@ -337,7 +337,7 @@ describe("SetupProvidersScreen", () => {
     for (const [state, sentence] of cases) {
       const item = provider({ providerId: "openai", label: "OpenAI", health: state, message: engine });
       const failed = { ...item, health: { ...item.health, reported: engine,
-        nextAction: "Finish setup for this provider, then check again.", noReadingSince: undefined } };
+        nextAction: "Finish setup for this provider.", noReadingSince: undefined } };
       expect(setupProviderDialogSentence(failed)).toBe(sentence);
       const { unmount } = renderDom(<SetupProvidersScreen usage={usage} providers={[failed]}
         onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
