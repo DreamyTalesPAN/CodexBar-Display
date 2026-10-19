@@ -8037,3 +8037,23 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; Paul's yes is pending. Visible change: the page behind the usage error dialog is darkened like every other dialog (was: not darkened, tiles usable under it). Words and buttons unchanged.
 - Scope: `usage-screen.tsx` (usage error: standard backdrop) and `usage-screen.error-overlay.test.tsx`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — look change only, no new notice
+## 2026-10-18 — Usage tiles: calm type 13 / 28 px, 400 / 600 (option, stacked on #669)
+
+- User approval: pending — Paul decides (Usage tiles in calm type; head unchanged)
+- Approved customer-visible result: none yet, pending Paul's decision. Proposed: tile titles 13 px / 600; the token line and the Status and Activity values 13 px / 400 in muted ink (the values were ink); a tile's main number 28 px / 600; a lane label such as "86% session remaining" stays on one line. No wording change. The Usage head above the tiles is unchanged.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (tile type, lane label, three tests), and this approval record. Option PR stacked on #669; not merged or released.
+- What's new: none — type and colour only, no new notice
+
+## 2026-10-18 — Usage tiles: a reset that does not fit beside a lane label moves beneath it (option, #777)
+
+- User approval: pending — Paul decides (Usage tiles in calm type; head unchanged)
+- Approved customer-visible result: none yet, pending Paul's decision. Proposed: at narrow tile width (960 px window) a lane label such as "94% session (5h) remaining" stays on one line and its reset ("Reset in 2h 37m") moves to the line beneath when there is no room beside it, instead of being clipped. No wording change. The Usage head above the tiles is unchanged.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (lane row wraps, one test assertion), and this approval record. Option PR #777 stacked on #669; not merged or released.
+- What's new: none — layout fallback only, no new notice
+
+## 2026-10-18 — Usage tiles: a wrapped reset stays right-aligned (option, #777)
+
+- User approval: pending — Paul decides (Usage tiles in calm type; head unchanged)
+- Approved customer-visible result: none yet, pending Paul's decision. Proposed: when a lane label and its reset do not fit on one line (960 px window), the reset ("Reset in 1h") moves to the line beneath and stays right-aligned there, instead of sitting at the left edge. No wording change. The Usage head above the tiles is unchanged.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (reset alignment, one test assertion), and this approval record. Option PR #777 stacked on #669; not merged or released.
+- What's new: none — layout alignment only, no new notice

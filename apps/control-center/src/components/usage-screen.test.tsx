@@ -866,6 +866,109 @@ describe("UsageScreen", () => {
     expect(html).not.toContain('aria-label="Updating"');
   });
 
+  // Calm type on the provider tiles (17.10.: sizes 28 and 13, weights 400 and
+  // 600). The big total above the tiles is not part of this.
+  it("sets a tile title in 13 px / 600 and its main number in 28 px / 600", () => {
+    render(
+      <UsageScreen
+        companionStatus="online"
+        onRefresh={vi.fn()}
+        usage={{
+          ...usage,
+          providers: [
+            {
+              id: "claude",
+              label: "Claude",
+              session: 40,
+              weekly: 20,
+              usageMode: "used",
+              stale: false,
+              windows: [{ id: "session", label: "Session", usedPercent: 40 }],
+            },
+          ],
+        }}
+      />,
+    );
+
+    const title = screen.getByRole("heading", { name: "Claude" });
+    expect(title.className).toContain("text-[13px]");
+    expect(title.className).toContain("font-semibold");
+    expect(title.className).not.toMatch(/\b(text-base|text-xl|font-medium|font-black|font-bold)\b/);
+
+    const mainNumber = screen.getByText("40%");
+    expect(mainNumber.className).toContain("text-[28px]");
+    expect(mainNumber.className).toContain("font-semibold");
+  });
+
+  it("sets the tile's secondary text in 13 px / 400 and muted, values included", () => {
+    render(
+      <UsageScreen
+        companionStatus="online"
+        onRefresh={vi.fn()}
+        usage={{
+          ...usage,
+          providers: [
+            {
+              id: "claude",
+              label: "Claude",
+              session: 40,
+              weekly: 20,
+              totalTokens: 1234567,
+              usageMode: "used",
+              stale: false,
+              activity: "Coding",
+              status: { description: "All systems operational" },
+              windows: [{ id: "session", label: "Session", usedPercent: 40 }],
+            },
+          ],
+        }}
+      />,
+    );
+
+    for (const element of [
+      screen.getByText("All systems operational"),
+      screen.getByText("Coding"),
+      screen.getByText(/^Tokens:/),
+    ]) {
+      expect(element.className).toContain("text-[13px]");
+      expect(element.className).not.toMatch(/\bfont-(semibold|bold|black|medium)\b/);
+      expect(element.className).toContain("text-muted-foreground");
+    }
+  });
+
+  it("keeps a lane label on one line, so 'SESSION (5H)' does not wrap in a tile", () => {
+    render(
+      <UsageScreen
+        companionStatus="online"
+        onRefresh={vi.fn()}
+        usage={{
+          ...usage,
+          providers: [
+            {
+              id: "claude",
+              label: "Claude",
+              session: 40,
+              weekly: 20,
+              usageMode: "used",
+              stale: false,
+              windows: [
+                { id: "session", label: "Session (5h)", usedPercent: 40 },
+                { id: "weekly", label: "Weekly", usedPercent: 20, resetSecs: 3600 },
+              ],
+            },
+          ],
+        }}
+      />,
+    );
+
+    const weeklyLabel = screen.getByText("20% weekly used");
+    expect(weeklyLabel.className).toContain("whitespace-nowrap");
+    // A reset that has no room beside the label moves under it, never clipped.
+    expect(weeklyLabel.parentElement?.className).toContain("flex-wrap");
+    // Wrapped alone on its line, the reset keeps its place on the right.
+    expect(screen.getByText(/^Reset in/).className).toContain("ml-auto");
+  });
+
   // The header holds only the name. Each reset sits right-aligned on its own
   // lane row: the first (session or weekly) line for the big number, the
   // later lines beside their bar.

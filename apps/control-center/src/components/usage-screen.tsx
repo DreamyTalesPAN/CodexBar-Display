@@ -827,7 +827,7 @@ function UsageLineView({
   status?: ReactNode;
 }) {
   const right = line.resetText ? (
-    <span className="shrink-0 text-muted-foreground">{line.resetText}</span>
+    <span className="ml-auto shrink-0 text-muted-foreground">{line.resetText}</span>
   ) : (
     status
   );
@@ -847,16 +847,16 @@ function UsageLineView({
   const text = `${line.percent}% ${line.label} ${modeLabel}`;
   return (
     <div className="grid gap-2">
-      <div className="flex items-baseline justify-between gap-4 text-[13px] text-foreground">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-[13px] text-foreground">
         {index === 0 ? (
-          <span className="text-muted-foreground">
+          <span className="whitespace-nowrap text-muted-foreground">
             <span className="text-[28px] leading-none font-semibold text-foreground">
               {line.percent}%
             </span>{" "}
             {line.label} {modeLabel}
           </span>
         ) : (
-          <span>{text}</span>
+          <span className="whitespace-nowrap">{text}</span>
         )}
         {right}
       </div>
@@ -926,7 +926,7 @@ function UsageMetaGrid({ provider }: { provider: UsageProviderInfo }) {
       {items.map(([label, value]) => (
         <div className="min-w-0" key={label}>
           <dt className="text-[13px] text-muted-foreground">{label}</dt>
-          <dd className="mt-1 break-words text-[13px] text-foreground">
+          <dd className="mt-1 break-words text-[13px] text-muted-foreground">
             {value}
           </dd>
         </div>
