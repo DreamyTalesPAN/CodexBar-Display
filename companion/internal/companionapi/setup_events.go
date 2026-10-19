@@ -376,7 +376,7 @@ func (r *setupStepRecorder) Unwrap() http.ResponseWriter { return r.ResponseWrit
 // when it changed, then the provider result. providerID is empty for a check
 // of all providers.
 func (s *Server) recordProviderSetupEvents(setup codexbar.ProviderSetup, providerID, label string) {
-	provider := providerDiagnosticCheck(setup)
+	provider := providerDiagnosticCheck(setup, false)
 	if label != "" && provider.Status == "pass" {
 		provider.Detail = label + " is ready."
 	} else if label != "" {
