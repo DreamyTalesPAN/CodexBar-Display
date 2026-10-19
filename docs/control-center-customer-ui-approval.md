@@ -8354,3 +8354,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — #784: Support page matched to the template (build 2 QA)
+
+- User approval: pending — Paul reviews (#784 matched to the approved template, build 2 QA); look unchanged except, each one before → after: (1) the text on Support has 21 px lines → before 20 px, so the report card is 4 px taller and each check row is 46 px high → before 45 px; (2) the buttons Copy, Download, Create new and Run diagnostics have 14 px sides (Run diagnostics: icon 16 px, 8 px gap) → before 12 px sides, so each is 4 to 10 px wider now; (3) Create new and Refresh are 14 px → before 13 px.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/logs-screen.tsx`, `apps/control-center/src/components/support-report-actions.tsx`, `apps/control-center/src/components/diagnostics-panel.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content

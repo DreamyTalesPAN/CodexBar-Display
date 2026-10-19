@@ -130,7 +130,7 @@ export function SupportReportActions({
         ) : diagnosticsText ? (
           <>
             <Button
-              className={cn("w-full sm:w-auto", quiet && "text-sm")}
+              className={cn("w-full sm:w-auto", quiet && "px-3.5 text-sm")}
               onClick={copyDiagnostics}
               size={size} type="button"
               variant={quiet ? "ghost" : "outline"}
@@ -139,7 +139,7 @@ export function SupportReportActions({
               <span>{copyState === "copied" ? "Copied" : "Copy"}</span>
             </Button>
             <Button
-              className={cn("w-full sm:w-auto", quiet && "text-sm")}
+              className={cn("w-full sm:w-auto", quiet && "px-3.5 text-sm")}
               onClick={downloadDiagnostics}
               size={size} type="button"
               variant={quiet ? "ghost" : "outline"}
@@ -149,7 +149,7 @@ export function SupportReportActions({
             </Button>
             {onCreate ? (
               <Button
-                className="w-full sm:w-auto"
+                className={cn("w-full sm:w-auto", quiet && "px-3.5 text-sm")}
                 disabled={creating}
                 onClick={createDiagnostics}
                 size={size} type="button"
@@ -162,7 +162,7 @@ export function SupportReportActions({
           </>
         ) : onCreate ? (
           <Button
-            className={cn("w-full sm:w-auto", quiet && "text-sm")}
+            className={cn("w-full sm:w-auto", quiet && "px-3.5 text-sm")}
             disabled={creating}
             onClick={createDiagnostics}
             size={size} type="button"

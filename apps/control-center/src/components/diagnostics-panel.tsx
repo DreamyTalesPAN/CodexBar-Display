@@ -68,7 +68,7 @@ export function DiagnosticsPanel({
             </span>
           ) : null}
           <Button
-            className="text-sm"
+            className="gap-2 px-3.5 text-sm has-data-[icon=inline-start]:pl-3.5 [&_svg:not([class*='size-'])]:size-4"
             disabled={running || !onRun}
             onClick={onRun}
             size="sm"
