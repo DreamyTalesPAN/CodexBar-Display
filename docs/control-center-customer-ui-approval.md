@@ -9393,3 +9393,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: before → after: the key dialog (Settings › Theme Studio AI, and the same dialog opened from the Studio) used its own plain dialog with a fade-and-zoom entrance and grew after opening, when the saved-key state arrived (the "Disconnect OpenAI" button appeared) and re-centred it, which looked like a jump; after: it is the same dialog as Factory reset and Run setup again (`SetupDialog`): no entrance animation of its own, the same dimmed screen behind it, and it has its final height from the first frame. Texts, heading, buttons and the Close button stay as in the entries above; in the Studio the dialog still has the X while no key is being checked.
 - Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx`, `ai-theme-studio-screen.tsx` (key dialog only), `apps/control-center/src/components/setup/setup-dialog.tsx` (description is optional; no description line is drawn when it is omitted), their tests, and this record. Pull request branch only, not merge or release.
 - What's new: none — same dialog, no new text or feature
+
+## 2026-10-19 — Calm redesign: customer-flow check follows the one-line screensaver notice (#784, CI fix)
+
+- User approval: pending — Paul reviews (#784 matched to the approved Claude Design template "Calm Redesign - alle Screens", design QA 19.10.); CI fix of a test script, no visible change; not seen by Paul
+- Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged; the one-line notice "Screensaver is off. Turn it on in Settings." is in the entry above.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` (two locators) and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
