@@ -9116,6 +9116,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in this branch's entries and main's entries; the key dialog in Settings has no X (calm A2 dialogs have none).
 - Scope: the merge of main, `apps/control-center/src/components/theme-studio/openai-key-form.tsx` (one prop), `apps/control-center/src/components/settings-screen.test.tsx` (7 sections incl. Theme Studio AI) and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
+<<<<<<< HEAD
 ## 2026-10-19 — Calm Updates screen as drawn in the approved master, plus the states derived from the calm rules (#752)
 - User approval: pending — Paul reviews (Updates built as drawn in the approved master + derived states, decided by the communicator 19.10.)
 - Approved customer-visible result: none yet; waits for Paul's yes. Before: two cards "Mac App" and "VibeTV" with Installed / Available version chips, "Last checked <date, time with seconds>" per card, an "Alert" box for the Mac-App-first rule and the update progress, a heading "Up to date" with a "What's new" link, and one full-width lime button ("Check for updates" / "Update"). After: one headline with a dot ("Everything is up to date", "Update available", "Checking for updates", "Update check failed", "Updating VibeTV", "VibeTV is restarting"); one framed card with a row "Mac App" ("App" on Windows) and a row "VibeTV firmware", each with an icon, one version number (the installed one) and "Up to date"; "Checked today, 08:44" (or "yesterday" / the date) and an outline "Check for updates" button beside the page title; a grey "What's new in <version>" note card with the newest entry's title and "Read notes" (opens the existing What's new dialog). Update available: the row that has the update shows a lime "Update" button (Mac App: Sparkle updater or verified download; firmware: starts the update) and says "Version <x> is available"; the firmware row keeps "Update Mac App first" / "Checking Mac App" inside its row while the app comes first. Installing: a thin progress bar and one "> step" line (shared process steps) inside the firmware row. Update complete / attention: title and sentence inside the firmware row. Failed check: a dialog "Could not check for updates" with "Check the internet connection, then try again.", a lime "Try again" and "Close" (no X); the failed update dialog is unchanged.
@@ -9625,6 +9626,8 @@ issue scope, or release permission never implies UI permission.
 - User approval: pending — Paul reviews (#802 matched to the approved template, build 2 QA); look unchanged except, each one before → after: (1) the lime Create button is 36 px high with 17 px sides → before 44 px high; (2) the cards in the list stand 24 px apart sideways and 28 px apart downwards and are 275 px wide → before 10 px apart both ways and 284 px wide; (3) the theme preview dialog is 520 px wide, shows the picture 240 px wide, and its Close button is a plain text button → before 440 px, a picture as wide as the dialog, and a lime Close button.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/theme-library-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
+=======
+>>>>>>> origin/claude/appearance-one-page
 
 ## 2026-10-19 — #784: Support page matched to the template (build 2 QA)
 
@@ -9664,6 +9667,37 @@ issue scope, or release permission never implies UI permission.
 - User approval: pending — Paul reviews (#784 matched to the approved template, build 2 QA); look unchanged except, each one before → after: the dialog "VibeTV Control Center needs attention" is 480 px wide, so Restart Control Center and Try automatic repair again stand side by side → before 440 px wide with the two buttons one under the other.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/setup/setup-recovery-dialogs.tsx` and this approval record. Pull request branch only, not merged, not released.
+<<<<<<< HEAD
+=======
+- What's new: none — no new content
+
+## 2026-10-19 — Appearance: one page with type switch, search, filters and one Create button (#790, #791, #792, #794)
+
+- User approval: pending — Paul reviews (Appearance built as drawn in the approved master "Calm Redesign - alle Screens", frames 04–06, F2–F5); look unchanged except, before → after: (1) the sidebar entry "Appearance" with its two sub-entries "Themes" and "Screensavers" becomes one entry "Appearance" without sub-entries, and the page title is always "Appearance" (before: "Themes" or "Screensavers"); (2) the two lists become one page that opens on "All" with a switch "All n · Themes n · Screensavers n" under the title, and the choice is kept while the app is open (Settings › "Choose screensaver" opens "Screensavers", a theme link opens "Themes"); (3) new: a "Search" field (name only, not case-sensitive, Esc clears; empty result reads "Nothing matches your search or filters.") and a "Filters" button whose popover (300 px, no X, Esc closes) groups the options with a count each for the open list — "Status" (Installed, Update available) always, "Features" (Agent states, Animated, Clock, Usage stats, Pixel art) and "Providers shown" (1 provider, 2 providers, 3 or more) only when the theme catalog carries tags — with "Clear all" and "n results" at the bottom and the picked options as removable chips with "Clear all" under the bar (several options of one group match any, groups match all); (4) the buttons "Create Theme" and "Create Screensaver" become one lime "Create"; in "Themes" and "Screensavers" it starts that type, on "All" it opens a small menu "Theme / Screensaver"; (5) the grey box "Screensaver is off." with the link "Turn on in Settings" on the Screensavers page becomes one muted line "Screensaver is off. Turn it on in Settings." with "Settings" as the link (shown only under "Screensavers"; the switch stays in Settings only), and Install is greyed instead of reading "Turn on first"; (6) each card gets the type word "Theme" or "Screensaver" at the right of its name, a 6 px preview corner, "Edit" underlined at the left and the status at the right ("✓ Installed", lime "Install" or "Update", "Update needed" as plain text) in a 28 px row, with 24 px between the columns and 28 px between the rows. A theme the customer made keeps its "Custom" mark next to the name and its "Delete" link next to "Edit" (not drawn in the master). Codex review fixes on top: the toolbar wraps in a narrow window, the screensaver setting is read again when Screensavers is opened from All, "Show me in Themes" opens the Themes segment, the Settings link has the full focus ring, and the grey fill of the chosen card stays as before (the master draws no chosen card). Merged with the base of 19.10. (2f8c5ec8): the screensaver-off line stays the template's one muted line.
+- Approved customer-visible result: none yet; waits for Paul's yes (see the entries above). Nothing new to approve in the later fixes and merges.
+- Scope: `apps/control-center/src/components/{appearance-toolbar,theme-library-screen,control-center-shell,control-center-app,control-center-types}.ts(x)`, `apps/control-center/src/components/theme-studio/theme-studio-preview.tsx`, `apps/control-center/src/lib/appearance-filters.ts`, the tests of these files, `apps/control-center/scripts/test-customer-flows.mjs` (navigation to the Themes and Screensavers segments, the title "Appearance", the screensaver switch now in Settings) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content in this PR; whether the one Appearance page gets a What's new entry is Paul's call (merge and review fixes change nothing)
+
+## 2026-10-19 — #802: approval marker after merging the calm redesign base (one-page Appearance)
+
+- User approval: Merge of the calm redesign base (#784 incl. main with #638) into this branch; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — #802: Appearance page matched to the template (build 2 QA)
+
+- User approval: pending — Paul reviews (#802 matched to the approved template, build 2 QA); look unchanged except, each one before → after: (1) the lime Create button is 36 px high with 17 px sides → before 44 px high; (2) the cards in the list stand 24 px apart sideways and 28 px apart downwards and are 275 px wide → before 10 px apart both ways and 284 px wide; (3) the theme preview dialog is 520 px wide, shows the picture 240 px wide, and its Close button is a plain text button → before 440 px, a picture as wide as the dialog, and a lime Close button.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #802: Codex fixes, Themes test and customer flow follow the Appearance segments
+
+- User approval: pending — Paul reviews (Codex review fix, tests and flow script only); no visible change: the display preference test and the customer flow reach the Themes segment of Appearance, as the other flows already do.
+- Approved customer-visible result: none; no visible change.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs`, `apps/control-center/src/components/control-center-app.display-preferences.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+>>>>>>> origin/claude/appearance-one-page
 - What's new: none — no new content
 
 ## 2026-10-19 — #780: Setup selected-card ring matched to the template (build 2 QA)
