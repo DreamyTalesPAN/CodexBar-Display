@@ -160,6 +160,30 @@ describe("SetupDisplayModeScreen", () => {
     expect(render()).toContain("Continue");
   });
 
+  // Calm rule (#713): lime is only for a primary button fill and a switch that
+  // is on. The chosen card and the chosen provider are framed in ink, as they
+  // are on Settings, not in the lime ring token.
+  it("frames the chosen Display mode card and provider in ink, not lime", () => {
+    const html = render({ mode: "fixed", selectedProviderId: codex.id });
+    // Only the chosen card (Manual) and the chosen provider are pressed.
+    const pressed = Array.from(
+      html.matchAll(/<button\b[^>]*aria-pressed="true"[^>]*>/g),
+      (match) => match[0],
+    );
+
+    expect(pressed).toHaveLength(2);
+    for (const tag of pressed) {
+      const classes = (tag.match(/class="([^"]*)"/)?.[1] ?? "").split(/\s+/);
+      expect(classes).toContain("border-foreground");
+      expect(classes).toContain("ring-foreground/20");
+      expect(classes).not.toContain("border-ring");
+      expect(classes).not.toContain("ring-ring/20");
+      // Keyboard focus on the chosen card must not fall back to lime.
+      expect(classes).toContain("focus-visible:border-foreground");
+      expect(classes).not.toContain("focus-visible:border-ring");
+    }
+  });
+
   // The screen used to take a second Continue, and a changed selection with
   // it, while the first write was still on its way: two writes raced, the
   // first to answer released the step, and what VibeTV kept was whichever
