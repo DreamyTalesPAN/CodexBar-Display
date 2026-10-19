@@ -1,0 +1,222 @@
+// @vitest-environment jsdom
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { WHATS_NEW } from "@/lib/whats-new";
+import { UpdatesScreen, type UpdatesScreenProps } from "./updates-screen";
+
+afterEach(cleanup);
+
+// The calm Updates screen as drawn in the approved master: one headline, one
+// framed object with a row per component, the "What's new" note card.
+const upToDate: UpdatesScreenProps = {
+  companionStatus: "online",
+  companionInfo: { app: { version: "1.0.64", installedInApplications: true } },
+  companionRelease: {
+    checkedAt: "2026-10-19T08:44:00Z",
+    status: "available",
+    latestVersion: "1.0.64",
+    installedVersion: "1.0.64",
+    updateAvailable: false,
+    message: "Mac App is up to date.",
+  },
+  device: { connected: true, board: "esp8266-smalltv-st7789", firmware: "1.0.48" },
+  firmwareUpdate: {
+    checkedAt: "2026-10-19T08:44:00Z",
+    status: "current",
+    installedFirmware: "1.0.48",
+    latestFirmware: "1.0.48",
+    updateAvailable: false,
+  },
+  onCheckUpdates: () => undefined,
+  onInstallUpdate: () => true,
+  onShowWhatsNew: () => undefined,
+};
+
+const variant = (element: HTMLElement) => element.getAttribute("data-variant");
+
+describe("calm Updates screen", () => {
+  it("up to date: one headline, two quiet rows with one version each, an outline check button", () => {
+    render(<UpdatesScreen {...upToDate} />);
+
+    expect(screen.getByRole("heading", { level: 2, name: "Everything is up to date" })).toBeTruthy();
+    const rows = screen.getAllByRole("heading", { level: 3 });
+    expect(rows.map((row) => row.textContent)).toEqual(["Mac App", "VibeTV firmware"]);
+    expect(screen.getAllByText("Up to date")).toHaveLength(2);
+    expect(screen.getByText("1.0.64", { selector: "span" })).toBeTruthy();
+    expect(screen.getByText("1.0.48")).toBeTruthy();
+
+    // Lime is only for a primary action, and nothing needs one here.
+    expect(screen.queryByRole("link", { name: "Update" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Update" })).toBeNull();
+    expect(variant(screen.getByRole("button", { name: "Check for updates" }))).toBe("outline");
+  });
+
+  it("checks for updates from the header button", () => {
+    const check = vi.fn();
+    render(<UpdatesScreen {...upToDate} onCheckUpdates={check} />);
+    fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
+    expect(check).toHaveBeenCalledTimes(1);
+  });
+
+  it("names the Windows app 'App' and never says Mac", () => {
+    const { container } = render(<UpdatesScreen {...upToDate} windowsHost />);
+    expect(screen.getAllByRole("heading", { level: 3 }).map((row) => row.textContent)).toEqual([
+      "App",
+      "VibeTV firmware",
+    ]);
+    expect(container.textContent).not.toContain("Mac");
+  });
+
+  it("shows the What's new note card with the installed version and opens the notes", () => {
+    const show = vi.fn();
+    render(<UpdatesScreen {...upToDate} onShowWhatsNew={show} />);
+    expect(screen.getByText("What's new in 1.0.64")).toBeTruthy();
+    expect(screen.getByText(WHATS_NEW[WHATS_NEW.length - 1].title)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Read notes" }));
+    expect(show).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows no What's new card when the notes cannot be opened", () => {
+    render(<UpdatesScreen {...upToDate} onShowWhatsNew={undefined} />);
+    expect(screen.queryByText(/What's new/)).toBeNull();
+  });
+
+  it("update available: the row with the update has a lime Update, the headline says so", () => {
+    render(
+      <UpdatesScreen
+        {...upToDate}
+        companionInfo={{ app: { version: "1.0.64", installedInApplications: false } }}
+        companionRelease={{
+          ...upToDate.companionRelease!,
+          dmgDownloadStatus: "available",
+          dmgDownloadUrl: "https://example.test/VibeTV-Control-Center.dmg",
+          latestVersion: "1.0.65",
+          updateAvailable: true,
+        }}
+        firmwareUpdate={{
+          ...upToDate.firmwareUpdate!,
+          latestFirmware: "1.0.49",
+          status: "update_available",
+          updateAvailable: true,
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { level: 2, name: "Update available" })).toBeTruthy();
+    const update = screen.getByRole("link", { name: "Update" });
+    expect(variant(update)).toBe("default");
+    expect(update.getAttribute("href")).toBe("https://example.test/VibeTV-Control-Center.dmg");
+    expect(screen.getByText("Version 1.0.65 is available")).toBeTruthy();
+    // One version per row: the installed one.
+    expect(screen.getByText("1.0.64", { selector: "span" })).toBeTruthy();
+    // The firmware waits for the Mac App, and says so inside its own row.
+    expect(screen.getByText("Update Mac App first")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Update" })).toBeNull();
+    expect(variant(screen.getByRole("button", { name: "Check for updates" }))).toBe("outline");
+  });
+
+  it("firmware update available: lime Update in the firmware row starts it", () => {
+    const install = vi.fn();
+    render(
+      <UpdatesScreen
+        {...upToDate}
+        firmwareUpdate={{
+          ...upToDate.firmwareUpdate!,
+          latestFirmware: "1.0.49",
+          status: "update_available",
+          updateAvailable: true,
+        }}
+        onInstallUpdate={install}
+      />,
+    );
+    const update = screen.getByRole("button", { name: "Update" });
+    expect(variant(update)).toBe("default");
+    expect(screen.getByText("Version 1.0.49 is available")).toBeTruthy();
+    fireEvent.click(update);
+    expect(install).toHaveBeenCalledTimes(1);
+  });
+
+  it("installing: the step is a process-steps line inside the card, no Update button", () => {
+    render(
+      <UpdatesScreen
+        {...upToDate}
+        firmwareUpdate={{
+          ...upToDate.firmwareUpdate!,
+          latestFirmware: "1.0.49",
+          status: "update_available",
+          updateAvailable: true,
+        }}
+        updateStatus={{
+          phase: "installing",
+          stage: "uploading",
+          startedAt: "2026-10-19T09:00:00Z",
+          message: "Sending the update to VibeTV.",
+          progress: 40,
+          logs: [],
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { level: 2, name: "Updating VibeTV" })).toBeTruthy();
+    const steps = document.querySelector('[data-slot="process-steps"]') as HTMLElement;
+    expect(steps.getAttribute("data-variant")).toBe("single");
+    expect(steps.textContent).toBe("> Sending the update to VibeTV.");
+    expect(steps.closest("h3")).toBeNull();
+    const firmwareRow = screen.getByRole("heading", { level: 3, name: "VibeTV firmware" }).parentElement!.parentElement!;
+    expect(firmwareRow.contains(steps)).toBe(true);
+    expect(within(firmwareRow).getByRole("progressbar").getAttribute("aria-valuenow")).toBe("40");
+    expect(screen.queryByRole("button", { name: "Update" })).toBeNull();
+    expect(screen.getByText("Updating")).toBeTruthy();
+  });
+
+  it("failed check: a dialog with a lime Try again and Close, no X", () => {
+    const check = vi.fn();
+    render(
+      <UpdatesScreen
+        {...upToDate}
+        firmwareUpdate={{
+          checkedAt: "2026-10-19T09:10:00Z",
+          status: "check_failed",
+          installedFirmware: "1.0.48",
+          updateAvailable: false,
+        }}
+        onCheckUpdates={check}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { level: 2, name: "Update check failed" })).toBeTruthy();
+    const dialog = screen.getByRole("dialog", { name: "Could not check for updates" });
+    expect(within(dialog).getByText("Check the internet connection, then try again.")).toBeTruthy();
+    expect(variant(within(dialog).getByRole("button", { name: "Try again" }))).toBe("default");
+    expect(within(dialog).getByRole("button", { name: "Close" })).toBeTruthy();
+    expect(within(dialog).getAllByRole("button")).toHaveLength(2);
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Try again" }));
+    expect(check).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("failed check: Close keeps the failure in the row and does not ask again", () => {
+    const failed = {
+      checkedAt: "2026-10-19T09:10:00Z",
+      status: "check_failed" as const,
+      installedFirmware: "1.0.48",
+      updateAvailable: false,
+    };
+    const view = render(<UpdatesScreen {...upToDate} firmwareUpdate={failed} />);
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByText("Check failed")).toBeTruthy();
+
+    // The next failed check is a new failure.
+    view.rerender(
+      <UpdatesScreen {...upToDate} firmwareUpdate={{ ...failed, checkedAt: "2026-10-19T09:20:00Z" }} />,
+    );
+    expect(screen.getByRole("dialog", { name: "Could not check for updates" })).toBeTruthy();
+  });
+
+  it("no dialog while everything checks fine", () => {
+    render(<UpdatesScreen {...upToDate} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});

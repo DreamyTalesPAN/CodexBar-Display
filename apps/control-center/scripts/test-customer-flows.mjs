@@ -8316,17 +8316,9 @@ async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
   await dmgUpdateLink.waitFor({
     timeout: 10_000,
   });
-  const updateCardBadges = page.locator(
-    '[data-slot="card-action"] [data-slot="badge"]',
-  );
-  const updateCardBadgeLabels = await updateCardBadges.allTextContents();
-  assert(
-    updateCardBadgeLabels.length > 0 &&
-      updateCardBadgeLabels.every(
-        (label) => label.trim() === "Update available",
-      ),
-    `Update cards must only show Update available badges, got ${JSON.stringify(updateCardBadgeLabels)}`,
-  );
+  await page
+    .getByRole("heading", { name: "Update available", level: 2 })
+    .waitFor({ timeout: 10_000 });
   assert(
     assetName(await dmgUpdateLink.getAttribute("href")) ===
       "VibeTV-Control-Center.dmg",
@@ -8339,10 +8331,10 @@ async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
     "Updates must not expose manual Mac App installation mechanics",
   );
   await page
-    .getByText("Installed", { exact: true })
+    .getByRole("heading", { name: "Mac App", level: 3 })
     .waitFor({ timeout: 10_000 });
   await page
-    .getByText("Available", { exact: true })
+    .getByRole("heading", { name: "VibeTV firmware", level: 3 })
     .waitFor({ timeout: 10_000 });
   assert(
     (await page
@@ -8447,10 +8439,10 @@ async function testNativeMacAppUpdateUsesSparkleAction(browser, appUrl) {
   );
   await page.getByText("1.0.32").waitFor({ timeout: 10_000 });
   await page
-    .getByText("Installed", { exact: true })
+    .getByRole("heading", { name: "Mac App", level: 3 })
     .waitFor({ timeout: 10_000 });
   await page
-    .getByText("Available", { exact: true })
+    .getByRole("heading", { name: "VibeTV firmware", level: 3 })
     .waitFor({ timeout: 10_000 });
   assert(
     (await page.getByText("Status", { exact: true }).count()) === 0 &&
@@ -8616,15 +8608,9 @@ async function testDmgInstallStaysUpToDateAtSameVersion(browser, appUrl) {
     "DMG Overview must not show the legacy migration card",
   );
   await clickNavigation(page, "Updates");
-  await page.getByRole("heading", { name: "Up to date" }).waitFor({
-    timeout: 10_000,
-  });
-  assert(
-    (await page
-      .locator('[data-slot="card-action"] [data-slot="badge"]')
-      .count()) === 0,
-    "Up-to-date cards must not show status badges",
-  );
+  await page
+    .getByRole("heading", { name: "Everything is up to date" })
+    .waitFor({ timeout: 10_000 });
   assert(
     (await page.getByRole("link", { name: "Update" }).count()) === 0,
     "Current DMG install must not show a migration download",
@@ -8670,7 +8656,9 @@ async function testLegacyMigrationCanRetryFailedRelease(
   await page.getByRole("heading", { name: "Update check failed" }).waitFor({
     timeout: 10_000,
   });
-  const retry = page.getByRole("button", { name: "Check again" });
+  const retry = page
+    .getByRole("dialog", { name: "Could not check for updates" })
+    .getByRole("button", { name: "Try again" });
   await retry.waitFor({ timeout: 10_000 });
   assert(
     await retry.isEnabled(),
@@ -8680,13 +8668,16 @@ async function testLegacyMigrationCanRetryFailedRelease(
   await retry.click();
   await waitForCondition(
     () => fixtureServer.failedReleaseRequestCount > requestsBeforeRetry,
-    "Check again should repeat the hosted DMG release request",
+    "Try again should repeat the hosted DMG release request",
   );
   await page.getByRole("heading", { name: "Update check failed" }).waitFor({
     timeout: 10_000,
   });
   assert(
-    await page.getByRole("button", { name: "Check again" }).isEnabled(),
+    await page
+      .getByRole("dialog", { name: "Could not check for updates" })
+      .getByRole("button", { name: "Try again" })
+      .isEnabled(),
     "A repeated hosted release failure must leave retry available",
   );
   assert(
@@ -9009,9 +9000,9 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
   });
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await clickNavigation(page, "Updates");
-  const firmwareSection = page.locator('[data-slot="card"]').filter({
-    has: page.getByRole("heading", { name: "VibeTV", exact: true }),
-  });
+  const firmwareSection = page
+    .getByRole("heading", { name: "VibeTV firmware", level: 3 })
+    .locator("xpath=../..");
   await page.getByRole("button", { name: "Update", exact: true }).waitFor({
     timeout: 10_000,
   });
