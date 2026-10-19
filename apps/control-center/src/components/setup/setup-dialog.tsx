@@ -22,7 +22,7 @@ export type SetupDialogAction = {
 
 type SetupDialogProps = {
   children?: ReactNode;
-  description: string;
+  description?: string;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   /** The single signal action. Rendered last, on the right. */
