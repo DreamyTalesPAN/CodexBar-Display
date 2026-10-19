@@ -8453,3 +8453,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: merge of origin/claude/group-calm-redesign (#784, 9c18d75f) into this branch, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-19 — #803: merge of the #784 outage-dialog fix, no change of its own
+
+- User approval: none needed — no visible change: this commit only merges the calm redesign base (#784) with its fix that makes the grey backdrop of the outage dialogs take no clicks; nothing of this pull request's own look changes.
+- Approved customer-visible result: none; no visible change.
+- Scope: merge of `origin/claude/group-calm-redesign` (`apps/control-center/src/components/setup/setup-recovery-dialogs.tsx`, its test, the flow comment) and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
