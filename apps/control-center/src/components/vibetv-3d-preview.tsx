@@ -141,8 +141,9 @@ export function VibeTV3DPreview({
     cssScene.add(screenPivot);
 
     const camera = new PerspectiveCamera(28, 1, 0.1 * U, 50 * U);
-    // A little lower than the first 3D build, as in the approved calm Overview.
-    camera.position.set(1.55 * U, 0.7 * U, 3.4 * U);
+    // Seen from a little lower and turned a little further than the first 3D
+    // build (about 27 degrees off the front), as in the approved calm Overview.
+    camera.position.set(1.72 * U, 0.3 * U, 3.32 * U);
 
     const key = new DirectionalLight(0xffffff, 1.6);
     key.position.set(2.5 * U, 4 * U, 3 * U);
@@ -189,14 +190,17 @@ export function VibeTV3DPreview({
     const startedAt = performance.now();
     let frameRequest = 0;
     let previousAt = startedAt;
+    // The sway starts from the resting angle of the picture, not mid-swing.
+    let swayFrom = startedAt;
     const loop = () => {
       frameRequest = requestAnimationFrame(loop);
       const now = performance.now();
       const elapsed = Math.min(now - previousAt, 100);
       previousAt = now;
       const swaying = !still && !dragging && now - touchedAt > 2500;
+      if (!swaying) swayFrom = now;
       if (swaying) {
-        const sway = Math.sin(((now - startedAt) / 1000) * 0.35) * 0.18;
+        const sway = Math.sin(((now - swayFrom) / 1000) * 0.35) * 0.18;
         modelPivot.rotation.y += (sway - modelPivot.rotation.y) * (1 - Math.pow(0.98, elapsed / (1000 / 60)));
         screenPivot.rotation.y = modelPivot.rotation.y;
       }

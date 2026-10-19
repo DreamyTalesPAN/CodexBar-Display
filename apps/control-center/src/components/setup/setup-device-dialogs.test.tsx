@@ -314,4 +314,25 @@ describe("Dialogs as drawn in the template", () => {
     expect(dialog.textContent).toContain("Choose it to connect again.");
     expect(dialog.textContent).not.toContain("Choose your VibeTV");
   });
+
+  it("lists the VibeTVs as plain radio rows, not setup cards (frame 47)", () => {
+    render(
+      <SetupDevicePickerDialog
+        candidates={[
+          { deviceId: "4F2A", target: "192.168.178.163", transport: "wifi", firmware: "1.4.2", known: true },
+          { deviceId: "91C0", target: "cable://vibetv", transport: "cable", firmware: "1.4.2" },
+        ]}
+        error={null}
+        onConnect={vi.fn()}
+        onOpenChange={vi.fn()}
+      />,
+    );
+    const rows = screen.getAllByRole("radio");
+    expect(rows).toHaveLength(2);
+    expect(rows[0].textContent).toBe("VibeTV 4F2A192.168.178.163 · Firmware 1.4.2WiFi · Previously connected");
+    expect(rows[1].textContent).toBe("VibeTV 91C0Firmware 1.4.2Cable");
+    expect(rows[0].getAttribute("aria-checked")).toBe("true");
+    expect(rows[0].closest('[data-slot="item"]')).toBeNull();
+    expect(screen.queryByRole("img")).toBeNull();
+  });
 });

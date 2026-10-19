@@ -9924,3 +9924,24 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: a wizard card reached by Tab shows the same ring as the other controls.
 - Scope: `apps/control-center/src/components/setup/setup-selectable-card.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #784: build 2b QA, the 3D VibeTV on Overview is turned like the template (frame 1)
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the 3D VibeTV seen from the right and nearly from the front at rest (camera about 24 degrees off the front, a little higher) and its sway began mid-swing, which at the first look showed it turned even further to the front → the device rests turned about 27 degrees off the front, seen a little from below as drawn in the template, and the sway starts from that resting angle.
+- Approved customer-visible result: the Overview picture of the VibeTV shows the device at the angle of frame 1 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #784: build 2b QA, no sidebar toggle beside the title of Updates and Support (frames 10, 11)
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the sidebar-toggle icon stood left of the title "Updates" and "Support" → those two pages show the title alone, as drawn in the template; every other page keeps the icon, and a narrow window keeps it on all pages because it is the only way to the menu there.
+- Approved customer-visible result: Updates and Support start with their title, as in frames 10 and 11.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #784: build 2b QA, "Your VibeTV is not reachable" lists plain radio rows (frame 47)
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the dialog showed the setup device cards (thumbnail, WiFi and "Previously connected" chips, ring, check mark) → it shows plain radio rows between hairlines as drawn in frame 47: round radio, "VibeTV 4F2A", "192.168.178.163 · Firmware 1.4.2" below, "WiFi · Previously connected" (or "Cable") at the right; the dialog is 480 px wide as drawn. The words are unchanged.
+- Approved customer-visible result: the picker dialog looks like frame 47 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/setup/setup-device-dialogs.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content

@@ -250,6 +250,26 @@ describe("ControlCenterShell", () => {
     expect(screen.getByRole("navigation", { name: "Control Center" })).toBeTruthy();
   });
 
+  // Build 2b QA against the approved template: Updates and Support draw no
+  // sidebar toggle beside the title (a narrow window keeps it).
+  it("hides the sidebar toggle beside the title on Updates and Support only", () => {
+    vi.stubGlobal("matchMedia", () => ({
+      matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }));
+    for (const [tab, hidden] of [["updates", true], ["logs", true], ["overview", false], ["settings", false]] as const) {
+      const { unmount } = render(
+        <TooltipProvider>
+          <ControlCenterShell activeTab={tab} onTabChange={vi.fn()}>
+            <div>content</div>
+          </ControlCenterShell>
+        </TooltipProvider>,
+      );
+      const toggle = screen.getByRole("button", { name: "Open navigation" });
+      expect(toggle.className.split(" ").includes("md:hidden")).toBe(hidden);
+      unmount();
+    }
+  });
+
   it("has no accessibility violations with an update waiting", async () => {
     await expectNoAxeViolations(
       renderToStaticMarkup(
