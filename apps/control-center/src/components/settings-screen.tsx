@@ -218,12 +218,12 @@ export function SettingsScreen({
     );
 
   return (
-    <div className="mx-auto w-full max-w-[1040px] pt-4 pb-10">
+    <div className="mx-auto w-full max-w-[1040px] pt-6 pb-10">
       <SetupStepFailedDialog
         error={actionError ?? errorForHost(providerError, windowsHost)}
         onOpenChange={(open) => !open && onDismissError()}
       />
-      <SettingsSection id="settings-display-mode" title="Display mode">
+      <SettingsSection id="settings-display-mode" title="Display mode" topAligned>
         {providerPicker.displayNotice ? (
           <p className="text-[13px] text-muted-foreground" role="status">
             {providerPicker.displayNotice}
@@ -245,7 +245,7 @@ export function SettingsScreen({
             selected={displayMode === "automatic"}
           />
           {displayMode === "automatic" && rotation ? (
-            <div className="mt-4">
+            <div className="mt-2">
               <PreferenceRow
                 descriptor={rotation}
                 disabled={localActionBusy}
@@ -260,7 +260,7 @@ export function SettingsScreen({
             selected={displayMode === "fixed"}
           />
           {displayMode === "fixed" ? (
-            <div className="mt-4">
+            <div className="mt-2">
             <SettingRow htmlFor="vibetv-manual-provider" label="Show this provider">
               <Select
                 onValueChange={(providerId) =>
@@ -291,7 +291,7 @@ export function SettingsScreen({
           ) : null}
         </div>
         {providerShortcut ? (
-          <p className="text-[13px] text-muted-foreground">
+          <p className="-mt-1 text-[13px] text-muted-foreground">
             {providerShortcut === "available"
               ? // What a press does now (issue #558): it moves between the
                 // providers Manual offers, so one of them leaves nothing to
@@ -404,15 +404,15 @@ export function SettingsScreen({
               value={standbyValues.brightnessPercent}
               valueLabel={`${standbyValues.brightnessPercent}%`}
             />
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div className="flex min-h-9 flex-wrap items-center gap-x-4 gap-y-2">
               <span aria-hidden className="w-[190px] shrink-0" />
               <div className="flex min-w-[160px] flex-1 flex-wrap items-center gap-x-2">
                 <a
                   aria-disabled={standbyDetailsDisabled}
                   className={
                     standbyDetailsDisabled
-                      ? "pointer-events-none inline-block py-1 text-sm font-normal text-foreground underline underline-offset-4 opacity-50"
-                      : "inline-block py-1 text-sm font-normal text-foreground underline underline-offset-4 hover:text-[var(--vibetv-support)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      ? "pointer-events-none inline-block text-[13px] font-normal text-foreground underline underline-offset-4 opacity-50"
+                      : "inline-block text-[13px] font-normal text-foreground underline underline-offset-4 hover:text-[var(--vibetv-support)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   }
                   href="#screensavers"
                   onClick={(event) => {
@@ -438,7 +438,7 @@ export function SettingsScreen({
 
       <ItemSeparator className="my-0" />
 
-      <SettingsSection title="Connection">
+      <SettingsSection title="Connection" topAligned>
         <div
           aria-label="Connection mode"
           aria-busy={busyAction === "connection-mode"}
@@ -498,8 +498,8 @@ export function SettingsScreen({
       <SettingsSection title="Setup">
         {/* Each action sits beside its own line: one line beside both
             explained only the first (issue #579). */}
-        <div className="flex items-center justify-between gap-4">
-          <div className="min-w-0">
+        <div className="flex items-center justify-between gap-6">
+          <div className="flex min-w-0 flex-col gap-0.5">
             <p className="text-[13px] font-semibold">Run setup again</p>
             <p className="text-[13px] text-muted-foreground" id="vibetv-run-setup-help">
               Connect {thisHost} to another VibeTV.
@@ -523,8 +523,8 @@ export function SettingsScreen({
           </Button>
         </div>
         {onEraseDevice && connectionMode === "cable" ? (
-          <div className="flex items-center justify-between gap-4 border-t border-foreground/10 pt-5">
-            <div className="min-w-0">
+          <div className="-mt-1 flex items-center justify-between gap-6 border-t border-foreground/10 pt-4">
+            <div className="flex min-w-0 flex-col gap-0.5">
               <p className="text-[13px] font-semibold">Factory reset</p>
               <p className="text-[13px] text-muted-foreground" id="vibetv-factory-reset-help">
                 VibeTV forgets its WiFi details, pairing, settings and themes.
@@ -532,7 +532,7 @@ export function SettingsScreen({
             </div>
             <Button
               aria-describedby="vibetv-factory-reset-help"
-              className="shrink-0 text-destructive"
+              className="shrink-0 text-[oklch(0.55_0.19_27)]"
               disabled={localActionBusy || !deviceIsCustomerConnected(device)}
               onClick={() => setEraseRequested(true)}
               size="sm"
@@ -586,6 +586,8 @@ export function SettingsScreen({
 
       <SettingsSection title="AI providers">
         <ProviderList
+          // The design's Settings list: 40 px search, 48 px rows, "Show more" at the left edge.
+          className="[&_[data-slot=item-group]]:mt-4 [&_[data-slot=item]]:h-12 [&_[data-slot=item]]:py-0 [&_input]:h-10 [&>button:last-child]:mt-4 [&>button:last-child]:self-start [&>button:last-child]:px-0"
           onCheckAgain={(provider) => void providerPicker.onCheck(provider)}
           onOpenSignIn={
             providerPicker.onOpenSignIn
@@ -621,17 +623,22 @@ function SettingsSection({
   children,
   id,
   title,
+  topAligned = false,
 }: {
   children: ReactNode;
   /** For a link that opens Settings at this group ("What's new", Screensavers). */
   id?: string;
   title: string;
+  /** The first control is a radio list, not a 36 px row: the name sits level with its top. */
+  topAligned?: boolean;
 }) {
   return (
     <section id={id} className="grid grid-cols-1 items-start gap-5 py-8 md:grid-cols-[minmax(0,240px)_minmax(0,560px)] md:gap-10">
       <div className="min-w-0">
         {/* Padded to the centre of the first control row. */}
-        <h2 className="pt-2 text-[13px] leading-5 font-semibold">{title}</h2>
+        <h2 className={cn("text-[13px] leading-5 font-semibold", !topAligned && "pt-2")}>
+          {title}
+        </h2>
       </div>
       <div className="flex min-w-0 flex-col gap-5">{children}</div>
     </section>
@@ -655,7 +662,7 @@ function SettingRow({
 }) {
   return (
     <div
-      className="flex flex-wrap items-center gap-x-4 gap-y-2"
+      className="flex min-h-9 flex-wrap items-center gap-x-4 gap-y-2"
       data-disabled={disabled}
     >
       <Label
@@ -770,7 +777,7 @@ function BrightnessControl({
 }) {
   return (
     <div
-      className="flex flex-wrap items-center gap-x-4 gap-y-2"
+      className="flex min-h-9 flex-wrap items-center gap-x-4 gap-y-2"
       data-disabled={disabled}
     >
       {labelled ? (

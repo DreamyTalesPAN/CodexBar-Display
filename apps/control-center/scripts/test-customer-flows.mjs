@@ -6573,7 +6573,8 @@ async function testAppearanceSidebarNavigation(browser, appUrl) {
       "Appearance sections must stay in the sidebar, not become content tabs",
     );
     await page
-      .getByRole("link", { name: "Turn on in Settings", exact: true })
+      .locator("main.control-center-shell")
+      .getByRole("link", { name: "Settings", exact: true })
       .click();
     await page
       .getByRole("heading", { name: "Screensaver", exact: true })

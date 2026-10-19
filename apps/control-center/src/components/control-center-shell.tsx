@@ -5,7 +5,7 @@ import {
   BarChart3,
   ChevronDown,
   FileText,
-  Grid2X2,
+  Palette,
   RefreshCw,
   SlidersHorizontal,
 } from "lucide-react";
@@ -79,7 +79,7 @@ const NAV_ITEMS: ShellNavItem[] = [
   {
     id: "theme-library",
     label: "Appearance",
-    icon: <Grid2X2 aria-hidden />,
+    icon: <Palette aria-hidden />,
   },
   {
     id: "updates",

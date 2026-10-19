@@ -788,7 +788,7 @@ it("opens Settings at Show screensaver from the line under Screensavers", async 
   expect(screen.queryByRole("switch", { name: "Show screensaver" })).toBeNull();
   expect(window.text()).toContain("Screensaver is off.");
 
-  fireEvent.click(screen.getByRole("link", { name: "Turn on in Settings" }));
+  fireEvent.click(screen.getByRole("link", { name: "Settings" }));
   await window.wait(1);
   expect(screen.getByRole("heading", { name: "Screensaver" }).closest("section")?.id).toBe(
     "settings-screensaver",
@@ -801,7 +801,7 @@ it("opens Settings at Show screensaver from the line under Screensavers", async 
   await window.wait(1);
   expect(screen.getByRole("heading", { name: "Screensavers" })).toBeTruthy();
   expect(window.text()).not.toContain("Screensaver is off.");
-  expect(screen.queryByRole("link", { name: "Turn on in Settings" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
 });
 
 // Codex review of #645: the screensaver values belong to one VibeTV. When the
