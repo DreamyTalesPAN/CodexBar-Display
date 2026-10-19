@@ -49,16 +49,10 @@ describe("SetupLog", () => {
     );
   });
 
-  it("shows the caret only on the last line, and only while running", () => {
-    expect(renderToStaticMarkup(<SetupLog lines={lines} />)).not.toContain(
-      "vibetv-caret-blink",
-    );
-
+  it("draws no cursor block, while running or not: the lines are the look", () => {
     const running = renderToStaticMarkup(<SetupLog lines={lines} running />);
 
-    expect(running.match(/vibetv-caret-blink/g)).toHaveLength(1);
-    expect(running.indexOf("vibetv-caret-blink")).toBeGreaterThan(
-      running.indexOf("VibeTV 5804508"),
-    );
+    expect(running).not.toContain("aria-hidden");
+    expect(running.match(/&gt; /g)).toHaveLength(2);
   });
 });

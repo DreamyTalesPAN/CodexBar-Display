@@ -14,7 +14,7 @@ export type SetupLogLine = {
 type SetupLogProps = {
   className?: string;
   lines: SetupLogLine[];
-  /** Renders the blinking caret after the last line while work is in flight. */
+  /** While work is in flight, a step that runs long gets a "Still …" line. */
   running?: boolean;
   /** Off where the screen already writes its own "still …" lines. */
   stillLines?: boolean;
@@ -91,7 +91,7 @@ export function SetupLog({
       )}
       ref={scrollRef}
     >
-      {rows.map((line, index) => (
+      {rows.map((line) => (
         <div
           className={cn(
             // Keyed by id, so only a line that is genuinely new animates; the
@@ -106,7 +106,6 @@ export function SetupLog({
           key={line.id}
         >
           <span>&gt; {line.text}</span>
-          {running && index === rows.length - 1 ? <SetupLogCaret /> : null}
         </div>
       ))}
     </div>
@@ -130,13 +129,4 @@ function stillText(text: string): string {
   // Lower-case a capitalised first word, but not a name such as VibeTV.
   const doing = step.replace(/^[A-Z][a-z]+\b/, (word) => word.toLowerCase());
   return `Still ${doing} – hang tight.`;
-}
-
-function SetupLogCaret() {
-  return (
-    <span
-      aria-hidden
-      className="inline-block h-[14px] w-[8px] shrink-0 bg-foreground [animation:vibetv-caret-blink_1.1s_step-end_infinite]"
-    />
-  );
 }

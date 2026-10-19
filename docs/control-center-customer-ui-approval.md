@@ -7817,3 +7817,11 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: unchanged.
 - Scope: merge of `origin/main` into this pull request branch, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no customer-visible change
+
+## 2026-10-19 — Step lists: "Still … – hang tight." lines and no cursor block
+
+- User approval: Paul, 19.10.2026 via the communicator: variant A, at most 5 "Still … – hang tight." lines every 8 s, calm look without cursor block.
+- Approved customer-visible result: while a setup step runs longer than 8 s, one more line "> Still <step in lower-case continuous form> – hang tight." is added under it every 8 s, up to 5 lines per step; a step that ends in a past tense gets "> Still working on it – hang tight."; the last sentence of a multi-sentence step text is used ("Upload interrupted. Retrying." → "> Still retrying – hang tight."); the running step no longer shows a blinking black cursor block at the end of the log, on every step list (theme install, device connection, welcome, provider loading). The providers screen keeps its own "still checking, hang tight" line every 20 s and gets no "Still" line.
+  Before → after, example: theme install, "> Refreshing display stream." with a blinking black block after it → "> Refreshing display stream." then after 8 s "> Still refreshing display stream – hang tight.", after 16 s a second identical line, no block.
+- Scope: `apps/control-center/src/components/setup/setup-log.tsx`, `apps/control-center/src/components/setup/setup-log.test.tsx`, `apps/control-center/src/components/setup/setup-log-still.test.tsx` (new), `apps/control-center/src/components/setup/setup-providers-screen.tsx` (opt-out only), `apps/control-center/src/components/control-center-app.tsx` (comment only), `apps/control-center/src/app/globals.css` (unused caret keyframe removed). Pull request branch only, not merge or release.
+- What's new: none — step-line change only, no release-note item.

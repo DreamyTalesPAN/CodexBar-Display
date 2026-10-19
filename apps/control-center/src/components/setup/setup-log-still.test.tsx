@@ -190,13 +190,4 @@ describe("SetupLog while a step runs long", () => {
 
     expect(stillRows(container)).toEqual([]);
   });
-
-  it("moves the caret to the newest line, Still lines included", () => {
-    const { container } = render(<SetupLog lines={running} running />);
-    advance(8000);
-
-    const rows = container.querySelectorAll("[role=status] > div");
-    expect(rows[0].querySelector("[aria-hidden]")).toBeNull();
-    expect(rows[1].querySelector("[aria-hidden]")).not.toBeNull();
-  });
 });
