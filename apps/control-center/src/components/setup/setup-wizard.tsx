@@ -179,6 +179,14 @@ export function SetupWizard(props: SetupWizardProps) {
   } = props;
 
   const [wentBackTo, setWentBackTo] = useState<SetupStep | null>(null);
+  // The customer picked what to connect (a card and Connect, or Cable/WiFi).
+  // Only then does the connect screen have a choice to go back to; a lone
+  // VibeTV that connects by itself has none.
+  const [connectChosen, setConnectChosen] = useState(false);
+  const derivedStepRef = useRef(derivedStep);
+  useEffect(() => {
+    derivedStepRef.current = derivedStep;
+  }, [derivedStep]);
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [connectionDeviceId, setConnectionDeviceId] = useState<string | null>(null);
   const [preferredTransport, setPreferredTransport] =
@@ -380,6 +388,7 @@ export function SetupWizard(props: SetupWizardProps) {
       (entry) => candidateKey(entry) === preselected,
     );
     if (candidate) {
+      setConnectChosen(true);
       if (candidate.transport === "cable" && candidate.deviceId &&
           (preferredTransport === "choose" || (!preferredTransport &&
             (props.connectionModeChoiceRequired || !props.connectionMode)))) {
@@ -394,6 +403,19 @@ export function SetupWizard(props: SetupWizardProps) {
     // is half way through setting up.
     connect.retry();
   }, [connect, preselected, preferredTransport, props.connectionMode, props.connectionModeChoiceRequired, visibleCandidates]);
+
+  // The device step's Back: the choice of Cable or WiFi again. Waiting for
+  // WiFi leaves nothing running here: the details are with VibeTV, and the
+  // search that waits for it stops with the step.
+  const backToConnectionChoice = () => {
+    transportChoiceRef.current += 1;
+    setConnectChosen(false);
+    setPreferredTransport("choose");
+    setConnectionDeviceId(null);
+    setWiFiSetup(null);
+    setSelectedTarget(null);
+    searchAgain();
+  };
 
   const scanWiFiNetworks = useCallback(async () => {
     setWiFiScanning(true);
@@ -708,6 +730,24 @@ export function SetupWizard(props: SetupWizardProps) {
   }
 
   if (step === "device") {
+    const choseTransport = Boolean(preferredTransport && preferredTransport !== "choose");
+    // Back during the sequence: the step that runs finishes (the companion has
+    // no cancel for a pairing or a firmware write), no further one starts, and
+    // then the connection choice shows again.
+    const leaveAfterConnect = () => connect.leaveWhenSettled(() => {
+      // Pairing publishes the VibeTV before the sequence ends, so the derived
+      // step may already be past this one.
+      directAttempt.current = "";
+      if (derivedStepRef.current !== "device") {
+        setWentBackTo("device");
+      }
+      backToConnectionChoice();
+    });
+    const onBack = connectInFlight
+      ? connectChosen || choseTransport ? leaveAfterConnect : undefined
+      : connect.state.phase === "idle" && choseTransport
+        ? backToConnectionChoice
+        : undefined;
     const connecting =
       connectInFlight ||
       connect.state.phase === "done" ||
@@ -732,21 +772,7 @@ export function SetupWizard(props: SetupWizardProps) {
           firmwarePercent={props.firmwareWrittenPercent}
           logLines={connectLogLines(connect.state, props.firmwareWrittenPercent)}
           onConnect={startConnect}
-          onBack={
-            connect.state.phase === "idle" &&
-            preferredTransport &&
-            preferredTransport !== "choose" &&
-            wifiSetup?.phase !== "waiting"
-              ? () => {
-                  transportChoiceRef.current += 1;
-                  setPreferredTransport("choose");
-                  setConnectionDeviceId(null);
-                  setWiFiSetup(null);
-                  setSelectedTarget(null);
-                  searchAgain();
-                }
-              : undefined
-          }
+          onBack={onBack}
           onChooseTransport={(transport) => void chooseTransport(transport)}
           onEditWiFi={() => setWiFiSetup((current) =>
             current ? { ...current, phase: "credentials" } : current,

@@ -60,10 +60,28 @@ export function useSetupConnect(
   // a successful connect empties the discovered list, and the device the
   // customer is half way through updating would no longer be in it.
   const candidateRef = useRef<DeviceCandidate | null>(null);
+  // Back pressed while the sequence runs. The companion has no way to cancel a
+  // pairing or a firmware write, so the step that is running finishes and no
+  // further one starts; then the sequence ends quietly and this is called.
+  const leaveRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     progressRef.current = firmwareProgress;
   }, [firmwareProgress]);
+
+  /** Ends the sequence without a result when Back was pressed; true when it did. */
+  const settleIfLeaving = useCallback(() => {
+    const leave = leaveRef.current;
+    if (!leave) {
+      return false;
+    }
+    leaveRef.current = null;
+    candidateRef.current = null;
+    setFailure(null);
+    setState(IDLE);
+    leave();
+    return true;
+  }, []);
 
   const run = useCallback(
     async (candidate: DeviceCandidate) => {
@@ -76,6 +94,9 @@ export function useSetupConnect(
       let firmware: { from: string; to: string } | null = null;
 
       const fail = (next: ConnectFailure, errorText: string) => {
+        if (settleIfLeaving()) {
+          return;
+        }
         setState({
           ...base,
           errorText,
@@ -111,6 +132,9 @@ export function useSetupConnect(
         return;
       }
 
+      if (settleIfLeaving()) {
+        return;
+      }
       reached = "checking-firmware";
       setState({ ...base, phase: "checking-firmware" });
 
@@ -128,6 +152,9 @@ export function useSetupConnect(
         return;
       }
 
+      if (settleIfLeaving()) {
+        return;
+      }
       if (!firmware) {
         setState({ ...base, phase: "done" });
         onDone?.();
@@ -164,6 +191,9 @@ export function useSetupConnect(
         return;
       }
 
+      if (settleIfLeaving()) {
+        return;
+      }
       setState({
         ...base,
         firmwareFrom: firmware.from,
@@ -172,14 +202,20 @@ export function useSetupConnect(
       });
       onDone?.();
     },
-    [onDone, steps],
+    [onDone, settleIfLeaving, steps],
   );
 
   const dismissFailure = useCallback(() => setFailure(null), []);
   const reset = useCallback(() => {
+    leaveRef.current = null;
     setFailure(null);
     candidateRef.current = null;
     setState(IDLE);
+  }, []);
+
+  /** Back during the sequence: `leave` runs once the running step is over. */
+  const leaveWhenSettled = useCallback((leave: () => void) => {
+    leaveRef.current = leave;
   }, []);
 
   /** Runs the sequence again against the device it last ran against. */
@@ -190,5 +226,5 @@ export function useSetupConnect(
     }
   }, [run]);
 
-  return { dismissFailure, failure, reset, retry, run, state };
+  return { dismissFailure, failure, leaveWhenSettled, reset, retry, run, state };
 }

@@ -168,7 +168,8 @@ export function SetupDeviceScreen({
     <SetupWizardScreen
       label="Choose your VibeTV"
       aiFixPrompt={aiFixPrompt}
-      onBack={wifiBusy ? undefined : onBack}
+      // The details are being sent: nothing to leave yet.
+      onBack={wifiSubmitting ? undefined : onBack}
       onCreateSupportReport={onCreateSupportReport}
       windowsHost={windowsHost}
     >
@@ -430,7 +431,7 @@ export function SetupDeviceScreen({
       {!showModeChoice ? (
         <>
           <SetupLog
-            className="mt-8 empty:hidden"
+            className="mt-8 empty:mt-0"
             lines={
               waitingForWiFi && wifiCredentialsSent
                 ? [
