@@ -7538,3 +7538,11 @@ issue scope, or release permission never implies UI permission.
 - Visible text: none changed.
 - Scope: `apps/control-center/src/components/setup/setup-device-card.tsx` (uses the shared `SelectionDot`), `setup-selectable-card.tsx` (removes the now unused `SelectionCheck`), `setup-device-screen.test.tsx`.
 - What's new: none — the same round mark as the connection cards of step 4.
+
+## 2026-10-18 — Calm Mac App download page: the Setup B look (#713)
+
+- User approval: Paul 17.10. approved Setup B; this applies the same calm treatment to the Mac App download page that shares its hero (#713).
+- Approved customer-visible result: Look only, no text changes. "Welcome to" is no longer set in capitals with wide tracking; it reads as on the Setup welcome screen (13 px, muted). The subtitle under the hero is 13 px instead of 14 px. The Download and Open Control Center buttons are the standard 44 px instead of 48 px. The words are unchanged.
+- Visible text: none changed.
+- Scope: `apps/control-center/src/components/setup/mac-app-download-screen.tsx`, its test `mac-app-download-screen.test.tsx` (one look test), and this approval record. Stacked on #747. Pull-request branch only, not merge or release.
+- What's new: none — layout and type only, no new capability
