@@ -388,7 +388,7 @@ function TokenUsageSkeleton({ providerCount }: { providerCount: number }) {
             <div className="flex h-[50.4px] items-center">
               <Skeleton className="h-9 w-56 max-w-full motion-reduce:animate-none" />
             </div>
-            <div className="mt-1.5 flex h-[19.5px] items-center">
+            <div className="mt-1.5 flex h-[21.75px] items-center">
               <Skeleton className="h-3.5 w-52 max-w-full motion-reduce:animate-none" />
             </div>
           </div>
@@ -397,9 +397,9 @@ function TokenUsageSkeleton({ providerCount }: { providerCount: number }) {
           <Skeleton className="h-56 w-full motion-reduce:animate-none" />
         </div>
         <div className="mt-1.5 mb-7 flex flex-wrap items-center gap-x-[18px] gap-y-1">
-          {/* Each chip reserves the legend's line box (19.5 px), so a wrapped row is as tall as the loaded one. */}
+          {/* Each chip reserves the legend's line box (21.75 px), so a wrapped row is as tall as the loaded one. */}
           {Array.from({ length: providerCount }, (_, index) => (
-            <div className="flex h-[19.5px] items-center" key={index}>
+            <div className="flex h-[21.75px] items-center" key={index}>
               <Skeleton className="h-3.5 w-14 motion-reduce:animate-none" />
             </div>
           ))}
@@ -441,7 +441,7 @@ function TokenUsageOverTimePanel({
         <div className="flex h-8 items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-2">
             <h2
-              className="text-[13px] font-normal text-muted-foreground"
+              className="text-[14.5px] font-normal text-muted-foreground"
               id="total-tokens-heading"
             >
               Last 30 days
@@ -482,11 +482,11 @@ function TokenUsageOverTimePanel({
         <div className="mt-1.5">
           <p className="text-hero break-words font-semibold text-foreground tabular-nums">
             <span>{formatFullTokenCount(last30DaysTokens)}</span>
-            <span className="ml-2.5 text-[13px] font-normal tracking-normal text-muted-foreground">
+            <span className="ml-2.5 text-[14.5px] font-normal tracking-normal text-muted-foreground">
               tokens
             </span>
           </p>
-          <p className="mt-1.5 text-[13px] leading-normal text-muted-foreground">
+          <p className="mt-1.5 text-[14.5px] leading-normal text-muted-foreground">
             {formatTokenCountInWords(last30DaysTokens)}
           </p>
         </div>
@@ -516,16 +516,16 @@ function TokenUsageOverTimePanel({
             <XAxis
               axisLine={{ stroke: "var(--foreground)", strokeOpacity: 0.22 }}
               dataKey="day"
-              interval="preserveStartEnd"
-              minTickGap={96}
-              tick={{ fill: "var(--muted-foreground)", fontSize: 13 }}
+              interval={0}
+              ticks={weeklyDayTicks(chartData.map((row) => String(row.day)))}
+              tick={{ fill: "var(--muted-foreground)", fontSize: 14.5 }}
               tickFormatter={formatDayLabel}
               tickLine={false}
               tickMargin={8}
             />
             <YAxis
               axisLine={false}
-              tick={{ fill: "var(--muted-foreground)", fontSize: 13 }}
+              tick={{ fill: "var(--muted-foreground)", fontSize: 14.5 }}
               tickCount={3}
               tickFormatter={formatTokenCount}
               tickLine={false}
@@ -575,7 +575,7 @@ function TokenUsageOverTimePanel({
         ) : null}
       </div>
       <div
-        className="mt-1.5 mb-7 flex flex-wrap items-center gap-x-[18px] gap-y-1 text-[13px] text-muted-foreground"
+        className="mt-1.5 mb-7 flex flex-wrap items-center gap-x-[18px] gap-y-1 text-[14.5px] text-muted-foreground"
         data-testid="usage-legend"
       >
         {series.map((item) => (
@@ -847,7 +847,7 @@ function UsageLineView({
   const text = `${line.percent}% ${line.label} ${modeLabel}`;
   return (
     <div className="grid gap-2">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-[13px] text-foreground">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-[14.5px] text-foreground">
         {index === 0 ? (
           <span className="whitespace-nowrap text-muted-foreground">
             <span className="text-[32px] leading-none font-semibold text-foreground">
@@ -911,7 +911,7 @@ function TokenRow({ provider }: { provider: UsageProviderInfo }) {
   }
 
   return (
-    <div className="mt-auto grid gap-1 text-[13px] text-muted-foreground">
+    <div className="mt-auto grid gap-1 text-[14.5px] text-muted-foreground">
       {parts.length > 0 ? <p>Tokens: {parts.join(" · ")}</p> : null}
       {spend ? <p>{spend}</p> : null}
     </div>
@@ -923,7 +923,6 @@ function UsageMetaGrid({ provider }: { provider: UsageProviderInfo }) {
     provider.status?.description
       ? ["Status", providerStatusLabel(provider.status.description)]
       : null,
-    provider.activity ? ["Activity", provider.activity] : null,
   ].filter(Boolean) as Array<[string, string]>;
 
   if (items.length === 0) {
@@ -934,8 +933,8 @@ function UsageMetaGrid({ provider }: { provider: UsageProviderInfo }) {
     <dl className="grid gap-3 sm:grid-cols-3">
       {items.map(([label, value]) => (
         <div className="min-w-0" key={label}>
-          <dt className="text-[13px] text-muted-foreground">{label}</dt>
-          <dd className="mt-1 break-words text-[13px] text-muted-foreground">
+          <dt className="text-[14.5px] text-muted-foreground">{label}</dt>
+          <dd className="mt-1 break-words text-[14.5px] text-muted-foreground">
             {value}
           </dd>
         </div>
@@ -1357,6 +1356,20 @@ function providerStatusLabel(description?: string): string {
     return "Status ready";
   }
   return value;
+}
+
+// The master's week axis: the first day, then every seventh day, and the last
+// day, left out only where it would crowd the last one.
+export function weeklyDayTicks(days: string[]): string[] {
+  const dayMs = 86_400_000;
+  const start = Date.parse(`${days[0]}T00:00:00Z`);
+  const last = days[days.length - 1];
+  const end = Date.parse(`${last}T00:00:00Z`);
+  const ticks = days.filter((day) => {
+    const offset = (Date.parse(`${day}T00:00:00Z`) - start) / dayMs;
+    return offset % 7 === 0 && (end - Date.parse(`${day}T00:00:00Z`)) / dayMs >= 4;
+  });
+  return last === undefined ? [] : [...ticks, last];
 }
 
 function formatDayLabel(day: string): string {

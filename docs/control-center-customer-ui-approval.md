@@ -7531,12 +7531,46 @@ issue scope, or release permission never implies UI permission.
 - Scope: `theme-library-screen.tsx`, its test and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — a colour fix of an existing link, not announced to customers
 
+## 2026-10-16 — #663: Same device-switch reset as #645 for display brightness (no visible change)
+
+- User approval: none needed, no visible change. Same device-switch reset as #645 for display brightness (#663); no new wording; not seen by Paul.
+- Approved customer-visible result: unchanged; Brightness and the Settings screensaver switch stay as in the entries above. While another VibeTV's settings are still unknown, Brightness stays disabled, as the screensaver switch does.
+- Scope: `control-center-app.tsx`, its display preferences test. Pull-request branch only, not merge or release.
+- What's new: none — review fix, no customer-visible change of its own
+
+## 2026-10-16 — #674: approval marker after merging #645 and main (no visible change)
+
+
+
+- User approval: Merge of the stacked base (#645) and main for the hardware run; no visible change of its own; not seen by Paul. The UI review gate cannot read a clean merge commit as approval marker, so this entry stands for that merge. No new wording.
+
+- Approved customer-visible result: as approved in the #663 entry above (no visible change); nothing else changes.
+
+- Scope: the merge of the #645 branch and main into this branch and this approval record. Pull request branch only, not merge or release.
+
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible change)
+
+- User approval: Codex review fix, no visible change; not seen by Paul.
+- Approved customer-visible result: none. When another VibeTV connects, a Brightness change still waiting to be sent is dropped instead of being sent to that VibeTV; the slider and all wording stay as they are.
+- Scope: `resetDeviceSettings` in `apps/control-center/src/components/control-center-app.tsx`, its test in `control-center-app.display-preferences.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix, no customer-visible change
+
 ## 2026-10-19 — #645: dark-mode hover of "Turn on in Settings" reaches 4.5:1
 
 - User approval: Marcus, answers 54b and 55a on 2026-10-19 (via the orchestrator): fix the dark-mode hover contrast of "Turn on in Settings" now, in #645 (54b). Because the Control Center does not switch dark mode on, the evidence is a unit test, a contrast calculation and a rendered image with dark mode on, without a new device test (55a).
 - Approved customer-visible result: in dark mode the link "Turn on in Settings" in the "Screensaver is off." line under Appearance › Screensavers hovers in the light olive #A9C76A, 4.92:1 on the dark grey #444933, instead of olive #506600 with 1.44:1. Light mode is unchanged: olive #506600 on hover, 5.58:1. Same text, same place, same action. The Control Center does not switch dark mode on today, so customers see no change yet.
 - Scope: `theme-library-screen.tsx`, its test and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — a colour fix of an existing link, not announced to customers
+
+## 2026-10-19 — #674: Codex review fix of #645, a late settings answer for another VibeTV no longer chooses the selected theme (no visible change)
+
+- User approval: Codex review finding on #645 (`1a568a04`); Marcus, via the orchestrator on 2026-10-19: fix it in #674 with a unit test, without a new device test, because this path never runs with one VibeTV.
+- Approved customer-visible result: none with one VibeTV. When another VibeTV connects while a read of the first one's settings is still on its way, that late answer no longer marks the first VibeTV's active theme as selected under Appearance › Themes; the selection follows the VibeTV connected now, as Brightness and the Settings screensaver switch already do.
+- Scope: `readSettings` in `apps/control-center/src/components/control-center-app.tsx`, its test in `control-center-app.display-preferences.test.tsx`, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — review fix, no customer-visible change
+
 
 ## 2026-10-16 — Usage: calm tiles, action tiles and no Check again (#644 follow-up)
 
@@ -8140,4 +8174,11 @@ issue scope, or release permission never implies UI permission.
 - User approval: pending — Paul reviews (#783 matched to the approved master design, 19.10.)
 - Approved customer-visible result: none yet, pending Paul's review. Look only, no wording change: the 30-day total is 48 px (was 46 px) with the "tokens" unit and the words line set closer to it; the token chart is 224 px high (was 384 px) with a 2.5 px line, fewer date labels and a visible baseline; the legend sits closer under the chart and the tiles closer under the legend; tile padding and gaps are 22 px; the tile name is 15 px / 600 (was 13 px); the first lane's number is 32 px (was 28 px); the number of each later lane is in ink and its words muted; the lane bars are 12 px high with a 4 px corner (were 6 px, fully round). Body text stays 13 px (#777); the master's 14.5 px waits for Paul. Not part of this change: the pace bar (target tick, reserve and deficit pieces, line under each bar), which is a separate feature.
 - Scope: `usage-screen.tsx`, `usage-screen.test.tsx` (look-pinning assertions), `globals.css` (hero size 48 px, letter spacing -0.02em), and this approval record.
+- What's new: none — look only, no new notice
+
+## 2026-10-19 — Usage: master body size, olive Codex line, no Activity row, weekly axis (#783)
+
+- User approval: pending — Paul reviews (Paul's decisions on #783 via the communicator 19.10.: master sizes 14.5 px, olive Codex line, Activity row and weekly axis as in the approved master)
+- Approved customer-visible result: none yet, pending Paul's review. Look only, no new wording. (1) Body text on Usage is 14.5 px / 400 (was 13 px): "Last 30 days", the "tokens" unit, the number in words, the chart axis labels, the legend, the lane labels and their reset, the token line and the Status value. The pace line under a bar stays 13 px. (2) The Codex line, its area and its legend dot are the master's dark olive `#444933` in the light theme (was `#506600`); the dark theme keeps the light olive `#A9C76A`, which stays apart from Claude's light grey. (3) The tile no longer shows an Activity row (it showed "Activity" with a word such as "coding" or "idle" under the lanes): the master draws none. The Status value stays. (4) The chart's date axis labels the first day, then every seventh day, and the last day (before: about ten labels three days apart), for example Sep 20, Sep 27, Oct 4, Oct 11, Oct 19; a weekly day less than four days before the last day is left out.
+- Scope: `usage-screen.tsx`, `usage-screen.test.tsx`, `globals.css` (`--chart-2` in the light theme), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — look only, no new notice
