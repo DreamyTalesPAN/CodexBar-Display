@@ -8045,3 +8045,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's yes.
 - Scope: `apps/control-center/src/components/diagnostics-panel.tsx`, `apps/control-center/src/components/diagnostics-panel.test.tsx` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no new content
+
+## 2026-10-19 — Support: Fix only for a failing usage engine check (#795, Codex fix)
+
+- User approval: pending — Paul reviews (Support "Fix" + "n of 6 passed" as drawn in the approved master "Calm Redesign - alle Screens", frame 11, #795); look unchanged except: before (this PR's first version), a usage engine check that had not been checked yet (attention) also showed a "Fix" link; after, "Fix" shows only for a failing usage engine check. The "n of m passed" counter and the rest are as in the entry above.
+- Approved customer-visible result: none yet; waits for Paul's yes.
+- Scope: `apps/control-center/src/components/diagnostics-panel.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content

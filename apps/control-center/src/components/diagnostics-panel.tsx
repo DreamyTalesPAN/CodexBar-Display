@@ -261,7 +261,7 @@ function CheckRow({
           </p>
         ) : null}
       </div>
-      {state !== "pass" && onRepair ? (
+      {state === "fail" && onRepair ? (
         <Button
           className="col-start-2 h-auto justify-self-start px-0 font-semibold sm:col-start-4 sm:row-start-1 sm:justify-self-end"
           disabled={repairing}
