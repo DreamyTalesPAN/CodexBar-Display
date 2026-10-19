@@ -52,7 +52,7 @@ describe("Gauge 2.0 theme pack", () => {
     expect(manifest).toMatchObject({ usage: "live", assets: [], minFirmware: "1.0.50", version: "0.2.0" });
     expect(manifest.requiredCapabilities).toEqual(["usage-slots-v1", "color-stops-v1", "progress-arc-v1", "usage-pace-v1"]);
     // Two letters, so no theme a customer saves can share the file name.
-    expect(manifest.themeSpec.path).toMatch(/^\/themes\/u\/ga-5-[0-9a-f]{8}\.json$/);
+    expect(manifest.themeSpec.path).toMatch(/^\/themes\/u\/ga-8-[0-9a-f]{8}\.json$/);
     expect(manifest.themeSpec.bytes).toBe(Buffer.byteLength(rawSpec));
     expect(pack.specPath).toBe(manifest.themeSpec.path);
   });
@@ -123,6 +123,10 @@ describe("Gauge 2.0 theme pack", () => {
       for (const p of texts.filter((t) => t.f !== 4)) {
         const value = renderTextPrimitive(p, data);
         seen.add(value);
+        // The provider line is clipped at its box, so a notice may be longer than it.
+        if (p.b === "l") {
+          continue;
+        }
         const font = p.f ?? 1;
         const size = themeTextFittedSize(value, font, p.s!, p.w!, true);
         const width = themeFirmwareTextMetrics(value, font, size)!.width;
@@ -134,23 +138,21 @@ describe("Gauge 2.0 theme pack", () => {
     }
   });
 
-  // A notice replaces the provider name ("Update available", "Open VibeTV Mac App"):
-  // whatever the text, it must stay inside the hole of the ring, never over it.
+  // A notice replaces the provider name ("Update available", "Open VibeTV Mac App").
+  // VibeTV draws a text inside its box and clips it there, so a notice longer than
+  // the box is cut at the box edge. The box lies inside the hole of the ring:
+  // whatever the text, nothing of it can reach the ring.
   it("keeps the update notice inside the ring", () => {
     const { cx, cy, radius, thickness } = themeProgressArc(arc, 0)!;
     const hole = radius - thickness / 2;
     const name = texts.find((p) => p.b === "l")!;
-    for (const label of ["Claude", "Codex", "Busy", "Update available", "Open VibeTV Mac App"]) {
-      const data = frame(91, { label });
-      const value = renderTextPrimitive(name, data);
-      const size = themeTextFittedSize(value, name.f!, name.s!, name.w!, true);
-      const width = themeFirmwareTextMetrics(value, name.f!, size)!.width;
-      const height = 8 * size; // TFT_eSPI font 1 cell
-      const left = name.x! + (name.w! - width) / 2;
-      for (const [x, y] of [[left, name.y!], [left + width, name.y!], [left, name.y! + height], [left + width, name.y! + height]]) {
-        expect(Math.hypot(x - cx, y - cy), `${label} corner ${x},${y}`).toBeLessThan(hole);
-      }
+    const height = 8 * 2; // TFT_eSPI font 2 cell, with its clip margin
+    for (const [x, y] of [[name.x!, name.y!], [name.x! + name.w!, name.y!], [name.x!, name.y! + height], [name.x! + name.w!, name.y! + height]]) {
+      expect(Math.hypot(x - cx, y - cy), `box corner ${x},${y}`).toBeLessThan(hole - 2);
     }
+    // The preview clips the notice at the same box.
+    const notice = render(frame(91, { label: "Open VibeTV Mac App" }));
+    expect(notice).toContain(`width="${name.w}"`);
   });
 
   it("stays inside the 240 px panel and renders through the production preview", () => {

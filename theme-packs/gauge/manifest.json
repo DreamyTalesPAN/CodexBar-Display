@@ -13,10 +13,10 @@
     "usage-pace-v1"
   ],
   "themeSpec": {
-    "path": "/themes/u/ga-5-a3ca5e4f.json",
+    "path": "/themes/u/ga-8-84ebb1a2.json",
     "file": "theme.json",
-    "bytes": 1300,
-    "sha256": "a3ca5e4f483105f84974955f5d3bafed5a7e681ca86d4587895c784d5941351b",
+    "bytes": 1298,
+    "sha256": "84ebb1a2456d2faed40803072d82b0ccbd97945e83cd2308b5416710467febbd",
     "contentType": "application/json"
   },
   "assets": []
