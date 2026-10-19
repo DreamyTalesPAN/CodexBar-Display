@@ -7837,20 +7837,6 @@ issue scope, or release permission never implies UI permission.
 - What's new: none — no new content
 
 
-## 2026-10-18 — Setup wizard Display mode card in ink, like Settings (#748 stack, option)
-
-- User approval: pending — Paul decides (setup wizard Display mode card framed in ink like Settings); look unchanged except: the outline around the chosen Display mode card (Automatic or Manual) and around the chosen provider under `Show this provider` in the setup wizard's Display Mode step goes from the lime-olive outline to an ink outline of the same thickness.
-- Approved customer-visible result: none — not approved yet, Paul decides. Proposed: only the colour of the outline around the chosen card and the chosen provider changes, to ink. Text before → after: none; the words, places, size and thickness stay the same. Lime stays only for primary button fills and the switch on state. The round selection mark keeps its look. No new text, control or dialog.
-- Scope: `apps/control-center/src/components/setup/setup-selectable-card.tsx` (the ink frame also sets a foreground focus-visible border and ring, so keyboard focus on the chosen card stays ink; Settings uses the same ink frame, so its focus frame on the chosen card changes the same way), `apps/control-center/src/components/setup/setup-display-mode-screen.tsx` (passes the ink flag to `DisplayModeChoice` in the wizard's Display Mode step; the preview gallery shows that same step), `apps/control-center/src/components/setup/setup-display-mode-screen.test.tsx` (new test for the ink frame), and this approval record. Option branch stacked on #748; not merged, not released, not seen by Paul yet.
-- What's new: none — a colour change of an existing outline needs no notice.
-
-## 2026-10-18 — Ink frame keeps its colour while focused (Codex review fix, #775 option)
-
-- User approval: pending — Paul decides (setup wizard Display mode card framed in ink like Settings, keyboard focus included); look unchanged except: a chosen Display mode card or chosen provider that has keyboard focus keeps its ink outline instead of going lime.
-- Approved customer-visible result: none — not approved yet, Paul decides. Proposed: only the outline colour of the chosen card and provider while focused changes to ink. Text before → after: none; the words, places, size and thickness stay the same. No new text, control or dialog.
-- Scope: `apps/control-center/src/components/setup/setup-selectable-card.tsx` (ink branch of the chosen frame adds foreground focus-visible border and ring; default unchanged), `apps/control-center/src/components/setup/setup-display-mode-screen.test.tsx` (focus assertion added to the ink test), and this approval record. Settings uses the same ink branch, so its chosen card and provider also keep the ink outline while focused. Option branch stacked on #748; not merged, not released, not seen by Paul yet.
-- What's new: none — a colour fix of an existing outline needs no notice.
-
 ## 2026-10-18 — Option: keyboard focus ring in ink instead of lime (app-wide)
 - User approval: pending — Paul decides (keyboard focus ring ink instead of lime, app-wide)
 - Approved customer-visible result: Not decided; this is an option for Paul. The keyboard focus ring becomes the ink colour (`#1B1B1B` on light, `#EDEDED` on dark) instead of olive-lime (`#506600` light, `#CCFF00` dark), at full opacity instead of 40 % or 50 %. Look unchanged except: focus rings of buttons, inputs, textareas, selects, checkboxes, switches, tabs, toggles, badges, list items, the Settings links, and the border and ring of the selected setup card change from `#506600` to `#1B1B1B`, and their opacity from 40 % or 50 % to 100 %. The primary button fill and the switch on-state stay lime. Contrast of the ring against the page: 16.4:1 light, 14.7:1 dark (old lime 6.2:1 light).

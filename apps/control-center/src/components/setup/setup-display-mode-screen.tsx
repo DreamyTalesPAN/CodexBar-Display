@@ -104,7 +104,6 @@ export function SetupDisplayModeScreen({
         automaticPreview={automaticPreview}
         automaticPreviews={automaticPreviews}
         className="mt-4"
-        ink
         manualPreview={manualPreview}
         mode={mode}
         onSelectMode={onSelectMode}
