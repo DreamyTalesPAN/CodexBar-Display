@@ -14,25 +14,60 @@ int ClampDrawRadius(int radius, int width, int height) {
   return max(0, min(radius, min(width, height) / 2));
 }
 
+// How many pixels the corner of a rounded rect of radius r takes off a row that
+// lies `row` pixels from its top or bottom edge (0 from the middle rows on).
+int RoundedCornerInset(int radius, int rowFromEdge) {
+  if (radius <= 0 || rowFromEdge >= radius) {
+    return 0;
+  }
+  // The row's centre lies (radius - rowFromEdge - 1/2) px from the circle's centre.
+  const int dy2 = 2 * (radius - rowFromEdge) - 1;
+  int dx = 0;
+  while (4 * (dx + 1) * (dx + 1) + dy2 * dy2 <= 4 * radius * radius) {
+    ++dx;
+  }
+  return radius - dx;
+}
+
 // The reserve or deficit piece of a pace bar: solid, or hatched with diagonal
-// stripes two pixels wide every four, as the Control Center draws it.
-void FillPacePiece(TFT_eSPI& tft, int x, int y, int w, int h, const primitive::ProgressCommand& cmd) {
+// stripes two pixels wide every four, as the Control Center draws it. Where it
+// reaches an end of the bar's rounded interior (leftRadius / rightRadius > 0) its
+// corners follow that rounding instead of covering it.
+void FillPacePiece(TFT_eSPI& tft, int x, int y, int w, int h, const primitive::ProgressCommand& cmd,
+                   int leftRadius = 0, int rightRadius = 0) {
   if (w <= 0 || h <= 0) {
     return;
   }
-  if (!cmd.hatched) {
-    tft.fillRect(x, y, w, h, cmd.pieceColor);
-    return;
+  if (leftRadius <= 0 && rightRadius <= 0) {
+    if (!cmd.hatched) {
+      tft.fillRect(x, y, w, h, cmd.pieceColor);
+      return;
+    }
+    tft.fillRect(x, y, w, h, cmd.hatchGapColor);
   }
-  tft.fillRect(x, y, w, h, cmd.hatchGapColor);
   for (int row = 0; row < h; ++row) {
-    int stripe = x - 3;
-    stripe += (4 - ((stripe + y + row) & 3)) & 3;
-    for (; stripe < x + w; stripe += 4) {
-      const int from = max(stripe, x);
-      const int to = min(stripe + 2, x + w);
-      if (to > from) {
+    const int edge = min(row, h - 1 - row);
+    const int from = x + RoundedCornerInset(leftRadius, edge);
+    const int to = x + w - RoundedCornerInset(rightRadius, edge);
+    if (to <= from) {
+      continue;
+    }
+    if (!cmd.hatched) {
+      if (leftRadius > 0 || rightRadius > 0) {
         tft.fillRect(from, y + row, to - from, 1, cmd.pieceColor);
+      }
+      continue;
+    }
+    if (leftRadius > 0 || rightRadius > 0) {
+      tft.fillRect(from, y + row, to - from, 1, cmd.hatchGapColor);
+    }
+    int stripe = from - 3;
+    stripe += (4 - ((stripe + y + row) & 3)) & 3;
+    for (; stripe < to; stripe += 4) {
+      const int a = max(stripe, from);
+      const int b = min(stripe + 2, to);
+      if (b > a) {
+        tft.fillRect(a, y + row, b - a, 1, cmd.pieceColor);
       }
     }
   }
@@ -129,7 +164,9 @@ class ESP8266PrimitiveSink final : public primitive::Sink {
         }
       }
       const int pieceFrom = min(innerW, max(0, (innerW * p) / 100));
-      FillPacePiece(tft, cmd.x + 1 + pieceFrom, cmd.y + 1, filled - pieceFrom, innerH, cmd);
+      FillPacePiece(tft, cmd.x + 1 + pieceFrom, cmd.y + 1, filled - pieceFrom, innerH, cmd,
+                    pieceFrom == 0 ? ClampDrawRadius(innerRadius, filled, innerH) : 0,
+                    filled == innerW ? ClampDrawRadius(innerRadius, filled, innerH) : 0);
     }
     if (cmd.planAt >= 0) {
       // The plan tick, 2 px wide, reaching past the bar like the ring's.
