@@ -9726,3 +9726,16 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the entry above; nothing else changes.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this record. Pull request branch only, not merge or release.
 - What's new: none — test expectation only, no customer-visible change
+## 2026-10-19 — #783: Codex fixes, first day on short charts and plan-only providers
+
+- User approval: pending — Paul reviews (Codex review fix); look unchanged except, each one before → after: (1) the usage chart of 2 to 4 days labels its first day too → before only its last day; (2) a provider with a plan name or an extra-usage cap but zero use stays in the usage list → before it was hidden.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/usage-screen.tsx`, `apps/control-center/src/components/usage-screen.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #783: "Your computer is very busy" dialog follows the template (build 2 decision)
+
+- User approval: Paul, 19.10.2026 via the communicator: build-2 decision — app follows the template (frame 49); before → after: the dialog "Your computer is very busy" dims the screen behind it with the grey backdrop like every other dialog → before no backdrop, the page stayed bright and clickable.
+- Approved customer-visible result: the dialog looks as drawn in frame 49 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/system-busy-dialog.tsx`, `apps/control-center/src/components/system-busy-dialog.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content

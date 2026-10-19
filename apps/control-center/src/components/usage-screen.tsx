@@ -1044,6 +1044,9 @@ function shouldShowProvider(
   if (providerHasCost(provider)) {
     return true;
   }
+  if (providerHasPlanOrSpend(provider)) {
+    return true;
+  }
   return (provider.usageOverTime || []).some(
     (point) => point.totalCreditsUsed > 0,
   );
@@ -1089,6 +1092,10 @@ function providerHasCost(provider: UsageProviderInfo): boolean {
     (cost.latestTokens || 0) > 0 ||
     Boolean(cost.topModel?.trim())
   );
+}
+
+function providerHasPlanOrSpend(provider: UsageProviderInfo): boolean {
+  return Boolean(provider.plan?.trim()) || spendText(provider.spend) !== null;
 }
 
 function normalizeTokenHistory(days: UsageCostDay[]) {
@@ -1386,14 +1393,19 @@ function WeekTick({
 // day, left out only where it would crowd the last one.
 export function weeklyDayTicks(days: string[]): string[] {
   const dayMs = 86_400_000;
-  const start = Date.parse(`${days[0]}T00:00:00Z`);
+  const first = days[0];
   const last = days[days.length - 1];
+  if (first === undefined || last === undefined) {
+    return [];
+  }
+  const start = Date.parse(`${first}T00:00:00Z`);
   const end = Date.parse(`${last}T00:00:00Z`);
-  const ticks = days.filter((day) => {
+  const weekly = days.filter((day) => {
     const offset = (Date.parse(`${day}T00:00:00Z`) - start) / dayMs;
-    return offset % 7 === 0 && (end - Date.parse(`${day}T00:00:00Z`)) / dayMs >= 4;
+    return day !== first && offset % 7 === 0 && (end - Date.parse(`${day}T00:00:00Z`)) / dayMs >= 4;
   });
-  return last === undefined ? [] : [...ticks, last];
+  // The first day is always labelled, also in a short history; a set drops it twice when it is the last day too.
+  return [...new Set([first, ...weekly, last])];
 }
 
 function formatDayLabel(day: string): string {
