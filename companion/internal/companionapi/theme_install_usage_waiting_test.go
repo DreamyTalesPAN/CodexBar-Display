@@ -94,9 +94,10 @@ func TestDisplayStreamReportsUsageWarmingAndThemeWaitSettles(t *testing.T) {
 	target := "http://192.0.2.10"
 	now := time.Now().UTC()
 	start := now.Add(-10*time.Second).Format(time.RFC3339Nano) + ` runtime event=stream-start label="test.warming"` + "\n"
-	waiting := func(at time.Time) string {
-		return at.Format(time.RFC3339) + " runtime event=usage-waiting port=" + target + " reason=collector-warming\n"
+	waitingFor := func(at time.Time, port string) string {
+		return at.Format(time.RFC3339) + " runtime event=usage-waiting port=" + port + " reason=collector-warming\n"
 	}
+	waiting := func(at time.Time) string { return waitingFor(at, target) }
 	for _, tc := range []struct {
 		name string
 		log  string
@@ -106,6 +107,7 @@ func TestDisplayStreamReportsUsageWarmingAndThemeWaitSettles(t *testing.T) {
 		{"notice before this stream start", waiting(now.Add(-time.Minute)) + start, false},
 		{"stale notice", start + waiting(now.Add(-displayStreamReadyAge-time.Minute)), false},
 		{"no notice", start, false},
+		{"notice of another device", start + waitingFor(now.Add(-2*time.Second), "http://192.0.2.99"), false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := os.WriteFile(logPath, []byte(tc.log), 0o600); err != nil {
@@ -115,6 +117,16 @@ func TestDisplayStreamReportsUsageWarmingAndThemeWaitSettles(t *testing.T) {
 				t.Fatalf("stream=%+v want UsageWaiting=%v", got, tc.want)
 			}
 		})
+	}
+
+	// A Cable stream logs its serial port, which only a Cable target accepts.
+	for port, want := range map[string]bool{"/dev/cu.usbmodem1101": true, "http://192.0.2.99": false} {
+		if err := os.WriteFile(logPath, []byte(start+waitingFor(now, port)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got := server.streamStatus(context.Background(), cableDeviceTarget); got.UsageWaiting != want {
+			t.Fatalf("cable stream with notice for %q: %+v want UsageWaiting=%v", port, got, want)
+		}
 	}
 
 	if err := os.WriteFile(logPath, []byte(start+waiting(now)), 0o600); err != nil {

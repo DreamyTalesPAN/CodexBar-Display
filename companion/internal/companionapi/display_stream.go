@@ -137,7 +137,7 @@ func inspectDisplayStreamAfterRunning(ctx context.Context, target string, notBef
 			stream.ErrorCode = errorCode
 			return stream
 		}
-		if waitingAt, ok := streamLog.lastUsageWaitingAfter(boundary); ok && time.Since(waitingAt) <= displayStreamReadyAge {
+		if waitingAt, ok := streamLog.lastUsageWaitingAfter(boundary, target); ok && time.Since(waitingAt) <= displayStreamReadyAge {
 			stream.UsageWaiting = true
 		}
 		stream.Detail = "Display stream has not sent usage yet."

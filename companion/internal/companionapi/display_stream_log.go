@@ -152,8 +152,10 @@ func (l displayStreamLog) lastErrorAfter(boundary time.Time) (time.Time, string,
 }
 
 // lastUsageWaitingAfter finds the runtime's "collector is still warming up,
-// nothing to send yet" notice, which is neither a frame nor an error.
-func (l displayStreamLog) lastUsageWaitingAfter(boundary time.Time) (time.Time, bool) {
+// nothing to send yet" notice, which is neither a frame nor an error. Only a
+// notice for this target counts: while the stream switches devices the log can
+// still end with the old device's notice.
+func (l displayStreamLog) lastUsageWaitingAfter(boundary time.Time, target string) (time.Time, bool) {
 	for _, lines := range l {
 		for i := len(lines) - 1; i >= 0; i-- {
 			line := strings.TrimSpace(lines[i])
@@ -166,6 +168,15 @@ func (l displayStreamLog) lastUsageWaitingAfter(boundary time.Time) (time.Time, 
 			}
 			when, err := time.Parse(time.RFC3339Nano, parts[0])
 			if err != nil || (!boundary.IsZero() && when.Before(boundary)) {
+				continue
+			}
+			// A Cable stream logs its serial port, never the shared Cable target.
+			port := displayStreamLogValue(line, "port")
+			if samePublicTarget(target, cableDeviceTarget) {
+				if strings.HasPrefix(port, "http") {
+					continue
+				}
+			} else if !samePublicTarget(target, port) {
 				continue
 			}
 			return when, true
