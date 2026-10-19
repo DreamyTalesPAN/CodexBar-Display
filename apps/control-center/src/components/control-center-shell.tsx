@@ -51,7 +51,7 @@ type ControlCenterShellProps = {
   hiddenTabs?: ActiveTab[];
   headerAction?: ReactNode;
   updateAvailable?: boolean;
-  /** Theme Studio keeps its own header ("Appearance") instead of the sub-page name. */
+  /** The open Theme Studio draws its own header row, so the shell keeps only a hidden title. */
   themeStudioOpen?: boolean;
 };
 
@@ -106,7 +106,7 @@ export function ControlCenterShell({
   themeStudioOpen = false,
 }: ControlCenterShellProps) {
   // On Appearance the page title is the open sub-page (one title, no second
-  // heading below it); the Studio keeps the "Appearance" title.
+  // heading below it); the open Studio keeps the "Appearance" title, hidden.
   const pageTitle =
     activeTab === "theme-library" && !themeStudioOpen
       ? activeAppearanceSection === "screensavers"
@@ -164,21 +164,26 @@ export function ControlCenterShell({
         </Sidebar>
 
         <SidebarInset className="control-center-shell control-center-shell__main min-w-0">
-          <header className="control-center-shell__header mt-9 flex h-10 items-center justify-between gap-4 bg-background px-5 sm:px-7 lg:px-12">
-            <div className="flex min-w-0 items-center gap-3">
-              <SidebarTrigger
-                aria-label="Open navigation"
-                className="-m-1 size-7 shrink-0 p-0 text-muted-foreground hover:bg-transparent hover:text-foreground [&_svg]:size-5"
-              />
-              <h1 className="truncate text-[28px] leading-none font-semibold tracking-[-0.01em] text-foreground">
-                {pageTitle}
-              </h1>
-            </div>
+          {themeStudioOpen ? (
+            // The Studio's own row (back arrow, design name, File, Save) is the header; the title stays for screen readers.
+            <h1 className="sr-only">{pageTitle}</h1>
+          ) : (
+            <header className="control-center-shell__header mt-9 flex h-10 items-center justify-between gap-4 bg-background px-5 sm:px-7 lg:px-12">
+              <div className="flex min-w-0 items-center gap-3">
+                <SidebarTrigger
+                  aria-label="Open navigation"
+                  className="-m-1 size-7 shrink-0 p-0 text-muted-foreground hover:bg-transparent hover:text-foreground [&_svg]:size-5"
+                />
+                <h1 className="truncate text-[28px] leading-none font-semibold tracking-[-0.01em] text-foreground">
+                  {pageTitle}
+                </h1>
+              </div>
 
-            {headerAction}
-          </header>
+              {headerAction}
+            </header>
+          )}
 
-          <div className="control-center-shell__content px-5 py-0 sm:px-7 lg:px-12">{children}</div>
+          <div className={`control-center-shell__content px-5 sm:px-7 lg:px-12 ${themeStudioOpen ? "pt-9" : "py-0"}`}>{children}</div>
         </SidebarInset>
       </div>
     </SidebarProvider>
