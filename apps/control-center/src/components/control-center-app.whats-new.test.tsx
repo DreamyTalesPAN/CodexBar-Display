@@ -248,8 +248,7 @@ afterEach(() => {
 it("tells a set-up customer what is new once, on Overview, until they close it", async () => {
   const window = startWindow();
   await window.wait(10);
-  // In a short window only the list scrolls. The button that has the focus
-  // stands outside it, so it stays in view and the list stays at its start.
+  // In a short window only the list scrolls.   // stands outside it, so it stays in view and the list stays at its start.
   const list = notice()!.querySelector("ul")!;
   expect(list.className).toContain("overflow-y-auto");
   expect(notice()!.className).not.toContain("overflow-y-auto");
@@ -286,8 +285,10 @@ it("tells a set-up customer what is new once, on Overview, until they close it",
     "Switch providers with a shortcut",
     "Choose how often VibeTV switches",
   ]);
-  // Enter closes the notice instead of opening Settings.
-  expect(document.activeElement?.textContent).toBe("Got it");
+  // The app opened the notice by itself: no control shows a ring yet. The
+  // notice takes focus, and the first Tab goes to its first control.
+  expect(document.activeElement).toBe(notice());
+  expect(document.activeElement?.matches("button")).toBe(false);
   expect(seen()).toBeNull();
 
   fireEvent.click(within(notice()!).getByRole("button", { name: "Got it" }));
