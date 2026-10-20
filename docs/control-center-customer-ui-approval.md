@@ -8089,3 +8089,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #821 the setup tile draws the same sprite as the VibeTV at every moment.
 - Scope: #821 `apps/control-center/src/components/setup/setup-display-previews.ts`, `setup-display-theme-tiles.tsx`, `setup-display-mode-screen.tsx` (type), `apps/control-center/src/components/live-vibetv-preview.tsx` (frame type), the test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #821 Codex fix not announced
+
+## 2026-10-20 — #821: the setup tile keeps a legacy provider's reset when only its session is unreadable (Codex review)
+
+- User approval: no visible change – UI approval not needed (#821: behaviour fix; a legacy provider without windows and with an unreadable session keeps its root reset countdown in the tile, as the frame sent to VibeTV does, instead of "Reset unavailable"; plus the preview unit tests now pin their clock)
+- Approved customer-visible result: #821 as in its own entries; no new look.
+- Scope: `apps/control-center/src/components/setup/setup-display-previews.ts`, its unit test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — behaviour fix in an edge case, no new content
