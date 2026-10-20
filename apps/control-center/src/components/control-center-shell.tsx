@@ -163,7 +163,16 @@ export function ControlCenterShell({
             </header>
           )}
 
-          <div className={`control-center-shell__content px-5 sm:px-7 lg:px-12 ${themeStudioOpen ? "pt-9" : "py-0"}`}>{children}</div>
+          <div
+            className={cn(
+              "control-center-shell__content px-5 sm:px-7 lg:px-12",
+              themeStudioOpen ? "pt-9" : "py-0",
+              // Overview fills the window's height: its numbers sit at the bottom (#784 point 1).
+              activeTab === "overview" && !themeStudioOpen && "flex flex-1 flex-col",
+            )}
+          >
+            {children}
+          </div>
         </SidebarInset>
       </div>
     </SidebarProvider>

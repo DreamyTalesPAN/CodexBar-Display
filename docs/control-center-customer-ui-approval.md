@@ -8620,3 +8620,38 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the dialog looks as drawn in frame "Dialoge: Theme preview" (#dialog-theme-preview) of "Calm Redesign - alle Screens": picture centred, radius 6 px.
 - Scope: `apps/control-center/src/components/theme-library-screen.tsx`, `apps/control-center/src/components/theme-library-screen.appearance.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #784: Overview fills the window's height (7197 template point 1)
+
+- User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #784 point 1 (Overview). Before → after: #784 point 1: the Overview was a block under the title, with the four numbers right below the VibeTV and a 392 px VibeTV → #784 point 1: the page fills the window's height, the four numbers sit at the bottom (32 px below them), "VibeTV is connected" and the VibeTV are centred as one group in the space above, and the VibeTV image is 440 px wide.
+- Approved customer-visible result: #784 point 1: Overview as in frame `#overview` of "Calm Redesign - alle Screens" (picture 01, right side), in a large and in a small window.
+- Scope: #784 point 1: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/control-center-shell.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #784 point 1: no new content, the same page laid out differently
+
+## 2026-10-20 — #784: keyboard focus ring and invalid ring are 2 px (7197 template point 4)
+
+- User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #784 point 4 (focus ring 2 px). Before → after: #784 point 4: the keyboard focus ring on input, select, button, checkbox, switch and tab was a 1 px border plus a 2 px or 3 px halo → #784 point 4: border plus a 1 px ring in the ring colour, 2 px in total; an invalid field (aria-invalid) shows the same 2 px, in red, also under the keyboard (consistent with #817). Still shown for keyboard focus only, not when a dialog opens.
+- Approved customer-visible result: #784 point 4: focus and error rings as in frame `#controls-focus` of "Calm Redesign - alle Screens" (picture 04, right side).
+- Scope: #784 point 4: the shared controls in `apps/control-center/src/components/ui/` (input, textarea, select, checkbox, switch, button, tabs, input-group, badge, item, toggle), the two row buttons in `settings-screen.tsx` and `setup/setup-device-dialogs.tsx`, `globals.focus-ring.test.ts`, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #784 point 4: no new content, a thinner ring
+
+## 2026-10-20 — #784: own dropdown instead of the native select (7197 template point 5)
+
+- User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #784 point 5 (own dropdown). Before → after: #784 point 5: the Theme Studio's three dropdowns (Live information to show, Reset for, Reading to show) opened the system menu with a blue chosen item, and the shared dropdown list used a different look → #784 point 5: every dropdown a customer sees is our own list below the field: the chosen item is bolder with a grey background and a check mark, the item under the pointer a lighter grey, nothing blue; the field shows the 2 px focus ring while open.
+- Approved customer-visible result: #784 point 5: dropdown as in frames `#settings-dropdown` and `#controls-focus` of "Calm Redesign - alle Screens" (picture 05, right side).
+- Scope: #784 point 5: `apps/control-center/src/components/ui/select.tsx`, `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, the two browser test scripts that drive those dropdowns, the select test, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #784 point 5: no new content, the same choices in a different list
+
+## 2026-10-20 — #784: Overview numbers span the window and the dropdown list is as wide as its field (7197 points 1 and 5, picture check)
+
+- User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #784 points 1 and 5, after the picture comparison with the template. Before → after: #784 point 1 (picture check): the four numbers were capped at 1180 px width and went to two columns below 1024 px window width → they span the page width as in the template and stay in four columns from 960 px; #784 point 5 (picture check): the dropdown list was 12 px wider than its field → it is exactly as wide as the field.
+- Approved customer-visible result: #784 points 1 and 5: as in the frames `#overview` and `#settings-dropdown` of "Calm Redesign - alle Screens" at 1920 × 1080 and about 1000 × 700.
+- Scope: #784 points 1 and 5: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/ui/select.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #784 points 1 and 5 (picture check): no new content
+
+## 2026-10-20 — #802: approval marker after merging claude/group-calm-redesign at fd754339
+
+- User approval: merge of claude/group-calm-redesign (fd754339, #784 points 1, 4, 5 of the 7197 template) into #802; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: #802 as in its own entries (pending, Paul reviews) plus the entries of #784 (pending, Paul reviews).
+- Scope: the merge of fd754339 and this approval record. Pull request branch #802 only, not merged, not released.
+- What's new: none — merge of fd754339, no customer-visible change of its own

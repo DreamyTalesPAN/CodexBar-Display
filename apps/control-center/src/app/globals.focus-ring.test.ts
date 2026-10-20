@@ -52,13 +52,28 @@ describe("keyboard focus ring colour", () => {
     expect(contrast(token(dark, "ring"), token(dark, "background"))).toBeGreaterThanOrEqual(3);
   });
 
-  it("keeps the ink ring on invalid inputs with keyboard focus, in both themes", () => {
+  // Paul, 20.10.2026 (7197 review): an invalid field shows the full RED ring,
+  // under the keyboard too, and as thick as the ink ring (2 px).
+  it("shows the full red ring on invalid inputs with keyboard focus, in both themes", () => {
     const input = readFileSync(
       path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "components", "ui", "input.tsx"),
       "utf8",
     );
-    expect(input).toContain("aria-invalid:focus-visible:ring-ring");
-    expect(input).toContain("dark:aria-invalid:focus-visible:ring-ring");
+    expect(input).toContain("aria-invalid:focus-visible:ring-destructive");
+    expect(input).not.toContain("aria-invalid:focus-visible:ring-ring");
+    expect(contrast(token(light, "destructive"), token(light, "background"))).toBeGreaterThanOrEqual(3);
+    expect(contrast(token(dark, "destructive"), token(dark, "background"))).toBeGreaterThanOrEqual(3);
+  });
+
+  // 7197 review point 4: border + a 1 px ring = 2 px, never the old 3 px halo.
+  it("draws the keyboard focus ring and the invalid ring 2 px thick on the shared controls", () => {
+    const uiDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "components", "ui");
+    for (const name of ["input", "textarea", "select", "checkbox", "switch", "button", "tabs", "input-group"]) {
+      const text = readFileSync(path.join(uiDir, `${name}.tsx`), "utf8");
+      expect(text, name).not.toMatch(/focus-visible:ring-(?:2|3|\[3px\])\b/);
+      expect(text, name).not.toMatch(/(?:^|[\s"])(?:aria-invalid:ring-(?:2|3)|dark:aria-invalid:ring-)/);
+      expect(text, name).toMatch(/ring-1/);
+    }
   });
 
   it("draws the default outline of native controls at full strength", () => {
