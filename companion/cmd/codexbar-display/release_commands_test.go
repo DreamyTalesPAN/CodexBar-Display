@@ -1124,9 +1124,9 @@ func TestRunInstallUpdateCableRescueFlashesPreIdentityVibeTVOnAFreshSystem(t *te
 		return usb.CableDevice{Port: "/dev/mock-legacy", Hello: protocol.DeviceHello{Board: "esp8266-smalltv-st7789", Firmware: "1.0.0"}}, nil
 	}
 	var flashedPort, flashedImage string
-	flashCableRescueFn = func(_ context.Context, port string, image []byte, progress func(int)) error {
+	flashCableRescueFn = func(_ context.Context, port string, image []byte, opts usb.ROMFlashOptions) error {
 		flashedPort, flashedImage = port, string(image)
-		progress(50)
+		opts.Progress(50)
 		*firmwareVersion = "1.0.1"
 		return nil
 	}
@@ -1157,7 +1157,7 @@ func TestRunInstallUpdateCableRescueWritesNothingWithoutAPreIdentityVibeTV(t *te
 		probes++
 		return usb.CableDevice{}, errors.New("no VibeTV with pre-Cable firmware answered hello")
 	}
-	flashCableRescueFn = func(context.Context, string, []byte, func(int)) error {
+	flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
 		t.Fatal("rescue flashed without a pre-identity VibeTV")
 		return nil
 	}
@@ -1192,7 +1192,7 @@ func TestRunInstallUpdateCableRescueFindsTheVibeTVOnALaterProbe(t *testing.T) {
 		return usb.CableDevice{Port: "/dev/mock-legacy", Hello: protocol.DeviceHello{Board: "esp8266-smalltv-st7789", Firmware: "1.0.0"}}, nil
 	}
 	flashedPort := ""
-	flashCableRescueFn = func(_ context.Context, port string, _ []byte, _ func(int)) error {
+	flashCableRescueFn = func(_ context.Context, port string, _ []byte, _ usb.ROMFlashOptions) error {
 		flashedPort = port
 		*firmwareVersion = "1.0.1"
 		return nil
@@ -1217,7 +1217,7 @@ func TestRunInstallUpdateCableRescueWritesNothingOnAHashMismatch(t *testing.T) {
 	findLegacyCableVibeTVFn = func() (usb.CableDevice, error) {
 		return usb.CableDevice{Port: "/dev/mock-legacy", Hello: protocol.DeviceHello{Board: "esp8266-smalltv-st7789", Firmware: "1.0.0"}}, nil
 	}
-	flashCableRescueFn = func(context.Context, string, []byte, func(int)) error {
+	flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
 		t.Fatal("rescue flashed an image that does not match the manifest")
 		return nil
 	}
@@ -1243,9 +1243,15 @@ func pinCableRescue(t *testing.T) {
 	t.Helper()
 	previousFind := findLegacyCableVibeTVFn
 	previousFlash := flashCableRescueFn
+	previousPorts := listCablePortsFn
+	previousPause := cableRescueRetryPause
+	cableRescueRetryPause = time.Millisecond
+	listCablePortsFn = func() ([]string, error) { return nil, nil }
 	t.Cleanup(func() {
 		findLegacyCableVibeTVFn = previousFind
 		flashCableRescueFn = previousFlash
+		listCablePortsFn = previousPorts
+		cableRescueRetryPause = previousPause
 	})
 }
 
