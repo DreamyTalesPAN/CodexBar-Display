@@ -180,7 +180,7 @@ export function UsageScreen({
   });
 
   return (
-    <div className="mx-auto max-w-[1180px]">
+    <div>
       <section className="pt-4 pb-8">
         {refreshNotice ? (
           <Alert className="mb-6 bg-muted">
@@ -210,7 +210,10 @@ export function UsageScreen({
         ) : null}
 
         {tiles.length > 0 ? (
-          <ol className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+          <ol
+            className="grid max-w-[1316px] justify-start gap-4"
+            style={{ gridTemplateColumns: "repeat(auto-fill, 428px)" }}
+          >
             {tiles.map((tile) => (
               <li className="min-w-0" key={tile.id}>
                 {tile.node}
@@ -394,10 +397,10 @@ function TokenUsageSkeleton({ providerCount }: { providerCount: number }) {
             </div>
           </div>
         </section>
-        <div className="relative mt-5 min-h-56">
+        <div className="relative mt-12 min-h-56">
           <Skeleton className="h-56 w-full motion-reduce:animate-none" />
         </div>
-        <div className="mt-1.5 mb-7 flex flex-wrap items-center gap-x-[18px] gap-y-1">
+        <div className="mt-1.5 mb-14 flex flex-wrap items-center gap-x-[18px] gap-y-1">
           {/* Each chip reserves the legend's line box (21.75 px), so a wrapped row is as tall as the loaded one. */}
           {Array.from({ length: providerCount }, (_, index) => (
             <div className="flex h-[21.75px] items-center" key={index}>
@@ -493,7 +496,7 @@ function TokenUsageOverTimePanel({
         </div>
       </section>
 
-      <div className="relative mt-5 min-h-56">
+      <div className="relative mt-12 min-h-56">
         <ChartContainer
           aria-hidden={!hasCurrentData}
           aria-label={`Daily tokens used over time for ${providerNames.join(", ")}`}
@@ -576,7 +579,7 @@ function TokenUsageOverTimePanel({
         ) : null}
       </div>
       <div
-        className="mt-1.5 mb-7 flex flex-wrap items-center gap-x-[18px] gap-y-1 text-[14.5px] text-muted-foreground"
+        className="mt-1.5 mb-14 flex flex-wrap items-center gap-x-[18px] gap-y-1 text-[14.5px] text-muted-foreground"
         data-testid="usage-legend"
       >
         {series.map((item) => (

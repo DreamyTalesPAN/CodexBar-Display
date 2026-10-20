@@ -8519,3 +8519,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #783: Usage spacing follows the template (7197 review, point 2)
+
+- User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #783 point 2 (Usage spacing). Before → after: from the number and its words to the chart there were 20 px → there are 48 px; from the chart and its legend to the provider cards there were 28 px → there are 56 px.
+- Approved customer-visible result: the Usage page looks as drawn in frame "Usage" (#usage) of "Calm Redesign - alle Screens": 48 px between the number and the chart, 56 px between the legend and the provider cards (also in the loading state).
+- Scope: `apps/control-center/src/components/usage-screen.tsx`, `apps/control-center/src/components/usage-screen.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #783: Usage page margin grows and the provider cards keep 428 px (7197 review, point 3)
+
+- User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #783 point 3 (Usage scaling). Before → after: the Usage page was centred in a column of at most 1180 px with a fixed 40 px margin and the provider cards stretched over two or three equal columns → the page margin is 48 px and grows with the window up to 96 px, the chart follows the full width, and the provider cards are 428 px wide, at most three in a row (at most 1316 px), left-aligned like the chart and not stretched.
+- Approved customer-visible result: the Usage page looks as drawn in frames "Usage" (#usage) and "Usage at 1920 x 1080" (#usage-large) of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/usage-screen.tsx`, `apps/control-center/src/components/usage-screen.test.tsx`, `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
