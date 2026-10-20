@@ -10155,3 +10155,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the Appearance cards look as drawn in frames "Darstellung" (#appearance-all, #appearance-ss, #appearance-filter) of "Calm Redesign - alle Screens": all cards alike, pill "Active" on the active one.
 - Scope: `apps/control-center/src/components/theme-library-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #781: Theme Studio colour field with a palette inside Details (7197 review, point 6)
+
+- User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #781 point 6 (Theme Studio colour picker). Before → after: the Color field was a small system colour square plus the hex code, and the system colour picker opened as a floating layer → the Color field inside "Details" under the preview shows the colour, its hex code and a chevron; its palette opens directly below the field, inside Details (it scrolls with Details, nothing opens above the preview) with 12 colours and no blue, and "More colours…" opens the system colour picker as before.
+- Approved customer-visible result: the colour field and its palette look as drawn in frame "Theme Studio: Farbwahl" (#studio-color) of "Calm Redesign - alle Screens"; the rows that are already in the app's Details stay as they are (the template's "Live information" and "Text size" rows are only placeholders).
+- Scope: `apps/control-center/src/components/theme-studio/editor-fields.tsx`, `apps/control-center/src/components/theme-studio/editor-fields.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #781: the colour palette scrolls into view when it opens (7197 review, point 6, picture check)
+
+- User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #781 point 6 (Theme Studio colour picker), picture check against the template. Before → after: when the Color row sits at the bottom of the window, the palette opened below it but out of sight until Details was scrolled → when the palette opens, Details scrolls just far enough to show it.
+- Approved customer-visible result: the colour palette opens directly below the Color field inside Details and is visible, as drawn in frame "Theme Studio: Farbwahl" (#studio-color) of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/theme-studio/editor-fields.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
