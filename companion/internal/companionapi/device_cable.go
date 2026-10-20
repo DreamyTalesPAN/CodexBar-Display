@@ -143,6 +143,9 @@ func (s *Server) cableDeviceInfo(ctx context.Context, cfg runtimeconfig.Config, 
 	}, stream), true, false, false)
 }
 
+// movedRescueProbeBudget bounds the hello probes of one moved-VibeTV search.
+const movedRescueProbeBudget = 20 * time.Second
+
 // rescueMarkerPort returns the port a pending rescue marker's VibeTV is on: the
 // marked port while it is connected, else the one port it was moved to by a
 // replug. Without a port no rescue write can resume. The search for a moved
@@ -163,7 +166,23 @@ func (s *Server) rescueMarkerPort(marker firmwareupdate.RescueMarker) (string, b
 	if s.readCableHello == nil || s.firmwareUpdateActive.Load() {
 		return "", false
 	}
-	return firmwareupdate.MovedRescuePort(marker, ports, s.readCableHello)
+	// Each new port may wait a full hello window. The probes share one budget:
+	// a port that cannot be checked in time may be the moved VibeTV, so no port
+	// is named then.
+	deadline := time.Now().Add(movedRescueProbeBudget)
+	overBudget := false
+	moved, found := firmwareupdate.MovedRescuePort(marker, ports, func(port string) (protocol.DeviceHello, error) {
+		if time.Now().After(deadline) {
+			overBudget = true
+			// Counted as answering so it is no candidate; the result is refused below.
+			return protocol.DeviceHello{DeviceID: "unprobed"}, nil
+		}
+		return s.readCableHello(port)
+	})
+	if overBudget {
+		return "", false
+	}
+	return moved, found
 }
 
 // halfWrittenRescueEntry is the VibeTV a failed Cable rescue left without
