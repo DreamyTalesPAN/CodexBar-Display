@@ -7873,6 +7873,34 @@ issue scope, or release permission never implies UI permission.
 - Scope: #815 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #815 approval record only
 
+## 2026-10-17 — Accessibility baseline: axe checks for Theme Studio, the replace question and the busy notice (#214)
+
+- User approval: pending — Paul reviews this PR (accessibility baseline, #214); look unchanged.
+- Approved customer-visible result: none. Every screen and dialog looks unchanged; only tests and `docs/control-center-accessibility.md` change.
+- Scope: `apps/control-center/src/components/system-busy-dialog.test.tsx`, the new `apps/control-center/src/components/theme-studio/theme-studio.axe.test.tsx` and `replace-draft-dialog.test.tsx`, `docs/control-center-accessibility.md` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — tests and documentation only
+
+## 2026-10-20 — #727: approval marker after merging main at e7e8319d
+
+- User approval: no visible change – UI approval not needed (merge of main (e7e8319d) into #727; tests and docs only)
+- Approved customer-visible result: #727 adds accessibility checks only; nothing customers see changes.
+- Scope: #727 merge e7e8319d, the Theme Studio axe test moved to theme-studio.axe.test.tsx, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #727 tests only
+
+## 2026-10-20 — #727: coverage table points at the axe test
+
+- User approval: no visible change – UI approval not needed (#727: coverage table in the accessibility doc fixed and a test that keeps it true; tests and docs only)
+- Approved customer-visible result: #727 changes a document and a test only; nothing customers see changes.
+- Scope: `docs/control-center-accessibility.md`, the new `apps/control-center/src/test/accessibility-doc.test.ts` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #727 docs and tests only
+
+## 2026-10-20 — #727: approval marker after merging main at 12205356
+
+- User approval: no visible change – UI approval not needed (merge of main (12205356) into #727; the own entries of #727 keep their approvals)
+- Approved customer-visible result: #727 as in its own entries plus the entries merged with 12205356; nothing else changes.
+- Scope: the merge of 12205356 and this approval record. Pull request branch #727 only, not merged, not released.
+- What's new: none — merge of 12205356, no customer-visible change of its own
+
 ## 2026-10-20 — #819: the cached rescue version is shown only for the rescue itself (Codex review)
 
 - User approval: pending — #819 Codex fix, no new wording; not seen by Paul. Before → after: #819 any VibeTV with the same board and firmware as a half-written one was shown the cached rescue version → #819 only the Cable rescue of the marked VibeTV (port connected) shows it; every other VibeTV shows the version from the release, as it is updated from there.
