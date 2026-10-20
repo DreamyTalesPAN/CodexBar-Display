@@ -65,7 +65,6 @@ const (
 	// powered-off device reads disconnected well under two minutes.
 	deviceConnectedGraceWindow   = 75 * time.Second
 	displayVerificationAge       = 2 * time.Minute
-	displayStreamWaitTime        = 30 * time.Second
 	themeInstallStreamWaitTime   = 5 * time.Minute
 	themeInstallJobTime          = 7 * time.Minute
 	displayRenderWaitTime        = 12 * time.Second
