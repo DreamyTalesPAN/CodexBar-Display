@@ -1,0 +1,243 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/firmwareupdate"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
+)
+
+const rescueTestBoard = "esp8266-smalltv-st7789"
+
+func legacyRescueDevice() (usb.CableDevice, error) {
+	return usb.CableDevice{Port: "/dev/mock-legacy", Hello: protocol.DeviceHello{Board: rescueTestBoard, Firmware: "1.0.0"}}, nil
+}
+
+func rescueArgs(manifestURL string) []string {
+	return []string{"--target", "cable-rescue://vibetv", "--manifest-url", manifestURL, "--skip-launchagent-pause"}
+}
+
+// writeRescueMarkerFixture leaves what a failed rescue write leaves behind: a
+// marker for port and the image it was writing.
+func writeRescueMarkerFixture(t *testing.T, port string, age time.Duration) firmwareupdate.RescueMarker {
+	t.Helper()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	imagePath := filepath.Join(t.TempDir(), "firmware.bin")
+	if err := os.WriteFile(imagePath, []byte("cable firmware"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	marker := firmwareupdate.RescueMarker{
+		Port:           port,
+		Board:          rescueTestBoard,
+		Firmware:       "1.0.0",
+		TargetFirmware: "1.0.1",
+		ImagePath:      imagePath,
+		ImageSHA256:    sha256String("cable firmware"),
+		WriteStartedAt: time.Now().Add(-age),
+	}
+	if err := firmwareupdate.SaveRescueMarker(home, marker); err != nil {
+		t.Fatal(err)
+	}
+	return marker
+}
+
+func rescueMarkerPresent(t *testing.T) bool {
+	t.Helper()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, ok := firmwareupdate.LoadRescueMarker(home, time.Now())
+	return ok
+}
+
+func TestRunInstallUpdateCableRescueRetriesAFailedWriteAtALowerBaudRate(t *testing.T) {
+	_, manifestURL, firmwareVersion := prepareCableFirmwareUpdateTest(t)
+	pinCableRescue(t)
+	readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{DeviceID: "device-cable", Board: rescueTestBoard, Firmware: *firmwareVersion}, nil
+	}
+	findLegacyCableVibeTVFn = legacyRescueDevice
+	var bauds []int
+	var ports []string
+	flashCableRescueFn = func(_ context.Context, port string, _ []byte, opts usb.ROMFlashOptions) error {
+		bauds, ports = append(bauds, opts.BaudRate), append(ports, port)
+		opts.OnWriteStarted()
+		if len(bauds) == 1 {
+			return errors.New("write flash block 342 of 473: ROM loader response timeout")
+		}
+		*firmwareVersion = "1.0.1"
+		return nil
+	}
+
+	output, err := captureStdout(t, func() error { return runInstallUpdate(rescueArgs(manifestURL)) })
+	if err != nil {
+		t.Fatalf("rescue should succeed on the second write: %v\n%s", err, output)
+	}
+	if len(bauds) != 2 || bauds[0] != 0 || bauds[1] != usb.ROMFallbackBaudRate || ports[0] != "/dev/mock-legacy" || ports[1] != "/dev/mock-legacy" {
+		t.Fatalf("writes at bauds %v on ports %v, want the default then %d on the same port", bauds, ports, usb.ROMFallbackBaudRate)
+	}
+	for _, want := range []string{
+		"Cable rescue write 1/2 at the standard baud rate",
+		"Cable rescue write 1/2 failed: write flash block 342 of 473",
+		"Cable rescue write 2/2 at 115200 baud",
+		"Done: firmware 1.0.1 installed",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("missing %q in the updater output:\n%s", want, output)
+		}
+	}
+	if rescueMarkerPresent(t) {
+		t.Fatal("the marker must be cleared after a verified update")
+	}
+}
+
+func TestRunInstallUpdateCableRescueLeavesAMarkerWhenTheWriteFailedAfterTheErase(t *testing.T) {
+	_, manifestURL, _ := prepareCableFirmwareUpdateTest(t)
+	pinCableRescue(t)
+	findLegacyCableVibeTVFn = legacyRescueDevice
+	writes := 0
+	flashCableRescueFn = func(_ context.Context, _ string, _ []byte, opts usb.ROMFlashOptions) error {
+		writes++
+		opts.OnWriteStarted()
+		return errors.New("write flash block 342 of 473: ROM loader response timeout")
+	}
+
+	output, err := captureStdout(t, func() error { return runInstallUpdate(rescueArgs(manifestURL)) })
+	if err == nil || writes != 2 {
+		t.Fatalf("expected two failed writes, got err=%v writes=%d\n%s", err, writes, output)
+	}
+	home, _ := os.UserHomeDir()
+	marker, ok := firmwareupdate.LoadRescueMarker(home, time.Now())
+	if !ok || marker.Port != "/dev/mock-legacy" || marker.TargetFirmware != "1.0.1" ||
+		marker.Board != rescueTestBoard || marker.Firmware != "1.0.0" ||
+		marker.ImageSHA256 != sha256String("cable firmware") || !strings.HasSuffix(marker.ImagePath, "firmware.bin") ||
+		time.Since(marker.WriteStartedAt) > time.Minute {
+		t.Fatalf("marker after the failed rescue: %+v ok=%v", marker, ok)
+	}
+	var cmdErr *commandError
+	if !errors.As(err, &cmdErr) || !strings.Contains(cmdErr.Hint, "rescues it automatically") || strings.Contains(cmdErr.Hint, "retry once") {
+		t.Fatalf("hint after a half-written rescue: %+v", cmdErr)
+	}
+}
+
+func TestRunInstallUpdateCableRescueLeavesNoMarkerWhenTheLoaderNeverErased(t *testing.T) {
+	_, manifestURL, _ := prepareCableFirmwareUpdateTest(t)
+	pinCableRescue(t)
+	findLegacyCableVibeTVFn = legacyRescueDevice
+	flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
+		return errors.New("VibeTV did not enter the ESP8266 ROM loader")
+	}
+
+	output, err := captureStdout(t, func() error { return runInstallUpdate(rescueArgs(manifestURL)) })
+	if err == nil {
+		t.Fatalf("expected the rescue to fail\n%s", output)
+	}
+	if rescueMarkerPresent(t) {
+		t.Fatal("a write that never started must not leave a marker")
+	}
+	var cmdErr *commandError
+	if !errors.As(err, &cmdErr) || !strings.Contains(cmdErr.Hint, "retry once") {
+		t.Fatalf("the VibeTV still says hello here, so the plain retry hint stays: %+v", cmdErr)
+	}
+}
+
+func TestRunInstallUpdateCableRescueFlashesTheMarkedPortWhenNoHelloComes(t *testing.T) {
+	_, manifestURL, firmwareVersion := prepareCableFirmwareUpdateTest(t)
+	pinCableRescue(t)
+	marker := writeRescueMarkerFixture(t, "COM4", time.Hour)
+	listCablePortsFn = func() ([]string, error) { return []string{"COM1", "com4"}, nil }
+	probes := 0
+	findLegacyCableVibeTVFn = func() (usb.CableDevice, error) {
+		probes++
+		return usb.CableDevice{}, errors.New("no VibeTV with pre-Cable firmware answered hello")
+	}
+	resolveCableFirmwarePortFn = func(string, string) (string, error) {
+		t.Fatal("verification must stay on the marked port")
+		return "", nil
+	}
+	readCableFirmwareHelloFn = func(port string) (protocol.DeviceHello, error) {
+		if port != "COM4" {
+			t.Fatalf("verification read %q, want the marked port", port)
+		}
+		return protocol.DeviceHello{DeviceID: "device-cable", Board: rescueTestBoard, Firmware: *firmwareVersion}, nil
+	}
+	var flashedPort, flashedImage string
+	flashCableRescueFn = func(_ context.Context, port string, image []byte, opts usb.ROMFlashOptions) error {
+		flashedPort, flashedImage = port, string(image)
+		opts.OnWriteStarted()
+		*firmwareVersion = "1.0.1"
+		return nil
+	}
+
+	output, err := captureStdout(t, func() error { return runInstallUpdate(rescueArgs(manifestURL)) })
+	if err != nil {
+		t.Fatalf("rescue through the marked port failed: %v\n%s", err, output)
+	}
+	if probes != 3 || flashedPort != marker.Port || flashedImage != "cable firmware" {
+		t.Fatalf("probes=%d flashed %q with %q", probes, flashedPort, flashedImage)
+	}
+	if !strings.Contains(output, "left half-written") || !strings.Contains(output, "Done: firmware 1.0.1 installed") {
+		t.Fatalf("resume was not logged or not verified:\n%s", output)
+	}
+	if rescueMarkerPresent(t) {
+		t.Fatal("the marker must be cleared after the verified update")
+	}
+}
+
+// The safety rule of the rescue: no flash without a legacy hello, unless a
+// fresh marker names a port that is still there and its image is intact.
+func TestRunInstallUpdateCableRescueWritesNothingWithoutAUsableMarker(t *testing.T) {
+	for name, setup := range map[string]func(t *testing.T){
+		"no marker": func(t *testing.T) {},
+		"port gone": func(t *testing.T) {
+			writeRescueMarkerFixture(t, "COM4", time.Hour)
+			listCablePortsFn = func() ([]string, error) { return []string{"COM1", "COM5"}, nil }
+		},
+		"marker too old": func(t *testing.T) {
+			writeRescueMarkerFixture(t, "COM4", firmwareupdate.RescueMarkerMaxAge+time.Hour)
+			listCablePortsFn = func() ([]string, error) { return []string{"COM4"}, nil }
+		},
+		"image changed": func(t *testing.T) {
+			marker := writeRescueMarkerFixture(t, "COM4", time.Hour)
+			if err := os.WriteFile(marker.ImagePath, []byte("something else"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			listCablePortsFn = func() ([]string, error) { return []string{"COM4"}, nil }
+		},
+		"image gone": func(t *testing.T) {
+			marker := writeRescueMarkerFixture(t, "COM4", time.Hour)
+			if err := os.Remove(marker.ImagePath); err != nil {
+				t.Fatal(err)
+			}
+			listCablePortsFn = func() ([]string, error) { return []string{"COM4"}, nil }
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, manifestURL, _ := prepareCableFirmwareUpdateTest(t)
+			pinCableRescue(t)
+			setup(t)
+			findLegacyCableVibeTVFn = func() (usb.CableDevice, error) {
+				return usb.CableDevice{}, errors.New("no VibeTV with pre-Cable firmware answered hello")
+			}
+			flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
+				t.Fatal("flashed a port without a legacy hello and without a usable marker")
+				return nil
+			}
+			_, err := captureStdout(t, func() error { return runInstallUpdate(rescueArgs(manifestURL)) })
+			if err == nil || !strings.Contains(err.Error(), "pre-Cable firmware") {
+				t.Fatalf("expected the rescue refusal, got %v", err)
+			}
+		})
+	}
+}

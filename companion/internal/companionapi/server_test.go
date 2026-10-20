@@ -15358,3 +15358,58 @@ func TestStatusAndDiagnosticsCarrySystemBusy(t *testing.T) {
 		}
 	}
 }
+
+// Issue #818: a rescue write that failed after the erase leaves a VibeTV that
+// boot-loops and says no hello. While its marked port is connected, the search
+// offers it for the rescue instead of "No VibeTV found".
+func TestDeviceSearchOffersAHalfWrittenVibeTVForItsRescue(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		ports      []string
+		age        time.Duration
+		cableHello bool
+		want       bool
+	}{
+		{"marked port connected", []string{"COM1", "com4"}, time.Hour, false, true},
+		{"marked port gone", []string{"COM1"}, time.Hour, false, false},
+		{"marker too old", []string{"COM4"}, firmwareupdate.RescueMarkerMaxAge + time.Hour, false, false},
+		{"VibeTV answers again", []string{"COM4"}, time.Hour, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Another VibeTV on WiFi lets the scan settle at once; the rescue
+			// entry must come next to it.
+			wifi := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = fmt.Fprint(w, `{"kind":"hello","board":"esp32-lilygo-t-display-s3","firmware":"1.0.45","deviceId":"wifi-b","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`)
+			}))
+			defer wifi.Close()
+			server := newTestServer(t, runtimeconfig.Config{})
+			server.subnetTargets = func() []string { return []string{wifi.URL} }
+			server.listCablePorts = func() ([]string, error) { return tc.ports, nil }
+			server.discoverCableDevices = func(context.Context) ([]usb.CableDevice, error) {
+				if tc.cableHello {
+					return []usb.CableDevice{{Port: "COM4", Hello: protocol.DeviceHello{DeviceID: "cable-a", Board: "esp8266-smalltv-st7789", Firmware: "1.0.9"}}}, nil
+				}
+				return nil, errors.New("no VibeTV answered")
+			}
+			if err := firmwareupdate.SaveRescueMarker(server.home, firmwareupdate.RescueMarker{
+				Port: "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
+				ImagePath: "/x/firmware.bin", WriteStartedAt: time.Now().Add(-tc.age),
+			}); err != nil {
+				t.Fatal(err)
+			}
+			rec := httptest.NewRecorder()
+			server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`)))
+			var got struct {
+				Devices []deviceSearchEntry `json:"devices"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			rescue := deviceSearchEntry{Target: cableDeviceTarget, Transport: "cable", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", Rescue: true}
+			offered := slices.Contains(got.Devices, rescue)
+			if offered != tc.want {
+				t.Fatalf("rescue offered=%v want %v: status=%d body=%s", offered, tc.want, rec.Code, rec.Body.String())
+			}
+		})
+	}
+}

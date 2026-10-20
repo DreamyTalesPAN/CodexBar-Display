@@ -26,6 +26,10 @@ const (
 	// at once; 460800 barely writes faster, because each block's flash write
 	// then dominates, and needs many connect attempts; 921600 never syncs.
 	romBaudRate = 230400
+	// ROMFallbackBaudRate is the slower rate for the second try of a rescue
+	// write: a CH340 on Windows timed out at 230400 (issue #818), and the ROM
+	// loader detects whatever rate the first sync arrives at.
+	ROMFallbackBaudRate = 115200
 
 	romFlashBlockSize  = 0x400
 	romFlashSectorSize = 0x1000
@@ -50,16 +54,41 @@ var (
 	errROMRejected = errors.New("ROM loader rejected command")
 )
 
+// ErrNotESP8266AppImage is returned before the port is opened when the bytes
+// are not an ESP8266 app image, so nothing is written for them.
+var ErrNotESP8266AppImage = errors.New("firmware is not an ESP8266 app image")
+
+// ROMFlashOptions tunes one ROM loader write.
+type ROMFlashOptions struct {
+	// BaudRate is the serial rate for the loader; zero means the default.
+	BaudRate int
+	// Progress, when set, receives the written share in steps of ten percent.
+	Progress func(percent int)
+	// OnWriteStarted, when set, is called each time the loader accepts the
+	// flash begin command: from then on the old firmware is gone and the
+	// device may be left without bootable firmware.
+	OnWriteStarted func()
+}
+
 // FlashESP8266AppImage writes an ESP8266 app image at offset 0 through the ROM
 // loader on path and resets the chip into it. Settings, themes, and WiFi
 // credentials live above the sketch area and are not touched. progress, when
 // set, receives the written share in steps of ten percent.
 func FlashESP8266AppImage(ctx context.Context, path string, image []byte, progress func(percent int)) error {
+	return FlashESP8266AppImageWithOptions(ctx, path, image, ROMFlashOptions{Progress: progress})
+}
+
+// FlashESP8266AppImageWithOptions is FlashESP8266AppImage with a choice of
+// baud rate and a hook for the moment the old firmware is erased.
+func FlashESP8266AppImageWithOptions(ctx context.Context, path string, image []byte, opts ROMFlashOptions) error {
 	if len(image) == 0 || image[0] != 0xe9 || len(image) > romMaxAppImageSize {
-		return errors.New("firmware is not an ESP8266 app image")
+		return ErrNotESP8266AppImage
 	}
 	mode := openMode()
 	mode.BaudRate = romBaudRate
+	if opts.BaudRate > 0 {
+		mode.BaudRate = opts.BaudRate
+	}
 	port, err := serialOpener{openFn: serialOpen}.Open(path, mode)
 	if err != nil {
 		return wrapTransportError(
@@ -71,7 +100,7 @@ func FlashESP8266AppImage(ctx context.Context, path string, image []byte, progre
 		)
 	}
 	defer func() { _ = closePortBestEffort(port, path, closeTimeout) }()
-	loader := &romLoader{port: port, sleep: time.Sleep, progress: progress}
+	loader := &romLoader{port: port, sleep: time.Sleep, progress: opts.Progress, onWriteStarted: opts.OnWriteStarted}
 	return loader.flashAndBoot(ctx, image)
 }
 
@@ -98,7 +127,9 @@ type romLoader struct {
 	port     SerialPort
 	sleep    func(time.Duration)
 	progress func(percent int)
-	pending  []byte
+	// onWriteStarted runs once the loader accepted flash begin.
+	onWriteStarted func()
+	pending        []byte
 }
 
 func (l *romLoader) connect(ctx context.Context) error {
@@ -149,6 +180,9 @@ func (l *romLoader) flash(ctx context.Context, image []byte) error {
 	begin := romWords(romEraseSize(0, len(image)), uint32(blocks), romFlashBlockSize, 0)
 	if err := l.command(romCmdFlashBegin, begin, 0, eraseTimeout); err != nil {
 		return fmt.Errorf("erase flash: %w", err)
+	}
+	if l.onWriteStarted != nil {
+		l.onWriteStarted()
 	}
 	reported := 0
 	for seq := range blocks {

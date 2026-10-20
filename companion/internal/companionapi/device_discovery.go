@@ -218,6 +218,14 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 		}) {
 			devices = append(devices, legacyCableSearchEntry(legacy))
 		}
+		// Issue #818: a rescue write that failed after the erase leaves a
+		// VibeTV that boot-loops and says no hello, so no search finds it. The
+		// rescue marker keeps it selectable for the next rescue.
+		if legacy == nil && len(cableDevices) == 0 {
+			if entry, ok := s.halfWrittenRescueEntry(); ok {
+				devices = append(devices, entry)
+			}
+		}
 		for _, cable := range cableDevices {
 			hello := cable.Hello.Normalize()
 			devices = append(devices, deviceSearchEntry{
