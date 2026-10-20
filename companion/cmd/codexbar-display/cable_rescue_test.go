@@ -449,6 +449,21 @@ func TestRunInstallUpdateCableRescueFlashesTheMarkedPortWhenNoHelloComes(t *test
 	}
 }
 
+// Codex review on #819: the cached image is checked when the marker is picked
+// and read again for the write. Only the bytes the marker recorded may be written.
+func TestRescueImageMatchesMarkerOnlyForTheRecordedBytes(t *testing.T) {
+	marker := firmwareupdate.RescueMarker{ImageSHA256: sha256String("cable firmware")}
+	if !rescueImageMatchesMarker([]byte("cable firmware"), marker) {
+		t.Fatal("the recorded bytes must match")
+	}
+	if rescueImageMatchesMarker([]byte("changed firmware"), marker) {
+		t.Fatal("changed bytes must not match")
+	}
+	if rescueImageMatchesMarker([]byte("cable firmware"), firmwareupdate.RescueMarker{}) {
+		t.Fatal("a marker without a checksum must not match")
+	}
+}
+
 // The safety rule of the rescue: no flash without a legacy hello, unless a
 // fresh marker names a port that is still there and its image is intact.
 func TestRunInstallUpdateCableRescueWritesNothingWithoutAUsableMarker(t *testing.T) {

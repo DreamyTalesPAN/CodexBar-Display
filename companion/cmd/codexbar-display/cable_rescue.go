@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -95,6 +97,13 @@ func flashCableRescueWithRetry(ctx context.Context, home string, marker firmware
 // resumableRescueMarker returns the marker of a rescue write that failed after
 // the erase, but only while its port is still present and its image is intact.
 // Only then may the ROM loader on that port be written without a legacy hello.
+// rescueImageMatchesMarker reports whether image is exactly the one the marker
+// recorded. A resume writes only those bytes (Codex review on #819).
+func rescueImageMatchesMarker(image []byte, marker firmwareupdate.RescueMarker) bool {
+	sum := sha256.Sum256(image)
+	return strings.EqualFold(hex.EncodeToString(sum[:]), strings.TrimSpace(marker.ImageSHA256))
+}
+
 func resumableRescueMarker(home string) (firmwareupdate.RescueMarker, bool) {
 	marker, ok := firmwareupdate.LoadRescueMarker(home, time.Now())
 	if !ok {
