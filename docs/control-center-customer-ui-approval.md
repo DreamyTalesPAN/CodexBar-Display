@@ -8061,3 +8061,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #821 frame fidelity: the tile frame carries the same freshness state the host stamps on a fresh frame and builds provider rows only from delivered windows; pending Paul's review.
 - Scope: #821 frame fidelity in `apps/control-center/src/components/setup/setup-display-previews.ts`, its test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #821 frame fidelity fix, no new content
+
+## 2026-10-20 — #821 reset fidelity: expired countdowns and the later deadline match the device
+
+- User approval: pending — #821 reset fidelity (Codex review fixes); before → after in the setup step 11 tiles: (1) #821 reset fidelity: a provider whose only reset deadline ran out since it was read (for example a window with 0 % used and 30 s left, read a minute ago) read "No active session" on the tile → it reads "Reset unavailable", as on the VibeTV; (2) #821 reset fidelity: a provider whose first window has no deadline but a later window does showed "Reset unavailable" for a theme that binds the reset text → it counts down the later deadline, as on the VibeTV. Nothing else changes.
+- Approved customer-visible result: #821 reset fidelity: the tile treats an expired countdown as stale and takes the root reset from the first window that has a deadline, exactly as the host does; pending Paul's review.
+- Scope: #821 reset fidelity in `apps/control-center/src/components/setup/setup-display-previews.ts`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #821 reset fidelity fix, no new content

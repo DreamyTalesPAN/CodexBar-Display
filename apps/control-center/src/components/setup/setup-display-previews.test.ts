@@ -341,4 +341,36 @@ describe("reset trust in the synthesized frames", () => {
     expect(frame).toMatchObject({ resetTrust: "stale", resetTrustSecs: 0, resetSecs: 0 });
     expect(frame?.usageWindows?.[0].resetSecs).toBe(0);
   });
+
+  it("marks the frame stale once its only deadline has run out since the reading, as ApplyResetTrust does", () => {
+    const later = new Date("2026-10-20T08:01:00Z");
+    const preview = displayPreviewFor(
+      provider({
+        collectedAt: stamped,
+        windows: [{ id: "session", label: "Session", usedPercent: 0, resetSecs: 30 }],
+      }),
+      later,
+    );
+
+    expect(preview?.frame).toMatchObject({ resetTrust: "stale", resetTrustSecs: 0, resetSecs: 0 });
+    const data = buildFrameData(stamped, preview!.frame!, later);
+    expect(renderTextPrimitive({ type: "text", text: "{reset}" }, data)).toBe("Reset unavailable");
+  });
+
+  it("takes the root resetSecs from the first window that has a deadline, as Frame.Normalize does", () => {
+    const frame = displayPreviewFor(
+      provider({
+        collectedAt: stamped,
+        resetSecs: undefined,
+        windows: [
+          { id: "session", label: "Session", usedPercent: 10 },
+          { id: "weekly", label: "Weekly", usedPercent: 20, resetSecs: 7200 },
+        ],
+      }),
+    )?.frame;
+
+    expect(frame?.resetSecs).toBe(7200);
+    const data = buildFrameData(stamped, frame!, at);
+    expect(renderTextPrimitive({ type: "text", text: "{reset}" }, data)).not.toBe("Reset unavailable");
+  });
 });

@@ -1,5 +1,5 @@
 import type { UsageProviderInfo, UsageSnapshot } from "../control-center-types";
-import { remainingResetSecs } from "@/lib/reset-countdown";
+import { remainingResetSecs, secondsSince } from "@/lib/reset-countdown";
 import { formatReset } from "../usage-screen";
 import type { DisplayFrame } from "../live-vibetv-preview";
 import type { SetupDisplayModePreview } from "./setup-display-mode-screen";
@@ -24,6 +24,15 @@ function windowSlotsOf(provider: UsageProviderInfo) {
           ? null
           : { id: "weekly", label: "Weekly", percent: provider.weekly, resetSecs: undefined },
       ].filter((slot): slot is NonNullable<typeof slot> => slot !== null);
+}
+
+/**
+ * The frame's root resetSecs as Frame.Normalize sets it
+ * (applyLegacyUsageProjection): the first window with a deadline, not the first
+ * window. A legacy provider's single session slot carries provider.resetSecs.
+ */
+function rootResetSecs(slots: { resetSecs?: number }[]): number {
+  return slots.find((slot) => (slot.resetSecs ?? 0) > 0)?.resetSecs ?? 0;
 }
 
 /**
@@ -115,10 +124,29 @@ function resetSourceKey(provider: string): string {
     : "";
 }
 
-function withResetTrust(frame: DisplayFrame, collectedAt: string | undefined): DisplayFrame {
+/**
+ * Mirrors hasResetCountdown / reanchorResetSec: whether any deadline of the
+ * frame (root, windows, provider rows) is still ahead after `age` seconds.
+ */
+function hasCountdown(frame: DisplayFrame, age: number): boolean {
+  return [frame, ...(frame.usageWindows ?? []), ...(frame.providerSlots ?? [])].some(
+    (carrier) => (carrier.resetSecs ?? 0) > age,
+  );
+}
+
+function withResetTrust(
+  frame: DisplayFrame,
+  collectedAt: string | undefined,
+  now: Date,
+): DisplayFrame {
   const basisKnown = Boolean(collectedAt) && !Number.isNaN(new Date(collectedAt!).getTime());
   const source = resetSourceKey(frame.provider ?? "");
-  if (!basisKnown || !source) {
+  // ApplyResetTrust: a countdown that was positive when read and has run out by
+  // the time the frame leaves turns the frame stale -- "Reset unavailable" on
+  // the device -- instead of a measured idle account (`hadCountdown`).
+  const ranOut =
+    hasCountdown(frame, 0) && !hasCountdown(frame, secondsSince(collectedAt, now));
+  if (!basisKnown || !source || ranOut) {
     return {
       ...frame,
       resetSecs: 0,
@@ -149,6 +177,7 @@ export function displayFrameFor(
   provider: UsageProviderInfo,
   tokenUsageReady = false,
   allProviders: UsageProviderInfo[] = [provider],
+  now = new Date(),
 ): DisplayFrame | null {
   if (provider.stale === true || provider.usageUnavailable === true) {
     return null;
@@ -166,7 +195,7 @@ export function displayFrameFor(
     weekly: provider.weekly,
     sessionUnavailable: provider.sessionUnavailable === true,
     weeklyUnavailable: provider.weeklyUnavailable === true,
-    resetSecs: provider.windows?.[0]?.resetSecs ?? provider.resetSecs,
+    resetSecs: rootResetSecs(readable),
     usageMode: provider.usageMode,
     usageWindows: readable,
     // Cross-provider rows (pv1*/pv2* in a theme), from the complete provider set.
@@ -178,7 +207,7 @@ export function displayFrameFor(
     // /v1/usage leaves zero token totals out once the token history is read;
     // the snapshot's readiness says those zeros are known (Codex on #821).
     ...(tokenUsageReady ? { tokenTotalsKnown: true } : {}),
-  }, provider.collectedAt);
+  }, provider.collectedAt, now);
 }
 
 /**
@@ -198,7 +227,7 @@ export function displayPreviewFor(
     return null;
   }
   const unavailable = provider.stale === true || provider.usageUnavailable === true;
-  const frame = displayFrameFor(provider, tokenUsageReady, allProviders);
+  const frame = displayFrameFor(provider, tokenUsageReady, allProviders, now);
   return {
     providerLabel: provider.label,
     ...(frame ? { frame, frameAt: provider.collectedAt } : {}),
@@ -206,7 +235,7 @@ export function displayPreviewFor(
       ? null
       : formatReset(
           remainingResetSecs(
-            provider.windows?.[0]?.resetSecs ?? provider.resetSecs,
+            rootResetSecs(windowSlotsOf(provider)),
             provider.collectedAt,
             now,
           ),
