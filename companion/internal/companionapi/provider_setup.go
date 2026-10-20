@@ -560,11 +560,6 @@ func (s *Server) finishProviderRetry(providerID string, providerRevision uint64,
 	label := ""
 	if providerID != "" {
 		s.recordExactProviderSetup(providerID, providerRevision, setup)
-		// A check the customer overtook by switching the provider again is
-		// not news, and must not touch the usage service either (#805 review).
-		if s.currentProviderRevision(providerID) != providerRevision {
-			return
-		}
 		// A too-old engine puts its own row first; name the provider asked for.
 		for _, provider := range setup.Providers {
 			if strings.EqualFold(provider.ID, providerID) {
@@ -572,7 +567,49 @@ func (s *Server) finishProviderRetry(providerID string, providerRevision uint64,
 				break
 			}
 		}
+		if s.providerRetryFollowupHook != nil {
+			s.providerRetryFollowupHook()
+		}
+		// A check the customer overtook by switching the provider again is
+		// not news, and must not touch the usage service either (#805
+		// review). The revision is checked and the follow-up runs without a
+		// switch in between, see whileProviderRevision.
+		s.whileProviderRevision(providerID, providerRevision, func() {
+			s.followProviderRetry(providerID, afterBrowserSignInRead, requestedAt, setup, label)
+		})
+		return
 	}
+	s.followProviderRetry(providerID, afterBrowserSignInRead, requestedAt, setup, label)
+}
+
+// whileProviderRevision runs follow only if the provider's revision is still
+// the given one, and holds back the log entry of a switch of the provider
+// until follow is done: the switch takes providerFollowupMu after it changed
+// the revision (awaitProviderFollowups) and logs its own step only then. So a
+// follow-up either sees the new revision and does nothing, or finishes before
+// the switch is logged. providerPreferences.mu is not held while follow runs,
+// because it writes the setup log. It returns false when follow did not run.
+func (s *Server) whileProviderRevision(providerID string, providerRevision uint64, follow func()) bool {
+	s.providerFollowupMu.Lock()
+	defer s.providerFollowupMu.Unlock()
+	if s.currentProviderRevision(providerID) != providerRevision {
+		return false
+	}
+	follow()
+	return true
+}
+
+// awaitProviderFollowups waits for a follow-up that passed its revision check
+// before the caller changed the revision. A follow-up that starts later sees
+// the new revision and does nothing.
+func (s *Server) awaitProviderFollowups() {
+	s.providerFollowupMu.Lock()
+	s.providerFollowupMu.Unlock()
+}
+
+// followProviderRetry logs what the check found and lets the usage service
+// follow a provider that is ready now.
+func (s *Server) followProviderRetry(providerID string, afterBrowserSignInRead bool, requestedAt time.Time, setup codexbar.ProviderSetup, label string) {
 	s.recordProviderSetupEvents(setup, providerID, label)
 	if setup.Status == codexbar.ProviderReady {
 		// A reading the running usage service took before CodexBar's config

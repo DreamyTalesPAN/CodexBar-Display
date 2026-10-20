@@ -978,6 +978,49 @@ func TestExactProviderRetryOvertakenBySwitchingOffLeavesNoTrace(t *testing.T) {
 	}
 }
 
+// The customer can switch the provider off in the very moment between the
+// check finishing and its follow-up. The follow-up decides on the revision it
+// acts on, not on one read earlier: no event, no replacement (#805 Codex
+// review).
+func TestExactProviderRetrySwitchedOffBeforeFollowUpLeavesNoTrace(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthUnavailable}}, nil
+	}
+	server.providerPreferences.set = func(context.Context, string, bool) error { return nil }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
+	var restarts atomic.Int32
+	server.restartUsageService = func(context.Context) error { restarts.Add(1); return nil }
+	server.probeExactProvider = func(_ context.Context, _ string, providerID string) codexbar.ProviderSetup {
+		return exactSetupFixture(server.currentTime(), providerID, codexbar.ProviderReady)
+	}
+	if _, err := server.cachedProviderSettings(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	switchedOff := false
+	server.providerRetryFollowupHook = func() {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPatch, "/v1/preferences/codexbar.providers.claude.enabled", strings.NewReader(`{"value":false}`)))
+		if rec.Code != http.StatusOK {
+			t.Errorf("Claude could not be switched off: %d %s", rec.Code, rec.Body.String())
+		}
+		switchedOff = true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/providers/retry?provider=claude", nil))
+	if rec.Code != http.StatusOK || !switchedOff {
+		t.Fatalf("retry: status=%d switchedOff=%t body=%s", rec.Code, switchedOff, rec.Body.String())
+	}
+	time.Sleep(100 * time.Millisecond)
+	if event, ok := server.setupEvents.lastOfStage(server.currentTime(), "provider_check"); ok {
+		t.Fatalf("a check switched off before its follow-up reached the setup log: %+v", event)
+	}
+	if restarts.Load() != 0 {
+		t.Fatalf("a check switched off before its follow-up replaced the usage service %d times", restarts.Load())
+	}
+}
+
 func TestExactProviderRetryPreservesFreshFailureOverLastGoodUsage(t *testing.T) {
 	for _, status := range []string{
 		codexbar.ProviderAuthRequired,

@@ -224,6 +224,9 @@ func (a providerPreferenceAdapter) Write(ctx context.Context, settingID string, 
 	if descriptor.ID == "" {
 		return preferenceDescriptor{}, errPreferenceNotFound
 	}
+	// A check follow-up that already passed its revision check finishes before
+	// this switch is logged; a later one sees the new revision and stands down.
+	a.server.awaitProviderFollowups()
 	// Logged before the check starts, so the switch always precedes its result.
 	choice := descriptor.Label + " turned off."
 	if enabled {
@@ -253,9 +256,9 @@ func (s *Server) verifyEnabledProvider(providerID, label string, providerRevisio
 	setup := s.currentExactProviderSetup(ctx, providerID)
 	s.recordExactProviderSetup(providerID, providerRevision, setup)
 	// A check the customer already overtook by switching again is not news.
-	if s.currentProviderRevision(providerID) == providerRevision {
+	s.whileProviderRevision(providerID, providerRevision, func() {
 		s.recordProviderSetupEvents(setup, providerID, label)
-	}
+	})
 }
 
 func providerHealthFromReadiness(status string) codexbar.ProviderHealthState {
