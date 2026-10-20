@@ -8475,6 +8475,13 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/src/components/live-vibetv-preview.tsx`, `apps/control-center/src/components/vibetv-3d-preview.tsx`, the recovery test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
+## 2026-10-20 — #784: approval marker after merging main
+
+- User approval: Merge of main into this branch; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
 ## 2026-10-20 — #816: "Not now" on "VibeTV not found" holds through a short status change in the same outage (#787)
 
 - User approval: pending — Paul reviews (Codex finding #787 on #784); before → after: after "Not now" on the Overview's "VibeTV not found" dialog, a short in-between status (reconnecting, inconclusive check) during the same outage cleared the choice and the dialog came back when VibeTV was still missing → "Not now" holds until VibeTV is connected again; after a real reconnect and a new loss the dialog shows again as before. No new or changed text, layout or look.
