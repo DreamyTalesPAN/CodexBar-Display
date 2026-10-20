@@ -8041,3 +8041,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #782 one sentence for a provider that needs its own app, wherever setup shows it.
 - Scope: #782 the setup sentence in the Control Center (and, in #782, the Companion's setup log and the shared sentence file), their tests and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #782 wording not announced
+
+## 2026-10-20 — #782: correction — Paul's 7198 approval does not cover this PR yet
+
+- User approval: pending — #782 correction (communicator, 20.10.2026): Paul's "rest passt" for build 7198 covered only what he saw in normal use (#781, #783, #784, #798, #803); the approval recorded for #782 a moment ago was premature and is reverted, its entries are pending again until he says yes to #782 itself.
+- Approved customer-visible result: #782 unchanged; this entry only corrects the record.
+- Scope: #782 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #782 record correction only
