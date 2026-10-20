@@ -1035,7 +1035,7 @@ export function AIThemeStudioScreen({
             <Input
               aria-label="Design name"
               title={document.packName || "Design name"}
-              className="col-start-1 row-start-1 h-10 w-full min-w-0 text-ellipsis border-transparent bg-transparent px-2 text-[28px] leading-none font-semibold md:text-[28px] shadow-none hover:border-input focus-visible:border-ring"
+              className="col-start-1 row-start-1 h-10 w-0 min-w-full text-ellipsis border-transparent bg-transparent px-2 text-[28px] leading-none font-semibold md:text-[28px] shadow-none hover:border-input focus-visible:border-ring"
               value={document.packName}
               maxLength={48}
               disabled={locked}
@@ -1099,7 +1099,7 @@ export function AIThemeStudioScreen({
             </Button>
           </div>
           {notices.length || sendBlockedReason ? (
-            <div className="ml-auto mr-3 flex min-w-0 max-w-[14rem] flex-[0_1_auto] flex-col items-end gap-0.5 pl-4 text-right">
+            <div className="ml-auto mr-3 flex min-w-0 max-w-[14rem] flex-[0_1_auto] flex-col items-end gap-0.5 text-right">
               {notices.map((text, i) => <p key={i} role="status" className="text-[13px] font-normal text-muted-foreground [overflow-wrap:break-word]">{text}</p>)}
               {sendBlockedReason ? <p id="send-blocked-reason" role="status" className="text-[13px] font-normal text-muted-foreground [overflow-wrap:break-word]">{sendBlockedReason}</p> : null}
             </div>
