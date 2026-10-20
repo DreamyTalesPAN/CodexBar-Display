@@ -96,7 +96,9 @@ func flashCableRescueWithRetry(ctx context.Context, home string, marker firmware
 		case <-time.After(cableRescueRetryPause):
 		}
 	}
-	if err != nil && !started && untouched && !resumed {
+	// Without a recorded chip identity the write never reached the chip check,
+	// so no FLASH_BEGIN went out and nothing was erased (Codex on #840).
+	if err != nil && !started && (untouched || marker.ChipMAC == "") && !resumed {
 		// Nothing reached the flash and the VibeTV was not half-written
 		// before: its old firmware still answers its own hello, so no marker
 		// may authorize a write without one. A resumed rescue keeps its marker:

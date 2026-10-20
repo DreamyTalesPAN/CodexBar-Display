@@ -172,12 +172,30 @@ func (s *Server) rescueMarkerPort(marker firmwareupdate.RescueMarker) (string, b
 	deadline := time.Now().Add(movedRescueProbeBudget)
 	overBudget := false
 	moved, found := firmwareupdate.MovedRescuePort(marker, ports, func(port string) (protocol.DeviceHello, error) {
-		if time.Now().After(deadline) {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
 			overBudget = true
 			// Counted as answering so it is no candidate; the result is refused below.
 			return protocol.DeviceHello{DeviceID: "unprobed"}, nil
 		}
-		return s.readCableHello(port)
+		// The hello read cannot be cancelled and may wait a full hello window, so
+		// it runs aside and the search stops waiting when the budget ends.
+		type reply struct {
+			hello protocol.DeviceHello
+			err   error
+		}
+		done := make(chan reply, 1)
+		go func() {
+			hello, err := s.readCableHello(port)
+			done <- reply{hello, err}
+		}()
+		select {
+		case got := <-done:
+			return got.hello, got.err
+		case <-time.After(remaining):
+			overBudget = true
+			return protocol.DeviceHello{DeviceID: "unprobed"}, nil
+		}
 	})
 	if overBudget {
 		return "", false

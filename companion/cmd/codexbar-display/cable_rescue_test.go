@@ -142,7 +142,9 @@ func TestRunInstallUpdateCableRescueKeepsTheMarkerWhenTheLoaderNeverAnswered(t *
 	_, manifestURL, _ := prepareCableFirmwareUpdateTest(t)
 	pinCableRescue(t)
 	findLegacyCableVibeTVFn = legacyRescueDevice
-	flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
+	flashCableRescueFn = func(_ context.Context, _ string, _ []byte, opts usb.ROMFlashOptions) error {
+		// An earlier inner attempt identified the chip before its FLASH_BEGIN reply was lost.
+		_ = opts.OnChipIdentified(rescueTestChip)
 		return usb.ErrROMLoaderNotEntered
 	}
 
@@ -152,6 +154,22 @@ func TestRunInstallUpdateCableRescueKeepsTheMarkerWhenTheLoaderNeverAnswered(t *
 	}
 	if !rescueMarkerPresent(t) {
 		t.Fatal("a loader that never answered may hide an erase; the marker must stay")
+	}
+}
+
+// Without a chip identity the loader never got past the chip check, so no
+// FLASH_BEGIN went out and the marker is cleared (Codex on #840).
+func TestRunInstallUpdateCableRescueClearsTheMarkerWhenNoChipWasIdentified(t *testing.T) {
+	_, manifestURL, _ := prepareCableFirmwareUpdateTest(t)
+	pinCableRescue(t)
+	findLegacyCableVibeTVFn = legacyRescueDevice
+	flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
+		return usb.ErrROMLoaderNotEntered
+	}
+
+	output, err := captureStdout(t, func() error { return runInstallUpdate(rescueArgs(manifestURL)) })
+	if err == nil || rescueMarkerPresent(t) {
+		t.Fatalf("err=%v marker=%v\n%s", err, rescueMarkerPresent(t), output)
 	}
 }
 
@@ -199,7 +217,9 @@ func TestRunInstallUpdateCableRescueKeepsTheMarkerWhenTheFailureMayHaveErased(t 
 		_, manifestURL, _ := prepareCableFirmwareUpdateTest(t)
 		pinCableRescue(t)
 		findLegacyCableVibeTVFn = legacyRescueDevice
-		flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
+		flashCableRescueFn = func(_ context.Context, _ string, _ []byte, opts usb.ROMFlashOptions) error {
+			// The chip was identified before FLASH_BEGIN; its reply then timed out.
+			_ = opts.OnChipIdentified(rescueTestChip)
 			return errors.New("flash begin: ROM loader response timeout")
 		}
 		output, err := captureStdout(t, func() error { return runInstallUpdate(rescueArgs(manifestURL)) })
