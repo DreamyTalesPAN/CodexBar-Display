@@ -80,7 +80,7 @@ type UsageSlotFrame = {
 };
 type UsageWindowFrame = UsageSlotFrame;
 
-type DisplayFrame = {
+export type DisplayFrame = {
   v?: number;
   provider?: string;
   label?: string;
@@ -98,6 +98,8 @@ type DisplayFrame = {
   usageSlots?: UsageSlotFrame[];
   providerSlots?: UsageSlotFrame[];
   activity?: string;
+  /** How long VibeTV keeps showing `activity` without a fresh frame; 0 or absent: no expiry. */
+  activityTtlSecs?: number;
   sessionTokens?: number;
   weekTokens?: number;
   totalTokens?: number;
@@ -182,7 +184,7 @@ export type ThemePrimitive = {
   p?: string[];
 };
 
-type FrameData = {
+export type FrameData = {
   provider: string;
   label: string;
   session: number;
@@ -640,7 +642,7 @@ const RECONNECT_FRAME_GRACE_MS = 120_000;
 
 // Retry cadence for the theme render pack while it is unavailable or does not
 // match the device's active revision yet.
-const THEME_PACK_RETRY_MS = 5_000;
+export const THEME_PACK_RETRY_MS = 5_000;
 
 function frameFreshForReconnect(
   displayFrame: DisplayFrameSnapshot | null | undefined,
@@ -1492,7 +1494,7 @@ function frameUsageMode(displayFrame: DisplayFrame | undefined): string {
   return "used";
 }
 
-function activeThemeId(device: DeviceInfo | null): string {
+export function activeThemeId(device: DeviceInfo | null): string {
   const theme = normalizeThemeAlias(device?.activeTheme);
   if (theme && theme !== "installing") {
     return theme;
