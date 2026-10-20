@@ -1025,26 +1025,30 @@ export function AIThemeStudioScreen({
         }
       }}
     >
-        <header className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          {onBackToLibrary ? <Button variant="ghost" size="icon" aria-label="Back to library" title="Back to library" disabled={locked} onClick={() => { if (dirty && persistedDraft.current !== document) setLeaving(true); else onBackToLibrary(); }}><ArrowLeft /></Button> : null}
+        <header className="flex min-h-10 flex-wrap items-center gap-x-1 gap-y-2">
+          {onBackToLibrary ? <Button variant="ghost" size="icon" className="-ml-2 size-9 [&_svg]:size-5" aria-label="Back to library" title="Back to library" disabled={locked} onClick={() => { if (dirty && persistedDraft.current !== document) setLeaving(true); else onBackToLibrary(); }}><ArrowLeft /></Button> : null}
           <h2 className="sr-only">{document.usage === "screensaver" ? "Screensaver Studio" : "Theme Studio"}</h2>
-          <Input
-            aria-label="Design name"
-            title={document.packName || "Design name"}
-            className="h-10 min-w-24 max-w-xs flex-[2_1_0%] text-ellipsis border-transparent bg-transparent px-2 text-[28px] leading-none font-semibold md:text-[28px] shadow-none hover:border-input focus-visible:border-ring"
-            value={document.packName}
-            maxLength={48}
-            disabled={locked}
-            onChange={(e) =>
-              mutate((d) => {
-                d.packName = e.target.value;
-              })
-            }
-          />
+          {/* The box is as wide as the name (as drawn in the template); the input lies over the hidden copy of its text. */}
+          <div className="ml-1 mr-4 inline-grid min-w-24 max-w-[20rem] shrink">
+            <span aria-hidden className="invisible col-start-1 row-start-1 h-10 overflow-hidden whitespace-pre border px-2 text-[28px] leading-none font-semibold">{document.packName || " "}</span>
+            <Input
+              aria-label="Design name"
+              title={document.packName || "Design name"}
+              className="col-start-1 row-start-1 h-10 w-full min-w-0 text-ellipsis border-transparent bg-transparent px-2 text-[28px] leading-none font-semibold md:text-[28px] shadow-none hover:border-input focus-visible:border-ring"
+              value={document.packName}
+              maxLength={48}
+              disabled={locked}
+              onChange={(e) =>
+                mutate((d) => {
+                  d.packName = e.target.value;
+                })
+              }
+            />
+          </div>
           <div className="flex items-center gap-1">
             <Popover open={fileMenu} onOpenChange={setFileMenu}>
               <PopoverTrigger asChild>
-                <Button variant="ghost" disabled={locked}>
+                <Button variant="ghost" className="h-9 gap-1.5 px-2.5 text-[13px] font-semibold [&_svg]:size-3.5" disabled={locked}>
                   File
                   <ChevronDown />
                 </Button>
@@ -1073,6 +1077,7 @@ export function AIThemeStudioScreen({
             <Button
               variant="ghost"
               size="icon"
+              className="size-9"
               title="Undo · ⌘Z / Ctrl+Z"
               aria-label="Undo last edit"
               disabled={!state.past.length || locked}
@@ -1083,6 +1088,7 @@ export function AIThemeStudioScreen({
             <Button
               variant="ghost"
               size="icon"
+              className="size-9"
               title="Redo · ⇧⌘Z / Ctrl+Shift+Z / Ctrl+Y"
               aria-label="Redo edit"
               disabled={!state.future.length || locked}
@@ -1092,7 +1098,7 @@ export function AIThemeStudioScreen({
             </Button>
           </div>
           {notices.length || sendBlockedReason ? (
-            <div className="ml-auto flex min-w-0 max-w-[14rem] flex-[0_1_auto] flex-col items-end gap-0.5 text-right">
+            <div className="ml-auto mr-3 flex min-w-0 max-w-[14rem] flex-[0_1_auto] flex-col items-end gap-0.5 pl-4 text-right">
               {notices.map((text, i) => <p key={i} role="status" className="text-[13px] font-normal text-muted-foreground [overflow-wrap:break-word]">{text}</p>)}
               {sendBlockedReason ? <p id="send-blocked-reason" role="status" className="text-[13px] font-normal text-muted-foreground [overflow-wrap:break-word]">{sendBlockedReason}</p> : null}
             </div>
@@ -1100,6 +1106,7 @@ export function AIThemeStudioScreen({
           <div className={`${notices.length || sendBlockedReason ? "" : "ml-auto "}flex shrink-0 items-center gap-2`}>
             <Button
               variant="outline"
+              className="h-9 px-3.5 text-[13px]"
               disabled={locked || Boolean(saveBlockedReason) || !document.spec.primitives.length || validation.errors.length > 0}
               title={saveBlockedReason}
               onClick={() => void save()}
@@ -1108,7 +1115,7 @@ export function AIThemeStudioScreen({
             </Button>
             {/* A disabled button takes no pointer events, so the tooltip sits on this wrapper. */}
             <span title={sendBlockedReason || undefined} className="inline-flex">
-              <Button disabled={locked || sendNeedsFix} aria-describedby={sendBlockedReason ? "send-blocked-reason" : undefined} onClick={() => void send()}>
+              <Button className="h-9 px-3.5 text-[13px]" disabled={locked || sendNeedsFix} aria-describedby={sendBlockedReason ? "send-blocked-reason" : undefined} onClick={() => void send()}>
                 {sending ? <Spinner /> : null}
                 {sending ? "Sending…" : transferJob ? "Check transfer" : "Send to VibeTV"}
               </Button>

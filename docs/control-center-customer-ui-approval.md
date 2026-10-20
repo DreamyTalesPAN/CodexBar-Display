@@ -8105,3 +8105,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the Studio's top row looks like frames 7-9 of "Calm Redesign - alle Screens".
 - Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #781: build 2b QA, the Theme Studio's top row has the template's sizes and spacing (frames 7-9)
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the back arrow, "File", undo, redo, "Save" and "Send to VibeTV" were 44 px high with wide gaps, the design name was a wide field and the top row (and everything under it) sat about 3 px lower than drawn → those controls are 36 px high, the gaps are 4 px, the design name box is as wide as the name (up to 20 rem), "Save" and "Send to VibeTV" use 13 px text, and the top row is 40 px high as in the template. While a request runs the controls stay greyed as before (not changed; see the report).
+- Approved customer-visible result: the top row of the Theme Studio looks like frames 7-9 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
