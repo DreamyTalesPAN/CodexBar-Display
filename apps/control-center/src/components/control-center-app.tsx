@@ -3164,7 +3164,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           tone: "attention",
         });
         lastFirmwareErrorRef.current = {
-          code: "firmware_update_attention",
+          // A stream that was only not seen yet recovers by itself (#826).
+          code:
+            finishedJob.outcome === "firmware_current_stream_attention"
+              ? "firmware_update_stream_attention"
+              : "firmware_update_attention",
           message:
             finishedJob.message ||
             "Firmware is current, but VibeTV still needs attention.",
@@ -5397,6 +5401,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       // Selection already returned the verified handshake. A second probe can
       // race the transport worker's restart and discard that fresh identity.
       return { board: connected.board, firmware: connected.firmware };
+    },
+    streamRecovered: async () => {
+      const refreshed = await refreshDevice({ quiet: true });
+      return refreshed?.stream?.healthy === true;
     },
     installFirmware: async (connected) => {
       lastFirmwareErrorRef.current = null;

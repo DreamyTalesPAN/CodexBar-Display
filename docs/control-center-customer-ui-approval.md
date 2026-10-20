@@ -7817,3 +7817,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: unchanged.
 - Scope: merge of `origin/main` into this pull request branch, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no customer-visible change
+
+## 2026-10-20 — #826: setup carries on by itself when the display stream shows up after a firmware update
+
+- User approval: pending — #826 no new wording; not seen by Paul. Behavior only: the existing "Firmware current — attention needed" dialog in setup closes by itself and setup continues, when the Companion reported only a not-yet-seen display stream and the stream then proves healthy.
+- Approved customer-visible result: #826 unchanged texts, dialogs and layout. After a firmware update whose only open point was the display stream, setup no longer stays on the dialog if frames arrive within about two minutes; all other attention results keep the dialog as before.
+- Scope: #826 `apps/control-center/src/components/setup/setup-connect.ts`, `apps/control-center/src/components/control-center-app.tsx` and the test `apps/control-center/src/components/setup/setup-wizard.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — #826 not announced to customers

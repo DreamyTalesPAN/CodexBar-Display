@@ -646,7 +646,7 @@ func (s *Server) verifyCableFirmwareUpdateResult(ctx context.Context, jobID stri
 	if err := s.startDisplayStream(ctx, cableDeviceTarget); err != nil {
 		return firmwareAttentionOutcome("stream"), "Firmware is current, but the display stream could not restart.", nil
 	}
-	stream := s.waitForFreshDisplayStream(ctx, cableDeviceTarget, streamStartedAt)
+	stream := s.waitForFirmwareUpdateStream(ctx, cableDeviceTarget, streamStartedAt)
 	streamHealthy := displayStreamHealthyForTarget(&stream, cableDeviceTarget)
 	streamAwaitingProvider := !streamHealthy && providerSetupStreamForTarget(&stream, cableDeviceTarget)
 	if !streamHealthy && !streamAwaitingProvider {
@@ -755,7 +755,7 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 	if err := s.startDisplayStream(ctx, target); err != nil {
 		return firmwareAttentionOutcome("stream"), "Firmware is current, but the display stream could not restart.", nil
 	}
-	stream := s.waitForFreshDisplayStream(ctx, target, streamStartedAt)
+	stream := s.waitForFirmwareUpdateStream(ctx, target, streamStartedAt)
 	streamHealthy := displayStreamHealthyForTarget(&stream, target)
 	// A stream that restarted, owns this exact VibeTV, and is only held back by
 	// provider setup has nothing left to prove about the firmware update. It

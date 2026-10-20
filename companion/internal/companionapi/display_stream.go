@@ -250,6 +250,13 @@ func (s *Server) waitForFreshDisplayStream(ctx context.Context, target string, n
 	return s.waitForFreshDisplayStreamUpTo(ctx, target, notBefore, displayStreamWaitTime)
 }
 
+// waitForFirmwareUpdateStream waits for the first frames after a firmware
+// update. A pause during the update is not a stream failure: only a stream that
+// stays missing for the whole grace period is reported as needing attention.
+func (s *Server) waitForFirmwareUpdateStream(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
+	return s.waitForFreshDisplayStreamUpTo(ctx, target, notBefore, firmwareStreamVerifyTime)
+}
+
 func (s *Server) waitForFreshDisplayStreamUpTo(ctx context.Context, target string, notBefore time.Time, waitTime time.Duration) displayStreamInfo {
 	if s.waitStreamAfter != nil {
 		return s.waitStreamAfter(ctx, target, notBefore)
