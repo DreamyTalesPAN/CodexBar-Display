@@ -8446,3 +8446,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the picker row shows a rounded focus ring when reached by keyboard.
 - Scope: `apps/control-center/src/components/setup/setup-device-dialogs.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #816: "Not now" on "VibeTV not found" holds through a short status change in the same outage (#787)
+
+- User approval: pending — Paul reviews (Codex finding #787 on #784); before → after: after "Not now" on the Overview's "VibeTV not found" dialog, a short in-between status (reconnecting, inconclusive check) during the same outage cleared the choice and the dialog came back when VibeTV was still missing → "Not now" holds until VibeTV is connected again; after a real reconnect and a new loss the dialog shows again as before. No new or changed text, layout or look.
+- Approved customer-visible result: the "VibeTV not found" dialog as in #784, shown once per outage after "Not now".
+- Scope: `apps/control-center/src/components/control-center-app.tsx`, its new test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
