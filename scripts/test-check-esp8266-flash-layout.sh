@@ -54,6 +54,41 @@ expect 1 new-env
 printf '[env:native]\nplatform = native@1.2.1\n' >"${WORK}/no-esp8266.ini"
 expect 1 no-esp8266
 
+# Several parents: PlatformIO takes the option from the latter one.
+cat >"${WORK}/multi-latter-bad.ini" <<'INI'
+[base_ok]
+board_build.ldscript = eagle.flash.4m2m.ld
+
+[base_bad]
+board_build.ldscript = eagle.flash.4m3m.ld
+
+[env:main]
+platform = espressif8266@4.2.1
+extends = base_ok, base_bad
+INI
+expect 1 multi-latter-bad
+
+sed 's/extends = base_ok, base_bad/extends = base_bad, base_ok/' "${WORK}/multi-latter-bad.ini" >"${WORK}/multi-latter-ok.ini"
+expect 0 multi-latter-ok
+
+# ${section.option} interpolation is resolved before deciding.
+cat >"${WORK}/interpolated-bad.ini" <<'INI'
+[common]
+platform = espressif8266@4.2.1
+ldscript = eagle.flash.4m3m.ld
+
+[env:main]
+platform = ${common.platform}
+board_build.ldscript = ${common.ldscript}
+INI
+expect 1 interpolated-bad
+
+sed 's/4m3m/4m2m/' "${WORK}/interpolated-bad.ini" >"${WORK}/interpolated-ok.ini"
+expect 0 interpolated-ok
+
+grep -v ldscript "${WORK}/interpolated-ok.ini" >"${WORK}/interpolated-no-ldscript.ini"
+expect 1 interpolated-no-ldscript
+
 "$CHECK" >/dev/null || die "the repository's platformio.ini fails the check"
 
 echo "ESP8266 flash layout check tests passed"

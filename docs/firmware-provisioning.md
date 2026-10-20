@@ -199,13 +199,18 @@ Two more exit codes mean that there is no verdict: 2 is a usage or setup error
 esptool failed, or the read came back short). Only exit 1 says that factory
 leftovers were found.
 
-Batch sample: a device passes when the verdict is not `LEFTOVERS` (exit 0 or
-3). `CLEAN` is expected right after a full erase. `NOT ERASED` is normal on
-a device that has received a firmware update over the cable, because the
-update first stores the new image just below `_FS_start`; on an unused device
-straight from the supplier it is still a pass, but ask the supplier what they
-wrote there. One `LEFTOVERS` (exit 1) rejects the batch until the supplier has
-erased and reflashed it. Exit 2 or 4 is no verdict: free the port and read again.
+Batch sample: take devices that were never connected to the app. Each must
+read `CLEAN` (exit 0), because after a full erase the supplier writes only
+`firmware.bin` below this region. `LEFTOVERS` (exit 1) rejects the batch until
+the supplier has erased and reflashed it. `NOT ERASED` (exit 3) puts the batch
+on hold: the region holds data the check does not recognize, so ask the
+supplier what they wrote there before accepting it. Exit 2 or 4 is no verdict:
+free the port and read again.
+
+`NOT ERASED` is normal on a device that has already received a firmware
+update over the cable, because the update first stores the new image just
+below `_FS_start`. Such a device is no batch sample; for it, only `LEFTOVERS`
+means factory data.
 
 The check calls esptool through PlatformIO (`pio`), so PlatformIO has to be
 installed on the computer that reads the device.

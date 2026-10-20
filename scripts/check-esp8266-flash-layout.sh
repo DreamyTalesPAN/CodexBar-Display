@@ -15,25 +15,44 @@ REQUIRED="eagle.flash.4m2m.ld"
 [[ -f "$INI" ]] || { printf 'error: %s not found\n' "$INI" >&2; exit 2; }
 
 python3 - "$INI" "$REQUIRED" <<'PY'
-import configparser, sys
+import configparser, re, sys
 
 ini, required = sys.argv[1], sys.argv[2]
 cp = configparser.ConfigParser(interpolation=None, strict=False, inline_comment_prefixes=(";",))
 cp.read(ini)
 
-def value(section, key, seen=()):
+# PlatformIO's own ${section.option} interpolation; "this" is the env being read.
+REF = re.compile(r"\$\{([^.}]+)\.([^}]+)\}")
+
+def resolve(text, env, depth=0):
+    if depth > 10:
+        sys.exit(f"error: interpolation loop in [{env}]")
+    def sub(match):
+        section, key = match.group(1), match.group(2)
+        if section == "sysenv":
+            return match.group(0)
+        found = raw(env if section == "this" else section, key)
+        return "" if found is None else resolve(found, env, depth + 1)
+    return REF.sub(sub, text)
+
+def raw(section, key, seen=()):
     if section in seen:
         sys.exit(f"error: extends loop at [{section}]")
     if cp.has_option(section, key) and section != "env":
         return cp.get(section, key).strip()
     if cp.has_option(section, "extends"):
-        for parent in cp.get(section, "extends").split(","):
-            found = value(parent.strip(), key, seen + (section,))
+        # PlatformIO: with several parents the latter one wins.
+        for parent in reversed(cp.get(section, "extends").split(",")):
+            found = raw(parent.strip(), key, seen + (section,))
             if found is not None:
                 return found
     if cp.has_section("env") and cp.has_option("env", key):
         return cp.get("env", key).strip()
     return None
+
+def value(env, key):
+    found = raw(env, key)
+    return None if found is None else resolve(found, env).strip()
 
 bad, checked = [], []
 for section in cp.sections():
