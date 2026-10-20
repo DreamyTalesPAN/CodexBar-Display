@@ -147,3 +147,26 @@ func TestFirmwareUpdateReportsStreamAttentionWhenFramesStayMissing(t *testing.T)
 		t.Fatalf("message=%q", job.Message)
 	}
 }
+
+// The updater's own "complete" is not the end of the job: the server still
+// checks health, stream and picture, and only its result is final. The page
+// stops polling at a final phase, so an early "complete" would show the update
+// as done before an attention (found on #838 after #829).
+func TestFirmwareUpdateEventDoesNotEndTheJob(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	job := server.createFirmwareUpdateJob()
+	for _, phase := range []string{"complete", "attention", "error"} {
+		server.applyFirmwareUpdateEvent(job.ID, firmwareUpdateEvent{Stage: "verifying_health", Phase: phase, Outcome: "already_current"})
+		got, _ := server.firmwareUpdateJobSnapshot(job.ID)
+		if got.Phase != "installing" {
+			t.Fatalf("an updater event with phase %q ended the job: phase=%q", phase, got.Phase)
+		}
+		if got.Outcome != "already_current" {
+			t.Fatalf("the updater's outcome must still be kept for the verification: %q", got.Outcome)
+		}
+	}
+	server.applyFirmwareUpdateEvent(job.ID, firmwareUpdateEvent{Stage: "uploading", Phase: "installing"})
+	if got, _ := server.firmwareUpdateJobSnapshot(job.ID); got.Phase != "installing" || got.Stage != "uploading" {
+		t.Fatalf("a running event must still move the job: %+v", got)
+	}
+}
