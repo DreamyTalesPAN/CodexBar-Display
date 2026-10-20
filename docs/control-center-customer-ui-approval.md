@@ -10394,3 +10394,30 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #817 as described in its entries above; nothing else changes.
 - Scope: #817 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #817 approval record only
+## 2026-10-20 — #561 update offer: the Mac App update is offered in its own calm dialog when no VibeTV is found
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 08:55: "Ja" (to "Soll das so rein?" about the picture ui/561-update-hint/01-no-vibetv-found-newer-app.png, in the new dialog style) — entry: #561 update offer: the Mac App update is offered in its own calm dialog when no VibeTV is  — Before → after: #561 update offer: when no VibeTV was found, setup showed only the usual not-found help, even if the Mac App was older than the newest release and an old app can be the reason → #561 update offer: on a Mac, when the Mac App is older than the newest release and no VibeTV is found, the dialog "Update the Mac App first" appears first.
+- Approved customer-visible result: #561 update offer: the dialog reads "We couldn't find your VibeTV. Version <version> is out, and an older app may not find it. Setup scans again after the update." with the version in the normal font, no close X, the secondary button "Scan again" and the lime button "Update Mac App" (opens the Mac App's update check); #561 update offer: it is offered once per version, only in the Mac App, never on Windows, and "Scan again" leads on to the usual not-found help; #561 update offer: it looks like the other calm setup dialogs (size, spacing, type, no focus ring at open).
+- Scope: #561 update offer: `apps/control-center/src/components/control-center-app.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.tsx`, `apps/control-center/src/components/setup/setup-device-screen.tsx`, `apps/control-center/src/components/setup/setup-dialog.tsx`, `apps/control-center/src/components/setup/setup-wizard.tsx`, their tests and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #561 update offer: the dialog appears only while a problem is being solved, nothing a customer needs to learn
+
+## 2026-10-20 — #822 Sparkle order: during setup the Mac App's own update dialog no longer comes before the calm "Update the Mac App first" dialog
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 08:55: "Ja" (to "Soll das so rein?" about the picture ui/561-update-hint/01-no-vibetv-found-newer-app.png, in the new dialog style) — entry: #822 Sparkle order: during setup the Mac App's own update dialog no longer comes before th — Before → after: #822 Sparkle order: during setup, a newer Mac App opened the Mac App's own update dialog as soon as it was found, and the calm dialog came only after canceling it → #822 Sparkle order: during setup the calm dialog "Update the Mac App first" is the only offer, and its "Update Mac App" button opens the Mac App's update check.
+- Approved customer-visible result: #822 Sparkle order: while setup is on screen no native update dialog opens on its own; #822 Sparkle order: once setup has handed over to the Control Center, the Mac App's update dialog opens once per version exactly as before; #822 Sparkle order: the calm dialog itself is unchanged.
+- Scope: #822 Sparkle order: `apps/control-center/src/components/control-center-app.tsx`, `apps/control-center/src/components/control-center-app.mac-update-prompt.test.tsx`, `apps/control-center/src/components/control-center-app.mac-app-offer.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #822 Sparkle order: only the order of two existing dialogs changes, nothing a customer needs to learn
+
+## 2026-10-20 — #822 update offer: "Not now" holds per version (Codex review)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 08:55: "Ja" (to "Soll das so rein?" about the picture ui/561-update-hint/01-no-vibetv-found-newer-app.png, in the new dialog style) — entry: #822 update offer: "Not now" holds per version (Codex review)
+- Approved customer-visible result: #822 when a newer release arrives while setup stays open after the previous offer was dismissed, setup offers the newer one once; the dialog itself is unchanged.
+- Scope: #822 `apps/control-center/src/components/setup/setup-wizard.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #822 per-version dismissal, no new content
+
+## 2026-10-20 — #822: Paul's approval recorded (the calm update offer dialog (ui/561-update-hint/01-no-vibetv-found-newer-app.png))
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 08:55: "Ja" — #822 approval record for the calm update offer dialog (ui/561-update-hint/01-no-vibetv-found-newer-app.png); the #822 entries above now carry this approval, merge markers are marked as no visible change.
+- Approved customer-visible result: #822 as described in its entries above; nothing else changes.
+- Scope: #822 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #822 approval record only

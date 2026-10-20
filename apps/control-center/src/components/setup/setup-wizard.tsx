@@ -21,9 +21,11 @@ import { copyForHost } from "@/lib/customer-platform";
 import { useSetupConnect, type SetupConnectSteps } from "./setup-connect";
 import { connectLogLines } from "./setup-connect-log";
 import {
+  type MacAppUpdateOffer,
   SetupAddressDialog,
   SetupConnectFailedDialog,
   SetupDeviceNotFoundDialog,
+  SetupMacAppUpdateDialog,
   SetupCableHelpDialog,
 } from "./setup-device-dialogs";
 import { SetupDialog } from "./setup-dialog";
@@ -76,6 +78,8 @@ export type SetupWizardProps = {
   onDismissUsageFailure?: () => void;
   /** The app runs on Windows, where "this Mac" reads "this computer". */
   windowsHost?: boolean;
+  /** A newer Mac App exists; offered on the "VibeTV not found" pages (#561). */
+  macAppUpdate?: MacAppUpdateOffer;
   automaticPreviews: SetupDisplayModePreview[];
   connectSteps: SetupConnectSteps;
   connectionMode: string;
@@ -208,6 +212,16 @@ export function SetupWizard(props: SetupWizardProps) {
   const [wifiError, setWiFiError] = useState<string | null>(null);
   const [addressDialogOpen, setAddressDialogOpen] = useState(false);
   const [notFoundDismissed, setNotFoundDismissed] = useState(false);
+  // Offered once: after "Scan again" or closing it, not-found shows its usual help (#561).
+  // Dismissed per version (Codex on #822): a newer release that arrives while
+  // setup stays open is offered again, once.
+  const [dismissedMacAppVersion, setDismissedMacAppVersion] = useState<string | null>(null);
+  const pendingMacAppUpdate =
+    props.macAppUpdate && props.macAppUpdate.version !== dismissedMacAppVersion
+      ? props.macAppUpdate
+      : undefined;
+  const setMacAppUpdateDismissed = (_dismissed: true) =>
+    setDismissedMacAppVersion(props.macAppUpdate?.version ?? null);
   // The completion this step asked for is still on its way. Held here rather
   // than passed in: the wizard is what awaits it.
   const [providersContinuing, setProvidersContinuing] = useState(false);
@@ -774,6 +788,8 @@ export function SetupWizard(props: SetupWizardProps) {
           connectPhase={connect.state.phase}
           firmwarePercent={props.firmwareWrittenPercent}
           logLines={connectLogLines(connect.state, props.firmwareWrittenPercent)}
+          macAppUpdate={pendingMacAppUpdate}
+          onDismissMacAppUpdate={() => setMacAppUpdateDismissed(true)}
           onConnect={startConnect}
           onBack={onBack}
           stopping={connect.leaving}
@@ -818,7 +834,16 @@ export function SetupWizard(props: SetupWizardProps) {
             showCloseButton={false}
           />
         ) : null}
-        {searchFailed && !wifiSetup && !props.connectionMode && !preferredTransport ? (
+        {searchFailed && !wifiSetup && pendingMacAppUpdate ? (
+          <SetupMacAppUpdateDialog
+            offer={pendingMacAppUpdate}
+            onDismiss={() => setMacAppUpdateDismissed(true)}
+            onScanAgain={() => {
+              setMacAppUpdateDismissed(true);
+              searchAgain();
+            }}
+          />
+        ) : searchFailed && !wifiSetup && !props.connectionMode && !preferredTransport ? (
           <SetupCableHelpDialog
             onEnterAddressManually={openAddressDialog}
             onScanAgain={searchAgain}

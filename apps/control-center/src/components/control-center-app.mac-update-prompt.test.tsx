@@ -9,6 +9,7 @@ import { createElement } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { rememberCompletedSetup } from "@/lib/completed-setup-devices";
 import { markWhatsNewSeen } from "@/lib/whats-new";
 import { ControlCenterApp } from "./control-center-app";
 import { openMacAppUpdatePrompt } from "./control-center-runtime";
@@ -75,6 +76,11 @@ async function openApp({
   };
   // A customer who has read "What's new"; it would lie over Overview.
   markWhatsNewSeen();
+  // A customer who finished setup for this VibeTV once goes straight on to the
+  // Control Center; without it the wizard still shows its closing screen.
+  if (setupFinished) {
+    rememberCompletedSetup(device.deviceId);
+  }
   vi.useFakeTimers();
   if (userAgent) {
     vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue(userAgent);
@@ -184,6 +190,7 @@ async function openApp({
 
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.useRealTimers();
@@ -191,10 +198,33 @@ afterEach(() => {
   runtime.hostedShell = false;
 });
 
-it("opens the Mac App update prompt once when a newer Mac App is offered, during setup", async () => {
+it("does not open the native prompt while setup owns the screen", async () => {
   const app = await openApp({ userAgent: nativeUserAgent, setupFinished: false });
 
+  // The wizard offers the update in its own calm dialog and starts the visible
+  // check from its button; Sparkle's dialog must not come first.
   expect(app.text()).toContain("Welcome to");
+  expect(openMacAppUpdatePrompt).not.toHaveBeenCalled();
+  await app.wait(20);
+  expect(openMacAppUpdatePrompt).not.toHaveBeenCalled();
+});
+
+it("opens the prompt once setup has handed the screen to the Control Center", async () => {
+  const app = await openApp({ userAgent: nativeUserAgent, setupFinished: false });
+  expect(openMacAppUpdatePrompt).not.toHaveBeenCalled();
+
+  // The VibeTV is found and was set up before: the wizard hands the screen over.
+  rememberCompletedSetup(device.deviceId);
+  app.companion.device = device;
+  await app.wait(20);
+  expect(app.text()).not.toContain("Welcome to");
+  expect(openMacAppUpdatePrompt).toHaveBeenCalledTimes(1);
+});
+
+it("opens the prompt in the Control Center of a customer who finished setup", async () => {
+  const app = await openApp({ userAgent: nativeUserAgent });
+
+  expect(app.text()).not.toContain("Welcome to");
   expect(openMacAppUpdatePrompt).toHaveBeenCalledTimes(1);
 });
 

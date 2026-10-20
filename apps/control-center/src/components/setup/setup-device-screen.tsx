@@ -24,7 +24,11 @@ import type {
 } from "../control-center-types";
 import { candidateKey, type SetupTransport } from "./setup-connection";
 import { SetupDeviceCard } from "./setup-device-card";
-import { SetupCableHelpDialog } from "./setup-device-dialogs";
+import {
+  type MacAppUpdateOffer,
+  SetupCableHelpDialog,
+  SetupMacAppUpdateDialog,
+} from "./setup-device-dialogs";
 import { SelectionDot, calmCardClass, moveAmongRadios } from "./setup-selectable-card";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
@@ -53,6 +57,9 @@ type SetupDeviceScreenProps = {
   /** Share of the firmware really written, from the update's own log; no bar without it. */
   firmwarePercent?: number;
   logLines: SetupLogLine[];
+  /** A newer Mac App exists; offered first while no VibeTV turns up (#561). */
+  macAppUpdate?: MacAppUpdateOffer;
+  onDismissMacAppUpdate?: () => void;
   aiFixPrompt?: () => string;
   onConnect: () => void;
   onBack?: () => void;
@@ -89,6 +96,8 @@ export function SetupDeviceScreen({
   connectPhase,
   firmwarePercent,
   logLines,
+  macAppUpdate,
+  onDismissMacAppUpdate = () => {},
   aiFixPrompt,
   onConnect,
   onBack,
@@ -395,11 +404,22 @@ export function SetupDeviceScreen({
       ) : null}
 
       {wifiSetupPhase === "waiting" && !wifiWaitingViaCable ? (
-        <SetupCableHelpDialog
-          onEnterAddressManually={onEnterAddressManually}
-          onScanAgain={onSearchAgain}
-          scanning={searching}
-        />
+        macAppUpdate ? (
+          <SetupMacAppUpdateDialog
+            offer={macAppUpdate}
+            onDismiss={onDismissMacAppUpdate}
+            onScanAgain={() => {
+              onDismissMacAppUpdate();
+              onSearchAgain();
+            }}
+          />
+        ) : (
+          <SetupCableHelpDialog
+            onEnterAddressManually={onEnterAddressManually}
+            onScanAgain={onSearchAgain}
+            scanning={searching}
+          />
+        )
       ) : null}
 
       {showCandidates ? (

@@ -24,7 +24,7 @@ export type SetupDialogAction = {
 type SetupDialogProps = {
   children?: ReactNode;
   /** Omit for a dialog whose title says it all; no empty description is rendered. */
-  description?: string;
+  description?: ReactNode;
   /** Optional header icon (Theme Studio's dialogs); the calm dialogs (A2) draw none. */
   icon?: LucideIcon;
   /** Destructive tints the header icon; "neutral" is for progress dialogs. */
