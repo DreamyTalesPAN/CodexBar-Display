@@ -122,6 +122,8 @@ func (s *Server) waitForDisplayRenderWithStream(
 	})
 }
 
+const displayRenderPollInterval = 750 * time.Millisecond
+
 // errDisplayRenderNotAdvanced marks a render check whose last health read
 // succeeded but showed the same render counters as the baseline.
 var errDisplayRenderNotAdvanced = errors.New("render counters did not advance")
@@ -133,7 +135,21 @@ func waitForDisplayRenderWithHealthReader(
 	stream displayStreamInfo,
 	readHealth func() (deviceHealth, error),
 ) (deviceHealth, error) {
-	deadline := time.Now().Add(displayRenderWaitTime)
+	return waitForDisplayRenderPolling(ctx, target, baseline, stream, displayRenderWaitTime, displayRenderPollInterval, readHealth)
+}
+
+// waitForDisplayRenderPolling is the render check with its wait and poll
+// interval as arguments, so tests can run the timeout paths in milliseconds.
+func waitForDisplayRenderPolling(
+	ctx context.Context,
+	target string,
+	baseline deviceHealth,
+	stream displayStreamInfo,
+	wait time.Duration,
+	poll time.Duration,
+	readHealth func() (deviceHealth, error),
+) (deviceHealth, error) {
+	deadline := time.Now().Add(wait)
 	var last deviceHealth
 	var lastErr error
 	for {
@@ -173,7 +189,7 @@ func waitForDisplayRenderWithHealthReader(
 				lastErr = ctx.Err()
 			}
 			return last, lastErr
-		case <-time.After(750 * time.Millisecond):
+		case <-time.After(poll):
 		}
 	}
 }

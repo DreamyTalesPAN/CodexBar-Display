@@ -15458,6 +15458,14 @@ func TestStatusAndDiagnosticsCarrySystemBusy(t *testing.T) {
 // An unchanged live picture may only stand in for a fresh, successful read:
 // when the last read fails (cable gone), the error must not qualify (Codex on #838).
 func TestDisplayRenderUnchangedOnlyFromAFreshRead(t *testing.T) {
+	// The wait and poll interval are short here: the error paths must not
+	// cost the production 12 seconds each (Codex on #838).
+	started := time.Now()
+	defer func() {
+		if elapsed := time.Since(started); elapsed > 3*time.Second {
+			t.Errorf("render check error paths took %v; they must use a short deadline", elapsed)
+		}
+	}()
 	full, partial := uint64(5), uint64(2)
 	baseline := deviceHealth{OK: true}
 	baseline.Render.FullCount = &full
@@ -15465,7 +15473,7 @@ func TestDisplayRenderUnchangedOnlyFromAFreshRead(t *testing.T) {
 	baseline.Render.LastKind = "usage"
 
 	reads := 0
-	_, err := waitForDisplayRenderWithHealthReader(context.Background(), cableDeviceTarget, baseline, displayStreamInfo{}, func() (deviceHealth, error) {
+	_, err := waitForDisplayRenderPolling(context.Background(), cableDeviceTarget, baseline, displayStreamInfo{}, 30*time.Millisecond, 5*time.Millisecond, func() (deviceHealth, error) {
 		reads++
 		if reads == 1 {
 			return baseline, nil
@@ -15476,7 +15484,7 @@ func TestDisplayRenderUnchangedOnlyFromAFreshRead(t *testing.T) {
 		t.Fatalf("a failed last read must not count as unchanged counters: %v", err)
 	}
 
-	_, err = waitForDisplayRenderWithHealthReader(context.Background(), cableDeviceTarget, baseline, displayStreamInfo{}, func() (deviceHealth, error) {
+	_, err = waitForDisplayRenderPolling(context.Background(), cableDeviceTarget, baseline, displayStreamInfo{}, 30*time.Millisecond, 5*time.Millisecond, func() (deviceHealth, error) {
 		return baseline, nil
 	})
 	if !errors.Is(err, errDisplayRenderNotAdvanced) {
