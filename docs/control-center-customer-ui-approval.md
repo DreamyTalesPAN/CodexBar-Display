@@ -8742,3 +8742,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #783 the overlay button names where it leads; Usage cards never cut off; normal and wide windows unchanged (7197 template point 3).
 - Scope: #783 `apps/control-center/src/components/provider-action-dialog.tsx`, `apps/control-center/src/components/usage-screen.tsx`, their tests and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #783 Codex fixes not announced
+
+## 2026-10-20 — #800: approval marker commit for the merge 54194585 of claude/group-usage (Codex fixes c89aa649)
+
+- User approval: pending — merge 54194585 of claude/group-usage into #800; no visible change of its own; Paul reviews the visible changes of #783 before merge.
+- Approved customer-visible result: #800 merge 54194585 as in the #783 entry "two Codex fixes on the Usage overlay button and narrow windows"; nothing else changes.
+- Scope: #800 merge 54194585 and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #800 merge 54194585 has no customer-visible change of its own
