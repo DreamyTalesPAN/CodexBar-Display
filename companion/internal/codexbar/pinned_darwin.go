@@ -34,6 +34,27 @@ var pinnedRun = func(ctx context.Context, name string, args ...string) ([]byte, 
 }
 
 func ValidatePinnedCLI(ctx context.Context, app string) (string, error) {
+	bin, err := verifyPinnedSignature(ctx, app)
+	if err != nil {
+		return "", err
+	}
+	if out, err := pinnedRun(ctx, "/usr/sbin/spctl", "--assess", "--type", "execute", "--verbose=4", app); err != nil {
+		return "", fmt.Errorf("assess CodexBar: %w (%s)", err, strings.TrimSpace(string(out)))
+	}
+	version, err := reportedVersion(ctx, bin, pinnedFirstRunTimeout)
+	if err != nil {
+		return "", err
+	}
+	pin, _ := parseLooseVersion(PinnedVersion)
+	if version.Compare(pin) != 0 {
+		return "", fmt.Errorf("expected pinned CodexBar %s, got %s", PinnedVersion, version)
+	}
+	return bin, nil
+}
+
+// verifyPinnedSignature proves the copy on disk is intact and signed by the
+// expected team, without Gatekeeper and without starting it.
+func verifyPinnedSignature(ctx context.Context, app string) (string, error) {
 	bin := filepath.Join(app, "Contents", "Helpers", "CodexBarCLI")
 	if !isExecutable(bin) {
 		return "", fmt.Errorf("pinned CLI is not executable: %s", bin)
@@ -48,17 +69,6 @@ func ValidatePinnedCLI(ctx context.Context, app string) (string, error) {
 	identity := "\n" + strings.TrimSpace(string(out)) + "\n"
 	if !strings.Contains(identity, "\nTeamIdentifier="+pinnedTeam+"\n") || !strings.Contains(identity, "\nIdentifier="+pinnedBundle+"\n") {
 		return "", errors.New("unexpected CodexBar signing identity")
-	}
-	if out, err := pinnedRun(ctx, "/usr/sbin/spctl", "--assess", "--type", "execute", "--verbose=4", app); err != nil {
-		return "", fmt.Errorf("assess CodexBar: %w (%s)", err, strings.TrimSpace(string(out)))
-	}
-	version, err := reportedVersion(ctx, bin, pinnedFirstRunTimeout)
-	if err != nil {
-		return "", err
-	}
-	pin, _ := parseLooseVersion(PinnedVersion)
-	if version.Compare(pin) != 0 {
-		return "", fmt.Errorf("expected pinned CodexBar %s, got %s", PinnedVersion, version)
 	}
 	return bin, nil
 }
@@ -141,7 +151,13 @@ func PreparePinnedCLI(ctx context.Context, archive string, _ bool) (string, erro
 	if err := publishPinnedApp(staged, target); err != nil {
 		return "", err
 	}
-	return ValidatePinnedCLI(ctx, target)
+	// The published copy is the staged one, moved by a rename: it passed
+	// Gatekeeper and its first start a moment ago. Asking both again doubled
+	// the steps that fail on a busy Mac at the first install, the moment a
+	// new customer sees "Usage service needs repair" (#556). The signature
+	// check still proves the moved copy is intact, and every later start runs
+	// the full check on it.
+	return verifyPinnedSignature(ctx, target)
 }
 
 func normalizePinnedXattrs(app string) error {

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "@/test/axe";
 import { SetupEventsContext } from "../setup-event-log";
@@ -91,5 +91,64 @@ describe("SetupHelpMenu support report", () => {
     expect(screen.getByRole("status").textContent).toBe(
       "Report savedIt is in your Downloads folder. Attach it when you ask for help.",
     );
+  });
+});
+
+// Keyboard: the menu takes focus when it opens, the arrow keys move between its
+// entries, and Escape gives focus back to Help.
+describe("SetupHelpMenu keyboard", () => {
+  function openMenu() {
+    render(
+      <SetupHelpMenu
+        aiFixPrompt={() => "fix"}
+        onCreateSupportReport={vi.fn().mockResolvedValue(null)}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Help" }));
+    return {
+      ask: screen.getByRole("menuitem", { name: "Ask AI to fix" }),
+      create: screen.getByRole("menuitem", { name: "Create support report" }),
+    };
+  }
+
+  it("moves focus onto the first entry when the menu opens", () => {
+    const { ask } = openMenu();
+    expect(document.activeElement).toBe(ask);
+  });
+
+  it("moves between the entries with the arrow keys and wraps around", () => {
+    const { ask, create } = openMenu();
+    fireEvent.keyDown(ask, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(create);
+    fireEvent.keyDown(create, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(ask);
+    fireEvent.keyDown(ask, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(create);
+  });
+
+  it("jumps to the first and the last entry with Home and End", () => {
+    const { ask, create } = openMenu();
+    fireEvent.keyDown(ask, { key: "End" });
+    expect(document.activeElement).toBe(create);
+    fireEvent.keyDown(create, { key: "Home" });
+    expect(document.activeElement).toBe(ask);
+  });
+
+  it("keeps focus in the menu when the used entry gives way to its outcome", async () => {
+    Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
+    const { ask, create } = openMenu();
+    fireEvent.click(ask);
+    await waitFor(() =>
+      expect(screen.queryByRole("menuitem", { name: "Ask AI to fix" })).toBeNull());
+    // The focus moves in an effect after that render; on a slow runner the
+    // removal is seen first.
+    await waitFor(() => expect(document.activeElement).toBe(create));
+  });
+
+  it("closes on Escape and gives focus back to Help", () => {
+    const { ask } = openMenu();
+    fireEvent.keyDown(ask, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Help" }));
   });
 });

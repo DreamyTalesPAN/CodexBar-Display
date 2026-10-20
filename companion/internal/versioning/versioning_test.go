@@ -2,6 +2,32 @@ package versioning
 
 import "testing"
 
+func TestSemVerStringJoinsPreReleaseAndDropsBuildMetadata(t *testing.T) {
+	cases := []struct {
+		raw  string
+		want string
+	}{
+		{raw: "1.2.3", want: "1.2.3"},
+		{raw: "v1.2.3", want: "1.2.3"},
+		{raw: "0.0.0", want: "0.0.0"},
+		{raw: "1.2.3-rc.1", want: "1.2.3-rc.1"},
+		{raw: "v1.2.3-rc.1+build42", want: "1.2.3-rc.1"},
+		{raw: "1.2.3+build42", want: "1.2.3"},
+		{raw: "1.2.3-  ", want: "1.2.3"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.raw, func(t *testing.T) {
+			v, err := ParseSemVer(tc.raw)
+			if err != nil {
+				t.Fatalf("parse %q: %v", tc.raw, err)
+			}
+			if got := v.String(); got != tc.want {
+				t.Fatalf("String() of %q = %q, want %q", tc.raw, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestParseSemVerValid(t *testing.T) {
 	got, err := ParseSemVer("v1.2.3-rc.1+build42")
 	if err != nil {

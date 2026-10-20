@@ -75,14 +75,16 @@ Companion for everything it needs.
   uninstall. The Companion's Windows sidecars are `codexbar-display.exe` (Go,
   built in CI) and `codexbar-cli.exe` (the unmodified pinned Win-CodexBar
   console CLI downloaded by `scripts/fetch-win-codexbar.ps1`, currently the
-  VibeTV fork release `v0.60.3-vibetv.11` with the Windows Claude probe fixes,
+  VibeTV fork release `v0.60.3-vibetv.12` with the Windows Claude probe fixes,
   Claude rate-limit and stale-token recovery, separate session and weekly rows
   from the Claude CLI source (#510), steady Claude percentages when the source
   changes between OAuth and the CLI (#531), one shared gate in front of the
   Claude OAuth usage endpoint and a CLI probe that gets past the startup
   questions of Claude Code 2.1.29x (#500), Auto asking Claude Code's login
   before the browser so a second claude.ai account in the browser cannot
-  replace it (marcus7989/Win-CodexBar#10), and a statically linked C runtime;
+  replace it (marcus7989/Win-CodexBar#10), Claude's local token history marked
+  complete after a finished scan (#820, marcus7989/Win-CodexBar#12), and a
+  statically linked C runtime;
   licence in `windows/THIRD_PARTY`). The Companion finds the CLI next to its own exe;
   `CODEXBAR_BIN` is not set.
 
@@ -192,6 +194,20 @@ needed.
   read-only flag. The job verifies the resulting signature with
   `Get-AuthenticodeSignature` and fails the release if it is missing or issued
   to an unexpected subject.
+- SmartScreen record (#418). The public installer of v1.0.64, read on the test
+  laptop on 2026-10-13 with `Get-AuthenticodeSignature`: status `Valid`,
+  subject `CN=DreamyTales GmbH, O=DreamyTales GmbH, L=Cologne, S=North
+  Rhine-Westphalia, C=DE`, issuer `Microsoft ID Verified CS EOC CA 03`, a
+  three-day certificate (2026-10-12 to 2026-10-15) with a counter-signature of
+  the `Microsoft Public RSA Time Stamping Authority`, so the signature stays
+  valid after the certificate ends. That is a publicly trusted, identity
+  validated certificate, not an EV one. The installed
+  `VibeTVControlCenter.exe` of an unsigned CI build reads `NotSigned`, as
+  expected. Not recorded: the reputation state, that is whether SmartScreen
+  shows "Windows protected your PC" on a first download. The bench installs
+  over SSH from a file without the Mark of the Web, so SmartScreen never looks
+  at it; it needs one download in Edge on a Windows machine that has never run
+  the app, with a picture of what appears.
 - Pinned-CLI validation (`validate-codexbar`) is a stub outside macOS; the
   Windows CLI is trusted by the installer SHA-256 pin only.
 - Not proven in the VM: ARM64 hosts, Cable transport, a real N→N+1 update

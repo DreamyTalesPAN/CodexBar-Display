@@ -553,7 +553,7 @@ if environment.get("VIBETV_MAC_APP_BUILD") != "146":
 with open(sys.argv[3], encoding="utf-8") as f:
     source = f.read()
 
-prepare_start = source.index("private func prepareCompanion()")
+prepare_start = source.index("private func prepareCompanion(")
 prepare_end = source.index(
     "private func ensureBundledRuntimeServiceRegistered()",
     prepare_start,
@@ -729,6 +729,10 @@ required_source = [
     'title: "Restart service"',
     "action: #selector(retryRuntimePreparation)",
     "kind: .serviceRestart",
+    'title: "macOS blocked VibeTV’s background service"',
+    "kind: .launchBlocked",
+    "?? runtimeStartFailure(for: health, since: preparationStartedAt)",
+    '"launchBlockedBySignatureLast24Hours": runtimeLaunchWasBlockedBySignature(',
     'title: "VibeTV update didn’t finish"',
     'detail: "The app and its background service are on different versions."',
     'title: "Restart VibeTV"',
@@ -823,7 +827,7 @@ status_start = preparation_method.find("presentInstallationStatus(")
 preflight_call = preparation_method.find("await self?.performLocalNetworkPrivacyPreflight()")
 preparation_task = preparation_method.find("preparationTask = Task")
 prepare_runtime = preparation_method.find(
-    "let outcome = await self.prepareCompanion()"
+    "let outcome = await self.prepareCompanion(fromStartScreen: true)"
 )
 native_case = preparation_method.find("case .nativeRuntimeReady:", prepare_runtime)
 webview_after_verify = preparation_method.find("self.presentControlCenter()", native_case)
@@ -900,7 +904,7 @@ if not (
     raise SystemExit(
         "native app must stop legacy writers, register, pass local runtime health, migrate old apps, then persist"
     )
-prepare_start = source.find("private func prepareCompanion() async")
+prepare_start = source.find("private func prepareCompanion(fromStartScreen: Bool = false) async")
 prepare_end = source.find("private func ensureBundledRuntimeServiceRegistered()", prepare_start)
 prepare_method = source[prepare_start:prepare_end]
 if "/v1/device/repair" in prepare_method or "prepareExistingDeviceConnection" in prepare_method:
@@ -935,12 +939,12 @@ if (
         "native CodexBar bootstrap must prepare only the private pinned CLI"
     )
 launch_start = bootstrap_end
-launch_end = source.find("private func prepareCompanion() async", launch_start)
+launch_end = source.find("private func prepareCompanion(fromStartScreen: Bool = false) async", launch_start)
 launch_method = source[launch_start:launch_end]
 for required_launch_behavior in [
     "withBundleIdentifier: codexBarBundleIdentifier",
     "appManagedCodexBarAppURL(",
-    "validatedPinnedCodexBarCLI(at: appURL)",
+    "await validatedPinnedCodexBarCLI(at: appURL)",
     "NSWorkspace.OpenConfiguration()",
     "configuration.activates = false",
     "configuration.addsToRecentItems = false",
@@ -960,8 +964,8 @@ if (
     '"prepare-codexbar", "--archive"' not in prepare_payload
     or 'arguments.append("--reuse-running")' not in prepare_payload
     or 'withBundleIdentifier: codexBarBundleIdentifier' not in prepare_payload
-    or 'return runPinnedCodexBar(arguments)' not in prepare_payload
-    or 'runPinnedCodexBar(["validate-codexbar", "--app", appURL.path])' not in source
+    or 'return await runPinnedCodexBar(arguments)' not in prepare_payload
+    or 'await runPinnedCodexBar(["validate-codexbar", "--app", appURL.path])' not in source
 ):
     raise SystemExit("native shell must delegate pinned staging/validation and preserve the running-app exception")
 
@@ -979,7 +983,7 @@ if (
     )
 repair_restart = prepare_method.find("if codexBarRepairRestartRequired")
 repair_stop = prepare_method.find("await unregisterBundledRuntimeService()", repair_restart)
-codexbar_publish = prepare_method.find("guard bootstrapCodexBar()")
+codexbar_publish = prepare_method.find("var codexBarPrepared = await bootstrapCodexBar()")
 if not (0 <= repair_restart < repair_stop < codexbar_publish):
     raise SystemExit(
         "native CodexBar repair must stop the managed runtime before replacing its private payload"

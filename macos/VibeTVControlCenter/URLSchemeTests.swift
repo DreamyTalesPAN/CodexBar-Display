@@ -1,5 +1,6 @@
 #if VIBETV_CONTROL_CENTER_TESTING
 import Foundation
+import WebKit
 
 private func require(_ condition: @autoclosure () -> Bool, _ message: String) {
     guard condition() else {
@@ -9,6 +10,55 @@ private func require(_ condition: @autoclosure () -> Bool, _ message: String) {
 }
 
 func runURLSchemeTests() {
+    // Issue #655: a window behind other windows must not suspend the page that
+    // drives the setup.
+    MainActor.assumeIsolated {
+        let configuration = makeControlCenterWebViewConfiguration()
+        require(
+            configuration.preferences.inactiveSchedulingPolicy == .none,
+            "the Control Center page must keep running while its window is covered"
+        )
+        require(
+            configuration.defaultWebpagePreferences.allowsContentJavaScript,
+            "the Control Center page needs JavaScript"
+        )
+    }
+    // Issue #655: only macOS 14.0 to 14.5 need the app to keep a covered page
+    // running; their WebKit still suspends it despite `.none`.
+    for (major, minor, patch) in [(14, 0, 0), (14, 3, 1), (14, 5, 0)] {
+        require(
+            controlCenterPageNeedsKeepAlive(
+                OperatingSystemVersion(majorVersion: major, minorVersion: minor, patchVersion: patch)
+            ),
+            "macOS \(major).\(minor).\(patch) needs the page keep-alive"
+        )
+    }
+    for (major, minor, patch) in [(14, 6, 0), (14, 7, 6), (15, 0, 0), (26, 0, 0)] {
+        require(
+            !controlCenterPageNeedsKeepAlive(
+                OperatingSystemVersion(majorVersion: major, minorVersion: minor, patchVersion: patch)
+            ),
+            "macOS \(major).\(minor).\(patch) keeps a covered page running by itself"
+        )
+    }
+    require(
+        controlCenterPageKeepAliveInterval < .seconds(8 * 60),
+        "the keep-alive must come before WebKit's eight-minute suspension"
+    )
+
+    // Issue #556: the start screen retries the CodexBar preparation once; a repair does not.
+    require(
+        retriesCodexBarBootstrap(fromStartScreen: true, repairRequested: false),
+        "the start screen must retry the CodexBar preparation before asking for a repair"
+    )
+    require(
+        !retriesCodexBarBootstrap(fromStartScreen: true, repairRequested: true),
+        "a requested CodexBar repair must answer after one preparation"
+    )
+    require(
+        !retriesCodexBarBootstrap(fromStartScreen: false, repairRequested: false),
+        "a runtime repair must answer within the page's wait, after one preparation"
+    )
     // Issue #582: the page learns how the save dialog ended.
     require(
         downloadFinishedEventScript(fileName: "vibetv-theme-new-theme.zip", saved: true)
@@ -110,6 +160,76 @@ func runURLSchemeTests() {
             && serviceStatus.kind == .serviceRestart,
         "service startup failures must offer the focused restart recovery"
     )
+    let blockedStatus = InstallationFailure.launchBlockedBySignature.installationStatus
+    require(
+        blockedStatus.title == "macOS blocked VibeTV’s background service"
+            && blockedStatus.detail.contains("download it again from vibetv.shop")
+            && blockedStatus.retryTitle == "Download VibeTV again"
+            && blockedStatus.kind == .launchBlocked,
+        "a helper killed for its signature must send the customer to a new download, not to Restart service"
+    )
+    require(
+        installationPreviewFailure("launch-blocked") == .launchBlockedBySignature,
+        "the blocked-service screen must be previewable for the click test"
+    )
+    let helperPath = "/Applications/VibeTV Control Center.app/Contents/Helpers/codexbar-display"
+    func crashReport(indicator: String, path: String = helperPath) -> String {
+        #"{"app_name":"codexbar-display","bug_type":"309"}"# + "\n"
+            + #"{"procPath":"\#(path)","termination":{"flags":66,"code":4,"namespace":"CODESIGNING","indicator":"\#(indicator)"}}"#
+    }
+    require(
+        crashReportShowsLaunchConstraintViolation(
+            crashReport(indicator: "Launch Constraint Violation"),
+            helperPath: helperPath
+        ),
+        "a launch constraint kill of the bundled helper must be recognised"
+    )
+    require(
+        !crashReportShowsLaunchConstraintViolation(
+            crashReport(indicator: "Invalid Page"),
+            helperPath: helperPath
+        )
+            && !crashReportShowsLaunchConstraintViolation(
+                crashReport(
+                    indicator: "Launch Constraint Violation",
+                    path: "/Applications/Other.app/Contents/Helpers/codexbar-display"
+                ),
+                helperPath: helperPath
+            )
+            && !crashReportShowsLaunchConstraintViolation("not a report", helperPath: helperPath),
+        "only a launch constraint kill of this app's own helper may change the recovery"
+    )
+    let crashDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("vibetv-626-\(UUID().uuidString)", isDirectory: true)
+    try? FileManager.default.createDirectory(at: crashDirectory, withIntermediateDirectories: true)
+    let staleReport = crashDirectory.appendingPathComponent("codexbar-display-2026-10-15-075801.ips")
+    try? crashReport(indicator: "Launch Constraint Violation").write(to: staleReport, atomically: true, encoding: .utf8)
+    try? FileManager.default.setAttributes(
+        [.modificationDate: Date().addingTimeInterval(-3_600)],
+        ofItemAtPath: staleReport.path
+    )
+    require(
+        !runtimeLaunchWasBlockedBySignature(
+            crashDirectory: crashDirectory,
+            helperPath: helperPath,
+            since: Date().addingTimeInterval(-60)
+        ),
+        "a crash report from before this start must not decide the recovery"
+    )
+    try? crashReport(indicator: "Launch Constraint Violation").write(
+        to: crashDirectory.appendingPathComponent("codexbar-display-2026-10-20-095314.ips"),
+        atomically: true,
+        encoding: .utf8
+    )
+    require(
+        runtimeLaunchWasBlockedBySignature(
+            crashDirectory: crashDirectory,
+            helperPath: helperPath,
+            since: Date().addingTimeInterval(-60)
+        ),
+        "a launch constraint kill during this start must be found in the crash reports"
+    )
+    try? FileManager.default.trashItem(at: crashDirectory, resultingItemURL: nil)
     let updateStatus = InstallationFailure.updateMismatch.installationStatus
     require(
         updateStatus.title == "VibeTV update didn’t finish"
