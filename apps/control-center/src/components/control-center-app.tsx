@@ -5343,7 +5343,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // Not found is one dialog like the others: it waits behind the same
   // higher-priority dialogs, and it is not shown during a firmware update.
   // A "Not now" comes back the next time VibeTV is found and lost again.
-  if (!vibetvNotFound(device) && vibetvNotFoundDismissed) {
+  // Only a connected VibeTV counts as found: a short "starting" or an
+  // inconclusive probe during the same outage keeps the dismissal. In its
+  // anti-flap grace the companion reports a recently seen VibeTV as connected
+  // while still "reconnecting"; that is not a found VibeTV either.
+  if (
+    deviceIsCustomerConnected(device) &&
+    device.connectionState !== "reconnecting" &&
+    vibetvNotFoundDismissed
+  ) {
     setVibetvNotFoundDismissed(false);
   }
   const vibetvNotFoundOpen =

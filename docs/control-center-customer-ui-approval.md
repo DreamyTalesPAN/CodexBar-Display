@@ -10047,6 +10047,21 @@ issue scope, or release permission never implies UI permission.
 - What's new: none — #784 focus ring on open: no new content
 
 ## 2026-10-20 — #798: approval marker after merging claude/group-calm-redesign
+## 2026-10-20 — #816: "Not now" on "VibeTV not found" holds through a short status change in the same outage (#787)
+
+- User approval: pending — Paul reviews (Codex finding #787 on #784); before → after: after "Not now" on the Overview's "VibeTV not found" dialog, a short in-between status (reconnecting, inconclusive check) during the same outage cleared the choice and the dialog came back when VibeTV was still missing → "Not now" holds until VibeTV is connected again; after a real reconnect and a new loss the dialog shows again as before. No new or changed text, layout or look.
+- Approved customer-visible result: the "VibeTV not found" dialog as in #784, shown once per outage after "Not now".
+- Scope: `apps/control-center/src/components/control-center-app.tsx`, its new test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #816: "Not now" also holds while the companion keeps a recently seen VibeTV "connected" during reconnecting (Codex review)
+
+- User approval: pending — Paul reviews (Codex review fix on #816); before → after: in the companion's short anti-flap grace a recently seen cable VibeTV is reported connected while it is still reconnecting; that cleared "Not now" and the "VibeTV not found" dialog came back in the same outage → only a connected VibeTV that is no longer reconnecting ends the outage. No new or changed text, layout or look.
+- Approved customer-visible result: as in the #816 entry above.
+- Scope: `apps/control-center/src/components/control-center-app.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #816: approval marker after merging claude/group-calm-redesign
 
 - User approval: Merge of claude/group-calm-redesign into this branch; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
@@ -10322,3 +10337,16 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #821 the setup tile draws the same sprite as the VibeTV at every moment.
 - Scope: #821 `apps/control-center/src/components/setup/setup-display-previews.ts`, `setup-display-theme-tiles.tsx`, `setup-display-mode-screen.tsx` (type), `apps/control-center/src/components/live-vibetv-preview.tsx` (frame type), the test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #821 Codex fix not announced
+## 2026-10-20 — #816: approval marker after merging claude/group-calm-redesign
+
+- User approval: Merge of claude/group-calm-redesign into this branch; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #816: approval marker after merging claude/group-calm-redesign at ece7b388
+
+- User approval: merge of claude/group-calm-redesign (ece7b388) into #816; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: #816 as in its own entries (pending, Paul reviews) plus the entries merged with ece7b388; nothing else changes.
+- Scope: the merge of ece7b388 and this approval record. Pull request branch #816 only, not merged, not released.
+- What's new: none — merge of ece7b388, no customer-visible change of its own
