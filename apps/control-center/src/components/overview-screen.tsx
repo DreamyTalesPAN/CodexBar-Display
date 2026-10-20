@@ -177,12 +177,15 @@ export function OverviewScreen({
   }, []);
 
   return (
-    <div className="mx-auto max-w-[1180px]">
+    <div className="flex w-full flex-1 flex-col pb-8">
+      {/* The page fills the window's height (#784 point 1): the numbers sit at
+          the bottom, "VibeTV is connected" and the device are centred as one
+          group in the space above them. */}
       <section
         aria-labelledby="vibetv-overview-title"
-        className="mt-7 flex flex-col items-center"
+        className="mt-7 flex flex-1 flex-col items-center"
       >
-        <div className="flex items-center gap-3">
+        <div className="mt-auto flex items-center gap-3">
           {connected ? (
             <span
               aria-hidden
@@ -203,7 +206,7 @@ export function OverviewScreen({
           </h2>
         </div>
 
-        <div className="relative mt-3 flex w-full justify-center">
+        <div className="relative mt-3 mb-5 flex w-full justify-center">
           {use3D ? (
             <div
               // Until the 3D is revealed it is only drawn in the background:
@@ -217,7 +220,7 @@ export function OverviewScreen({
               inert={threeReady ? undefined : true}
             >
               <VibeTV3DPreview
-                className="-my-5 aspect-[640/411] max-w-[640px]"
+                className="-my-[22px] aspect-[640/411] max-w-[718px]"
                 device={device}
                 displayFrame={displayFrame}
                 onReady={onThreeReady}
@@ -227,7 +230,7 @@ export function OverviewScreen({
             </div>
           ) : null}
           {threeReady ? null : (
-            <div className="w-[392px] max-w-full">
+            <div className="w-[440px] max-w-full">
               <LiveVibeTVPreview
                 device={device}
                 displayFrame={displayFrame}
@@ -238,7 +241,7 @@ export function OverviewScreen({
           )}
         </div>
 
-        <dl className="mt-5 grid w-full grid-cols-2 gap-x-8 gap-y-5 border-t border-foreground/10 pt-5 text-[13px] lg:grid-cols-4">
+        <dl className="mt-auto grid w-full grid-cols-2 gap-x-8 gap-y-5 border-t border-foreground/10 pt-5 text-[13px] min-[960px]:grid-cols-4">
           <Fact
             label={windowsHost ? "App" : "Mac App"}
             line={updateLine(macAppUpdate)}

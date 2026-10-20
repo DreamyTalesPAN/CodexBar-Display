@@ -144,7 +144,8 @@ try {
   await page.getByRole("button",{name:"Add manually",exact:true}).click();
   await page.getByRole("button",{name:/^Reset countdown/}).click();
   await openDetails();
-  await page.getByLabel("Reset for",{exact:true}).selectOption("2");
+  await page.getByRole("combobox",{name:"Reset for",exact:true}).click();
+  await page.getByRole("option",{name:"Second usage window",exact:true}).click();
   await page.getByRole("button",{name:"Deselect element",exact:true}).click();
 
   const attachmentPicker=page.locator('input[type="file"][accept="image/png,image/jpeg,image/webp"]');

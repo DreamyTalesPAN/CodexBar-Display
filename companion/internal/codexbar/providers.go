@@ -41,6 +41,17 @@ var dashboardProbeBudget = perProviderProbeTimeout
 // wrap a check must be at least this long.
 const ProviderCheckBudget = perProviderProbeTimeout + 5*time.Second
 
+// exactProviderProbeTimeout caps the check of the one provider a customer
+// switched on or asked to check again. A Mac whose only Claude sign-in is
+// Claude Code's Keychain item gets its answer from CodexBar's Claude CLI path,
+// which took 55 s for a customer (#786). Nobody waits on this check with a
+// request (see companionapi), so it gets more time than an unattended scan.
+const exactProviderProbeTimeout = 90 * time.Second
+
+// ExactProviderCheckBudget is the longest one exact provider check takes:
+// the 5 s inventory read plus its probe.
+const ExactProviderCheckBudget = exactProviderProbeTimeout + 5*time.Second
+
 // maxParallelProviderProbes matches Win-CodexBar's own refresh
 // (MAX_CONCURRENT_PROVIDER_FETCHES = 8), which also asks the switched-on
 // providers side by side.

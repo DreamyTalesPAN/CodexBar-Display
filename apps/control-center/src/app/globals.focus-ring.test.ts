@@ -39,12 +39,14 @@ const light = themeBlock(":root {");
 const dark = themeBlock(".dark {");
 
 describe("keyboard focus ring colour", () => {
-  it("uses the ink colour on the light theme", () => {
-    expect(token(light, "ring")).toBe(token(light, "foreground"));
+  // Paul, 20.10.2026 (via the communicator): the ring is the template's olive
+  // (--ring in "Calm Redesign - alle Screens": #506600 light, #CCFF00 dark).
+  it("uses the template's olive on the light theme", () => {
+    expect(token(light, "ring")).toBe("#506600");
   });
 
-  it("uses the ink colour on the dark theme", () => {
-    expect(token(dark, "ring")).toBe(token(dark, "foreground"));
+  it("uses the template's lime on the dark theme", () => {
+    expect(token(dark, "ring")).toBe("#CCFF00");
   });
 
   it("keeps at least 3:1 against the page background, in both themes", () => {
@@ -52,13 +54,28 @@ describe("keyboard focus ring colour", () => {
     expect(contrast(token(dark, "ring"), token(dark, "background"))).toBeGreaterThanOrEqual(3);
   });
 
-  it("keeps the ink ring on invalid inputs with keyboard focus, in both themes", () => {
+  // Paul, 20.10.2026 (7197 review): an invalid field shows the full RED ring,
+  // under the keyboard too, and as thick as the ink ring (2 px).
+  it("shows the full red ring on invalid inputs with keyboard focus, in both themes", () => {
     const input = readFileSync(
       path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "components", "ui", "input.tsx"),
       "utf8",
     );
-    expect(input).toContain("aria-invalid:focus-visible:ring-ring");
-    expect(input).toContain("dark:aria-invalid:focus-visible:ring-ring");
+    expect(input).toContain("aria-invalid:focus-visible:ring-destructive");
+    expect(input).not.toContain("aria-invalid:focus-visible:ring-ring");
+    expect(contrast(token(light, "destructive"), token(light, "background"))).toBeGreaterThanOrEqual(3);
+    expect(contrast(token(dark, "destructive"), token(dark, "background"))).toBeGreaterThanOrEqual(3);
+  });
+
+  // 7197 review point 4: border + a 1 px ring = 2 px, never the old 3 px halo.
+  it("draws the keyboard focus ring and the invalid ring 2 px thick on the shared controls", () => {
+    const uiDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "components", "ui");
+    for (const name of ["input", "textarea", "select", "checkbox", "switch", "button", "tabs", "input-group"]) {
+      const text = readFileSync(path.join(uiDir, `${name}.tsx`), "utf8");
+      expect(text, name).not.toMatch(/focus-visible:ring-(?:2|3|\[3px\])\b/);
+      expect(text, name).not.toMatch(/(?:^|[\s"])(?:aria-invalid:ring-(?:2|3)|dark:aria-invalid:ring-)/);
+      expect(text, name).toMatch(/ring-1/);
+    }
   });
 
   it("draws the default outline of native controls at full strength", () => {
