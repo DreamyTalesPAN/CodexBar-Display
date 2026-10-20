@@ -7893,3 +7893,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #727 changes a document and a test only; nothing customers see changes.
 - Scope: `docs/control-center-accessibility.md`, the new `apps/control-center/src/test/accessibility-doc.test.ts` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #727 docs and tests only
+
+## 2026-10-20 — #727: approval marker after merging main at 12205356
+
+- User approval: no visible change – UI approval not needed (merge of main (12205356) into #727; the own entries of #727 keep their approvals)
+- Approved customer-visible result: #727 as in its own entries plus the entries merged with 12205356; nothing else changes.
+- Scope: the merge of 12205356 and this approval record. Pull request branch #727 only, not merged, not released.
+- What's new: none — merge of 12205356, no customer-visible change of its own
