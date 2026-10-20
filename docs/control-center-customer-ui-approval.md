@@ -8492,7 +8492,7 @@ issue scope, or release permission never implies UI permission.
 ## 2026-10-20 — #778: an invalid field with keyboard focus shows the full ink focus ring
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 09:05: "ja" (to the picture ui/817-invalid-focus/rot-close.png, question "Passt das so?"; the final #817 look is the red focus ring on every invalid field) — entry: #778: an invalid field with keyboard focus shows the full ink focus ring — before → after: a focused invalid field showed the red, reduced invalid ring → the full ink focus ring on a focused invalid field (light and dark), the red border stays and the red ring stays when the field is not focused. Nothing else changes.
-- Approved customer-visible result: pending — Paul reviews; a focused invalid input group shows the full ink focus ring with its red border, nothing else changes.
+- Approved customer-visible result: Replaced by Paul's correction below (red focus ring on every invalid field); this entry's ink ring is not shipped.
 - Scope: `apps/control-center/src/components/ui/input-group.tsx`, its new test `apps/control-center/src/components/ui/input-group.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
@@ -8578,3 +8578,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #817 as in its own entries (the red 2 px focus ring on invalid fields, Paul's yes of 2026-10-20 09:05) on top of the merged calm redesign with its olive ring; nothing else changes.
 - Scope: the merge of e51f999f (conflicts in the shared controls and `globals.focus-ring.test.ts` resolved by keeping the redesign's 2 px structure and #817's red-on-invalid classes, including the checked checkbox rule) and this approval record. Pull request branch #817 only, not merged, not released.
 - What's new: none — merge of e51f999f, no customer-visible change of its own
+
+## 2026-10-20 — #817: result lines of approved entries cleaned up
+
+- User approval: no visible change – UI approval not needed (#817 record cleanup: entries that already carry Paul's approval no longer start their result line with "pending"/"Draft")
+- Approved customer-visible result: #817 unchanged; only the wording of the approval record.
+- Scope: #817 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #817 record cleanup
