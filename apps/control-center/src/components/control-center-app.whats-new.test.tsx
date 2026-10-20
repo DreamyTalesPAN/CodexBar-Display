@@ -265,6 +265,11 @@ it("tells a set-up customer what is new once, on Overview, until they close it",
   expect(list.className).toContain("overflow-y-auto");
   expect(notice()!.className).not.toContain("overflow-y-auto");
   expect(list.contains(within(notice()!).getByRole("button", { name: "Got it" }))).toBe(false);
+  // The template spaces the entries 20 px apart and sets "Show me in ..." as one 20 px line, 4 px under the sentence.
+  expect(list.className).toContain("gap-5");
+  const showMe = within(notice()!).getAllByRole("button", { name: /^Show me in/ })[0];
+  expect(showMe.className).toContain("h-5");
+  expect(showMe.className).toContain("mt-0.5");
 
   const text = notice()?.textContent ?? "";
   expect(text).toContain("Version 1.0.63");

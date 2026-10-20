@@ -176,6 +176,9 @@ describe("SettingsScreen standby controls", () => {
     expect(cable).toMatch(
       /Run setup again<\/p><p[^>]*>Connect this Mac to another VibeTV\.<\/p><\/div><button[^>]*><span>Run setup<\/span><\/button><\/div><div[^>]*><div[^>]*><p[^>]*>Factory reset<\/p><p[^>]*>VibeTV forgets its WiFi details, pairing, settings and themes\.<\/p><\/div><button[^>]*><span>Reset…<\/span><\/button>/,
     );
+    // The template's outline buttons have 14 px of side space (border included in the 36 px box).
+    expect(cable).toMatch(/<button[^>]*class="[^"]*\bpx-3\.5\b[^"]*"[^>]*><span>Run setup<\/span>/);
+    expect(cable).toMatch(/<button[^>]*class="[^"]*\bpx-3\.5\b[^"]*"[^>]*><span>Reset…<\/span>/);
     expect(cable.match(/Connect this Mac to another VibeTV\./g)).toHaveLength(1);
     expect(wifi).toContain("Connect this Mac to another VibeTV.");
     expect(wifi).not.toContain("VibeTV forgets");
