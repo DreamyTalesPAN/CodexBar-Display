@@ -4216,6 +4216,10 @@ func TestInspectDisplayStreamCountsAnErrorStampedWithItsFrame(t *testing.T) {
 	if stream.Healthy || stream.ErrorCode != "provider_setup_required" {
 		t.Fatalf("an error stamped with its frame was ignored: %+v", stream)
 	}
+	// The page compares this stamp with the end of a firmware update (#829).
+	if stream.ErrorAt != frameAt.UTC().Format(time.RFC3339) {
+		t.Fatalf("errorAt=%q, want the error line's time %s", stream.ErrorAt, frameAt.UTC().Format(time.RFC3339))
+	}
 }
 
 func TestInspectDisplayStreamReportsPairingErrorBeforeFirstFrame(t *testing.T) {
@@ -12856,7 +12860,7 @@ func TestFirmwareUpdateCurrentFirmwareWithStreamFailureNeedsAttention(t *testing
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if job.Phase != "attention" || job.Outcome != "firmware_current_stream_attention" || job.Result == nil || !job.Result.HealthVerified || job.Result.StreamVerified {
+	if job.Phase != "attention" || job.Outcome != "firmware_current_stream_restart_attention" || job.Result == nil || !job.Result.HealthVerified || job.Result.StreamVerified {
 		t.Fatalf("current firmware with a broken stream must need attention without another flash: %+v", job)
 	}
 }
