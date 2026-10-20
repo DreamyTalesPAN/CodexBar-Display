@@ -7990,6 +7990,62 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of 4b0831d7 and this approval record. Pull request branch #819 only, not merged, not released.
 - What's new: none — merge of 4b0831d7, no customer-visible change of its own
 
+## 2026-10-20 — #826: setup carries on by itself when the display stream shows up after a firmware update
+
+- User approval: pending — #826 no new wording; not seen by Paul. Behavior only: the existing "Firmware current — attention needed" dialog in setup closes by itself and setup continues, when the Companion reported only a not-yet-seen display stream and the stream then proves healthy.
+- Approved customer-visible result: #826 unchanged texts, dialogs and layout. After a firmware update whose only open point was the display stream, setup no longer stays on the dialog if frames arrive within about two minutes; all other attention results keep the dialog as before.
+- Scope: #826 `apps/control-center/src/components/setup/setup-connect.ts`, `apps/control-center/src/components/control-center-app.tsx` and the test `apps/control-center/src/components/setup/setup-wizard.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — #826 not announced to customers
+
+## 2026-10-20 — #829: a stream that only waits for an AI provider also counts as recovered (Codex review)
+
+- User approval: pending — #829 Codex fix, no new wording; not seen by Paul. Before → after: #829 a VibeTV whose stream runs but reports "no AI provider set up yet" (the normal state before the provider step) kept setup on the attention dialog → #829 setup treats it as a recovered stream, as the Companion's own firmware check already does.
+- Approved customer-visible result: #829 unchanged texts, dialogs and layout; setup continues after the firmware update also before a provider is chosen.
+- Scope: #829 `apps/control-center/src/components/control-center-types.ts` (+ test), `apps/control-center/src/components/control-center-app.tsx`, a lint fix in `apps/control-center/src/components/setup/setup-connect.ts`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #829 Codex fix not announced
+
+## 2026-10-20 — #829: approval marker after merging main at e7e8319d
+
+- User approval: no visible change – UI approval not needed (merge of main (e7e8319d) into #829; the own entries of #829 keep their approvals)
+- Approved customer-visible result: #829 as in its own entries plus the entries merged with e7e8319d; nothing else changes.
+- Scope: the merge of e7e8319d and this approval record. Pull request branch #829 only, not merged, not released.
+- What's new: none — merge of e7e8319d, no customer-visible change of its own
+
+## 2026-10-20 — #829: approval marker after merging main at 12205356
+
+- User approval: no visible change – UI approval not needed (merge of main (12205356) into #829; the own entries of #829 keep their approvals)
+- Approved customer-visible result: #829 as in its own entries plus the entries merged with 12205356; nothing else changes.
+- Scope: the merge of 12205356 and this approval record. Pull request branch #829 only, not merged, not released.
+- What's new: none — merge of 12205356, no customer-visible change of its own
+
+## 2026-10-20 — #829: approval marker after merging main at 1f6d099d
+
+- User approval: no visible change – UI approval not needed (merge of main (1f6d099d) into #829; the own entries of #829 keep their approvals)
+- Approved customer-visible result: #829 as in its own entries plus the entries merged with 1f6d099d; nothing else changes.
+- Scope: the merge of 1f6d099d and this approval record. Pull request branch #829 only, not merged, not released.
+- What's new: none — merge of 1f6d099d, no customer-visible change of its own
+
+## 2026-10-20 — #829: approval marker after merging main at 4b0831d7
+
+- User approval: no visible change – UI approval not needed (merge of main (4b0831d7) into #829; the own entries of #829 keep their approvals)
+- Approved customer-visible result: #829 as in its own entries plus the entries merged with 4b0831d7; nothing else changes.
+- Scope: the merge of 4b0831d7 and this approval record. Pull request branch #829 only, not merged, not released.
+- What's new: none — merge of 4b0831d7, no customer-visible change of its own
+
+## 2026-10-20 — #829: stream recovery only on a reading from after the update
+
+- User approval: no visible change – UI approval not needed (#829 changes no screen and no text: the existing stream-attention hint after a firmware update now only closes by itself on a frame or provider-setup report from after the update, never on one from before it; Codex review on #829, confirmed by Marcus)
+- Approved customer-visible result: #829 unchanged screens and texts; in the rare case of a stale pre-update reading the hint stays open until a fresh reading arrives.
+- Scope: #829 setup/Updates stream-attention recovery check and the Companion's stream status field `errorAt`. Pull request branch only, not merged, not released.
+- What's new: none — #829 recovery check only
+
+## 2026-10-20 — #829: approval marker after merging main at 5f09bf54
+
+- User approval: no visible change – UI approval not needed (merge of main (5f09bf54) into #829; the own entries of #829 keep their approvals)
+- Approved customer-visible result: #829 as in its own entries plus the entries merged with 5f09bf54; nothing else changes.
+- Scope: the merge of 5f09bf54 and this approval record. Pull request branch #829 only, not merged, not released.
+- What's new: none — merge of 5f09bf54, no customer-visible change of its own
+
 ## 2026-10-20 — #840: approval marker after rebasing onto main at 5f09bf54
 
 - User approval: no visible change – UI approval not needed (#840 base switched from claude/818-rom-rescue-retry to main after #819 was merged as 5f09bf54; merged the final #819 branch and main, which carry the same tree; the own entries of #840 keep their approvals)
