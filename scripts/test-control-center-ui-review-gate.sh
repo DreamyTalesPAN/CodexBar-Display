@@ -977,7 +977,23 @@ test_unrecognized_approval_value_is_due() {
   assert_contains "$(run_gate "$repo")" "none of the accepted forms"
 }
 
+# The approval log grows past execFileSync's default 1 MiB buffer on long-lived
+# branches; the gate must still read the whole diff (#823).
+test_approval_log_over_one_mib_is_read() {
+  local repo="${TMP_ROOT}/big-log"
+  setup_repo "$repo"
+  python3 -c 'import sys; sys.stdout.write("".join("\n## filler %d\n\n- %s\n" % (i, "x" * 200) for i in range(6000)))' \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" add docs/control-center-customer-ui-approval.md
+  git -C "$repo" commit -q -m "Big approval log on base"
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Change customer-facing UI"
+  commit_approval "$repo" "Updated overview after a big log"
+  expect_gate_success "$repo"
+}
+
 test_non_ui_commits_do_not_block
+test_approval_log_over_one_mib_is_read
 test_ui_change_blocks_immediately
 test_working_tree_ui_change_blocks_immediately
 test_explicit_approval_resets_gate

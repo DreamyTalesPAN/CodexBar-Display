@@ -9,6 +9,10 @@ const repoRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
 }).trim();
 process.chdir(repoRoot);
 
+// The approval log is over 1 MiB on long-lived branches; execFileSync's default
+// 1 MiB buffer would cut it and the gate would read an empty diff.
+const GIT_MAX_BUFFER = 1 << 28;
+
 const APPROVAL_FILE = "docs/control-center-customer-ui-approval.md";
 const PRINCIPLES_FILE = "docs/control-center-ui-principles.md";
 // Approval commits committed after this moment must name the UI paths they
@@ -527,6 +531,7 @@ function printSummary({
 function git(args) {
   return execFileSync("git", args, {
     encoding: "utf8",
+    maxBuffer: GIT_MAX_BUFFER,
     stdio: ["ignore", "pipe", "pipe"],
   }).trim();
 }
