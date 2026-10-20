@@ -247,3 +247,126 @@ describe("Display mode tiles keep time-dependent fields moving", () => {
     expect(text).not.toContain("3h 0m");
   });
 });
+
+describe("Display mode tiles retry a theme pack that is not ready yet", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("draws the theme once the Companion answers after failing at first", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout", "Date"] });
+    let up = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        up
+          ? ({ ok: true, status: 200, json: async () => PACK } as Response)
+          : ({ ok: false, status: 503 } as Response),
+      ),
+    );
+    show([live("Claude", 64)]);
+    await settle();
+    // The plain tile stands in while the theme cannot be read.
+    expect(tiles(0)).toHaveLength(0);
+
+    up = true;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    await settle();
+
+    expect(tiles(0)).toHaveLength(1);
+    expect(tiles(0)[0].getAttribute("data-state")).toBe("live");
+  });
+
+  it("asks again when the first answer is the previous theme revision", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout", "Date"] });
+    let current = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          ({
+            ok: true,
+            status: 200,
+            json: async () => (current ? PACK : { ...PACK, specPath: "/themes/u/claude--8-old.json" }),
+          }) as Response,
+      ),
+    );
+    show([live("Claude", 64)]);
+    await settle();
+    expect(tiles(0)).toHaveLength(0);
+
+    current = true;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    await settle();
+
+    expect(tiles(0)).toHaveLength(1);
+  });
+});
+
+describe("Display mode tiles re-classify reset trust on every clock tick", () => {
+  const RESET_PACK = {
+    ...PACK,
+    spec: {
+      p: [{ t: "tx", x: 0, y: 0, w: 240, h: 40, s: 20, c: "#fff", v: "{reset}" }],
+    },
+  };
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function withDeadline(frameAt: string, resetSecs: number): SetupDisplayModePreview {
+    const base = live("Claude", 0);
+    return {
+      ...base,
+      frameAt,
+      frame: {
+        ...base.frame!,
+        resetSecs,
+        resetTrust: "live",
+        resetTrustSecs: 5 * 3600,
+        resetSource: "claude",
+        usageWindows: [{ id: "session", label: "Session", percent: 0, resetSecs }],
+      },
+    };
+  }
+
+  async function open(preview: SetupDisplayModePreview) {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout", "Date"] });
+    vi.setSystemTime(new Date("2026-10-20T08:00:00Z"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, status: 200, json: async () => RESET_PACK }) as Response),
+    );
+    show([preview]);
+    await settle();
+  }
+
+  it("says Reset unavailable once the last deadline runs out while the screen is open", async () => {
+    await open(withDeadline("2026-10-20T08:00:00Z", 30));
+    expect(tiles(0)[0].textContent).not.toContain("Reset unavailable");
+
+    await act(async () => {
+      vi.advanceTimersByTime(31_000);
+    });
+
+    expect(tiles(0)[0].textContent).toContain("Reset unavailable");
+    expect(tiles(0)[0].textContent).not.toContain("No active session");
+  });
+
+  it("says Reset unavailable once the 5 h trust horizon passes, whatever deadline is left", async () => {
+    // Read 4 h 59 m 30 s ago, with a deadline days away.
+    await open(withDeadline("2026-10-20T03:00:30Z", 3 * 24 * 3600));
+    expect(tiles(0)[0].textContent).not.toContain("Reset unavailable");
+
+    await act(async () => {
+      vi.advanceTimersByTime(31_000);
+    });
+
+    expect(tiles(0)[0].textContent).toContain("Reset unavailable");
+  });
+});

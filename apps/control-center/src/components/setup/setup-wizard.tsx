@@ -13,6 +13,7 @@ import type {
 } from "../control-center-types";
 import {
   activeThemeId,
+  livePreviewDisplayFrame,
   type DisplayFrameSnapshot,
 } from "../live-vibetv-preview";
 import type { ProviderItem } from "../provider-picker";
@@ -33,6 +34,7 @@ import {
   type SetupDisplayModePreview,
   type SetupDisplayModeProvider,
 } from "./setup-display-mode-screen";
+import { withSentActivity } from "./setup-display-previews";
 import {
   SetupFirmwareBlockedDialog,
   SetupFirmwareUpdateFailedDialog,
@@ -1030,14 +1032,20 @@ export function SetupWizard(props: SetupWizardProps) {
       : pickedTheme
         ? { id: pickedTheme.id, specPath: pickedTheme.themeSpecPath }
         : null;
+    // The activity verdict is the one in the frame last sent to VibeTV: the
+    // usage service's own activity is from before the daemon decides it.
+    const displayPreviews = withSentActivity(
+      props.automaticPreviews,
+      livePreviewDisplayFrame(props.device, props.displayFrame),
+    );
     return (
       <>
         <SetupDisplayModeScreen
           {...help}
-          automaticPreview={props.automaticPreviews[0] ?? null}
-          automaticPreviews={props.automaticPreviews}
+          automaticPreview={displayPreviews[0] ?? null}
+          automaticPreviews={displayPreviews}
           manualPreview={
-            props.automaticPreviews.find(
+            displayPreviews.find(
               (preview) =>
                 preview.providerLabel ===
                 props.displayProviders.find(

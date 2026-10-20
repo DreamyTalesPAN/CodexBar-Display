@@ -145,6 +145,40 @@ describe("SetupWizard: display step tiles", () => {
     ).not.toHaveLength(0);
   });
 
+  it("shows the activity VibeTV was last sent, not what the usage service reported", async () => {
+    const withActivity = { ...withValues, frame: { ...frame, activity: undefined } };
+    const props = baseProps({
+      automaticPreviews: [withActivity],
+      displayProviders: [{ id: "claude", label: "Claude" }],
+      device: {
+        activeTheme: "synthwave", connected: true, active: true, paired: true,
+        display: { themeSpec: { path: "/themes/u/synth--1.json" } },
+      } as SetupWizardProps["device"],
+      displayFrame: {
+        ok: true,
+        savedAt: new Date().toISOString(),
+        frame: { ...frame, activity: "coding" },
+      } as SetupWizardProps["displayFrame"],
+    });
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }) as unknown as typeof window.matchMedia;
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true, status: 200,
+      json: async () => ({
+        assets: {},
+        spec: { p: [{ t: "tx", x: 0, y: 0, w: 240, h: 40, s: 20, c: "#fff", b: "act" }] },
+        themeId: "synthwave", specPath: "/themes/u/synth--1.json",
+      }),
+    }) as Response));
+    render(<SetupWizard {...props} />);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    const tile = document.querySelector('[data-slot="display-mode-tile"]');
+    expect(tile?.textContent).toContain("coding");
+    expect(tile?.textContent).not.toContain("idle");
+  });
+
   it("uses the theme picked on the previous step before the device names one", async () => {
     const props = baseProps({
       automaticPreviews: [withValues],

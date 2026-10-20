@@ -5,6 +5,8 @@ import {
   displayPreviewFor,
   displayPreviewsFor,
   providerSlotsFor,
+  withResetTrust,
+  withSentActivity,
 } from "./setup-display-previews";
 
 function provider(fields: Partial<UsageProviderInfo>): UsageProviderInfo {
@@ -322,6 +324,7 @@ describe("reset trust in the synthesized frames", () => {
         collectedAt: stamped,
         windows: [{ id: "session", label: "Session", usedPercent: 10, resetSecs: 3600 }],
       }),
+      at,
     )?.frame;
 
     expect(frame).toMatchObject({ resetTrust: "live", resetTrustSecs: 5 * 3600 });
@@ -387,5 +390,65 @@ describe("reset trust in the synthesized frames", () => {
     expect(frame?.resetSecs).toBe(7200);
     const data = buildFrameData(stamped, frame!, at);
     expect(renderTextPrimitive({ type: "text", text: "{reset}" }, data)).not.toBe("Reset unavailable");
+  });
+});
+
+describe("the activity verdict", () => {
+  it("does not take activity from the usage service, which lacks the daemon's verdict", () => {
+    const frame = displayPreviewFor(provider({ collectedAt: "2026-10-20T08:00:00Z", activity: "coding" }))?.frame;
+
+    expect(frame?.activity).toBeUndefined();
+  });
+
+  it("puts the activity of the frame last sent to VibeTV on that provider's preview only", () => {
+    const stamped = "2026-10-20T08:00:00Z";
+    const previews = displayPreviewsFor(
+      {
+        generatedAt: stamped,
+        providers: [
+          provider({ id: "codex", label: "Codex", collectedAt: stamped }),
+          provider({ id: "claude", label: "Claude", collectedAt: stamped }),
+        ],
+      } as UsageSnapshot,
+      [
+        { id: "codex", label: "Codex" },
+        { id: "claude", label: "Claude" },
+      ],
+    );
+
+    const shown = withSentActivity(previews, { frame: { provider: "codex", activity: "coding" } });
+
+    expect(shown[0].frame?.activity).toBe("coding");
+    expect(buildFrameData(stamped, shown[0].frame!, new Date(stamped)).activity).toBe("coding");
+    expect(shown[1].frame?.activity).toBeUndefined();
+    expect(buildFrameData(stamped, shown[1].frame!, new Date(stamped)).activity).toBe("idle");
+    // Nothing sent yet: the previews are untouched.
+    expect(withSentActivity(previews, null)).toBe(previews);
+  });
+});
+
+describe("withResetTrust on a later clock reading", () => {
+  const stamped = "2026-10-20T08:00:00Z";
+
+  it("turns a live frame stale once its deadline has run out", () => {
+    const frame = displayPreviewFor(
+      provider({ collectedAt: stamped, windows: [{ id: "session", label: "Session", usedPercent: 0, resetSecs: 30 }] }),
+      new Date(stamped),
+    )!.frame!;
+    expect(frame.resetTrust).toBe("live");
+
+    const later = withResetTrust(frame, stamped, new Date("2026-10-20T08:01:00Z"));
+
+    expect(later).toMatchObject({ resetTrust: "stale", resetSecs: 0 });
+    expect(later.usageWindows?.[0].resetSecs).toBe(0);
+  });
+
+  it("keeps a stale frame stale instead of reading it as an idle account", () => {
+    const stale = displayPreviewFor(
+      provider({ collectedAt: stamped, windows: [{ id: "session", label: "Session", usedPercent: 0, resetSecs: 30 }] }),
+      new Date("2026-10-20T08:01:00Z"),
+    )!.frame!;
+
+    expect(withResetTrust(stale, stamped, new Date("2026-10-20T08:02:00Z")).resetTrust).toBe("stale");
   });
 });

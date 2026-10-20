@@ -6,12 +6,14 @@ import { loadLocalThemeRenderPack } from "@/lib/local-theme-render-pack";
 import { normalizeThemeSpecHash } from "../control-center-runtime";
 import {
   buildFrameData,
+  THEME_PACK_RETRY_MS,
   fetchThemeRenderPackRevision,
   ThemeSpecPreview,
   themeRenderPackMatchesActiveRevision,
   type ThemeRenderPack,
 } from "../live-vibetv-preview";
 import type { SetupDisplayModePreview } from "./setup-display-mode-screen";
+import { withResetTrust } from "./setup-display-previews";
 
 /** The theme VibeTV is showing, which the tiles draw. */
 export type SetupDisplayModeTheme = {
@@ -42,6 +44,7 @@ export function useThemeRenderPack(
     pack: ThemeRenderPack | null;
     status: "ready" | "error";
   } | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
 
   useEffect(() => {
     if (!themeId) {
@@ -56,6 +59,16 @@ export function useThemeRenderPack(
       return () => window.clearTimeout(timer);
     }
     const controller = new AbortController();
+    let retryTimer: number | undefined;
+    // Never a terminal error, as in the Overview's loader: the Companion may
+    // still be starting, its pack cache building, or the first answer carry the
+    // previous theme revision. The plain tiles stand in meanwhile.
+    const scheduleRetry = () => {
+      retryTimer = window.setTimeout(
+        () => setRetryNonce((nonce) => nonce + 1),
+        THEME_PACK_RETRY_MS,
+      );
+    };
     fetchThemeRenderPackRevision(themeId, specPath, specHash, controller.signal)
       .then((payload) => {
         const matches = themeRenderPackMatchesActiveRevision(
@@ -68,15 +81,24 @@ export function useThemeRenderPack(
           pack: matches ? payload : null,
           status: matches ? "ready" : "error",
         });
+        if (!matches) {
+          scheduleRetry();
+        }
       })
       .catch((error) => {
         if (error instanceof DOMException && error.name === "AbortError") {
           return;
         }
         setState({ key, pack: null, status: "error" });
+        scheduleRetry();
       });
-    return () => controller.abort();
-  }, [key, specHash, specPath, themeId]);
+    return () => {
+      controller.abort();
+      if (retryTimer !== undefined) {
+        window.clearTimeout(retryTimer);
+      }
+    };
+  }, [key, retryNonce, specHash, specPath, themeId]);
 
   if (!themeId) {
     return { pack: null, status: "error" };
@@ -197,7 +219,13 @@ function ThemeTile({
   const data = useMemo(
     () =>
       frame.frame
-        ? buildFrameData(frame.frameAt, frame.frame, now)
+        ? buildFrameData(
+            frame.frameAt,
+            // As the device does on every draw: an expired deadline or trust
+            // horizon turns the frame stale and clears its countdowns.
+            withResetTrust(frame.frame, frame.frameAt, now),
+            now,
+          )
         : null,
     [frame.frame, frame.frameAt, now],
   );

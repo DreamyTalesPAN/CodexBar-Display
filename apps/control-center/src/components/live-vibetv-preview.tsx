@@ -612,7 +612,7 @@ const RECONNECT_FRAME_GRACE_MS = 120_000;
 
 // Retry cadence for the theme render pack while it is unavailable or does not
 // match the device's active revision yet.
-const THEME_PACK_RETRY_MS = 5_000;
+export const THEME_PACK_RETRY_MS = 5_000;
 
 function frameFreshForReconnect(
   displayFrame: DisplayFrameSnapshot | null | undefined,

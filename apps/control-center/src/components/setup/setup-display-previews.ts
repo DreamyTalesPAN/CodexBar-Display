@@ -134,11 +134,21 @@ function hasCountdown(frame: DisplayFrame, age: number): boolean {
   );
 }
 
-function withResetTrust(
+/**
+ * Classifies a frame's countdowns as of `now`, exported so a tile re-runs it on
+ * every clock tick: the device does this each time it draws, so an expired
+ * deadline or an expired trust horizon turns the frame stale while the screen
+ * is open. A frame that is already stale stays stale (its deadlines are gone,
+ * so there is nothing left that could make it live again).
+ */
+export function withResetTrust(
   frame: DisplayFrame,
   collectedAt: string | undefined,
   now: Date,
 ): DisplayFrame {
+  if (frame.resetTrust === "stale") {
+    return frame;
+  }
   const basisKnown = Boolean(collectedAt) && !Number.isNaN(new Date(collectedAt!).getTime());
   const source = resetSourceKey(frame.provider ?? "");
   // ApplyResetTrust: a countdown that was positive when read and has run out by
@@ -203,7 +213,9 @@ export function displayFrameFor(
     usageWindows: readable,
     // Cross-provider rows (pv1*/pv2* in a theme), from the complete provider set.
     providerSlots: providerSlotsFor(allProviders, provider.collectedAt),
-    activity: provider.activity,
+    // No activity here: /v1/usage's provider.activity is the collector snapshot
+    // from before the daemon applies its verdict. The verdict is the one in the
+    // frame last sent to the device (withSentActivity).
     sessionTokens: provider.sessionTokens,
     weekTokens: provider.weekTokens,
     totalTokens: provider.totalTokens,
@@ -288,5 +300,28 @@ export function displayPreviewsFor(
         resetLabel: null,
         windows: [],
       },
+  );
+}
+
+/**
+ * The activity verdict VibeTV was last sent, put on the preview of the provider
+ * that frame was for. The daemon decides coding/idle from usage and token deltas
+ * after /v1/usage is built, so the device's frame is the only authority; every
+ * other provider keeps no verdict (idle), as it would on the device until it is
+ * the one being sent.
+ */
+export function withSentActivity(
+  previews: SetupDisplayModePreview[],
+  sent: { frame?: DisplayFrame } | null | undefined,
+): SetupDisplayModePreview[] {
+  const provider = sent?.frame?.provider;
+  const activity = sent?.frame?.activity;
+  if (!provider || !activity) {
+    return previews;
+  }
+  return previews.map((preview) =>
+    preview.frame?.provider === provider && preview.frame.activity !== activity
+      ? { ...preview, frame: { ...preview.frame, activity } }
+      : preview,
   );
 }

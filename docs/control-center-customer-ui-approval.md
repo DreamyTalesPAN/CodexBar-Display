@@ -8075,3 +8075,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #821 the setup tile draws the same reset text as the VibeTV would; nothing else changes.
 - Scope: #821 `apps/control-center/src/components/setup/setup-display-previews.ts`, its test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #821 Codex fix not announced
+
+## 2026-10-20 — #821: setup tile activity, theme retry and live reset trust (Codex review)
+
+- User approval: pending — #821 Codex fixes on the single setup tile; the rendered result is pending Paul's review. Before → after: (1) #821 a theme that draws a different picture while coding (Clippy, Tiny Office) showed its idle picture on the tile while the VibeTV showed the coding one → #821 the tile takes the activity of the frame last sent to the VibeTV; (2) #821 if the Companion was still starting or its theme pack was not ready, the tile stayed on the plain preview until the screen was reopened → #821 it asks again every 5 s and draws the theme as soon as the pack is there; (3) #821 a tile left open past the last reset deadline or past the 5 h trust horizon kept counting down until the next usage update → #821 it shows "Reset unavailable" on the next second, exactly as the VibeTV does.
+- Approved customer-visible result: #821 the setup tile draws the same activity picture, theme and reset text as the VibeTV for the same frame; nothing else changes.
+- Scope: #821 `apps/control-center/src/components/setup/setup-display-previews.ts`, `setup-display-theme-tiles.tsx`, `setup-wizard.tsx`, their tests and this approval record; the unreferenced scratch scripts `apps/control-center/scripts/shots.mjs` and `shots-base.mjs` are removed. Pull request branch only, not merged, not released.
+- What's new: none — #821 Codex fixes not announced
