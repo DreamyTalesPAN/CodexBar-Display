@@ -8154,3 +8154,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #781 Studio fixes: the Theme Studio composer and Details end at the window's bottom edge, and the key dialog appears in one step like the other dialogs (same position, size and fade as the "Factory reset" dialog, no jump).
 - Scope: #781 Studio fixes in `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, `editable-theme-preview.tsx`, `openai-key-form.tsx`, their tests and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #781: Theme Studio colour field with a palette inside Details (7197 review, point 6)
+
+- User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #781 point 6 (Theme Studio colour picker). Before → after: the Color field was a small system colour square plus the hex code, and the system colour picker opened as a floating layer → the Color field inside "Details" under the preview shows the colour, its hex code and a chevron; its palette opens directly below the field, inside Details (it scrolls with Details, nothing opens above the preview) with 12 colours and no blue, and "More colours…" opens the system colour picker as before.
+- Approved customer-visible result: the colour field and its palette look as drawn in frame "Theme Studio: Farbwahl" (#studio-color) of "Calm Redesign - alle Screens"; the rows that are already in the app's Details stay as they are (the template's "Live information" and "Text size" rows are only placeholders).
+- Scope: `apps/control-center/src/components/theme-studio/editor-fields.tsx`, `apps/control-center/src/components/theme-studio/editor-fields.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
