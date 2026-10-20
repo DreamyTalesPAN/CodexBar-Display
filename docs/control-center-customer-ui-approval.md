@@ -8447,6 +8447,34 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/src/components/setup/setup-device-dialogs.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
+## 2026-10-20 — #784: build 2b QA, lime buttons fill their whole box and "What's new" spaces its entries as drawn
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: every lime button (Create, Install, Connect, Continue, Got it, Run diagnostics and so on) showed a 1 px frame of the page colour inside its box, so it looked 2 px lower and narrower than drawn → the lime fills the whole box (the same size, 36 px or 44 px high, as in the template); in "What's new" the entries were 24 px apart and "Show me in Themes / Settings" sat 2 px too close to the sentence above it and 6 px too far from the next entry → the entries are 20 px apart and the link sits 4 px under the sentence, as in frame 37. Nothing else changes.
+- Approved customer-visible result: lime buttons and the "What's new" dialog look like frames 5, 13, 24 and 37 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/ui/button.tsx`, `apps/control-center/src/components/whats-new-dialog.tsx`, their tests and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #784: build 2b QA, the Settings buttons "Run setup" and "Reset…" have the template's width (frame 3)
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: "Run setup" and "Reset…" in Settings were 4 px narrower than drawn (12 px of side space) → they have 14 px of side space, like the other outline buttons (89 → 93 px for "Run setup", 71 → 75 px for "Reset…"). Nothing else changes.
+- Approved customer-visible result: the Settings buttons look like frame 3 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/settings-screen.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #784: build 2b QA, a lime button with another fill (the round Send button) keeps no lime frame
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the entry above filled the lime buttons with a lime border; this change fills them by letting the fill run under the border instead, so a lime-variant button that is given another fill (the round grey/black "Send" button in the Theme Studio) shows no thin lime ring. The lime buttons look as in the entry above. Nothing else changes.
+- Approved customer-visible result: lime buttons fill their whole box; the round Send button in the Theme Studio is a plain circle as in frames 7-9 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/ui/button.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #784: the 3D VibeTV on the Overview waits for the theme pack also after an earlier settled screen (Codex review)
+
+- User approval: pending — Paul reviews (Codex review fix on #784); before → after: when the Overview first showed a settled screen (no VibeTV yet) and a VibeTV with its frame arrived later, the 3D VibeTV could replace the flat preview while its screen still said "Loading preview" → the 3D waits until the theme pack is in, as it already did when the VibeTV was connected from the start. Nothing else changes.
+- Approved customer-visible result: the 3D VibeTV appears only with its theme drawn, as in frame 1 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/live-vibetv-preview.tsx`, `apps/control-center/src/components/vibetv-3d-preview.tsx`, the recovery test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
 ## 2026-10-20 — #816: "Not now" on "VibeTV not found" holds through a short status change in the same outage (#787)
 
 - User approval: pending — Paul reviews (Codex finding #787 on #784); before → after: after "Not now" on the Overview's "VibeTV not found" dialog, a short in-between status (reconnecting, inconclusive check) during the same outage cleared the choice and the dialog came back when VibeTV was still missing → "Not now" holds until VibeTV is connected again; after a real reconnect and a new loss the dialog shows again as before. No new or changed text, layout or look.
