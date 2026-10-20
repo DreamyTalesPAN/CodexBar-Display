@@ -604,6 +604,7 @@ func (s *Server) whileProviderRevision(providerID string, providerRevision uint6
 // the new revision and does nothing.
 func (s *Server) awaitProviderFollowups() {
 	s.providerFollowupMu.Lock()
+	//lint:ignore SA2001 the empty section is the point: it waits until a running follow-up has finished.
 	s.providerFollowupMu.Unlock()
 }
 
