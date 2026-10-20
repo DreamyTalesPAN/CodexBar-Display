@@ -7852,6 +7852,27 @@ issue scope, or release permission never implies UI permission.
 - Scope: #827 merge 02905756 and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #827 merge 02905756 has no customer-visible change of its own
 
+## 2026-10-20 — #815: approval marker after merging main
+
+- User approval: no visible change – UI approval not needed (#815: approval marker after merging main: Merge of main into this branch; no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #815: approval marker after merging main at e7e8319d
+
+- User approval: no visible change – UI approval not needed (merge of main (e7e8319d) into #815; the own entries of #815 keep their approvals)
+- Approved customer-visible result: #815 as in its own entries plus the entries merged with e7e8319d; nothing else changes.
+- Scope: the merge of e7e8319d and this approval record. Pull request branch #815 only, not merged, not released.
+- What's new: none — merge of e7e8319d, no customer-visible change of its own
+
+## 2026-10-20 — #815: approval lines rewritten to the two accepted forms
+
+- User approval: no visible change – UI approval not needed (#815 record rewrite for the gate in #823; no customer-visible change)
+- Approved customer-visible result: #815 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
+- Scope: #815 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #815 approval record only
+
 ## 2026-10-19 — Theme tags in the catalog (data only, #793)
 - User approval: no visible change – UI approval not needed (#801 Theme tags in the catalog (data only, #793): data only, no visible change; not seen by Paul; the Features and Providers filter groups come in the later Appearance filter PR and need his yes there)
 - Approved customer-visible result: none. The theme catalog gets an optional `tags` field and the readers keep it; no screen, copy, control or layout changes.
