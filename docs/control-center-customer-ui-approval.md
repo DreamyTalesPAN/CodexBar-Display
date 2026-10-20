@@ -7967,3 +7967,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #827 merge 02905756 as in this branch's entries and the merged ones; nothing else changes.
 - Scope: #827 merge 02905756 and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #827 merge 02905756 has no customer-visible change of its own
+
+## 2026-10-20 — #785: approval marker after merging main at e7e8319d
+
+- User approval: no visible change – UI approval not needed (merge of main (e7e8319d) into #785; main.swift keeps both the #785 repair flag and the merged #626 screen check)
+- Approved customer-visible result: #785 as in its own entries plus the entries merged with e7e8319d; nothing else changes.
+- Scope: the merge of e7e8319d and this approval record. Pull request branch #785 only, not merged, not released.
+- What's new: none — merge of e7e8319d, no customer-visible change of its own
