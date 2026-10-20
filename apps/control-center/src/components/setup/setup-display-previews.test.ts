@@ -357,6 +357,21 @@ describe("reset trust in the synthesized frames", () => {
     expect(renderTextPrimitive({ type: "text", text: "{reset}" }, data)).toBe("Reset unavailable");
   });
 
+  it("marks the frame stale once the reading is older than the 5 h trust horizon, even with a later deadline", () => {
+    const later = new Date(new Date(stamped).getTime() + (5 * 3600 + 60) * 1000);
+    const preview = displayPreviewFor(
+      provider({
+        collectedAt: stamped,
+        windows: [{ id: "weekly", label: "Weekly", usedPercent: 10, resetSecs: 3 * 24 * 3600 }],
+      }),
+      later,
+    );
+
+    expect(preview?.frame).toMatchObject({ resetTrust: "stale", resetTrustSecs: 0, resetSecs: 0 });
+    const data = buildFrameData(stamped, preview!.frame!, later);
+    expect(renderTextPrimitive({ type: "text", text: "{reset}" }, data)).toBe("Reset unavailable");
+  });
+
   it("takes the root resetSecs from the first window that has a deadline, as Frame.Normalize does", () => {
     const frame = displayPreviewFor(
       provider({

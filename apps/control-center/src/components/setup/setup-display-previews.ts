@@ -144,9 +144,12 @@ function withResetTrust(
   // ApplyResetTrust: a countdown that was positive when read and has run out by
   // the time the frame leaves turns the frame stale -- "Reset unavailable" on
   // the device -- instead of a measured idle account (`hadCountdown`).
-  const ranOut =
-    hasCountdown(frame, 0) && !hasCountdown(frame, secondsSince(collectedAt, now));
-  if (!basisKnown || !source || ranOut) {
+  const age = secondsSince(collectedAt, now);
+  const ranOut = hasCountdown(frame, 0) && !hasCountdown(frame, age);
+  // ApplyResetTrust: a basis older than the trust horizon (5 h) is stale too,
+  // whatever deadline it still carries (`ResetTrustSec <= 0`).
+  const trustExpired = age >= RESET_TRUST_HORIZON_SECS;
+  if (!basisKnown || !source || ranOut || trustExpired) {
     return {
       ...frame,
       resetSecs: 0,

@@ -8068,3 +8068,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #821 reset fidelity: the tile treats an expired countdown as stale and takes the root reset from the first window that has a deadline, exactly as the host does; pending Paul's review.
 - Scope: #821 reset fidelity in `apps/control-center/src/components/setup/setup-display-previews.ts`, its test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #821 reset fidelity fix, no new content
+
+## 2026-10-20 — #821: a setup tile with usage older than 5 hours shows "Reset unavailable" (Codex review)
+
+- User approval: pending — #821 Codex fix on the single setup tile; the rendered result is pending Paul's review. Before → after: #821 a tile whose usage reading was more than five hours old but still carried a later deadline kept counting down that old reset → #821 the tile shows "Reset unavailable", exactly as the VibeTV does for the same frame (ApplyResetTrust, trust horizon 5 h).
+- Approved customer-visible result: #821 the setup tile draws the same reset text as the VibeTV would; nothing else changes.
+- Scope: #821 `apps/control-center/src/components/setup/setup-display-previews.ts`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #821 Codex fix not announced
