@@ -157,7 +157,7 @@ export function setupProviderDialogSentence(
       return "GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet.";
     }
     return setupProviderNeedsOwnApp(provider)
-      ? `VibeTV reads ${label} usage from ${label}'s own app, so make sure it is installed and signed in on this computer.`
+      ? `VibeTV can't read ${label} until the ${label} app is installed and running.`
       : `Sign in to ${label} so VibeTV can read its usage.`;
   }
   if (variant === "browser_sign_in") {

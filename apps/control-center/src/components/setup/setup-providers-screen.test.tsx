@@ -321,8 +321,8 @@ describe("SetupProvidersScreen", () => {
   it("says one fixed sentence per state, without engine text or a copy action", () => {
     const engine = "No available fetch strategy for openai.";
     const cases: [PreferenceHealthState, string][] = [
-      ["auth_required", "VibeTV reads OpenAI usage from OpenAI's own app, so make sure it is installed and signed in on this computer."],
-      ["setup_required", "VibeTV reads OpenAI usage from OpenAI's own app, so make sure it is installed and signed in on this computer."],
+      ["auth_required", "VibeTV can't read OpenAI until the OpenAI app is installed and running."],
+      ["setup_required", "VibeTV can't read OpenAI until the OpenAI app is installed and running."],
       ["browser_sign_in_required", "Sign in to OpenAI in your browser, then close the browser."],
       ["permission_required", "Allow access on this computer so VibeTV can read OpenAI usage."],
       ["unsupported", "OpenAI no longer works with this account, so switch it off and use another provider."],
@@ -433,7 +433,7 @@ describe("SetupProvidersScreen", () => {
     expect(setupProviderDialogSentence(copilotSignedOut))
       .toBe("GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet.");
     expect(setupProviderDialogSentence(openaiSignedOut)).toBe(
-      "VibeTV reads OpenAI usage from OpenAI's own app, so make sure it is installed and signed in on this computer.",
+      "VibeTV can't read OpenAI until the OpenAI app is installed and running.",
     );
   });
 

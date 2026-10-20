@@ -1066,7 +1066,7 @@ func TestProviderDisplayNameComesFromTheInventory(t *testing.T) {
 		t.Fatalf("display name = %q, want OpenAI API", got)
 	}
 	row := providerResult("openai", ProviderAuthRequired)
-	if row.Label != "OpenAI API" || row.Detail != "VibeTV reads OpenAI API usage from OpenAI API's own app, so make sure it is installed and signed in on this computer." {
+	if row.Label != "OpenAI API" || row.Detail != "VibeTV can't read OpenAI API until the OpenAI API app is installed and running." {
 		t.Fatalf("openai row = %+v", row)
 	}
 	if got := providerDisplayName("widgetx"); got != "Widgetx" {
@@ -1107,7 +1107,7 @@ func TestAggregateRowSentenceUsesTheInventoryLabel(t *testing.T) {
 	rows := providersWithSwitchState(context.Background(), "codexbar-bin",
 		[]ProviderReadiness{providerResult("openai", ProviderAuthRequired)})
 	if len(rows) != 1 || rows[0].Label != "OpenAI API" ||
-		rows[0].Detail != "VibeTV reads OpenAI API usage from OpenAI API's own app, so make sure it is installed and signed in on this computer." {
+		rows[0].Detail != "VibeTV can't read OpenAI API until the OpenAI API app is installed and running." {
 		t.Fatalf("aggregate row = %+v", rows)
 	}
 }
@@ -1119,7 +1119,7 @@ func TestNotConfiguredProviderRowSaysThePopupSentence(t *testing.T) {
 	if got := providerResult("claude", ProviderNotConfigured).Detail; got != "Sign in to Claude so VibeTV can read its usage." {
 		t.Fatalf("claude not configured: %q", got)
 	}
-	if got := providerResult("gemini", ProviderNotConfigured).Detail; got != "VibeTV reads Gemini usage from Gemini's own app, so make sure it is installed and signed in on this computer." {
+	if got := providerResult("gemini", ProviderNotConfigured).Detail; got != "VibeTV can't read Gemini until the Gemini app is installed and running." {
 		t.Fatalf("gemini not configured: %q", got)
 	}
 	if got := providerResult("codexbar", ProviderNotConfigured).Detail; got != "No usable AI provider is configured yet." {
@@ -1146,7 +1146,7 @@ func TestMixedAggregateRowNamesTheProviderWithoutAddingRows(t *testing.T) {
 	rows := providersWithSwitchState(context.Background(), "codexbar-bin",
 		[]ProviderReadiness{providerResult("codex", ProviderReady), providerResult("openai", ProviderAuthRequired)})
 	if len(rows) != 2 || rows[0].Status != ProviderReady || rows[1].ID != "openai" || rows[1].Label != "OpenAI API" ||
-		rows[1].Detail != "VibeTV reads OpenAI API usage from OpenAI API's own app, so make sure it is installed and signed in on this computer." {
+		rows[1].Detail != "VibeTV can't read OpenAI API until the OpenAI API app is installed and running." {
 		t.Fatalf("mixed aggregate rows = %+v", rows)
 	}
 }
