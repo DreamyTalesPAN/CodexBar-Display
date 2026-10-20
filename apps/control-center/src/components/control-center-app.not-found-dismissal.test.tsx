@@ -44,6 +44,16 @@ const inconclusive = {
   stream: { healthy: false, running: true },
 };
 
+// The companion's anti-flap grace (status.go withConfiguredConnectionState):
+// a recently seen cable VibeTV stays connected: true while reconnecting.
+const graceConnected = {
+  ...connected,
+  connected: true,
+  ready: false,
+  connectionState: "reconnecting",
+  stream: { healthy: false, running: true },
+};
+
 function jsonResponse(body: unknown, status = 200): Response {
   return {
     ok: status < 400,
@@ -144,6 +154,26 @@ it("keeps Not now through an inconclusive probe of the same outage", async () =>
   expect(notFoundDialog()).toBeNull();
 
   app.companion.device = inconclusive;
+  await app.wait(5);
+  expect(notFoundDialog()).toBeNull();
+
+  app.companion.device = notFound;
+  await app.wait(30);
+  expect(notFoundDialog()).toBeNull();
+});
+
+it("keeps Not now through a grace-connected reconnect of the same outage", async () => {
+  const app = startWindow();
+  await app.wait(10);
+  app.companion.device = notFound;
+  await app.wait(30);
+  expect(notFoundDialog()).not.toBeNull();
+
+  fireEvent.click(within(notFoundDialog()!).getByRole("button", { name: "Not now" }));
+  await app.wait(1);
+  expect(notFoundDialog()).toBeNull();
+
+  app.companion.device = graceConnected;
   await app.wait(5);
   expect(notFoundDialog()).toBeNull();
 

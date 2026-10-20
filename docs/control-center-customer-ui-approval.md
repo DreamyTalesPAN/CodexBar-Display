@@ -8453,3 +8453,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the "VibeTV not found" dialog as in #784, shown once per outage after "Not now".
 - Scope: `apps/control-center/src/components/control-center-app.tsx`, its new test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #816: "Not now" also holds while the companion keeps a recently seen VibeTV "connected" during reconnecting (Codex review)
+
+- User approval: pending — Paul reviews (Codex review fix on #816); before → after: in the companion's short anti-flap grace a recently seen cable VibeTV is reported connected while it is still reconnecting; that cleared "Not now" and the "VibeTV not found" dialog came back in the same outage → only a connected VibeTV that is no longer reconnecting ends the outage. No new or changed text, layout or look.
+- Approved customer-visible result: as in the #816 entry above.
+- Scope: `apps/control-center/src/components/control-center-app.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
