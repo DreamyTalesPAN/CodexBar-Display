@@ -89,6 +89,31 @@ expect 0 interpolated-ok
 grep -v ldscript "${WORK}/interpolated-ok.ini" >"${WORK}/interpolated-no-ldscript.ini"
 expect 1 interpolated-no-ldscript
 
+# Owner-qualified platform names are ESP8266 builds too.
+cat "${WORK}/ok.ini" >"${WORK}/owner-qualified.ini"
+printf '\n[env:owner]\nplatform = platformio/espressif8266@4.2.1\nboard_build.ldscript = eagle.flash.4m3m.ld\n' >>"${WORK}/owner-qualified.ini"
+expect 1 owner-qualified
+
+# [env] defaults apply only after every parent was searched.
+cat >"${WORK}/env-default-after-parents.ini" <<'INI'
+[env]
+board_build.ldscript = eagle.flash.4m2m.ld
+
+[bad]
+board_build.ldscript = eagle.flash.4m3m.ld
+
+[unrelated]
+build_flags = -DX=1
+
+[env:main]
+platform = espressif8266@4.2.1
+extends = bad, unrelated
+INI
+expect 1 env-default-after-parents
+
+sed 's/extends = bad, unrelated/extends = unrelated/' "${WORK}/env-default-after-parents.ini" >"${WORK}/env-default-only.ini"
+expect 0 env-default-only
+
 "$CHECK" >/dev/null || die "the repository's platformio.ini fails the check"
 
 echo "ESP8266 flash layout check tests passed"

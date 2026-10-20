@@ -35,7 +35,7 @@ def resolve(text, env, depth=0):
         return "" if found is None else resolve(found, env, depth + 1)
     return REF.sub(sub, text)
 
-def raw(section, key, seen=()):
+def chain(section, key, seen=()):
     if section in seen:
         sys.exit(f"error: extends loop at [{section}]")
     if cp.has_option(section, key) and section != "env":
@@ -43,12 +43,17 @@ def raw(section, key, seen=()):
     if cp.has_option(section, "extends"):
         # PlatformIO: with several parents the latter one wins.
         for parent in reversed(cp.get(section, "extends").split(",")):
-            found = raw(parent.strip(), key, seen + (section,))
+            found = chain(parent.strip(), key, seen + (section,))
             if found is not None:
                 return found
-    if cp.has_section("env") and cp.has_option("env", key):
-        return cp.get("env", key).strip()
     return None
+
+def raw(section, key):
+    # The common [env] defaults apply only after the whole extends chain.
+    found = chain(section, key)
+    if found is None and cp.has_option("env", key):
+        found = cp.get("env", key).strip()
+    return found
 
 def value(env, key):
     found = raw(env, key)
@@ -59,7 +64,8 @@ for section in cp.sections():
     if not section.startswith("env:"):
         continue
     platform = value(section, "platform") or ""
-    if not platform.startswith("espressif8266"):
+    # Covers espressif8266@x, platformio/espressif8266@x and repository URLs.
+    if "espressif8266" not in platform:
         continue
     checked.append(section)
     ldscript = value(section, "board_build.ldscript")
