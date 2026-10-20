@@ -8750,3 +8750,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #784 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
 - Scope: #784 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #784 approval record only
+
+## 2026-10-20 — #802: approval marker after merging claude/group-calm-redesign again
+
+- User approval: merge of claude/group-calm-redesign into #802 (docs and setup-providers changes of the base, approval record kept from both sides); no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: #802 as in its own entries (pending, Paul reviews) plus the entries of the base branch.
+- Scope: the merge and this approval record. Pull request branch #802 only, not merged, not released.
+- What's new: none — merge of the base branch, no customer-visible change of its own
