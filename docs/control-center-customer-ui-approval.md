@@ -8551,3 +8551,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #784 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
 - Scope: #784 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #784 approval record only
+
+## 2026-10-20 — #784: Copilot sign-in heading only on its sign-in dialog
+
+- User approval: pending — #784 Copilot heading scope: the decided heading "GitHub Copilot needs a GitHub sign-in" (20.10.2026) now shows only on the dialog that used to say "GitHub Copilot needs its own app"; a timed-out Copilot ("did not answer in time, and VibeTV tries again by itself") keeps the plain heading "GitHub Copilot" again.
+- Approved customer-visible result: #784 the Copilot sign-in dialog is headed "GitHub Copilot needs a GitHub sign-in"; the timed-out Copilot dialog is headed "GitHub Copilot", as before commit 9c129d1c.
+- Scope: #784 Setup Wizard provider dialog heading only. Pull request branch only, not merged, not released.
+- What's new: none — #784 dialog heading scope only
