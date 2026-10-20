@@ -1836,7 +1836,7 @@ extension InstallationFailure {
                 kind: .serviceRestart
             )
         case .launchBlockedBySignature:
-            // Customer text proposed for Marcus' approval (question 75).
+            // Customer text approved by Marcus (question 75a, 2026-10-20).
             return InstallationStatus(
                 title: "macOS blocked VibeTV’s background service",
                 detail: "This copy of VibeTV is signed differently from the one your Mac first allowed. Quit VibeTV, move it to the Trash, then download it again from vibetv.shop and open it.",

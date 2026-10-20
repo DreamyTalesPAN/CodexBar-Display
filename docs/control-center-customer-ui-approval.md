@@ -7,10 +7,10 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-20 — Mac: a background service blocked by macOS sends the customer to a new download (#626)
 
-- User approval: pending — proposed to Marcus via the orchestrator (question 75), not answered yet.
-- Approved customer-visible result: proposal, valid once question 75 is answered: when macOS kills VibeTV's background service because this copy of the app is signed differently from the copy that first registered it ("Launch Constraint Violation" in the helper's crash report), the native start screen shows the title "macOS blocked VibeTV’s background service", the text "This copy of VibeTV is signed differently from the one your Mac first allowed. Quit VibeTV, move it to the Trash, then download it again from vibetv.shop and open it.", the primary button "Download VibeTV again" (opens the existing download page), and the usual "Create report" and "Open support log". "Restart service" is not offered on this screen. Every other service start failure keeps its current screen. The native support report gains the field `launchBlockedBySignatureLast24Hours`.
+- User approval: Marcus 75a, 20.10.2026, via the orchestrator (question 75, exact title, text and buttons below).
+- Approved customer-visible result: when macOS kills VibeTV's background service because this copy of the app is signed differently from the copy that first registered it ("Launch Constraint Violation" in the helper's crash report), the native start screen shows the title "macOS blocked VibeTV’s background service", the text "This copy of VibeTV is signed differently from the one your Mac first allowed. Quit VibeTV, move it to the Trash, then download it again from vibetv.shop and open it.", the primary button "Download VibeTV again" (opens the existing download page), and the usual "Create report" and "Open support log". "Restart service" is not offered on this screen. Every other service start failure keeps its current screen. The native support report gains the field `launchBlockedBySignatureLast24Hours`.
 - Scope: `macos/VibeTVControlCenter/main.swift`, `URLSchemeTests.swift`, `scripts/test-macos-control-center-app-bundle.sh`, and this approval record. Pull request branch only, not merge or release.
-- What's new: none — a recovery screen for test and non-official copies, not announced to customers
+- What's new: none — a recovery screen only for copies signed differently from the official app, not announced to customers
 
 ## 2026-10-16 — Subscription providers first in the provider list (#651)
 
