@@ -8505,21 +8505,28 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-20 — #816: approval marker after merging claude/group-calm-redesign
 
-- User approval: Merge of claude/group-calm-redesign into this branch; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- User approval: no visible change – UI approval not needed (#816: approval marker after merging claude/group-calm-redesign: Merge of claude/group-calm-redesign into this branch; no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
 
 ## 2026-10-20 — #816: approval marker after merging claude/group-calm-redesign
 
-- User approval: Merge of claude/group-calm-redesign into this branch; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- User approval: no visible change – UI approval not needed (#816: approval marker after merging claude/group-calm-redesign: Merge of claude/group-calm-redesign into this branch; no visible change of its own; the entries it brings carry their own approvals; not seen by Paul) [2]
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
 
 ## 2026-10-20 — #816: approval marker after merging claude/group-calm-redesign at ece7b388
 
-- User approval: merge of claude/group-calm-redesign (ece7b388) into #816; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- User approval: no visible change – UI approval not needed (#816: approval marker after merging claude/group-calm-redesign at ece7b388: merge of claude/group-calm-redesign (ece7b388) into #816; no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
 - Approved customer-visible result: #816 as in its own entries (pending, Paul reviews) plus the entries merged with ece7b388; nothing else changes.
 - Scope: the merge of ece7b388 and this approval record. Pull request branch #816 only, not merged, not released.
 - What's new: none — merge of ece7b388, no customer-visible change of its own
+
+## 2026-10-20 — #816: approval lines rewritten to the two accepted forms
+
+- User approval: no visible change – UI approval not needed (#816 record rewrite for the gate in #823; no customer-visible change)
+- Approved customer-visible result: #816 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
+- Scope: #816 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #816 approval record only
