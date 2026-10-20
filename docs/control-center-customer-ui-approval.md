@@ -7955,6 +7955,41 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of 1f6d099d and this approval record. Pull request branch #801 only, not merged, not released.
 - What's new: none — merge of 1f6d099d, no customer-visible change of its own
 
+## 2026-10-20 — #819: the cached rescue version is shown only for the rescue itself (Codex review)
+
+- User approval: pending — #819 Codex fix, no new wording; not seen by Paul. Before → after: #819 any VibeTV with the same board and firmware as a half-written one was shown the cached rescue version → #819 only the Cable rescue of the marked VibeTV (port connected) shows it; every other VibeTV shows the version from the release, as it is updated from there.
+- Approved customer-visible result: #819 the firmware version named in setup is the one that will really be written; texts and layout unchanged.
+- Scope: #819 `apps/control-center/src/components/control-center-app.tsx` (rescue flag on the firmware check), `companion/internal/companionapi/firmware_update.go`, `companion/internal/companionapi/device_cable.go`, the server test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #819 Codex fix not announced
+
+## 2026-10-20 — #819: approval marker after merging main at e7e8319d
+
+- User approval: no visible change – UI approval not needed (merge of main (e7e8319d) into #819; the own entries of #819 keep their approvals)
+- Approved customer-visible result: #819 as in its own entries plus the entries merged with e7e8319d; nothing else changes.
+- Scope: the merge of e7e8319d and this approval record. Pull request branch #819 only, not merged, not released.
+- What's new: none — merge of e7e8319d, no customer-visible change of its own
+
+## 2026-10-20 — #819: approval marker after merging main at 12205356
+
+- User approval: no visible change – UI approval not needed (merge of main (12205356) into #819; the own entries of #819 keep their approvals)
+- Approved customer-visible result: #819 as in its own entries plus the entries merged with 12205356; nothing else changes.
+- Scope: the merge of 12205356 and this approval record. Pull request branch #819 only, not merged, not released.
+- What's new: none — merge of 12205356, no customer-visible change of its own
+
+## 2026-10-20 — #819: approval marker after merging main at 1f6d099d
+
+- User approval: no visible change – UI approval not needed (merge of main (1f6d099d) into #819; the own entries of #819 keep their approvals)
+- Approved customer-visible result: #819 as in its own entries plus the entries merged with 1f6d099d; nothing else changes.
+- Scope: the merge of 1f6d099d and this approval record. Pull request branch #819 only, not merged, not released.
+- What's new: none — merge of 1f6d099d, no customer-visible change of its own
+
+## 2026-10-20 — #819: approval marker after merging main at 4b0831d7
+
+- User approval: no visible change – UI approval not needed (merge of main (4b0831d7) into #819; the own entries of #819 keep their approvals)
+- Approved customer-visible result: #819 as in its own entries plus the entries merged with 4b0831d7; nothing else changes.
+- Scope: the merge of 4b0831d7 and this approval record. Pull request branch #819 only, not merged, not released.
+- What's new: none — merge of 4b0831d7, no customer-visible change of its own
+
 ## 2026-10-20 — #826: setup carries on by itself when the display stream shows up after a firmware update
 
 - User approval: pending — #826 no new wording; not seen by Paul. Behavior only: the existing "Firmware current — attention needed" dialog in setup closes by itself and setup continues, when the Companion reported only a not-yet-seen display stream and the stream then proves healthy.

@@ -105,7 +105,28 @@ func (s *Server) handleFirmwareLatest(w http.ResponseWriter, r *http.Request) {
 	board := strings.TrimSpace(r.URL.Query().Get("board"))
 	installedFirmware := strings.TrimSpace(r.URL.Query().Get("firmware"))
 	checkedAt := time.Now().UTC().Format(time.RFC3339)
-	if cfg, err := s.config(); err == nil && runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" {
+	// A VibeTV left half-written by a failed Cable rescue is finished from the
+	// image cached for that write, not from the manifest: setup must name the
+	// version that will really be written (Codex review on #819). Only for the
+	// rescue itself (rescue=1), and before the configured-Cable lookup below,
+	// which describes another VibeTV.
+	if r.URL.Query().Get("rescue") == "1" {
+		if target, ok := s.cachedRescueTarget(board, installedFirmware); ok {
+			writeJSON(w, http.StatusOK, firmwareLatestResponse{
+				CheckedAt:         checkedAt,
+				InstalledFirmware: installedFirmware,
+				LatestFirmware:    target,
+				UpdateAvailable:   true,
+				Status:            "update_available",
+				Message:           "Firmware update available.",
+			})
+			return
+		}
+	}
+	// A rescue check names the selected VibeTV by its own board and firmware;
+	// the configured Cable VibeTV is another one (Codex review on #819).
+	if cfg, err := s.config(); err == nil && r.URL.Query().Get("rescue") != "1" &&
+		runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" {
 		hello, ok := s.currentCableHello()
 		verified := ok && cableHelloMatchesConfig(hello, cfg.DeviceID)
 		if !verified {
@@ -1397,4 +1418,34 @@ func firmwareUpdateCommandArgs(target, manifestURL string, force bool) []string 
 		args = append(args, "--force")
 	}
 	return args
+}
+
+// cachedRescueTarget is the version a Cable rescue of the marked VibeTV will
+// write: the marker's cached image, while a rescue can really resume it. That
+// needs the marked port connected and silent (a VibeTV that answers there makes
+// the marker stale and the install updates from the manifest, see
+// resumableRescueMarker), the same board and firmware, and an intact image.
+func (s *Server) cachedRescueTarget(board, installedFirmware string) (string, bool) {
+	marker, ok := firmwareupdate.LoadRescueMarker(s.home, time.Now())
+	if !ok || !s.rescueMarkerPortPresent(marker) ||
+		!strings.EqualFold(strings.TrimSpace(marker.Board), strings.TrimSpace(board)) ||
+		strings.TrimSpace(marker.Firmware) != strings.TrimSpace(installedFirmware) ||
+		!firmwareupdate.RescueImageIntact(marker) {
+		return "", false
+	}
+	// While a firmware update runs (the rescue itself, between its two write
+	// attempts), the port is the update's: no hello probe (Codex review on #819).
+	if s.readCableHello != nil && !s.firmwareUpdateActive.Load() {
+		if hello, err := s.readCableHello(marker.Port); err == nil &&
+			(strings.TrimSpace(hello.DeviceID) != "" || strings.TrimSpace(hello.Firmware) != "") {
+			return "", false
+		}
+	}
+	target := strings.TrimSpace(marker.TargetFirmware)
+	installed, installedErr := versioning.ParseSemVer(installedFirmware)
+	next, nextErr := versioning.ParseSemVer(target)
+	if installedErr != nil || nextErr != nil || next.Compare(installed) <= 0 {
+		return "", false
+	}
+	return target, true
 }
