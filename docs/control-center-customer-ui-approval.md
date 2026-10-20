@@ -8523,3 +8523,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #817 as in its entries above (red focus ring under keyboard focus, red border kept, one style for every field); this entry adds nothing visible.
 - Scope: this approval record for #817 only. Pull request branch only, not merged, not released.
 - What's new: none — #817 pending marker, no new content
+
+## 2026-10-20 — #817 checked checkbox keeps its red border under keyboard focus (Codex review)
+
+- User approval: pending — #817 follows Paul's approved rule (red focus ring and red border on every invalid field, 20.10.2026); this closes the checked-checkbox gap Codex found; rendered #817 result stays pending his final look.
+- Approved customer-visible result: #817 a checked, invalid checkbox under keyboard focus shows the red border with the red ring, like every other invalid field.
+- Scope: #817 `apps/control-center/src/components/ui/checkbox.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #817 checkbox border fix, no new content
