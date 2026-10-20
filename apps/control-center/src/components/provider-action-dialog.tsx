@@ -28,7 +28,9 @@ export function providerActionCopy(action: UsageProviderAction) {
 
 /** The button label, which the tile's action already says for each state. */
 function providerActionPrimary(action: UsageProviderAction): string {
-  if (action.state === "permission_required") return "Open AI providers";
+  // A sign-in the Companion cannot start goes to Settings, like a permission:
+  // the button says where it leads (Codex review on #783).
+  if (action.state === "permission_required" || action.inSettings) return "Open AI providers";
   return `Sign in to ${action.name}`;
 }
 

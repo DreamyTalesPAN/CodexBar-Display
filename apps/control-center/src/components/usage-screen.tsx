@@ -213,7 +213,7 @@ export function UsageScreen({
         {tiles.length > 0 ? (
           <ol
             className="grid max-w-[1316px] justify-start gap-4"
-            style={{ gridTemplateColumns: "repeat(auto-fill, 428px)" }}
+            style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 428px), 428px))" }}
           >
             {tiles.map((tile) => (
               <li className="min-w-0" key={tile.id}>

@@ -375,3 +375,9 @@ it("a sign-in left while its provider was checking is forgotten once the check i
   expect(dialog("Claude needs a new sign-in")).not.toBeNull();
   expect(dialog("Claude needs a new sign-in")?.textContent).not.toContain("Could not open Claude.");
 });
+
+it("names Settings on the button when the sign-in cannot start from here", () => {
+  render(<Overlay actions={claude("auth_required", vi.fn(), true)} />);
+  expect(screen.getByRole("button", { name: "Open AI providers" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Sign in to Claude" })).toBeNull();
+});

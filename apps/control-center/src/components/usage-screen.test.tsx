@@ -72,7 +72,8 @@ describe("UsageScreen", () => {
   // 7197 review, point 3: the cards are 428 px wide, at most three in a row, left-aligned; the page is not centred.
   it("lays the provider cards out as a grid of 428 px columns, not stretched", () => {
     const html = renderUsage();
-    expect(html).toContain("repeat(auto-fill, 428px)");
+    // 428 px at most; a window narrower than one card lets the card shrink (Codex on #783).
+    expect(html).toContain("repeat(auto-fill, minmax(min(100%, 428px), 428px))");
     expect(html).toContain("max-w-[1316px] justify-start");
     expect(html).not.toContain("max-w-[1180px]");
     expect(html).not.toContain("2xl:grid-cols-3");
