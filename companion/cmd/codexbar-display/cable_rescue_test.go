@@ -348,6 +348,29 @@ func TestRunInstallUpdateCableRescueKeepsTheMarkerWhenAnotherVibeTVAnswersOnItsP
 	}
 }
 
+// A different pre-Cable VibeTV found by the legacy probe on the marked port
+// name is not written, and the marker stays (Codex on #819).
+func TestRunInstallUpdateCableRescueRefusesAnotherLegacyVibeTVOnTheMarkedPort(t *testing.T) {
+	_, manifestURL, _ := prepareCableFirmwareUpdateTest(t)
+	pinCableRescue(t)
+	writeRescueMarkerFixture(t, "/dev/mock-legacy", time.Hour)
+	listCablePortsFn = func() ([]string, error) { return []string{"/dev/mock-legacy"}, nil }
+	findLegacyCableVibeTVFn = func() (usb.CableDevice, error) {
+		return usb.CableDevice{Port: "/dev/mock-legacy", Hello: protocol.DeviceHello{Board: rescueTestBoard, Firmware: "0.9.0"}}, nil
+	}
+	readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{Board: rescueTestBoard, Firmware: "0.9.0"}, nil
+	}
+	flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
+		t.Fatal("wrote to a different VibeTV on the marked port")
+		return nil
+	}
+	output, err := captureStdout(t, func() error { return runInstallUpdate(rescueArgs(manifestURL)) })
+	if err == nil || !rescueMarkerPresent(t) {
+		t.Fatalf("expected a refusal with the marker kept: err=%v marker=%v\n%s", err, rescueMarkerPresent(t), output)
+	}
+}
+
 func TestRunInstallUpdateCableRescueFlashesTheMarkedPortWhenNoHelloComes(t *testing.T) {
 	_, manifestURL, firmwareVersion := prepareCableFirmwareUpdateTest(t)
 	pinCableRescue(t)

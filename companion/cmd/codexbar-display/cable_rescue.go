@@ -33,8 +33,10 @@ func flashCableRescueWithRetry(ctx context.Context, home string, marker firmware
 	// One marker is the only record of a half-written VibeTV. While one for
 	// another port is pending (its VibeTV may just be unplugged), a second
 	// rescue would overwrite it, so it waits (Codex review on #819).
-	if pending, ok := firmwareupdate.LoadRescueMarker(home, time.Now()); ok &&
-		!strings.EqualFold(strings.TrimSpace(pending.Port), strings.TrimSpace(marker.Port)) {
+	// While a marker is pending, only its own resume may write. A fresh rescue
+	// would overwrite it, whether its VibeTV sits on another port or on the
+	// same port name reused by a different VibeTV (Codex review on #819).
+	if pending, ok := firmwareupdate.LoadRescueMarker(home, time.Now()); ok && !resumed {
 		return fmt.Errorf("the VibeTV on %s is left half-written; connect it by Cable and update it first", pending.Port)
 	}
 	marker.WriteStartedAt = time.Now()
