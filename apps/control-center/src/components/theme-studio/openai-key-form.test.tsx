@@ -32,6 +32,8 @@ describe("Theme Studio AI row in Settings", () => {
     render(<ThemeStudioKeyRow />);
     expect(await screen.findByText("Not connected")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Add key" })).toBeTruthy();
+    // The template's outline buttons have 14 px of side space.
+    expect(screen.getByRole("button", { name: "Add key" }).classList).toContain("px-3.5");
   });
 
   it("shows Connected and Change key once a key is saved", async () => {

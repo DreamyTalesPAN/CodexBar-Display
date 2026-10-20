@@ -1054,15 +1054,15 @@ export function AIThemeStudioScreen({
                   <ChevronDown className="size-3.5" />
                 </Button>
               </PopoverTrigger>
-              <PopoverContent align="start" className="w-64 p-1.5">
-                <div className="flex flex-col gap-0.5" onClick={() => setFileMenu(false)}>
+              <PopoverContent align="start" sideOffset={6} className="w-64 p-1.5">
+                <div className="flex flex-col" onClick={() => setFileMenu(false)}>
                   <Button size="sm" variant="ghost" className="w-full justify-start font-normal" onClick={() => requestLoad({ document: blank() })}>
                     New design
                   </Button>
                   <Button size="sm" variant="ghost" className="w-full justify-start font-normal" onClick={() => openPanel("library")}>
                     Open saved design…
                   </Button>
-                  <div aria-hidden className="my-1 h-px bg-border" />
+                  <div aria-hidden className="mx-1 my-1.5 h-px bg-border" />
                   <Button size="sm" variant="ghost" className="w-full justify-start font-normal" onClick={() => jsonInput.current?.click()}>
                     Open design file…
                   </Button>
@@ -1123,7 +1123,8 @@ export function AIThemeStudioScreen({
             </span>
           </div>
         </header>
-          <main className="flex min-h-0 flex-1 flex-col gap-6 pt-8 lg:flex-row lg:gap-12">
+          {/* In the template the editor is 520 px high in an 800 px window: the preview sits in the middle of it, the composer on its bottom edge. */}
+          <main className="flex min-h-0 flex-1 flex-col gap-6 pt-8 lg:mb-[98px] lg:flex-row lg:gap-12">
             <div className="min-h-0 min-w-0 overflow-y-auto lg:flex-1 lg:basis-0">
             <div
               id="theme-design-canvas"
@@ -1580,13 +1581,14 @@ export function AIThemeStudioScreen({
                     void generate();
                   }
                 }}
-                className="min-h-8 max-h-64 resize-none overflow-y-auto rounded-none border-0 text-[13px] md:text-[13px] bg-transparent px-3.5 pb-0 pt-3 disabled:bg-transparent focus-visible:ring-0 [field-sizing:fixed]"
+                className="min-h-0 max-h-64 resize-none overflow-y-auto rounded-none border-0 text-[13px] md:text-[13px] bg-transparent px-3.5 pb-0 pt-[11px] disabled:bg-transparent focus-visible:ring-0 [field-sizing:fixed]"
                 placeholder={selected.length ? "Describe what to change in this element…" : "Describe your design or what to change…"}
               />
-              <div className="flex items-center gap-0.5 px-1.5 pb-2 pt-3">
+              <div className="flex items-center gap-0.5 pb-[7px] pl-1.5 pr-[11px] pt-[11px]">
               <Button
                 variant="ghost"
                 size={canCancel ? "default" : "icon"}
+                className={canCancel ? "h-8 px-2.5 text-[13px]" : "size-8"}
                 aria-label={canCancel ? "Cancel" : "Add manually"}
                 title={canCancel ? "Cancel" : "Add element"}
                 disabled={locked && !canCancel}
@@ -1595,7 +1597,7 @@ export function AIThemeStudioScreen({
                 {canCancel ? "Cancel" : <SquarePlus />}
               </Button>
                 <Button
-                  variant="ghost" size="icon"
+                  variant="ghost" size="icon" className="size-8"
                   aria-label="Attach reference images" title="Attach images"
                   disabled={locked || attaching || attachments.length >= 3}
                   onClick={() => attachmentInput.current?.click()}
@@ -1604,7 +1606,7 @@ export function AIThemeStudioScreen({
                 </Button>
                 <Button
                   size="icon"
-                  className="ml-auto size-8 rounded-full bg-foreground text-background hover:bg-foreground/90"
+                  className="ml-auto size-8 rounded-full! bg-foreground text-background hover:bg-foreground/90"
                   aria-label="Create"
                   title="Create"
                   aria-busy={busy}
@@ -1617,7 +1619,7 @@ export function AIThemeStudioScreen({
               </div>
               </div>
             </section>
-            <div className="mt-3 w-full space-y-3">
+            <div className="mt-3 w-full space-y-3 empty:mt-0">
               {error ? (
                 <p id="ai-theme-error" role="alert" className="text-sm text-destructive [overflow-wrap:anywhere]">
                   {error}
