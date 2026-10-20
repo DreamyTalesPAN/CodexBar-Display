@@ -180,7 +180,12 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 			rescueEntry = &entry
 		}
 	}
-	if err != nil && len(cableDevices) == 0 && rescueEntry == nil {
+	// A pre-Cable VibeTV that answered for its first rescue is reached over the
+	// Cable only, like the marked one: the LAN error must not hide it (Codex
+	// review on #819).
+	var legacyAnswered *usb.LegacyCableFirmwareError
+	legacyOnCable := explicitTarget == "" && errors.As(cableErr, &legacyAnswered)
+	if err != nil && len(cableDevices) == 0 && rescueEntry == nil && !legacyOnCable {
 		var invalidTarget *invalidTargetError
 		if errors.As(err, &invalidTarget) {
 			writeInvalidDeviceTarget(w)

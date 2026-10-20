@@ -15527,3 +15527,69 @@ func TestFirmwareLatestNamesTheCachedRescueTarget(t *testing.T) {
 		t.Fatalf("the rescue check must ignore the configured Cable VibeTV: %+v err=%v body=%s", got, err, rec.Body.String())
 	}
 }
+
+// Without WiFi a pre-Cable VibeTV on the Cable still gets its rescue offer:
+// the rescue needs no network (Codex review on #819).
+func TestDeviceSearchOffersTheLegacyCableRescueWithoutWiFi(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.subnetTargets = func() []string { return nil }
+	server.localNetworkAvailable = func() bool { return false }
+	server.discoverCableDevices = func(context.Context) ([]usb.CableDevice, error) {
+		return nil, legacyCableSearchError{&usb.LegacyCableFirmwareError{Board: "esp8266-smalltv-st7789", Firmware: "1.0.39"}}
+	}
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`)))
+	var got struct {
+		Error apiError `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Error.Code != "cable_firmware_too_old" || got.Error.Device == nil || !got.Error.Device.Rescue {
+		t.Fatalf("the legacy rescue must not be hidden by the missing WiFi: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// A first-time rescue check (no marker) names the selected VibeTV's own
+// manifest version, not the configured Cable VibeTV's (Codex review on #819).
+func TestFirmwareLatestRescueCheckIgnoresTheConfiguredCableVibeTV(t *testing.T) {
+	manifest := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"release":"v1.0.99","artifacts":[{"board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.10"}]}`))
+	}))
+	defer manifest.Close()
+	t.Setenv(firmwareManifestEnvVar, manifest.URL+"/firmware-manifest.json")
+	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "other"})
+	server.readCableHello = func(string) (protocol.DeviceHello, error) { return protocol.DeviceHello{}, errors.New("absent") }
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/updates/latest?board=esp8266-smalltv-st7789&firmware=1.0.0&rescue=1", nil))
+	var got firmwareLatestResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || !got.UpdateAvailable || got.LatestFirmware != "1.0.10" || got.InstalledFirmware != "1.0.0" {
+		t.Fatalf("the rescue check must use the selected VibeTV: %+v err=%v body=%s", got, err, rec.Body.String())
+	}
+}
+
+// Between the rescue's two write attempts the check must not open the marked
+// port for a hello (Codex review on #819).
+func TestFirmwareLatestRescueCheckDoesNotProbeDuringAnUpdate(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	imagePath := filepath.Join(t.TempDir(), "firmware.bin")
+	if err := os.WriteFile(imagePath, []byte("cable firmware"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte("cable firmware"))
+	if err := firmwareupdate.SaveRescueMarker(server.home, firmwareupdate.RescueMarker{
+		Port: "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
+		ImagePath: imagePath, ImageSHA256: hex.EncodeToString(sum[:]), WriteStartedAt: time.Now().Add(-time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	server.listCablePorts = func() ([]string, error) { return []string{"COM4"}, nil }
+	probed := false
+	server.readCableHello = func(string) (protocol.DeviceHello, error) { probed = true; return protocol.DeviceHello{}, errors.New("busy") }
+	server.firmwareUpdateActive.Store(true)
+	defer server.firmwareUpdateActive.Store(false)
+	if target, ok := server.cachedRescueTarget("esp8266-smalltv-st7789", "1.0.0"); !ok || target != "1.0.9" || probed {
+		t.Fatalf("target=%q ok=%v probed=%v", target, ok, probed)
+	}
+}

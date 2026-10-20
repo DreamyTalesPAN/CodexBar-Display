@@ -123,7 +123,10 @@ func (s *Server) handleFirmwareLatest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if cfg, err := s.config(); err == nil && runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" {
+	// A rescue check names the selected VibeTV by its own board and firmware;
+	// the configured Cable VibeTV is another one (Codex review on #819).
+	if cfg, err := s.config(); err == nil && r.URL.Query().Get("rescue") != "1" &&
+		runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" {
 		hello, ok := s.currentCableHello()
 		verified := ok && cableHelloMatchesConfig(hello, cfg.DeviceID)
 		if !verified {
@@ -1422,7 +1425,9 @@ func (s *Server) cachedRescueTarget(board, installedFirmware string) (string, bo
 		!firmwareupdate.RescueImageIntact(marker) {
 		return "", false
 	}
-	if s.readCableHello != nil {
+	// While a firmware update runs (the rescue itself, between its two write
+	// attempts), the port is the update's: no hello probe (Codex review on #819).
+	if s.readCableHello != nil && !s.firmwareUpdateActive.Load() {
 		if hello, err := s.readCableHello(marker.Port); err == nil &&
 			(strings.TrimSpace(hello.DeviceID) != "" || strings.TrimSpace(hello.Firmware) != "") {
 			return "", false
