@@ -7844,3 +7844,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #805 as in its own entries (pending, Paul reviews) plus the entries merged with b74db67b; nothing else changes.
 - Scope: the merge of b74db67b and this approval record. Pull request branch #805 only, not merged, not released.
 - What's new: none — merge of b74db67b, no customer-visible change of its own
+
+## 2026-10-20 — #827: approval marker for the merge 02905756 of main
+
+- User approval: no visible change – UI approval not needed (#827 merge 02905756 of main; the merged entries keep their own approvals)
+- Approved customer-visible result: #827 merge 02905756 as in this branch's entries and the merged ones; nothing else changes.
+- Scope: #827 merge 02905756 and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #827 merge 02905756 has no customer-visible change of its own
