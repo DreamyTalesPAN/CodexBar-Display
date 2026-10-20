@@ -8005,3 +8005,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: a wizard card reached by Tab shows the same ring as the other controls.
 - Scope: `apps/control-center/src/components/setup/setup-selectable-card.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #780: approval marker after merging main
+
+- User approval: Merge of main into this branch; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
