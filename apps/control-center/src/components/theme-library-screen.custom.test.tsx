@@ -197,7 +197,7 @@ describe("ThemeLibraryScreen custom themes", () => {
       document
         .querySelector(`[aria-label="Preview ${title}"]`)!
         .closest('[role="listitem"]')!
-        .querySelector<HTMLButtonElement>('button[title*="nstall"]')!.title;
+        .querySelector<HTMLElement>('button[title*="nstall"], [data-testid="theme-status-pill"][title]')!.title;
     const render = (path: string, props: Partial<ThemeLibraryScreenProps> = {}) =>
       renderLibrary([catalogTheme, namesake], {
         device: {

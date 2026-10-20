@@ -10067,6 +10067,27 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of ece7b388 and this approval record. Pull request branch #798 only, not merged, not released.
 - What's new: none — merge of ece7b388, no customer-visible change of its own
 
+## 2026-10-20 — #802: Appearance "Installed" is a pill on the theme picture (7197 review, point 7)
+
+- User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #802 point 7 (Installed as a pill). Before → after: an installed theme card had a row "✓ Installed" at the right of its bottom line → that row is gone; a pill sits at the top right on the theme picture: "Active" (dark) on the theme VibeTV shows, "Installed" (light) on the other installed themes and screensavers.
+- Approved customer-visible result: the Appearance cards look as drawn in frames "Darstellung" (#appearance-all, #appearance-ss, #appearance-filter) of "Calm Redesign - alle Screens": pill "Active" dark and "Installed" light on the picture, no "✓ Installed" row.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx`, its tests, `apps/control-center/scripts/test-customer-flows.mjs` (the flow looks for the pill instead of the button) and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #802: Appearance cards are smaller, 200 px wide, centred as a group (7197 review, point 8)
+
+- User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #802 point 8 (smaller cards). Before → after: three cards per row were stretched over the full page width (about 255 px each, 24 px apart) with the type (Theme / Screensaver) beside the name → still three per row, but each card is 200 px wide, 32 px apart, the group is centred (also at 1920 px, not stretched), and the type sits under the name.
+- Approved customer-visible result: the Appearance cards look as drawn in frames "Darstellung" (#appearance-all, #appearance-ss, #appearance-filter) of "Calm Redesign - alle Screens", also at 1920 px wide.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx`, `apps/control-center/src/components/theme-library-screen.appearance.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #802: Theme preview dialog picture is centred with 6 px corners (7197 review, point 9)
+
+- User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #802 point 9 (theme preview dialog). Before → after: the picture in the theme preview dialog sat at the left edge with square corners → it is centred in the dialog and has 6 px corners, the same as the card picture.
+- Approved customer-visible result: the dialog looks as drawn in frame "Dialoge: Theme preview" (#dialog-theme-preview) of "Calm Redesign - alle Screens": picture centred, radius 6 px.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx`, `apps/control-center/src/components/theme-library-screen.appearance.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
 ## 2026-10-20 — #784: Overview fills the window's height (7197 template point 1)
 
 - User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #784 point 1 (Overview). Before → after: #784 point 1: the Overview was a block under the title, with the four numbers right below the VibeTV and a 392 px VibeTV → #784 point 1: the page fills the window's height, the four numbers sit at the bottom (32 px below them), "VibeTV is connected" and the VibeTV are centred as one group in the space above, and the VibeTV image is 440 px wide.
@@ -10121,3 +10142,16 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #803 point 11: Support as in frame `#support` of "Calm Redesign - alle Screens" (pictures 11 and 11b, right side), in a large and a small window.
 - Scope: #803 point 11: `apps/control-center/src/components/logs-screen.tsx`, `apps/control-center/src/components/control-center-shell.tsx` (the same margin and panel-icon change that #798 point 10 makes for Updates, so the two merge cleanly), its test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #803 point 11: no new content, the same page with a wider layout
+## 2026-10-20 — #802: approval marker after merging claude/group-calm-redesign at fd754339
+
+- User approval: merge of claude/group-calm-redesign (fd754339, #784 points 1, 4, 5 of the 7197 template) into #802; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: #802 as in its own entries (pending, Paul reviews) plus the entries of #784 (pending, Paul reviews).
+- Scope: the merge of fd754339 and this approval record. Pull request branch #802 only, not merged, not released.
+- What's new: none — merge of fd754339, no customer-visible change of its own
+
+## 2026-10-20 — #802: Appearance card of the active theme has no grey fill, the pill says Active (7197 review, point 7, picture check)
+
+- User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #802 point 7 (Installed as a pill), picture check against the template. Before → after: the card of the active theme had a light grey fill → all cards have the same white card; the dark "Active" pill on the picture is what marks the active theme, as drawn in the template.
+- Approved customer-visible result: the Appearance cards look as drawn in frames "Darstellung" (#appearance-all, #appearance-ss, #appearance-filter) of "Calm Redesign - alle Screens": all cards alike, pill "Active" on the active one.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content

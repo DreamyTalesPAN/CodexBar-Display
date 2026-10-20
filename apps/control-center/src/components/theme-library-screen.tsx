@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Check,
   Library,
   Lock,
   Monitor,
@@ -940,8 +939,11 @@ export function ThemeLibraryScreen({
                 Nothing matches your search or filters.
               </p>
             ) : null}
-            {/* gap-x-6! gap-y-7!: ItemGroup's own gap for small items (gap-2.5) would win. */}
-            <ItemGroup className="grid grid-cols-1 gap-x-6! gap-y-7! sm:grid-cols-2 lg:grid-cols-3">
+            {/* Cards are 200 px wide with 32 px between them, three in a row at most, as a group in the middle of the page (7197 review, point 8). gap-8!: ItemGroup's own gap for small items (gap-2.5) would win. */}
+            <ItemGroup
+              className="mx-auto grid max-w-[664px] justify-center gap-8!"
+              style={{ gridTemplateColumns: "repeat(auto-fill, 200px)" }}
+            >
               {listedItems.map((theme) => (
                 <ThemeListItem
                   busyAction={busyAction}
@@ -1001,7 +1003,7 @@ export function ThemeLibraryScreen({
             >
               Example data · This is a catalog preview, not live VibeTV data.
             </p>
-            <div className="w-60 max-w-full">
+            <div className="mx-auto w-60 max-w-full">
               <ThemePreview large theme={previewTheme} />
             </div>
             <DialogFooter>
@@ -1424,16 +1426,26 @@ function ThemeListItem({
   // while something holds it back); every other state is plain text.
   const installIsText =
     disabled && installLabel !== "Install" && installLabel !== "Update";
+  // "Installed" is not a button any more: the picture carries a pill instead.
+  // (An installed row keeps its pill while another action holds the buttons.)
+  const rowInstalled =
+    installLabel === "Installed" || (installed && !retryingFailedInstall);
+  const statusPill: "Active" | "Installed" | null = rowInstalled
+    ? item.themeId === displayThemeId
+      ? "Active"
+      : "Installed"
+    : null;
 
   return (
     <Item
-      // The card's 1 px border plus 9 px = the template's 10 px inner space, so the picture is as wide as drawn.
-      className="gap-2.5 rounded-[var(--radius-card)] p-[9px]"
+      // The card's 1 px border plus 7 px = the template's 8 px inner space, so the picture is as wide as drawn.
+      className="gap-2 rounded-[var(--radius-card)] p-[7px]"
       id={item.kind === "published" ? catalogThemeRowId(item.themeId) : undefined}
       role="listitem"
-      variant={item.themeId === displayThemeId ? "muted" : "outline"}
+      // Every card looks the same; the pill on the picture says which one is active (7197 review, point 7).
+      variant="outline"
     >
-      <ItemMedia className="basis-full w-full">
+      <ItemMedia className="relative basis-full w-full">
         <Button
           aria-label={`Preview ${item.title}`}
           className="h-auto w-full justify-start rounded-[6px] p-0"
@@ -1443,9 +1455,24 @@ function ThemeListItem({
         >
           <ThemePreview onPack={setPublishedPack} theme={item} />
         </Button>
+        {/* A pill on the picture says what the row is: Active (dark) for the theme VibeTV shows, Installed (light) for the others on VibeTV. */}
+        {statusPill ? (
+          <span
+            className={cn(
+              "pointer-events-none absolute top-1.5 right-1.5 inline-flex h-5 items-center rounded-full px-2 text-[12px] leading-none font-semibold",
+              statusPill === "Active"
+                ? "bg-foreground text-background"
+                : "bg-card text-foreground shadow-[0_0_0_1px_color-mix(in_srgb,var(--foreground)_14%,transparent)]",
+            )}
+            data-testid="theme-status-pill"
+            title={rowInstalled ? title : undefined}
+          >
+            {statusPill}
+          </span>
+        ) : null}
       </ItemMedia>
       <ItemContent className="basis-full gap-0.5 px-0.5">
-        <div className="flex min-w-0 items-baseline justify-between gap-2">
+        <div className="flex min-w-0 flex-col">
           <ItemTitle className="min-w-0 text-[13px] font-semibold">
             <span className="truncate">{item.title}</span>
             {isCustom ? <Badge variant="secondary">Custom</Badge> : null}
@@ -1493,26 +1520,28 @@ function ThemeListItem({
           ) : null}
         </span>
         {/* Install is the primary (lime) action at the right edge. Once the
-            row has nothing to install, the same slot shows the status as text. */}
-        <Button
-          className={cn(
-            "h-7 px-3",
-            installIsText && "px-0 font-normal disabled:opacity-100 disabled:text-muted-foreground",
-          )}
-          disabled={disabled}
-          onClick={() => {
-            if (!blocker) {
-              onInstallTheme(item);
-            }
-          }}
-          title={title}
-          type="button"
-          size="sm"
-          variant={installIsText ? "ghost" : "default"}
-        >
-          {installLabel === "Installed" ? <Check data-icon="inline-start" aria-hidden /> : null}
-          {installLabel}
-        </Button>
+            row has nothing to install, the slot shows the other states as
+            text; "Installed" is the pill on the picture, not a row here. */}
+        {rowInstalled ? null : (
+          <Button
+            className={cn(
+              "h-7 px-3",
+              installIsText && "px-0 font-normal disabled:opacity-100 disabled:text-muted-foreground",
+            )}
+            disabled={disabled}
+            onClick={() => {
+              if (!blocker) {
+                onInstallTheme(item);
+              }
+            }}
+            title={title}
+            type="button"
+            size="sm"
+            variant={installIsText ? "ghost" : "default"}
+          >
+            {installLabel}
+          </Button>
+        )}
       </ItemActions>
       {visibleInstallStatus ? (
         <ItemFooter className="basis-full block">
@@ -2093,11 +2122,8 @@ function ThemePreview({
   return (
     <ThemeRenderPreview
       animate={Boolean(large)}
-      className={
-        large
-          ? "aspect-square w-full"
-          : "aspect-square w-full rounded-[6px]"
-      }
+      // Card picture and dialog picture have the same corners: 6 px (7197 review, point 9).
+      className="aspect-square w-full rounded-[6px]"
       onPack={onPack}
       // A Theme Studio theme has no published pack to load: its spec only
       // exists in this app.
