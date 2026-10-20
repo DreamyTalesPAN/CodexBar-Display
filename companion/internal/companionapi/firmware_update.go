@@ -105,6 +105,24 @@ func (s *Server) handleFirmwareLatest(w http.ResponseWriter, r *http.Request) {
 	board := strings.TrimSpace(r.URL.Query().Get("board"))
 	installedFirmware := strings.TrimSpace(r.URL.Query().Get("firmware"))
 	checkedAt := time.Now().UTC().Format(time.RFC3339)
+	// A VibeTV left half-written by a failed Cable rescue is finished from the
+	// image cached for that write, not from the manifest: setup must name the
+	// version that will really be written (Codex review on #819). Only for the
+	// rescue itself (rescue=1), and before the configured-Cable lookup below,
+	// which describes another VibeTV.
+	if r.URL.Query().Get("rescue") == "1" {
+		if target, ok := s.cachedRescueTarget(board, installedFirmware); ok {
+			writeJSON(w, http.StatusOK, firmwareLatestResponse{
+				CheckedAt:         checkedAt,
+				InstalledFirmware: installedFirmware,
+				LatestFirmware:    target,
+				UpdateAvailable:   true,
+				Status:            "update_available",
+				Message:           "Firmware update available.",
+			})
+			return
+		}
+	}
 	if cfg, err := s.config(); err == nil && runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" {
 		hello, ok := s.currentCableHello()
 		verified := ok && cableHelloMatchesConfig(hello, cfg.DeviceID)
@@ -142,34 +160,6 @@ func (s *Server) handleFirmwareLatest(w http.ResponseWriter, r *http.Request) {
 			Message:           "VibeTV update info is not available yet.",
 		})
 		return
-	}
-
-	// A VibeTV left half-written by a failed Cable rescue is finished from the
-	// image cached for that write, not from the manifest: setup must name the
-	// version that will really be written, even if a newer release came out
-	// since (Codex review on #819). Only for the rescue itself (rescue=1): while
-	// a marker is pending, a rescue write can only resume the marked VibeTV, and
-	// only while its port is connected. Any other selected VibeTV with the same
-	// board and firmware is updated from the manifest and gets its version.
-	if marker, ok := firmwareupdate.LoadRescueMarker(s.home, time.Now()); ok &&
-		r.URL.Query().Get("rescue") == "1" && s.rescueMarkerPortPresent(marker) &&
-		strings.EqualFold(strings.TrimSpace(marker.Board), board) &&
-		strings.TrimSpace(marker.Firmware) == installedFirmware &&
-		firmwareupdate.RescueImageIntact(marker) {
-		target := strings.TrimSpace(marker.TargetFirmware)
-		installed, installedErr := versioning.ParseSemVer(installedFirmware)
-		next, nextErr := versioning.ParseSemVer(target)
-		if installedErr == nil && nextErr == nil && next.Compare(installed) > 0 {
-			writeJSON(w, http.StatusOK, firmwareLatestResponse{
-				CheckedAt:         checkedAt,
-				InstalledFirmware: installedFirmware,
-				LatestFirmware:    target,
-				UpdateAvailable:   true,
-				Status:            "update_available",
-				Message:           "Firmware update available.",
-			})
-			return
-		}
 	}
 
 	installedVersion, installedErr := versioning.ParseSemVer(installedFirmware)
@@ -1417,4 +1407,32 @@ func firmwareUpdateCommandArgs(target, manifestURL string, force bool) []string 
 		args = append(args, "--force")
 	}
 	return args
+}
+
+// cachedRescueTarget is the version a Cable rescue of the marked VibeTV will
+// write: the marker's cached image, while a rescue can really resume it. That
+// needs the marked port connected and silent (a VibeTV that answers there makes
+// the marker stale and the install updates from the manifest, see
+// resumableRescueMarker), the same board and firmware, and an intact image.
+func (s *Server) cachedRescueTarget(board, installedFirmware string) (string, bool) {
+	marker, ok := firmwareupdate.LoadRescueMarker(s.home, time.Now())
+	if !ok || !s.rescueMarkerPortPresent(marker) ||
+		!strings.EqualFold(strings.TrimSpace(marker.Board), strings.TrimSpace(board)) ||
+		strings.TrimSpace(marker.Firmware) != strings.TrimSpace(installedFirmware) ||
+		!firmwareupdate.RescueImageIntact(marker) {
+		return "", false
+	}
+	if s.readCableHello != nil {
+		if hello, err := s.readCableHello(marker.Port); err == nil &&
+			(strings.TrimSpace(hello.DeviceID) != "" || strings.TrimSpace(hello.Firmware) != "") {
+			return "", false
+		}
+	}
+	target := strings.TrimSpace(marker.TargetFirmware)
+	installed, installedErr := versioning.ParseSemVer(installedFirmware)
+	next, nextErr := versioning.ParseSemVer(target)
+	if installedErr != nil || nextErr != nil || next.Compare(installed) <= 0 {
+		return "", false
+	}
+	return target, true
 }

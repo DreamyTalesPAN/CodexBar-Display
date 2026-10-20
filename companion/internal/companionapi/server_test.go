@@ -15499,4 +15499,31 @@ func TestFirmwareLatestNamesTheCachedRescueTarget(t *testing.T) {
 	if got := latest("firmware=1.0.0&rescue=1"); got.LatestFirmware != "1.0.10" {
 		t.Fatalf("without the marked port the manifest version applies: %+v", got)
 	}
+	// A VibeTV that answers on the marked port again makes the marker stale: the
+	// install updates from the manifest, so the check names its version.
+	ports = []string{"COM4"}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{DeviceID: "healthy", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0"}, nil
+	}
+	if got := latest("firmware=1.0.0&rescue=1"); got.LatestFirmware != "1.0.10" {
+		t.Fatalf("a stale marker must not name the cached version: %+v", got)
+	}
+
+	// A config still in Cable mode for another VibeTV does not replace the
+	// rescue's board and firmware (Codex review on #819).
+	cabled := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "other"})
+	if err := firmwareupdate.SaveRescueMarker(cabled.home, firmwareupdate.RescueMarker{
+		Port: "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
+		ImagePath: imagePath, ImageSHA256: hex.EncodeToString(sum[:]), WriteStartedAt: time.Now().Add(-time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cabled.listCablePorts = func() ([]string, error) { return []string{"COM4"}, nil }
+	cabled.readCableHello = func(string) (protocol.DeviceHello, error) { return protocol.DeviceHello{}, errors.New("no hello") }
+	rec := httptest.NewRecorder()
+	cabled.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/updates/latest?board=esp8266-smalltv-st7789&firmware=1.0.0&rescue=1", nil))
+	var got firmwareLatestResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || !got.UpdateAvailable || got.LatestFirmware != "1.0.9" {
+		t.Fatalf("the rescue check must ignore the configured Cable VibeTV: %+v err=%v body=%s", got, err, rec.Body.String())
+	}
 }
