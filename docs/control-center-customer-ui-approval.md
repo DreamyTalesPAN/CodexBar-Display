@@ -8742,3 +8742,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #798 the Updates heading never offers an update the customer cannot take.
 - Scope: #798 `apps/control-center/src/components/updates-screen.tsx`, its calm test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #798 Codex fix not announced
+
+## 2026-10-20 — #798: browser flow expects the headline the screen already shows for a blocked migration
+
+- User approval: no visible change – UI approval not needed (#798: browser test script only; the screen already reads "No update available" for a required migration without a verified download, the script still waited for "Everything is up to date")
+- Approved customer-visible result: #798 unchanged; this entry only records the test update.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — test-only change, no customer-visible change
