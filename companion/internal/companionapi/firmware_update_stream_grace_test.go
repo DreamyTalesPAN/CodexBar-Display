@@ -61,6 +61,9 @@ func runCableFirmwareUpdateWithFrameAfter(t *testing.T, frameAfter time.Duration
 	}
 	// The stream restart is the moment the late frame is measured from.
 	server.refreshStream = func(context.Context, string) error {
+		if streamRestartErr != nil {
+			return streamRestartErr
+		}
 		if frameAfter >= 0 {
 			go func() {
 				time.Sleep(frameAfter)
@@ -101,6 +104,27 @@ func runCableFirmwareUpdateWithFrameAfter(t *testing.T, frameAfter time.Duration
 		t.Fatalf("update did not finish: %+v", job)
 	}
 	return job
+}
+
+// streamRestartErr, when set, makes the stream restart itself fail.
+var streamRestartErr error
+
+// Codex on #829: a restart that failed outright gets its own outcome. Only a
+// stream that was merely not seen in time may be polled back to "recovered" by
+// the app; a failed restart would otherwise be closed on a pre-update frame.
+func TestFirmwareUpdateReportsAFailedStreamRestartSeparately(t *testing.T) {
+	streamRestartErr = fmt.Errorf("launchctl kickstart failed")
+	t.Cleanup(func() { streamRestartErr = nil })
+	job := runCableFirmwareUpdateWithFrameAfter(t, -1)
+	if job.Phase != "attention" || job.Outcome != "firmware_current_stream_restart_attention" {
+		t.Fatalf("a failed restart needs its own attention outcome: phase=%q outcome=%q message=%q", job.Phase, job.Outcome, job.Message)
+	}
+	if job.Outcome == firmwareAttentionOutcome("stream") {
+		t.Fatal("a failed restart must not share the timed-out stream's outcome")
+	}
+	if job.Message != "Firmware is current, but the display stream could not restart." {
+		t.Fatalf("message=%q", job.Message)
+	}
 }
 
 func TestFirmwareUpdateWaitsForFirstFramesAfterThePause(t *testing.T) {

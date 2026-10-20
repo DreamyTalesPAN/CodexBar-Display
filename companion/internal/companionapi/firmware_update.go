@@ -644,7 +644,10 @@ func (s *Server) verifyCableFirmwareUpdateResult(ctx context.Context, jobID stri
 	s.setFirmwareUpdateStage(jobID, "restarting_stream")
 	streamStartedAt := time.Now().UTC()
 	if err := s.startDisplayStream(ctx, cableDeviceTarget); err != nil {
-		return firmwareAttentionOutcome("stream"), "Firmware is current, but the display stream could not restart.", nil
+		// A restart that failed outright never recovers by itself, unlike a
+		// stream that was only not seen in time: its own outcome keeps the app
+		// from polling it back to "recovered" on an older frame (Codex on #829).
+		return firmwareAttentionOutcome("stream_restart"), "Firmware is current, but the display stream could not restart.", nil
 	}
 	stream := s.waitForFirmwareUpdateStream(ctx, cableDeviceTarget, streamStartedAt)
 	streamHealthy := displayStreamHealthyForTarget(&stream, cableDeviceTarget)
@@ -753,7 +756,10 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 	baseline := health
 	streamStartedAt := time.Now().UTC()
 	if err := s.startDisplayStream(ctx, target); err != nil {
-		return firmwareAttentionOutcome("stream"), "Firmware is current, but the display stream could not restart.", nil
+		// A restart that failed outright never recovers by itself, unlike a
+		// stream that was only not seen in time: its own outcome keeps the app
+		// from polling it back to "recovered" on an older frame (Codex on #829).
+		return firmwareAttentionOutcome("stream_restart"), "Firmware is current, but the display stream could not restart.", nil
 	}
 	stream := s.waitForFirmwareUpdateStream(ctx, target, streamStartedAt)
 	streamHealthy := displayStreamHealthyForTarget(&stream, target)
@@ -925,6 +931,8 @@ func firmwareAttentionOutcome(kind string) string {
 		return prefix + "health_attention"
 	case "stream":
 		return prefix + "stream_attention"
+	case "stream_restart":
+		return prefix + "stream_restart_attention"
 	default:
 		return prefix + "render_attention"
 	}

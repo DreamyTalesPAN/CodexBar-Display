@@ -12854,7 +12854,7 @@ func TestFirmwareUpdateCurrentFirmwareWithStreamFailureNeedsAttention(t *testing
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if job.Phase != "attention" || job.Outcome != "firmware_current_stream_attention" || job.Result == nil || !job.Result.HealthVerified || job.Result.StreamVerified {
+	if job.Phase != "attention" || job.Outcome != "firmware_current_stream_restart_attention" || job.Result == nil || !job.Result.HealthVerified || job.Result.StreamVerified {
 		t.Fatalf("current firmware with a broken stream must need attention without another flash: %+v", job)
 	}
 }
