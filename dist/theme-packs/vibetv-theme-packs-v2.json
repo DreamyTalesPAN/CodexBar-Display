@@ -15,6 +15,11 @@
         "color-stops-v1",
         "usage-pace-v1"
       ],
+      "tags": [
+        "animated",
+        "pixel-art",
+        "providers-1"
+      ],
       "downloadAsset": "vibetv-theme-claude-creature-v1.4.0.zip",
       "sha256": "5d68b02095c849da444d495e929de4558a9f643aab2ff04ee92fe088ac991bc2",
       "bytes": 3433,
@@ -46,6 +51,11 @@
         "usage-pace-v1",
         "color-stops-v1"
       ],
+      "tags": [
+        "animated",
+        "pixel-art",
+        "providers-1"
+      ],
       "downloadAsset": "vibetv-theme-clippy-v1.2.0.zip",
       "sha256": "2e95ccada48f523b63e602c59193d6314453ce1e2b25be0ba5fa3801fed25220",
       "bytes": 18727,
@@ -74,6 +84,9 @@
         "progress-arc-v1",
         "usage-pace-v1"
       ],
+      "tags": [
+        "providers-1"
+      ],
       "downloadAsset": "vibetv-theme-gauge-v0.2.0.zip",
       "sha256": "370de9875a6dbab14bf67568a5d2aee98b259e9138630d91eeae4fcadb2b107a",
       "bytes": 932,
@@ -93,6 +106,10 @@
         "usage-slots-v1",
         "color-stops-v1",
         "usage-pace-v1"
+      ],
+      "tags": [
+        "animated",
+        "providers-1"
       ],
       "downloadAsset": "vibetv-theme-mini-classic-v1.3.0.zip",
       "sha256": "5da5d9c83f0565c1cbddf7c6003d61c2ffe7c7033704ddc300aa1e4eb0d933df",
@@ -122,6 +139,10 @@
       "requiredCapabilities": [
         "usage-slots-v1",
         "provider-slots-v1"
+      ],
+      "tags": [
+        "clock",
+        "providers-2"
       ],
       "downloadAsset": "vibetv-theme-night-clock-v0.2.0.zip",
       "sha256": "24eff083f41b2b0ebbc677d83fc7f5b44512a5fc2d74a81b870d67bd307ee977",
@@ -163,6 +184,10 @@
         "text-valign-v1",
         "usage-pace-v1"
       ],
+      "tags": [
+        "pixel-art",
+        "providers-1"
+      ],
       "downloadAsset": "vibetv-theme-pixel-battery-v1.17.0.zip",
       "sha256": "383c3a7d403bc9ddc3aa550d839c95ee9efbb6663bd3f119f5a4979edb893533",
       "bytes": 2924,
@@ -181,6 +206,10 @@
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
         "usage-slots-v1"
+      ],
+      "tags": [
+        "pixel-art",
+        "providers-1"
       ],
       "downloadAsset": "vibetv-theme-reset-countdown-v1.1.7.zip",
       "sha256": "3b2b51f3903a4747aff4656d66c59800018a4fe3c3f241ec00ecf769c97cc2e2",
@@ -201,6 +230,10 @@
       "requiredCapabilities": [
         "usage-slots-v1",
         "usage-pace-v1"
+      ],
+      "tags": [
+        "pixel-art",
+        "providers-1"
       ],
       "downloadAsset": "vibetv-theme-synthwave-v1.2.0.zip",
       "sha256": "7473d0e8c1fc7d3443b2e1e9245a56aa182d8738d988b9d758c69c0f4e0a7679",
@@ -229,6 +262,11 @@
         "text-valign-v1",
         "usage-pace-v1"
       ],
+      "tags": [
+        "animated",
+        "pixel-art",
+        "providers-1"
+      ],
       "downloadAsset": "vibetv-theme-tiny-office-v0.7.0.zip",
       "sha256": "10f5b1715ac2b29bd75dd0a1df50f85821e455cddab98f067e67e6a4bd667c5f",
       "bytes": 8097,
@@ -249,6 +287,10 @@
         "usage-slots-v1",
         "text-valign-v1"
       ],
+      "tags": [
+        "providers-1",
+        "usage-stats"
+      ],
       "downloadAsset": "vibetv-theme-token-counter-v0.1.0.zip",
       "sha256": "52ec00deb0b9c66218fd548ce7439e74a6933807ffa563f3468e6e364bf3f735",
       "bytes": 784,
@@ -264,6 +306,11 @@
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
         "usage-slots-v1"
+      ],
+      "tags": [
+        "animated",
+        "pixel-art",
+        "usage-stats"
       ],
       "downloadAsset": "vibetv-theme-token-fire-v0.2.3.zip",
       "sha256": "5c8f340a9a18ddd46ffad8983a214c0fd088dbe7c4d13ea72a8c4536bc488bc1",

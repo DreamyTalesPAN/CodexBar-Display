@@ -6,6 +6,7 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, expect, it } from "vitest";
 
+import { expectNoAxeViolations } from "@/test/axe";
 import { SystemBusyDialog, systemBusyCopy } from "./system-busy-dialog";
 
 afterEach(cleanup);
@@ -41,4 +42,10 @@ it("dims the screen behind the dialog", () => {
   expect(scrim?.className).toContain("bg-black/10");
   expect(scrim?.className).toContain("opacity-100");
   expect(scrim?.className).not.toContain("pointer-events-none");
+});
+
+it("has no accessibility violations while it is open", async () => {
+  render(page(null));
+  expect(busy()).not.toBeNull();
+  await expectNoAxeViolations(document.body.innerHTML);
 });
