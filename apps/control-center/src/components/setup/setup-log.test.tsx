@@ -82,4 +82,11 @@ describe("SetupLog", () => {
       "vibetv-caret-blink",
     );
   });
+
+  it("draws no cursor block, while running or not: the lines are the look", () => {
+    const running = renderToStaticMarkup(<SetupLog lines={lines} running />);
+
+    expect(running).not.toContain("aria-hidden");
+    expect(running.match(/&gt; /g)).toHaveLength(2);
+  });
 });

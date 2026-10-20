@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { ProcessSteps, type ProcessStep } from "../process-steps";
 
@@ -12,10 +12,18 @@ type SetupLogProps = {
   /**
    * Work is in flight. The log is not marked aria-busy: that would hold back
    * its announcements, and a step that advances by unmounting would never be
-   * heard. It only keeps the log scrolled to its newest line.
+   * heard. It keeps the log scrolled to its newest line, and a step that runs
+   * long gets a "Still …" line.
    */
   running?: boolean;
+  /** Off where the screen already writes its own "still …" lines. */
+  stillLines?: boolean;
 };
+
+/** A step that is still running after this long gets a "Still …" line. */
+const STILL_INTERVAL_MS = 8000;
+/** Most "Still …" lines one step gets; after that the log stops growing. */
+const STILL_MAX_LINES = 5;
 
 /**
  * Terminal-style progress log for the setup wizard.
@@ -24,16 +32,57 @@ type SetupLogProps = {
  * and grows to five lines; beyond that the log scrolls inside the box and the
  * top edge fades.
  * The lines themselves are ProcessSteps (Theme Studio and Updates use the same).
+ *
+ * While the last step runs for longer than STILL_INTERVAL_MS, a "Still …" line
+ * is added under it every interval. This is the only display timer: a real
+ * failure arrives from the companion as its own line or error.
  */
-export function SetupLog({ className, lines }: SetupLogProps) {
+export function SetupLog({
+  className,
+  lines,
+  running = false,
+  stillLines = true,
+}: SetupLogProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const lastKey = lines.length ? stepKey(lines[lines.length - 1]) : undefined;
+  // How many "Still …" lines each step has got, keyed by stepKey.
+  const [stillCounts, setStillCounts] = useState<Record<string, number>>({});
+  // A retry reuses the step's id: a step that starts running again counts from zero.
+  const [prevRun, setPrevRun] = useState({ key: lastKey, running });
+  if (prevRun.key !== lastKey || prevRun.running !== running) {
+    setPrevRun({ key: lastKey, running });
+    if (running && lastKey !== undefined) {
+      setStillCounts((counts) => ({ ...counts, [lastKey]: 0 }));
+    }
+  }
+
+  useEffect(() => {
+    if (!stillLines || !running || lastKey === undefined) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setStillCounts((counts) => ({
+        ...counts,
+        [lastKey]: Math.min((counts[lastKey] ?? 0) + 1, STILL_MAX_LINES),
+      }));
+    }, STILL_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [stillLines, running, lastKey]);
+
+  const rows: SetupLogLine[] = lines.flatMap((line) => [
+    line,
+    ...Array.from({ length: stillCounts[stepKey(line)] ?? 0 }, (_, index) => ({
+      id: `${line.id}-still-${index + 1}`,
+      text: stillText(line.text),
+    })),
+  ]);
 
   useEffect(() => {
     const node = scrollRef.current;
     if (node) {
       node.scrollTop = node.scrollHeight;
     }
-  }, [lines]);
+  }, [lines, running, stillCounts]);
 
   return (
     <div
@@ -45,23 +94,59 @@ export function SetupLog({ className, lines }: SetupLogProps) {
         // only hint that there is more, so the top edge fades instead — the
         // log always sits at its bottom, so anything out of view is above.
         "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-        lines.length > 5 &&
+        rows.length > 5 &&
           "[mask-image:linear-gradient(to_bottom,transparent,black_14px)]",
         className,
       )}
       ref={scrollRef}
     >
       {/* No steps, no child: an empty log must match `empty:mt-0`, or its margin leaves a gap in the step. */}
-      {lines.length ? (
+      {rows.length ? (
         <ProcessSteps
-          steps={lines.map((line, index) => ({
+          steps={rows.map((line, index) => ({
             ...line,
             // Everything above the newest line reads as finished.
             tone:
-              line.tone !== "error" && index < lines.length - 1 ? "done" : line.tone,
+              line.tone !== "error" && index < rows.length - 1 ? "done" : line.tone,
           }))}
         />
       ) : null}
     </div>
   );
+}
+
+/** The step's words: its last sentence, without a ": …", " · " or " — " tail. */
+function stepWording(text: string): string {
+  const sentences = text.replace(/\.$/, "").split(/\. /);
+  return sentences[sentences.length - 1].split(/: | · | — /)[0];
+}
+
+/**
+ * Identifies one step for counting its Still lines. The id alone is not
+ * enough: a restored log numbers its lines by position, so a new step can
+ * take an old id. The wording stays put while a percentage changes.
+ */
+function stepKey(line: SetupLogLine): string {
+  return `${line.id}\u0000${stepWording(line.text)}`;
+}
+
+/**
+ * "Refreshing display stream." becomes "Still refreshing display stream – hang
+ * tight." Only the last sentence counts ("Upload interrupted. Retrying." reads
+ * "retrying"), a tail after ": ", " · " or " — " (a percentage, a version) is left out,
+ * so the line does not go stale as that number changes. A dot inside a number
+ * ("192.168") is kept. A past-tense text ("Uploaded theme layout.") says
+ * nothing about what is running, so it gets the generic line.
+ */
+function stillText(text: string): string {
+  const step = stepWording(text);
+  // Past tense at the start or the end ("Uploaded theme layout.",
+  // "Display stream refreshed.") is not what runs now; "installed" inside
+  // "Checking installed firmware." is.
+  if (!step || /^\w+ed\b|\b\w+ed$/i.test(step)) {
+    return "Still working on it – hang tight.";
+  }
+  // Lower-case a capitalised first word, but not a name such as VibeTV.
+  const doing = step.replace(/^[A-Z][a-z]+\b/, (word) => word.toLowerCase());
+  return `Still ${doing} – hang tight.`;
 }

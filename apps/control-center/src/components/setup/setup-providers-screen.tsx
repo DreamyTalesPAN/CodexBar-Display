@@ -584,7 +584,8 @@ function SetupProvidersLoadingScreen({
         This can take up to 5 minutes. We&apos;re sorry.
       </SetupWizardSubtitle>
 
-      <SetupLog className="mt-8" lines={lines} running />
+      {/* This screen writes its own "still checking" lines every 20 seconds. */}
+      <SetupLog className="mt-8" lines={lines} running stillLines={false} />
 
       <div className="relative mt-6 w-full">
         <Search
