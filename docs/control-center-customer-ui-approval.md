@@ -8711,7 +8711,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-20 — #802: Appearance install on the button, bigger lime Active pill (7198 review, Paul's pictures)
 
-- User approval: pending — Paul asked for this on 20.10.2026 after his review of build 7198 and the first pictures (via the communicator); the rendered result is pending his review. This line: #802 install state and pills. Before → after: while installing, the card grew by a progress bar and a box with step lines, and afterwards kept a box "Installed – Theme is active on VibeTV." → the card never changes its height: its own lime Install button turns into a disabled "Installing" with a spinner, nothing else is added, and after the install only the pill on the picture remains; the "Active" pill is bigger (14 px text, 24 px high) in lime #CCFF00 with black text, the "Installed" pill is as big and light so Active stands out; no extra "Try again" row, a failed install is the usual dialog and the card's Install button retries.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:30: "passt so" (pictures of the install button and the pills, vibetv-testbench/review-1016/ui/802-install-button/) — entry: #802 install state and pills. Before → after: while installing, the card grew by a progress bar and a box with step lines, and afterwards kept a box "Installed – Theme is active on VibeTV." → the card never changes its height: its own lime Install button turns into a disabled "Installing" with a spinner, nothing else is added, and after the install only the pill on the picture remains; the "Active" pill is bigger (14 px text, 24 px high) in lime #CCFF00 with black text, the "Installed" pill is as big and light so Active stands out; no extra "Try again" row, a failed install is the usual dialog and the card's Install button retries.
 - Approved customer-visible result: pictures for Paul in `vibetv-testbench/review-1016/ui/802-install-button/` (card while installing, card after, close-up of the pills), 1200 px, "App heute (7198)" next to "neu".
 - Scope: `apps/control-center/src/components/theme-library-screen.tsx`, its unit tests, the customer-flow script `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #802 install state and pills: no new content, the same install with another look
@@ -8757,3 +8757,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #802 as in its own entries (pending, Paul reviews) plus the entries of the base branch.
 - Scope: the merge and this approval record. Pull request branch #802 only, not merged, not released.
 - What's new: none — merge of the base branch, no customer-visible change of its own
+
+## 2026-10-20 — #802: Paul approved the install button and the pills
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:30: "passt so" — #802 approval record for the Appearance install state: the entry "Appearance install on the button, bigger lime Active pill (7198 review, Paul's pictures)" above now carries it; earlier #802 entries stay as they are.
+- Approved customer-visible result: #802 install on the card's own lime button ("Installing" with a spinner, the card keeps its height, no steps, bar or notice in the card) and the bigger lime "Active" pill with black text next to the light "Installed" pill, as in the pictures in `vibetv-testbench/review-1016/ui/802-install-button/`.
+- Scope: this approval record only. Pull request branch #802 only, not merged, not released.
+- What's new: none — approval record for #802 install state and pills, no new content
