@@ -8038,3 +8038,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #829 unchanged screens and texts; in the rare case of a stale pre-update reading the hint stays open until a fresh reading arrives.
 - Scope: #829 setup/Updates stream-attention recovery check and the Companion's stream status field `errorAt`. Pull request branch only, not merged, not released.
 - What's new: none — #829 recovery check only
+
+## 2026-10-20 — #829: approval marker after merging main at 5f09bf54
+
+- User approval: no visible change – UI approval not needed (merge of main (5f09bf54) into #829; the own entries of #829 keep their approvals)
+- Approved customer-visible result: #829 as in its own entries plus the entries merged with 5f09bf54; nothing else changes.
+- Scope: the merge of 5f09bf54 and this approval record. Pull request branch #829 only, not merged, not released.
+- What's new: none — merge of 5f09bf54, no customer-visible change of its own
