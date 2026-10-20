@@ -15,11 +15,20 @@ REQUIRED="eagle.flash.4m2m.ld"
 [[ -f "$INI" ]] || { printf 'error: %s not found\n' "$INI" >&2; exit 2; }
 
 python3 - "$INI" "$REQUIRED" <<'PY'
-import configparser, re, sys
+import configparser, glob, os, re, sys
 
 ini, required = sys.argv[1], sys.argv[2]
 cp = configparser.ConfigParser(interpolation=None, strict=False, inline_comment_prefixes=(";",))
 cp.read(ini)
+
+# Like PlatformIO: files named in [platformio] extra_configs are read after the
+# main file and override its sections and options.
+if cp.has_option("platformio", "extra_configs"):
+    base = os.path.dirname(os.path.abspath(ini))
+    for pattern in cp.get("platformio", "extra_configs").replace(",", "\n").split("\n"):
+        pattern = pattern.strip()
+        if pattern:
+            cp.read(sorted(glob.glob(os.path.join(base, os.path.expanduser(pattern)))))
 
 # PlatformIO's own ${section.option} interpolation; "this" is the env being read.
 REF = re.compile(r"\$\{([^.}]+)\.([^}]+)\}")

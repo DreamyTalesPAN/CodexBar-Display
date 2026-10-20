@@ -114,6 +114,14 @@ expect 1 env-default-after-parents
 sed 's/extends = bad, unrelated/extends = unrelated/' "${WORK}/env-default-after-parents.ini" >"${WORK}/env-default-only.ini"
 expect 0 env-default-only
 
+# Files in [platformio] extra_configs override the main file.
+mkdir -p "${WORK}/extra"
+{ printf '[platformio]\nextra_configs = extra/*.ini\n\n'; cat "${WORK}/ok.ini"; } >"${WORK}/extra-configs.ini"
+printf '[env:main]\nboard_build.ldscript = eagle.flash.4m3m.ld\n' >"${WORK}/extra/override.ini"
+expect 1 extra-configs
+printf '[env:main]\nbuild_flags = -DY=1\n' >"${WORK}/extra/override.ini"
+expect 0 extra-configs
+
 "$CHECK" >/dev/null || die "the repository's platformio.ini fails the check"
 
 echo "ESP8266 flash layout check tests passed"
