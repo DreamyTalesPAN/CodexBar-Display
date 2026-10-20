@@ -342,8 +342,8 @@ export function EditableThemePreview({
     <div
       ref={surfaceRef}
       aria-label="Selection workspace"
-      // Three rows: the preview in the middle one, the details in the free space below it (as high as that space, scrolling inside), so the preview never moves or gets covered.
-      className="relative grid min-h-0 w-full flex-1 grid-rows-[minmax(0,1fr)_auto_minmax(3rem,1fr)] max-lg:grid-rows-[auto_auto_auto] [touch-action:none]"
+      // Three rows plus a 98 px spacer: the preview stays where it is centred above the spacer; the details take all the space below the preview down to the bottom edge (scrolling inside), so the preview never moves or gets covered.
+      className="relative grid min-h-0 w-full flex-1 grid-rows-[minmax(0,1fr)_auto_minmax(3rem,1fr)_98px] max-lg:grid-rows-[auto_auto_auto] [touch-action:none]"
       onPointerDown={(event) => {
         if (event.button === 0 && !(event.target as Element).closest("svg, button, input, textarea, select, a, [role=button], [data-selection-controls]")) startSelection(event);
       }}
@@ -439,7 +439,7 @@ export function EditableThemePreview({
     </div>
     </div>
     </div>
-    {children ? <div className="row-start-3 flex flex-col pt-2 lg:min-h-0 [touch-action:auto]">{children}</div> : null}
+    {children ? <div className="row-start-3 flex flex-col pt-2 lg:row-span-2 lg:min-h-0 [touch-action:auto]">{children}</div> : null}
     {selectionBox ? (
       <div aria-hidden="true" data-testid="selection-box"
         className="pointer-events-none absolute z-10 border border-dashed border-[#CCFF00] bg-[#CCFF0033]"

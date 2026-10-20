@@ -1122,8 +1122,8 @@ export function AIThemeStudioScreen({
             </span>
           </div>
         </header>
-          {/* In the template the editor is 520 px high in an 800 px window: the preview sits in the middle of it, the composer on its bottom edge. */}
-          <main className="flex min-h-0 flex-1 flex-col gap-6 pt-8 lg:mb-[98px] lg:flex-row lg:gap-12">
+          {/* The composer sits on the bottom edge of the window at every height; the preview keeps the template's position (see the spacer row in the workspace grid). */}
+          <main className="flex min-h-0 flex-1 flex-col gap-6 pt-8 lg:flex-row lg:gap-12">
             <div className="min-h-0 min-w-0 overflow-y-auto lg:flex-1 lg:basis-0">
             <div
               id="theme-design-canvas"
