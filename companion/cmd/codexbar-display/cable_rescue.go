@@ -105,20 +105,13 @@ func resumableRescueMarker(home string) (firmwareupdate.RescueMarker, bool) {
 		fmt.Printf("Cable rescue: marked port %s is not present, nothing to resume\n", marker.Port)
 		return firmwareupdate.RescueMarker{}, false
 	}
-	if _, statErr := os.Stat(marker.ImagePath); statErr != nil {
-		fmt.Printf("Cable rescue: marked image is gone, nothing to resume: %v\n", statErr)
-		return firmwareupdate.RescueMarker{}, false
-	}
-	if sum, sumErr := sha256File(marker.ImagePath); sumErr != nil || !strings.EqualFold(sum, marker.ImageSHA256) {
-		fmt.Printf("Cable rescue: marked image does not match its checksum, nothing to resume\n")
-		return firmwareupdate.RescueMarker{}, false
-	}
 	// A write that succeeded but was not verified leaves a marker although the
 	// VibeTV may boot and answer normally later. Only an answer that matches the
 	// recorded rescue (same board, the old or the target firmware) proves that;
 	// then the marker is stale. Any other answer is another VibeTV on a reused
 	// port name: the marker stays for the half-written one, and this port is not
-	// written either (Codex review on #819).
+	// written either (Codex review on #819). This runs before the image checks:
+	// a healthy VibeTV clears its stale marker even when the cached image is gone.
 	if hello, helloErr := readCableFirmwareHelloFn(marker.Port); helloErr == nil &&
 		(strings.TrimSpace(hello.DeviceID) != "" || strings.TrimSpace(hello.Firmware) != "") {
 		fw := strings.TrimSpace(hello.Firmware)
@@ -131,6 +124,14 @@ func resumableRescueMarker(home string) (firmwareupdate.RescueMarker, bool) {
 		} else {
 			fmt.Printf("Cable rescue: another VibeTV answers on %s (board %s, firmware %s); keeping the marker for the half-written one and writing nothing there\n", marker.Port, strings.TrimSpace(hello.Board), fw)
 		}
+		return firmwareupdate.RescueMarker{}, false
+	}
+	if _, statErr := os.Stat(marker.ImagePath); statErr != nil {
+		fmt.Printf("Cable rescue: marked image is gone, nothing to resume: %v\n", statErr)
+		return firmwareupdate.RescueMarker{}, false
+	}
+	if sum, sumErr := sha256File(marker.ImagePath); sumErr != nil || !strings.EqualFold(sum, marker.ImageSHA256) {
+		fmt.Printf("Cable rescue: marked image does not match its checksum, nothing to resume\n")
 		return firmwareupdate.RescueMarker{}, false
 	}
 	fmt.Printf("Cable rescue: no VibeTV said hello, but port %s holds one left half-written; resuming through its ROM loader\n", marker.Port)

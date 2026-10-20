@@ -325,6 +325,38 @@ func TestRunInstallUpdateCableRescueClearsAStaleMarkerWhoseVibeTVAnswers(t *test
 	}
 }
 
+// A stale marker whose cached image was deleted is still cleared once its
+// VibeTV answers, so it cannot block every later rescue (Codex on #819).
+func TestRunInstallUpdateCableRescueClearsAStaleMarkerWhoseImageIsGone(t *testing.T) {
+	_, manifestURL, firmwareVersion := prepareCableFirmwareUpdateTest(t)
+	pinCableRescue(t)
+	marker := writeRescueMarkerFixture(t, "COM4", time.Hour)
+	if err := os.Remove(marker.ImagePath); err != nil {
+		t.Fatal(err)
+	}
+	listCablePortsFn = func() ([]string, error) { return []string{"COM4", "/dev/mock-legacy"}, nil }
+	findLegacyCableVibeTVFn = legacyRescueDevice
+	readCableFirmwareHelloFn = func(port string) (protocol.DeviceHello, error) {
+		if port == "COM4" {
+			return protocol.DeviceHello{DeviceID: "healthy-marked", Board: rescueTestBoard, Firmware: "1.0.1"}, nil
+		}
+		return protocol.DeviceHello{DeviceID: "device-cable", Board: rescueTestBoard, Firmware: *firmwareVersion}, nil
+	}
+	flashCableRescueFn = func(_ context.Context, _ string, _ []byte, opts usb.ROMFlashOptions) error {
+		opts.OnWriteStarted()
+		*firmwareVersion = "1.0.1"
+		return nil
+	}
+	output, _ := captureStdout(t, func() error { return runInstallUpdate(rescueArgs(manifestURL)) })
+	if !strings.Contains(output, "marker is stale") {
+		t.Fatalf("the stale marker was not reported:\n%s", output)
+	}
+	home, _ := os.UserHomeDir()
+	if kept, ok := firmwareupdate.LoadRescueMarker(home, time.Now()); ok {
+		t.Fatalf("the stale marker must be cleared: %+v", kept)
+	}
+}
+
 // Another VibeTV on a reused port name neither clears the marker nor gets
 // written (Codex on #819).
 func TestRunInstallUpdateCableRescueKeepsTheMarkerWhenAnotherVibeTVAnswersOnItsPort(t *testing.T) {
@@ -436,6 +468,10 @@ func TestRunInstallUpdateCableRescueWritesNothingWithoutAUsableMarker(t *testing
 				t.Fatal(err)
 			}
 			listCablePortsFn = func() ([]string, error) { return []string{"COM4"}, nil }
+			// The half-written VibeTV on the marked port stays silent.
+			readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+				return protocol.DeviceHello{}, errors.New("no hello")
+			}
 		},
 		"image gone": func(t *testing.T) {
 			marker := writeRescueMarkerFixture(t, "COM4", time.Hour)
@@ -443,6 +479,10 @@ func TestRunInstallUpdateCableRescueWritesNothingWithoutAUsableMarker(t *testing
 				t.Fatal(err)
 			}
 			listCablePortsFn = func() ([]string, error) { return []string{"COM4"}, nil }
+			// The half-written VibeTV on the marked port stays silent.
+			readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+				return protocol.DeviceHello{}, errors.New("no hello")
+			}
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
