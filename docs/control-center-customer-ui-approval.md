@@ -8460,3 +8460,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the Settings buttons look like frame 3 of "Calm Redesign - alle Screens".
 - Scope: `apps/control-center/src/components/settings-screen.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #784: build 2b QA, a lime button with another fill (the round Send button) keeps no lime frame
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the entry above filled the lime buttons with a lime border; this change fills them by letting the fill run under the border instead, so a lime-variant button that is given another fill (the round grey/black "Send" button in the Theme Studio) shows no thin lime ring. The lime buttons look as in the entry above. Nothing else changes.
+- Approved customer-visible result: lime buttons fill their whole box; the round Send button in the Theme Studio is a plain circle as in frames 7-9 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/ui/button.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
