@@ -8581,7 +8581,14 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-20 — #817: result lines of approved entries cleaned up
 
-- User approval: no visible change – UI approval not needed (#817 record cleanup: entries that already carry Paul's approval no longer start their result line with "pending"/"Draft")
+- User approval: no visible change – UI approval not needed (#817: result lines of approved entries cleaned up: record cleanup, wording only: entries that already carry Paul's approval no longer open their result line with an old status word)
 - Approved customer-visible result: #817 unchanged; only the wording of the approval record.
 - Scope: #817 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #817 record cleanup
+
+## 2026-10-20 — #817: approval lines rewritten to the two accepted forms
+
+- User approval: no visible change – UI approval not needed (#817 record rewrite for the gate in #823; no customer-visible change)
+- Approved customer-visible result: #817 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
+- Scope: #817 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #817 approval record only
