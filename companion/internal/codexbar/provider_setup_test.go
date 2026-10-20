@@ -1016,14 +1016,14 @@ func TestPermissionCopyNamesTheHostSystem(t *testing.T) {
 	providerCopyGOOS = "darwin"
 	mac := providerResult("claude", ProviderPermissionRequired)
 	if mac.Detail != "macOS blocked access required by this provider." ||
-		mac.NextAction != "Allow the requested macOS permission, then check again." {
+		mac.NextAction != "Allow the requested macOS permission." {
 		t.Fatalf("macOS copy changed: %+v", mac)
 	}
 
 	providerCopyGOOS = "windows"
 	windows := providerResult("claude", ProviderPermissionRequired)
 	if windows.Detail != "Windows blocked access required by this provider." ||
-		windows.NextAction != "Allow the requested access, then check again." {
+		windows.NextAction != "Allow the requested access." {
 		t.Fatalf("Windows copy = %+v", windows)
 	}
 }

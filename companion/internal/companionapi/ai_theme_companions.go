@@ -213,27 +213,44 @@ func (a *aiThemeState) createCompanionConcept(ctx context.Context, key string, r
 			}
 			prompt := fmt.Sprintf("%s Create ONE sprite sheet with EXACTLY EIGHT animation frames in a regular 4-COLUMN, 2-ROW grid of equal SQUARE cells, aspect ratio 2:1. Each cell contains the SAME complete isolated subject at identical scale and body anchor. Generous padding; no clipping. Draw one continuous cyclic action in reading order, frame8 returning smoothly to frame1. Keep body size, face, markings and ground/hover anchor consistent; only intended body parts change pose. Chunky crisp pixel art readable at %dx%d display pixels. Use perfectly flat opaque pure magenta RGB(255,0,255) #FF00FF everywhere outside the subject, including holes between limbs. NO checkerboard, scenery, floor, shadows, captions, borders or grid lines. Do not use magenta in the subject. For grounded subjects keep feet at the same baseline around 88%% cell height. Subject: %s. Motion: %s.", identity, p.Size, p.Size, p.Subject, p.Motion)
 			prompt += " Customer change request: " + req.Prompt
-			c.SheetBase64, e = a.createConceptImageSized(ctx, key, prompt, reference, "1536x768")
-			if e != nil {
-				return result, e
+			// A companion that runs into the request deadline is left to the
+			// fallback below, so the finished picture is never lost to it.
+			outOfTime := errors.Is(ctx.Err(), context.DeadlineExceeded)
+			issue := ""
+			if !outOfTime {
+				c.SheetBase64, e = a.createConceptImageSized(ctx, key, prompt, reference, "1536x768")
+				outOfTime = errors.Is(ctx.Err(), context.DeadlineExceeded)
 			}
-			if err := ctx.Err(); err != nil {
-				return result, err
-			}
-			if issue := companionSheetIssue(c.SheetBase64); issue != "" {
-				// Repair this sprite once. Never send the rejected scene back as an
-				// identity reference, and never regenerate other layers here.
-				repairPrompt := "REPAIR: The previous output was rejected: " + issue + ". Return ONLY an isolated sprite sheet, never an illustration or scene. " + prompt + " FINAL OUTPUT REQUIREMENT: exactly 4 columns by 2 rows of square cells; eight complete poses with empty padding on every edge. Every pixel outside the subject must be uniform #FF00FF. NO environment, floor, UI, text or extra poses."
-				c.SheetBase64, e = a.createConceptImageSized(ctx, key, repairPrompt, identityReference, "1536x768")
+			if !outOfTime {
 				if e != nil {
 					return result, e
 				}
 				if err := ctx.Err(); err != nil {
 					return result, err
 				}
-				if issue = companionSheetIssue(c.SheetBase64); issue != "" {
-					return result, aiThemeQualityFailure("frames", "Companion "+p.ID+" failed after one correction: "+issue, false)
+				issue = companionSheetIssue(c.SheetBase64)
+			}
+			if issue != "" {
+				// Repair this sprite once. Never send the rejected scene back as an
+				// identity reference, and never regenerate other layers here.
+				repairPrompt := "REPAIR: The previous output was rejected: " + issue + ". Return ONLY an isolated sprite sheet, never an illustration or scene. " + prompt + " FINAL OUTPUT REQUIREMENT: exactly 4 columns by 2 rows of square cells; eight complete poses with empty padding on every edge. Every pixel outside the subject must be uniform #FF00FF. NO environment, floor, UI, text or extra poses."
+				sheet, e := a.createConceptImageSized(ctx, key, repairPrompt, identityReference, "1536x768")
+				if errors.Is(ctx.Err(), context.Canceled) {
+					return result, ctx.Err()
 				}
+				// A repair that fails or outlives the request counts as rejected.
+				if e == nil && ctx.Err() == nil {
+					c.SheetBase64, issue = sheet, companionSheetIssue(sheet)
+				}
+			}
+			if outOfTime || issue != "" {
+				// The customer still gets the design: an existing companion keeps
+				// its previous drawings, a new one is left out of the picture.
+				prior, ok := old[p.ID]
+				if !ok {
+					continue
+				}
+				c.SheetBase64, c.Reuse = prior.SheetBase64, true
 			}
 		}
 		result.Companions = append(result.Companions, c)
