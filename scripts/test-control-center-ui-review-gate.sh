@@ -43,7 +43,7 @@ WHATS_NEW_NONE="- What's new: none — nothing a customer would look for"
 approval_entry() {
   local label="$1"
   local whats_new="${2-$WHATS_NEW_NONE}"
-  printf '\n## %s\n\n- User approval: Explicit test approval.\n- Approved customer-visible result: %s\n' \
+  printf '\n## %s\n\n- User approval: approved by Paul in the communicator chat, 2026-10-20 12:15: "Ja, so passt das."\n- Approved customer-visible result: %s\n' \
     "$label" "$label"
   [[ -z "$whats_new" ]] || printf '%s\n' "$whats_new"
 }
@@ -286,7 +286,7 @@ test_every_added_entry_needs_its_approval_lines() {
   setup_repo "$repo"
   commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
     "Change customer-facing UI"
-  printf '\n## First half\n\n- User approval: Explicit test approval.\n%s\n\n## Second half\n\n- Approved customer-visible result: Second half\n%s\n' \
+  printf '\n## First half\n\n- User approval: approved by Paul in the communicator chat, 2026-10-20 12:15: "Ja, so passt das."\n%s\n\n## Second half\n\n- Approved customer-visible result: Second half\n%s\n' \
     "$WHATS_NEW_NONE" "$WHATS_NEW_NONE" \
     >> "$repo/docs/control-center-customer-ui-approval.md"
   git -C "$repo" add docs/control-center-customer-ui-approval.md
@@ -340,7 +340,7 @@ test_pending_approval_is_due() {
 test_draft_approval_is_due() {
   local repo="${TMP_ROOT}/draft-approval"
   approve_ui_change_with_lines "$repo" \
-    "- User approval: Paul asked for this change in the issue." \
+    '- User approval: approved by Paul in the communicator chat, 2026-10-20 12:15: "Ja, so passt das."' \
     "- Approved customer-visible result: Draft, to be confirmed by Paul. The overview reads Ready."
   expect_gate_due "$repo"
   assert_contains "$(run_gate "$repo")" "$PENDING_REASON"
@@ -357,7 +357,7 @@ test_approval_pending_review_is_due() {
 test_markdown_draft_result_is_due() {
   local repo="${TMP_ROOT}/markdown-draft"
   approve_ui_change_with_lines "$repo" \
-    "- User approval: Paul asked for this change in the issue." \
+    '- User approval: approved by Paul in the communicator chat, 2026-10-20 12:15: "Ja, so passt das."' \
     "- Approved customer-visible result: **Draft**, to be confirmed by Paul."
   expect_gate_due "$repo"
 }
@@ -367,7 +367,7 @@ test_markdown_draft_result_is_due() {
 give_pending_approval() {
   local repo="$1"
   local file="$repo/docs/control-center-customer-ui-approval.md"
-  sed 's/^- User approval: pending — Paul reviews this PR (test)\.$/- User approval: Paul approved the rendered result in the PR review (test)./' \
+  sed 's/^- User approval: pending — Paul reviews this PR (test)\.$/- User approval: approved by Paul in the communicator chat, 2026-10-20 12:15: "Ja, so passt das."/' \
     "$file" > "$file.new"
   mv "$file.new" "$file"
 }
@@ -416,7 +416,7 @@ test_correction_commit_does_not_cover_its_own_ui() {
 test_result_that_describes_a_draft_passes() {
   local repo="${TMP_ROOT}/result-names-draft"
   approve_ui_change_with_lines "$repo" \
-    "- User approval: Explicit test approval." \
+    '- User approval: approved by Paul in the communicator chat, 2026-10-20 12:15: "Ja, so passt das."' \
     "- Approved customer-visible result: Theme Studio keeps the unsaved draft while a provider is pending."
   expect_gate_success "$repo"
 }
@@ -522,7 +522,7 @@ test_pending_entry_on_base_does_not_block_later_pull_requests() {
 approval_entry_scoped() {
   local label="$1"
   local path="$2"
-  printf '\n## %s\n\n- User approval: Explicit test approval.\n- Approved customer-visible result: %s\n- Scope: %s and this approval record.\n%s\n' \
+  printf '\n## %s\n\n- User approval: approved by Paul in the communicator chat, 2026-10-20 12:15: "Ja, so passt das."\n- Approved customer-visible result: %s\n- Scope: %s and this approval record.\n%s\n' \
     "$label" "$label" "$path" "$WHATS_NEW_NONE"
 }
 
@@ -895,6 +895,42 @@ test_pending_and_draft_stay_due_next_to_the_new_forms() {
   expect_gate_due "$repo"
 }
 
+# Every added "User approval:" value must be one of the accepted forms; free
+# text, an incomplete "approved by Paul" or a missing line is no approval.
+test_unrecognized_approval_value_is_due() {
+  local repo
+  local label=0
+  local value
+  for value in \
+    "Explicit test approval." \
+    "approved by Paul in the communicator chat" \
+    "approved by Paul in the communicator chat, 2026-10-20 12:15" \
+    'approved by Paul in the communicator chat, 2026-10-20: "Ja."' \
+    'approved by Paul in the communicator chat, 2026-10-20 12:15: ""' \
+    "Paul asked for this change in the issue." \
+    "approved"; do
+    label=$((label + 1))
+    repo="${TMP_ROOT}/unrecognized-approval-${label}"
+    approve_ui_change_with_approval_line "$repo" "- User approval: ${value}"
+    expect_gate_due "$repo"
+    assert_contains "$(run_gate "$repo")" "none of the accepted forms"
+  done
+
+  # An earlier entry of the same change is checked too, and so is a missing line.
+  repo="${TMP_ROOT}/unrecognized-approval-earlier"
+  setup_repo "$repo"
+  git -C "$repo" update-ref refs/remotes/origin/main HEAD
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Change customer-facing UI"
+  printf '\n## Free text\n\n- User approval: Looks good.\n- Approved customer-visible result: Free text\n%s\n' \
+    "$WHATS_NEW_NONE" >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" add docs/control-center-customer-ui-approval.md
+  git -C "$repo" commit -q -m "Free text approval"
+  commit_approval "$repo" "Given later"
+  expect_gate_due "$repo"
+  assert_contains "$(run_gate "$repo")" "none of the accepted forms"
+}
+
 test_non_ui_commits_do_not_block
 test_ui_change_blocks_immediately
 test_working_tree_ui_change_blocks_immediately
@@ -938,5 +974,6 @@ test_no_visible_change_needs_a_reason
 test_no_visible_change_cannot_announce_something_new
 test_no_visible_change_in_an_earlier_commit_passes
 test_pending_and_draft_stay_due_next_to_the_new_forms
+test_unrecognized_approval_value_is_due
 
 printf 'control-center UI review gate tests passed\n'

@@ -102,6 +102,7 @@ const addedDiff = addedSince
     ].join("\n");
 const pendingEntries = addedEntries(addedDiff).filter(isPendingOrDraft);
 const badNoChangeEntries = addedEntries(addedDiff).filter(isBadNoVisibleChange);
+const unrecognizedApprovalEntries = addedEntries(addedDiff).filter(hasUnrecognizedApproval);
 const invalidApprovalMarker =
   (workingTreeApprovalChanged && !workingTreeApprovalValid) ||
   (!workingTreeApprovalChanged && Boolean(approvalCommit) && !committedApprovalValid);
@@ -109,6 +110,7 @@ const due =
   invalidApprovalMarker ||
   pendingEntries.length > 0 ||
   badNoChangeEntries.length > 0 ||
+  unrecognizedApprovalEntries.length > 0 ||
   unapprovedUiFiles.length > 0;
 
 printSummary({
@@ -121,6 +123,7 @@ printSummary({
   pendingEntries,
   uiChangedFiles,
   unapprovedUiFiles,
+  unrecognizedApprovalEntries,
   workingTreeApprovalChanged,
   workingTreeChangedFiles,
 });
@@ -132,7 +135,9 @@ if (due) {
       ? `${pendingEntries.length} approval entr${pendingEntries.length === 1 ? "y" : "ies"} added by this change say${pendingEntries.length === 1 ? "s" : ""} pending or draft, which is no approval yet. Replace it with the given approval before merge.`
       : badNoChangeEntries.length > 0
         ? `${badNoChangeEntries.length} approval entr${badNoChangeEntries.length === 1 ? "y" : "ies"} added by this change say${badNoChangeEntries.length === 1 ? "s" : ""} "no visible change" without the full form \`no visible change – UI approval not needed (<reason>)\` or with a "What's new" notice, which is a visible change.`
-        : `Customer-facing UI changed in ${unapprovedUiFiles.length} file(s) without a matching approval entry.`;
+        : unrecognizedApprovalEntries.length > 0
+          ? `${unrecognizedApprovalEntries.length} approval entr${unrecognizedApprovalEntries.length === 1 ? "y" : "ies"} added by this change ${unrecognizedApprovalEntries.length === 1 ? "has" : "have"} a "User approval:" line in none of the accepted forms: \`approved by Paul in the communicator chat, <YYYY-MM-DD HH:MM>: "<quote>"\` or \`no visible change – UI approval not needed (<reason>)\`.`
+          : `Customer-facing UI changed in ${unapprovedUiFiles.length} file(s) without a matching approval entry.`;
   const message = [
     reason,
     `Get explicit approval for the exact visible result, review ${PRINCIPLES_FILE}, then append it to ${APPROVAL_FILE}.`,
@@ -348,6 +353,23 @@ function isPendingOrDraft(entry) {
   );
 }
 
+// An entry's "User approval:" line must be one of the accepted forms: Paul's
+// recorded yes (1), or the complete no-visible-change form (2). Pending and
+// draft entries (3) and a malformed "no visible change" are reported as such
+// by the checks above; anything else (an incomplete "approved by Paul", free
+// text, no line at all) is no approval.
+function hasUnrecognizedApproval(entry) {
+  const approval = entryField(entry, "- User approval:");
+  if (APPROVED_BY_PAUL_PATTERN.test(approval)) {
+    return false;
+  }
+  const marked = approval.replace(LEADING_MARKDOWN, "");
+  if (PENDING_APPROVAL_PATTERN.test(approval) || NO_VISIBLE_CHANGE_START.test(marked)) {
+    return false;
+  }
+  return true;
+}
+
 // An entry that calls itself "no visible change" needs the reason in the given
 // form and may not announce a "What's new" notice (a notice is something the
 // customer sees).
@@ -442,6 +464,7 @@ function printSummary({
   badNoChangeEntries,
   uiChangedFiles,
   unapprovedUiFiles,
+  unrecognizedApprovalEntries,
   workingTreeApprovalChanged,
   workingTreeChangedFiles,
 }) {
@@ -468,6 +491,12 @@ function printSummary({
   if (badNoChangeEntries.length > 0) {
     console.log('Approval entries that say "no visible change" without the full form:');
     for (const entry of badNoChangeEntries) {
+      console.log(`- ${entry.split("\n")[0].slice(3)}`);
+    }
+  }
+  if (unrecognizedApprovalEntries.length > 0) {
+    console.log("Approval entries whose approval line is in none of the accepted forms:");
+    for (const entry of unrecognizedApprovalEntries) {
       console.log(`- ${entry.split("\n")[0].slice(3)}`);
     }
   }
