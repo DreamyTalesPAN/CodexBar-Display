@@ -8814,3 +8814,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #802 no change; the same screens and sentences as in the entries above.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs` only. Pull request branch #802 only, not merged, not released.
 - What's new: none — test-only change, no customer-visible content
+
+## 2026-10-20 — #802: catalog tags for the theme filters when pack metadata is incomplete
+
+- User approval: pending — #802 catalog tags for the theme filters (Marcus' #801 suggestion): a theme whose catalog entry has tags but incomplete pack metadata now shows the catalog's tags, so its filter options and counts can change; Paul reviews.
+- Approved customer-visible result: #802 the filter options and counts take the catalog's tags for such a theme; nothing else changes.
+- Scope: `apps/control-center/src/lib/themes.ts` and its unit test `themes.test.ts`, and this approval record. Pull request branch #802 only, not merged, not released.
+- What's new: none — #802 filter tags from the catalog, no new content
