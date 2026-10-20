@@ -7831,3 +7831,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #805 as in its own entries (pending, Paul reviews) plus the entries merged with b74db67b; nothing else changes.
 - Scope: the merge of b74db67b and this approval record. Pull request branch #805 only, not merged, not released.
 - What's new: none — merge of b74db67b, no customer-visible change of its own
+
+## 2026-10-20 — A silent background service is restarted once by itself (#836)
+
+- User approval: no visible change – UI approval not needed (#836: the existing service screen appears less often, because the app first does the existing "Restart service" once by itself; no new text or look)
+- Approved customer-visible result: unchanged (#836). The screen "VibeTV's background service couldn't start" has the same texts and buttons; it only appears after the app has done the existing "Restart service" once by itself in that launch and the service stayed silent again (#836).
+- Scope: `macos/VibeTVControlCenter/main.swift`, `macos/VibeTVControlCenter/URLSchemeTests.swift`, and this approval record (#836). Pull request branch only, not merge or release.
+- What's new: none — the service screen simply appears less often (#836)
