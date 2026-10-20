@@ -7817,3 +7817,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: unchanged.
 - Scope: merge of `origin/main` into this pull request branch, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no customer-visible change
+
+## 2026-10-19 — A slow provider check finishes instead of timing out (#786)
+
+- User approval: Marcus, 19.10.2026, question 64 via the orchestrator, answer "ja": a single provider check may take up to 90 s, after at most 50 s the row shows that it is being checked, the result arrives on its own, and the check of all providers keeps its 40 s.
+- Approved customer-visible result: When a customer switches one provider on or clicks "Check again" on it, that provider's check may now take up to 90 seconds before the row reports "The provider check timed out.", on the Mac and on Windows, instead of 40 seconds. If the check still runs after 50 seconds, "Check again" ends and the row shows that the provider is being checked until the result arrives; the row then shows the result without another click. A Mac whose only Claude sign-in is Claude Code (about 55 seconds through CodexBar) ends with Claude working instead of the timeout. No copy, layout or control changes; the check of all providers at once keeps its 40 seconds.
+- Scope: `companion/internal/codexbar/providers.go`, `provider_setup.go`, `companion/internal/companionapi/provider_setup.go`, `preferences.go`, their tests, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a check that now finishes needs no notice
+
+## 2026-10-20 — #805: approval marker after merging main at b74db67b
+
+- User approval: merge of main (b74db67b) into #805; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: #805 as in its own entries (pending, Paul reviews) plus the entries merged with b74db67b; nothing else changes.
+- Scope: the merge of b74db67b and this approval record. Pull request branch #805 only, not merged, not released.
+- What's new: none — merge of b74db67b, no customer-visible change of its own
