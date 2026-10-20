@@ -789,6 +789,112 @@ test_ui_file_renamed_out_of_ui_folders_is_due() {
   expect_gate_due "$repo"
 }
 
+# How approvals are recorded (docs/control-center-customer-ui-approval.md).
+# A UI change approved by an entry with the given approval line and What's new line.
+approve_ui_change_with_approval_line() {
+  local repo="$1" approval_line="$2" whats_new="${3-$WHATS_NEW_NONE}"
+  approve_ui_change_with_lines "$repo" "$approval_line" \
+    "- Approved customer-visible result: The overview reads Ready."
+  if [[ "$whats_new" != "$WHATS_NEW_NONE" ]]; then
+    sed "s/^- What's new: none — nothing a customer would look for\$/${whats_new//\//\\/}/" \
+      "$repo/docs/control-center-customer-ui-approval.md" > "$repo/approval.new"
+    mv "$repo/approval.new" "$repo/docs/control-center-customer-ui-approval.md"
+    git -C "$repo" commit -q -am "What's new line"
+  fi
+}
+
+NO_CHANGE_LINE="- User approval: no visible change – UI approval not needed (merge of main, no screen differs)"
+
+# 1) approved by Paul in the communicator chat, with his quote and the time.
+test_approved_by_paul_in_chat_passes() {
+  local repo="${TMP_ROOT}/approved-by-paul"
+  approve_ui_change_with_approval_line "$repo" \
+    '- User approval: approved by Paul in the communicator chat, 2026-10-20 12:15: "Ja, so passt das."'
+  expect_gate_success "$repo"
+  # His words may contain the words pending or draft without undoing his yes.
+  repo="${TMP_ROOT}/approved-by-paul-quote-draft"
+  approve_ui_change_with_approval_line "$repo" \
+    '- User approval: approved by Paul in the communicator chat, 2026-10-20 12:15: "Ja, der Draft ist gut."'
+  expect_gate_success "$repo"
+}
+
+# 2) no visible change, with a reason.
+test_no_visible_change_with_reason_passes() {
+  local repo="${TMP_ROOT}/no-visible-change"
+  approve_ui_change_with_approval_line "$repo" "$NO_CHANGE_LINE"
+  expect_gate_success "$repo"
+}
+
+test_no_visible_change_needs_a_reason() {
+  local repo="${TMP_ROOT}/no-visible-change-bare"
+  approve_ui_change_with_approval_line "$repo" "- User approval: no visible change"
+  expect_gate_due "$repo"
+  assert_contains "$(run_gate "$repo")" "no visible change"
+
+  repo="${TMP_ROOT}/no-visible-change-no-reason"
+  approve_ui_change_with_approval_line "$repo" \
+    "- User approval: no visible change – UI approval not needed"
+  expect_gate_due "$repo"
+
+  repo="${TMP_ROOT}/no-visible-change-empty-reason"
+  approve_ui_change_with_approval_line "$repo" \
+    "- User approval: no visible change – UI approval not needed (  )"
+  expect_gate_due "$repo"
+}
+
+# A What's new notice is something the customer sees: no cover for it.
+test_no_visible_change_cannot_announce_something_new() {
+  local repo="${TMP_ROOT}/no-visible-change-whats-new"
+  approve_ui_change_with_approval_line "$repo" "$NO_CHANGE_LINE" \
+    "- What's new: \`provider-shortcut\`"
+  expect_gate_due "$repo"
+  assert_contains "$(run_gate "$repo")" "no visible change"
+}
+
+# The form also passes in entries of earlier commits of the change, and a
+# pending entry next to it still fails.
+test_no_visible_change_in_an_earlier_commit_passes() {
+  local repo="${TMP_ROOT}/no-visible-change-earlier"
+  setup_repo "$repo"
+  git -C "$repo" update-ref refs/remotes/origin/main HEAD
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Merge of main touches UI files"
+  printf '\n## Merge of main\n\n%s\n- Approved customer-visible result: No screen differs.\n%s\n' \
+    "$NO_CHANGE_LINE" "$WHATS_NEW_NONE" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" add docs/control-center-customer-ui-approval.md
+  git -C "$repo" commit -q -m "Record the merge of main"
+  commit_approval "$repo" "Given overview"
+  expect_gate_success "$repo"
+
+  pending_approval_entry "Pending overview" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" add docs/control-center-customer-ui-approval.md
+  git -C "$repo" commit -q -m "Pending approval for overview"
+  expect_gate_due "$repo"
+  assert_contains "$(run_gate "$repo")" "$PENDING_REASON"
+}
+
+# 3) everything else stays pending and fails.
+test_pending_and_draft_stay_due_next_to_the_new_forms() {
+  local repo="${TMP_ROOT}/pending-line"
+  approve_ui_change_with_approval_line "$repo" \
+    "- User approval: pending — Paul reviews this PR (test)."
+  expect_gate_due "$repo"
+  assert_contains "$(run_gate "$repo")" "$PENDING_REASON"
+
+  repo="${TMP_ROOT}/draft-line"
+  approve_ui_change_with_approval_line "$repo" "- User approval: draft, waiting for Paul."
+  expect_gate_due "$repo"
+  assert_contains "$(run_gate "$repo")" "$PENDING_REASON"
+
+  # Not the full form of 1): quoting nothing, no time, or pending next to it.
+  repo="${TMP_ROOT}/approved-by-paul-pending"
+  approve_ui_change_with_approval_line "$repo" \
+    "- User approval: approved by Paul in the communicator chat, pending his quote."
+  expect_gate_due "$repo"
+}
+
 test_non_ui_commits_do_not_block
 test_ui_change_blocks_immediately
 test_working_tree_ui_change_blocks_immediately
@@ -826,5 +932,11 @@ test_ui_file_renamed_out_of_ui_folders_is_due
 test_approval_commit_before_cutoff_keeps_old_rule
 test_scoped_merge_approval_passes
 test_squash_merge_on_main_does_not_block_later_pull_requests
+test_approved_by_paul_in_chat_passes
+test_no_visible_change_with_reason_passes
+test_no_visible_change_needs_a_reason
+test_no_visible_change_cannot_announce_something_new
+test_no_visible_change_in_an_earlier_commit_passes
+test_pending_and_draft_stay_due_next_to_the_new_forms
 
 printf 'control-center UI review gate tests passed\n'

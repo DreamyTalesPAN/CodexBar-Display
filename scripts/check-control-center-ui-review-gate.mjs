@@ -33,6 +33,21 @@ const PENDING_APPROVAL_PATTERN = /\b(pending|draft)\b/i;
 const PENDING_RESULT_PATTERN = /^(pending|draft)\b/i;
 // Markdown around the first word ("**Draft**") does not hide it.
 const LEADING_MARKDOWN = /^[\s*_`~]+/;
+// How an approval is recorded (docs/control-center-customer-ui-approval.md):
+// 1) after Paul's yes in the communicator chat: the line is
+//    `approved by Paul in the communicator chat, <YYYY-MM-DD HH:MM>: "<quote>"`.
+//    His words are quoted as said and do not count as the state of the approval.
+// 2) a change with no visible change (a merge of main, a firmware or companion
+//    fix that only touches UI files): `no visible change – UI approval not
+//    needed (<reason>)`. The reason is required. The gate cannot see what a
+//    customer sees; it can only refuse the form when it is incomplete or when
+//    the entry also announces something in "What's new".
+// 3) everything else stays "pending …" and is due until Paul's OK.
+const APPROVED_BY_PAUL_PATTERN =
+  /^approved by Paul in the communicator chat, \d{4}-\d{2}-\d{2} \d{2}:\d{2}: ["“„].+["”“]\s*$/i;
+const NO_VISIBLE_CHANGE_START = /^no visible change\b/i;
+const NO_VISIBLE_CHANGE_PATTERN =
+  /^no visible change\s*[–—-]\s*UI approval not needed\s*\(\s*[^)\s][^)]*\)/i;
 
 const uiFilePatterns = [
   /^apps\/control-center\/src\/components\//,
@@ -86,15 +101,21 @@ const addedDiff = addedSince
       workingTreeApprovalEdited ? workingTreeApprovalDiff() : "",
     ].join("\n");
 const pendingEntries = addedEntries(addedDiff).filter(isPendingOrDraft);
+const badNoChangeEntries = addedEntries(addedDiff).filter(isBadNoVisibleChange);
 const invalidApprovalMarker =
   (workingTreeApprovalChanged && !workingTreeApprovalValid) ||
   (!workingTreeApprovalChanged && Boolean(approvalCommit) && !committedApprovalValid);
-const due = invalidApprovalMarker || pendingEntries.length > 0 || unapprovedUiFiles.length > 0;
+const due =
+  invalidApprovalMarker ||
+  pendingEntries.length > 0 ||
+  badNoChangeEntries.length > 0 ||
+  unapprovedUiFiles.length > 0;
 
 printSummary({
   activeApprovalValid,
   analysisRef,
   approvalCommit,
+  badNoChangeEntries,
   due,
   invalidApprovalMarker,
   pendingEntries,
@@ -109,7 +130,9 @@ if (due) {
     ? `The newest approval marker does not add the required lines: "${APPROVAL_PREFIXES.join('", "')}", and "${WHATS_NEW_PREFIX}" with "none — <reason>" or ids from ${WHATS_NEW_FILE} in backticks.`
     : pendingEntries.length > 0
       ? `${pendingEntries.length} approval entr${pendingEntries.length === 1 ? "y" : "ies"} added by this change say${pendingEntries.length === 1 ? "s" : ""} pending or draft, which is no approval yet. Replace it with the given approval before merge.`
-      : `Customer-facing UI changed in ${unapprovedUiFiles.length} file(s) without a matching approval entry.`;
+      : badNoChangeEntries.length > 0
+        ? `${badNoChangeEntries.length} approval entr${badNoChangeEntries.length === 1 ? "y" : "ies"} added by this change say${badNoChangeEntries.length === 1 ? "s" : ""} "no visible change" without the full form \`no visible change – UI approval not needed (<reason>)\` or with a "What's new" notice, which is a visible change.`
+        : `Customer-facing UI changed in ${unapprovedUiFiles.length} file(s) without a matching approval entry.`;
   const message = [
     reason,
     `Get explicit approval for the exact visible result, review ${PRINCIPLES_FILE}, then append it to ${APPROVAL_FILE}.`,
@@ -316,12 +339,28 @@ function entryField(entry, prefix) {
 }
 
 function isPendingOrDraft(entry) {
+  const approval = entryField(entry, "- User approval:");
   return (
-    PENDING_APPROVAL_PATTERN.test(entryField(entry, "- User approval:")) ||
+    (!APPROVED_BY_PAUL_PATTERN.test(approval) && PENDING_APPROVAL_PATTERN.test(approval)) ||
     PENDING_RESULT_PATTERN.test(
       entryField(entry, "- Approved customer-visible result:").replace(LEADING_MARKDOWN, ""),
     )
   );
+}
+
+// An entry that calls itself "no visible change" needs the reason in the given
+// form and may not announce a "What's new" notice (a notice is something the
+// customer sees).
+function isBadNoVisibleChange(entry) {
+  const approval = entryField(entry, "- User approval:").replace(LEADING_MARKDOWN, "");
+  if (!NO_VISIBLE_CHANGE_START.test(approval)) {
+    return false;
+  }
+  if (!NO_VISIBLE_CHANGE_PATTERN.test(approval)) {
+    return true;
+  }
+  const whatsNew = entryField(entry, WHATS_NEW_PREFIX).replace(LEADING_MARKDOWN, "");
+  return !/^none\s*[—–-]\s*\S/.test(whatsNew);
 }
 
 // ref: the commit whose own tree the entry is judged against; null is the
@@ -400,6 +439,7 @@ function printSummary({
   due,
   invalidApprovalMarker,
   pendingEntries,
+  badNoChangeEntries,
   uiChangedFiles,
   unapprovedUiFiles,
   workingTreeApprovalChanged,
@@ -422,6 +462,12 @@ function printSummary({
   if (pendingEntries.length > 0) {
     console.log("Approval entries that say pending or draft:");
     for (const entry of pendingEntries) {
+      console.log(`- ${entry.split("\n")[0].slice(3)}`);
+    }
+  }
+  if (badNoChangeEntries.length > 0) {
+    console.log('Approval entries that say "no visible change" without the full form:');
+    for (const entry of badNoChangeEntries) {
       console.log(`- ${entry.split("\n")[0].slice(3)}`);
     }
   }
