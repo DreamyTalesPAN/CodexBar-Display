@@ -122,13 +122,17 @@ type preferenceAdapter interface {
 }
 
 type providerPreferencesState struct {
-	mu            sync.Mutex
-	at            time.Time
-	cached        []codexbar.ProviderSetting
-	load          func(context.Context) ([]codexbar.ProviderSetting, error)
-	set           func(context.Context, string, bool) error
-	revision      uint64
-	providerRev   map[string]uint64
+	mu          sync.Mutex
+	at          time.Time
+	cached      []codexbar.ProviderSetting
+	load        func(context.Context) ([]codexbar.ProviderSetting, error)
+	set         func(context.Context, string, bool) error
+	revision    uint64
+	providerRev map[string]uint64
+	// exactChecking counts the exact checks running per provider whose row
+	// shows checking. A health scan, whenever it started, must not replace
+	// that row; the check records its own result (#805 Codex review).
+	exactChecking map[string]int
 	healthRefresh bool
 	inventoryMu   sync.Mutex
 	inventoryAt   time.Time
@@ -202,6 +206,9 @@ func (a providerPreferenceAdapter) Write(ctx context.Context, settingID string, 
 	}
 	a.server.providerPreferences.providerRev[providerID]++
 	providerRevision := a.server.providerPreferences.providerRev[providerID]
+	if enabled {
+		a.server.pinExactCheckingLocked(providerID)
+	}
 	a.server.providerReadinessMu.Lock()
 	delete(a.server.providerReadiness, providerID)
 	a.server.providerReadinessMu.Unlock()
@@ -240,6 +247,7 @@ func (a providerPreferenceAdapter) Write(ctx context.Context, settingID string, 
 }
 
 func (s *Server) verifyEnabledProvider(providerID, label string, providerRevision uint64) {
+	defer s.releaseExactChecking(providerID)
 	ctx, cancel := context.WithTimeout(context.Background(), exactProviderCheckTimeout)
 	defer cancel()
 	setup := s.currentExactProviderSetup(ctx, providerID)
@@ -538,6 +546,9 @@ func (s *Server) startProviderHealthRefreshLocked() bool {
 		if err != nil {
 			for i := range s.providerPreferences.cached {
 				setting := &s.providerPreferences.cached[i]
+				if s.providerPreferences.exactChecking[setting.ID] > 0 {
+					continue
+				}
 				if setting.Enabled && (setting.Health == codexbar.ProviderHealthHealthy || setting.Health == codexbar.ProviderHealthChecking) {
 					setting.Health = codexbar.ProviderHealthUnavailable
 				}
@@ -550,7 +561,8 @@ func (s *Server) startProviderHealthRefreshLocked() bool {
 		}
 		for i := range s.providerPreferences.cached {
 			current, ok := healthByID[s.providerPreferences.cached[i].ID]
-			if !ok || current.Enabled != s.providerPreferences.cached[i].Enabled {
+			if !ok || current.Enabled != s.providerPreferences.cached[i].Enabled ||
+				s.providerPreferences.exactChecking[s.providerPreferences.cached[i].ID] > 0 {
 				continue
 			}
 			s.providerPreferences.cached[i].Health = current.Health
@@ -1118,4 +1130,29 @@ func writePreferencesReadError(w http.ResponseWriter, err error) {
 
 func writePreferenceNotFound(w http.ResponseWriter) {
 	writeError(w, http.StatusNotFound, "preference_not_found", "This setting was not found.", "Refresh settings, then try again.")
+}
+
+// pinExactCheckingLocked keeps the provider's checking row out of reach of
+// health scans until releaseExactChecking. The caller holds providerPreferences.mu.
+func (s *Server) pinExactCheckingLocked(providerID string) {
+	if s.providerPreferences.exactChecking == nil {
+		s.providerPreferences.exactChecking = make(map[string]int)
+	}
+	s.providerPreferences.exactChecking[providerID]++
+}
+
+// releaseExactChecking ends a pin after the check recorded its result. The
+// revision moves on so a scan that read while the pin held, and so may carry
+// the answer from before the check, is dropped.
+func (s *Server) releaseExactChecking(providerID string) {
+	s.providerPreferences.mu.Lock()
+	defer s.providerPreferences.mu.Unlock()
+	if s.providerPreferences.exactChecking[providerID] <= 0 {
+		return
+	}
+	s.providerPreferences.exactChecking[providerID]--
+	if s.providerPreferences.exactChecking[providerID] == 0 {
+		delete(s.providerPreferences.exactChecking, providerID)
+	}
+	s.providerPreferences.revision++
 }

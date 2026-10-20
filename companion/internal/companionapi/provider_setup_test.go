@@ -836,6 +836,95 @@ func TestExactProviderRetryOutlastingTheRequestFinishesInTheBackground(t *testin
 	}
 }
 
+// An exact check can outlast the preferences cache (10 s). The page keeps
+// polling, so a health scan then starts after the checking mark and reads the
+// answer from before the retry. It must not replace the checking row: only
+// the check's own result may (#805 Codex review).
+func TestHealthScanStartedAfterTheCheckingMarkLeavesTheRowChecking(t *testing.T) {
+	previousWait := exactProviderRetryWait
+	exactProviderRetryWait = 20 * time.Millisecond
+	t.Cleanup(func() { exactProviderRetryWait = previousWait })
+	server := newTestServer(t, runtimeconfig.Config{})
+	clock := time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
+	var clockMu sync.Mutex
+	server.now = func() time.Time {
+		clockMu.Lock()
+		defer clockMu.Unlock()
+		return clock
+	}
+	var scans atomic.Int32
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		scans.Add(1)
+		return []codexbar.ProviderSetting{{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthUnavailable}}, nil
+	}
+	server.providerPreferences.loadInventory = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{{ID: "claude", Label: "Claude", Enabled: true}}, nil
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
+	claudeState := func() string {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+		var response preferencesResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil || len(response.Items) != 1 {
+			t.Fatalf("unexpected preferences: %v %s", err, rec.Body.String())
+		}
+		return response.Items[0].Health.State
+	}
+	waitForScan := func(count int32) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			server.providerPreferences.mu.Lock()
+			running := server.providerPreferences.healthRefresh
+			server.providerPreferences.mu.Unlock()
+			if scans.Load() >= count && !running {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("health scan %d never finished", count)
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	claudeState()
+	waitForScan(1)
+	if state := claudeState(); state == "checking" {
+		t.Fatalf("the first scan must show the failure before the retry, got %q", state)
+	}
+
+	release := make(chan struct{})
+	server.probeExactProvider = func(ctx context.Context, _ string, providerID string) codexbar.ProviderSetup {
+		<-release
+		return exactSetupFixture(server.currentTime(), providerID, codexbar.ProviderReady)
+	}
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/providers/retry?provider=claude", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"checking"`) {
+		t.Fatalf("a check that outlasts the wait must answer checking: %d %s", rec.Code, rec.Body.String())
+	}
+	if state := claudeState(); state != "checking" {
+		t.Fatalf("the row must show the running check, got %q", state)
+	}
+
+	// The check runs past the cache: the poll starts a new scan, which still
+	// reads the failure from before the retry.
+	clockMu.Lock()
+	clock = clock.Add(providerPreferenceCache + time.Second)
+	clockMu.Unlock()
+	claudeState()
+	waitForScan(2)
+	if state := claudeState(); state != "checking" {
+		t.Fatalf("a scan started after the mark replaced the running check with %q", state)
+	}
+
+	close(release)
+	waitForCachedProviderHealth(t, server, "claude", codexbar.ProviderHealthHealthy)
+	if state := claudeState(); state != "healthy" {
+		t.Fatalf("the finished check must land on the row, got %q", state)
+	}
+}
+
 // The customer can switch the provider off while its check runs on after the
 // request answered. Its result then speaks for a choice that no longer holds:
 // it must neither land in the setup log nor replace the usage service

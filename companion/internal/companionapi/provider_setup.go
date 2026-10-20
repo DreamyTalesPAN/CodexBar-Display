@@ -543,8 +543,11 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 		s.finishProviderRetry(providerID, providerRevision, afterBrowserSignInRead, requestedAt, setup)
 		writeJSON(w, http.StatusOK, providerSetupResponse{OK: true, ProviderSetup: setup})
 	case <-wait.Done():
-		s.markExactProviderChecking(providerID, providerRevision)
+		pinned := s.markExactProviderChecking(providerID, providerRevision)
 		go func() {
+			if pinned {
+				defer s.releaseExactChecking(providerID)
+			}
 			s.finishProviderRetry(providerID, providerRevision, afterBrowserSignInRead, requestedAt, <-checked)
 		}()
 		writeJSON(w, http.StatusOK, providerSetupResponse{OK: true, ProviderSetup: checkingProviderSetup(s.currentTime())})
@@ -601,12 +604,14 @@ func (s *Server) finishProviderRetry(providerID string, providerRevision uint64,
 // markExactProviderChecking shows a switched-on provider as checking while its
 // exact check runs on after the request answered. The earlier result no longer
 // speaks for it, and a health scan that was already running must not replace
-// the mark before the check is recorded.
-func (s *Server) markExactProviderChecking(providerID string, providerRevision uint64) {
+// the mark before the check is recorded. A scan started after the mark is held
+// off as well, until releaseExactChecking, which the caller owes when the
+// answer is true.
+func (s *Server) markExactProviderChecking(providerID string, providerRevision uint64) bool {
 	s.providerPreferences.mu.Lock()
 	defer s.providerPreferences.mu.Unlock()
 	if s.providerPreferences.providerRev[providerID] != providerRevision {
-		return
+		return false
 	}
 	for i := range s.providerPreferences.cached {
 		setting := &s.providerPreferences.cached[i]
@@ -622,8 +627,10 @@ func (s *Server) markExactProviderChecking(providerID string, providerRevision u
 		s.providerReadinessMu.Lock()
 		delete(s.providerReadiness, providerID)
 		s.providerReadinessMu.Unlock()
-		return
+		s.pinExactCheckingLocked(providerID)
+		return true
 	}
+	return false
 }
 
 // requestUsageServiceReplace asks the supervisor to check the usage service.
