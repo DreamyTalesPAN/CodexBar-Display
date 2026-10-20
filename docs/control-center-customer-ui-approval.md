@@ -8662,3 +8662,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the Appearance cards look as drawn in frames "Darstellung" (#appearance-all, #appearance-ss, #appearance-filter) of "Calm Redesign - alle Screens": all cards alike, pill "Active" on the active one.
 - Scope: `apps/control-center/src/components/theme-library-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #802: tests follow the all-cards-alike Appearance design (Codex review)
+
+- User approval: no visible change – UI approval not needed (#802: unit test and card-size goldens only; the active card now expects the same outline variant as the others plus the Active pill, and the 240 px card goldens follow the 200 px cards)
+- Approved customer-visible result: #802 unchanged; this entry only records test updates.
+- Scope: `apps/control-center/src/components/control-center-app.display-preferences.test.tsx`, `apps/control-center/test-fixtures/theme-preview-vector-goldens.json` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — test-only change, no customer-visible change
