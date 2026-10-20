@@ -8026,3 +8026,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #821 setup step 11 tiles show the same token totals as the VibeTV.
 - Scope: `apps/control-center/src/components/setup/setup-display-previews.ts`, its test and this approval record for #821. Pull request branch only, not merged, not released.
 - What's new: none — #821 token-total fix, no new content
+
+## 2026-10-20 — #821 carousel: Automatic tiles of setup step 11 rotate as a calm carousel
+
+- User approval: Paul decided on 20.10.2026 (via the communicator): Automatic tiles rotate as a calm carousel; rendered result pending his review. #821 carousel before → after in the Display mode step (frame 22): (1) in Automatic the big tile in front (104 px, full strength) changes provider every 2 seconds, the same rhythm the VibeTV uses in Automatic → before the big tile stayed on the first position and only the highlight moved between fixed places; (2) #821 carousel: the small tiles (84 px, 30 % strength, 10 px gap) move up behind it in turn, and the tile that was in front fades in at the back → before they did not move; (3) #821 carousel: the movement slides and fades in 500 ms, ease-out, no bounce, only position and opacity change; (4) #821 carousel: with reduced motion switched on in the system the tiles switch without any movement but still rotate → before they stayed still; (5) #821 carousel: Manual shows one tile and does not rotate, and a provider without values keeps its grey placeholder, as before. The app calculates nothing: only the order and the movement change.
+- Approved customer-visible result: #821 carousel: none yet; waits for Paul's review of the rendered result (stills and animation in `review-1016/ui/821-carousel/`).
+- Scope: #821 carousel: `apps/control-center/src/components/setup/setup-display-mode-screen.tsx`, `apps/control-center/src/components/setup/setup-display-theme-tiles.tsx`, `apps/control-center/src/app/globals.css` (one keyframe), the #821 carousel tests and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #821 carousel movement only, no new content
