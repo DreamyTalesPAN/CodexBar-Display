@@ -1148,7 +1148,7 @@ function DeleteThemeDialog({
           <Alert variant="destructive"><Lock /><AlertTitle>{say("Theme could not be deleted")}</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>
         ) : null}
         <AlertDialogFooter>
-          <AlertDialogCancel autoFocus onClick={onCancel}>
+          <AlertDialogCancel onClick={onCancel}>
             Cancel
           </AlertDialogCancel>
           <AlertDialogAction
