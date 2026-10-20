@@ -7479,7 +7479,7 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: pending — Paul reviews this PR (accessibility baseline, #214); look unchanged.
 - Approved customer-visible result: none. Every screen and dialog looks unchanged; only tests and `docs/control-center-accessibility.md` change.
-- Scope: `apps/control-center/src/components/system-busy-dialog.test.tsx`, the new `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.test.tsx` and `replace-draft-dialog.test.tsx`, `docs/control-center-accessibility.md` and this approval record. Pull request branch only, not merge or release.
+- Scope: `apps/control-center/src/components/system-busy-dialog.test.tsx`, the new `apps/control-center/src/components/theme-studio/theme-studio.axe.test.tsx` and `replace-draft-dialog.test.tsx`, `docs/control-center-accessibility.md` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — tests and documentation only
 ## 2026-10-15 — #643: Show screensaver says where its twin is
 
@@ -7864,3 +7864,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #727 adds accessibility checks only; nothing customers see changes.
 - Scope: #727 merge e7e8319d, the Theme Studio axe test moved to theme-studio.axe.test.tsx, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #727 tests only
+
+## 2026-10-20 — #727: coverage table points at the axe test
+
+- User approval: no visible change – UI approval not needed (#727: coverage table in the accessibility doc fixed and a test that keeps it true; tests and docs only)
+- Approved customer-visible result: #727 changes a document and a test only; nothing customers see changes.
+- Scope: `docs/control-center-accessibility.md`, the new `apps/control-center/src/test/accessibility-doc.test.ts` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #727 docs and tests only

@@ -75,7 +75,7 @@ npx vitest run src/components/usage-screen.test.tsx
 | Settings | `settings-screen.test.tsx`, `settings-connection.test.tsx` | every section, factory reset question, connection question |
 | Whole app | `control-center-shell.test.tsx`, `control-center-app.display-preferences.test.tsx` | navigation with an update waiting, every tab inside the real navigation, `Run setup again?` |
 | What's new | `control-center-app.whats-new.test.tsx` | the dialog over Updates |
-| Theme Studio, first screen | `theme-studio/ai-theme-studio-screen.test.tsx` | blank editor with no chat yet |
+| Theme Studio, first screen | `theme-studio/theme-studio.axe.test.tsx` | blank editor with no chat yet |
 | Replace your changes? | `theme-studio/replace-draft-dialog.test.tsx` | the question with Keep editing and Replace |
 | Computer is very busy | `system-busy-dialog.test.tsx` | the notice with OK |
 
