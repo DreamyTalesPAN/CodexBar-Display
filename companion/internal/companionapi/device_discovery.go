@@ -170,7 +170,17 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 	} else {
 		devices, err = s.searchDevices(searchCtx, cfg, explicitTarget)
 	}
-	if err != nil && len(cableDevices) == 0 {
+	// Issue #818: a rescue write that failed after the erase leaves a VibeTV
+	// that boot-loops and says no hello, so no search finds it. The rescue
+	// marker keeps it selectable for the next rescue, also when the LAN search
+	// failed: the rescue runs over the Cable only.
+	var rescueEntry *deviceSearchEntry
+	if explicitTarget == "" && len(cableDevices) == 0 {
+		if entry, ok := s.halfWrittenRescueEntry(); ok {
+			rescueEntry = &entry
+		}
+	}
+	if err != nil && len(cableDevices) == 0 && rescueEntry == nil {
 		var invalidTarget *invalidTargetError
 		if errors.As(err, &invalidTarget) {
 			writeInvalidDeviceTarget(w)
@@ -218,13 +228,8 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 		}) {
 			devices = append(devices, legacyCableSearchEntry(legacy))
 		}
-		// Issue #818: a rescue write that failed after the erase leaves a
-		// VibeTV that boot-loops and says no hello, so no search finds it. The
-		// rescue marker keeps it selectable for the next rescue.
-		if legacy == nil && len(cableDevices) == 0 {
-			if entry, ok := s.halfWrittenRescueEntry(); ok {
-				devices = append(devices, entry)
-			}
+		if legacy == nil && rescueEntry != nil {
+			devices = append(devices, *rescueEntry)
 		}
 		for _, cable := range cableDevices {
 			hello := cable.Hello.Normalize()

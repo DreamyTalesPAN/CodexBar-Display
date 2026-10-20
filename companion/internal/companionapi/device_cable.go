@@ -157,6 +157,11 @@ func (s *Server) halfWrittenRescueEntry() (deviceSearchEntry, bool) {
 	}) {
 		return deviceSearchEntry{}, false
 	}
+	// An entry the rescue cannot start (image deleted or changed) would only
+	// lead the customer in a circle.
+	if !firmwareupdate.RescueImageIntact(marker) {
+		return deviceSearchEntry{}, false
+	}
 	return deviceSearchEntry{
 		Target:    cableDeviceTarget,
 		Transport: "cable",

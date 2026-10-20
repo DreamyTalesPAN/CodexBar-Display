@@ -1,9 +1,12 @@
 package firmwareupdate
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -67,7 +70,37 @@ func SaveRescueMarker(home string, marker RescueMarker) error {
 	if err := os.Chmod(tmpPath, 0o644); err != nil {
 		return err
 	}
-	return os.Rename(tmpPath, path)
+	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+	// The rename is durable only once the directory entry is: on the first
+	// rescue there is no older marker to fall back to after a power loss.
+	return syncDir(filepath.Dir(path))
+}
+
+func syncDir(dir string) error {
+	if runtime.GOOS == "windows" {
+		// NTFS commits the rename with its journal; a directory handle
+		// cannot be flushed there.
+		return nil
+	}
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = d.Close() }()
+	return d.Sync()
+}
+
+// RescueImageIntact reports whether the image a marker points to is still
+// there unchanged, so a rescue from that marker can actually start.
+func RescueImageIntact(marker RescueMarker) bool {
+	data, err := os.ReadFile(marker.ImagePath)
+	if err != nil {
+		return false
+	}
+	sum := sha256.Sum256(data)
+	return strings.EqualFold(hex.EncodeToString(sum[:]), strings.TrimSpace(marker.ImageSHA256))
 }
 
 // LoadRescueMarker returns the marker only while it is complete and recent.

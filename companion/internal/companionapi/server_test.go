@@ -4,6 +4,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15364,16 +15366,20 @@ func TestStatusAndDiagnosticsCarrySystemBusy(t *testing.T) {
 // offers it for the rescue instead of "No VibeTV found".
 func TestDeviceSearchOffersAHalfWrittenVibeTVForItsRescue(t *testing.T) {
 	for _, tc := range []struct {
-		name       string
-		ports      []string
-		age        time.Duration
-		cableHello bool
-		want       bool
+		name         string
+		ports        []string
+		age          time.Duration
+		cableHello   bool
+		noWiFi       bool
+		imageChanged bool
+		want         bool
 	}{
-		{"marked port connected", []string{"COM1", "com4"}, time.Hour, false, true},
-		{"marked port gone", []string{"COM1"}, time.Hour, false, false},
-		{"marker too old", []string{"COM4"}, firmwareupdate.RescueMarkerMaxAge + time.Hour, false, false},
-		{"VibeTV answers again", []string{"COM4"}, time.Hour, true, false},
+		{"marked port connected", []string{"COM1", "com4"}, time.Hour, false, false, false, true},
+		{"marked port gone", []string{"COM1"}, time.Hour, false, false, false, false},
+		{"marker too old", []string{"COM4"}, firmwareupdate.RescueMarkerMaxAge + time.Hour, false, false, false, false},
+		{"VibeTV answers again", []string{"COM4"}, time.Hour, true, false, false, false},
+		{"no WiFi on this computer", []string{"COM4"}, time.Hour, false, true, false, true},
+		{"marked image changed", []string{"COM4"}, time.Hour, false, false, true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// Another VibeTV on WiFi lets the scan settle at once; the rescue
@@ -15384,6 +15390,11 @@ func TestDeviceSearchOffersAHalfWrittenVibeTVForItsRescue(t *testing.T) {
 			defer wifi.Close()
 			server := newTestServer(t, runtimeconfig.Config{})
 			server.subnetTargets = func() []string { return []string{wifi.URL} }
+			if tc.noWiFi {
+				server.subnetTargets = func() []string { return nil }
+				server.defaultWiFiTarget = func() string { return "" }
+				server.localNetworkAvailable = func() bool { return false }
+			}
 			server.listCablePorts = func() ([]string, error) { return tc.ports, nil }
 			server.discoverCableDevices = func(context.Context) ([]usb.CableDevice, error) {
 				if tc.cableHello {
@@ -15391,9 +15402,19 @@ func TestDeviceSearchOffersAHalfWrittenVibeTVForItsRescue(t *testing.T) {
 				}
 				return nil, errors.New("no VibeTV answered")
 			}
+			imagePath := filepath.Join(t.TempDir(), "firmware.bin")
+			if err := os.WriteFile(imagePath, []byte("cable firmware"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			sum := sha256.Sum256([]byte("cable firmware"))
+			if tc.imageChanged {
+				if err := os.WriteFile(imagePath, []byte("something else"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if err := firmwareupdate.SaveRescueMarker(server.home, firmwareupdate.RescueMarker{
 				Port: "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
-				ImagePath: "/x/firmware.bin", WriteStartedAt: time.Now().Add(-tc.age),
+				ImagePath: imagePath, ImageSHA256: hex.EncodeToString(sum[:]), WriteStartedAt: time.Now().Add(-tc.age),
 			}); err != nil {
 				t.Fatal(err)
 			}
