@@ -8412,11 +8412,11 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/src/components/setup/setup-recovery-dialogs.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.test.tsx`, the comment in `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
-## 2026-10-20 — #784: build 2b QA, the 3D VibeTV on Overview has the template's size and angle (frame 1)
+## 2026-10-20 — #784: build 2b QA, the 3D VibeTV on Overview is turned like the template (frame 1)
 
-- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the 3D VibeTV filled a stage up to 900 x 580 px, so the device was about 15 % larger than in the template and pushed the four facts (Mac App, VibeTV, Display, Firmware) about 190 px lower than drawn; its sway started mid-swing, so the first look showed it turned further to the front than the template; it was seen from a little higher → the device is framed as in frame 1 (about 240 px wide screen on a 1200 px window, seen a little from below, turned about 25 degrees off the front), the facts sit where the template draws them, and the sway starts from that resting angle. Dragging and the sway are unchanged.
-- Approved customer-visible result: the Overview picture of the VibeTV and the line of facts below it look like frame 1 of "Calm Redesign - alle Screens".
-- Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx`, `apps/control-center/src/components/overview-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the 3D VibeTV seen from the right and nearly from the front at rest (camera about 24 degrees off the front, a little higher) and its sway began mid-swing, which at the first look showed it turned even further to the front → the device rests turned about 27 degrees off the front, seen a little from below as drawn in the template, and the sway starts from that resting angle.
+- Approved customer-visible result: the Overview picture of the VibeTV shows the device at the angle of frame 1 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
 ## 2026-10-20 — #784: build 2b QA, no sidebar toggle beside the title of Updates and Support (frames 10, 11)
@@ -8431,4 +8431,11 @@ issue scope, or release permission never implies UI permission.
 - User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the dialog showed the setup device cards (thumbnail, WiFi and "Previously connected" chips, ring, check mark) → it shows plain radio rows between hairlines as drawn in frame 47: round radio, "VibeTV 4F2A", "192.168.178.163 · Firmware 1.4.2" below, "WiFi · Previously connected" (or "Cable") at the right; the dialog is 480 px wide as drawn. The words are unchanged.
 - Approved customer-visible result: the picker dialog looks like frame 47 of "Calm Redesign - alle Screens".
 - Scope: `apps/control-center/src/components/setup/setup-device-dialogs.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #784: build 2b QA, the 3D VibeTV on Overview has the template's size (frame 1), replaces the angle entry above
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the 3D VibeTV filled a stage up to 900 x 580 px, so the device was about 15 % larger than in the template and pushed the four facts (Mac App, VibeTV, Display, Firmware) about 190 px lower than drawn; its sway started mid-swing, so the first look showed it turned further to the front than the template; it was seen from a little higher → the device is framed as in frame 1 (about 240 px wide screen on a 1200 px window, seen a little from below, turned about 25 degrees off the front), the facts sit where the template draws them, and the sway starts from that resting angle. Dragging and the sway are unchanged.
+- Approved customer-visible result: the Overview picture of the VibeTV and the line of facts below it look like frame 1 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx`, `apps/control-center/src/components/overview-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
