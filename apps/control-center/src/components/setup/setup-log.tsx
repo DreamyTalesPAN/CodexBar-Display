@@ -51,14 +51,17 @@ export function SetupLog({ className, lines }: SetupLogProps) {
       )}
       ref={scrollRef}
     >
-      <ProcessSteps
-        steps={lines.map((line, index) => ({
-          ...line,
-          // Everything above the newest line reads as finished.
-          tone:
-            line.tone !== "error" && index < lines.length - 1 ? "done" : line.tone,
-        }))}
-      />
+      {/* No steps, no child: an empty log must match `empty:mt-0`, or its margin leaves a gap in the step. */}
+      {lines.length ? (
+        <ProcessSteps
+          steps={lines.map((line, index) => ({
+            ...line,
+            // Everything above the newest line reads as finished.
+            tone:
+              line.tone !== "error" && index < lines.length - 1 ? "done" : line.tone,
+          }))}
+        />
+      ) : null}
     </div>
   );
 }
