@@ -7817,3 +7817,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: unchanged.
 - Scope: merge of `origin/main` into this pull request branch, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no customer-visible change
+
+## 2026-10-20 — #819: the cached rescue version is shown only for the rescue itself (Codex review)
+
+- User approval: pending — #819 Codex fix, no new wording; not seen by Paul. Before → after: #819 any VibeTV with the same board and firmware as a half-written one was shown the cached rescue version → #819 only the Cable rescue of the marked VibeTV (port connected) shows it; every other VibeTV shows the version from the release, as it is updated from there.
+- Approved customer-visible result: #819 the firmware version named in setup is the one that will really be written; texts and layout unchanged.
+- Scope: #819 `apps/control-center/src/components/control-center-app.tsx` (rescue flag on the firmware check), `companion/internal/companionapi/firmware_update.go`, `companion/internal/companionapi/device_cable.go`, the server test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #819 Codex fix not announced

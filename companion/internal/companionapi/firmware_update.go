@@ -147,8 +147,12 @@ func (s *Server) handleFirmwareLatest(w http.ResponseWriter, r *http.Request) {
 	// A VibeTV left half-written by a failed Cable rescue is finished from the
 	// image cached for that write, not from the manifest: setup must name the
 	// version that will really be written, even if a newer release came out
-	// since (Codex review on #819).
+	// since (Codex review on #819). Only for the rescue itself (rescue=1): while
+	// a marker is pending, a rescue write can only resume the marked VibeTV, and
+	// only while its port is connected. Any other selected VibeTV with the same
+	// board and firmware is updated from the manifest and gets its version.
 	if marker, ok := firmwareupdate.LoadRescueMarker(s.home, time.Now()); ok &&
+		r.URL.Query().Get("rescue") == "1" && s.rescueMarkerPortPresent(marker) &&
 		strings.EqualFold(strings.TrimSpace(marker.Board), board) &&
 		strings.TrimSpace(marker.Firmware) == installedFirmware &&
 		firmwareupdate.RescueImageIntact(marker) {

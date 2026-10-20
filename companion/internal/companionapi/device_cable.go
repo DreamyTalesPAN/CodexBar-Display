@@ -143,18 +143,27 @@ func (s *Server) cableDeviceInfo(ctx context.Context, cfg runtimeconfig.Config, 
 	}, stream), true, false, false)
 }
 
+// rescueMarkerPortPresent reports whether the port of a pending rescue marker is
+// connected right now; without it no rescue write can resume.
+func (s *Server) rescueMarkerPortPresent(marker firmwareupdate.RescueMarker) bool {
+	if s.listCablePorts == nil {
+		return false
+	}
+	ports, err := s.listCablePorts()
+	return err == nil && slices.ContainsFunc(ports, func(port string) bool {
+		return strings.EqualFold(strings.TrimSpace(port), strings.TrimSpace(marker.Port))
+	})
+}
+
 // halfWrittenRescueEntry is the VibeTV a failed Cable rescue left without
 // bootable firmware, while its marked port is still connected. Only the rescue
 // update reaches it, through the ROM loader on that port.
 func (s *Server) halfWrittenRescueEntry(responding []usb.CableDevice) (deviceSearchEntry, bool) {
 	marker, ok := firmwareupdate.LoadRescueMarker(s.home, time.Now())
-	if !ok || s.listCablePorts == nil {
+	if !ok {
 		return deviceSearchEntry{}, false
 	}
-	ports, err := s.listCablePorts()
-	if err != nil || !slices.ContainsFunc(ports, func(port string) bool {
-		return strings.EqualFold(strings.TrimSpace(port), strings.TrimSpace(marker.Port))
-	}) {
+	if !s.rescueMarkerPortPresent(marker) {
 		return deviceSearchEntry{}, false
 	}
 	// A VibeTV that answers on the marked port is not half-written any more;

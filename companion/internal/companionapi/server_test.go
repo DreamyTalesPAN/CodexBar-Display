@@ -15470,20 +15470,33 @@ func TestFirmwareLatestNamesTheCachedRescueTarget(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	latest := func(firmware string) firmwareLatestResponse {
+	ports := []string{"COM4"}
+	server.listCablePorts = func() ([]string, error) { return ports, nil }
+	latest := func(query string) firmwareLatestResponse {
 		rec := httptest.NewRecorder()
-		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/updates/latest?board=esp8266-smalltv-st7789&firmware="+firmware, nil))
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/updates/latest?board=esp8266-smalltv-st7789&"+query, nil))
 		var got firmwareLatestResponse
 		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 			t.Fatalf("decode: %v body=%s", err, rec.Body.String())
 		}
 		return got
 	}
-	if got := latest("1.0.0"); !got.UpdateAvailable || got.LatestFirmware != "1.0.9" {
+	if got := latest("firmware=1.0.0&rescue=1"); !got.UpdateAvailable || got.LatestFirmware != "1.0.9" {
 		t.Fatalf("the half-written VibeTV must be offered the cached 1.0.9: %+v", got)
 	}
 	// Another VibeTV (other firmware) still gets the manifest's version.
-	if got := latest("1.0.5"); got.LatestFirmware != "1.0.10" {
+	if got := latest("firmware=1.0.5&rescue=1"); got.LatestFirmware != "1.0.10" {
 		t.Fatalf("another VibeTV must get the manifest version: %+v", got)
+	}
+	// A VibeTV with the same board and firmware that is not being rescued is
+	// updated from the manifest, so it is offered the manifest's version
+	// (Codex review on #819).
+	if got := latest("firmware=1.0.0"); got.LatestFirmware != "1.0.10" {
+		t.Fatalf("a non-rescue VibeTV must get the manifest version: %+v", got)
+	}
+	// With the marked port unplugged no rescue can resume, so no cached target.
+	ports = []string{"COM7"}
+	if got := latest("firmware=1.0.0&rescue=1"); got.LatestFirmware != "1.0.10" {
+		t.Fatalf("without the marked port the manifest version applies: %+v", got)
 	}
 }
