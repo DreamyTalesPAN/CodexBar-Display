@@ -8666,3 +8666,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: A reserve or deficit piece that reaches an end of a bar with rounded corners (Pace Meter at the very end of the track) is cut to the rounded interior, on VibeTV and in the previews, instead of ending square over the corner. Segmented pace bars keep the rounding of every segment, also the paced ones. No other change.
 - Scope: `components/live-vibetv-preview.tsx` and its test, the firmware bar drawing (not a screen), and this approval record.
 - What's new: none — a drawing correction, no new notice
+
+## 2026-10-20 — #800: approval marker after merging main
+
+- User approval: Merge of main into this branch; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
