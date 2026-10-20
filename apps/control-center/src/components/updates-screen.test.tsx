@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "@/test/axe";
@@ -618,5 +618,101 @@ describe("UpdatesScreen Mac-App-first gate", () => {
       );
       expect(screen.queryByText(/^Checked /)).toBeNull();
     });
+  });
+});
+
+// Issue #579 (Windows and Mac, 2026-10-13): a finished install kept its
+// progress bar as a dark line above "Update complete". A finished install has
+// no progress left to show.
+describe("UpdatesScreen finished update notice", () => {
+  const completedUpdate = {
+    phase: "complete" as const,
+    startedAt: "2026-10-13T10:01:00Z",
+    finishedAt: "2026-10-13T10:05:00Z",
+    logs: [],
+    result: { firmware: "1.0.41" },
+  };
+  const props = {
+    companionStatus: "online" as const,
+    device: { connected: true, board: "esp8266-smalltv-st7789", firmware: "1.0.41" },
+    firmwareUpdate: {
+      checkedAt: "2026-10-13T10:05:30Z",
+      installedFirmware: "1.0.41",
+      latestFirmware: "1.0.41",
+      updateAvailable: false,
+      status: "current" as const,
+    },
+  };
+
+  it("shows Update complete without a progress bar", () => {
+    render(<UpdatesScreen {...props} updateStatus={completedUpdate} />);
+
+    expect(screen.getByText("Update complete")).toBeTruthy();
+    expect(screen.queryByRole("progressbar")).toBeNull();
+  });
+
+  // Issue #579: after a failed check the earlier "Update complete" stayed below
+  // "Update check failed". A failed check that came after the update replaces
+  // that notice.
+  it("replaces Update complete with a failed firmware check that came after it", () => {
+    render(
+      <UpdatesScreen
+        {...props}
+        firmwareUpdate={{
+          checkedAt: "2026-10-13T11:00:00Z",
+          installedFirmware: "1.0.41",
+          updateAvailable: false,
+          status: "check_failed",
+        }}
+        updateStatus={completedUpdate}
+      />,
+    );
+
+    expect(screen.getByText("Update check failed")).toBeTruthy();
+    expect(screen.queryByText("Update complete")).toBeNull();
+  });
+
+  // Issue #687: a failure recorded before the update finished must not hide
+  // the completion notice.
+  it("keeps Update complete when the failed check is older than the update", () => {
+    render(
+      <UpdatesScreen
+        {...props}
+        firmwareUpdate={{
+          checkedAt: "2026-10-13T09:00:00Z",
+          installedFirmware: "1.0.40",
+          updateAvailable: false,
+          status: "check_failed",
+        }}
+        updateStatus={completedUpdate}
+      />,
+    );
+
+    expect(screen.getByText("Update complete")).toBeTruthy();
+  });
+});
+
+describe("UpdatesScreen Mac App check that failed during migration", () => {
+  // Calm design: the failed check is the "Could not check for updates" dialog,
+  // and its button reads "Try again".
+  it("offers Try again, never Check again", () => {
+    render(
+      <UpdatesScreen
+        companionStatus="online"
+        companionRelease={{
+          checkedAt: "2026-10-17T10:00:00Z",
+          status: "check_failed",
+          updateAvailable: false,
+          message: "Mac App check failed.",
+        }}
+        device={{ connected: true, board: "esp8266-smalltv-st7789", firmware: "1.0.39" }}
+        firmwareUpdate={{ checkedAt: "2026-10-17T10:00:00Z", installedFirmware: "1.0.39", status: "current", updateAvailable: false }}
+        onCheckUpdates={() => undefined}
+        requiresMacAppMigration
+      />,
+    );
+    const dialog = screen.getByRole("dialog", { name: "Could not check for updates" });
+    expect(within(dialog).getByRole("button", { name: "Try again" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Check again" })).toBeNull();
   });
 });

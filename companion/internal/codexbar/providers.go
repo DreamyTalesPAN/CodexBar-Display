@@ -666,6 +666,7 @@ func parseProviderSettings(raw []byte) ([]ProviderSetting, error) {
 		if label == "" {
 			label = HumanLabel(id)
 		}
+		rememberProviderDisplayName(id, label)
 		health := ProviderHealthChecking
 		if !item.Enabled {
 			health = ProviderHealthChecking
@@ -706,6 +707,7 @@ func parseProviderSettingsText(raw []byte) ([]ProviderSetting, error) {
 		if label == "" {
 			label = HumanLabel(id)
 		}
+		rememberProviderDisplayName(id, label)
 		settings = append(settings, ProviderSetting{
 			ID:             id,
 			Label:          label,

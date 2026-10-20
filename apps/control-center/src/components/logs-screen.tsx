@@ -1,14 +1,13 @@
 "use client";
 
-import { AlertTriangle } from "lucide-react";
 import type { ReactNode } from "react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { copyForHost } from "@/lib/customer-platform";
 import type { SupportDiagnostics } from "./control-center-types";
 import { formatCustomerSupportText } from "./customer-support-text";
 import { DiagnosticsPanel, SUPPORT_FRAME as FRAME } from "./diagnostics-panel";
+import { SetupDialog } from "./setup/setup-dialog";
 import { SupportReportActions } from "./support-report-actions";
 
 export type LogEvent = {
@@ -20,18 +19,25 @@ export type LogEvent = {
 
 export type LogsScreenProps = {
   events?: LogEvent[];
+  /** The shared snapshot Run diagnostics collects; the card does not show it. */
   diagnostics?: SupportDiagnostics | null;
+  /** The report the Support report card created, if any. */
+  supportReport?: SupportDiagnostics | null;
   lastError?: {
     code: string;
     message: string;
     nextAction: string;
   } | null;
+  /** The owner shows only errors it has not had closed yet. */
+  onDismissError?: () => void;
   onLoadDiagnostics?: () => void;
+  onCreateSupportReport?: () => void;
   onRefresh?: () => void;
   onRepairUsageEngine?: () => void;
   repairingUsageEngine?: boolean;
   busyAction?: string | null;
   supportReportBusy?: boolean;
+  diagnosticsRunning?: boolean;
   /** The app runs on Windows, where "Mac App" reads "app". */
   windowsHost?: boolean;
 };
@@ -39,23 +45,40 @@ export type LogsScreenProps = {
 export function LogsScreen({
   events = [],
   diagnostics,
+  supportReport,
   lastError,
+  onDismissError,
   onLoadDiagnostics,
+  onCreateSupportReport,
   onRefresh,
   onRepairUsageEngine,
   repairingUsageEngine = false,
   busyAction,
   supportReportBusy = false,
+  diagnosticsRunning = false,
   windowsHost = false,
 }: LogsScreenProps) {
-  const lastCreated = diagnostics?.generatedAt
-    ? createdWhen(diagnostics.generatedAt)
+  const lastCreated = supportReport?.generatedAt
+    ? createdWhen(supportReport.generatedAt)
     : "";
   const supportText = (value: string) =>
     copyForHost(formatCustomerSupportText(value), windowsHost);
 
   return (
     <div className="grid gap-10 pt-8 pb-10 text-sm leading-normal">
+      {/* One error object is one occurrence: the owner dismisses it, and a new
+          failure (a new object, even with the same words) opens the dialog again. */}
+      {lastError ? (
+        <SetupDialog
+          description={supportText(lastError.nextAction)}
+          onOpenChange={(open) => {
+            if (!open) onDismissError?.();
+          }}
+          open
+          primaryAction={{ label: "OK", onSelect: () => onDismissError?.() }}
+          title={supportText(lastError.message)}
+        />
+      ) : null}
       <div
         className={`flex items-center justify-between gap-6 p-5 ${FRAME}`}
       >
@@ -69,8 +92,8 @@ export function LogsScreen({
         <div className="shrink-0">
           <SupportReportActions
             creating={supportReportBusy}
-            diagnostics={diagnostics}
-            onCreate={onLoadDiagnostics}
+            diagnostics={supportReport}
+            onCreate={onCreateSupportReport}
             quiet
             size="sm"
             windowsHost={windowsHost}
@@ -83,7 +106,7 @@ export function LogsScreen({
         onRepairUsageEngine={onRepairUsageEngine}
         onRun={onLoadDiagnostics}
         repairing={repairingUsageEngine}
-        running={supportReportBusy}
+        running={diagnosticsRunning}
         windowsHost={windowsHost}
       />
 
@@ -104,13 +127,6 @@ export function LogsScreen({
         }
         title="Recent activity"
       >
-        {lastError ? (
-          <Alert>
-            <AlertTriangle aria-hidden />
-            <AlertTitle>{supportText(lastError.message)}</AlertTitle>
-            <AlertDescription>{supportText(lastError.nextAction)}</AlertDescription>
-          </Alert>
-        ) : null}
         <div className={`px-5 py-3.5 ${FRAME}`}>
           {events.length ? (
             <ul className="max-h-[320px] overflow-y-auto font-mono text-[13px] leading-[22px]">

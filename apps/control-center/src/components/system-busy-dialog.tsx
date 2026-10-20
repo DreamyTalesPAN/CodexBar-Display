@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useWaitsForPageDialog } from "./announcement-gate";
 import { SetupDialog } from "./setup/setup-dialog";
 
 /**
@@ -66,13 +67,17 @@ export function useOtherDialogOpen(ownTitles: string[]): boolean {
   return open;
 }
 
-/** The computer is too starved for the usage engine to answer (#606). */
+/**
+ * The computer is too starved for the usage engine to answer (#606). An
+ * announcement: it waits while a page dialog is open (#632).
+ */
 export function SystemBusyDialog({ onClose }: { onClose: () => void }) {
-  if (useOtherDialogOpen([systemBusyCopy.title])) {
+  if (useWaitsForPageDialog()) {
     return null;
   }
   return (
     <SetupDialog
+      announcement
       description={systemBusyCopy.description}
       onOpenChange={(open) => {
         if (!open) {
@@ -81,6 +86,9 @@ export function SystemBusyDialog({ onClose }: { onClose: () => void }) {
       }}
       open
       primaryAction={{ label: systemBusyCopy.action, onSelect: onClose }}
+      // An announcement over whatever the customer is doing: the customer's own
+      // dialog keeps the focus when both open together (#632).
+      onOpenAutoFocus={(event) => event.preventDefault()}
       showCloseButton={false}
       title={systemBusyCopy.title}
     />

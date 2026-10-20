@@ -55,7 +55,7 @@ it("says when the support report was last created, and nothing before one exists
 
   const html = renderToStaticMarkup(
     <LogsScreen
-      diagnostics={{ ok: true, generatedAt: new Date().toISOString(), checks: [] }}
+      supportReport={{ ok: true, generatedAt: new Date().toISOString(), checks: [] }}
     />,
   );
   expect(html).toMatch(/Last created today at \d{2}:\d{2}\./);

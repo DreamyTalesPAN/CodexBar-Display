@@ -11,6 +11,7 @@ import {
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "@/test/axe";
+import sharedSetupSentences from "./provider-setup-sentences.json";
 import type { PreferenceHealthState, UsageSnapshot } from "../control-center-types";
 import type { ProviderItem } from "../provider-picker";
 import {
@@ -119,7 +120,7 @@ describe("SetupProvidersScreen", () => {
     const { rerender } = renderDom(<SetupProvidersScreen {...props} />);
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
     expect(within(screen.getByRole("dialog")).getByText(
-      "VibeTV can't read GitHub Copilot until the GitHub Copilot app is installed and running.",
+      "GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet.",
     )).toBeTruthy();
     expect(screen.queryByText(failed.health.reported)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "OK" }));
@@ -165,6 +166,56 @@ describe("SetupProvidersScreen", () => {
   // Paul, 16.10. ("wieso hab ich hier so viele optionen?"): the popup showed
   // the engine's own text, a status line and a copy action. Every state says
   // one fixed sentence and ends on OK.
+  it("says one fixed sentence per state, without engine text or a copy action", () => {
+    const engine = "No available fetch strategy for openai.";
+    const cases: [PreferenceHealthState, string][] = [
+      ["auth_required", "VibeTV can't read OpenAI until the OpenAI app is installed and running."],
+      ["setup_required", "VibeTV can't read OpenAI until the OpenAI app is installed and running."],
+      ["browser_sign_in_required", "Sign in to OpenAI in your browser, then close the browser."],
+      ["permission_required", "Allow access on this computer so VibeTV can read OpenAI usage."],
+      ["unsupported", "OpenAI no longer works with this account, so switch it off and use another provider."],
+      ["no_usage_available", "This OpenAI account has no usage yet."],
+      ["service_outage", "OpenAI has a service outage, and VibeTV tries again by itself."],
+      ["stale", "VibeTV shows the last OpenAI reading until a new one arrives."],
+      ["engine_incompatible", "The usage engine is too old and needs a repair."],
+      ["rate_limited", "Nothing to fix: OpenAI is busy right now, and VibeTV tries again by itself."],
+      ["timeout", "OpenAI did not answer in time, and VibeTV tries again by itself."],
+      ["unavailable", "VibeTV could not read OpenAI usage right now and tries again by itself."],
+      ["config_error", "VibeTV could not read OpenAI usage right now and tries again by itself."],
+    ];
+    for (const [state, sentence] of cases) {
+      const item = provider({ providerId: "openai", label: "OpenAI", health: state, message: engine });
+      const failed = { ...item, health: { ...item.health, reported: engine,
+        nextAction: "Finish setup for this provider.", noReadingSince: undefined } };
+      expect(setupProviderDialogSentence(failed)).toBe(sentence);
+    }
+    for (const state of ["healthy", "checking", "disabled"]) {
+      expect(setupProviderDialogSentence(provider({ providerId: "openai", label: "OpenAI", health: state }))).toBeNull();
+    }
+    // A provider whose sign-in the app starts says so, and its stale row with
+    // a sign-in behind it says the same.
+    const claudeOut = provider({ providerId: "claude", label: "Claude", health: "auth_required" });
+    expect(setupProviderDialogSentence(claudeOut)).toBe("Sign in to Claude so VibeTV can read its usage.");
+    expect(setupProviderDialogSentence({ ...claudeOut,
+      health: { ...claudeOut.health, state: "stale", signInState: "auth_required" } }))
+      .toBe("Sign in to Claude so VibeTV can read its usage.");
+  });
+
+  // The setup log reads the same fixture (companion/internal/codexbar,
+  // provider_setup_sentences_test.go): one sentence per state on both sides.
+  it("says the shared fixture sentence per state, as the setup log does", () => {
+    for (const entry of sharedSetupSentences) {
+      const item = provider({ providerId: entry.providerId, label: entry.label, health: entry.state });
+      // Build 2 (Paul, 19.10.): the own-app popup follows the template, "VibeTV
+      // can't read <Provider> until the <Provider> app is installed and
+      // running." The setup log keeps the fixture's longer sentence.
+      const expected = entry.sentence.includes("'s own app")
+        ? `VibeTV can't read ${entry.label} until the ${entry.label} app is installed and running.`
+        : entry.sentence;
+      expect(setupProviderDialogSentence(item), entry.state).toBe(expected);
+    }
+  });
+
   // The Companion can start the sign-in of these four only; every other
   // provider is listed without a sign-in button.
   it("starts a sign-in only for Codex, Claude, Cursor and Antigravity", () => {
@@ -176,10 +227,26 @@ describe("SetupProvidersScreen", () => {
     ]);
   });
 
+  // Copilot has no app of its own: CodexBar reads it with a GitHub sign-in,
+  // so the sentence names that sign-in. Every other provider that has no
+  // sign-in in the app keeps the own-app sentence (#591).
+  it("names the GitHub sign-in for Copilot and keeps the own-app sentence for other providers", () => {
+    // CodexBar 0.75.0 names the provider "Copilot" in its inventory.
+    const copilotSignedOut = provider({ providerId: "copilot", label: "Copilot",
+      health: "setup_required", message: "No available fetch strategy for copilot." });
+    const openaiSignedOut = provider({ providerId: "openai", label: "OpenAI",
+      health: "setup_required", message: "No available fetch strategy for openai." });
+    expect(setupProviderDialogSentence(copilotSignedOut))
+      .toBe("GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet.");
+    expect(setupProviderDialogSentence(openaiSignedOut)).toBe(
+      "VibeTV can't read OpenAI until the OpenAI app is installed and running.",
+    );
+  });
+
   // A signed-out provider the app cannot sign in says what the customer has
-  // to do (its own app, installed and running) and offers the setup guide
-  // as its signal action beside OK.
-  it("tells a signed-out provider without a sign-in to use its own app", () => {
+  // to do and offers the setup guide as its signal action beside OK. Copilot
+  // has no own app: its sentence names the GitHub sign-in (#591).
+  it("tells a signed-out Copilot that its GitHub sign-in cannot start yet, and keeps the setup guide beside OK", () => {
     const onOpenSetupGuide = vi.fn();
     const failed = { ...copilot, value: true,
       health: { ...copilot.health, reported: "No available fetch strategy for copilot." } };
@@ -189,7 +256,7 @@ describe("SetupProvidersScreen", () => {
       pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
     const dialog = within(screen.getByRole("dialog"));
     expect(dialog.getByText(
-      "VibeTV can't read GitHub Copilot until the GitHub Copilot app is installed and running.",
+      "GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet.",
     )).toBeTruthy();
     expect(dialog.queryByText("No available fetch strategy for copilot.")).toBeNull();
     expect(dialog.queryByRole("button", { name: /Copy provider message/ })).toBeNull();
@@ -200,6 +267,21 @@ describe("SetupProvidersScreen", () => {
     fireEvent.click(dialog.getByRole("button", { name: "Open setup guide" }));
     expect(onOpenSetupGuide).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("keeps the own-app sentence off sign-in providers and other states", () => {
+    const claudeSignedOut = provider({ providerId: "claude", label: "Claude",
+      health: "auth_required", message: "Sign in to Claude." });
+    const timedOut = provider({ providerId: "copilot", label: "GitHub Copilot",
+      health: "timeout", message: "The provider check timed out." });
+    const signedOut = { ...copilot, value: true };
+    for (const [item, sentence] of [
+      [claudeSignedOut, "Sign in to Claude so VibeTV can read its usage."],
+      [timedOut, "GitHub Copilot did not answer in time, and VibeTV tries again by itself."],
+      [signedOut, "GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet."],
+    ] as const) {
+      expect(setupProviderDialogSentence(item)).toBe(sentence);
+    }
   });
 
   // The sign-in action belongs to one of the four signed-out tools the

@@ -76,7 +76,7 @@ func TestProbeExactProviderReportsIncompatibleEngineOnItsRow(t *testing.T) {
 	got := ProbeProviderSetupForProvider(context.Background(), t.TempDir(), "Codex")
 	if len(got.Providers) != 2 || got.Providers[1].ID != "codex" ||
 		got.Providers[1].Status != ProviderEngineIncompatible ||
-		got.Providers[1].Detail != "Usage engine 0.17 is too old. Version 0.23 or newer is required." {
+		got.Providers[1].Detail != "The usage engine is too old and needs a repair." {
 		t.Fatalf("the requested provider must carry the incompatible state: %+v", got.Providers)
 	}
 }

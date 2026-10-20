@@ -27,9 +27,13 @@ type SetupDialogProps = {
   description?: ReactNode;
   /** Optional header icon (Theme Studio's dialogs); the calm dialogs (A2) draw none. */
   icon?: LucideIcon;
+  /** An announcement, not a page's own dialog: it waits for those (#632). */
+  announcement?: boolean;
   /** Destructive tints the header icon; "neutral" is for progress dialogs. */
   tone?: "error" | "neutral";
   onOpenChange: (open: boolean) => void;
+  /** Lets an announcement leave focus where it is (#632). */
+  onOpenAutoFocus?: (event: Event) => void;
   open: boolean;
   /** The single signal action. Rendered last, on the right. */
   primaryAction?: SetupDialogAction;
@@ -93,8 +97,10 @@ export function SetupDialog({
   children,
   description,
   icon: Icon,
+  announcement,
   tone = "error",
   onOpenChange,
+  onOpenAutoFocus,
   open,
   primaryAction,
   scrim = true,
@@ -122,10 +128,12 @@ export function SetupDialog({
       />
       <DialogContent
         className={wide ? "sm:max-w-[480px]" : undefined}
+        data-announcement={announcement ? "" : undefined}
         style={{ animation: "none" }}
         {...(description === undefined ? { "aria-describedby": undefined } : {})}
         onInteractOutside={(event) => event.preventDefault()}
         onKeyDown={scrim ? undefined : leaveByTab}
+        onOpenAutoFocus={onOpenAutoFocus}
       >
         <DialogHeader>
           <DialogTitle className={Icon ? "flex items-center gap-2" : undefined}>

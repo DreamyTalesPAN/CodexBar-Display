@@ -10056,6 +10056,217 @@ issue scope, or release permission never implies UI permission.
 - What's new: none — no new content
 
 ## 2026-10-20 — #784: approval marker after merging main
+## 2026-10-15 — Offer the Mac App update only on the Mac (#561)
+
+- User approval: Paul asked on 2026-10-15 to fix the Codex review finding on PR #639 ("ja, fix das alles"): the Windows app must not offer a "Mac App" update. He has not personally previewed this exact build.
+- Approved customer-visible result: the "Update the Mac App" hint on the "VibeTV not found" pages appears only in the Mac App. The Windows app shows these pages as before.
+- Scope: `control-center-app.tsx` and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — removes a hint from Windows, nothing to announce
+
+## 2026-10-15 — Mac App update hint also while waiting for a WiFi VibeTV (#561)
+
+- User approval: Paul asked on 2026-10-15 to finish PR #639 ("mach den feddich, ci grün, merge ready"), which includes the open Codex review finding: the approved hint was missing from the "Connect the USB cable" help that appears while setup waits for a WiFi VibeTV without a cable. Main is merged in with #641; the UI review gate cannot read a merge commit as approval marker, so this entry also stands for that merge. No new wording.
+- Approved customer-visible result: the same "Update the Mac App" hint as approved above, now also in that waiting help dialog, only in the Mac App and only when a newer Mac App exists. Nothing else changes.
+- Scope: `setup-device-screen.tsx`, `setup-wizard.tsx`, their test, the pinned actions in `.github/workflows/claude.yml` (same change as #640), the merge of main and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — completes the unreleased hint, nothing to announce
+
+## 2026-10-16 — Mac App update as its own dialog before "not found" (#561, design 1d)
+
+- User approval: Paul rejected the inline hint of the entries above on 2026-10-15 after seeing it on the Mac ("das gebe ich nicht frei"), so those entries no longer describe an approved look. He had the hint redesigned in Claude Design (project "Screen-Redesign mit VibeTV", page "Setup - Mac App Update (561)") and chose variant 1d on 2026-10-16 ("1d").
+- Approved customer-visible result: in the Mac App only, when setup finds no VibeTV and a newer Mac App exists, a dialog "Update the Mac App first" appears before "We couldn't find your VibeTV" and before "Connect the USB cable": "We couldn't find your VibeTV. Version <version> is out, and an older app may not find it. Setup scans again after the update." Footer: "Scan again" (outline) and "Update Mac App" (signal), plus the close button. "Scan again" or closing leads to the usual not-found help without any hint; the old inline card is gone. Windows shows no Mac App dialog.
+- Scope: `setup-device-dialogs.tsx`, `setup-device-screen.tsx`, `setup-wizard.tsx`, `setup-dialog.tsx` (description may carry the version in mono), their tests, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — completes the unreleased #561 hint, nothing to announce
+
+## 2026-10-16 — #561: approval marker after merging main with #615
+
+- User approval: Paul chose design 1d for #639 on 2026-10-16 (entry above). Main moved on with #615 (overnight audit, `WithLatestDisplayFrame` around the setup wizard) and #640 while the branch was in review, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the 2026-10-16 #561 entry above; nothing else changes.
+- Scope: the merge of main into this branch, the `macAppUpdate` prop moved into the wrapped `SetupWizard` in `control-center-app.tsx`, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — #561: approval marker after merging main with #619 and #628
+
+- User approval: Paul chose design 1d for #639 on 2026-10-16 (entry above). Main moved on with #619 and #628 while the branch was in review, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as approved in the 2026-10-16 #561 entry above; nothing else changes. "Update Mac App" keeps Sparkle's visible check, as #619 keeps it for Update buttons.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+
+## 2026-10-15 — Offer the Mac App update on the VibeTV-not-found pages (#561)
+
+- User approval: Paul approved this change in the comment on PR #639 on 2026-10-15 ("du kannst meine freigabe in das ui review gate eintragen"). He has not personally previewed this exact build.
+- Approved customer-visible result: When a newer Mac App is available, the "VibeTV not found" pages show a hint that an update exists with the button `Update the Mac App`. Without a newer Mac App the pages look as before.
+- Scope: `setup-device-dialogs.tsx`, `setup-wizard.tsx`, `control-center-app.tsx`, the focused dialog test, and this approval record. No merge, release, or device write is implied.
+- What's new: none — the hint appears only while a problem is being solved, nothing a customer needs to learn.
+
+## 2026-10-16 — Mac App update offer: not on Windows, also on the WiFi-waiting not-found path (#561)
+
+- User approval: Paul chose variant 1d on 2026-10-16 (Claude Design "Setup - Mac App Update (561)"); this push only fixes where it shows (not on Windows; also on the WiFi-waiting not-found path); look and copy unchanged.
+- Approved customer-visible result: As in the 2026-10-15 entry (#561) above: the update hint with `Update the Mac App` appears on the "VibeTV not found" pages only in a Mac window and only when a newer Mac App exists. The WiFi-waiting not-found page shows the same hint. Windows shows nothing new. Look and copy unchanged.
+- Scope: `apps/control-center/src/components/control-center-app.mac-app-offer.test.tsx` (new test: Mac shows the offer, Windows gets none) and this approval record. The WiFi-waiting forwarding (`setup-device-screen.tsx`) is covered by the existing test in `setup-device-dialogs.test.tsx`. No merge, release, or device write is implied.
+- What's new: none — the hint appears only while a problem is being solved, nothing a customer needs to learn.
+
+## 2026-10-17 — Finished update and theme notices: no progress bar; a failed firmware check replaces "Update complete" (#579)
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #579); look unchanged except: the progress bar above "Update complete" (Updates) and above "Installed" (Appearance › Themes) is removed once the install has finished → no bar; the "Update complete" notice is removed when a firmware check fails after that update, the heading "Update check failed" stays alone.
+- Approved customer-visible result: a finished install shows its notice without the dark progress line; while the install runs, the bar stays as before. A failed firmware check that came after a finished update no longer leaves "Update complete" below "Update check failed". Wording, buttons and layout stay the same.
+- Scope: `apps/control-center/src/components/updates-screen.tsx` (finished-update notice and failed-check replacement), `apps/control-center/src/components/theme-library-screen.tsx` (theme install notice), their tests and this approval record. Pull request branch only, not merge or release.
+- What's new: none — removed progress line and a stale notice, no new capability
+
+## 2026-10-17 — #579 review fix: a failed firmware check replaces the finished-update notice without comparing times
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #579, Codex review); look unchanged from the entry above except: a failed firmware check now replaces the "Update complete" notice whenever that notice is shown, also when the check result is older than the update → before: that older failure left "Update complete" visible; after: the notice is removed and only "Update check failed" stays.
+- Approved customer-visible result: the same as in the entry above, except for the case in the "before" line of this entry; the earlier entry's words "came after a finished update" are not exact any more, since no times are compared. Wording, buttons and layout stay the same.
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — same removed notice as in the entry above, no new capability
+
+## 2026-10-17 — #687 review fix: a failed firmware check hides "Update complete" only when it is newer than the update
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #687, Codex review); look unchanged except: a failed firmware check that was recorded before the finished update → before: the "Update complete" notice is removed (as in the entry above); after: the "Update complete" notice stays and "Update check failed" is shown under it. A failed check recorded after the update still removes the notice.
+- Approved customer-visible result: wording, buttons and layout stay the same. The notice hides only when the failed check is newer than the finished update. Live completions now store their finish as an exact instant, so this order is known for them too.
+- Scope: `apps/control-center/src/components/updates-screen.tsx` and its test, `apps/control-center/src/components/control-center-app.tsx` (firmware finish times), `apps/control-center/src/components/update-jobs.ts` (firmware status fallback), this approval record. Pull request branch only, not merge or release.
+- What's new: none — ordering fix only, no new capability
+
+## 2026-10-17 — Recent activity: newest first, each entry with the time it was written
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #548, #558, #579); look unchanged except: the time of a Recent activity entry is the time it was written (for example `VibeTV update needs attention` after a device check or a theme install step now shows that later time, not the time the update step ended); no wording change.
+- Approved customer-visible result: Support › Recent activity keeps the newest entry on top, and its time is the moment the entry was written, so the times read top to bottom never go back. No new wording. `Settings loaded` stays out of the list at start (already removed on main); the repeated-entry rule is unchanged.
+- Scope: `addEvent` and the calls of `addEvent` in `apps/control-center/src/components/control-center-app.tsx`, the display-preferences test file in `apps/control-center/src/components/` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a fix of a reported defect, no new capability
+
+## 2026-10-17 — Codex review fix on #685: the Recent activity test checks every timed entry
+- User approval: Covered by the entry above (#685, pending Paul's review); this entry changes only a test, no visible change; not seen by Paul.
+- Approved customer-visible result: No visible change. The test no longer skips list rows without a time, and it checks that the session entry keeps its marker `Session` and stays last.
+- Scope: `apps/control-center/src/components/control-center-app.display-preferences.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a test-only fix from a Codex review
+
+## 2026-10-17 — #632: busy computer notice no longer takes focus from a page dialog
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #632); look unchanged except: none on screen; the notice's OK button no longer takes the keyboard focus when the notice opens.
+- Approved customer-visible result: none on screen. The busy computer notice (wording and layout unchanged) no longer takes keyboard focus when it opens, and a page dialog that opens in the same moment keeps the focus and the notice is taken down before the screen repaints.
+- Scope: `apps/control-center/src/components/system-busy-dialog.tsx`, its test, `apps/control-center/src/components/setup/setup-dialog.tsx` (one optional prop, passed through) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a focus fix, no new capability
+
+## 2026-10-17 — #632 Codex fix: busy computer notice checks for other dialogs before paint
+
+- User approval: none needed for this entry; Codex review fix of #632, no visible change; not seen by Paul. The approval of the entry above still stands.
+- Approved customer-visible result: none on screen. The check that keeps the busy computer notice out of the way of a page dialog now runs before the screen repaints (observer set up in a layout effect).
+- Scope: `apps/control-center/src/components/system-busy-dialog.tsx`, its test and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a timing fix, no new capability
+
+## 2026-10-17 — #632: an announcement waits while a page dialog is open
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #632); look unchanged except: an announcement (the busy computer notice, the AI usage notice, What's new) no longer appears on top of an open page dialog; it appears after that dialog closes. Wording, layout and buttons unchanged.
+- Approved customer-visible result: the busy computer notice, the AI usage notice and What's new wait while a page dialog is open (Run setup again?, a firmware failure, a theme preview, a factory reset, a delete confirmation) and show after it closes. A page dialog that opens in the same moment keeps the keyboard focus.
+- Scope: `apps/control-center/src/components/announcement-gate.ts` (new, one shared rule), `announcement-gate.test.tsx` (new), `system-busy-dialog.tsx`, `setup/setup-usage-dialog.tsx`, `whats-new-dialog.tsx`, `setup/setup-dialog.tsx` (one optional `announcement` prop, marks the dialog) and this approval record. Pull request branch only, not merge or release. Stacked on #692.
+- What's new: none — no new capability; the same notices, later.
+
+## 2026-10-17 — Setup log uses the popup sentence per provider state (stacked on #697)
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect found in the #697 review: one sentence per state in the setup log and the popup); look unchanged except: the setup log line of a failing provider now says the popup sentence of its state, with the provider's CodexBar display name (for OpenAI: "OpenAI API"). Per state, before → after: signed out, sign-in can be started (Codex, Claude, Cursor, Antigravity) "This provider needs an active sign-in." → "Sign in to <Label> so VibeTV can read its usage."; signed out, any other provider → "VibeTV reads <Label> usage from <Label>'s own app, so make sure it is installed and signed in on this computer."; browser sign-in "<Label> usage needs a signed-in <host> session in your browser." → "Sign in to <Label> in your browser, then close the browser."; permission "macOS blocked access required by this provider." (Windows: "Windows blocked access required by this provider.") → "Allow access on this computer so VibeTV can read <Label> usage."; unsupported "<Label> no longer supports this account." → "<Label> no longer works with this account, so switch it off and use another provider."; no usage "This account does not expose usage data." → "This <Label> account has no usage yet."; timeout "The provider check timed out." → "<Label> did not answer in time, and VibeTV tries again by itself."; rate limit "<Label> received too many usage checks and is pausing them for a few minutes." → "Nothing to fix: <Label> is busy right now, and VibeTV tries again by itself."; settings or unknown failure "The usage service could not save or read its provider settings." / "The usage service could not read this provider." → "VibeTV could not read <Label> usage right now and tries again by itself."; engine too old "The usage engine is too old." → "The usage engine is too old and needs a repair." The same sentences appear in the support report's first sentence, and the Settings row message for a browser sign-in (not shown on screen, only matched by search) changes to "Sign in to <Label> in your browser, then close the browser. Sign in to <host> in your browser, close the browser, then check again." The engine row "Usage service" keeps its sentences; not_configured and the usage-service fallback message are unchanged. The popup itself is unchanged.
+- Approved customer-visible result: the setup log line of a failing provider says the same sentence as the Control Center popup for that state, with the provider's display name; the next-step line, the engine row and the popup are unchanged.
+- Scope: `companion/internal/codexbar/provider_setup.go` and `providers.go` (sentences, display name from the inventory), the shared fixture `apps/control-center/src/components/setup/provider-setup-sentences.json`, and the tests. Pull request branch only, not merge or release.
+- What's new: none — setup log sentences and their display name only; popup and screen layout unchanged.
+
+## 2026-10-17 — Layout leftovers of #579: Appearance opens its tab, Support buttons sit under the text
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #579); look unchanged except: (1) Sidebar, expanded: clicking `Appearance` now also opens the Appearance tab in its current section, so `Settings` is no longer highlighted beside the open group; before, the page stayed on Settings while the group opened. Both `Themes` and `Screensavers` still open from the group, and the icon-collapsed sidebar is unchanged. (2) Support › `Support report`: `Create report`, `Copy`, `Download` and `Create again` sit directly under the description; before, they were centred vertically in the free height of the card next to `Connected VibeTV`, leaving a large gap above them. Wording and sizes are unchanged.
+- Approved customer-visible result: only the two changes above; no new wording, screen, dialog or button. Two other points of #579 need no change on main: the usage display helper line is gone (the Usage display row never reached main, removed on the bundle branch in #600, see the 2026-10-13 entry), and the byte size mismatch is gone too (`110 B / 2 KB` was removed with the native Theme Studio in #422, its per-asset size line in #614): the Usage display row never reached main (removed on the bundle branch in #600, see the 2026-10-13 entry), and the `110 B / 2 KB` display was removed with the native Theme Studio in #422 and its per-asset size line in #614.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/control-center-shell.test.tsx`, `apps/control-center/src/components/logs-screen.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new wording, no new capability
+
+## 2026-10-17 — #579 (found in #698): provider shortcut line keeps two lines under Display mode
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #579); look unchanged except: under Settings › Display mode the shortcut line ("Press … in any app to show the next provider. …") always has room for two lines. Before: the space followed the text, one line in Manual or before usage is read and two lines in Automatic with usage, so switching made the page below jump by one line. After: the same text, same wording, same place, and no jump; in Manual and before usage is read there is one blank line more under the line.
+- Approved customer-visible result: the text of the shortcut line stays exactly as in the #424, #558 entries above (Ctrl+Alt+Shift+P / ⌃⌥⌘P, "This switches to Manual.", "This needs two providers with usage.", "not available" sentence); only the reserved height changes as described above. A browser, which names no shortcut, shows no line and reserves nothing.
+- Scope: `apps/control-center/src/components/settings-screen.tsx`, its test `apps/control-center/src/components/settings-screen.test.tsx` and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — layout only, no new text or capability
+
+## 2026-10-17 — #591: a switched-on Copilot names the GitHub sign-in, not an own app
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #591); look unchanged except: the provider popup for a switched-on GitHub Copilot that CodexBar cannot read changes from "VibeTV reads GitHub Copilot usage from GitHub Copilot's own app, so make sure it is installed and signed in on this computer." → "Sign in to GitHub Copilot so VibeTV can read its usage." No button is added or removed ("Open setup guide" beside "OK" stays as it is).
+- Approved customer-visible result: provider popup for a switched-on GitHub Copilot that CodexBar cannot read: "VibeTV reads GitHub Copilot usage from GitHub Copilot's own app, so make sure it is installed and signed in on this computer." → "Sign in to GitHub Copilot so VibeTV can read its usage." Same title, same buttons; nothing else changes.
+- Scope: the sentence in `setupProviderDialogSentence` in `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its tests, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the wording is the existing sign-in sentence of the other providers, filled in with the provider name
+
+## 2026-10-17 — #591 Codex fix: the Copilot sentence names GitHub when CodexBar says "Copilot"
+
+- User approval: pending — Paul reviews this PR; the sentence is the one of the entry above, the fix only makes it hold for the name CodexBar 0.75.0 sends ("Copilot"). Not seen by Paul.
+- Approved customer-visible result: none beyond the entry above: "Sign in to GitHub Copilot so VibeTV can read its usage." instead of "Sign in to Copilot ..." for that name.
+- Scope: `setupProviderDialogSentence` in `apps/control-center/src/components/setup/setup-providers-screen.tsx` and its test. Pull request branch only, not merge or release.
+- What's new: none — a Codex review fix to the wording already approved above
+
+## 2026-10-17 — Support: the last error opens as an overlay dialog, not inline text
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect: errors are dialogs over the page, not inline text; rule scan 1017, item 12); look unchanged except: the last error as an inline warning in the Recent activity card at the top of Support → the same sentences in an overlay dialog with "OK".
+- Approved customer-visible result: On Support, when the last action failed, the error is no longer an inline warning in the Recent activity card. It opens as a dialog over the page: the title is the error sentence (the same text as before), below it the next-step sentence (the same text as before), and one button "OK" that closes it (the X closes it too). The dialog does not come back for the same error on its own; a new occurrence of the error opens it again. Wording, colours and buttons of everything else stay the same.
+- Scope: `apps/control-center/src/components/logs-screen.tsx`, its new test `apps/control-center/src/components/logs-screen.error-overlay.test.tsx` and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — the same sentences in a dialog, no new capability
+
+## 2026-10-17 — Support error dialog: the app keeps the dismissal per error
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect: errors are dialogs over the page, not inline text; rule scan 1017, item 12); look unchanged except: the last error as an inline warning in the Recent activity card at the top of Support → the same sentences in an overlay dialog with "OK". Same wording as the entry above; this entry only moves where the dismissal is kept.
+- Approved customer-visible result: On Support, the last error opens as a dialog over the page (title = the error sentence, next-step sentence below, "OK" and the X close it), as in the entry above. It stays closed for the same error, also after leaving Support and coming back. A new failure, even with the same words, opens it again. Nothing else changes.
+- Scope: `apps/control-center/src/components/logs-screen.tsx`, `apps/control-center/src/components/control-center-app.tsx` (it keeps the dismissed error and passes it to Support), `apps/control-center/src/components/logs-screen.error-overlay.test.tsx` and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — the same sentences in a dialog, no new capability
+
+## 2026-10-17 — Support error dialog waits while runtime repair or the lost-VibeTV picker is open
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect: two centred dialogs stacked on Support, the lower one's buttons unreachable; Codex review on #743); look unchanged except: when Refresh on Support loses the Companion, the Support error dialog no longer opens on top of the runtime repair dialog (and not on top of the lost-VibeTV picker); the runtime repair dialog alone is shown.
+- Approved customer-visible result: On Support, while the runtime repair dialog or the lost-VibeTV picker is open, the last error is not shown as a second dialog. The text of both dialogs is unchanged. Once that dialog is closed, the Support error dialog shows, as in the entries above, unless it was already dismissed. Nothing else changes.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (the condition for what Support receives) and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no new capability, the same dialogs in a fixed order
+
+## 2026-10-17 — Support error dialog waits for every centred dialog
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect: centred dialogs stacked on Support, the lower one's buttons unreachable; Codex review on #743); look unchanged except: while the runtime repair, the lost-VibeTV picker, the usage repair dialog, the system busy dialog, "Run setup again?" or What's new is open, the Support error dialog waits and is not shown on top of them.
+- Approved customer-visible result: On Support, the last error is shown as its dialog only when no other centred dialog is open. The text of every dialog is unchanged. When the other dialog closes, the Support error shows, unless it was already dismissed. Nothing else changes.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (the condition for what Support receives) and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no new capability, the same dialogs in a fixed order
+
+## 2026-10-17 — An error closed once stays closed on Support and in Settings
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect: an error closed on Support came back on Settings; Codex review on #743); look unchanged except: an error closed with "OK" on Support no longer opens again when Settings is opened, and the Settings error dialog is not shown for an error that was already closed.
+- Approved customer-visible result: An error dialog closed with "OK" (or the X) stays closed on every page for that same error. A new failure, even with the same words, opens it again. The text and buttons of the dialogs are unchanged. Nothing else changes.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (the dismissed error, kept once for Support and Settings), `apps/control-center/src/components/logs-screen.tsx` (reports the dismissal, no own state), `apps/control-center/src/components/logs-screen.error-overlay.test.tsx` and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no new capability, the same dialogs
+
+## 2026-10-17 — Small fixes from the rule check: Try again, sentence case, no red for past failures
+
+- User approval: pending — Paul reviews this PR (fix from the rule check of 17.10., no issue); look unchanged except: Updates, the button for a failed Mac App check reads "Try again" (before: "Check again"); setup heading "Display Mode" reads "Display mode" (before: "Display Mode"); a past "Failed" step in the setup log is in the normal text colour (before: red).
+- Approved customer-visible result: On Updates, the button that retries a failed Mac App check reads "Try again" (before: "Check again"); its placement and behaviour are unchanged. On setup's display step the heading reads "Display mode" (before: "Display Mode"). In the setup log (Logs and the Help menu), a step that failed in the past shows its "Failed" word, message and next-step line in the normal text colour (before: red). Nothing else changes.
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/setup/setup-display-mode-screen.tsx`, `apps/control-center/src/components/setup-event-log.tsx`, their tests, `apps/control-center/scripts/test-customer-flows.mjs` (button name only) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — sentence case and one colour, no new copy
+
+## 2026-10-18 — Setup log: the wheel at its end no longer moves the page (walk-through leftovers, #579)
+
+- User approval: pending — Paul reviews this PR (fix of a point from the Mac walk-through reported in #579: with the pointer over the Setup log at its end, the page scrolled instead of stopping).
+- Approved customer-visible result: No visible change. On Support › Setup log, the mouse wheel or trackpad scroll stops at the end of the list instead of moving the page behind it. Wording, layout and colours stay as they are.
+- Scope: the class of the Setup log list in `apps/control-center/src/components/setup-event-log.tsx` and one test in `setup-event-log.test.tsx`; this approval record. Pull request branch only, not merge or release.
+- What's new: none — a scroll-chaining fix
+
+## 2026-10-18 — Windows: Themes and Theme Studio errors use the Windows words
+- User approval: pending — Paul reviews this PR (fix of a reported defect: the Windows app showed a Companion error with the Mac wording on the Themes page and in Theme Studio); look unchanged except: on Windows only, "Mac App" reads "App" and "this Mac" reads "this computer" in the Themes error box and the Theme Studio error line; macOS unchanged.
+- Approved customer-visible result: In the Windows app only, an error on Appearance › Themes ("Theme action failed") and the error line of Theme Studio read the same wording as the rest of the Windows app (for example "App is restarting." instead of "Mac App is restarting."). Layout, buttons and macOS text stay the same.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx`, `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, their new tests `theme-library-screen.windows-copy.test.tsx` and `ai-theme-studio-screen.windows-copy.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — wording of an existing error line on Windows only
+
+## 2026-10-18 — Run diagnostics no longer opens the Support report card
+
+- User approval: pending — Paul reviews this fix (Run diagnostics no longer switches the Support report card to Copy/Download; approved 24.09. text "Create a diagnostic file when support asks for it." stays true); look: unchanged.
+- Approved customer-visible result: Support › Run diagnostics no longer changes the Support report card. After it the card still says "Create report"; before, it showed "Copy", "Download" and "Create again" without a click on "Create report". Run diagnostics no longer shows the card as "Creating report" either, and the card's Create report does not show Run diagnostics as running. Create report, Create again, all texts and the layout stay as they are; the diagnostics results still appear under Diagnostics.
+- Scope: `apps/control-center/src/components/control-center-app.tsx`, `apps/control-center/src/components/logs-screen.tsx`, the tests `logs-screen-support-report.test.tsx` and `control-center-app.support-report-card.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a fix of a reported defect, no new text or control.
+
+## 2026-10-18 — #591 option: the Copilot popup says VibeTV cannot start the GitHub sign-in yet
+
+- User approval: pending — Paul decides #591 (Copilot sentence: "GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet."); look: same popup, new sentence.
+- Approved customer-visible result: none yet. Option to decide, stacked on #740: the provider popup for a switched-on GitHub Copilot that CodexBar cannot read changes from "Sign in to GitHub Copilot so VibeTV can read its usage." → "GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet." Same title and buttons ("Open setup guide" beside "OK" stays as it is).
+- Scope: the sentence in `setupProviderDialogSentence` in `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its tests, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — wording only
+
+## 2026-10-19 — Merge of main (v1.0.65 release round + #638) into the small-fixes group
+
+- User approval: Merge of main (v1.0.65 release round + #638) into this group; no visible change of its own; not seen by Paul
+- Approved customer-visible result: as in this branch's entries and main's entries
+- Scope: the merge conflict resolutions in `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/setup/setup-device-screen.tsx`, their tests, `companion/internal/codexbar/provider_setup.go` and its tests, `companion/internal/companionapi/preferences_test.go`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #782: approval marker after merging main
 
 - User approval: Merge of main into this branch; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
