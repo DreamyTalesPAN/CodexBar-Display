@@ -1234,15 +1234,15 @@ export function AIThemeStudioScreen({
               </div>
             ) : null}
             {primitive && !isAttachedSceneAnimation(primitive.assetPath) ? (
-              <Collapsible data-selection-controls className="mx-auto flex w-full max-w-[460px] flex-col lg:min-h-0">
+              <Collapsible data-selection-controls className="mx-auto flex w-full max-w-[460px] flex-col">
                 <CollapsibleTrigger asChild>
                   <Button variant="ghost" className="group w-full justify-between">
                     Details
                     <ChevronDown className="transition-transform group-data-[state=open]:rotate-180" />
                   </Button>
                 </CollapsibleTrigger>
-                {/* The panel is as high as the free space below the preview and scrolls inside itself. */}
-                <CollapsibleContent className="pt-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:has-[[data-testid=color-palette]]:min-h-40">
+                {/* The panel has its natural height and never scrolls inside itself: in a low window it runs past the bottom of the workspace and the whole left column (preview and Details) scrolls as one, so the colour field and its palette are never cut off in a small scroll area of their own. */}
+                <CollapsibleContent className="pt-3">
               <section className="space-y-3" aria-label="Selected element tools">
                 <div className="flex items-center justify-between gap-2">
                   <h2 className="min-w-0 truncate font-medium">

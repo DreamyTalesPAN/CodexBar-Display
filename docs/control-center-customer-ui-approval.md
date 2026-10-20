@@ -8182,3 +8182,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #781 key dialog and Settings row look exactly as before; only a stale answer after Disconnect is ignored.
 - Scope: #781 `apps/control-center/src/components/theme-studio/openai-key-form.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #781 fix of a review finding, no new text or feature
+
+## 2026-10-20 — #781: Theme Studio colour field and its whole palette fit together in a low window (7197 review, point 6)
+
+- User approval: pending — #781 point 6 follow-up; the rendered result is pending Paul's review. Before → after: #781 at a 1200x800 window the Details area was a small scroll box of its own (about 100–160 px high), so the Color field, the palette and "More colours…" were cut off and never visible together → #781 Details take their natural height and the whole left column (preview and Details) scrolls as one; the palette scrolls into view when it opens, so the Color field, the 12 swatches and "More colours…" are visible together under the preview as in the template (picture 06-farbwahl) at 1200x800, 1000x700 and 1920x1080. The preview itself looks and sits as before.
+- Approved customer-visible result: #781 Theme Studio Details with the Color field, palette and "More colours…" together at 1200x800, 1000x700 and 1920x1080 (pictures "Vorlage (Claude Design)" | "App mit PR #781").
+- Scope: #781 `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #781 layout fix not announced
