@@ -8474,3 +8474,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the 3D VibeTV appears only with its theme drawn, as in frame 1 of "Calm Redesign - alle Screens".
 - Scope: `apps/control-center/src/components/live-vibetv-preview.tsx`, `apps/control-center/src/components/vibetv-3d-preview.tsx`, the recovery test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #778: an invalid field with keyboard focus shows the full ink focus ring
+
+- User approval: pending — Paul reviews (Codex follow-up #778); before → after: a focused invalid field showed the red, reduced invalid ring → the full ink focus ring on a focused invalid field (light and dark), the red border stays and the red ring stays when the field is not focused. Nothing else changes.
+- Approved customer-visible result: pending — Paul reviews; a focused invalid input group shows the full ink focus ring with its red border, nothing else changes.
+- Scope: `apps/control-center/src/components/ui/input-group.tsx`, its new test `apps/control-center/src/components/ui/input-group.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
