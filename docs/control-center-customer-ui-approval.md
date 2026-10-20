@@ -8695,3 +8695,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #784 the Copilot sign-in dialog is headed "GitHub Copilot needs a GitHub sign-in"; the timed-out Copilot dialog is headed "GitHub Copilot", as before commit 9c129d1c.
 - Scope: #784 Setup Wizard provider dialog heading only. Pull request branch only, not merged, not released.
 - What's new: none — #784 dialog heading scope only
+
+## 2026-10-20 — #784: approval marker after merging main at 4b0831d7
+
+- User approval: no visible change – UI approval not needed (merge of main (4b0831d7) into #784; the own entries of #784 keep their approvals)
+- Approved customer-visible result: #784 as in its own entries plus the entries merged with 4b0831d7; nothing else changes.
+- Scope: the merge of 4b0831d7 and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — merge of 4b0831d7, no customer-visible change of its own
