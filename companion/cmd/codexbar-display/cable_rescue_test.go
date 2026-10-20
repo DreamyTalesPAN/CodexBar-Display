@@ -132,7 +132,10 @@ func TestRunInstallUpdateCableRescueLeavesAMarkerWhenTheWriteFailedAfterTheErase
 	}
 }
 
-func TestRunInstallUpdateCableRescueLeavesNoMarkerWhenTheLoaderNeverErased(t *testing.T) {
+// "Never entered the loader" can hide an earlier inner attempt whose
+// FLASH_BEGIN reply was lost, so the marker stays (Codex on #819). A VibeTV
+// that still answers clears it on the next attempt.
+func TestRunInstallUpdateCableRescueKeepsTheMarkerWhenTheLoaderNeverAnswered(t *testing.T) {
 	_, manifestURL, _ := prepareCableFirmwareUpdateTest(t)
 	pinCableRescue(t)
 	findLegacyCableVibeTVFn = legacyRescueDevice
@@ -144,12 +147,21 @@ func TestRunInstallUpdateCableRescueLeavesNoMarkerWhenTheLoaderNeverErased(t *te
 	if err == nil {
 		t.Fatalf("expected the rescue to fail\n%s", output)
 	}
-	if rescueMarkerPresent(t) {
-		t.Fatal("a write that never started must not leave a marker")
+	if !rescueMarkerPresent(t) {
+		t.Fatal("a loader that never answered may hide an erase; the marker must stay")
 	}
-	var cmdErr *commandError
-	if !errors.As(err, &cmdErr) || !strings.Contains(cmdErr.Hint, "retry once") {
-		t.Fatalf("the VibeTV still says hello here, so the plain retry hint stays: %+v", cmdErr)
+}
+
+func TestRunInstallUpdateCableRescueClearsTheMarkerForARefusedImage(t *testing.T) {
+	_, manifestURL, _ := prepareCableFirmwareUpdateTest(t)
+	pinCableRescue(t)
+	findLegacyCableVibeTVFn = legacyRescueDevice
+	flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
+		return usb.ErrNotESP8266AppImage
+	}
+	output, err := captureStdout(t, func() error { return runInstallUpdate(rescueArgs(manifestURL)) })
+	if err == nil || rescueMarkerPresent(t) {
+		t.Fatalf("a refused image sent nothing; the marker must go: err=%v marker=%v\n%s", err, rescueMarkerPresent(t), output)
 	}
 }
 

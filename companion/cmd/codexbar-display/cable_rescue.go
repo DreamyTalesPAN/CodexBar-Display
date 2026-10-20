@@ -61,10 +61,12 @@ func flashCableRescueWithRetry(ctx context.Context, home string, marker firmware
 			return nil
 		}
 		fmt.Printf("Cable rescue write %d/%d failed: %v\n", i+1, len(attempts), err)
-		// The port that would not open, the loader that never synced and the
-		// refused image all failed before any flash command.
-		if !errors.Is(err, usb.ErrROMLoaderNotEntered) && !errors.Is(err, usb.ErrNotESP8266AppImage) &&
-			errcode.Of(err) != errcode.TransportSerialOpen {
+		// Only a port that would not open and a refused image prove that no
+		// flash command went out. A loader that "never synced" may hide an
+		// earlier inner attempt whose FLASH_BEGIN reply was lost (Codex on
+		// #819), so that marker stays; a VibeTV that still answers clears it
+		// on the next attempt (stale-marker check).
+		if !errors.Is(err, usb.ErrNotESP8266AppImage) && errcode.Of(err) != errcode.TransportSerialOpen {
 			untouched = false
 		}
 		if ctx.Err() != nil || errors.Is(err, usb.ErrNotESP8266AppImage) || i == len(attempts)-1 {
