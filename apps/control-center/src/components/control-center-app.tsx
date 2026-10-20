@@ -258,6 +258,8 @@ type Props = {
 type FirmwareCheckOptions = {
   board?: string;
   firmware?: string;
+  /** The Cable rescue of the selected VibeTV: a half-written one resumes its cached image. */
+  rescue?: boolean;
   signal?: AbortSignal;
 };
 
@@ -2943,6 +2945,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         board,
         firmware,
       });
+      if (options.rescue) {
+        params.set("rescue", "1");
+      }
 
       try {
         if (isLocalCompanionOrigin()) {
@@ -5379,6 +5384,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       const update = await refreshFirmwareUpdate({
         board: connected.board,
         firmware: connected.firmware,
+        rescue: connected.rescue,
       });
       // A check that could not be made is not a check that found nothing. Both
       // resolve rather than reject, and treating them as "up to date" told the
