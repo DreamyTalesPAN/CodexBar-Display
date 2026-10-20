@@ -23,6 +23,28 @@ func runURLSchemeTests() {
             "the Control Center page needs JavaScript"
         )
     }
+    // Issue #655: only macOS 14.0 to 14.5 need the app to keep a covered page
+    // running; their WebKit still suspends it despite `.none`.
+    for (major, minor, patch) in [(14, 0, 0), (14, 3, 1), (14, 5, 0)] {
+        require(
+            controlCenterPageNeedsKeepAlive(
+                OperatingSystemVersion(majorVersion: major, minorVersion: minor, patchVersion: patch)
+            ),
+            "macOS \(major).\(minor).\(patch) needs the page keep-alive"
+        )
+    }
+    for (major, minor, patch) in [(14, 6, 0), (14, 7, 6), (15, 0, 0), (26, 0, 0)] {
+        require(
+            !controlCenterPageNeedsKeepAlive(
+                OperatingSystemVersion(majorVersion: major, minorVersion: minor, patchVersion: patch)
+            ),
+            "macOS \(major).\(minor).\(patch) keeps a covered page running by itself"
+        )
+    }
+    require(
+        controlCenterPageKeepAliveInterval < .seconds(8 * 60),
+        "the keep-alive must come before WebKit's eight-minute suspension"
+    )
 
     // Issue #556: the start screen retries the CodexBar preparation once; a repair does not.
     require(
