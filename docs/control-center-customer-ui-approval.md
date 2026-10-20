@@ -8821,3 +8821,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #817 as in its own entries plus the entries merged with d748c370; nothing else changes.
 - Scope: the merge of d748c370 and this approval record. Pull request branch #817 only, not merged, not released.
 - What's new: none — merge of d748c370, no customer-visible change of its own
+
+## 2026-10-20 — #817: approval marker after merging claude/group-calm-redesign at 79a9589b
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (79a9589b) into #817; the own entries of #817 keep their approvals)
+- Approved customer-visible result: #817 as in its own entries plus the entries merged with 79a9589b; nothing else changes.
+- Scope: the merge of 79a9589b and this approval record. Pull request branch #817 only, not merged, not released.
+- What's new: none — merge of 79a9589b, no customer-visible change of its own
