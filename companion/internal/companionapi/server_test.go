@@ -12646,9 +12646,11 @@ func TestFirmwareUpdateCableAcceptsUnchangedLivePicture(t *testing.T) {
 				t.Fatal(err)
 			}
 			var job firmwareUpdateJob
-			for attempt := 0; attempt < 100; attempt++ {
+			// The updater's own events can already say "complete" while the
+			// server still checks the picture; only FinishedAt marks the end.
+			for attempt := 0; attempt < 500; attempt++ {
 				job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
-				if job.Phase != "installing" {
+				if job.FinishedAt != nil {
 					break
 				}
 				time.Sleep(10 * time.Millisecond)
