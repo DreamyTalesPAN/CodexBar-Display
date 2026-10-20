@@ -51,7 +51,7 @@ export function WhatsNewDialog({
             <p className="text-[13px] text-muted-foreground">Version {appVersion}</p>
           ) : null}
         </DialogHeader>
-        <ul className="-mr-2 flex min-h-0 flex-col gap-6 overflow-y-auto pr-2">
+        <ul className="-mr-2 flex min-h-0 flex-col gap-5 overflow-y-auto pr-2">
           {entries.map((entry) => (
             <li className="flex items-start" key={entry.id}>
               <div className="flex flex-col items-start gap-0.5">
@@ -61,7 +61,8 @@ export function WhatsNewDialog({
                 </p>
                 {entry.theme || entry.inSettings ? (
                   <Button
-                    className="h-auto px-0"
+                    // 4 px under the text, one 20 px line, 20 px to the next entry, as in the template.
+                    className="mt-0.5 h-5 border-0 px-0"
                     onClick={() =>
                       entry.theme
                         ? onShow("themes", catalogThemeRowId(entry.theme))
