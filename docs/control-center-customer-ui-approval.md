@@ -8655,3 +8655,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #802 as in its own entries (pending, Paul reviews) plus the entries of #784 (pending, Paul reviews).
 - Scope: the merge of fd754339 and this approval record. Pull request branch #802 only, not merged, not released.
 - What's new: none — merge of fd754339, no customer-visible change of its own
+
+## 2026-10-20 — #802: Appearance card of the active theme has no grey fill, the pill says Active (7197 review, point 7, picture check)
+
+- User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #802 point 7 (Installed as a pill), picture check against the template. Before → after: the card of the active theme had a light grey fill → all cards have the same white card; the dark "Active" pill on the picture is what marks the active theme, as drawn in the template.
+- Approved customer-visible result: the Appearance cards look as drawn in frames "Darstellung" (#appearance-all, #appearance-ss, #appearance-filter) of "Calm Redesign - alle Screens": all cards alike, pill "Active" on the active one.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content

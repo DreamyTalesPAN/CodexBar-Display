@@ -1441,7 +1441,8 @@ function ThemeListItem({
       className="gap-2 rounded-[var(--radius-card)] p-[7px]"
       id={item.kind === "published" ? catalogThemeRowId(item.themeId) : undefined}
       role="listitem"
-      variant={item.themeId === displayThemeId ? "muted" : "outline"}
+      // Every card looks the same; the pill on the picture says which one is active (7197 review, point 7).
+      variant="outline"
     >
       <ItemMedia className="relative basis-full w-full">
         <Button
