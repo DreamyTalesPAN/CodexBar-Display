@@ -299,3 +299,46 @@ describe("connected preview must self-heal (customer bug 2026-08-06)", () => {
     expect(screen.queryByText(/preview unavailable/i)).toBeNull();
   });
 });
+
+describe("3D screen handover waits for the theme pack (Codex review on #784)", () => {
+  it("settles only after the pack is in, not while it says Loading preview", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    vi.stubGlobal("fetch", vi.fn(async () => { await gate; return jsonResponse(matchingPack); }));
+    const onScreenSettled = vi.fn();
+    render(createElement(LiveVibeTVPreview, { device: connectedDevice, displayFrame: renderableFrame, onScreenSettled, screenOnly: true, usage: null }));
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByText("Loading preview")).toBeTruthy();
+    expect(onScreenSettled).not.toHaveBeenCalled();
+    await act(async () => { release(); await gate; });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    expect(screen.queryByText("Loading preview")).toBeNull();
+    expect(onScreenSettled).toHaveBeenCalled();
+  });
+
+  it("reports loading again when a settled screen switches to Loading preview", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    vi.stubGlobal("fetch", vi.fn(async () => { await gate; return jsonResponse(matchingPack); }));
+    const calls: string[] = [];
+    const onScreenSettled = vi.fn(() => calls.push("settled"));
+    const onScreenLoading = vi.fn(() => calls.push("loading"));
+    const view = render(createElement(LiveVibeTVPreview, { device: null, displayFrame: null, onScreenLoading, onScreenSettled, screenOnly: true, usage: null }));
+    await act(async () => { await Promise.resolve(); });
+    expect(calls).toEqual(["settled"]);
+    view.rerender(createElement(LiveVibeTVPreview, { device: connectedDevice, displayFrame: renderableFrame, onScreenLoading, onScreenSettled, screenOnly: true, usage: null }));
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByText("Loading preview")).toBeTruthy();
+    expect(calls).toEqual(["settled", "loading"]);
+    await act(async () => { release(); await gate; });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    expect(calls).toEqual(["settled", "loading", "settled"]);
+  });
+
+  it("settles at once for a screen that has no pack to wait for", async () => {
+    const onScreenSettled = vi.fn();
+    render(createElement(LiveVibeTVPreview, { device: null, displayFrame: null, onScreenSettled, screenOnly: true, usage: null }));
+    await act(async () => { await Promise.resolve(); });
+    expect(onScreenSettled).toHaveBeenCalled();
+  });
+});

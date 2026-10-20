@@ -1,7 +1,14 @@
 "use client";
 
 import Image from "next/image";
-import type { DeviceCandidate } from "../control-center-types";
+import { useCallback, useState } from "react";
+import type {
+  DeviceCandidate,
+  DeviceInfo,
+  UsageSnapshot,
+} from "../control-center-types";
+import type { DisplayFrameSnapshot } from "../live-vibetv-preview";
+import { SetupVibeTV3DPreview } from "./setup-3d-preview";
 import { candidateAddress } from "../device-target-copy";
 import { SelectionDot, calmCardClass } from "./setup-selectable-card";
 import { cn } from "@/lib/utils";
@@ -12,6 +19,15 @@ type SetupDeviceCardProps = {
   tabStop: boolean;
   onSelect: () => void;
   selected: boolean;
+  /**
+   * The 3D VibeTV is available (hardware WebGL). The photo stays until its
+   * model is on screen, and for good without WebGL.
+   */
+  preview3D?: boolean;
+  /** What this VibeTV shows; only the VibeTV the app is connected to has a live screen. */
+  previewDevice?: DeviceInfo | null;
+  previewFrame?: DisplayFrameSnapshot | null;
+  previewUsage?: UsageSnapshot | null;
 };
 
 const CHIP_CLASS =
@@ -20,9 +36,15 @@ const CHIP_CLASS =
 export function SetupDeviceCard({
   candidate,
   onSelect,
+  preview3D = false,
+  previewDevice = null,
+  previewFrame = null,
+  previewUsage = null,
   selected,
   tabStop,
 }: SetupDeviceCardProps) {
+  const [threeReady, setThreeReady] = useState(false);
+  const onThreeReady = useCallback(() => setThreeReady(true), []);
   const address = candidateAddress(candidate.target);
   const cable = candidate.transport === "cable";
   return (
@@ -34,13 +56,37 @@ export function SetupDeviceCard({
       tabIndex={tabStop ? 0 : -1}
       type="button"
     >
-      <Image
-        alt=""
-        className="h-16 w-18 shrink-0 object-contain"
-        height={64}
-        src="/images/vibetv-device-overview-cutout.png"
-        width={72}
-      />
+      <span aria-hidden className="pointer-events-none relative h-16 w-18 shrink-0">
+        {threeReady ? null : (
+          <Image
+            alt=""
+            className="size-full object-contain"
+            height={64}
+            src="/images/vibetv-device-overview-cutout.png"
+            width={72}
+          />
+        )}
+        {preview3D ? (
+          // A small render of the same 3D VibeTV as the Overview. Its stage is
+          // a little wider than the thumbnail (the device fills about 60 % of
+          // it) and centred on it; it is drawn only in the background until
+          // its model is on screen.
+          <span
+            className={cn(
+              "absolute top-1/2 left-1/2 w-[112px] -translate-x-1/2 -translate-y-1/2",
+              threeReady ? "" : "opacity-0",
+            )}
+          >
+            <SetupVibeTV3DPreview
+              className="aspect-[640/411] w-full"
+              device={previewDevice}
+              displayFrame={previewFrame}
+              onReady={onThreeReady}
+              usage={previewUsage}
+            />
+          </span>
+        ) : null}
+      </span>
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="font-semibold whitespace-nowrap">
