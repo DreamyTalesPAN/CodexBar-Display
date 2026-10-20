@@ -10031,3 +10031,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the 3D VibeTV appears only with its theme drawn, as in frame 1 of "Calm Redesign - alle Screens".
 - Scope: `apps/control-center/src/components/live-vibetv-preview.tsx`, `apps/control-center/src/components/vibetv-3d-preview.tsx`, the recovery test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #784: approval marker after merging main
+
+- User approval: Merge of main into this branch; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #784: focus ring on open — a dialog's first control shows no focus ring until the keyboard is used
+
+- User approval: Paul decided on 20.10.2026 (via the communicator): the focus ring on a dialog's first control shows only for keyboard use; the rendered result is pending his review. This line: #784 focus ring on open. Before → after: #784 focus ring on open: "Restart Control Center", What's new "Got it", "Close" on the setup dialogs and the device picker rows showed the black focus ring on their first control as the dialog opened → #784 focus ring on open: the dialog takes focus itself without a ring; one Tab puts the ring on the first control, and a dialog opened with the keyboard still focuses its first control.
+- Approved customer-visible result: #784 focus ring on open: a dialog that opens shows no black ring on any button or row until the customer presses Tab; the ring when tabbing is as drawn in "Calm Redesign - alle Screens".
+- Scope: #784 focus ring on open: `apps/control-center/src/components/ui/dialog.tsx`, `apps/control-center/src/components/ui/alert-dialog.tsx`, `apps/control-center/src/components/whats-new-dialog.tsx`, the two confirmation dialogs that set `autoFocus`, their tests, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #784 focus ring on open: no new content
