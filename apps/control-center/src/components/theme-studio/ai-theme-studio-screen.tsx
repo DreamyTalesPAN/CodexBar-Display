@@ -1025,7 +1025,7 @@ export function AIThemeStudioScreen({
         }
       }}
     >
-        <header className="flex min-h-10 flex-wrap items-center gap-x-1 gap-y-2">
+        <header className="flex min-h-10 flex-wrap items-center gap-x-1 gap-y-2 md:flex-nowrap">
           {onBackToLibrary ? <Button variant="ghost" size="icon" className="-ml-2 size-9" aria-label="Back to library" title="Back to library" disabled={locked} onClick={() => { if (dirty && persistedDraft.current !== document) setLeaving(true); else onBackToLibrary(); }}><ArrowLeft className="size-5" /></Button> : null}
           <h2 className="sr-only">{document.usage === "screensaver" ? "Screensaver Studio" : "Theme Studio"}</h2>
           {/* The box is as wide as the name (as drawn in the template); the input lies over the hidden copy of its text. */}
@@ -1045,7 +1045,7 @@ export function AIThemeStudioScreen({
               }
             />
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1">
             <Popover open={fileMenu} onOpenChange={setFileMenu}>
               <PopoverTrigger asChild>
                 <Button variant="ghost" className="h-9 gap-1.5 px-2.5 text-[13px] font-semibold" disabled={locked}>
@@ -1098,7 +1098,7 @@ export function AIThemeStudioScreen({
             </Button>
           </div>
           {notices.length || sendBlockedReason ? (
-            <div className="ml-auto mr-3 flex min-w-0 max-w-[14rem] flex-[0_1_auto] flex-col items-end gap-0.5 text-right">
+            <div className="ml-auto mr-3 flex min-w-40 max-w-[14rem] flex-[0_1_auto] flex-col items-end gap-0.5 text-right">
               {notices.map((text, i) => <p key={i} role="status" className="text-[13px] font-normal text-muted-foreground [overflow-wrap:break-word]">{text}</p>)}
               {sendBlockedReason ? <p id="send-blocked-reason" role="status" className="text-[13px] font-normal text-muted-foreground [overflow-wrap:break-word]">{sendBlockedReason}</p> : null}
             </div>
@@ -1242,7 +1242,7 @@ export function AIThemeStudioScreen({
                   </Button>
                 </CollapsibleTrigger>
                 {/* The panel is as high as the free space below the preview and scrolls inside itself. */}
-                <CollapsibleContent className="pt-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+                <CollapsibleContent className="pt-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:has-[[data-testid=color-palette]]:min-h-40">
               <section className="space-y-3" aria-label="Selected element tools">
                 <div className="flex items-center justify-between gap-2">
                   <h2 className="min-w-0 truncate font-medium">

@@ -8168,3 +8168,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the colour palette opens directly below the Color field inside Details and is visible, as drawn in frame "Theme Studio: Farbwahl" (#studio-color) of "Calm Redesign - alle Screens".
 - Scope: `apps/control-center/src/components/theme-studio/editor-fields.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #781: Theme Studio header keeps one row with a notice, palette sits in the flow (Codex fix)
+
+- User approval: pending — #781 Codex fix; the rendered result is pending Paul's review. Before → after: #781 at a 960 px window with the navigation open the notice shrank and the header wrapped into two rows, and the colour palette floated over the rows below it and was cut off at 1200x800 → #781 the notice keeps a reserved width (two lines at most) next to Save and the design name gives way, so the header stays one row; the palette opens in the normal flow below the Color field, pushes the rows below it down and scrolls with Details, with "More colours…" visible.
+- Approved customer-visible result: #781 Theme Studio header with a notice and the Color palette as in the 7197 template (picture 06-farbwahl), at 960, 1200 and 1920 px.
+- Scope: #781 `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, `apps/control-center/src/components/theme-studio/editor-fields.tsx`, their tests and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #781 layout fixes not announced

@@ -21,7 +21,10 @@ describe("ColorField", () => {
     const palette = screen.getByTestId("color-palette");
     // Anchored in the field's own wrapper (not a floating layer elsewhere), so it scrolls with Details.
     expect(container.contains(palette)).toBe(true);
-    expect(palette.className).toContain("absolute");
+    // In the normal flow: it pushes the rows below it down instead of covering them or being cut off.
+    expect(palette.className).not.toMatch(/\b(absolute|fixed|sticky)\b/);
+    expect(palette.className).not.toMatch(/\b(top|bottom|left|right)-\[/);
+    expect(palette.parentElement?.className).not.toContain("overflow");
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(palette.querySelectorAll("button[aria-label^='#']")).toHaveLength(12);
     expect(COLOR_PALETTE).toHaveLength(12);

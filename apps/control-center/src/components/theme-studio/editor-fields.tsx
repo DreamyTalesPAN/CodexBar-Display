@@ -180,20 +180,20 @@ export function ColorField({
         {open ? (
           <div
             aria-label={`${label} palette`}
-            className="absolute top-[calc(100%+6px)] right-0 z-10 box-border w-[232px] rounded-xl bg-popover p-3 shadow-[0_0_0_1px_color-mix(in_srgb,var(--foreground)_10%,transparent),0_8px_24px_rgba(0,0,0,0.14)]"
+            className="mt-1.5 mr-0 ml-auto box-border w-full max-w-[232px] scroll-mb-3 rounded-xl bg-popover p-3 shadow-[0_0_0_1px_color-mix(in_srgb,var(--foreground)_10%,transparent),0_4px_12px_rgba(0,0,0,0.08)]"
             data-testid="color-palette"
             id={paletteId}
             ref={paletteRef}
             role="group"
           >
-            <div className="grid grid-cols-[repeat(6,28px)] gap-2">
+            <div className="grid grid-cols-6 gap-2">
               {COLOR_PALETTE.map((color) => {
                 const selected = color === normalizedValue;
                 return (
                   <button
                     aria-label={color}
                     aria-pressed={selected}
-                    className={`size-7 cursor-pointer rounded-full border-0 p-0 ${
+                    className={`aspect-square w-full cursor-pointer rounded-full border-0 p-0 ${
                       selected
                         ? "shadow-[inset_0_0_0_1px_rgba(0,0,0,0.12),0_0_0_2px_var(--popover),0_0_0_4px_var(--foreground)]"
                         : "shadow-[inset_0_0_0_1px_rgba(0,0,0,0.12)]"
