@@ -8175,3 +8175,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #781 Theme Studio header with a notice and the Color palette as in the 7197 template (picture 06-farbwahl), at 960, 1200 and 1920 px.
 - Scope: #781 `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, `apps/control-center/src/components/theme-studio/editor-fields.tsx`, their tests and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #781 layout fixes not announced
+
+## 2026-10-20 — #781: Codex fix, a late key check no longer brings a disconnected key back
+
+- User approval: no visible change – UI approval not needed (#781: Codex fix to the OpenAI key form; the first read of the stored-key state is dropped once Disconnect, Save or the key check has started, so a slow older answer can no longer show a deleted key as "Change key"; no new look, text or layout)
+- Approved customer-visible result: #781 key dialog and Settings row look exactly as before; only a stale answer after Disconnect is ignored.
+- Scope: #781 `apps/control-center/src/components/theme-studio/openai-key-form.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #781 fix of a review finding, no new text or feature

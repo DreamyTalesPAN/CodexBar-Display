@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchAIThemeCapabilities, saveAIThemeCredential, verifyAIThemeCredential } from "@/lib/ai-theme";
+import { deleteAIThemeCredential, fetchAIThemeCapabilities, saveAIThemeCredential, verifyAIThemeCredential } from "@/lib/ai-theme";
 import { OpenAIKeyForm, ThemeStudioKeyRow } from "./openai-key-form";
 
 vi.mock("@/lib/ai-theme", () => ({
@@ -74,6 +74,31 @@ describe("Theme Studio AI row in Settings", () => {
     answer(capabilities(false));
     await waitFor(() => expect(fetchAIThemeCapabilities).toHaveBeenCalled());
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("ignores a late mount-time answer once Disconnect has started, so a deleted key does not come back", async () => {
+    let answer!: (value: ReturnType<typeof capabilities>) => void;
+    vi.mocked(fetchAIThemeCapabilities).mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+    vi.mocked(deleteAIThemeCredential).mockResolvedValue(undefined as never);
+    const onConfiguredChange = vi.fn();
+    render(
+      <OpenAIKeyForm
+        inSetup={false}
+        initialConfigured={true}
+        onConfiguredChange={onConfiguredChange}
+        onConnectingChange={() => {}}
+        onConnected={() => {}}
+        onDisconnected={() => {}}
+        onDismiss={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect OpenAI" }));
+    await waitFor(() => expect(onConfiguredChange).toHaveBeenLastCalledWith(false));
+    // The older read now resolves with the key still present.
+    answer(capabilities(true));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(onConfiguredChange).toHaveBeenLastCalledWith(false);
+    expect(screen.queryByRole("button", { name: "Disconnect OpenAI" })).toBeNull();
   });
 
   it("says AI is unavailable once the helper has answered that it is", async () => {
