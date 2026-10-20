@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { UsageProviderInfo, UsageSnapshot } from "../control-center-types";
 import { buildFrameData, renderTextPrimitive } from "../live-vibetv-preview";
 import {
@@ -9,6 +9,17 @@ import {
   withActivityExpiry,
   withSentActivity,
 } from "./setup-display-previews";
+
+// The readings below are stamped 2026-10-20T08:00Z; a frame older than the 5 h
+// trust horizon is stale, so the clock must stay near them or these tests fail
+// a few hours after they were written.
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-10-20T08:30:00Z"));
+});
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function provider(fields: Partial<UsageProviderInfo>): UsageProviderInfo {
   return {
@@ -110,6 +121,25 @@ describe("displayPreviewFor: the frame the theme draws", () => {
 
     expect(windows).toHaveLength(1);
     expect(windows?.[0].id).toBe("session");
+  });
+
+  it("keeps a legacy provider's root reset when only its session is unreadable", () => {
+    // No windows, session unreadable, weekly readable: the frame sent to VibeTV
+    // keeps the root countdown, so the tile must show it too (Codex on #821).
+    const now = new Date("2026-10-20T10:00:00Z");
+    const preview = displayPreviewFor(
+      provider({
+        sessionUnavailable: true,
+        weekly: 26,
+        resetSecs: 3 * 3600,
+        collectedAt: now.toISOString(),
+      }),
+      now,
+    );
+
+    expect(preview?.frame?.resetSecs).toBe(3 * 3600);
+    expect(preview?.frame?.resetTrust).toBe("live");
+    expect(preview?.resetLabel).toBe("Reset in 3h 0m");
   });
 
   it("has no frame for a provider without usage, so its tile stays a placeholder", () => {

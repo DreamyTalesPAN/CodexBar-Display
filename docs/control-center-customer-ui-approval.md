@@ -7820,7 +7820,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-17 — Calm redesign of the Setup Wizard, steps 1–8 (variant B, #713)
 
-- User approval: pending — Paul reviews this PR (calm redesign Setup Wizard, variant B, #713); look: one centred column, 28px title and 13px text in one font, 56px wordmark with the TV in the olive support colour, 44px primary buttons, device cards with the device picture, check marks in ink instead of lime.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 16:10: "top, die neue app passt so" (setup B pictures incl. the 3D VibeTV in the device list and on "Your VibeTV is live"; the earlier "rest passt" for the other setup B pictures applies too) — entry: Calm redesign of the Setup Wizard, steps 1–8 (variant B, #713)
 - Approved customer-visible result: none yet; this is the look Paul picked as variant B and is waiting for his review of this PR. Approved means the look is accepted, not that the layout is merged.
 - Visible text: "Welcome to" is no longer set in capitals with wide tracking (the words are unchanged). No other text changes.
 - Scope: `apps/control-center/src/components/control-center-brand.tsx` (hero variant, also used by the Mac App step), `apps/control-center/src/components/setup/setup-wizard-screen.tsx`, `setup-welcome-screen.tsx`, `setup-device-screen.tsx`, `setup-device-card.tsx`, `setup-selectable-card.tsx`, their tests, and this approval record. Pull-request branch only, not merge or release.
@@ -7828,7 +7828,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-17 — Calm Setup Wizard, steps 1–8: restyle scoped to the device screen (Codex fix)
 
-- User approval: pending — Paul reviews this PR (calm redesign Setup Wizard, variant B, #713); look unchanged from the entry above: the 28px title and 13px subtitle apply to the device screen steps (choose, connect, WiFi) only.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 16:10: "top, die neue app passt so" (setup B pictures incl. the 3D VibeTV in the device list and on "Your VibeTV is live"; the earlier "rest passt" for the other setup B pictures applies too) — entry: Calm Setup Wizard, steps 1–8: restyle scoped to the device screen (Codex fix)
 - Approved customer-visible result: none yet; the same look as above, only the scope changes. The shared title and subtitle keep their old size and weight for the providers, display-mode, theme and live screens (steps 9–17), which this PR does not change.
 - Visible text: none changed.
 - Scope: `apps/control-center/src/components/setup/setup-wizard-screen.tsx` (shared title and subtitle defaults restored) and `apps/control-center/src/components/setup/setup-device-screen.tsx` (title and subtitle classes set on this screen only), plus this approval record. Pull-request branch only, not merge or release.
@@ -7836,14 +7836,14 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-17 — Calm Setup Wizard, steps 1–8: check mark colour scoped to device cards (Codex fix)
 
-- User approval: pending — Paul reviews this PR (calm redesign Setup Wizard, variant B, #713); look unchanged from the entries above: the selected check on the device cards is ink instead of the support colour.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 16:10: "top, die neue app passt so" (setup B pictures incl. the 3D VibeTV in the device list and on "Your VibeTV is live"; the earlier "rest passt" for the other setup B pictures applies too) — entry: Calm Setup Wizard, steps 1–8: check mark colour scoped to device cards (Codex fix)
 - Approved customer-visible result: none yet; only the device cards (steps 2 to 8) change, the check marks of Display Mode and Choose your theme keep their support colour.
 - Visible text: none changed.
 - Scope: `apps/control-center/src/components/setup/setup-selectable-card.tsx` (optional colour class on the shared check; default kept) and `apps/control-center/src/components/setup/setup-device-card.tsx` (passes ink), plus this approval record. Pull-request branch only, not merge or release.
 - What's new: none — scope fix after a Codex finding, no new capability
 ## 2026-10-17 — Calm redesign of the Setup Wizard, steps 9–17 (variant B, #713)
 
-- User approval: pending — Paul reviews this PR (calm redesign Setup Wizard steps 9–17, variant B, #713); look: one centred column, 28px titles and 13px text, 44px lime buttons, round check marks on the display-mode and theme cards, provider switches 34×20, display-mode column 640px wide, help menu items semibold, setup log popover 340px wide.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 16:10: "top, die neue app passt so" (setup B pictures incl. the 3D VibeTV in the device list and on "Your VibeTV is live"; the earlier "rest passt" for the other setup B pictures applies too) — entry: Calm redesign of the Setup Wizard, steps 9–17 (variant B, #713)
 - Approved customer-visible result: none yet; this is the look Paul picked as variant B and is waiting for his review of this PR. Approved means the look is accepted, not that the layout is merged.
 - Visible text: none changed. Copy stays as it is, including "Display Mode" and "Sign in to <provider>", which the picture words differently (see the PR body).
 - Scope: `apps/control-center/src/components/setup/setup-wizard-screen.tsx` (wide column only), `setup-providers-screen.tsx`, `setup-provider-row.tsx`, `setup-display-mode-screen.tsx`, `setup-theme-screen.tsx`, `setup-selectable-card.tsx` (new round mark only), `setup-help-menu.tsx` (menu items and log width), `setup-live-screen.tsx`, the theme test that pinned the old classes, and this approval record. Pull-request branch only, not merge or release.
@@ -7851,7 +7851,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-17 — Calm redesign Setup Wizard steps 9–17, switch size fix (#713, Codex review on #751)
 
-- User approval: pending — Paul reviews this PR (calm redesign Setup Wizard steps 9–17, variant B, #713); look: provider switches 34×20 as in the picture (the Codex fix makes the size apply; before this fix the switch rendered at 32×18.4).
+- User approval: approved by Paul in the communicator chat, 2026-10-20 16:10: "top, die neue app passt so" (setup B pictures incl. the 3D VibeTV in the device list and on "Your VibeTV is live"; the earlier "rest passt" for the other setup B pictures applies too) — entry: Calm redesign Setup Wizard steps 9–17, switch size fix (#713, Codex review on #751)
 - Approved customer-visible result: none yet; this is the look Paul picked as variant B and is waiting for his review of this PR.
 - Visible text: none changed.
 - Scope: `apps/control-center/src/components/setup/setup-provider-row.tsx` (switch size classes only).
@@ -7859,7 +7859,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-17 — Calm redesign Setup Wizard steps 9–17, switch thumb fix (#713, Codex review on #751)
 
-- User approval: pending — Paul reviews this PR (calm redesign Setup Wizard steps 9–17, variant B, #713); look: provider switches 34×20 with the thumb at the right edge when on (before this fix the thumb was about 3px short of the edge).
+- User approval: approved by Paul in the communicator chat, 2026-10-20 16:10: "top, die neue app passt so" (setup B pictures incl. the 3D VibeTV in the device list and on "Your VibeTV is live"; the earlier "rest passt" for the other setup B pictures applies too) — entry: Calm redesign Setup Wizard steps 9–17, switch thumb fix (#713, Codex review on #751)
 - Approved customer-visible result: none yet; this is the look Paul picked as variant B and is waiting for his review of this PR.
 - Visible text: none changed.
 - Scope: `apps/control-center/src/components/setup/setup-provider-row.tsx` (switch classes only).
@@ -7867,7 +7867,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-17 — Calm redesign Setup Wizard steps 9–17, calm title on these screens only (#713, base merge)
 
-- User approval: pending — Paul reviews this PR (calm redesign Setup Wizard steps 9–17, variant B, #713); look: 28px semibold titles and 13px subtitles on the providers, display mode, theme and live screens, as in the pictures B-09 to B-17.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 16:10: "top, die neue app passt so" (setup B pictures incl. the 3D VibeTV in the device list and on "Your VibeTV is live"; the earlier "rest passt" for the other setup B pictures applies too) — entry: Calm redesign Setup Wizard steps 9–17, calm title on these screens only (#713, base merge)
 - Approved customer-visible result: none yet. Paul's latest commit on the base (096d3769) keeps the shared title old and puts the calm title on the device screen only; this PR puts the calm title on steps 9 to 17 through the exported constants and leaves the shared title as it is. Paul decides which one stays.
 - Visible text: none changed.
 - Scope: `apps/control-center/src/components/setup/setup-wizard-screen.tsx` (two exported class constants only), `setup-providers-screen.tsx`, `setup-display-mode-screen.tsx`, `setup-theme-screen.tsx`, `setup-live-screen.tsx`.
@@ -7875,7 +7875,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-18 — Calm Setup Wizard variant B: step 4 check mark and step 8 progress bar (#713)
 
-- User approval: Paul 17.10. approved Setup B pictures; this adds the step-4 check mark and step-8 progress bar shown there (#713).
+- User approval: approved by Paul in the communicator chat, 2026-10-20 16:10: "top, die neue app passt so" (setup B pictures incl. the 3D VibeTV in the device list and on "Your VibeTV is live"; the earlier "rest passt" for the other setup B pictures applies too) — entry: Calm Setup Wizard variant B: step 4 check mark and step 8 progress bar (#713)
 - Approved customer-visible result: the round check mark on the selected connection method (B-04) and the firmware progress bar under the update log (B-08), as in the pictures.
 - Visible text: none changed.
 - Scope: `apps/control-center/src/components/setup/setup-device-screen.tsx` (check mark on the connection cards, progress bar under the log), `setup-wizard.tsx` (passes the existing written percent through), `setup-device-screen.test.tsx`.
@@ -7883,7 +7883,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-18 — Calm Setup Wizard variant B: step 2 round device-card marks (#713)
 
-- User approval: Paul 17.10. approved Setup B pictures; this adds the step-2 round device-card marks shown in B-02 (#713).
+- User approval: approved by Paul in the communicator chat, 2026-10-20 16:10: "top, die neue app passt so" (setup B pictures incl. the 3D VibeTV in the device list and on "Your VibeTV is live"; the earlier "rest passt" for the other setup B pictures applies too) — entry: Calm Setup Wizard variant B: step 2 round device-card marks (#713)
 - Approved customer-visible result: the round dark mark on the selected VibeTV card and an empty ring on the others (B-02), in place of the plain check.
 - Visible text: none changed.
 - Scope: `apps/control-center/src/components/setup/setup-device-card.tsx` (uses the shared `SelectionDot`), `setup-selectable-card.tsx` (removes the now unused `SelectionCheck`), `setup-device-screen.test.tsx`.
@@ -7891,7 +7891,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-18 — Calm Mac App download page: the Setup B look (#713)
 
-- User approval: Paul 17.10. approved Setup B; this applies the same calm treatment to the Mac App download page that shares its hero (#713).
+- User approval: approved by Paul in the communicator chat, 2026-10-20 16:10: "top, die neue app passt so" (setup B pictures incl. the 3D VibeTV in the device list and on "Your VibeTV is live"; the earlier "rest passt" for the other setup B pictures applies too) — entry: Calm Mac App download page: the Setup B look (#713)
 - Approved customer-visible result: Look only, no text changes. "Welcome to" is no longer set in capitals with wide tracking; it reads as on the Setup welcome screen (13 px, muted). The subtitle under the hero is 13 px instead of 14 px. The Download and Open Control Center buttons are the standard 44 px instead of 48 px. The words are unchanged.
 - Visible text: none changed.
 - Scope: `apps/control-center/src/components/setup/mac-app-download-screen.tsx`, its test `mac-app-download-screen.test.tsx` (one look test), and this approval record. Stacked on #747. Pull-request branch only, not merge or release.
@@ -7899,7 +7899,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-19 — Setup B group: calm look scoped to the Setup Wizard (Codex fix on the group PR)
 
-- User approval: pending — Paul reviews this group (parts: #747 #751 #756 #757 #760); no visible change in Setup compared with the entries above.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 16:10: "top, die neue app passt so" (setup B pictures incl. the 3D VibeTV in the device list and on "Your VibeTV is live"; the earlier "rest passt" for the other setup B pictures applies too) — entry: Setup B group: calm look scoped to the Setup Wizard (Codex fix on the group PR)
 - Approved customer-visible result: none yet; Settings › Display mode and Settings › AI providers keep the look they have on main (plain check, previous paddings and type, 32×18 switch). The round marks, paddings, semibold titles and 34×20 switch apply to the Setup Wizard only.
 - Visible text: none changed.
 - Scope: `apps/control-center/src/components/setup/setup-display-mode-screen.tsx`, `setup-provider-row.tsx`, `setup-providers-screen.tsx` (optional `calm` flag set by the Setup screens), `setup-selectable-card.tsx` (plain check kept for Settings), and two tests.
@@ -7907,7 +7907,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-19 — Setup matched to the approved master design "Calm Redesign - alle Screens" (group #780)
 
-- User approval: pending — Paul reviews (Setup matched to the approved master design "Calm Redesign - alle Screens", 19.10.)
+- User approval: approved by Paul in the communicator chat, 2026-10-20 16:10: "top, die neue app passt so" (setup B pictures incl. the 3D VibeTV in the device list and on "Your VibeTV is live"; the earlier "rest passt" for the other setup B pictures applies too) — entry: Setup matched to the approved master design "Calm Redesign - alle Screens" (group #780)
 - Approved customer-visible result: none yet. Look of all 17 Setup steps brought to the master frames: content centred as one block (no reserved log space), 13 px type, 28 px titles, 10 px under the title, cards with a 10 % ink ring and a soft 3 px brand ring when picked, 44 px buttons, plain 13 px underlined links, 36 px Back and Help, calm Help menu with the setup log as plain "> time stage · status" lines, log lines above the newest dimmed and no blinking block, "Sign in needed ↗" in red on the AI provider row.
 - Visible text: `starting background service` → `starting the Mac App` (Windows: `starting the app`); `reading provider usage on this Mac` / `…on this computer` (welcome step only) → `reading your AI providers`; the welcome line `scanning your WiFi` is removed; `Display Mode` → `Display mode` (title and window name); `Show one or multiple AI Providers.` → `Show one or multiple AI providers.`; provider sign-in row `Sign in to <Provider>` + arrow button → `Sign in needed ↗` (decided for Paul by the communicator, 19.10.).
 - Scope: `apps/control-center/src/components/setup/*` (wizard frame, welcome, device, providers, display mode, theme, live, help menu, log, cards, provider row, preview gallery), `setup-event-log.tsx` (calm variant used by the Setup Help menu only), `control-center-app.tsx` (welcome log lines), `scripts/test-customer-flows.mjs` and `docs/customer-setup.md` (the changed words), and the matching tests. Settings and the Logs screen keep their look.
@@ -7915,7 +7915,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-19 — Setup master match: customer-flow script follows the Windows welcome words (group #780)
 
-- User approval: pending — Paul reviews (Setup matched to the approved master design "Calm Redesign - alle Screens", 19.10.)
+- User approval: approved by Paul in the communicator chat, 2026-10-20 16:10: "top, die neue app passt so" (setup B pictures incl. the 3D VibeTV in the device list and on "Your VibeTV is live"; the earlier "rest passt" for the other setup B pictures applies too) — entry: Setup master match: customer-flow script follows the Windows welcome words (group #780)
 - Approved customer-visible result: none yet; no visible change beyond the entry above.
 - Visible text: none changed.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs` only (the Windows welcome check now waits for `starting the app`, the first line that differs by host).
@@ -7923,7 +7923,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-19 — Setup wordmark TV lime (group #780)
 
-- User approval: pending — Paul reviews (Setup wordmark "TV" lime, Paul's decision 19.10.)
+- User approval: approved by Paul in the communicator chat, 2026-10-20 16:10: "top, die neue app passt so" (setup B pictures incl. the 3D VibeTV in the device list and on "Your VibeTV is live"; the earlier "rest passt" for the other setup B pictures applies too) — entry: Setup wordmark TV lime (group #780)
 - Approved customer-visible result: none yet. On the Setup welcome and Mac App download screens the hero wordmark reads "VIBE" in ink and "TV" in the lime brand colour, on light backgrounds too (was olive #506600). Nothing else changes; the sidebar wordmark is unchanged.
 - Visible text: none changed.
 - Scope: `apps/control-center/src/components/control-center-brand.tsx` (hero variant only, the class of the TV span) and its new test `control-center-brand.test.tsx`.
@@ -7931,14 +7931,14 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-19 — #780: approval marker after merging main (#214 arrow keys and the release round) into the calm Setup Wizard
 
-- User approval: Merge of main (#214 arrow keys and the release round) into #780; no visible change of its own; not seen by Paul
+- User approval: no visible change – UI approval not needed (merge commit into #780; no visible change of its own; entry: #780: approval marker after merging main (#214 arrow keys and the release round) into the )
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and main's entries; nothing else changes. In the calm look the arrow keys move between the VibeTVs and the themes, and through the Help menu, as on main.
 - Scope: the merge of main into this branch (setup-device-card.tsx, setup-device-screen.tsx, setup-help-menu.tsx, setup-theme-screen.tsx) and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
 
 ## 2026-10-19 — #780: Codex review fix, the setup log is no longer marked aria-busy
 
-- User approval: Codex review fix (P2, thread on setup-log.tsx), no visible change; not seen by Paul
+- User approval: approved by Paul in the communicator chat, 2026-10-20 16:10: "top, die neue app passt so" (setup B pictures incl. the 3D VibeTV in the device list and on "Your VibeTV is live"; the earlier "rest passt" for the other setup B pictures applies too) — entry: #780: Codex review fix, the setup log is no longer marked aria-busy
 - Approved customer-visible result: none; nothing on screen changes. A screen reader now announces the progress lines of a setup step while it runs instead of holding them back.
 - Scope: `setup-log.tsx`, its test and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
@@ -7968,56 +7968,56 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-20 — #813: approval marker after merging main
 
-- User approval: Merge of main into this branch; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- User approval: no visible change – UI approval not needed (merge commit into #780; no visible change of its own; entry: #780: approval marker after merging main (v1.0.65 release round + #638))
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
 
 ## 2026-10-19 — #780: Setup matched to the template (build 2 QA)
 
-- User approval: pending — Paul reviews (#780 matched to the approved template, build 2 QA); look unchanged except, each one before → after: (1) provider names in the Setup list are 13 px semibold → before 14 px; (2) in a provider row the red "Sign in needed" stands 16 px from the switch → before 8 px; (3) the IP address field in "Enter IP address" uses the normal text font → before a monospace font.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 16:10: "top, die neue app passt so" (setup B pictures incl. the 3D VibeTV in the device list and on "Your VibeTV is live"; the earlier "rest passt" for the other setup B pictures applies too) — entry: #780: Setup matched to the template (build 2 QA) — before → after: (1) provider names in the Setup list are 13 px semibold → before 14 px; (2) in a provider row the red "Sign in needed" stands 16 px from the switch → before 8 px; (3) the IP address field in "Enter IP address" uses the normal text font → before a monospace font.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/setup/setup-provider-row.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
 ## 2026-10-19 — #780: Setup selected-card ring matched to the template (build 2 QA)
 
-- User approval: pending — Paul reviews (#780 matched to the approved template, build 2 QA); look unchanged except, each one before → after: the soft 3 px ring around the chosen card (VibeTV, display mode, theme) is olive (#506600) at 25 % → before ink at 25 %.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 16:10: "top, die neue app passt so" (setup B pictures incl. the 3D VibeTV in the device list and on "Your VibeTV is live"; the earlier "rest passt" for the other setup B pictures applies too) — entry: #780: Setup selected-card ring matched to the template (build 2 QA) — before → after: the soft 3 px ring around the chosen card (VibeTV, display mode, theme) is olive (#506600) at 25 % → before ink at 25 %.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/setup/setup-selectable-card.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
 ## 2026-10-19 — #780: Codex fix, empty setup log keeps its live region
 
-- User approval: pending — Paul reviews (Codex review fix, no visible change; not seen by Paul); no visible change: an empty setup log (device and theme step) stays in the page as the live region for the status text, and only loses its top margin while it is empty (before: `display: none` while empty). The screen looks the same.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 16:10: "top, die neue app passt so" (setup B pictures incl. the 3D VibeTV in the device list and on "Your VibeTV is live"; the earlier "rest passt" for the other setup B pictures applies too) — entry: #780: Codex fix, empty setup log keeps its live region
 - Approved customer-visible result: none; no visible change.
 - Scope: `apps/control-center/src/components/setup/setup-device-screen.tsx`, `apps/control-center/src/components/setup/setup-theme-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
 ## 2026-10-19 — #780: Back on the connect and WiFi-wait screens (build 2 decision)
 
-- User approval: Paul, 19.10.2026 via the communicator: build-2 decision — app follows the template (frames 18, 19, 27, 28); before → after: (1) while "Connecting to VibeTV" runs (connecting, checking the firmware, updating the firmware, frames 18 and 19) a "Back" button stands top left → before none; it is shown where the customer chose a VibeTV or Cable/WiFi first (a lone VibeTV that connects by itself has no choice to return to and keeps no Back); pressing it lets the step that runs finish (a pairing or a firmware update is never stopped half way, the companion has no cancel for them), starts no further step and then shows the choice of Cable/WiFi or the list again, without an error dialog; (2) while "Connect VibeTV to WiFi" waits for VibeTV on the network (frames 27 and 28) a "Back" button stands top left → before none; it stops the wait and shows the choice of Cable/WiFi again.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 16:10: "top, die neue app passt so" (setup B pictures incl. the 3D VibeTV in the device list and on "Your VibeTV is live"; the earlier "rest passt" for the other setup B pictures applies too) — entry: #780: Back on the connect and WiFi-wait screens (build 2 decision) — before → after: (1) while "Connecting to VibeTV" runs (connecting, checking the firmware, updating the firmware, frames 18 and 19) a "Back" button stands top left → before none; it is shown where the customer chose a VibeTV or Cable/WiFi first (a lone VibeTV that connects by itself has no choice to return to and keeps no Back); pressing it lets the step that runs finish (a pairing or a firmware update is never stopped half way, the companion has no cancel for them), starts no further step and then shows the choice of Cable/WiFi or the list again, without an error dialog; (2) while "Connect VibeTV to WiFi" waits for VibeTV on the network (frames 27 and 28) a "Back" button stands top left → before none; it stops the wait and shows the choice of Cable/WiFi again.
 - Approved customer-visible result: the two screens show Back as drawn in frames 18, 19, 27 and 28 of "Calm Redesign - alle Screens".
 - Scope: `apps/control-center/src/components/setup/setup-connect.ts`, `apps/control-center/src/components/setup/setup-wizard.tsx`, `apps/control-center/src/components/setup/setup-device-screen.tsx`, `apps/control-center/src/components/setup/setup-wizard.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
 ## 2026-10-19 — #780: Codex fix, Back during a pairing returns to the connection choice
 
-- User approval: pending — Paul reviews (Codex review fix, P1/P2 on Back during a pairing); look unchanged except, before → after: pressing Back while a pairing still finishes lands on the connection choice → before, when the VibeTV had already been published, the customer could be sent on to provider setup instead.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 16:10: "top, die neue app passt so" (setup B pictures incl. the 3D VibeTV in the device list and on "Your VibeTV is live"; the earlier "rest passt" for the other setup B pictures applies too) — entry: #780: Codex fix, Back during a pairing returns to the connection choice — before → after: pressing Back while a pairing still finishes lands on the connection choice → before, when the VibeTV had already been published, the customer could be sent on to provider setup instead.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/setup/setup-wizard.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
 ## 2026-10-20 — #780: Back shows "Stopping…" while the running step finishes (build 2 decision)
 
-- User approval: Paul via the communicator, 20.10.2026 night: build-2 decision — Back during "Connecting to VibeTV" (frames 18, 19) shows at once that it was pressed; before → after: right after the click the Back button turns into a spinner with "Stopping…" (13 px, muted, not clickable) and stays so until the running step (pairing, firmware check or firmware update) has finished, then the choice of Cable/WiFi shows → before the button looked unchanged until the step ended. Back while waiting for WiFi (frames 27, 28) still leaves at once.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 16:10: "top, die neue app passt so" (setup B pictures incl. the 3D VibeTV in the device list and on "Your VibeTV is live"; the earlier "rest passt" for the other setup B pictures applies too) — entry: #780: Back shows "Stopping…" while the running step finishes (build 2 decision) — before → after: right after the click the Back button turns into a spinner with "Stopping…" (13 px, muted, not clickable) and stays so until the running step (pairing, firmware check or firmware update) has finished, then the choice of Cable/WiFi shows → before the button looked unchanged until the step ended. Back while waiting for WiFi (frames 27, 28) still leaves at once.
 - Approved customer-visible result: the Back button reads "Stopping…" with a spinner while the running step finishes.
 - Scope: `apps/control-center/src/components/setup/setup-connect.ts`, `apps/control-center/src/components/setup/setup-wizard.tsx`, `apps/control-center/src/components/setup/setup-wizard-screen.tsx`, `apps/control-center/src/components/setup/setup-device-screen.tsx`, `apps/control-center/src/components/setup/setup-wizard.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
 ## 2026-10-19 — #780: Codex fix, a typed VibeTV address keeps Back available during its pairing
 
-- User approval: pending — Paul reviews (Codex review fix); look unchanged except, before → after: after "Enter IP address manually" and a found VibeTV, Back is shown during pairing, firmware check and update, as after a card choice → before Back was hidden there.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 16:10: "top, die neue app passt so" (setup B pictures incl. the 3D VibeTV in the device list and on "Your VibeTV is live"; the earlier "rest passt" for the other setup B pictures applies too) — entry: #780: Codex fix, a typed VibeTV address keeps Back available during its pairing — before → after: after "Enter IP address manually" and a found VibeTV, Back is shown during pairing, firmware check and update, as after a card choice → before Back was hidden there.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/setup/setup-wizard.tsx` and this approval record. Pull request branch only, not merged, not released.
 ## 2026-10-18 — Calm type: 13 px text in the shared buttons, cards, labels and inputs (#713)
@@ -9943,7 +9943,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-20 — #780: build 2b QA, the selected-card focus ring of the Setup Wizard is full strength
 
-- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the keyboard focus ring around a wizard choice card (connection, display mode, theme) was drawn at 40 % strength → it is drawn at full strength like every other focus ring of the app (the calm redesign forbids reduced-opacity focus rings).
+- User approval: approved by Paul in the communicator chat, 2026-10-20 16:10: "top, die neue app passt so" (setup B pictures incl. the 3D VibeTV in the device list and on "Your VibeTV is live"; the earlier "rest passt" for the other setup B pictures applies too) — entry: #780: build 2b QA, the selected-card focus ring of the Setup Wizard is full strength — before → after: the keyboard focus ring around a wizard choice card (connection, display mode, theme) was drawn at 40 % strength → it is drawn at full strength like every other focus ring of the app (the calm redesign forbids reduced-opacity focus rings).
 - Approved customer-visible result: a wizard card reached by Tab shows the same ring as the other controls.
 - Scope: `apps/control-center/src/components/setup/setup-selectable-card.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
@@ -10272,6 +10272,7 @@ issue scope, or release permission never implies UI permission.
 ## 2026-10-20 — #782: approval marker after merging main
 
 - User approval: no visible change – UI approval not needed (merge commit into #784; no visible change of its own; entry: #784: approval marker after merging main)
+- User approval: no visible change – UI approval not needed (merge commit into #780; no visible change of its own; entry: #780: approval marker after merging main)
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
@@ -10686,3 +10687,45 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #784 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
 - Scope: #784 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #784 approval record only
+
+## 2026-10-20 — #821: the setup tile keeps a legacy provider's reset when only its session is unreadable (Codex review)
+
+- User approval: no visible change – UI approval not needed (#821: behaviour fix; a legacy provider without windows and with an unreadable session keeps its root reset countdown in the tile, as the frame sent to VibeTV does, instead of "Reset unavailable"; plus the preview unit tests now pin their clock)
+- Approved customer-visible result: #821 as in its own entries; no new look.
+- Scope: `apps/control-center/src/components/setup/setup-display-previews.ts`, its unit test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — behaviour fix in an edge case, no new content
+
+## 2026-10-20 — #780: one sentence for providers with their own app (setup log and popup)
+
+- User approval: pending — #780 wording as decided by the communicator on 20.10.2026 (text decision for Paul's 7198 review); Paul sees it in build 7198. Before → after: #780 "VibeTV reads <Provider> usage from <Provider>'s own app, so make sure it is installed and signed in on this computer." → #780 "VibeTV can't read <Provider> until the <Provider> app is installed and running." (the template sentence), the same in the setup log and in the popup.
+- Approved customer-visible result: #780 one sentence for a provider that needs its own app, wherever setup shows it.
+- Scope: #780 the setup sentence in the Control Center (and, in #782, the Companion's setup log and the shared sentence file), their tests and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #780 wording not announced
+
+## 2026-10-20 — #780: correction — Paul's 7198 approval does not cover this PR yet
+
+- User approval: pending — #780 correction (communicator, 20.10.2026): Paul's "rest passt" for build 7198 covered only what he saw in normal use (#781, #783, #784, #798, #803); the approval recorded for #780 a moment ago was premature and is reverted, its entries are pending again until he says yes to #780 itself.
+- Approved customer-visible result: #780 unchanged; this entry only corrects the record.
+- Scope: #780 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #780 record correction only
+
+## 2026-10-20 — #780: 3D VibeTV in the device list and on "Your VibeTV is live"
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 16:10: "top, die neue app passt so" (setup B pictures incl. the 3D VibeTV in the device list and on "Your VibeTV is live"; the earlier "rest passt" for the other setup B pictures applies too) — entry: #780: 3D VibeTV in the device list and on "Your VibeTV is live"
+- Approved customer-visible result: #780 pending — each VibeTV row of "Choose your VibeTV" shows a small 3D VibeTV (the one the app is connected to with its live screen), and "Your VibeTV is live" shows the 3D VibeTV with the live theme on its screen; without a hardware WebGL the photo and the flat case stay.
+- Scope: #780 Setup Wizard variant B only: the device rows and the live screen. The 3D component, its model and the flat preview's screen-only mode are the Overview's files, brought into #780 unchanged so the later merge with the calm redesign is trivial. Pull request branch only, not merged, not released.
+- What's new: none — #780 setup screens only
+
+## 2026-10-20 — #780: Paul's approval of the setup B pictures recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 16:10: "top, die neue app passt so" — #780 approval record (pictures ui/780-3d-setup/13-setup-02.png and 26-setup-15.png incl. the dark screen for devices not connected yet, plus "rest passt" for the other setup B pictures); the #780 entries above now carry it, merge markers are marked as no visible change, the provider sentence added after build 7198 stays pending.
+- Approved customer-visible result: #780 setup variant B as in its entries and the pictures named above.
+- Scope: #780 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #780 approval record only
+
+## 2026-10-20 — #821: approval marker after merging claude/group-setup-b again
+
+- User approval: merge of claude/group-setup-b into #821 (approval record kept from both sides); no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: #821 as in its own entries (pending, Paul reviews) plus the entries of the base branch.
+- Scope: the merge and this approval record. Pull request branch #821 only, not merged, not released.
+- What's new: none — merge of the base branch, no customer-visible change of its own

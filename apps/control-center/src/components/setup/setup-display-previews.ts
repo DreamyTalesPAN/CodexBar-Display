@@ -36,6 +36,22 @@ function rootResetSecs(slots: { resetSecs?: number }[]): number {
 }
 
 /**
+ * The root countdown of a provider's frame. A legacy provider (no windows)
+ * carries its only reset in provider.resetSecs, independent of whether its
+ * session percentage is readable: a session the collector could not read still
+ * leaves the authoritative root deadline in the frame sent to VibeTV, so the
+ * tile keeps it too instead of showing "Reset unavailable" (Codex on #821).
+ */
+function providerRootResetSecs(
+  provider: UsageProviderInfo,
+  slots: { resetSecs?: number }[],
+): number {
+  return provider.windows?.length
+    ? rootResetSecs(slots)
+    : Math.max(0, provider.resetSecs ?? 0);
+}
+
+/**
  * The cross-provider rows of the frame, as the host builds them
  * (providerResetSlots in companion/internal/daemon/selection.go): every
  * provider that is neither stale nor unavailable, in the order they are
@@ -208,7 +224,7 @@ export function displayFrameFor(
     weekly: provider.weekly,
     sessionUnavailable: provider.sessionUnavailable === true,
     weeklyUnavailable: provider.weeklyUnavailable === true,
-    resetSecs: rootResetSecs(readable),
+    resetSecs: providerRootResetSecs(provider, readable),
     usageMode: provider.usageMode,
     usageWindows: readable,
     // Cross-provider rows (pv1*/pv2* in a theme), from the complete provider set.
@@ -250,7 +266,7 @@ export function displayPreviewFor(
       ? null
       : formatReset(
           remainingResetSecs(
-            rootResetSecs(windowSlotsOf(provider)),
+            providerRootResetSecs(provider, windowSlotsOf(provider)),
             provider.collectedAt,
             now,
           ),

@@ -784,6 +784,9 @@ export function SetupWizard(props: SetupWizardProps) {
             legacyCandidateFlow ? undefined : connectionDecision.alternative
           }
           candidates={visibleCandidates}
+          previewDevice={props.device}
+          previewFrame={props.displayFrame}
+          previewUsage={props.usage}
           connecting={connecting}
           connectPhase={connect.state.phase}
           firmwarePercent={props.firmwareWrittenPercent}
