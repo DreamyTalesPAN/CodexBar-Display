@@ -5,7 +5,7 @@
 // edge of the window, where nothing showed that anything had happened. Since
 // Paul's review of 7198 the card shows no notice at all: the Install button
 // says "Installing" with a spinner, and the pill on the picture says Active.
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import type { ThemeProduct } from "@/lib/themes";
@@ -127,20 +127,4 @@ it("shows the row as installed as soon as its install is complete", () => {
     expect(screen.queryByRole("button", { name: "Wait" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Installing" })).toBeNull();
   }
-});
-
-// A finished install can carry a caveat (the companion's own sentence): that is
-// the usual dialog, not a line in the card, so it is not lost with the notice.
-it("says a caveat of a finished install in a dialog, and nothing for the plain sentences", () => {
-  const caveat = "Theme installed. VibeTV shows it once AI usage is ready.";
-  const view = render(list({ ...install, phase: "complete", message: "Theme is active on VibeTV." }, "install", "gauge"));
-  expect(screen.queryByRole("dialog")).toBeNull();
-
-  view.rerender(list({ ...install, phase: "complete", message: caveat }, "install", "gauge"));
-  const dialog = screen.getByRole("dialog", { name: "Theme installed" });
-  expect(within(dialog).getByText(caveat)).toBeTruthy();
-  expect(document.getElementById("catalog-theme-gauge")!.contains(dialog)).toBe(false);
-
-  fireEvent.click(within(dialog).getByRole("button", { name: "OK" }));
-  expect(screen.queryByRole("dialog")).toBeNull();
 });

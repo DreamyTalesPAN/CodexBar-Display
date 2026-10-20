@@ -1570,15 +1570,9 @@ function ThemeListItem({
   );
 }
 
-// The plain sentences a finished install says (the pill says the same); any
-// other line of a finished install carries a caveat, e.g. "Theme installed.
-// VibeTV shows it once AI usage is ready.", and must not be lost.
-const PLAIN_INSTALL_DONE = /^(Theme|Screensaver) (installed|is active on VibeTV|is ready on VibeTV)\.$/;
-
 /**
- * A failed install, and a finished one with a caveat, are the usual overlay
- * dialog. A running one has no steps in the card (it never changes its
- * height): its button says "Installing".
+ * A failed install is the usual overlay dialog. A running one has no steps in
+ * the card (it never changes its height): its button says "Installing".
  */
 function InstallOverlays({
   canRetry,
@@ -1591,35 +1585,9 @@ function InstallOverlays({
   status: ThemeInstallStatus | null;
   usage: ThemeStudioUsage;
 }) {
-  if (status?.phase === "error") {
-    return <InstallErrorDialog canRetry={canRetry} onRetry={onRetry} status={status} usage={usage} />;
-  }
-  const note = status?.phase === "complete" ? status.message?.trim() : "";
-  return status && note && !PLAIN_INSTALL_DONE.test(note) ? (
-    <InstallNoteDialog message={note} status={status} usage={usage} />
+  return status?.phase === "error" ? (
+    <InstallErrorDialog canRetry={canRetry} onRetry={onRetry} status={status} usage={usage} />
   ) : null;
-}
-
-function InstallNoteDialog({
-  message,
-  status,
-  usage,
-}: {
-  message: string;
-  status: ThemeInstallStatus;
-  usage: ThemeStudioUsage;
-}) {
-  const [dismissedAt, setDismissedAt] = useState<string | null>(null);
-  return (
-    <SetupDialog
-      description={message}
-      onOpenChange={(open) => { if (!open) setDismissedAt(status.startedAt); }}
-      open={dismissedAt !== status.startedAt}
-      primaryAction={{ label: "OK", onSelect: () => setDismissedAt(status.startedAt) }}
-      showCloseButton={false}
-      title={usage === "screensaver" ? "Screensaver installed" : "Theme installed"}
-    />
-  );
 }
 
 function InstallErrorDialog({

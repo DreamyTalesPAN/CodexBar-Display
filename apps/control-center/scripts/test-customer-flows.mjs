@@ -5443,9 +5443,23 @@ async function testProviderlessInstallKeepsTheCompanionOutcome(
   await page.getByRole("navigation", { name: "Control Center" }).waitFor({ timeout: 20_000 });
   companion.setThemeInstallJob(pendingInstall);
   await clickNavigation(page, "Themes");
-  await page
-    .getByText(awaitingProvider, { exact: true })
-    .waitFor({ timeout: 10_000 });
+  // Paul, 20.10.2026: a dialog or a sentence only when the customer has to do
+  // something. The theme appears by itself once usage is there, so the caveat
+  // is not shown at all; the card only stops saying "Installing".
+  await page.getByRole("button", { name: /Installing/ }).first().waitFor({ timeout: 10_000 }).catch(() => {});
+  await page.waitForFunction(
+    () => ![...document.querySelectorAll("button")].some((b) => /Installing/.test(b.textContent || "")),
+    null,
+    { timeout: 10_000 },
+  );
+  assert(
+    (await page.getByText(awaitingProvider).count()) === 0,
+    "The providerless caveat needs no action from the customer and must not be shown",
+  );
+  assert(
+    (await page.getByRole("dialog").count()) === 0,
+    "A finished install that needs nothing from the customer must not open a dialog",
+  );
   assert(
     (await page.getByText("Theme is active on VibeTV.").count()) === 0,
     "A VibeTV that cannot draw usage yet must never be described as showing the theme",
