@@ -8764,3 +8764,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #802 install on the card's own lime button ("Installing" with a spinner, the card keeps its height, no steps, bar or notice in the card) and the bigger lime "Active" pill with black text next to the light "Installed" pill, as in the pictures in `vibetv-testbench/review-1016/ui/802-install-button/`.
 - Scope: this approval record only. Pull request branch #802 only, not merged, not released.
 - What's new: none — approval record for #802 install state and pills, no new content
+
+## 2026-10-20 — #802: a finished install with a caveat says it in the usual dialog (Codex/CI, providerless install)
+
+- User approval: pending — #802: with the notice gone from the card, the companion's sentence of a finished install that carries a caveat (e.g. "Theme installed. VibeTV shows it once AI usage is ready.") would have been lost; it is now the usual overlay dialog "Theme installed" with an OK button, and the plain success sentences stay silent (the pill says it). Before → after: the sentence was a line in the card → it is the dialog text; the card itself does not change. Paul reviews.
+- Approved customer-visible result: #802 dialog "Theme installed" / "Screensaver installed" with the companion's sentence and OK, only for a finished install whose sentence is not the plain success sentence.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx`, its unit test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #802: the same sentence in another place, no new content
