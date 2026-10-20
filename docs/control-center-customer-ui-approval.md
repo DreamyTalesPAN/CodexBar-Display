@@ -8669,3 +8669,42 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #802 unchanged; this entry only records test updates.
 - Scope: `apps/control-center/src/components/control-center-app.display-preferences.test.tsx`, `apps/control-center/test-fixtures/theme-preview-vector-goldens.json` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — test-only change, no customer-visible change
+
+## 2026-10-17 — Process steps look like the Setup Wizard log
+
+- User approval: Paul's design rule of 2026-10-17 (via the communicator): process steps look like the Setup Wizard status log everywhere (one component ProcessSteps, no cursor block); he has not yet seen this build.
+- Approved customer-visible result: Every list of running process steps uses the Setup Wizard's log look: one "> text" line per step, in the same mono type, each step fading in, finished steps paler, no blinking block. Changed places, before → after:
+  - Appearance › Themes and Screensavers, install box (`InlineInstallProgress` in `theme-library-screen.tsx`): before: "Installing", the current step as a sentence and earlier steps as small plain text; after: all steps as "> text" lines, finished ones paler. Title, progress bar and "Installed" unchanged.
+  - Updates, VibeTV firmware update (`InlineUpdateProgress` in `updates-screen.tsx`): before: the running step as a sentence in body text; after: the same step as one "> text" line. Title, progress bar, restart text, and the complete and attention messages unchanged.
+  - Setup Wizard status logs: no visible change; the component is extracted from them and keeps the blinking caret while work runs.
+  - Diagnostics: no running steps are listed, so nothing changes.
+- Scope: `apps/control-center/src/components/process-steps.tsx` (new), `apps/control-center/src/components/setup/setup-log.tsx`, `apps/control-center/src/components/theme-library-screen.tsx` (InlineInstallProgress), `apps/control-center/src/components/updates-screen.tsx` (InlineUpdateProgress), their tests, and this record. Pull request branch only, not merge or release.
+- What's new: none — the same steps, shown in the setup log look
+
+## 2026-10-17 — Codex fix: install steps keep their place when they turn finished
+
+- User approval: none needed for this entry; it records a Codex review fix (P2) to the install box of the entry above: a step keeps its line when it turns finished, so it no longer fades in a second time. No visible change beyond the entry above; not seen by Paul.
+- Approved customer-visible result: as in the entry above; nothing else changes.
+- Scope: `InlineInstallProgress` key in `apps/control-center/src/components/theme-library-screen.tsx`, its test, and this record. Pull request branch only, not merge or release.
+- What's new: none — same steps, one fix to the animation
+
+## 2026-10-17 — Test expectation follows the install steps look
+
+- User approval: none needed for this entry; it changes only a test expectation: the screensaver and theme install test now expects the install's first step as "> Preparing … install." (the entry above), as CI on the previous head showed. No visible change beyond the entry above; not seen by Paul.
+- Approved customer-visible result: as in the entry above; nothing else changes.
+- Scope: `apps/control-center/src/components/control-center-app.screensaver-install.test.tsx` and this record. Pull request branch only, not merge or release.
+- What's new: none — same steps, a test expectation only
+
+## 2026-10-17 — Setup Wizard log: no blinking caret
+
+- User approval: Paul's rule of 2026-10-17 (no cursor block anywhere in process steps), decided on the #712 review and relayed by the communicator; he has not yet seen this build. It supersedes the statement in the entry above that the Setup Wizard log keeps its caret.
+- Approved customer-visible result: Setup Wizard status logs (welcome, providers, device, theme install): before: a blinking caret block at the end of the log while work runs; after: none. Lines, box, fade-in and everything else unchanged.
+- Scope: `apps/control-center/src/components/process-steps.tsx`, `apps/control-center/src/components/setup/setup-log.tsx` (caret and `running` prop removed), the four wizard callers that passed `running` (setup-welcome-screen, setup-providers-screen, setup-theme-screen, setup-device-screen), their tests, and this record. Pull request branch only, not merge or release.
+- What's new: none — removes a visual element; no new copy
+
+## 2026-10-20 — #802: approval marker after merging claude/process-steps-component
+
+- User approval: merge of claude/process-steps-component (ProcessSteps, the Setup Wizard step-line look) into #802; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: #802 as in its own entries (pending, Paul reviews) plus the entries of the process-steps branch.
+- Scope: the merge of claude/process-steps-component and this approval record. Pull request branch #802 only, not merged, not released.
+- What's new: none — merge of the shared ProcessSteps component, no customer-visible change of its own
