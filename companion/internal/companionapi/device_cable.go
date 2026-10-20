@@ -143,8 +143,8 @@ func (s *Server) cableDeviceInfo(ctx context.Context, cfg runtimeconfig.Config, 
 	}, stream), true, false, false)
 }
 
-// movedRescueProbeBudget bounds the hello probes of one moved-VibeTV search.
-const movedRescueProbeBudget = 20 * time.Second
+// movedRescueProbeBudget is one hello window plus a margin: all new ports are probed at once.
+const movedRescueProbeBudget = 35 * time.Second
 
 // rescueMarkerPort returns the port a pending rescue marker's VibeTV is on: the
 // marked port while it is connected, else the one port it was moved to by a
@@ -166,34 +166,32 @@ func (s *Server) rescueMarkerPort(marker firmwareupdate.RescueMarker) (string, b
 	if s.readCableHello == nil || s.firmwareUpdateActive.Load() {
 		return "", false
 	}
-	// Each new port may wait a full hello window. The probes share one budget:
-	// a port that cannot be checked in time may be the moved VibeTV, so no port
-	// is named then.
+	// A silent new port may wait out a full hello window, so all new ports are
+	// probed at once. A port that cannot be checked within the budget may be the
+	// moved VibeTV, so no port is named then.
+	replies := map[string]chan probeReply{}
+	for _, port := range firmwareupdate.NewRescuePorts(marker, ports) {
+		ch := make(chan probeReply, 1)
+		replies[port] = ch
+		go func(port string, ch chan probeReply) {
+			hello, err := s.readCableHello(port)
+			ch <- probeReply{hello, err}
+		}(port, ch)
+	}
 	deadline := time.Now().Add(movedRescueProbeBudget)
 	overBudget := false
 	moved, found := firmwareupdate.MovedRescuePort(marker, ports, func(port string) (protocol.DeviceHello, error) {
-		remaining := time.Until(deadline)
-		if remaining <= 0 {
+		ch, ok := replies[port]
+		if !ok {
 			overBudget = true
-			// Counted as answering so it is no candidate; the result is refused below.
 			return protocol.DeviceHello{DeviceID: "unprobed"}, nil
 		}
-		// The hello read cannot be cancelled and may wait a full hello window, so
-		// it runs aside and the search stops waiting when the budget ends.
-		type reply struct {
-			hello protocol.DeviceHello
-			err   error
-		}
-		done := make(chan reply, 1)
-		go func() {
-			hello, err := s.readCableHello(port)
-			done <- reply{hello, err}
-		}()
 		select {
-		case got := <-done:
+		case got := <-ch:
 			return got.hello, got.err
-		case <-time.After(remaining):
+		case <-time.After(time.Until(deadline)):
 			overBudget = true
+			// Counted as answering so it is no candidate; the result is refused below.
 			return protocol.DeviceHello{DeviceID: "unprobed"}, nil
 		}
 	})
@@ -237,4 +235,10 @@ func (s *Server) halfWrittenRescueEntry(responding []usb.CableDevice) (deviceSea
 		Firmware:  marker.Firmware,
 		Rescue:    true,
 	}, true
+}
+
+// probeReply is the outcome of one hello read on a new port.
+type probeReply struct {
+	hello protocol.DeviceHello
+	err   error
 }

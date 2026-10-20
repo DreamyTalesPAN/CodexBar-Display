@@ -157,3 +157,25 @@ func MovedRescuePort(marker RescueMarker, listed []string, readHello func(string
 	}
 	return candidates[0], true
 }
+
+// NewRescuePorts lists the ports a moved VibeTV can be on: the listed ports
+// that were not there when the write started and are not the marked port.
+func NewRescuePorts(marker RescueMarker, listed []string) []string {
+	if marker.Ports == nil {
+		return nil
+	}
+	before := make(map[string]bool, len(marker.Ports))
+	for _, port := range marker.Ports {
+		before[strings.ToUpper(strings.TrimSpace(port))] = true
+	}
+	marked := strings.ToUpper(strings.TrimSpace(marker.Port))
+	var out []string
+	for _, port := range listed {
+		key := strings.ToUpper(strings.TrimSpace(port))
+		if key == "" || key == marked || before[key] {
+			continue
+		}
+		out = append(out, port)
+	}
+	return out
+}
