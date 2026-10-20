@@ -69,6 +69,41 @@ func rescueMarkerPresent(t *testing.T) bool {
 	return ok
 }
 
+// Codex on #840: a first write that fails before the chip is read leaves a
+// marker without ChipMAC. A cancel during the pause before the second attempt
+// must still clear it, or it blocks every later rescue until it expires.
+func TestCableRescueCancelledInThePauseClearsAChiplessMarker(t *testing.T) {
+	prepareCableFirmwareUpdateTest(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	prevPause := cableRescueRetryPause
+	cableRescueRetryPause = 5 * time.Second
+	t.Cleanup(func() { cableRescueRetryPause = prevPause })
+	listCablePortsFn = func() ([]string, error) { return []string{"COM4"}, nil }
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	writes := 0
+	flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
+		writes++
+		// Fails before the chip check: no OnChipIdentified, no OnWriteStarted.
+		go func() { time.Sleep(50 * time.Millisecond); cancel() }()
+		return errors.New("ROM loader never synced")
+	}
+	marker := firmwareupdate.RescueMarker{Port: "COM4", Board: rescueTestBoard, Firmware: "1.0.0", TargetFirmware: "1.0.1",
+		ImagePath: filepath.Join(t.TempDir(), "firmware.bin")}
+	if err := flashCableRescueWithRetry(ctx, home, marker, []byte("cable firmware"), false); err == nil {
+		t.Fatal("the failed write must report its error")
+	}
+	if writes != 1 {
+		t.Fatalf("writes=%d, want 1: the cancel ends the retries", writes)
+	}
+	if rescueMarkerPresent(t) {
+		t.Fatal("a chipless marker must be cleared after a cancel in the pause")
+	}
+}
+
 func TestRunInstallUpdateCableRescueRetriesAFailedWriteAtALowerBaudRate(t *testing.T) {
 	_, manifestURL, firmwareVersion := prepareCableFirmwareUpdateTest(t)
 	pinCableRescue(t)

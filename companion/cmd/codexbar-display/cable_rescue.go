@@ -94,8 +94,13 @@ func flashCableRescueWithRetry(ctx context.Context, home string, marker firmware
 		}
 		select {
 		case <-ctx.Done():
-			return err
 		case <-time.After(cableRescueRetryPause):
+		}
+		// A cancel during the pause ends the retries like a cancelled write: the
+		// cleanup below still runs, so a chipless marker does not block every
+		// later rescue (Codex on #840).
+		if ctx.Err() != nil {
+			break
 		}
 	}
 	// Without a recorded chip identity the write never reached the chip check,
