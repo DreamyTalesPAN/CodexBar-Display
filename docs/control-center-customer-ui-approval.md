@@ -8124,3 +8124,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #780 setup variant B as in its entries and the pictures named above.
 - Scope: #780 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #780 approval record only
+
+## 2026-10-20 — #821: approval marker after merging claude/group-setup-b again
+
+- User approval: merge of claude/group-setup-b into #821 (approval record kept from both sides); no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: #821 as in its own entries (pending, Paul reviews) plus the entries of the base branch.
+- Scope: the merge and this approval record. Pull request branch #821 only, not merged, not released.
+- What's new: none — merge of the base branch, no customer-visible change of its own
