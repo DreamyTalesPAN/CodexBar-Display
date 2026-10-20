@@ -306,7 +306,7 @@ func runInstallUpdate(args []string) (retErr error) {
 				marker.Board, marker.Firmware = caps.Board, caps.Firmware
 				marker.ImageSHA256, _ = sha256File(imagePath)
 			}
-			uploadErr = flashCableRescueWithRetry(ctx, home, marker, image)
+			uploadErr = flashCableRescueWithRetry(ctx, home, marker, image, recovering)
 		}
 	} else if cableMode {
 		// The release's gzip image is about 30% smaller, and the ESP8266

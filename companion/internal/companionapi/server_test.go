@@ -15380,6 +15380,7 @@ func TestDeviceSearchOffersAHalfWrittenVibeTVForItsRescue(t *testing.T) {
 		{"VibeTV answers again", []string{"COM4"}, time.Hour, true, false, false, false},
 		{"no WiFi on this computer", []string{"COM4"}, time.Hour, false, true, false, true},
 		{"marked image changed", []string{"COM4"}, time.Hour, false, false, true, false},
+		{"working VibeTV on another port", []string{"COM4", "COM7"}, time.Hour, true, false, false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// Another VibeTV on WiFi lets the scan settle at once; the rescue
@@ -15398,7 +15399,11 @@ func TestDeviceSearchOffersAHalfWrittenVibeTVForItsRescue(t *testing.T) {
 			server.listCablePorts = func() ([]string, error) { return tc.ports, nil }
 			server.discoverCableDevices = func(context.Context) ([]usb.CableDevice, error) {
 				if tc.cableHello {
-					return []usb.CableDevice{{Port: "COM4", Hello: protocol.DeviceHello{DeviceID: "cable-a", Board: "esp8266-smalltv-st7789", Firmware: "1.0.9"}}}, nil
+					port := "COM4"
+					if slices.Contains(tc.ports, "COM7") {
+						port = "COM7"
+					}
+					return []usb.CableDevice{{Port: port, Hello: protocol.DeviceHello{DeviceID: "cable-a", Board: "esp8266-smalltv-st7789", Firmware: "1.0.9"}}}, nil
 				}
 				return nil, errors.New("no VibeTV answered")
 			}

@@ -58,6 +58,10 @@ var (
 // are not an ESP8266 app image, so nothing is written for them.
 var ErrNotESP8266AppImage = errors.New("firmware is not an ESP8266 app image")
 
+// ErrROMLoaderNotEntered: no sync reply, so nothing was sent that could erase
+// or write the flash.
+var ErrROMLoaderNotEntered = errors.New("VibeTV did not enter the ESP8266 ROM loader")
+
 // ROMFlashOptions tunes one ROM loader write.
 type ROMFlashOptions struct {
 	// BaudRate is the serial rate for the loader; zero means the default.
@@ -155,7 +159,7 @@ func (l *romLoader) connect(ctx context.Context) error {
 			}
 		}
 	}
-	return errors.New("VibeTV did not enter the ESP8266 ROM loader")
+	return ErrROMLoaderNotEntered
 }
 
 // enterLoader drives the usual DTR/RTS auto-reset circuit: RTS holds EN low,

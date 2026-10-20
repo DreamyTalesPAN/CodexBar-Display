@@ -175,8 +175,8 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 	// marker keeps it selectable for the next rescue, also when the LAN search
 	// failed: the rescue runs over the Cable only.
 	var rescueEntry *deviceSearchEntry
-	if explicitTarget == "" && len(cableDevices) == 0 {
-		if entry, ok := s.halfWrittenRescueEntry(); ok {
+	if explicitTarget == "" {
+		if entry, ok := s.halfWrittenRescueEntry(cableDevices); ok {
 			rescueEntry = &entry
 		}
 	}

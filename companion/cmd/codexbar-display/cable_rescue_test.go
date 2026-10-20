@@ -136,7 +136,7 @@ func TestRunInstallUpdateCableRescueLeavesNoMarkerWhenTheLoaderNeverErased(t *te
 	pinCableRescue(t)
 	findLegacyCableVibeTVFn = legacyRescueDevice
 	flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
-		return errors.New("VibeTV did not enter the ESP8266 ROM loader")
+		return usb.ErrROMLoaderNotEntered
 	}
 
 	output, err := captureStdout(t, func() error { return runInstallUpdate(rescueArgs(manifestURL)) })
@@ -174,6 +174,39 @@ func TestRunInstallUpdateCableRescueWritesNothingWhenTheMarkerCannotBeSaved(t *t
 	if !strings.Contains(err.Error(), "rescue marker") {
 		t.Fatalf("the error should name the marker: %v", err)
 	}
+}
+
+// A failure that may have reached the flash (a lost FLASH_BEGIN reply) or a
+// resumed rescue of an already erased VibeTV keeps the marker (Codex on #819).
+func TestRunInstallUpdateCableRescueKeepsTheMarkerWhenTheFailureMayHaveErased(t *testing.T) {
+	t.Run("timeout before the erase was acknowledged", func(t *testing.T) {
+		_, manifestURL, _ := prepareCableFirmwareUpdateTest(t)
+		pinCableRescue(t)
+		findLegacyCableVibeTVFn = legacyRescueDevice
+		flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
+			return errors.New("flash begin: ROM loader response timeout")
+		}
+		output, err := captureStdout(t, func() error { return runInstallUpdate(rescueArgs(manifestURL)) })
+		if err == nil || !rescueMarkerPresent(t) {
+			t.Fatalf("err=%v marker=%v\n%s", err, rescueMarkerPresent(t), output)
+		}
+	})
+	t.Run("resumed rescue that never reached the loader", func(t *testing.T) {
+		_, manifestURL, _ := prepareCableFirmwareUpdateTest(t)
+		pinCableRescue(t)
+		writeRescueMarkerFixture(t, "COM4", time.Hour)
+		listCablePortsFn = func() ([]string, error) { return []string{"COM4"}, nil }
+		findLegacyCableVibeTVFn = func() (usb.CableDevice, error) {
+			return usb.CableDevice{}, errors.New("no VibeTV with pre-Cable firmware answered hello")
+		}
+		flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
+			return usb.ErrROMLoaderNotEntered
+		}
+		output, err := captureStdout(t, func() error { return runInstallUpdate(rescueArgs(manifestURL)) })
+		if err == nil || !rescueMarkerPresent(t) {
+			t.Fatalf("a resumed rescue must keep its marker: err=%v marker=%v\n%s", err, rescueMarkerPresent(t), output)
+		}
+	})
 }
 
 func TestRunInstallUpdateCableRescueFlashesTheMarkedPortWhenNoHelloComes(t *testing.T) {

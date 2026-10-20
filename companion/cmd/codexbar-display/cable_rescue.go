@@ -18,7 +18,7 @@ import (
 // Windows that timed out at the default rate finished at the slower one.
 // From the moment the loader erases the old firmware, marker records that the
 // VibeTV can only be reached through its ROM loader until a write is verified.
-func flashCableRescueWithRetry(ctx context.Context, home string, marker firmwareupdate.RescueMarker, image []byte) error {
+func flashCableRescueWithRetry(ctx context.Context, home string, marker firmwareupdate.RescueMarker, image []byte, resumed bool) error {
 	attempts := []struct {
 		baud int
 		name string
@@ -34,6 +34,9 @@ func flashCableRescueWithRetry(ctx context.Context, home string, marker firmware
 		return fmt.Errorf("save the rescue marker before writing: %w", saveErr)
 	}
 	started := false
+	// Only a failure known to come before any flash command proves the old
+	// firmware is untouched; a lost FLASH_BEGIN reply may already have erased.
+	untouched := true
 	var err error
 	for i, attempt := range attempts {
 		fmt.Printf("Cable rescue write %d/%d %s\n", i+1, len(attempts), attempt.name)
@@ -50,6 +53,9 @@ func flashCableRescueWithRetry(ctx context.Context, home string, marker firmware
 			return nil
 		}
 		fmt.Printf("Cable rescue write %d/%d failed: %v\n", i+1, len(attempts), err)
+		if !errors.Is(err, usb.ErrROMLoaderNotEntered) && !errors.Is(err, usb.ErrNotESP8266AppImage) {
+			untouched = false
+		}
 		if ctx.Err() != nil || errors.Is(err, usb.ErrNotESP8266AppImage) || i == len(attempts)-1 {
 			break
 		}
@@ -59,9 +65,11 @@ func flashCableRescueWithRetry(ctx context.Context, home string, marker firmware
 		case <-time.After(cableRescueRetryPause):
 		}
 	}
-	if err != nil && !started {
-		// No erase was accepted: the old firmware is still there and answers
-		// its own hello, so no marker may authorize a write without one.
+	if err != nil && !started && untouched && !resumed {
+		// Nothing reached the flash and the VibeTV was not half-written
+		// before: its old firmware still answers its own hello, so no marker
+		// may authorize a write without one. A resumed rescue keeps its marker:
+		// that VibeTV was erased before this run began.
 		if clearErr := firmwareupdate.ClearRescueMarker(home); clearErr != nil {
 			fmt.Printf("warning: clearing the unused rescue marker failed: %v\n", clearErr)
 		}
