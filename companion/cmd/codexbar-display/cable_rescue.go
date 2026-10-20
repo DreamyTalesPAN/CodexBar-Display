@@ -50,12 +50,8 @@ func flashCableRescueWithRetry(ctx context.Context, home string, marker firmware
 	if saveErr := firmwareupdate.SaveRescueMarker(home, marker); saveErr != nil {
 		return fmt.Errorf("save the rescue marker before writing: %w", saveErr)
 	}
-	// A resumed rescue writes only the chip its marker recorded. The chip is
-	// saved into the marker before the erase, so a later resume can check it.
-	expectChip := ""
-	if resumed {
-		expectChip = marker.ChipMAC
-	}
+	// The chip is saved into the marker before the erase. Every later attempt
+	// writes only that chip: a resumed rescue starts with the chip it recorded.
 	recordChip := func(chip string) error {
 		marker.ChipMAC = chip
 		return firmwareupdate.SaveRescueMarker(home, marker)
@@ -75,7 +71,7 @@ func flashCableRescueWithRetry(ctx context.Context, home string, marker firmware
 			// The marker saved above stays as it is: rewriting it after the
 			// erase could only damage the one thing that leads back here.
 			OnWriteStarted:   func() { started = true },
-			ExpectChip:       expectChip,
+			ExpectChip:       marker.ChipMAC,
 			OnChipIdentified: recordChip,
 		})
 		if err == nil {

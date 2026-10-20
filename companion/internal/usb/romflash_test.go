@@ -26,6 +26,8 @@ type fakeROM struct {
 	begin        []byte
 	written      map[uint32][]byte
 	registers    map[uint32]uint32
+	// onBegin runs when FLASH_BEGIN arrives, for a chip that changes after an erase.
+	onBegin func()
 }
 
 func newFakeROM() *fakeROM {
@@ -83,6 +85,9 @@ func (f *fakeROM) handle(packet []byte) {
 		return
 	case romCmdFlashBegin:
 		f.begin = append([]byte(nil), data...)
+		if f.onBegin != nil {
+			f.onBegin()
+		}
 	case romCmdReadReg:
 		addr := binary.LittleEndian.Uint32(data)
 		value, known := f.registers[addr]
@@ -417,5 +422,18 @@ func TestROMLoaderReportsWhenTheWriteStarted(t *testing.T) {
 	}
 	if started != romFlashAttempts {
 		t.Fatalf("write started reported %d times, want %d", started, romFlashAttempts)
+	}
+}
+
+// After an earlier FLASH_BEGIN the erase may already have happened, so a chip
+// that reads differently afterwards must not count as an untouched VibeTV.
+func TestROMLoaderDoesNotTreatAChipChangeAfterAnEraseAsUntouched(t *testing.T) {
+	rom := newFakeROM()
+	rom.rejectBlock, rom.rejections = 1, romWriteBlockAttempts
+	rom.onBegin = func() { rom.registers[romEfuseMAC0] = 0x99 }
+	loader := &romLoader{port: rom, sleep: func(time.Duration) {}, onChipIdentified: func(string) error { return nil }}
+	err := loader.flashAndBoot(context.Background(), testAppImage(3*romFlashBlockSize))
+	if err == nil || errors.Is(err, ErrBeforeErase) || !strings.Contains(err.Error(), "may have erased") {
+		t.Fatalf("flash error = %v, want a failure after the erase", err)
 	}
 }

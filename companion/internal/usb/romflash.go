@@ -152,6 +152,9 @@ type romLoader struct {
 	expectChip       string
 	onChipIdentified func(chip string) error
 	pending          []byte
+	// beginSent is set before FLASH_BEGIN goes out: from then on an erase may
+	// have happened even when its reply was lost.
+	beginSent bool
 }
 
 func (l *romLoader) connect(ctx context.Context) error {
@@ -203,6 +206,7 @@ func (l *romLoader) flash(ctx context.Context, image []byte) error {
 	blocks := (len(image) + romFlashBlockSize - 1) / romFlashBlockSize
 	eraseTimeout := max(romCommandTimeout, romEraseTimeoutPerMB*time.Duration(len(image))/(1<<20))
 	begin := romWords(romEraseSize(0, len(image)), uint32(blocks), romFlashBlockSize, 0)
+	l.beginSent = true
 	if err := l.command(romCmdFlashBegin, begin, 0, eraseTimeout); err != nil {
 		return fmt.Errorf("erase flash: %w", err)
 	}
@@ -290,31 +294,42 @@ func (l *romLoader) readRegister(addr uint32) (uint32, error) {
 	return binary.LittleEndian.Uint32(frame[4:8]), nil
 }
 
-// checkChip reads the chip identity before the erase. A different chip, an
-// unreadable one, or an identity the caller refuses stops the write with
-// ErrBeforeErase, while the old firmware is still in place.
+// checkChip reads the chip identity before an erase. A different chip, an
+// unreadable one, or an identity the caller refuses stops the write. Once a
+// chip is identified, every later attempt of this write must show that chip.
 func (l *romLoader) checkChip() error {
 	if l.expectChip == "" && l.onChipIdentified == nil {
 		return nil
 	}
 	mac0, err := l.readRegister(romEfuseMAC0)
 	if err != nil {
-		return fmt.Errorf("%w: read chip identity: %v", ErrBeforeErase, err)
+		return l.chipCheckError(fmt.Errorf("read chip identity: %w", err))
 	}
 	mac1, err := l.readRegister(romEfuseMAC1)
 	if err != nil {
-		return fmt.Errorf("%w: read chip identity: %v", ErrBeforeErase, err)
+		return l.chipCheckError(fmt.Errorf("read chip identity: %w", err))
 	}
 	chip := fmt.Sprintf("%08x%08x", mac1, mac0)
 	if l.expectChip != "" && chip != l.expectChip {
-		return fmt.Errorf("%w: the chip is %s, expected %s", ErrBeforeErase, chip, l.expectChip)
+		return l.chipCheckError(fmt.Errorf("the chip is %s, expected %s", chip, l.expectChip))
 	}
 	if l.onChipIdentified != nil {
 		if err := l.onChipIdentified(chip); err != nil {
-			return fmt.Errorf("%w: %v", ErrBeforeErase, err)
+			return l.chipCheckError(err)
 		}
 	}
+	l.expectChip = chip
 	return nil
+}
+
+// chipCheckError marks a stop before the erase. Only a loader that has not
+// sent FLASH_BEGIN can say the erase did not happen: an earlier attempt of the
+// same write may have erased the chip already.
+func (l *romLoader) chipCheckError(err error) error {
+	if l.beginSent {
+		return fmt.Errorf("chip check after an earlier flash begin, which may have erased: %w", err)
+	}
+	return fmt.Errorf("%w: %v", ErrBeforeErase, err)
 }
 
 func (l *romLoader) readFrame(deadline time.Time) ([]byte, error) {
