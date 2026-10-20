@@ -60,7 +60,9 @@ var (
 	readCableFirmwareHelloFn                           = usb.ReadDeviceHello
 	transferCableFirmwareFn                            = usb.TransferFirmware
 	findLegacyCableVibeTVFn                            = usb.FindLegacyCableVibeTV
-	flashCableRescueFn                                 = usb.FlashESP8266AppImage
+	flashCableRescueFn                                 = usb.FlashESP8266AppImageWithOptions
+	listCablePortsFn                                   = usb.ListPorts
+	cableRescueRetryPause                              = 3 * time.Second
 	cableFirmwareVerifyTimeout                         = 120 * time.Second
 	cableFirmwareVerifyPollInterval                    = time.Second
 	firmwareRawDialContextFn                           = dialFirmwareRawConnection
