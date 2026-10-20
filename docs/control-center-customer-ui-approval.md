@@ -8516,3 +8516,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none; no visible change.
 - Scope: merge of `origin/claude/group-calm-redesign` (`apps/control-center/src/components/vibetv-3d-preview.tsx`, `overview-screen.tsx`, `control-center-shell.tsx`, `setup/setup-device-dialogs.tsx` and their tests) and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #802: build 2b QA, the Appearance cards have the template's inner space (frame 4)
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the picture on each Appearance card was 2 px smaller on every side than drawn, because the card's 1 px border came on top of the 10 px inner space → the card's inner space is 10 px including the border, so the picture is as wide as in the template (255 px instead of 253 px in an 800 px window) and the name and the Edit / Install row sit 1 px further out. Nothing else changes.
+- Approved customer-visible result: the cards of Appearance look like frame 4 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
