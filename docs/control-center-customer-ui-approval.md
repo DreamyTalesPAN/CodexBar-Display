@@ -8439,3 +8439,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the Overview picture of the VibeTV and the line of facts below it look like frame 1 of "Calm Redesign - alle Screens".
 - Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx`, `apps/control-center/src/components/overview-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #784: build 2b QA, the keyboard focus ring of a device-picker row has rounded corners
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the focus ring around the row you reach with Tab in "Your VibeTV is not reachable" had square corners → it has rounded corners like the other rings of the dialog. Nothing else changes.
+- Approved customer-visible result: the picker row shows a rounded focus ring when reached by keyboard.
+- Scope: `apps/control-center/src/components/setup/setup-device-dialogs.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
