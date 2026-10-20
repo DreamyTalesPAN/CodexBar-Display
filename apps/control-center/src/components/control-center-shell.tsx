@@ -175,7 +175,7 @@ export function ControlCenterShell({
             <header
               className={cn(
                 "control-center-shell__header mt-9 flex h-10 items-center justify-between gap-4 bg-background px-5 sm:px-7 lg:px-12",
-                growingMargin && "md:px-[clamp(48px,4cqw,96px)]",
+                growingMargin && "md:px-[clamp(48px,4cqw,96px)] lg:px-[clamp(48px,4cqw,96px)]",
               )}
             >
               <div className="flex min-w-0 items-center gap-3">
@@ -196,7 +196,7 @@ export function ControlCenterShell({
             className={cn(
               "control-center-shell__content px-5 sm:px-7 lg:px-12",
               themeStudioOpen ? "pt-9" : "py-0",
-              growingMargin && !themeStudioOpen && "md:px-[clamp(48px,4cqw,96px)]",
+              growingMargin && !themeStudioOpen && "md:px-[clamp(48px,4cqw,96px)] lg:px-[clamp(48px,4cqw,96px)]",
               // Overview fills the window's height: its numbers sit at the bottom (#784 point 1).
               activeTab === "overview" && !themeStudioOpen && "flex flex-1 flex-col",
             )}
