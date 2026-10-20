@@ -8033,3 +8033,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #821 carousel: none yet; waits for Paul's review of the rendered result (stills and animation in `review-1016/ui/821-carousel/`).
 - Scope: #821 carousel: `apps/control-center/src/components/setup/setup-display-mode-screen.tsx`, `apps/control-center/src/components/setup/setup-display-theme-tiles.tsx`, `apps/control-center/src/app/globals.css` (one keyframe), the #821 carousel tests and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #821 carousel movement only, no new content
+
+## 2026-10-20 — #821 carousel: at most three tiles visible
+
+- User approval: decided on 20.10.2026 for the #821 carousel (communicator, on Paul's behalf): at most three tiles show; rendered #821 result pending Paul's review.
+- Approved customer-visible result: the #821 carousel shows the front tile and two behind it, as in frame 22; further providers wait invisibly at the back and fade in as the strip turns; nothing is cut off or shrunk.
+- Scope: #821 carousel in `apps/control-center/src/components/setup/setup-display-theme-tiles.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #821 carousel limit, no new content

@@ -164,6 +164,26 @@ describe("Automatic theme tiles rotate as a carousel (#821 carousel)", () => {
     expect(front?.dataset.state).toBe("skeleton");
   });
 
+  it("shows at most three tiles; further providers wait invisibly and rotate into view", async () => {
+    // Paul, 20.10.2026: front + two behind, nothing cut off or shrunk.
+    show([live("Claude", 64), live("Codex", 28), live("Cursor", 18), live("Gemini", 50), live("Copilot", 12)]);
+    await settle();
+    const visible = () =>
+      tiles(0)
+        .filter((tile) => tile.getAttribute("aria-hidden") !== "true")
+        .sort((a, b) => Number(a.dataset.position) - Number(b.dataset.position))
+        .map((tile) => tile.dataset.provider);
+    expect(visible()).toEqual(["Claude", "Codex", "Cursor"]);
+    for (const tile of tiles(0).filter((t) => Number(t.dataset.position) >= 3)) {
+      expect(tile.className).toContain("opacity-0");
+      expect(tile.style.transform).toBe(
+        tiles(0).find((t) => t.dataset.position === "2")?.style.transform,
+      );
+    }
+    act(() => { vi.advanceTimersByTime(ROTATION_HOLD_MS); });
+    expect(visible()).toEqual(["Codex", "Cursor", "Gemini"]);
+  });
+
   it("does not rotate Manual", async () => {
     show(three(), "fixed");
     await settle();

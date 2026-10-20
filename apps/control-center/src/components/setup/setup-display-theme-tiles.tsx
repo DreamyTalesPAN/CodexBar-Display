@@ -91,6 +91,10 @@ const FRONT_SIZE = 104;
 const BEHIND_SIZE = 84;
 const TILE_GAP = 10;
 const BEHIND_SCALE = BEHIND_SIZE / FRONT_SIZE;
+// Paul, 20.10.2026: at most three tiles show (the front one and two behind, as
+// in the template). Further providers wait invisibly at the back and come into
+// view as the strip turns; nothing is cut off or shrunk.
+const VISIBLE_TILES = 3;
 
 /** Where a tile sits for a given place in line: 0 is the front. */
 function slotOffset(slot: number): number {
@@ -120,7 +124,8 @@ export function ThemeTileStrip({
   reducedMotion?: boolean;
 }) {
   const count = frames.length;
-  const width = count ? slotOffset(count - 1) + (count > 1 ? BEHIND_SIZE : FRONT_SIZE) : 0;
+  const shown = Math.min(count, VISIBLE_TILES);
+  const width = shown ? slotOffset(shown - 1) + (shown > 1 ? BEHIND_SIZE : FRONT_SIZE) : 0;
   // The back tile only fades in once the strip has moved at all, so the first
   // draw is still.
   const [moved, setMoved] = useState(index !== 0);
@@ -140,7 +145,7 @@ export function ThemeTileStrip({
           return (
             <ThemeTile
               active={slot === 0}
-              enters={!reducedMotion && moved && count > 1 && slot === count - 1}
+              enters={!reducedMotion && moved && count > 1 && count <= VISIBLE_TILES && slot === count - 1}
               frame={frame}
               key={`${frame.providerLabel}-${position}`}
               pack={pack}
@@ -176,15 +181,20 @@ function ThemeTile({
         : null,
     [frame.frame, frame.frameAt],
   );
-  const transform = `translateX(${slotOffset(slot)}px) scale(${active ? 1 : BEHIND_SCALE})`;
+  // A waiting tile sits invisibly on the last visible place, so it fades in
+  // there when its turn comes; one that leaves the front fades out in place
+  // first and only then moves there.
+  const waiting = slot >= VISIBLE_TILES;
+  const transform = `translateX(${slotOffset(Math.min(slot, VISIBLE_TILES - 1))}px) scale(${active ? 1 : BEHIND_SCALE})`;
   return (
     <span
       className={cn(
         "absolute top-0 left-0 block overflow-hidden rounded-[6px] bg-black",
-        active ? "opacity-100" : "opacity-30",
+        active ? "opacity-100" : waiting ? "opacity-0" : "opacity-30",
         !reducedMotion &&
           "transition-[transform,opacity] duration-500 ease-out will-change-transform",
       )}
+      aria-hidden={waiting || undefined}
       data-position={slot}
       data-provider={frame.providerLabel}
       data-slot="display-mode-tile"
@@ -197,6 +207,10 @@ function ThemeTile({
         // The tile that just left the front fades out where it stood and in at
         // the back (vibetv-tile-wrap) instead of sliding across the others.
         transitionProperty: enters ? "opacity" : undefined,
+        transition:
+          waiting && !reducedMotion
+            ? "opacity 250ms ease-out, transform 0s linear 250ms"
+            : undefined,
         transform,
         ["--tile-to" as string]: transform,
         transformOrigin: "left center",
