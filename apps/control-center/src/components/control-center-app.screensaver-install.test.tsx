@@ -207,7 +207,9 @@ it.each([
     .find((item) => within(item).queryByText(title))!;
   fireEvent.click(within(row).getByRole("button", { name: "Install" }));
   await wait(1);
-  expect(screen.getByText(`> Preparing ${noun.toLowerCase()} install.`)).toBeTruthy();
+  // The card shows no steps; its Install button says "Installing" (the lines are for the failure dialog below).
+  expect(within(row).getByRole("button", { name: "Installing" })).toBeTruthy();
+  expect(screen.queryByText(`> Preparing ${noun.toLowerCase()} install.`)).toBeNull();
 
   answerInstall(jsonResponse({ ok: true, job }, 202));
   await wait(3);

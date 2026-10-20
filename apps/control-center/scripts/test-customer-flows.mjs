@@ -8902,8 +8902,12 @@ async function testReloadRestoresRunningThemeInstall(browser, appUrl) {
   await page
     .getByRole("heading", { name: "Appearance", exact: true })
     .waitFor({ timeout: 10_000 });
+  // The card shows no notice: the finished install is the pill on its picture.
   await page
-    .getByText("Screensaver is ready on VibeTV.", { exact: true })
+    .getByRole("listitem")
+    .filter({ hasText: "Fixture Night Clock Screensaver" })
+    .getByTestId("theme-status-pill")
+    .filter({ hasText: /^(Installed|Active)$/ })
     .waitFor({ timeout: 10_000 });
   assert(
     installStatusRequests >= 2,
@@ -10852,7 +10856,16 @@ async function testThemeInstallStatusStaysCustomerOnly(browser, appUrl) {
   await popup.press("Escape");
   await page.waitForTimeout(250);
   assert(await popup.count() === 0, "Acknowledged theme failure must stay dismissed through polling");
-  await page.getByRole("button", { name: "Try again", exact: true }).click();
+  // The card has no "Try again" row (it never changes height): its own Install retries.
+  assert(
+    (await page.getByRole("button", { name: "Try again", exact: true }).count()) === 0,
+    "A dismissed theme failure must not add a Try again row to the card",
+  );
+  await page
+    .getByRole("listitem")
+    .filter({ hasText: "Fixture Synthwave Theme" })
+    .getByRole("button", { name: "Install", exact: true })
+    .click();
   await waitForCondition(() => installRequests.length === 2, "Theme retry must submit exactly one more install");
   await popup.waitFor();
   await assertNoMobileOverflow(page);
@@ -10923,8 +10936,19 @@ async function testThemeInstallShowsIntermediateProgress(browser, appUrl) {
     .getByRole("button", { name: "Install" });
   await installButton.waitFor({ timeout: 10_000 });
   await installButton.click();
-  await page.getByText("Uploading theme files.").waitFor({ timeout: 10_000 });
-  await page.getByText("Uploaded theme file 1.").waitFor({ timeout: 10_000 });
+  // The card's own Install button turns into Installing with a spinner; the
+  // card shows no steps (7198 review).
+  const synthwaveRow = page
+    .getByRole("listitem")
+    .filter({ hasText: "Fixture Synthwave Theme" });
+  await synthwaveRow
+    .getByRole("button", { name: "Installing", exact: true })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    (await synthwaveRow.getByText("Uploading theme files.").count()) === 0 &&
+      (await synthwaveRow.getByRole("progressbar").count()) === 0,
+    "A running install must add no steps or progress bar to the card",
+  );
   // Scoped to the row under test: any theme the device already had also reads
   // "Installed", so the unscoped locator raced two matches.
   await page
@@ -13291,9 +13315,11 @@ async function assertThemeLibraryLockedBehindSetup(page) {
 async function assertSelectedThemeRow(page, themeTitle) {
   const row = page.getByRole("listitem").filter({ hasText: themeTitle });
   await row.waitFor({ timeout: 10_000 });
+  // Every card looks alike since the 7197 review (point 7): a selected row has
+  // no look of its own, so the row being there is what is left to check.
   assert(
-    (await row.getAttribute("data-variant")) === "muted",
-    `${themeTitle} should be the selected theme row`,
+    (await row.getAttribute("data-variant")) === "outline",
+    `${themeTitle} should be a theme row`,
   );
 }
 
