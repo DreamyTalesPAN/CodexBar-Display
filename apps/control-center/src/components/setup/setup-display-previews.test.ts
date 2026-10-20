@@ -6,6 +6,7 @@ import {
   displayPreviewsFor,
   providerSlotsFor,
   withResetTrust,
+  withActivityExpiry,
   withSentActivity,
 } from "./setup-display-previews";
 
@@ -450,5 +451,27 @@ describe("withResetTrust on a later clock reading", () => {
     )!.frame!;
 
     expect(withResetTrust(stale, stamped, new Date("2026-10-20T08:02:00Z")).resetTrust).toBe("stale");
+  });
+});
+
+describe("withActivityExpiry", () => {
+  const sentAt = "2026-10-20T08:00:00Z";
+  const at = (secs: number) => new Date(new Date(sentAt).getTime() + secs * 1000);
+
+  it("lets a coding verdict run out after its TTL, as VibeTV does (#369)", () => {
+    const [shown] = withSentActivity(
+      [{ providerLabel: "Codex", frame: { provider: "codex" }, resetLabel: null, windows: [] }],
+      { frame: { provider: "codex", activity: "coding", activityTtlSecs: 90 }, savedAt: sentAt },
+    );
+    expect(shown.activityAt).toBe(sentAt);
+    expect(withActivityExpiry(shown.frame!, shown.activityAt, at(89)).activity).toBe("coding");
+    expect(withActivityExpiry(shown.frame!, shown.activityAt, at(90)).activity).toBe("idle");
+  });
+
+  it("keeps a verdict without a TTL or without a receipt time", () => {
+    expect(withActivityExpiry({ activity: "coding" }, sentAt, at(9999)).activity).toBe("coding");
+    expect(
+      withActivityExpiry({ activity: "coding", activityTtlSecs: 90 }, undefined, at(9999)).activity,
+    ).toBe("coding");
   });
 });

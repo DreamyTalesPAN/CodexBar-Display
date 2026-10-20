@@ -8082,3 +8082,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #821 the setup tile draws the same activity picture, theme and reset text as the VibeTV for the same frame; nothing else changes.
 - Scope: #821 `apps/control-center/src/components/setup/setup-display-previews.ts`, `setup-display-theme-tiles.tsx`, `setup-wizard.tsx`, their tests and this approval record; the unreferenced scratch scripts `apps/control-center/scripts/shots.mjs` and `shots-base.mjs` are removed. Pull request branch only, not merged, not released.
 - What's new: none — #821 Codex fixes not announced
+
+## 2026-10-20 — #821: the setup tile lets a "coding" verdict run out like VibeTV (Codex review)
+
+- User approval: pending — #821 Codex fix on the single setup tile; the rendered result is pending Paul's review. Before → after: #821 the tile kept the coding sprite of activity-sensitive themes (Clippy, Tiny Office) for as long as setup stayed open → #821 past the sent frame's activity TTL the tile shows the idle sprite, as VibeTV does on its own (#369).
+- Approved customer-visible result: #821 the setup tile draws the same sprite as the VibeTV at every moment.
+- Scope: #821 `apps/control-center/src/components/setup/setup-display-previews.ts`, `setup-display-theme-tiles.tsx`, `setup-display-mode-screen.tsx` (type), `apps/control-center/src/components/live-vibetv-preview.tsx` (frame type), the test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #821 Codex fix not announced

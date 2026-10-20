@@ -92,6 +92,8 @@ export type DisplayFrame = {
   usageSlots?: UsageSlotFrame[];
   providerSlots?: UsageSlotFrame[];
   activity?: string;
+  /** How long VibeTV keeps showing `activity` without a fresh frame; 0 or absent: no expiry. */
+  activityTtlSecs?: number;
   sessionTokens?: number;
   weekTokens?: number;
   totalTokens?: number;

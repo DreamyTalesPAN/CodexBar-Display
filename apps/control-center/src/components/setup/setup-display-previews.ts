@@ -312,16 +312,39 @@ export function displayPreviewsFor(
  */
 export function withSentActivity(
   previews: SetupDisplayModePreview[],
-  sent: { frame?: DisplayFrame } | null | undefined,
+  sent: { frame?: DisplayFrame; savedAt?: string } | null | undefined,
 ): SetupDisplayModePreview[] {
   const provider = sent?.frame?.provider;
   const activity = sent?.frame?.activity;
   if (!provider || !activity) {
     return previews;
   }
+  // The verdict carries its TTL and the time VibeTV got it, so the tile can let
+  // it run out the way the device does (withActivityExpiry).
+  const activityTtlSecs = sent.frame?.activityTtlSecs;
   return previews.map((preview) =>
-    preview.frame?.provider === provider && preview.frame.activity !== activity
-      ? { ...preview, frame: { ...preview.frame, activity } }
+    preview.frame?.provider === provider
+      ? {
+          ...preview,
+          activityAt: sent.savedAt,
+          frame: { ...preview.frame, activity, activityTtlSecs },
+        }
       : preview,
   );
+}
+
+/**
+ * Mirrors the device (#369): past `activityTtlSecs` without a fresh frame,
+ * counted from receipt, VibeTV shows idle on its own. Zero or absent: no expiry.
+ */
+export function withActivityExpiry(
+  frame: DisplayFrame,
+  activityAt: string | undefined,
+  now: Date,
+): DisplayFrame {
+  const ttl = frame.activityTtlSecs ?? 0;
+  if (!frame.activity || frame.activity === "idle" || ttl <= 0 || !activityAt) {
+    return frame;
+  }
+  return secondsSince(activityAt, now) >= ttl ? { ...frame, activity: "idle" } : frame;
 }

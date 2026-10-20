@@ -13,7 +13,7 @@ import {
   type ThemeRenderPack,
 } from "../live-vibetv-preview";
 import type { SetupDisplayModePreview } from "./setup-display-mode-screen";
-import { withResetTrust } from "./setup-display-previews";
+import { withActivityExpiry, withResetTrust } from "./setup-display-previews";
 
 /** The theme VibeTV is showing, which the tiles draw. */
 export type SetupDisplayModeTheme = {
@@ -223,11 +223,16 @@ function ThemeTile({
             frame.frameAt,
             // As the device does on every draw: an expired deadline or trust
             // horizon turns the frame stale and clears its countdowns.
-            withResetTrust(frame.frame, frame.frameAt, now),
+            // ... and a coding verdict past its TTL shows idle (#369).
+            withActivityExpiry(
+              withResetTrust(frame.frame, frame.frameAt, now),
+              frame.activityAt,
+              now,
+            ),
             now,
           )
         : null,
-    [frame.frame, frame.frameAt, now],
+    [frame.frame, frame.frameAt, frame.activityAt, now],
   );
   return (
     <span

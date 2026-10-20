@@ -61,6 +61,8 @@ export type SetupDisplayModePreview = {
   frame?: DisplayFrame;
   /** When those readings were taken, so reset countdowns keep counting down. */
   frameAt?: string;
+  /** When VibeTV received the frame whose activity this preview shows (its TTL counts from there). */
+  activityAt?: string;
   resetLabel: string | null;
   windows: { label: string; percent: number | null }[];
 };
