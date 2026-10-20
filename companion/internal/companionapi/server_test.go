@@ -12564,6 +12564,98 @@ func TestFirmwareUpdateCableRequiresVerifiedRender(t *testing.T) {
 	}
 }
 
+// Issue #835, Beelink Windows over USB, 2026-10-20: after an update the only
+// frame inside the picture check carried the same values the screen already
+// showed. The firmware redraws only when a frame changes the screen, so the
+// render counters stayed put and the customer got "the picture could not be
+// verified" for a VibeTV showing its picture normally. The same healthy live
+// picture, unchanged since before the stream restart, is a verified picture.
+// A screen that changed or broke while nothing was drawn is not.
+func TestFirmwareUpdateCableAcceptsUnchangedLivePicture(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		after    func(*deviceHealth)
+		complete bool
+	}{
+		{name: "unchanged live picture", after: func(*deviceHealth) {}, complete: true},
+		{name: "rebooted during the check", after: func(h *deviceHealth) { h.System.BootID = "boot-b" }},
+		{name: "theme render failed", after: func(h *deviceHealth) {
+			failed := false
+			h.Display.ThemeSpec.RenderOK = &failed
+			h.Display.ThemeSpec.RenderFailures = 1
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "device-cable-update", DeviceToken: "pair-token"}
+			server := newTestServer(t, cfg)
+			server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock-cable", nil }
+			server.readCableHello = func(string) (protocol.DeviceHello, error) {
+				return protocol.DeviceHello{
+					DeviceID: "device-cable-update",
+					Board:    "esp8266-smalltv-st7789",
+					Firmware: "1.0.41",
+					Features: []string{protocol.FeatureCableTransferV1, protocol.FeatureCableHealthV1},
+					Capabilities: protocol.CapabilityBlock{
+						Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable"},
+					},
+				}, nil
+			}
+			livePicture := func() deviceHealth {
+				fullCount, partialCount, renderOK := uint64(2), uint64(14), true
+				health := deviceHealth{OK: true}
+				health.System.BootID = "boot-a"
+				health.Display.ActiveTheme = "clippy"
+				health.Display.ThemeSpec.Active = true
+				health.Display.ThemeSpec.Path = "/themes/u/clippy-3-fe3fd4.json"
+				health.Display.ThemeSpec.RenderOK = &renderOK
+				health.Render.FullCount = &fullCount
+				health.Render.PartialCount = &partialCount
+				health.Render.LastKind = "theme_spec_frame"
+				return health
+			}
+			server.readCableHealth = func(string, string) (deviceHealth, error) { return livePicture(), nil }
+			server.refreshStream = func(context.Context, string) error { return nil }
+			server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+				return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
+			}
+			// The real wait hands back its last reading with the error.
+			server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+				health := livePicture()
+				tc.after(&health)
+				return health, errors.New("display render not ready: render counters did not advance")
+			}
+			server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+				_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"verifying_health","phase":"complete","outcome":"already_current","firmware":"1.0.41","observedFirmware":"1.0.41","target":"cable://vibetv","deviceId":"device-cable-update","artifactValidated":true,"helloVerified":true}`+"\n")
+				return nil
+			}
+
+			rec := httptest.NewRecorder()
+			server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`)))
+			var started firmwareUpdateJobResponse
+			if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+				t.Fatal(err)
+			}
+			var job firmwareUpdateJob
+			for attempt := 0; attempt < 100; attempt++ {
+				job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+				if job.Phase != "installing" {
+					break
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			if tc.complete {
+				if job.Phase != "complete" || job.Outcome != "already_current" || job.Result == nil || !job.Result.RenderVerified {
+					t.Fatalf("an unchanged live picture must complete the update: phase=%q outcome=%q message=%q result=%+v", job.Phase, job.Outcome, job.Message, job.Result)
+				}
+				return
+			}
+			if job.Phase != "attention" || job.Result == nil || job.Result.RenderVerified {
+				t.Fatalf("a changed or broken screen must stay unverified: phase=%q result=%+v", job.Phase, job.Result)
+			}
+		})
+	}
+}
+
 func TestFirmwareUpdateCableDoesNotOverridePostUpdateVerificationError(t *testing.T) {
 	cfg := runtimeconfig.Config{
 		ConnectionMode: "cable",
