@@ -8205,13 +8205,13 @@ issue scope, or release permission never implies UI permission.
 ## 2026-10-17 — Usage: named windows keep CodexBar's label, e.g. "Fable only" (#669)
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage: named windows keep CodexBar's label, e.g. "Fable only" (#669)
-- Approved customer-visible result: pending — a named CodexBar window keeps its label as delivered ("100% Fable only remaining"); session and weekly keep their lowercase wording ("45% session used", "26% weekly used"). No new wording.
+- Approved customer-visible result: A named CodexBar window keeps its label as delivered ("100% Fable only remaining"); session and weekly keep their lowercase wording ("45% session used", "26% weekly used"). No new wording.
 - Scope: `usage-screen.tsx` (label of named CodexBar windows), `usage-screen.test.tsx` (label expectations and one new test), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — label fix only, no new notice
 ## 2026-10-17 — Usage: plan name and extra-usage cap from CodexBar (stacked on #669)
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage: plan name and extra-usage cap from CodexBar (stacked on #669)
-- Approved customer-visible result: Pending Paul's review. A Usage tile shows the plan name CodexBar reports after the provider name, and the monthly extra-usage cap CodexBar reports with its used amount, in CodexBar's currency. Nothing is shown when CodexBar sends neither. Windows shows no cap; the plan name appears where Win-CodexBar sends one.
+- Approved customer-visible result: A Usage tile shows the plan name CodexBar reports after the provider name, and the monthly extra-usage cap CodexBar reports with its used amount, in CodexBar's currency. Nothing is shown when CodexBar sends neither. Windows shows no cap; the plan name appears where Win-CodexBar sends one.
 - Scope: `apps/control-center/src/components/usage-screen.tsx`, `control-center-types.ts`, `usage-screen.test.tsx`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — the plan name and the cap are what CodexBar already reports, shown where the tile is
 
@@ -8554,3 +8554,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #783 as described in its entries above, as seen in build 7198.
 - Scope: #783 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #783 approval record only
+
+## 2026-10-20 — #783: result lines of approved entries cleaned up
+
+- User approval: no visible change – UI approval not needed (#783 record cleanup: entries that already carry Paul's approval no longer start their result line with "pending"/"Draft")
+- Approved customer-visible result: #783 unchanged; only the wording of the approval record.
+- Scope: #783 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #783 record cleanup
