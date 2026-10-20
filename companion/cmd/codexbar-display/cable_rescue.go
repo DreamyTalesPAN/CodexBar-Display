@@ -26,6 +26,14 @@ func flashCableRescueWithRetry(ctx context.Context, home string, marker firmware
 		{0, "at the standard baud rate"},
 		{usb.ROMFallbackBaudRate, fmt.Sprintf("at %d baud", usb.ROMFallbackBaudRate)},
 	}
+	// The marker is the only way back to a VibeTV whose old firmware the loader
+	// has erased, so it must be on disk before the first write may start
+	// (Codex review on #819). Without it nothing is flashed.
+	marker.WriteStartedAt = time.Now()
+	if saveErr := firmwareupdate.SaveRescueMarker(home, marker); saveErr != nil {
+		return fmt.Errorf("save the rescue marker before writing: %w", saveErr)
+	}
+	started := false
 	var err error
 	for i, attempt := range attempts {
 		fmt.Printf("Cable rescue write %d/%d %s\n", i+1, len(attempts), attempt.name)
@@ -35,9 +43,10 @@ func flashCableRescueWithRetry(ctx context.Context, home string, marker firmware
 				fmt.Printf("Writing firmware: %d%%\n", percent)
 			},
 			OnWriteStarted: func() {
+				started = true
 				marker.WriteStartedAt = time.Now()
 				if saveErr := firmwareupdate.SaveRescueMarker(home, marker); saveErr != nil {
-					fmt.Printf("warning: saving the rescue marker failed: %v\n", saveErr)
+					fmt.Printf("warning: refreshing the rescue marker failed: %v\n", saveErr)
 				}
 			},
 		})
@@ -52,6 +61,13 @@ func flashCableRescueWithRetry(ctx context.Context, home string, marker firmware
 		case <-ctx.Done():
 			return err
 		case <-time.After(cableRescueRetryPause):
+		}
+	}
+	if err != nil && !started {
+		// No erase was accepted: the old firmware is still there and answers
+		// its own hello, so no marker may authorize a write without one.
+		if clearErr := firmwareupdate.ClearRescueMarker(home); clearErr != nil {
+			fmt.Printf("warning: clearing the unused rescue marker failed: %v\n", clearErr)
 		}
 	}
 	return err

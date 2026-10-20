@@ -152,6 +152,30 @@ func TestRunInstallUpdateCableRescueLeavesNoMarkerWhenTheLoaderNeverErased(t *te
 	}
 }
 
+func TestRunInstallUpdateCableRescueWritesNothingWhenTheMarkerCannotBeSaved(t *testing.T) {
+	_, manifestURL, _ := prepareCableFirmwareUpdateTest(t)
+	pinCableRescue(t)
+	findLegacyCableVibeTVFn = legacyRescueDevice
+	home, _ := os.UserHomeDir()
+	// A directory where the marker file belongs makes saving it fail.
+	if err := os.MkdirAll(firmwareupdate.RescueMarkerPath(home), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writes := 0
+	flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
+		writes++
+		return nil
+	}
+
+	output, err := captureStdout(t, func() error { return runInstallUpdate(rescueArgs(manifestURL)) })
+	if err == nil || writes != 0 {
+		t.Fatalf("without a saved marker nothing may be written, got err=%v writes=%d\n%s", err, writes, output)
+	}
+	if !strings.Contains(err.Error(), "rescue marker") {
+		t.Fatalf("the error should name the marker: %v", err)
+	}
+}
+
 func TestRunInstallUpdateCableRescueFlashesTheMarkedPortWhenNoHelloComes(t *testing.T) {
 	_, manifestURL, firmwareVersion := prepareCableFirmwareUpdateTest(t)
 	pinCableRescue(t)
