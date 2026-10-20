@@ -10661,6 +10661,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #822 as described in its entries above; nothing else changes.
 - Scope: #822 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #822 approval record only
+## 2026-10-20 — #784: Overview fills the window's height (7197 template point 1)
 
 ## 2026-10-20 — #784: the Copilot popup heading says it needs a GitHub sign-in
 
@@ -10763,3 +10764,16 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #817 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
 - Scope: #817 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #817 approval record only
+## 2026-10-20 — #822: approval marker after merging claude/group-calm-redesign at e51f999f
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (e51f999f) into #822; no visible change of its own; entry: #822: approval marker after merging claude/group-calm-redesign at e51f999f)
+- Approved customer-visible result: #822 as in its own entries (the calm "Update the Mac App first" dialog, dismissed per version, Paul's yes of 2026-10-20 08:55) on top of the merged calm redesign; nothing else changes.
+- Scope: the merge of e51f999f (only this approval record conflicted, resolved by keeping both sides) and this approval record. Pull request branch #822 only, not merged, not released.
+- What's new: none — merge of e51f999f, no customer-visible change of its own
+
+## 2026-10-20 — #822: approval lines rewritten to the two accepted forms
+
+- User approval: no visible change – UI approval not needed (#822 record rewrite for the gate in #823; no customer-visible change)
+- Approved customer-visible result: #822 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
+- Scope: #822 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #822 approval record only
