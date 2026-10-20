@@ -15447,3 +15447,43 @@ func TestDeviceSearchOffersAHalfWrittenVibeTVForItsRescue(t *testing.T) {
 		})
 	}
 }
+
+// A half-written VibeTV is finished from the image cached for the failed
+// rescue; the check names that version even when the manifest moved on
+// (Codex review on #819).
+func TestFirmwareLatestNamesTheCachedRescueTarget(t *testing.T) {
+	manifest := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"release":"v1.0.99","artifacts":[{"board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.10"}]}`))
+	}))
+	defer manifest.Close()
+	t.Setenv(firmwareManifestEnvVar, manifest.URL+"/firmware-manifest.json")
+	server := newTestServer(t, runtimeconfig.Config{})
+	imagePath := filepath.Join(t.TempDir(), "firmware.bin")
+	if err := os.WriteFile(imagePath, []byte("cable firmware"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte("cable firmware"))
+	if err := firmwareupdate.SaveRescueMarker(server.home, firmwareupdate.RescueMarker{
+		Port: "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
+		ImagePath: imagePath, ImageSHA256: hex.EncodeToString(sum[:]), WriteStartedAt: time.Now().Add(-time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	latest := func(firmware string) firmwareLatestResponse {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/updates/latest?board=esp8266-smalltv-st7789&firmware="+firmware, nil))
+		var got firmwareLatestResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode: %v body=%s", err, rec.Body.String())
+		}
+		return got
+	}
+	if got := latest("1.0.0"); !got.UpdateAvailable || got.LatestFirmware != "1.0.9" {
+		t.Fatalf("the half-written VibeTV must be offered the cached 1.0.9: %+v", got)
+	}
+	// Another VibeTV (other firmware) still gets the manifest's version.
+	if got := latest("1.0.5"); got.LatestFirmware != "1.0.10" {
+		t.Fatalf("another VibeTV must get the manifest version: %+v", got)
+	}
+}

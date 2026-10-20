@@ -144,6 +144,30 @@ func (s *Server) handleFirmwareLatest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A VibeTV left half-written by a failed Cable rescue is finished from the
+	// image cached for that write, not from the manifest: setup must name the
+	// version that will really be written, even if a newer release came out
+	// since (Codex review on #819).
+	if marker, ok := firmwareupdate.LoadRescueMarker(s.home, time.Now()); ok &&
+		strings.EqualFold(strings.TrimSpace(marker.Board), board) &&
+		strings.TrimSpace(marker.Firmware) == installedFirmware &&
+		firmwareupdate.RescueImageIntact(marker) {
+		target := strings.TrimSpace(marker.TargetFirmware)
+		installed, installedErr := versioning.ParseSemVer(installedFirmware)
+		next, nextErr := versioning.ParseSemVer(target)
+		if installedErr == nil && nextErr == nil && next.Compare(installed) > 0 {
+			writeJSON(w, http.StatusOK, firmwareLatestResponse{
+				CheckedAt:         checkedAt,
+				InstalledFirmware: installedFirmware,
+				LatestFirmware:    target,
+				UpdateAvailable:   true,
+				Status:            "update_available",
+				Message:           "Firmware update available.",
+			})
+			return
+		}
+	}
+
 	installedVersion, installedErr := versioning.ParseSemVer(installedFirmware)
 	if installedErr != nil {
 		writeJSON(w, http.StatusOK, firmwareLatestResponse{
