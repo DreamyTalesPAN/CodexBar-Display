@@ -250,13 +250,14 @@ describe("ControlCenterShell", () => {
     expect(screen.getByRole("navigation", { name: "Control Center" })).toBeTruthy();
   });
 
-  // Build 2b QA against the approved template: Updates and Support draw no
-  // sidebar toggle beside the title (a narrow window keeps it).
-  it("hides the sidebar toggle beside the title on Updates and Support only", () => {
+  // 7197 template points 10 and 11: Updates and Support show the panel icon
+  // beside the title like the other tabs, and their page margin is 48 px
+  // growing with the window (4cqw of the page area) up to 96 px, like Usage.
+  it("shows the sidebar toggle on every tab and grows the margin on Updates and Support", () => {
     vi.stubGlobal("matchMedia", () => ({
       matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
     }));
-    for (const [tab, hidden] of [["updates", true], ["logs", true], ["overview", false], ["settings", false]] as const) {
+    for (const [tab, grows] of [["updates", true], ["logs", true], ["overview", false], ["settings", false]] as const) {
       const { unmount } = render(
         <TooltipProvider>
           <ControlCenterShell activeTab={tab} onTabChange={vi.fn()}>
@@ -265,7 +266,10 @@ describe("ControlCenterShell", () => {
         </TooltipProvider>,
       );
       const toggle = screen.getByRole("button", { name: "Open navigation" });
-      expect(toggle.className.split(" ").includes("md:hidden")).toBe(hidden);
+      expect(toggle.className.split(" ")).not.toContain("md:hidden");
+      const margin = "md:px-[clamp(48px,4cqw,96px)]";
+      expect(document.querySelector(".control-center-shell__header")?.className.includes(margin)).toBe(grows);
+      expect(document.querySelector(".control-center-shell__content")?.className.includes(margin)).toBe(grows);
       unmount();
     }
   });

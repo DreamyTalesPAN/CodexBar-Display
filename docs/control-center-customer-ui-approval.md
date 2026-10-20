@@ -10046,6 +10046,27 @@ issue scope, or release permission never implies UI permission.
 - Scope: #784 focus ring on open: `apps/control-center/src/components/ui/dialog.tsx`, `apps/control-center/src/components/ui/alert-dialog.tsx`, `apps/control-center/src/components/whats-new-dialog.tsx`, the two confirmation dialogs that set `autoFocus`, their tests, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #784 focus ring on open: no new content
 
+## 2026-10-20 — #798: approval marker after merging claude/group-calm-redesign
+
+- User approval: Merge of claude/group-calm-redesign into this branch; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #798: approval marker for the merge of claude/group-calm-redesign at 315b6e57 (gate fix)
+
+- User approval: merge of claude/group-calm-redesign 315b6e57 into #798; no visible change of its own; not seen by Paul. This entry repeats the marker above with unique lines, so the gate reads it.
+- Approved customer-visible result: #798 as in its own entries (pending, Paul reviews) plus the entries merged with 315b6e57; nothing else changes.
+- Scope: this approval record for the merge of 315b6e57. Pull request branch #798 only, not merged, not released.
+- What's new: none — merge of 315b6e57, no customer-visible change of its own
+
+## 2026-10-20 — #798: approval marker after merging claude/group-calm-redesign at ece7b388
+
+- User approval: merge of claude/group-calm-redesign (ece7b388) into #798; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: #798 as in its own entries (pending, Paul reviews) plus the entries merged with ece7b388; nothing else changes.
+- Scope: the merge of ece7b388 and this approval record. Pull request branch #798 only, not merged, not released.
+- What's new: none — merge of ece7b388, no customer-visible change of its own
+
 ## 2026-10-20 — #784: Overview fills the window's height (7197 template point 1)
 
 - User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #784 point 1 (Overview). Before → after: #784 point 1: the Overview was a block under the title, with the four numbers right below the VibeTV and a 392 px VibeTV → #784 point 1: the page fills the window's height, the four numbers sit at the bottom (32 px below them), "VibeTV is connected" and the VibeTV are centred as one group in the space above, and the VibeTV image is 440 px wide.
@@ -10073,3 +10094,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #784 points 1 and 5: as in the frames `#overview` and `#settings-dropdown` of "Calm Redesign - alle Screens" at 1920 × 1080 and about 1000 × 700.
 - Scope: #784 points 1 and 5: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/ui/select.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #784 points 1 and 5 (picture check): no new content
+
+## 2026-10-20 — #798: approval marker after merging claude/group-calm-redesign at fd754339
+
+- User approval: merge of claude/group-calm-redesign (fd754339, #784 points 1, 4, 5 of the 7197 template) into #798; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: #798 as in its own entries (pending, Paul reviews) plus the entries of #784 (pending, Paul reviews).
+- Scope: the merge of fd754339 and this approval record. Pull request branch #798 only, not merged, not released.
+- What's new: none — merge of fd754339, no customer-visible change of its own
+
+## 2026-10-20 — #798: Updates without width limit, panel icon in the header, growing page margin (7197 template point 10)
+
+- User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #798 point 10 (Updates). Before → after: #798 point 10: the Updates page was at most 760 px wide, drew no panel icon beside its title on a window wider than 768 px, and had the fixed side margin of the other tabs → #798 point 10: no width limit, the header shows the panel icon like the other tabs, and the page margin is as on Usage: 48 px, growing with the window (4 % of the page width) up to 96 px.
+- Approved customer-visible result: #798 point 10: Updates as in frame `#updates` of "Calm Redesign - alle Screens" (pictures 10 and 10b, right side), in a large and a small window.
+- Scope: #798 point 10: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/control-center-shell.tsx` (the same margin and panel-icon change that #803 point 11 makes for Support, so the two merge cleanly), its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #798 point 10: no new content, the same page with a wider layout

@@ -342,7 +342,7 @@ export function UpdatesScreen({
       : "What's new";
 
   return (
-    <div className="max-w-[760px] pb-10 text-[14px] leading-normal">
+    <div className="pb-10 text-[14px] leading-normal">
       {/*
         The shell draws the page title on its own line and leaves the right of
         it free; this row sits on that line, as in the design.
