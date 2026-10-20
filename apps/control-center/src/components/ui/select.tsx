@@ -81,7 +81,7 @@ function SelectContent({
         <SelectPrimitive.Viewport
           data-position={position}
           className={cn(
-            position === "popper" && "w-full min-w-(--radix-select-trigger-width)"
+            position === "popper" && "w-full"
           )}
         >
           {children}

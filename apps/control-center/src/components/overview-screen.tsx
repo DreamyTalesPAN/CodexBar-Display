@@ -177,7 +177,7 @@ export function OverviewScreen({
   }, []);
 
   return (
-    <div className="mx-auto flex w-full max-w-[1180px] flex-1 flex-col pb-8">
+    <div className="flex w-full flex-1 flex-col pb-8">
       {/* The page fills the window's height (#784 point 1): the numbers sit at
           the bottom, "VibeTV is connected" and the device are centred as one
           group in the space above them. */}
@@ -241,7 +241,7 @@ export function OverviewScreen({
           )}
         </div>
 
-        <dl className="mt-auto grid w-full grid-cols-2 gap-x-8 gap-y-5 border-t border-foreground/10 pt-5 text-[13px] lg:grid-cols-4">
+        <dl className="mt-auto grid w-full grid-cols-2 gap-x-8 gap-y-5 border-t border-foreground/10 pt-5 text-[13px] min-[960px]:grid-cols-4">
           <Fact
             label={windowsHost ? "App" : "Mac App"}
             line={updateLine(macAppUpdate)}

@@ -8509,3 +8509,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #784 point 5: dropdown as in frames `#settings-dropdown` and `#controls-focus` of "Calm Redesign - alle Screens" (picture 05, right side).
 - Scope: #784 point 5: `apps/control-center/src/components/ui/select.tsx`, `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, the two browser test scripts that drive those dropdowns, the select test, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #784 point 5: no new content, the same choices in a different list
+
+## 2026-10-20 — #784: Overview numbers span the window and the dropdown list is as wide as its field (7197 points 1 and 5, picture check)
+
+- User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #784 points 1 and 5, after the picture comparison with the template. Before → after: #784 point 1 (picture check): the four numbers were capped at 1180 px width and went to two columns below 1024 px window width → they span the page width as in the template and stay in four columns from 960 px; #784 point 5 (picture check): the dropdown list was 12 px wider than its field → it is exactly as wide as the field.
+- Approved customer-visible result: #784 points 1 and 5: as in the frames `#overview` and `#settings-dropdown` of "Calm Redesign - alle Screens" at 1920 × 1080 and about 1000 × 700.
+- Scope: #784 points 1 and 5: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/ui/select.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #784 points 1 and 5 (picture check): no new content
