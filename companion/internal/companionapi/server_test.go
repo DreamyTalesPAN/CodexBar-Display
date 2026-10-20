@@ -12574,12 +12574,16 @@ func TestFirmwareUpdateCableRequiresVerifiedRender(t *testing.T) {
 func TestFirmwareUpdateCableAcceptsUnchangedLivePicture(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
+		lastKind string
 		after    func(*deviceHealth)
 		complete bool
 	}{
-		{name: "unchanged live picture", after: func(*deviceHealth) {}, complete: true},
-		{name: "rebooted during the check", after: func(h *deviceHealth) { h.System.BootID = "boot-b" }},
-		{name: "theme render failed", after: func(h *deviceHealth) {
+		{name: "unchanged live picture", lastKind: "theme_spec_frame", after: func(*deviceHealth) {}, complete: true},
+		// Beelink, clippy: the minute countdown was the last thing drawn.
+		{name: "unchanged picture after the countdown", lastKind: "reset", after: func(*deviceHealth) {}, complete: true},
+		{name: "parked on the setup screen", lastKind: "connected_setup", after: func(*deviceHealth) {}},
+		{name: "rebooted during the check", lastKind: "theme_spec_frame", after: func(h *deviceHealth) { h.System.BootID = "boot-b" }},
+		{name: "theme render failed", lastKind: "theme_spec_frame", after: func(h *deviceHealth) {
 			failed := false
 			h.Display.ThemeSpec.RenderOK = &failed
 			h.Display.ThemeSpec.RenderFailures = 1
@@ -12610,7 +12614,7 @@ func TestFirmwareUpdateCableAcceptsUnchangedLivePicture(t *testing.T) {
 				health.Display.ThemeSpec.RenderOK = &renderOK
 				health.Render.FullCount = &fullCount
 				health.Render.PartialCount = &partialCount
-				health.Render.LastKind = "theme_spec_frame"
+				health.Render.LastKind = tc.lastKind
 				return health
 			}
 			server.readCableHealth = func(string, string) (deviceHealth, error) { return livePicture(), nil }

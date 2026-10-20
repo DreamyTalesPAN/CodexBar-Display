@@ -680,10 +680,11 @@ func (s *Server) verifyCableFirmwareUpdateResult(ctx context.Context, jobID stri
 	return firmwareUpdateOutcome(snapshot), "", nil
 }
 
-// unchangedLivePicture reports whether VibeTV still shows the healthy usage
+// unchangedLivePicture reports whether VibeTV still shows the healthy live
 // picture it showed before the stream restart. The firmware redraws only when
 // a frame changes the screen, so a frame with the same values leaves the
-// render counters where they were (issue #835). Nothing was drawn in between:
+// render counters where they were (issue #835). The last draw may be the
+// minute countdown on that picture ("reset"). Nothing was drawn in between:
 // same boot, same counters, no new theme render failure.
 func unchangedLivePicture(before, after deviceHealth) bool {
 	beforeFull, beforePartial, beforeOK := displayRenderCounters(before)
@@ -692,7 +693,7 @@ func unchangedLivePicture(before, after deviceHealth) bool {
 		beforeFull == afterFull && beforePartial == afterPartial &&
 		strings.TrimSpace(before.System.BootID) == strings.TrimSpace(after.System.BootID) &&
 		before.Display.ThemeSpec.RenderFailures == after.Display.ThemeSpec.RenderFailures &&
-		renderHealthyFromHealth(before) && renderHealthyFromHealth(after)
+		renderSurfaceHealthy(after) && liveScreenRenderKind(after.Render.LastKind)
 }
 
 func firmwareUpdateOutcome(snapshot firmwareUpdateJob) string {
