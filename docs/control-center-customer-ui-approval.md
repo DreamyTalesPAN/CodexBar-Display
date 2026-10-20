@@ -10024,3 +10024,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the usage chart looks like frame 2 of "Calm Redesign - alle Screens" (plot, axis labels and legend at the template's positions).
 - Scope: `apps/control-center/src/components/usage-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #784: the 3D VibeTV on the Overview waits for the theme pack also after an earlier settled screen (Codex review)
+
+- User approval: pending — Paul reviews (Codex review fix on #784); before → after: when the Overview first showed a settled screen (no VibeTV yet) and a VibeTV with its frame arrived later, the 3D VibeTV could replace the flat preview while its screen still said "Loading preview" → the 3D waits until the theme pack is in, as it already did when the VibeTV was connected from the start. Nothing else changes.
+- Approved customer-visible result: the 3D VibeTV appears only with its theme drawn, as in frame 1 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/live-vibetv-preview.tsx`, `apps/control-center/src/components/vibetv-3d-preview.tsx`, the recovery test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
