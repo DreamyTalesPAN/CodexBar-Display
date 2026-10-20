@@ -8272,3 +8272,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #781 Theme Studio Details with the Color field, palette and "More colours…" together at 1200x800, 1000x700 and 1920x1080 (pictures "Vorlage (Claude Design)" | "App mit PR #781").
 - Scope: #781 `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #781 layout fix not announced
+
+## 2026-10-20 — #781: approval marker after merging main at 1f6d099d
+
+- User approval: no visible change – UI approval not needed (merge of main (1f6d099d) into #781; the own entries of #781 keep their approvals)
+- Approved customer-visible result: #781 as in its own entries plus the entries merged with 1f6d099d; nothing else changes.
+- Scope: the merge of 1f6d099d and this approval record. Pull request branch #781 only, not merged, not released.
+- What's new: none — merge of 1f6d099d, no customer-visible change of its own
