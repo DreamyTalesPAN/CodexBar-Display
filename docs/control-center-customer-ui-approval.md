@@ -8184,3 +8184,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #780 setup variant B as in its entries above; nothing visible changes with this correction.
 - Scope: #780 this time correction only. Pull request branch only, not merged, not released.
 - What's new: none — #780 approval time correction only
+
+## 2026-10-20 — #780: approval marker after merging main at 4b0831d7
+
+- User approval: no visible change – UI approval not needed (merge of main (4b0831d7) into #780; the own entries of #780 keep their approvals)
+- Approved customer-visible result: #780 as in its own entries plus the entries merged with 4b0831d7; nothing else changes.
+- Scope: the merge of 4b0831d7 and this approval record. Pull request branch #780 only, not merged, not released.
+- What's new: none — merge of 4b0831d7, no customer-visible change of its own
