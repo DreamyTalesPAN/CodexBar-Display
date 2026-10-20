@@ -9,8 +9,10 @@ import {
 } from "react";
 import type {
   DeviceCandidate,
+  DeviceInfo,
   PreferenceHealthState,
 } from "../control-center-types";
+import type { DisplayFrameSnapshot } from "../live-vibetv-preview";
 import type { SupportDiagnostics } from "../control-center-types";
 import type { ProviderItem } from "../provider-picker";
 import { connectLogLines, type ConnectPhase } from "./setup-connect-log";
@@ -58,6 +60,46 @@ const CANDIDATES: DeviceCandidate[] = [
     firmware: "1.0.55",
   },
 ];
+
+/**
+ * The VibeTV the preview pretends to be connected to: the first one of the
+ * list, showing the Claude creature theme. Its screen is drawn from the theme
+ * pack the Mac App serves, so without one the screen says "Loading preview".
+ */
+const PREVIEW_DEVICE = {
+  deviceId: "5804508",
+  target: "http://192.168.178.153",
+  active: true,
+  connected: true,
+  paired: true,
+  ready: true,
+  board: "esp8266_smalltv_st7789",
+  firmware: "1.0.55",
+  activeTheme: "claude-creature",
+  display: {
+    themeSpec: {
+      active: true,
+      path: "/themes/u/claude--9-5c74ca.json",
+      renderOk: true,
+    },
+  },
+} as DeviceInfo;
+
+const PREVIEW_FRAME: DisplayFrameSnapshot = {
+  ok: true,
+  savedAt: "2026-10-20T10:00:00Z",
+  frame: {
+    v: 2,
+    provider: "claude",
+    label: "Claude",
+    usageMode: "remaining",
+    resetSecs: 1380,
+    usageSlots: [
+      { id: "session", label: "Session", percent: 92, resetSecs: 1380 },
+      { id: "weekly", label: "Weekly", percent: 90 },
+    ],
+  },
+};
 
 const CABLE_CANDIDATES: DeviceCandidate[] = CANDIDATES.map(
   (candidate, index) => ({
@@ -329,6 +371,8 @@ export function SetupPreviewGallery() {
   function deviceScreen(lines?: SetupLogLine[]) {
     return (
       <SetupDeviceScreen
+        previewDevice={PREVIEW_DEVICE}
+        previewFrame={PREVIEW_FRAME}
         connectPhase={connectState.phase}
         firmwarePercent={active === "02-firmware" ? 42 : undefined}
         onWiFiError={() => {}}
@@ -630,8 +674,8 @@ export function SetupPreviewGallery() {
           <SetupLiveScreen
             aiFixPrompt={aiFixPrompt}
             onCreateSupportReport={createSupportReport}
-            device={null}
-            displayFrame={null}
+            device={PREVIEW_DEVICE}
+            displayFrame={PREVIEW_FRAME}
             usage={null}
           />
         );

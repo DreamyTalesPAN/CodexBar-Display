@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type {
   DeviceInfo,
   SupportDiagnostics,
@@ -10,6 +10,7 @@ import {
   LiveVibeTVPreview,
   type DisplayFrameSnapshot,
 } from "../live-vibetv-preview";
+import { SetupVibeTV3DPreview, useHardware3D } from "./setup-3d-preview";
 import {
   CALM_TITLE_CLASS,
   SetupWizardScreen,
@@ -49,6 +50,13 @@ export function SetupLiveScreen({
       onPreviewReady?.();
     }
   }, [alreadySetUp, onPreviewReady]);
+  // The same 3D VibeTV as the Overview: it starts after the first paint, only
+  // on a hardware WebGL, and replaces the flat preview once its model is on
+  // screen. The flat preview stays mounted underneath: it is the one that tells
+  // the wizard VibeTV shows its theme, and it is all there is without WebGL.
+  const hardware3D = useHardware3D();
+  const [threeReady, setThreeReady] = useState(false);
+  const onThreeReady = useCallback(() => setThreeReady(true), []);
   if (alreadySetUp) {
     return null;
   }
@@ -60,13 +68,36 @@ export function SetupLiveScreen({
       windowsHost={windowsHost}
     >
       <SetupWizardTitle className={CALM_TITLE_CLASS}>Your VibeTV is live</SetupWizardTitle>
-      <div className="mt-8 w-full">
-        <LiveVibeTVPreview
-          device={device}
-          displayFrame={displayFrame}
-          onPreviewReady={onPreviewReady}
-          usage={usage}
-        />
+      <div className="relative mt-8 flex w-full justify-center">
+        {hardware3D ? (
+          <div
+            // Until the 3D is revealed it is only drawn in the background: the
+            // flat preview is the one screen readers get.
+            aria-hidden={threeReady ? undefined : true}
+            className={
+              threeReady
+                ? "flex w-full justify-center"
+                : "absolute inset-0 flex justify-center opacity-0"
+            }
+            inert={threeReady ? undefined : true}
+          >
+            <SetupVibeTV3DPreview
+              className="-my-[22px] aspect-[640/411] w-[min(640px,calc(100vw-48px))] max-w-none shrink-0"
+              device={device}
+              displayFrame={displayFrame}
+              onReady={onThreeReady}
+              usage={usage}
+            />
+          </div>
+        ) : null}
+        <div className={threeReady ? "hidden" : "w-full"}>
+          <LiveVibeTVPreview
+            device={device}
+            displayFrame={displayFrame}
+            onPreviewReady={onPreviewReady}
+            usage={usage}
+          />
+        </div>
       </div>
     </SetupWizardScreen>
   );

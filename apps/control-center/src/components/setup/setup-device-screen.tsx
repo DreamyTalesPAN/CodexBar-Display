@@ -19,9 +19,13 @@ import { useState, type FormEvent } from "react";
 import type {
   ApiError,
   DeviceCandidate,
+  DeviceInfo,
   SupportDiagnostics,
+  UsageSnapshot,
   WiFiNetwork,
 } from "../control-center-types";
+import type { DisplayFrameSnapshot } from "../live-vibetv-preview";
+import { useHardware3D } from "./setup-3d-preview";
 import { candidateKey, type SetupTransport } from "./setup-connection";
 import { SetupDeviceCard } from "./setup-device-card";
 import { SetupCableHelpDialog } from "./setup-device-dialogs";
@@ -46,6 +50,14 @@ const CALM_INPUT_CLASS = "h-11 w-full text-[13px] md:text-[13px]";
 
 type SetupDeviceScreenProps = {
   candidates: DeviceCandidate[];
+  /**
+   * The VibeTV the app is connected to and what it shows. Its row in the list
+   * shows that screen on the 3D VibeTV; a VibeTV the app is not connected to
+   * has no live screen yet.
+   */
+  previewDevice?: DeviceInfo | null;
+  previewFrame?: DisplayFrameSnapshot | null;
+  previewUsage?: UsageSnapshot | null;
   alternativeTransport?: SetupTransport;
   connecting?: boolean;
   /** Names the work in flight, so the button reports it instead of "Connecting" throughout. */
@@ -85,6 +97,9 @@ type SetupDeviceScreenProps = {
 export function SetupDeviceScreen({
   alternativeTransport,
   candidates,
+  previewDevice = null,
+  previewFrame = null,
+  previewUsage = null,
   connecting = false,
   connectPhase,
   firmwarePercent,
@@ -114,6 +129,7 @@ export function SetupDeviceScreen({
   wifiWaitingViaCable = false,
   wifiCredentialsSent = false,
 }: SetupDeviceScreenProps) {
+  const preview3D = useHardware3D();
   const [wifiName, setWifiName] = useState("");
   const [wifiPassword, setWifiPassword] = useState("");
   const [manualWiFiName, setManualWiFiName] = useState(false);
@@ -124,6 +140,12 @@ export function SetupDeviceScreen({
   // Once the details are sent the form steps aside for the log; Edit WiFi
   // details brings it back with what was typed.
   const showWiFiForm = wifiSetupPhase === "credentials";
+  const isPreviewDevice = (candidate: DeviceCandidate) =>
+    Boolean(
+      candidate.deviceId &&
+        previewDevice?.deviceId &&
+        candidate.deviceId.toLowerCase() === previewDevice.deviceId.toLowerCase(),
+    );
   const wifiBusy = connecting || wifiSubmitting || waitingForWiFi;
   const passwordRequired = manualWiFiName ||
     wifiNetworks.find((network) => network.ssid === wifiName)?.encrypted !== false;
@@ -414,6 +436,10 @@ export function SetupDeviceScreen({
               candidate={candidate}
               key={`${candidate.deviceId || "legacy"}-${candidate.target}`}
               onSelect={() => onSelect(candidate)}
+              preview3D={preview3D}
+              previewDevice={isPreviewDevice(candidate) ? previewDevice : null}
+              previewFrame={isPreviewDevice(candidate) ? previewFrame : null}
+              previewUsage={isPreviewDevice(candidate) ? previewUsage : null}
               selected={selectedTarget === candidateKey(candidate)}
               tabStop={index === Math.max(selectedIndex, 0)}
             />

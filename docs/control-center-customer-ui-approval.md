@@ -8026,3 +8026,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #780 unchanged; this entry only corrects the record.
 - Scope: #780 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #780 record correction only
+
+## 2026-10-20 — #780: 3D VibeTV in the device list and on "Your VibeTV is live"
+
+- User approval: pending — #780 3D VibeTV in the device list and on "Your VibeTV is live" (Paul's review of the setup B pictures, 20.10.2026): the VibeTV rows of "Choose your VibeTV" and the "Your VibeTV is live" screen show the same 3D VibeTV as the Overview instead of the old photo and the flat case; this is not yet shown to Paul as a picture and not approved.
+- Approved customer-visible result: #780 pending — each VibeTV row of "Choose your VibeTV" shows a small 3D VibeTV (the one the app is connected to with its live screen), and "Your VibeTV is live" shows the 3D VibeTV with the live theme on its screen; without a hardware WebGL the photo and the flat case stay.
+- Scope: #780 Setup Wizard variant B only: the device rows and the live screen. The 3D component, its model and the flat preview's screen-only mode are the Overview's files, brought into #780 unchanged so the later merge with the calm redesign is trivial. Pull request branch only, not merged, not released.
+- What's new: none — #780 setup screens only
