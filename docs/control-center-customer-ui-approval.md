@@ -9990,4 +9990,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: none needed — no visible change of its own: this commit only merges the calm redesign base (#784) with its build 2b QA fixes (the 3D VibeTV frame, no sidebar toggle beside Updates and Support, plain radio rows in the device picker), which carry their own approval entries above; nothing of this pull request's own look changes.
 - Approved customer-visible result: none; no visible change.
 - Scope: merge of `origin/claude/group-calm-redesign` (`apps/control-center/src/components/vibetv-3d-preview.tsx`, `overview-screen.tsx`, `control-center-shell.tsx`, `setup/setup-device-dialogs.tsx` and their tests) and this approval record. Pull request branch only, not merged, not released.
+## 2026-10-20 — #781: build 2b QA, the Theme Studio's design name sits where the template draws it
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the design name box was a wide field with 9 px inner space that pushed "File", undo and redo about 9 px further right than drawn, and the notice next to "Save" could shrink below two lines of width → the box is as wide as the name, the name starts 4 px right of the back arrow and "File" follows 16 px after it as in the template, and the notice keeps its 224 px so it wraps to two lines.
+- Approved customer-visible result: the top row of the Theme Studio looks like frames 7-9 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
