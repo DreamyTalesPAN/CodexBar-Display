@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Feeds small platformio.ini files to check-esp8266-flash-layout.sh.
+# Feeds small PlatformIO projects to check-esp8266-flash-layout.sh. Needs pio.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CHECK="${ROOT_DIR}/scripts/check-esp8266-flash-layout.sh"
@@ -13,14 +13,19 @@ die() {
   exit 1
 }
 
+# project <name>: reads platformio.ini for a new project from stdin.
+project() {
+  mkdir -p "${WORK}/$1"
+  cat >"${WORK}/$1/platformio.ini"
+}
+
 expect() {
   local want="$1" name="$2" status=0
-  "$CHECK" "${WORK}/${name}.ini" >/dev/null 2>&1 || status=$?
+  "$CHECK" "${WORK}/${name}" >/dev/null 2>&1 || status=$?
   [[ "$status" == "$want" ]] || die "${name}: exit ${status}, expected ${want}"
 }
 
-cat >"${WORK}/ok.ini" <<'INI'
-[env]
+OK_INI='[env]
 framework = arduino
 
 [env:main]
@@ -34,28 +39,31 @@ build_flags = -DX=1
 
 [env:native]
 platform = native@1.2.1
-INI
+'
+
+project ok <<<"$OK_INI"
 expect 0 ok
 
-sed 's/eagle.flash.4m2m.ld/eagle.flash.4m3m.ld/' "${WORK}/ok.ini" >"${WORK}/bigger-fs.ini"
+project bigger-fs <<<"${OK_INI/eagle.flash.4m2m.ld/eagle.flash.4m3m.ld}"
 expect 1 bigger-fs
 
-grep -v ldscript "${WORK}/ok.ini" >"${WORK}/board-default.ini"
+grep -v ldscript <<<"$OK_INI" | project board-default
 expect 1 board-default
 
-cat "${WORK}/ok.ini" >"${WORK}/child-override.ini"
-printf '\n[env:other]\nextends = env:main\nboard_build.ldscript = eagle.flash.4m1m.ld\n' >>"${WORK}/child-override.ini"
+printf '%s\n[env:other]\nextends = env:main\nboard_build.ldscript = eagle.flash.4m1m.ld\n' "$OK_INI" | project child-override
 expect 1 child-override
 
-cat "${WORK}/ok.ini" >"${WORK}/new-env.ini"
-printf '\n[env:new]\nplatform = espressif8266@4.2.1\nboard = esp12e\n' >>"${WORK}/new-env.ini"
+printf '%s\n[env:new]\nplatform = espressif8266@4.2.1\nboard = esp12e\n' "$OK_INI" | project new-env
 expect 1 new-env
 
-printf '[env:native]\nplatform = native@1.2.1\n' >"${WORK}/no-esp8266.ini"
-expect 1 no-esp8266
+printf '%s\n[env:owner]\nplatform = platformio/espressif8266@4.2.1\nboard_build.ldscript = eagle.flash.4m3m.ld\n' "$OK_INI" | project owner-qualified
+expect 1 owner-qualified
 
-# Several parents: PlatformIO takes the option from the latter one.
-cat >"${WORK}/multi-latter-bad.ini" <<'INI'
+printf '[env:native]\nplatform = native@1.2.1\n' | project no-esp8266
+expect 2 no-esp8266
+
+# Several parents: the latter one wins.
+project multi-latter-bad <<'INI'
 [base_ok]
 board_build.ldscript = eagle.flash.4m2m.ld
 
@@ -68,34 +76,11 @@ extends = base_ok, base_bad
 INI
 expect 1 multi-latter-bad
 
-sed 's/extends = base_ok, base_bad/extends = base_bad, base_ok/' "${WORK}/multi-latter-bad.ini" >"${WORK}/multi-latter-ok.ini"
+sed 's/extends = base_ok, base_bad/extends = base_bad, base_ok/' "${WORK}/multi-latter-bad/platformio.ini" | project multi-latter-ok
 expect 0 multi-latter-ok
 
-# ${section.option} interpolation is resolved before deciding.
-cat >"${WORK}/interpolated-bad.ini" <<'INI'
-[common]
-platform = espressif8266@4.2.1
-ldscript = eagle.flash.4m3m.ld
-
-[env:main]
-platform = ${common.platform}
-board_build.ldscript = ${common.ldscript}
-INI
-expect 1 interpolated-bad
-
-sed 's/4m3m/4m2m/' "${WORK}/interpolated-bad.ini" >"${WORK}/interpolated-ok.ini"
-expect 0 interpolated-ok
-
-grep -v ldscript "${WORK}/interpolated-ok.ini" >"${WORK}/interpolated-no-ldscript.ini"
-expect 1 interpolated-no-ldscript
-
-# Owner-qualified platform names are ESP8266 builds too.
-cat "${WORK}/ok.ini" >"${WORK}/owner-qualified.ini"
-printf '\n[env:owner]\nplatform = platformio/espressif8266@4.2.1\nboard_build.ldscript = eagle.flash.4m3m.ld\n' >>"${WORK}/owner-qualified.ini"
-expect 1 owner-qualified
-
-# [env] defaults apply only after every parent was searched.
-cat >"${WORK}/env-default-after-parents.ini" <<'INI'
+# [env] defaults apply only when no parent sets the option.
+project env-default-after-parents <<'INI'
 [env]
 board_build.ldscript = eagle.flash.4m2m.ld
 
@@ -111,17 +96,38 @@ extends = bad, unrelated
 INI
 expect 1 env-default-after-parents
 
-sed 's/extends = bad, unrelated/extends = unrelated/' "${WORK}/env-default-after-parents.ini" >"${WORK}/env-default-only.ini"
-expect 0 env-default-only
+# ${section.option} interpolation.
+project interpolated-bad <<'INI'
+[common]
+platform = espressif8266@4.2.1
+ldscript = eagle.flash.4m3m.ld
 
-# Files in [platformio] extra_configs override the main file.
-mkdir -p "${WORK}/extra"
-{ printf '[platformio]\nextra_configs = extra/*.ini\n\n'; cat "${WORK}/ok.ini"; } >"${WORK}/extra-configs.ini"
-printf '[env:main]\nboard_build.ldscript = eagle.flash.4m3m.ld\n' >"${WORK}/extra/override.ini"
+[env:main]
+platform = ${common.platform}
+board_build.ldscript = ${common.ldscript}
+INI
+expect 1 interpolated-bad
+
+sed 's/4m3m/4m2m/' "${WORK}/interpolated-bad/platformio.ini" | project interpolated-ok
+expect 0 interpolated-ok
+
+# extra_configs, also when an extra file names a further one.
+printf '[platformio]\nextra_configs = extra/*.ini\n\n%s' "$OK_INI" | project extra-configs
+mkdir -p "${WORK}/extra-configs/extra/nested"
+printf '[env:main]\nboard_build.ldscript = eagle.flash.4m3m.ld\n' >"${WORK}/extra-configs/extra/override.ini"
 expect 1 extra-configs
-printf '[env:main]\nbuild_flags = -DY=1\n' >"${WORK}/extra/override.ini"
+printf '[env:main]\nbuild_flags = -DY=1\n' >"${WORK}/extra-configs/extra/override.ini"
 expect 0 extra-configs
+printf '[platformio]\nextra_configs = extra/nested/*.ini\n' >"${WORK}/extra-configs/extra/override.ini"
+printf '[env:main]\nboard_build.ldscript = eagle.flash.4m3m.ld\n' >"${WORK}/extra-configs/extra/nested/deeper.ini"
+expect 1 extra-configs
 
-"$CHECK" >/dev/null || die "the repository's platformio.ini fails the check"
+# ${sysenv.NAME} is resolved from the environment, as in the build.
+printf '%s\n[env:fromenv]\nplatform = ${sysenv.W310_PLATFORM}\nboard_build.ldscript = eagle.flash.4m3m.ld\n' "$OK_INI" | project sysenv
+status=0
+W310_PLATFORM=espressif8266@4.2.1 "$CHECK" "${WORK}/sysenv" >/dev/null 2>&1 || status=$?
+[[ "$status" == "1" ]] || die "sysenv: exit ${status}, expected 1"
+
+"$CHECK" >/dev/null || die "the repository's firmware_esp8266/platformio.ini fails the check"
 
 echo "ESP8266 flash layout check tests passed"

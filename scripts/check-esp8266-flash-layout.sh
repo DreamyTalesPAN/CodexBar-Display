@@ -7,82 +7,46 @@ set -euo pipefail
 # filesystem starts at 0x200000 and never sees it. A layout with a bigger
 # filesystem (for example eagle.flash.4m3m.ld) starts at 0x100000 and would
 # mount the factory files on every device already sold.
+#
+# PlatformIO itself resolves the configuration (extends, [env] defaults,
+# ${...} interpolation, extra_configs), so this check sees what the build sees.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-INI="${1:-${ROOT_DIR}/firmware_esp8266/platformio.ini}"
+PROJECT_DIR="${1:-${ROOT_DIR}/firmware_esp8266}"
 REQUIRED="eagle.flash.4m2m.ld"
 
-[[ -f "$INI" ]] || { printf 'error: %s not found\n' "$INI" >&2; exit 2; }
+die() {
+  printf 'error: %s\n' "$*" >&2
+  exit 2
+}
 
-python3 - "$INI" "$REQUIRED" <<'PY'
-import configparser, glob, os, re, sys
+[[ -f "${PROJECT_DIR}/platformio.ini" ]] || die "${PROJECT_DIR}/platformio.ini not found"
+command -v pio >/dev/null 2>&1 || die "missing required command: pio (PlatformIO)"
 
-ini, required = sys.argv[1], sys.argv[2]
-cp = configparser.ConfigParser(interpolation=None, strict=False, inline_comment_prefixes=(";",))
-cp.read(ini)
+CONFIG="$(pio project config -d "$PROJECT_DIR" --json-output)" ||
+  die "PlatformIO could not read ${PROJECT_DIR}/platformio.ini"
 
-# Like PlatformIO: files named in [platformio] extra_configs are read after the
-# main file and override its sections and options.
-if cp.has_option("platformio", "extra_configs"):
-    base = os.path.dirname(os.path.abspath(ini))
-    for pattern in cp.get("platformio", "extra_configs").replace(",", "\n").split("\n"):
-        pattern = pattern.strip()
-        if pattern:
-            cp.read(sorted(glob.glob(os.path.join(base, os.path.expanduser(pattern)))))
+printf '%s' "$CONFIG" | python3 -c '
+import json, sys
 
-# PlatformIO's own ${section.option} interpolation; "this" is the env being read.
-REF = re.compile(r"\$\{([^.}]+)\.([^}]+)\}")
-
-def resolve(text, env, depth=0):
-    if depth > 10:
-        sys.exit(f"error: interpolation loop in [{env}]")
-    def sub(match):
-        section, key = match.group(1), match.group(2)
-        if section == "sysenv":
-            return match.group(0)
-        found = raw(env if section == "this" else section, key)
-        return "" if found is None else resolve(found, env, depth + 1)
-    return REF.sub(sub, text)
-
-def chain(section, key, seen=()):
-    if section in seen:
-        sys.exit(f"error: extends loop at [{section}]")
-    if cp.has_option(section, key) and section != "env":
-        return cp.get(section, key).strip()
-    if cp.has_option(section, "extends"):
-        # PlatformIO: with several parents the latter one wins.
-        for parent in reversed(cp.get(section, "extends").split(",")):
-            found = chain(parent.strip(), key, seen + (section,))
-            if found is not None:
-                return found
-    return None
-
-def raw(section, key):
-    # The common [env] defaults apply only after the whole extends chain.
-    found = chain(section, key)
-    if found is None and cp.has_option("env", key):
-        found = cp.get("env", key).strip()
-    return found
-
-def value(env, key):
-    found = raw(env, key)
-    return None if found is None else resolve(found, env).strip()
-
+required = sys.argv[1]
 bad, checked = [], []
-for section in cp.sections():
+for section, options in json.load(sys.stdin):
     if not section.startswith("env:"):
         continue
-    platform = value(section, "platform") or ""
+    values = dict(options)
     # Covers espressif8266@x, platformio/espressif8266@x and repository URLs.
-    if "espressif8266" not in platform:
+    if "espressif8266" not in str(values.get("platform", "")):
         continue
     checked.append(section)
-    ldscript = value(section, "board_build.ldscript")
+    ldscript = values.get("board_build.ldscript")
     if ldscript != required:
-        bad.append(f"[{section}] uses {ldscript or 'the board default'}")
+        used = ldscript or "the board default"
+        bad.append(f"[{section}] uses {used}")
 
 if not checked:
-    sys.exit(f"error: no ESP8266 environment found in {ini}")
+    print("error: no ESP8266 environment found", file=sys.stderr)
+    sys.exit(2)
 if bad:
     print(f"flash layout: FAIL, every ESP8266 build must use {required} (issue #310)", file=sys.stderr)
     for line in bad:
@@ -90,4 +54,4 @@ if bad:
     print("  Devices already sold keep the factory filesystem at 0x100000; another layout can mount it.", file=sys.stderr)
     sys.exit(1)
 print(f"flash layout: ok, {len(checked)} ESP8266 builds use {required}")
-PY
+' "$REQUIRED"
