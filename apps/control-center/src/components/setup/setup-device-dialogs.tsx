@@ -3,16 +3,16 @@
 import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ItemGroup } from "@/components/ui/item";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import type { ApiError, DeviceCandidate } from "../control-center-types";
 import {
+  candidateAddress,
   DEVICE_TARGET_PLACEHOLDER,
   normalizeManualDeviceTarget,
 } from "../device-target-copy";
+import { cn } from "@/lib/utils";
 import { candidateKey } from "./setup-connection";
-import { SetupDeviceCard } from "./setup-device-card";
 import { SetupDialog } from "./setup-dialog";
 import { moveAmongRadios } from "./setup-selectable-card";
 
@@ -336,15 +336,17 @@ export function SetupDevicePickerDialog({
       secondaryAction={{ label: "Not now", onSelect: () => onOpenChange(false) }}
       showCloseButton={false}
       title={error?.message ?? "Your VibeTV is not reachable"}
+      wide
     >
-      <ItemGroup
+      {/* Frame 47: plain radio rows between hairlines, not the setup cards. */}
+      <div
         aria-label="VibeTVs found"
-        className="gap-3"
+        className="border-t border-foreground/10"
         onKeyDown={moveAmongRadios}
         role="radiogroup"
       >
         {candidates.map((candidate, index) => (
-          <SetupDeviceCard
+          <DevicePickerRow
             candidate={candidate}
             key={candidateKey(candidate)}
             onSelect={() => setSelectedKey(candidateKey(candidate))}
@@ -352,7 +354,55 @@ export function SetupDevicePickerDialog({
             tabStop={index === Math.max(selectedIndex, 0)}
           />
         ))}
-      </ItemGroup>
+      </div>
     </SetupDialog>
+  );
+}
+
+type DevicePickerRowProps = {
+  candidate: DeviceCandidate;
+  onSelect: () => void;
+  selected: boolean;
+  /** The one radio of its group that Tab reaches. */
+  tabStop: boolean;
+};
+
+function DevicePickerRow({ candidate, onSelect, selected, tabStop }: DevicePickerRowProps) {
+  const address = candidateAddress(candidate.target);
+  const cable = candidate.transport === "cable";
+  const detail = [
+    cable ? "" : address,
+    candidate.firmware ? `Firmware ${candidate.firmware}` : "",
+  ].filter(Boolean).join(" · ");
+  const tag = [
+    candidate.transport ? (cable ? "Cable" : "WiFi") : "",
+    candidate.known ? "Previously connected" : "",
+  ].filter(Boolean).join(" · ");
+  return (
+    <button
+      aria-checked={selected}
+      className="flex w-full items-center gap-4 rounded-md border-b border-foreground/10 py-3.5 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring"
+      onClick={onSelect}
+      role="radio"
+      tabIndex={tabStop ? 0 : -1}
+      type="button"
+    >
+      <span
+        aria-hidden
+        className={cn(
+          "box-border size-4 shrink-0 rounded-full border-[1.5px] border-input",
+          selected && "border-[5px] border-foreground bg-background",
+        )}
+      />
+      <span className="min-w-0 flex-1">
+        <span className="block text-[13px] font-semibold">
+          VibeTV {candidate.deviceId || address}
+        </span>
+        {detail ? (
+          <span className="mt-0.5 block text-[13px] text-muted-foreground">{detail}</span>
+        ) : null}
+      </span>
+      {tag ? <span className="text-[13px] text-muted-foreground">{tag}</span> : null}
+    </button>
   );
 }
