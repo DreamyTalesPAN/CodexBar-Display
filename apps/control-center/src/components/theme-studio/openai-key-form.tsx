@@ -240,7 +240,7 @@ export function ThemeStudioKeyRow() {
           <i aria-hidden className={`size-2 shrink-0 rounded-full ${configured === true ? "bg-[oklch(0.72_0.15_150)]" : "bg-muted-foreground/40"}`} />
           {configured === true ? "Connected" : "Not connected"}
         </span>
-        <Button variant="outline" size="sm" className="text-[13px]" onClick={() => setOpen(true)}>
+        <Button variant="outline" size="sm" className="px-3.5 text-[13px]" onClick={() => setOpen(true)}>
           {hasStoredKey(configured) ? "Change key" : "Add key"}
         </Button>
       </div>

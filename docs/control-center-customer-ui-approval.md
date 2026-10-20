@@ -8133,3 +8133,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the Theme Studio looks like frames 7-9 of "Calm Redesign - alle Screens" (preview card, composer and File menu at the template's positions and sizes).
 - Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #781: build 2b QA, the Settings button "Add key" / "Change key" has the template's width (frame 3)
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the button next to "Theme Studio AI" in Settings was 4 px narrower than drawn (12 px of side space) → it has 14 px of side space like the other outline buttons. Nothing else changes.
+- Approved customer-visible result: the button looks like frame 3 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
