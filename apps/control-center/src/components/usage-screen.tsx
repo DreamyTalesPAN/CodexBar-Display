@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
-import type { XAxisTickContentProps } from "recharts";
+import type { XAxisTickContentProps, YAxisTickContentProps } from "recharts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -503,7 +503,7 @@ function TokenUsageOverTimePanel({
           <AreaChart
             accessibilityLayer
             data={chartData}
-            margin={{ top: 8, right: 4, bottom: 0, left: 0 }}
+            margin={{ top: 16, right: 0, bottom: 0, left: 0 }}
           >
             <CartesianGrid
               stroke="var(--foreground)"
@@ -513,15 +513,16 @@ function TokenUsageOverTimePanel({
             <XAxis
               axisLine={{ stroke: "var(--foreground)", strokeOpacity: 0.22 }}
               dataKey="day"
+              height={48}
               interval={0}
               ticks={weeklyDayTicks(chartData.map((row) => String(row.day)))}
               tick={WeekTick}
               tickLine={false}
-              tickMargin={8}
+              tickMargin={5}
             />
             <YAxis
               axisLine={false}
-              tick={{ fill: "var(--muted-foreground)", fontSize: 14.5 }}
+              tick={ValueTick}
               tickCount={3}
               tickFormatter={formatTokenCount}
               tickLine={false}
@@ -1359,6 +1360,15 @@ function providerStatusLabel(description?: string): string {
     return "Status ready";
   }
   return value;
+}
+
+// The value labels start at the left edge of the chart, as in the master (the plot begins 44 px further right).
+function ValueTick({ payload, y }: YAxisTickContentProps) {
+  return (
+    <text dy="0.32em" fill="var(--muted-foreground)" fontSize={14.5} textAnchor="start" x={0} y={y}>
+      {formatTokenCount(Number(payload.value))}
+    </text>
+  );
 }
 
 // The first label starts at the axis and the last one ends at its right edge, as in the master.

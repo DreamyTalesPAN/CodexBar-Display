@@ -10017,3 +10017,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the Settings buttons look like frame 3 of "Calm Redesign - alle Screens".
 - Scope: `apps/control-center/src/components/settings-screen.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #783: build 2b QA, the usage chart has the template's plot height, axis labels and edge (frame 2)
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the chart plot was 184 px high with the day labels 19 px under the axis → it is 160 px high with the day labels 16 px under the axis, and the chart starts 8 px lower (16 px space above the top line) so the lines, the day labels and the legend sit where the template draws them; the value labels (2B, 1B, 0) were right-aligned next to the plot → they start at the left edge of the chart as in the template; the plot ended 4 px before the right edge → it ends at the edge, in line with the tiles below.
+- Approved customer-visible result: the usage chart looks like frame 2 of "Calm Redesign - alle Screens" (plot, axis labels and legend at the template's positions).
+- Scope: `apps/control-center/src/components/usage-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
