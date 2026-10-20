@@ -150,7 +150,8 @@ class ESP8266PrimitiveSink final : public primitive::Sink {
             tft.fillRect(segX1, cmd.y + 1, segW, innerH, cmd.fillColor);
           }
         } else if (segW > 0 && i < pieceSegments) {
-          FillPacePiece(tft, segX1, cmd.y + 1, segW, innerH, cmd);
+          const int pieceRadius = ClampDrawRadius(innerRadius, segW, innerH);
+          FillPacePiece(tft, segX1, cmd.y + 1, segW, innerH, cmd, pieceRadius, pieceRadius);
         }
       }
     } else {

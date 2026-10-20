@@ -1244,6 +1244,18 @@ describe("usage pace", () => {
     expect(boundValue("usageSlot1PaceFooter", none)).toBe(boundValue("usageSlot1Reset", none));
   });
 
+  it("clips a pace piece to the rounded interior of the bar, and only a bar with a piece", () => {
+    const render = (frame: ReturnType<typeof paced>, primitive: ThemePrimitive) =>
+      renderToStaticMarkup(
+        createElement(ThemeSpecPreview, { pack: { spec: { p: [primitive] } }, status: "ready", themeId: "x", animate: false, frame }),
+      );
+    const rounded: ThemePrimitive = { ...bar, br: 3, c: "#EDEDED", bg: "#2B2B2B", bc: "#2B2B2B", rc: "#C9F26B", dc: "#E7A3AC" };
+    expect(render(paced(91, { delta: -6, state: "reserve" }), rounded)).toContain("<clipPath");
+    // No pace, no piece, no clip: the markup of every other bar is unchanged.
+    expect(render(paced(91, undefined), rounded)).not.toContain("<clipPath");
+    expect(render(paced(91, { delta: -6, state: "reserve" }), { ...rounded, br: 0 })).not.toContain("<clipPath");
+  });
+
   it("says left for what remains and the mode itself otherwise", () => {
     expect(boundValue("usageModeShort", paced(91, undefined))).toBe("left");
     expect(boundValue("usageModeShort", paced(9, undefined, { usageMode: "used" }))).toBe("used");

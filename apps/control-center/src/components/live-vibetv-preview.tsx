@@ -1160,6 +1160,19 @@ function ThemeProgress({
   return (
     <g>
       {hatch}
+      {innerRadius > 0 && !segmented && fillWidth > pieceFrom ? (
+        // The piece follows the rounded interior of the bar where it reaches an end.
+        <clipPath id={`${hatchId}-clip`}>
+          <rect
+            height={innerHeight}
+            rx={innerRadius}
+            ry={innerRadius}
+            width={innerWidth}
+            x={x + 1}
+            y={y + 1}
+          />
+        </clipPath>
+      ) : null}
       <rect
         fill="none"
         height={height}
@@ -1206,6 +1219,7 @@ function ThemeProgress({
           />
           {fillWidth > pieceFrom ? (
             <rect
+              clipPath={innerRadius > 0 ? `url(#${hatchId}-clip)` : undefined}
               fill={pieceFill}
               height={innerHeight}
               width={fillWidth - pieceFrom}

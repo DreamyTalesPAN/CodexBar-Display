@@ -8659,3 +8659,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: As in the entry above. New: while no usage window exists (startup, provider error) and VibeTV shows a notice, the notice stands in the footer line under the ring (before: it would not have been visible at all). `usageProviderName` no longer counts as a text that shows the notice, so VibeTV draws the notice on the footer, not over the name.
 - Scope: `theme-packs/gauge/` (revision 10), its ZIP, render packs and catalog entry, `theme-packs/gauge-theme.test.ts`, the firmware field for the provider name (not a screen), and this approval record.
 - What's new: none — correction of an unpublished theme
+
+## 2026-10-19 — Pace bars: Codex review fix, the piece follows the rounded bar in VibeTV and in the preview (#800)
+
+- User approval: Codex review fix to the Pace themes above; not seen by Paul.
+- Approved customer-visible result: A reserve or deficit piece that reaches an end of a bar with rounded corners (Pace Meter at the very end of the track) is cut to the rounded interior, on VibeTV and in the previews, instead of ending square over the corner. Segmented pace bars keep the rounding of every segment, also the paced ones. No other change.
+- Scope: `components/live-vibetv-preview.tsx` and its test, the firmware bar drawing (not a screen), and this approval record.
+- What's new: none — a drawing correction, no new notice
