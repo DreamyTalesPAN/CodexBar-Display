@@ -4214,6 +4214,10 @@ func TestInspectDisplayStreamCountsAnErrorStampedWithItsFrame(t *testing.T) {
 	if stream.Healthy || stream.ErrorCode != "provider_setup_required" {
 		t.Fatalf("an error stamped with its frame was ignored: %+v", stream)
 	}
+	// The page compares this stamp with the end of a firmware update (#829).
+	if stream.ErrorAt != frameAt.UTC().Format(time.RFC3339) {
+		t.Fatalf("errorAt=%q, want the error line's time %s", stream.ErrorAt, frameAt.UTC().Format(time.RFC3339))
+	}
 }
 
 func TestInspectDisplayStreamReportsPairingErrorBeforeFirstFrame(t *testing.T) {

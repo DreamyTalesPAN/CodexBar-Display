@@ -18,6 +18,7 @@ import {
   providerSetupRequiresRecovery,
   automaticPoolForEnabledProviders,
   streamAwaitsProviderSetup,
+  streamCameBackSince,
   type DeviceInfo,
 } from "./control-center-types";
 
@@ -779,5 +780,29 @@ describe("streamAwaitsProviderSetup", () => {
       }),
     ).toBe(false);
     expect(streamAwaitsProviderSetup(null)).toBe(false);
+  });
+});
+
+describe("streamCameBackSince", () => {
+  // Codex on #829: the update ended at 12:01:40; a frame or provider report from
+  // before it can still sit inside the Companion's two-minute readiness window.
+  const updateEnd = Date.parse("2026-10-20T12:01:40Z");
+  const target = "cable://vibetv";
+
+  it("accepts a frame sent after the update", () => {
+    const device = { target, stream: { healthy: true, running: true, lastSentAt: "2026-10-20T12:01:45Z" } } as DeviceInfo;
+    expect(streamCameBackSince(device, updateEnd)).toBe(true);
+  });
+
+  it("rejects a healthy reading whose last frame is from before the update", () => {
+    const device = { target, stream: { healthy: true, running: true, lastSentAt: "2026-10-20T12:00:05Z" } } as DeviceInfo;
+    expect(streamCameBackSince(device, updateEnd)).toBe(false);
+  });
+
+  it("accepts a provider-setup report only from after the update", () => {
+    const awaiting = { target, stream: { running: true, healthy: false, errorCode: "provider_setup_required", target } };
+    expect(streamCameBackSince({ ...awaiting, stream: { ...awaiting.stream, errorAt: "2026-10-20T12:01:50Z" } } as DeviceInfo, updateEnd)).toBe(true);
+    expect(streamCameBackSince({ ...awaiting, stream: { ...awaiting.stream, errorAt: "2026-10-20T12:00:30Z" } } as DeviceInfo, updateEnd)).toBe(false);
+    expect(streamCameBackSince(awaiting as DeviceInfo, updateEnd)).toBe(false);
   });
 });

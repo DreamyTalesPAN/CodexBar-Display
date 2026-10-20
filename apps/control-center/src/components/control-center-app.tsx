@@ -68,7 +68,7 @@ import {
   providerSetupIsChecking,
   providerSetupNeedsEngineRecovery,
   providerSetupRequiresRecovery,
-  streamAwaitsProviderSetup,
+  streamCameBackSince,
   type ActiveTab,
   type AppearanceSection,
   type ApiError,
@@ -606,6 +606,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [whatsNewSeen, setWhatsNewSeen] = useState(seenWhatsNew);
   const [whatsNewReopened, setWhatsNewReopened] = useState(false);
   const lastFirmwareErrorRef = useRef<ApiError | null>(null);
+  // End of the last firmware update whose stream was not seen in time (#829).
+  const streamAttentionSinceRef = useRef<number>(0);
   const [supportDiagnostics, setSupportDiagnostics] =
     useState<SupportDiagnostics | null>(null);
   // The brightness the customer chose and VibeTV has not confirmed yet.
@@ -3164,6 +3166,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           at: finishedAt,
           tone: "attention",
         });
+        streamAttentionSinceRef.current =
+          Date.parse(finishedJob.finishedAt ?? "") || Date.now();
         lastFirmwareErrorRef.current = {
           // A stream that was only not seen yet recovers by itself (#826).
           code:
@@ -5405,10 +5409,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     },
     streamRecovered: async () => {
       const refreshed = await refreshDevice({ quiet: true });
-      return (
-        refreshed?.stream?.healthy === true ||
-        streamAwaitsProviderSetup(refreshed)
-      );
+      return streamCameBackSince(refreshed, streamAttentionSinceRef.current);
     },
     installFirmware: async (connected) => {
       lastFirmwareErrorRef.current = null;

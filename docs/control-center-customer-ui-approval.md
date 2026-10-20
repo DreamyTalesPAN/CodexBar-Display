@@ -7996,3 +7996,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #829 as in its own entries plus the entries merged with 4b0831d7; nothing else changes.
 - Scope: the merge of 4b0831d7 and this approval record. Pull request branch #829 only, not merged, not released.
 - What's new: none — merge of 4b0831d7, no customer-visible change of its own
+
+## 2026-10-20 — #829: stream recovery only on a reading from after the update
+
+- User approval: no visible change – UI approval not needed (#829 changes no screen and no text: the existing stream-attention hint after a firmware update now only closes by itself on a frame or provider-setup report from after the update, never on one from before it; Codex review on #829, confirmed by Marcus)
+- Approved customer-visible result: #829 unchanged screens and texts; in the rare case of a stale pre-update reading the hint stays open until a fresh reading arrives.
+- Scope: #829 setup/Updates stream-attention recovery check and the Companion's stream status field `errorAt`. Pull request branch only, not merged, not released.
+- What's new: none — #829 recovery check only

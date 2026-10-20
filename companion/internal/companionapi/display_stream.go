@@ -26,6 +26,10 @@ type displayStreamInfo struct {
 	LastTarget string `json:"lastTarget,omitempty"`
 	Detail     string `json:"detail,omitempty"`
 	ErrorCode  string `json:"errorCode,omitempty"`
+	// ErrorAt is when the stream last reported ErrorCode. The page compares it
+	// with the end of a firmware update, so an error from before the update is
+	// never taken as the stream coming back (Codex on #829).
+	ErrorAt string `json:"errorAt,omitempty"`
 }
 
 func (s *Server) startDisplayStream(ctx context.Context, target string) error {
@@ -132,6 +136,7 @@ func inspectDisplayStreamAfterRunning(ctx context.Context, target string, notBef
 		if errorOK && time.Since(errorAt) <= displayStreamReadyAge {
 			stream.Detail = errorDetail
 			stream.ErrorCode = errorCode
+			stream.ErrorAt = errorAt.UTC().Format(time.RFC3339)
 			return stream
 		}
 		stream.Detail = "Display stream has not sent usage yet."
@@ -159,6 +164,7 @@ func inspectDisplayStreamAfterRunning(ctx context.Context, target string, notBef
 	if errorOK && !errorAt.Before(lastSentAt) && time.Since(errorAt) <= displayStreamReadyAge {
 		stream.Detail = errorDetail
 		stream.ErrorCode = errorCode
+		stream.ErrorAt = errorAt.UTC().Format(time.RFC3339)
 		return stream
 	}
 	if time.Since(lastSentAt) > displayStreamReadyAge {
