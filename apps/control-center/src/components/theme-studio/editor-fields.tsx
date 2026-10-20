@@ -79,6 +79,7 @@ export function ColorField({
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
+  const paletteRef = useRef<HTMLDivElement>(null);
   const systemPickerRef = useRef<HTMLInputElement>(null);
   const draftValue =
     colorState.source === normalizedValue ? colorState.draft : normalizedValue;
@@ -86,6 +87,11 @@ export function ColorField({
   const setDraftValue = (draft: string) =>
     setColorState({ draft, source: normalizedValue });
   const paletteId = `${id}-palette`;
+
+  // Details scrolls inside itself: bring the palette into view when it opens.
+  useEffect(() => {
+    if (open) paletteRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -177,6 +183,7 @@ export function ColorField({
             className="absolute top-[calc(100%+6px)] right-0 z-10 box-border w-[232px] rounded-xl bg-popover p-3 shadow-[0_0_0_1px_color-mix(in_srgb,var(--foreground)_10%,transparent),0_8px_24px_rgba(0,0,0,0.14)]"
             data-testid="color-palette"
             id={paletteId}
+            ref={paletteRef}
             role="group"
           >
             <div className="grid grid-cols-[repeat(6,28px)] gap-2">
