@@ -10188,3 +10188,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the Usage page margin looks as drawn in frames "Usage" (#usage) and "Usage at 1920 x 1080" (#usage-large) of "Calm Redesign - alle Screens".
 - Scope: `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #798: Updates margin also grows on wide windows (fix of the 7197 point 10 entry)
+
+- User approval: pending — #798 fix of the entry above; the rendered result is pending Paul's review. Before → after: #798 from a 1024 px wide window the old fixed 48 px margin (lg:px-12) won over the growing one → #798 the margin grows with the window up to 96 px at every width, as the entry above describes.
+- Approved customer-visible result: #798 Updates page margin as in the 7197 template points 10 and 11 at large windows.
+- Scope: #798 `apps/control-center/src/components/control-center-shell.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #798 margin fix not announced
