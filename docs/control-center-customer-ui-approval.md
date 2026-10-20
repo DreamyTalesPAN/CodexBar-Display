@@ -8040,3 +8040,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #780 setup variant B as in its entries and the pictures named above.
 - Scope: #780 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #780 approval record only
+
+## 2026-10-20 — #780: time of Paul's approval corrected
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:30: "top, die neue app passt so" — #780 time correction: the communicator confirmed the yes came at about 15:30, not 16:10; the #780 entries above now carry 15:30, the quote is unchanged.
+- Approved customer-visible result: #780 setup variant B as in its entries above; nothing visible changes with this correction.
+- Scope: #780 this time correction only. Pull request branch only, not merged, not released.
+- What's new: none — #780 approval time correction only
