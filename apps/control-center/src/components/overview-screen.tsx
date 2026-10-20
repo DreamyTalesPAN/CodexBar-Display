@@ -217,7 +217,7 @@ export function OverviewScreen({
               inert={threeReady ? undefined : true}
             >
               <VibeTV3DPreview
-                className="aspect-[14/9] max-w-[900px]"
+                className="-my-5 aspect-[640/411] max-w-[640px]"
                 device={device}
                 displayFrame={displayFrame}
                 onReady={onThreeReady}
