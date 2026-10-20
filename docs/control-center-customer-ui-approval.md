@@ -8800,3 +8800,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #802 as described in its entries above, as seen in build 7198, with the install state as in the install-button entry.
 - Scope: #802 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #802 approval record only
+
+## 2026-10-20 — #802: Active pill from the device slot, failure dialog over the page, focus after install
+
+- User approval: pending — #802 Active pill from the device slot (after a restart, and for a theme with an update offered), install failure dialog shown over the page also while search or filters hide its card, keyboard focus kept on the card after an install; Paul reviews.
+- Approved customer-visible result: #802 the pill "Active" goes to the theme VibeTV reports in its slot, not to the selected catalog theme (before: after a restart an installed theme could read "Installed"; now it reads "Active"; an update offered for the active theme keeps "Active"); the install failure dialog is the same dialog, now also shown when the card is filtered out; no look change for mouse users, keyboard users land on the card's Preview button after an install.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx`, its tests `theme-library-screen.test.tsx` and `theme-library-screen.custom.test.tsx`, and this approval record. Pull request branch #802 only, not merged, not released.
+- What's new: none — #802 pill, dialog and focus only, no new content

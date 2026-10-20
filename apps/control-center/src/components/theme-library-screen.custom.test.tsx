@@ -385,9 +385,9 @@ describe("ThemeLibraryScreen custom themes", () => {
     await act(async () =>
       root.render(screen({ ...fromElsewhere, phase: "complete" }, ownPath)),
     );
-    // The result is the pill on the picture of the row whose file VibeTV holds;
-    // no notice, no steps in a card.
-    expect(row("My Theme").querySelector('[data-testid="theme-status-pill"]')?.textContent).toBe("Installed");
+    // The result is the pill on the picture of the row whose file VibeTV holds,
+    // which is the theme its slot shows: Active; no notice, no steps in a card.
+    expect(row("My Theme").querySelector('[data-testid="theme-status-pill"]')?.textContent).toBe("Active");
     expect(row("Catalog Namesake").querySelector('[data-testid="theme-status-pill"]')).toBeNull();
     expect(row("My Theme").textContent).not.toContain("Theme is active on VibeTV.");
     await act(async () => root.unmount());
