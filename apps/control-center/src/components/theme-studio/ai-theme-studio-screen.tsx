@@ -1029,7 +1029,7 @@ export function AIThemeStudioScreen({
           {onBackToLibrary ? <Button variant="ghost" size="icon" className="-ml-2 size-9 [&_svg]:size-5" aria-label="Back to library" title="Back to library" disabled={locked} onClick={() => { if (dirty && persistedDraft.current !== document) setLeaving(true); else onBackToLibrary(); }}><ArrowLeft /></Button> : null}
           <h2 className="sr-only">{document.usage === "screensaver" ? "Screensaver Studio" : "Theme Studio"}</h2>
           {/* The box is as wide as the name (as drawn in the template); the input lies over the hidden copy of its text. */}
-          <div className="ml-1 mr-4 inline-grid min-w-24 max-w-[20rem] shrink">
+          <div className="-ml-[5px] mr-[7px] inline-grid min-w-24 max-w-[20rem] shrink">
             <span aria-hidden className="invisible col-start-1 row-start-1 h-10 overflow-hidden whitespace-pre border px-2 text-[28px] leading-none font-semibold">{document.packName || " "}</span>
             <Input
               aria-label="Design name"
