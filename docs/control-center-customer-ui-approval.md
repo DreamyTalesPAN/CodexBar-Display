@@ -8166,7 +8166,7 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Lime text on light surfaces becomes the design-system olive
 
-- Approved customer-visible result: Draft, to be confirmed by Paul. On the welcome and Mac App download screens the wordmark reads "VIBE" in ink and "TV" in olive (was lime). Hovering "Choose screensaver" in Settings turns the link olive (was lime). Nothing else changes.
+- Approved customer-visible result: On the welcome and Mac App download screens the wordmark reads "VIBE" in ink and "TV" in olive (was lime). Hovering "Choose screensaver" in Settings turns the link olive (was lime). Nothing else changes.
 
 - Scope: `apps/control-center/src/components/control-center-brand.tsx`, `settings-screen.tsx`, `ui/field.tsx`, `ui/item.tsx`, `ui/empty.tsx`, `ui/badge.tsx`, their tests (`control-center-brand.test.tsx`, `settings-screen.test.tsx`, `ui/light-surface-links.test.tsx`) and this approval record. Pull-request branch only, not merge or release.
 
@@ -8537,3 +8537,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #784 as described in its entries above, as seen in build 7198.
 - Scope: #784 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #784 approval record only
+
+## 2026-10-20 — #784: result lines of approved entries cleaned up
+
+- User approval: no visible change – UI approval not needed (#784 record cleanup: entries that already carry Paul's approval no longer start their result line with "pending"/"Draft")
+- Approved customer-visible result: #784 unchanged; only the wording of the approval record.
+- Scope: #784 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #784 record cleanup
