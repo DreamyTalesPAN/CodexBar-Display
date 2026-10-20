@@ -104,7 +104,10 @@ export function UpdatesScreen({
   // The failed check the customer closed. Kept here, not in the dialog: the
   // dialog unmounts while another dialog is open, and only a newer failed
   // check may open it again.
-  const [dismissedFailedCheck, setDismissedFailedCheck] = useState<string | null>(null);
+  // One per check: a refresh of the firmware alone must not bring back a Mac
+  // App failure the customer closed, and the other way round.
+  const [dismissedMacAppCheck, setDismissedMacAppCheck] = useState<string | null>(null);
+  const [dismissedFirmwareCheck, setDismissedFirmwareCheck] = useState<string | null>(null);
   // Every check that runs to its end -- "Try again", the header button or
   // the app's own -- may fail anew, so its end lifts the dismissal. Its
   // answer can carry the same second as the failure before, so the end of the
@@ -114,7 +117,8 @@ export function UpdatesScreen({
   // The update job whose "Update failed" dialog the customer closed. Kept here
   // so the failed-check dialog knows whether that dialog is really open.
   const [dismissedUpdateError, setDismissedUpdateError] = useState<string | null>(null);
-  const [checkWasBusy, setCheckWasBusy] = useState(false);
+  const [macAppCheckWasBusy, setMacAppCheckWasBusy] = useState(false);
+  const [firmwareCheckWasBusy, setFirmwareCheckWasBusy] = useState(false);
   const firmwareUpdateCompleted = updateStatus?.phase === "complete";
   // Installed firmware always comes from device truth (live hello or the
   // firmware update check), never from an update job result: a failed job
@@ -196,9 +200,11 @@ export function UpdatesScreen({
   const firmwareCheckFailed = firmwareUpdate?.status === "check_failed";
   // A newer failed check is a new failure and opens again; a check that
   // answered is not part of it.
-  const failedCheckKey = `${macAppCheckFailed ? companionRelease?.checkedAt : ""}|${
-    firmwareCheckFailed ? firmwareUpdate?.checkedAt : ""
-  }`;
+  const macAppFailedKey = macAppCheckFailed ? companionRelease?.checkedAt ?? "" : null;
+  const firmwareFailedKey = firmwareCheckFailed ? firmwareUpdate?.checkedAt ?? "" : null;
+  const undismissedFailure =
+    (macAppFailedKey !== null && macAppFailedKey !== dismissedMacAppCheck) ||
+    (firmwareFailedKey !== null && firmwareFailedKey !== dismissedFirmwareCheck);
   const companionInstalled =
     companionStatus === "missing"
       ? "Not running"
@@ -254,12 +260,20 @@ export function UpdatesScreen({
   const updateErrorOpen =
     visibleUpdateStatus?.phase === "error" &&
     dismissedUpdateError !== visibleUpdateStatus.startedAt;
-  if (checkBusy && !checkWasBusy) {
-    setCheckWasBusy(true);
+  // A started check (the header button runs both) hides a pending retry;
+  // the end of a check lifts only that check's dismissal.
+  const macAppCheckBusy = checkingMacApp || refreshing;
+  const firmwareCheckBusy = checking || refreshing;
+  if (checkBusy && retryingFailedCheck && (macAppCheckBusy || firmwareCheckBusy)) {
     setRetryingFailedCheck(false);
-  } else if (!checkBusy && checkWasBusy) {
-    setCheckWasBusy(false);
-    setDismissedFailedCheck(null);
+  }
+  if (macAppCheckBusy !== macAppCheckWasBusy) {
+    setMacAppCheckWasBusy(macAppCheckBusy);
+    if (!macAppCheckBusy) setDismissedMacAppCheck(null);
+  }
+  if (firmwareCheckBusy !== firmwareCheckWasBusy) {
+    setFirmwareCheckWasBusy(firmwareCheckBusy);
+    if (!firmwareCheckBusy) setDismissedFirmwareCheck(null);
   }
   const actionsLocked =
     installingAnyUpdate ||
@@ -490,13 +504,16 @@ export function UpdatesScreen({
       ) : null}
 
       {(macAppCheckFailed || firmwareCheckFailed) &&
-      failedCheckKey !== dismissedFailedCheck &&
+      undismissedFailure &&
       !retryingFailedCheck &&
       !checkBusy &&
       !otherDialogOpen &&
       !updateErrorOpen ? (
         <CheckFailedDialog
-          onClose={() => setDismissedFailedCheck(failedCheckKey)}
+          onClose={() => {
+            setDismissedMacAppCheck(macAppFailedKey);
+            setDismissedFirmwareCheck(firmwareFailedKey);
+          }}
           onTryAgain={
             onCheckUpdates && !actionsLocked
               ? () => {
