@@ -39,6 +39,7 @@ import {
   type AppearanceSection,
   type ShellNavItem,
 } from "./control-center-types";
+import { cn } from "@/lib/utils";
 import { ControlCenterBrand } from "./control-center-brand";
 
 type ControlCenterShellProps = {
@@ -112,6 +113,9 @@ export function ControlCenterShell({
     }
     onTabChange(tab);
   };
+  // Usage: the page margin grows with the window (48 px up to 96 px), as in the
+  // template's frames "Usage" and "Usage at 1920 x 1080".
+  const growingMargin = activeTab === "usage";
   return (
     <SidebarProvider
       className="control-center-shell overflow-x-hidden bg-background text-foreground"
@@ -148,7 +152,11 @@ export function ControlCenterShell({
         </Sidebar>
 
         <SidebarInset className="control-center-shell control-center-shell__main min-w-0">
-          <header className="control-center-shell__header flex min-h-[72px] items-center justify-between gap-4 bg-background px-4 py-3 md:h-[86px] md:px-6 lg:px-10 lg:py-0">
+          <header className={cn(
+              "control-center-shell__header flex min-h-[72px] items-center justify-between gap-4 bg-background px-4 py-3 md:h-[86px] md:px-6 lg:px-10 lg:py-0",
+              growingMargin &&
+                "md:px-[clamp(48px,4vw,96px)] lg:px-[clamp(48px,4vw,96px)]",
+            )}>
             <div className="flex min-w-0 items-center gap-3">
               <SidebarTrigger aria-label="Open navigation" className="shrink-0" />
               <h1 className="truncate text-base font-semibold text-foreground md:text-xl">
@@ -160,7 +168,15 @@ export function ControlCenterShell({
             {headerAction}
           </header>
 
-          <div className="control-center-shell__content px-5 py-0 sm:px-7 lg:px-10">{children}</div>
+          <div
+            className={cn(
+              "control-center-shell__content px-5 py-0 sm:px-7 lg:px-10",
+              growingMargin &&
+                "md:px-[clamp(48px,4vw,96px)] lg:px-[clamp(48px,4vw,96px)]",
+            )}
+          >
+            {children}
+          </div>
         </SidebarInset>
       </div>
     </SidebarProvider>

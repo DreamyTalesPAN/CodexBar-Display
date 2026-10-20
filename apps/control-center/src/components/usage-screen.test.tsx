@@ -69,6 +69,15 @@ describe("UsageScreen", () => {
     expect(html).toContain('aria-label="10% weekly used"');
   });
 
+  // 7197 review, point 3: the cards are 428 px wide, at most three in a row, left-aligned; the page is not centred.
+  it("lays the provider cards out as a grid of 428 px columns, not stretched", () => {
+    const html = renderUsage();
+    expect(html).toContain("repeat(auto-fill, 428px)");
+    expect(html).toContain("max-w-[1316px] justify-start");
+    expect(html).not.toContain("max-w-[1180px]");
+    expect(html).not.toContain("2xl:grid-cols-3");
+  });
+
   it("says when the Usage notice stands", () => {
     expect(usageTokenHistoryUnavailable(usage)).toBe(false);
     expect(usageTokenHistoryUnavailable(null)).toBe(false);
@@ -204,9 +213,12 @@ describe("UsageScreen", () => {
     expect(loading.match(/data-slot="skeleton"/g)).toHaveLength(5);
     expect(loading).not.toContain('data-slot="spinner"');
     // Same chart wrapper and legend row as the finished panel, so the tiles below do not move.
-    expect(loading).toContain("relative mt-5 min-h-56");
-    expect(renderUsage()).toContain("relative mt-5 min-h-56");
-    expect(loading.indexOf("relative mt-5 min-h-56")).toBeLessThan(loading.lastIndexOf("gap-x-[18px]"));
+    expect(loading).toContain("relative mt-12 min-h-56");
+    expect(renderUsage()).toContain("relative mt-12 min-h-56");
+    expect(loading.indexOf("relative mt-12 min-h-56")).toBeLessThan(loading.lastIndexOf("gap-x-[18px]"));
+    // Template spacing (7197 review, point 2): 48 px from the number to the chart, 56 px from the legend to the cards.
+    expect(loading).toContain("mt-1.5 mb-14");
+    expect(renderUsage()).toContain("mb-14");
     // The skeleton shows no figures and no finished headings.
     expect(loading).not.toContain("Last 30 days");
     expect(loading).not.toContain("Tokens used over time");

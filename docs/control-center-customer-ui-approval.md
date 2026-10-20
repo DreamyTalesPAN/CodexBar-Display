@@ -8673,3 +8673,38 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #783: build 2b QA, the usage chart has the template's plot height, axis labels and edge (frame 2)
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the chart plot was 184 px high with the day labels 19 px under the axis → it is 160 px high with the day labels 16 px under the axis, and the chart starts 8 px lower (16 px space above the top line) so the lines, the day labels and the legend sit where the template draws them; the value labels (2B, 1B, 0) were right-aligned next to the plot → they start at the left edge of the chart as in the template; the plot ended 4 px before the right edge → it ends at the edge, in line with the tiles below.
+- Approved customer-visible result: the usage chart looks like frame 2 of "Calm Redesign - alle Screens" (plot, axis labels and legend at the template's positions).
+- Scope: `apps/control-center/src/components/usage-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #783: approval marker after merging main
+
+- User approval: Merge of main into this branch; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #783: Usage spacing follows the template (7197 review, point 2)
+
+- User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #783 point 2 (Usage spacing). Before → after: from the number and its words to the chart there were 20 px → there are 48 px; from the chart and its legend to the provider cards there were 28 px → there are 56 px.
+- Approved customer-visible result: the Usage page looks as drawn in frame "Usage" (#usage) of "Calm Redesign - alle Screens": 48 px between the number and the chart, 56 px between the legend and the provider cards (also in the loading state).
+- Scope: `apps/control-center/src/components/usage-screen.tsx`, `apps/control-center/src/components/usage-screen.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #783: Usage page margin grows and the provider cards keep 428 px (7197 review, point 3)
+
+- User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #783 point 3 (Usage scaling). Before → after: the Usage page was centred in a column of at most 1180 px with a fixed 40 px margin and the provider cards stretched over two or three equal columns → the page margin is 48 px and grows with the window up to 96 px, the chart follows the full width, and the provider cards are 428 px wide, at most three in a row (at most 1316 px), left-aligned like the chart and not stretched.
+- Approved customer-visible result: the Usage page looks as drawn in frames "Usage" (#usage) and "Usage at 1920 x 1080" (#usage-large) of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/usage-screen.tsx`, `apps/control-center/src/components/usage-screen.test.tsx`, `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #800: approval marker after merging claude/group-usage (7197 review points 2 and 3)
+
+- User approval: Merge of claude/group-usage (#783) into this branch, which brings the #783 entries "Usage spacing" (7197 point 2) and "Usage page margin and 428 px provider cards" (7197 point 3); no visible change of its own in #800; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: as in the merged #783 entries of 7197 points 2 and 3 (pending, Paul reviews); the pace rows of #800 sit inside the 428 px provider cards.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
