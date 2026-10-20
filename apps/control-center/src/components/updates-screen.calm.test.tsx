@@ -441,6 +441,24 @@ describe("calm Updates screen", () => {
     expect(screen.getByRole("heading", { level: 2, name: "Checking for updates" })).toBeTruthy();
   });
 
+  it("failed check: a firmware-only refresh keeps a closed Mac App failure closed", () => {
+    const macFailed = {
+      ...upToDate,
+      companionRelease: { ...upToDate.companionRelease!, status: "check_failed" as const },
+    };
+    const view = render(<UpdatesScreen {...macFailed} />);
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // Only the firmware check runs again (e.g. the device reported new firmware).
+    view.rerender(<UpdatesScreen {...macFailed} firmwareUpdate={undefined} />);
+    view.rerender(<UpdatesScreen {...macFailed} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // A new Mac App check that fails again opens it.
+    view.rerender(<UpdatesScreen {...macFailed} companionRelease={null} />);
+    view.rerender(<UpdatesScreen {...macFailed} />);
+    expect(screen.getByRole("dialog", { name: "Could not check for updates" })).toBeTruthy();
+  });
+
   it("no dialog while everything checks fine", () => {
     render(<UpdatesScreen {...upToDate} />);
     expect(screen.queryByRole("dialog")).toBeNull();

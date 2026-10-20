@@ -8600,3 +8600,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none; no visible change.
 - Scope: merge of `origin/claude/group-calm-redesign` (`apps/control-center/src/components/vibetv-3d-preview.tsx`, `overview-screen.tsx`, `control-center-shell.tsx`, `setup/setup-device-dialogs.tsx` and their tests) and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — Calm Updates screen: a closed failure stays closed when only the other check reruns (#752, Codex fix)
+- User approval: pending — Paul reviews (Updates built as drawn in the approved master + derived states); Codex review fix, no visible change; not seen by Paul
+- Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged from the entries above except: after the customer closed "Could not check for updates" for a failed Mac App check, a firmware-only refresh (e.g. after the VibeTV reported new firmware) no longer brings that dialog back; it opens again only when the failing check itself ran again.
+- Scope: `apps/control-center/src/components/updates-screen.tsx` (one dismissal per check), `apps/control-center/src/components/updates-screen.calm.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new feature; the Updates screen shows the entries that already exist
