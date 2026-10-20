@@ -8728,3 +8728,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #798 Updates page margin as in the 7197 template points 10 and 11 at large windows.
 - Scope: #798 `apps/control-center/src/components/control-center-shell.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #798 margin fix not announced
+
+## 2026-10-20 — #798: Updates never says "up to date" for a blocked migration (Codex fix)
+
+- User approval: pending — #798 Codex fix; the rendered result is pending Paul's review. Before → after: #798 a required Mac App migration with a missing or disabled download showed "Everything is up to date" beside a closed Update button → #798 the page says "No update available" in the quiet colour.
+- Approved customer-visible result: #798 Updates headline for a migration without a verified download is "No update available", never "Everything is up to date".
+- Scope: #798 `apps/control-center/src/components/updates-screen.tsx`, its calm test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #798 headline fix not announced

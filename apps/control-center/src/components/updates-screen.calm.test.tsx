@@ -298,6 +298,28 @@ describe("calm Updates screen", () => {
     expect(container.querySelector("i.bg-foreground")).toBeNull();
   });
 
+  it("a required migration whose download is missing or disabled is never 'up to date'", () => {
+    for (const dmgDownloadStatus of ["missing_asset", "disabled"] as const) {
+      const { container } = render(
+        <UpdatesScreen
+          {...upToDate}
+          companionRelease={{
+            ...upToDate.companionRelease!,
+            status: "available",
+            updateAvailable: false,
+            dmgDownloadStatus,
+          }}
+          requiresMacAppMigration
+        />,
+      );
+      expect(screen.queryByText("Everything is up to date")).toBeNull();
+      expect(screen.getByRole("heading", { level: 2, name: "No update available" })).toBeTruthy();
+      expect(container.querySelector("i.bg-muted-foreground")).not.toBeNull();
+      expect((screen.getByRole("button", { name: "Update" }) as HTMLButtonElement).disabled).toBe(true);
+      cleanup();
+    }
+  });
+
   it("a failed check outranks an available update in the headline's dot", () => {
     const { container } = render(
       <UpdatesScreen

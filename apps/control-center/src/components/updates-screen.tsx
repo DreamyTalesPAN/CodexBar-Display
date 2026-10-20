@@ -219,11 +219,18 @@ export function UpdatesScreen({
   );
   // The Mac App check answered, but not with "available" (disabled, or no
   // asset to install): that does not establish the app is current either.
+  // The same holds for a required migration that has nothing verified to
+  // download (the release says "available" but the download is "missing_asset"
+  // or "disabled"): the Update button stays closed, and the page must not claim
+  // "Everything is up to date" next to it.
+  const macAppMigrationBlocked = Boolean(
+    requiresMacAppMigration && !verifiedDmgDownloadUrl,
+  );
   const macAppNoAnswer = Boolean(
     macAppRunning &&
       companionRelease &&
-      companionRelease.status !== "available" &&
-      !macAppCheckFailed,
+      !macAppCheckFailed &&
+      (companionRelease.status !== "available" || macAppMigrationBlocked),
   );
   const pageStatusHeading =
     installingUpdate
