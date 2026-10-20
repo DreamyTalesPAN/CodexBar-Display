@@ -8475,6 +8475,13 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/src/components/live-vibetv-preview.tsx`, `apps/control-center/src/components/vibetv-3d-preview.tsx`, the recovery test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
+## 2026-10-20 — #784: approval marker after merging main
+
+- User approval: Merge of main into this branch; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
 ## 2026-10-20 — #778: an invalid field with keyboard focus shows the full ink focus ring
 
 - User approval: pending — Paul reviews (Codex follow-up #778); before → after: a focused invalid field showed the red, reduced invalid ring → the full ink focus ring on a focused invalid field (light and dark), the red border stays and the red ring stays when the field is not focused. Nothing else changes.
