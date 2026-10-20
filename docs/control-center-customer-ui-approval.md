@@ -8744,3 +8744,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #822 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
 - Scope: #822 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #822 approval record only
+
+## 2026-10-20 — #822: approval marker after merging claude/group-calm-redesign at d748c370
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (d748c370) into #822; the own entries of #822 keep their approvals)
+- Approved customer-visible result: #822 as in its own entries plus the entries merged with d748c370; nothing else changes.
+- Scope: the merge of d748c370 and this approval record. Pull request branch #822 only, not merged, not released.
+- What's new: none — merge of d748c370, no customer-visible change of its own
