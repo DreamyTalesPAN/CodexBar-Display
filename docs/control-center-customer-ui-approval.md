@@ -9996,3 +9996,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the top row of the Theme Studio looks like frames 7-9 of "Calm Redesign - alle Screens".
 - Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #781: build 2b QA, the Theme Studio's back arrow is 20 px as drawn
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the back arrow left of the design name was drawn 16 px wide → it is 20 px wide as in the template; the "File" chevron stays 14 px.
+- Approved customer-visible result: the top row of the Theme Studio looks like frames 7-9 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
