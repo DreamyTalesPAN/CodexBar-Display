@@ -37,6 +37,7 @@ const LEADING_MARKDOWN = /^[\s*_`~]+/;
 // 1) after Paul's yes in the communicator chat: the line is
 //    `approved by Paul in the communicator chat, <YYYY-MM-DD HH:MM>: "<quote>"`.
 //    His words are quoted as said and do not count as the state of the approval.
+//    Further text after the closing quote is allowed (` — entry: …`, `(build …)`).
 // 2) a change with no visible change (a merge of main, a firmware or companion
 //    fix that only touches UI files): `no visible change – UI approval not
 //    needed (<reason>)`. The reason is required. The gate cannot see what a
@@ -44,10 +45,13 @@ const LEADING_MARKDOWN = /^[\s*_`~]+/;
 //    the entry also announces something in "What's new".
 // 3) everything else stays "pending …" and is due until Paul's OK.
 const APPROVED_BY_PAUL_PATTERN =
-  /^approved by Paul in the communicator chat, \d{4}-\d{2}-\d{2} \d{2}:\d{2}: ["“„].+["”“]\s*$/i;
+  /^approved by Paul in the communicator chat, \d{4}-\d{2}-\d{2} \d{2}:\d{2}: ["“„].+["”“](\s.*)?$/i;
 const NO_VISIBLE_CHANGE_START = /^no visible change\b/i;
+// The reason in brackets ends the line (it may hold brackets of its own, and an
+// entry written twice carries a " [2]" suffix); text after it is not part of
+// the accepted form.
 const NO_VISIBLE_CHANGE_PATTERN =
-  /^no visible change\s*[–—-]\s*UI approval not needed\s*\(\s*[^)\s][^)]*\)/i;
+  /^no visible change\s*[–—-]\s*UI approval not needed\s*\(\s*[^)\s].*\)(\s*\[\d+\])?\s*$/i;
 
 const uiFilePatterns = [
   /^apps\/control-center\/src\/components\//,
@@ -166,7 +170,15 @@ function analysisHeadRef() {
 // what it covered.
 function latestApprovalCommit(ref) {
   const commits = lines(tryGit(["log", "--format=%H", ref, "--", APPROVAL_FILE]));
-  return commits.find((commit) => addedEntries(commitDiff(commit)).length > 0) || null;
+  // An entry a later commit removed again approves nothing: it must still be
+  // in the file at ref (by its heading), else the UI change before it would be
+  // counted as covered by an approval that is gone.
+  const headingsAtRef = new Set(lines(readRecordFile(APPROVAL_FILE, ref)).filter((line) => line.startsWith("## ")));
+  return (
+    commits.find((commit) =>
+      addedEntries(commitDiff(commit)).some((entry) => headingsAtRef.has(entry.split("\n")[0].trim())),
+    ) || null
+  );
 }
 
 function changedFilesSince(commit, ref) {

@@ -875,6 +875,52 @@ test_no_visible_change_in_an_earlier_commit_passes() {
   assert_contains "$(run_gate "$repo")" "$PENDING_REASON"
 }
 
+# Text after Paul's closing quote does not undo his yes ("— entry: …", "(build …)").
+test_approved_by_paul_may_be_followed_by_text() {
+  local repo="${TMP_ROOT}/approved-by-paul-trailing"
+  approve_ui_change_with_approval_line "$repo" \
+    '- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198) — entry: #663: Reset (no visible change) [2]'
+  expect_gate_success "$repo"
+  # A line that has no closing quote is still not the form.
+  repo="${TMP_ROOT}/approved-by-paul-no-closing-quote"
+  approve_ui_change_with_approval_line "$repo" \
+    '- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: rest passt'
+  expect_gate_due "$repo"
+}
+
+# Text after the reason is outside the accepted form (Codex review of #823);
+# nested brackets and a " [2]" suffix stay inside it.
+test_no_visible_change_ends_after_its_reason() {
+  local repo="${TMP_ROOT}/no-visible-change-trailing"
+  approve_ui_change_with_approval_line "$repo" \
+    "- User approval: no visible change – UI approval not needed (tests) despite changing the screen"
+  expect_gate_due "$repo"
+  assert_contains "$(run_gate "$repo")" "no visible change"
+
+  repo="${TMP_ROOT}/no-visible-change-nested"
+  approve_ui_change_with_approval_line "$repo" \
+    "- User approval: no visible change – UI approval not needed (merge into #783; entry: #674: marker (no visible change)) [2]"
+  expect_gate_success "$repo"
+}
+
+# An approval entry that a later commit removes again approves nothing (Codex
+# review of #823): the UI change before it is due again.
+test_removed_approval_entry_does_not_cover_ui() {
+  local repo="${TMP_ROOT}/approval-removed"
+  setup_repo "$repo"
+  git -C "$repo" update-ref refs/remotes/origin/main HEAD
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Change customer-facing UI"
+  pending_approval_entry "Pending overview" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" add docs/control-center-customer-ui-approval.md
+  git -C "$repo" commit -q -m "Pending approval for overview"
+  git -C "$repo" show HEAD~1:docs/control-center-customer-ui-approval.md \
+    > "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" commit -q -am "Drop the entry again"
+  expect_gate_due "$repo"
+}
+
 # 3) everything else stays pending and fails.
 test_pending_and_draft_stay_due_next_to_the_new_forms() {
   local repo="${TMP_ROOT}/pending-line"
@@ -973,6 +1019,9 @@ test_no_visible_change_with_reason_passes
 test_no_visible_change_needs_a_reason
 test_no_visible_change_cannot_announce_something_new
 test_no_visible_change_in_an_earlier_commit_passes
+test_approved_by_paul_may_be_followed_by_text
+test_no_visible_change_ends_after_its_reason
+test_removed_approval_entry_does_not_cover_ui
 test_pending_and_draft_stay_due_next_to_the_new_forms
 test_unrecognized_approval_value_is_due
 
