@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "node:child_process";
-import { appendFileSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 
 const repoRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
   encoding: "utf8",
@@ -24,10 +24,13 @@ const APPROVAL_PREFIXES = [
 // backticks, or "none — <reason>".
 const WHATS_NEW_PREFIX = "- What's new:";
 const WHATS_NEW_FILE = "apps/control-center/src/lib/whats-new.ts";
-// A newest entry whose "User approval:" line starts with "pending" passes the
-// gate, but the notice keeps Paul's yes in the PR review visible.
-const PENDING_APPROVAL_NOTICE =
-  "UI approval pending: Paul's yes in the PR review is required before merge";
+// An entry whose approval says pending or draft is no approval yet (#705): the
+// word anywhere in its "User approval:" line, or at the start of its
+// "Approved customer-visible result:" line ("Draft, to be confirmed by Paul.").
+// Further into the result line the words describe the product (Theme Studio
+// drafts, a pending provider).
+const PENDING_APPROVAL_PATTERN = /\b(pending|draft)\b/i;
+const PENDING_RESULT_PATTERN = /^(pending|draft)\b/i;
 
 const uiFilePatterns = [
   /^apps\/control-center\/src\/components\//,
@@ -62,10 +65,23 @@ const uiChangedFiles = unique([
 ]);
 const approvalCoversUi = workingTreeApprovalChanged && workingTreeApprovalValid;
 const unapprovedUiFiles = approvalCoversUi ? [] : uiChangedFiles;
+// Every entry this change adds is checked for pending or draft, also those of
+// earlier commits (#799): against the base it branched from when known, else
+// the newest approval commit.
+const comparisonBase = changeBase(analysisRef);
+const committedAddedDiff = comparisonBase
+  ? approvalDiff(comparisonBase, analysisRef)
+  : approvalCommit
+    ? commitDiff(approvalCommit)
+    : "";
+const pendingEntries = [
+  ...addedEntries(committedAddedDiff),
+  ...(workingTreeApprovalChanged ? addedEntries(workingTreeApprovalDiff()) : []),
+].filter(isPendingOrDraft);
 const invalidApprovalMarker =
   (workingTreeApprovalChanged && !workingTreeApprovalValid) ||
   (!workingTreeApprovalChanged && Boolean(approvalCommit) && !committedApprovalValid);
-const due = invalidApprovalMarker || unapprovedUiFiles.length > 0;
+const due = invalidApprovalMarker || pendingEntries.length > 0 || unapprovedUiFiles.length > 0;
 
 printSummary({
   activeApprovalValid,
@@ -73,6 +89,7 @@ printSummary({
   approvalCommit,
   due,
   invalidApprovalMarker,
+  pendingEntries,
   uiChangedFiles,
   unapprovedUiFiles,
   workingTreeApprovalChanged,
@@ -82,7 +99,9 @@ printSummary({
 if (due) {
   const reason = invalidApprovalMarker
     ? `The newest approval marker does not add the required lines: "${APPROVAL_PREFIXES.join('", "')}", and "${WHATS_NEW_PREFIX}" with "none — <reason>" or ids from ${WHATS_NEW_FILE} in backticks.`
-    : `Customer-facing UI changed in ${unapprovedUiFiles.length} file(s) without a matching approval entry.`;
+    : pendingEntries.length > 0
+      ? `${pendingEntries.length} approval entry/entries this change adds says pending or draft, which is no approval yet. Replace it with the given approval before merge.`
+      : `Customer-facing UI changed in ${unapprovedUiFiles.length} file(s) without a matching approval entry.`;
   const message = [
     reason,
     `Get explicit approval for the exact visible result, review ${PRINCIPLES_FILE}, then append it to ${APPROVAL_FILE}.`,
@@ -93,10 +112,6 @@ if (due) {
     console.error(`error: ${message}`);
   }
   process.exit(1);
-}
-
-if (pendingApprovalIntroduced()) {
-  printPendingApprovalNotice();
 }
 
 function analysisHeadRef() {
@@ -247,17 +262,62 @@ function untrackedFileContents(file) {
   }
 }
 
+// The base the change branched from: the pull request base in CI, else
+// origin/main. null when neither is known.
+function changeBase(ref) {
+  const base = pullRequestBase() || tryGit(["rev-parse", "--verify", "origin/main"]);
+  return base ? tryGit(["merge-base", base, ref]) || null : null;
+}
+
+function approvalDiff(from, to) {
+  return tryGit(["diff", "--unified=0", from, to, "--", APPROVAL_FILE]);
+}
+
+function addedLinesOf(diff) {
+  return lines(diff)
+    .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
+    .map((line) => line.slice(1).trim());
+}
+
+// One block per added entry: its "## " heading starts it.
+function addedEntries(diff) {
+  return addedLinesOf(diff)
+    .join("\n")
+    .split(/^(?=## )/m)
+    .filter((entry) => entry.startsWith("## "));
+}
+
+// The value of an entry's field, with the lines that continue it.
+function entryField(entry, prefix) {
+  const entryLines = entry.split("\n");
+  const start = entryLines.findIndex((line) => line.startsWith(prefix));
+  if (start < 0) {
+    return "";
+  }
+  const value = [entryLines[start].slice(prefix.length)];
+  for (const line of entryLines.slice(start + 1)) {
+    if (!line || line.startsWith("- ") || line.startsWith("## ")) {
+      break;
+    }
+    value.push(line);
+  }
+  return value.join(" ").trim();
+}
+
+function isPendingOrDraft(entry) {
+  return (
+    PENDING_APPROVAL_PATTERN.test(entryField(entry, "- User approval:")) ||
+    PENDING_RESULT_PATTERN.test(entryField(entry, "- Approved customer-visible result:"))
+  );
+}
+
 // ref: the commit whose own tree the entry is judged against; null is the
 // working tree (the checked-out head).
 function diffAddsApprovalEvidence(diff, ref = null) {
-  const addedLines = lines(diff)
-    .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
-    .map((line) => line.slice(1).trim());
-  // One block per added entry: its "## " heading starts it. Each one holds its
-  // own approval lines and answers for itself, also when one change adds
-  // several.
-  const added = addedLines.join("\n");
-  const entries = added.split(/^(?=## )/m).filter((entry) => entry.startsWith("## "));
+  // Each added entry holds its own approval lines and answers for itself, also
+  // when one change adds several.
+  const added = addedLinesOf(diff).join("\n");
+  const entries = addedEntries(diff);
   return [added, ...entries].every((text) => {
     const textLines = text.split("\n");
     const whatsNewLines = textLines.filter((line) => line.startsWith(WHATS_NEW_PREFIX));
@@ -313,58 +373,11 @@ function isUiFile(file) {
   return uiFilePatterns.some((pattern) => pattern.test(file));
 }
 
-// The newest entry is the last "## " block of the approval record.
-function newestApprovalEntry() {
-  try {
-    const entries = readFileSync(APPROVAL_FILE, "utf8")
-      .split(/^(?=## )/m)
-      .filter((entry) => entry.startsWith("## "));
-    return entries[entries.length - 1] || "";
-  } catch {
-    return "";
-  }
-}
-
-function newestApprovalPending() {
-  const approvalLine = lines(newestApprovalEntry()).find((line) =>
-    line.startsWith("- User approval:"),
-  );
-  return Boolean(approvalLine) && /^- User approval:\s*pending\b/.test(approvalLine);
-}
-
-// Only a change that adds the pending entry gets the notice. A later PR whose
-// base already holds it (main after the merge) stays quiet.
-function pendingApprovalIntroduced() {
-  if (!newestApprovalPending()) {
-    return false;
-  }
-  if (workingTreeApprovalChanged) {
-    return true;
-  }
-  const base = pullRequestBase();
-  if (!base) {
-    return false;
-  }
-  const newest = newestApprovalEntry().trim();
-  return !tryGit(["show", `${base}:${APPROVAL_FILE}`]).includes(newest);
-}
-
 function pullRequestBase() {
   if (!/^pull_request/.test(process.env["GITHUB_EVENT_NAME"] || "")) {
     return null;
   }
   return tryGit(["rev-parse", "--verify", "HEAD^1"]) || null;
-}
-
-function printPendingApprovalNotice() {
-  console.log(PENDING_APPROVAL_NOTICE);
-  if (process.env["GITHUB_ACTIONS"]) {
-    console.log(`::notice title=Control Center UI approval pending::${PENDING_APPROVAL_NOTICE}`);
-    const summary = process.env["GITHUB_STEP_SUMMARY"];
-    if (summary) {
-      appendFileSync(summary, `### Control Center UI approval pending\n\n${PENDING_APPROVAL_NOTICE}.\n\n`);
-    }
-  }
 }
 
 function printSummary({
@@ -373,6 +386,7 @@ function printSummary({
   approvalCommit,
   due,
   invalidApprovalMarker,
+  pendingEntries,
   uiChangedFiles,
   unapprovedUiFiles,
   workingTreeApprovalChanged,
@@ -391,6 +405,12 @@ function printSummary({
   console.log(`Unapproved UI files: ${unapprovedUiFiles.length}`);
   if (invalidApprovalMarker) {
     console.log("Approval marker is missing required evidence.");
+  }
+  if (pendingEntries.length > 0) {
+    console.log("Approval entries that say pending or draft:");
+    for (const entry of pendingEntries) {
+      console.log(`- ${entry.split("\n")[0].slice(3)}`);
+    }
   }
   const filesToPrint = due ? unapprovedUiFiles : uiChangedFiles;
   if (filesToPrint.length > 0) {
