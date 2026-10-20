@@ -74,7 +74,7 @@ type UsageSlotFrame = {
 };
 type UsageWindowFrame = UsageSlotFrame;
 
-type DisplayFrame = {
+export type DisplayFrame = {
   v?: number;
   provider?: string;
   label?: string;
@@ -176,7 +176,7 @@ export type ThemePrimitive = {
   p?: string[];
 };
 
-type FrameData = {
+export type FrameData = {
   provider: string;
   label: string;
   session: number;
@@ -1464,7 +1464,7 @@ function frameUsageMode(displayFrame: DisplayFrame | undefined): string {
   return "used";
 }
 
-function activeThemeId(device: DeviceInfo | null): string {
+export function activeThemeId(device: DeviceInfo | null): string {
   const theme = normalizeThemeAlias(device?.activeTheme);
   if (theme && theme !== "installing") {
     return theme;

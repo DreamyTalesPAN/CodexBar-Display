@@ -19,7 +19,7 @@ function provider(fields: Partial<UsageProviderInfo>): UsageProviderInfo {
 
 describe("displayPreviewFor", () => {
   it("carries the provider's own reading", () => {
-    expect(displayPreviewFor(provider({}))).toEqual({
+    expect(displayPreviewFor(provider({}))).toMatchObject({
       providerLabel: "Codex",
       resetLabel: "Reset in 3h 0m",
       windows: [{ label: "Session", percent: 42 }, { label: "Weekly", percent: 26 }],
@@ -62,6 +62,58 @@ describe("displayPreviewFor", () => {
 
   it("has nothing to draw without a provider", () => {
     expect(displayPreviewFor(undefined)).toBeNull();
+  });
+});
+
+describe("displayPreviewFor: the frame the theme draws", () => {
+  const stamped = "2026-10-20T08:00:00Z";
+
+  it("passes the usage service's values through unchanged", () => {
+    const preview = displayPreviewFor(
+      provider({
+        collectedAt: stamped,
+        usageMode: "remaining",
+        windows: [
+          { id: "session", label: "Session", usedPercent: 64, resetSecs: 3600 },
+          { id: "weekly", label: "Weekly", usedPercent: 28, resetSecs: 7200 },
+        ],
+      }),
+    );
+
+    expect(preview?.frameAt).toBe(stamped);
+    expect(preview?.frame).toMatchObject({
+      provider: "codex",
+      label: "Codex",
+      usageMode: "remaining",
+      usageWindows: [
+        { id: "session", label: "Session", percent: 64, resetSecs: 3600 },
+        { id: "weekly", label: "Weekly", percent: 28, resetSecs: 7200 },
+      ],
+    });
+  });
+
+  it("reads the plain session and weekly figures when there are no windows", () => {
+    expect(displayPreviewFor(provider({}))?.frame?.usageWindows).toMatchObject([
+      { id: "session", percent: 42 },
+      { id: "weekly", percent: 26 },
+    ]);
+  });
+
+  it("leaves a window the collector could not read out of the frame", () => {
+    const windows = displayPreviewFor(provider({ weeklyUnavailable: true }))
+      ?.frame?.usageWindows;
+
+    expect(windows).toHaveLength(1);
+    expect(windows?.[0].id).toBe("session");
+  });
+
+  it("has no frame for a provider without usage, so its tile stays a placeholder", () => {
+    expect(displayPreviewFor(provider({ usageUnavailable: true }))?.frame).toBeUndefined();
+    expect(displayPreviewFor(provider({ stale: true }))?.frame).toBeUndefined();
+    expect(
+      displayPreviewFor(provider({ sessionUnavailable: true, weeklyUnavailable: true }))
+        ?.frame,
+    ).toBeUndefined();
   });
 });
 

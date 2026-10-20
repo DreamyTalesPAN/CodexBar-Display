@@ -7,6 +7,7 @@ import type {
   ProviderDisplaySelection,
   SupportDiagnostics,
 } from "../control-center-types";
+import type { DisplayFrame } from "../live-vibetv-preview";
 import {
   Item,
   ItemActions,
@@ -14,6 +15,12 @@ import {
   ItemDescription,
   ItemTitle,
 } from "@/components/ui/item";
+import {
+  ThemeTileSkeleton,
+  ThemeTileStrip,
+  useThemeRenderPack,
+  type SetupDisplayModeTheme,
+} from "./setup-display-theme-tiles";
 import { SETUP_REVEAL } from "./setup-reveal";
 import {
   SelectionCheck,
@@ -46,6 +53,14 @@ export type SetupDisplayModeProvider = {
  */
 export type SetupDisplayModePreview = {
   providerLabel: string;
+  /**
+   * The provider's readings in the shape the theme renderer draws, exactly as
+   * the usage service delivered them. Absent while it has none to give; the
+   * theme tile then shows a placeholder instead of numbers.
+   */
+  frame?: DisplayFrame;
+  /** When those readings were taken, so reset countdowns keep counting down. */
+  frameAt?: string;
   resetLabel: string | null;
   windows: { label: string; percent: number | null }[];
 };
@@ -64,6 +79,12 @@ type SetupDisplayModeScreenProps = {
   /** Live usage of the provider Manual is pinned to right now. */
   manualPreview: SetupDisplayModePreview | null;
   mode: ProviderDisplaySelection["mode"];
+  /**
+   * The theme VibeTV is showing. With it, the tiles draw that theme with each
+   * provider's live values; without it (or if it cannot be read) they fall back
+   * to the plain usage tiles.
+   */
+  theme?: SetupDisplayModeTheme | null;
   aiFixPrompt?: () => string;
   onBack?: () => void;
   onContinue: () => void;
@@ -83,6 +104,7 @@ export function SetupDisplayModeScreen({
   automaticPreviews,
   manualPreview,
   mode,
+  theme,
   aiFixPrompt,
   onBack,
   onContinue,
@@ -120,6 +142,7 @@ export function SetupDisplayModeScreen({
         providers={providers}
         saving={saving}
         selectedProviderId={selectedProviderId}
+        theme={theme}
       />
 
       <Button
@@ -160,6 +183,7 @@ type DisplayModeChoiceProps = Pick<
   | "providers"
   | "saving"
   | "selectedProviderId"
+  | "theme"
 > & {
   /** Settings says so when Automatic follows a timer instead of activity. */
   automaticDescription?: string;
@@ -189,6 +213,7 @@ export function DisplayModeChoice({
   providers,
   saving = false,
   selectedProviderId,
+  theme,
 }: DisplayModeChoiceProps) {
   const rotation = rotationFrames(
     automaticPreview,
@@ -196,6 +221,23 @@ export function DisplayModeChoice({
     providers,
   );
   const { index } = useProviderRotation(rotation.length);
+  const themePack = useThemeRenderPack(theme);
+  const manualFrames = manualPreview ? [manualPreview] : [];
+  const tiles = (frames: SetupDisplayModePreview[], at: number) => {
+    // The theme's own picture whenever it can be had; the plain tile is what
+    // stays if the theme could not be read, so the step never loses its preview.
+    if (theme && themePack.status === "loading") {
+      return <ThemeTileSkeleton count={frames.length} />;
+    }
+    if (theme && themePack.pack) {
+      return frames.length ? (
+        <ThemeTileStrip frames={frames} index={at} pack={themePack.pack} />
+      ) : (
+        <ThemeTileSkeleton count={1} />
+      );
+    }
+    return <PreviewTile calm={calm} frames={frames} index={at} />;
+  };
 
   return (
     <div className={cn("flex w-full flex-col", calm ? "gap-6" : "gap-4", className)}>
@@ -208,7 +250,7 @@ export function DisplayModeChoice({
           selected={mode === "automatic"}
           title="Automatic"
         >
-          <PreviewTile calm={calm} frames={rotation} index={index} />
+          {tiles(rotation, index)}
         </ModeCard>
         <ModeCard
           calm={calm}
@@ -218,7 +260,7 @@ export function DisplayModeChoice({
           selected={mode === "fixed"}
           title="Manual"
         >
-          <PreviewTile calm={calm} frames={manualPreview ? [manualPreview] : []} index={0} />
+          {tiles(manualFrames, 0)}
         </ModeCard>
       </div>
 
