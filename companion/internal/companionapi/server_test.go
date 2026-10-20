@@ -15458,6 +15458,50 @@ func TestDeviceSearchOffersAHalfWrittenVibeTVForItsRescue(t *testing.T) {
 // A half-written VibeTV is finished from the image cached for the failed
 // rescue; the check names that version even when the manifest moved on
 // (Codex review on #819).
+// Codex on #840: a VibeTV moved to a new port is found by one silent hello
+// window there. The firmware check must not read that window a second time, or
+// it takes about 60 s and the app's 45 s request limit ends it.
+func TestFirmwareLatestReadsAMovedRescuePortOnce(t *testing.T) {
+	manifest := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"release":"v1.0.99","artifacts":[{"board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.10"}]}`))
+	}))
+	defer manifest.Close()
+	t.Setenv(firmwareManifestEnvVar, manifest.URL+"/firmware-manifest.json")
+	server := newTestServer(t, runtimeconfig.Config{})
+	imagePath := filepath.Join(t.TempDir(), "firmware.bin")
+	if err := os.WriteFile(imagePath, []byte("cable firmware"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte("cable firmware"))
+	if err := firmwareupdate.SaveRescueMarker(server.home, firmwareupdate.RescueMarker{
+		ChipMAC: "0000aabb11223344",
+		Port:    "COM4", Ports: []string{"COM1", "COM4"}, Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
+		ImagePath: imagePath, ImageSHA256: hex.EncodeToString(sum[:]), WriteStartedAt: time.Now().Add(-time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Replugged: COM4 is gone, the silent half-written VibeTV is on COM9.
+	server.listCablePorts = func() ([]string, error) { return []string{"COM1", "COM9"}, nil }
+	reads := map[string]int{}
+	server.readCableHello = func(port string) (protocol.DeviceHello, error) {
+		reads[port]++
+		return protocol.DeviceHello{}, errors.New("no hello")
+	}
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/updates/latest?board=esp8266-smalltv-st7789&firmware=1.0.0&rescue=1", nil))
+	var got firmwareLatestResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v body=%s", err, rec.Body.String())
+	}
+	if !got.UpdateAvailable || got.LatestFirmware != "1.0.9" {
+		t.Fatalf("the moved half-written VibeTV must be offered the cached 1.0.9: %+v", got)
+	}
+	if reads["COM9"] != 1 {
+		t.Fatalf("the moved port must be read once, got %d reads (%v)", reads["COM9"], reads)
+	}
+}
+
 func TestFirmwareLatestNamesTheCachedRescueTarget(t *testing.T) {
 	manifest := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

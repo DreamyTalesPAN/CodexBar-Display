@@ -151,20 +151,30 @@ const movedRescueProbeBudget = 50 * time.Second
 // replug. Without a port no rescue write can resume. The search for a moved
 // VibeTV probes new ports, so it waits while a firmware update holds them.
 func (s *Server) rescueMarkerPort(marker firmwareupdate.RescueMarker) (string, bool) {
+	port, present, _ := s.rescueMarkerPortProbed(marker)
+	return port, present
+}
+
+// rescueMarkerPortProbed is rescueMarkerPort that also says whether the port was
+// just proven silent: a moved port is only named after a full hello window on it
+// stayed empty. A caller must not read that hello window a second time: two
+// 30-second reads push the firmware check past the app's 45-second request limit
+// (Codex on #840).
+func (s *Server) rescueMarkerPortProbed(marker firmwareupdate.RescueMarker) (string, bool, bool) {
 	if s.listCablePorts == nil {
-		return "", false
+		return "", false, false
 	}
 	ports, err := s.listCablePorts()
 	if err != nil {
-		return "", false
+		return "", false, false
 	}
 	if slices.ContainsFunc(ports, func(port string) bool {
 		return strings.EqualFold(strings.TrimSpace(port), strings.TrimSpace(marker.Port))
 	}) {
-		return marker.Port, true
+		return marker.Port, true, false
 	}
 	if s.readCableHello == nil || s.firmwareUpdateActive.Load() {
-		return "", false
+		return "", false, false
 	}
 	// Each new port may wait a full hello window, and the sender reads one port at
 	// a time. The probes share one budget: once it is spent a port cannot be checked,
@@ -180,9 +190,9 @@ func (s *Server) rescueMarkerPort(marker firmwareupdate.RescueMarker) (string, b
 		return s.readCableHello(port)
 	})
 	if overBudget {
-		return "", false
+		return "", false, false
 	}
-	return moved, found
+	return moved, found, found
 }
 
 // halfWrittenRescueEntry is the VibeTV a failed Cable rescue left without
