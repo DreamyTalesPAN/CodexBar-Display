@@ -65,6 +65,24 @@ describe("Theme Studio AI row in Settings", () => {
     expect(dialog.hasAttribute("aria-describedby")).toBe(false);
   });
 
+  it("has its final layout from the first frame: no 'unavailable' notice while the helper is still being asked, and the key field is ready for focus", async () => {
+    let answer!: (value: ReturnType<typeof capabilities>) => void;
+    vi.mocked(fetchAIThemeCapabilities).mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+    render(<OpenAIKeyForm inSetup={false} onConnectingChange={() => {}} onConnected={() => {}} onDisconnected={() => {}} onDismiss={() => {}} />);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect((screen.getByPlaceholderText("Paste your key here") as HTMLInputElement).disabled).toBe(false);
+    answer(capabilities(false));
+    await waitFor(() => expect(fetchAIThemeCapabilities).toHaveBeenCalled());
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("says AI is unavailable once the helper has answered that it is", async () => {
+    vi.mocked(fetchAIThemeCapabilities).mockResolvedValue({ enabled: false, providers: [] } as unknown as ReturnType<typeof capabilities>);
+    render(<OpenAIKeyForm inSetup={false} onConnectingChange={() => {}} onConnected={() => {}} onDisconnected={() => {}} onDismiss={() => {}} />);
+    expect((await screen.findByRole("alert")).textContent).toContain("AI is unavailable");
+    expect((screen.getByPlaceholderText("Paste your key here") as HTMLInputElement).disabled).toBe(true);
+  });
+
   it("follows a key that was saved while its check failed once the dialog is closed", async () => {
     vi.mocked(fetchAIThemeCapabilities)
       .mockResolvedValueOnce(capabilities(false)) // the row

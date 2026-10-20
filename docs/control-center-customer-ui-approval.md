@@ -8147,3 +8147,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #781 Studio fixes: composer on the bottom edge, Details down to the window bottom, key dialog without a jump (review of build 7195)
+
+- User approval: pending — Paul asked on 20.10.2026 (review of build 7195, via the communicator) for the #781 Studio fixes; before → after: (1) the Theme Studio's prompt box floated 98 px above the bottom edge with empty space under it → #781 Studio fixes: it sits on the bottom edge of the chat column with the normal page margin at every window height (800, 1000, 1200 px), the chat above it fills the rest; (2) the opened "Details" showed one row at 800 px, because it ended 98 px above the window bottom → #781 Studio fixes: it takes all the space below the preview, down to the window bottom, and scrolls inside; the preview does not move; (3) the "Add OpenAI key" / "Replace OpenAI key" dialog opened 265 px high with an "AI is unavailable" notice and a disabled field, then shrank to 229 px and jumped by 18 px when the helper answered → #781 Studio fixes: it opens at its final size (229 px) with the key field focused and no notice unless the helper really answers that AI is unavailable.
+- Approved customer-visible result: #781 Studio fixes: the Theme Studio composer and Details end at the window's bottom edge, and the key dialog appears in one step like the other dialogs (same position, size and fade as the "Factory reset" dialog, no jump).
+- Scope: #781 Studio fixes in `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, `editable-theme-preview.tsx`, `openai-key-form.tsx`, their tests and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
