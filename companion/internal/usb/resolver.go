@@ -133,6 +133,11 @@ func ResolveVibeTVControlPort(explicit, expectedDeviceID string) (string, error)
 	return defaultSender.ResolveControlPort(explicit, expectedDeviceID)
 }
 
+// OpenVibeTVPort returns the open port of an already verified VibeTV, if any.
+func OpenVibeTVPort() (string, bool) {
+	return defaultSender.OpenVibeTVPort()
+}
+
 // CableDevice is an identity-confirmed VibeTV found on a serial port. Port is
 // transport plumbing only and must never be persisted or shown as identity.
 type CableDevice struct {

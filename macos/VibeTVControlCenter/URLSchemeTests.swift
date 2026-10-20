@@ -1,5 +1,6 @@
 #if VIBETV_CONTROL_CENTER_TESTING
 import Foundation
+import WebKit
 
 private func require(_ condition: @autoclosure () -> Bool, _ message: String) {
     guard condition() else {
@@ -9,6 +10,55 @@ private func require(_ condition: @autoclosure () -> Bool, _ message: String) {
 }
 
 func runURLSchemeTests() {
+    // Issue #655: a window behind other windows must not suspend the page that
+    // drives the setup.
+    MainActor.assumeIsolated {
+        let configuration = makeControlCenterWebViewConfiguration()
+        require(
+            configuration.preferences.inactiveSchedulingPolicy == .none,
+            "the Control Center page must keep running while its window is covered"
+        )
+        require(
+            configuration.defaultWebpagePreferences.allowsContentJavaScript,
+            "the Control Center page needs JavaScript"
+        )
+    }
+    // Issue #655: only macOS 14.0 to 14.5 need the app to keep a covered page
+    // running; their WebKit still suspends it despite `.none`.
+    for (major, minor, patch) in [(14, 0, 0), (14, 3, 1), (14, 5, 0)] {
+        require(
+            controlCenterPageNeedsKeepAlive(
+                OperatingSystemVersion(majorVersion: major, minorVersion: minor, patchVersion: patch)
+            ),
+            "macOS \(major).\(minor).\(patch) needs the page keep-alive"
+        )
+    }
+    for (major, minor, patch) in [(14, 6, 0), (14, 7, 6), (15, 0, 0), (26, 0, 0)] {
+        require(
+            !controlCenterPageNeedsKeepAlive(
+                OperatingSystemVersion(majorVersion: major, minorVersion: minor, patchVersion: patch)
+            ),
+            "macOS \(major).\(minor).\(patch) keeps a covered page running by itself"
+        )
+    }
+    require(
+        controlCenterPageKeepAliveInterval < .seconds(8 * 60),
+        "the keep-alive must come before WebKit's eight-minute suspension"
+    )
+
+    // Issue #556: the start screen retries the CodexBar preparation once; a repair does not.
+    require(
+        retriesCodexBarBootstrap(fromStartScreen: true, repairRequested: false),
+        "the start screen must retry the CodexBar preparation before asking for a repair"
+    )
+    require(
+        !retriesCodexBarBootstrap(fromStartScreen: true, repairRequested: true),
+        "a requested CodexBar repair must answer after one preparation"
+    )
+    require(
+        !retriesCodexBarBootstrap(fromStartScreen: false, repairRequested: false),
+        "a runtime repair must answer within the page's wait, after one preparation"
+    )
     // Issue #582: the page learns how the save dialog ended.
     require(
         downloadFinishedEventScript(fileName: "vibetv-theme-new-theme.zip", saved: true)
