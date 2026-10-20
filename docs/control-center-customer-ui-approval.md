@@ -5,6 +5,13 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-10-20 — Mac: a background service blocked by macOS sends the customer to a new download (#626)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 11:43: "ja" (to "Passt das so für dich? Mit „#827 ja“ wird es nach den Tests gemergt.", picture heute-vs-pr827.png); text and buttons before that by Marcus 75a, 20.10.2026 (question 75).
+- Approved customer-visible result: when macOS kills VibeTV's background service because this copy of the app is signed differently from the copy that first registered it ("Launch Constraint Violation" in the helper's crash report), the native start screen shows the title "macOS blocked VibeTV’s background service", the text "This copy of VibeTV is signed differently from the one your Mac first allowed. Quit VibeTV, move it to the Trash, then download it again from vibetv.shop and open it.", the primary button "Download VibeTV again" (opens the existing download page), and the usual "Create report" and "Open support log". "Restart service" is not offered on this screen. Every other service start failure keeps its current screen. The native support report gains the field `launchBlockedBySignatureLast24Hours`.
+- Scope: `macos/VibeTVControlCenter/main.swift`, `URLSchemeTests.swift`, `scripts/test-macos-control-center-app-bundle.sh`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a recovery screen only for copies signed differently from the official app, not announced to customers
+
 ## 2026-10-16 — Subscription providers first in the provider list (#651)
 
 - User approval: Marcus, 16.10.2026, channel Abstimmungschat (question 27, answer "ja").
@@ -7533,7 +7540,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-16 — #663: Same device-switch reset as #645 for display brightness (no visible change)
 
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #663: Same device-switch reset as #645 for display brightness (no visible change)
+- User approval: none needed, no visible change. Same device-switch reset as #645 for display brightness (#663); no new wording; not seen by Paul.
 - Approved customer-visible result: unchanged; Brightness and the Settings screensaver switch stay as in the entries above. While another VibeTV's settings are still unknown, Brightness stays disabled, as the screensaver switch does.
 - Scope: `control-center-app.tsx`, its display preferences test. Pull-request branch only, not merge or release.
 - What's new: none — review fix, no customer-visible change of its own
@@ -7542,7 +7549,7 @@ issue scope, or release permission never implies UI permission.
 
 
 
-- User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #674: approval marker after merging #645 and main (no visible change))
+- User approval: Merge of the stacked base (#645) and main for the hardware run; no visible change of its own; not seen by Paul. The UI review gate cannot read a clean merge commit as approval marker, so this entry stands for that merge. No new wording.
 
 - Approved customer-visible result: as approved in the #663 entry above (no visible change); nothing else changes.
 
@@ -7552,7 +7559,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-16 — #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible change)
 
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible chang
+- User approval: Codex review fix, no visible change; not seen by Paul.
 - Approved customer-visible result: none. When another VibeTV connects, a Brightness change still waiting to be sent is dropped instead of being sent to that VibeTV; the slider and all wording stay as they are.
 - Scope: `resetDeviceSettings` in `apps/control-center/src/components/control-center-app.tsx`, its test in `control-center-app.display-preferences.test.tsx`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — review fix, no customer-visible change
@@ -7566,7 +7573,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-19 — #674: Codex review fix of #645, a late settings answer for another VibeTV no longer chooses the selected theme (no visible change)
 
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #674: Codex review fix of #645, a late settings answer for another VibeTV no longer choose
+- User approval: Codex review finding on #645 (`1a568a04`); Marcus, via the orchestrator on 2026-10-19: fix it in #674 with a unit test, without a new device test, because this path never runs with one VibeTV.
 - Approved customer-visible result: none with one VibeTV. When another VibeTV connects while a read of the first one's settings is still on its way, that late answer no longer marks the first VibeTV's active theme as selected under Appearance › Themes; the selection follows the VibeTV connected now, as Brightness and the Settings screensaver switch already do.
 - Scope: `readSettings` in `apps/control-center/src/components/control-center-app.tsx`, its test in `control-center-app.display-preferences.test.tsx`, and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — review fix, no customer-visible change
@@ -7817,6 +7824,176 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: unchanged.
 - Scope: merge of `origin/main` into this pull request branch, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no customer-visible change
+
+## 2026-10-20 — #827: Paul's approval of the "macOS blocked VibeTV's background service" screen
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 11:43: "ja" — #827 picture "App heute (main) | App mit PR #827" (heute-vs-pr827.png).
+- Approved customer-visible result: #827 the native start screen for a background service killed by macOS for a different signature, exactly as in the entry "a background service blocked by macOS sends the customer to a new download (#626)" above.
+- Scope: #827 this approval record only (records Paul's approval of the entry above). Pull request branch only, not merged, not released.
+- What's new: none — #827 approval record only
+## 2026-10-19 — A slow provider check finishes instead of timing out (#786)
+
+- User approval: Marcus, 19.10.2026, question 64 via the orchestrator, answer "ja": a single provider check may take up to 90 s, after at most 50 s the row shows that it is being checked, the result arrives on its own, and the check of all providers keeps its 40 s.
+- Approved customer-visible result: When a customer switches one provider on or clicks "Check again" on it, that provider's check may now take up to 90 seconds before the row reports "The provider check timed out.", on the Mac and on Windows, instead of 40 seconds. If the check still runs after 50 seconds, "Check again" ends and the row shows that the provider is being checked until the result arrives; the row then shows the result without another click. A Mac whose only Claude sign-in is Claude Code (about 55 seconds through CodexBar) ends with Claude working instead of the timeout. No copy, layout or control changes; the check of all providers at once keeps its 40 seconds.
+- Scope: `companion/internal/codexbar/providers.go`, `provider_setup.go`, `companion/internal/companionapi/provider_setup.go`, `preferences.go`, their tests, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a check that now finishes needs no notice
+
+## 2026-10-20 — #805: approval marker after merging main at b74db67b
+
+- User approval: merge of main (b74db67b) into #805; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: #805 as in its own entries (pending, Paul reviews) plus the entries merged with b74db67b; nothing else changes.
+- Scope: the merge of b74db67b and this approval record. Pull request branch #805 only, not merged, not released.
+- What's new: none — merge of b74db67b, no customer-visible change of its own
+
+## 2026-10-20 — #827: approval marker for the merge 02905756 of main
+
+- User approval: no visible change – UI approval not needed (#827 merge 02905756 of main; the merged entries keep their own approvals)
+- Approved customer-visible result: #827 merge 02905756 as in this branch's entries and the merged ones; nothing else changes.
+- Scope: #827 merge 02905756 and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #827 merge 02905756 has no customer-visible change of its own
+
+## 2026-10-20 — #815: approval marker after merging main
+
+- User approval: no visible change – UI approval not needed (#815: approval marker after merging main: Merge of main into this branch; no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #815: approval marker after merging main at e7e8319d
+
+- User approval: no visible change – UI approval not needed (merge of main (e7e8319d) into #815; the own entries of #815 keep their approvals)
+- Approved customer-visible result: #815 as in its own entries plus the entries merged with e7e8319d; nothing else changes.
+- Scope: the merge of e7e8319d and this approval record. Pull request branch #815 only, not merged, not released.
+- What's new: none — merge of e7e8319d, no customer-visible change of its own
+
+## 2026-10-20 — #815: approval lines rewritten to the two accepted forms
+
+- User approval: no visible change – UI approval not needed (#815 record rewrite for the gate in #823; no customer-visible change)
+- Approved customer-visible result: #815 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
+- Scope: #815 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #815 approval record only
+
+## 2026-10-17 — Accessibility baseline: axe checks for Theme Studio, the replace question and the busy notice (#214)
+
+- User approval: pending — Paul reviews this PR (accessibility baseline, #214); look unchanged.
+- Approved customer-visible result: none. Every screen and dialog looks unchanged; only tests and `docs/control-center-accessibility.md` change.
+- Scope: `apps/control-center/src/components/system-busy-dialog.test.tsx`, the new `apps/control-center/src/components/theme-studio/theme-studio.axe.test.tsx` and `replace-draft-dialog.test.tsx`, `docs/control-center-accessibility.md` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — tests and documentation only
+
+## 2026-10-20 — #727: approval marker after merging main at e7e8319d
+
+- User approval: no visible change – UI approval not needed (merge of main (e7e8319d) into #727; tests and docs only)
+- Approved customer-visible result: #727 adds accessibility checks only; nothing customers see changes.
+- Scope: #727 merge e7e8319d, the Theme Studio axe test moved to theme-studio.axe.test.tsx, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #727 tests only
+
+## 2026-10-20 — #727: coverage table points at the axe test
+
+- User approval: no visible change – UI approval not needed (#727: coverage table in the accessibility doc fixed and a test that keeps it true; tests and docs only)
+- Approved customer-visible result: #727 changes a document and a test only; nothing customers see changes.
+- Scope: `docs/control-center-accessibility.md`, the new `apps/control-center/src/test/accessibility-doc.test.ts` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #727 docs and tests only
+
+## 2026-10-20 — #727: approval marker after merging main at 12205356
+
+- User approval: no visible change – UI approval not needed (merge of main (12205356) into #727; the own entries of #727 keep their approvals)
+- Approved customer-visible result: #727 as in its own entries plus the entries merged with 12205356; nothing else changes.
+- Scope: the merge of 12205356 and this approval record. Pull request branch #727 only, not merged, not released.
+- What's new: none — merge of 12205356, no customer-visible change of its own
+
+## 2026-10-19 — Theme tags in the catalog (data only, #793)
+- User approval: no visible change – UI approval not needed (#801 Theme tags in the catalog (data only, #793): data only, no visible change; not seen by Paul; the Features and Providers filter groups come in the later Appearance filter PR and need his yes there)
+- Approved customer-visible result: none. The theme catalog gets an optional `tags` field and the readers keep it; no screen, copy, control or layout changes.
+- Scope: `apps/control-center/src/lib/themes.ts`, the new `apps/control-center/src/lib/theme-tags.ts` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — data only, no customer-visible change
+
+## 2026-10-19 — Theme tag vocabulary: provider count instead of provider names (data only, #793)
+- User approval: no visible change – UI approval not needed (#801 Theme tag vocabulary: provider count instead of provider names (data only, #793): data only, no visible change; not seen by Paul; the provider groups "1 provider", "2 providers" and "3 or more" come in the later Appearance filter PR and need his yes there)
+- Approved customer-visible result: none. The provider tags become `providers-1`, `providers-2` and `providers-3plus` (how many providers a theme shows at once); no screen, copy or layout changes.
+- Scope: `apps/control-center/src/lib/theme-tags.ts`, its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — data only, no customer-visible change
+
+## 2026-10-19 — #801: approval marker after merging main (v1.0.65 release round + #638)
+
+- User approval: no visible change – UI approval not needed (#801: approval marker after merging main (v1.0.65 release round + #638): Merge of main into this branch; no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #801: approval marker after merging main
+
+- User approval: no visible change – UI approval not needed (#801: approval marker after merging main: Merge of main into this branch; no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #801: approval marker after merging main at e7e8319d
+
+- User approval: no visible change – UI approval not needed (merge of main (e7e8319d) into #801; the own entries of #801 keep their approvals)
+- Approved customer-visible result: #801 as in its own entries plus the entries merged with e7e8319d; nothing else changes.
+- Scope: the merge of e7e8319d and this approval record. Pull request branch #801 only, not merged, not released.
+- What's new: none — merge of e7e8319d, no customer-visible change of its own
+
+## 2026-10-20 — #801: approval lines rewritten to the two accepted forms
+
+- User approval: no visible change – UI approval not needed (#801 record rewrite for the gate in #823; no customer-visible change)
+- Approved customer-visible result: #801 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
+- Scope: #801 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #801 approval record only
+
+## 2026-10-20 — #801: approval marker after merging main at 12205356
+
+- User approval: no visible change – UI approval not needed (merge of main (12205356) into #801; the own entries of #801 keep their approvals)
+- Approved customer-visible result: #801 as in its own entries plus the entries merged with 12205356; nothing else changes.
+- Scope: the merge of 12205356 and this approval record. Pull request branch #801 only, not merged, not released.
+- What's new: none — merge of 12205356, no customer-visible change of its own
+
+## 2026-10-20 — #801: approval marker after merging main at 1f6d099d
+
+- User approval: no visible change – UI approval not needed (merge of main (1f6d099d) into #801; the own entries of #801 keep their approvals)
+- Approved customer-visible result: #801 as in its own entries plus the entries merged with 1f6d099d; nothing else changes.
+- Scope: the merge of 1f6d099d and this approval record. Pull request branch #801 only, not merged, not released.
+- What's new: none — merge of 1f6d099d, no customer-visible change of its own
+
+## 2026-10-20 — #819: the cached rescue version is shown only for the rescue itself (Codex review)
+
+- User approval: pending — #819 Codex fix, no new wording; not seen by Paul. Before → after: #819 any VibeTV with the same board and firmware as a half-written one was shown the cached rescue version → #819 only the Cable rescue of the marked VibeTV (port connected) shows it; every other VibeTV shows the version from the release, as it is updated from there.
+- Approved customer-visible result: #819 the firmware version named in setup is the one that will really be written; texts and layout unchanged.
+- Scope: #819 `apps/control-center/src/components/control-center-app.tsx` (rescue flag on the firmware check), `companion/internal/companionapi/firmware_update.go`, `companion/internal/companionapi/device_cable.go`, the server test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #819 Codex fix not announced
+
+## 2026-10-20 — #819: approval marker after merging main at e7e8319d
+
+- User approval: no visible change – UI approval not needed (merge of main (e7e8319d) into #819; the own entries of #819 keep their approvals)
+- Approved customer-visible result: #819 as in its own entries plus the entries merged with e7e8319d; nothing else changes.
+- Scope: the merge of e7e8319d and this approval record. Pull request branch #819 only, not merged, not released.
+- What's new: none — merge of e7e8319d, no customer-visible change of its own
+
+## 2026-10-20 — #819: approval marker after merging main at 12205356
+
+- User approval: no visible change – UI approval not needed (merge of main (12205356) into #819; the own entries of #819 keep their approvals)
+- Approved customer-visible result: #819 as in its own entries plus the entries merged with 12205356; nothing else changes.
+- Scope: the merge of 12205356 and this approval record. Pull request branch #819 only, not merged, not released.
+- What's new: none — merge of 12205356, no customer-visible change of its own
+
+## 2026-10-20 — #819: approval marker after merging main at 1f6d099d
+
+- User approval: no visible change – UI approval not needed (merge of main (1f6d099d) into #819; the own entries of #819 keep their approvals)
+- Approved customer-visible result: #819 as in its own entries plus the entries merged with 1f6d099d; nothing else changes.
+- Scope: the merge of 1f6d099d and this approval record. Pull request branch #819 only, not merged, not released.
+- What's new: none — merge of 1f6d099d, no customer-visible change of its own
+
+## 2026-10-20 — #819: approval marker after merging main at 4b0831d7
+
+- User approval: no visible change – UI approval not needed (merge of main (4b0831d7) into #819; the own entries of #819 keep their approvals)
+- Approved customer-visible result: #819 as in its own entries plus the entries merged with 4b0831d7; nothing else changes.
+- Scope: the merge of 4b0831d7 and this approval record. Pull request branch #819 only, not merged, not released.
+- What's new: none — merge of 4b0831d7, no customer-visible change of its own
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #663: Same device-switch reset as #645 for display brightness (no visible change)
+- User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #674: approval marker after merging #645 and main (no visible change))
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible chang
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #674: Codex review fix of #645, a late settings answer for another VibeTV no longer choose
 
 ## 2026-10-16 — #663: Same device-switch reset as #645 for display brightness (no visible change)
 
