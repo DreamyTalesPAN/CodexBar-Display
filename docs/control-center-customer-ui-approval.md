@@ -10240,3 +10240,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #781 Theme Studio Details with the Color field, palette and "More colours…" together at 1200x800, 1000x700 and 1920x1080 (pictures "Vorlage (Claude Design)" | "App mit PR #781").
 - Scope: #781 `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #781 layout fix not announced
+## 2026-10-20 — #784: the keyboard focus ring is the template's olive
+
+- User approval: pending — #784 focus ring colour by the communicator's decision on Paul's rule "the app looks exactly like the template" (20.10.2026); Paul sees it in build 7198. Before → after: #784 the 2 px keyboard focus ring was ink (#1B1B1B light, #EDEDED dark) → #784 the template's olive (#506600 light, #CCFF00 dark); the red ring on invalid fields (#817) stays.
+- Approved customer-visible result: #784 every keyboard focus ring (input, select, button, checkbox, switch, tab) in the template's --ring colour, 2 px, keyboard-only.
+- Scope: #784 `apps/control-center/src/app/globals.css` (--ring), its test `globals.focus-ring.test.ts`, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #784 focus ring colour not announced
