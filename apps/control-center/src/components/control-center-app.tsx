@@ -4641,10 +4641,19 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     companionStatus === "online" &&
     !themeSetupComplete &&
     (themeSetupEntryRequired || themeSetupSessionMatches);
+  // Once setup has admitted the customer to the Control Center, it never owns
+  // the window again. Theme and screensaver installs can temporarily make the
+  // device unready; that is install progress, not a new customer setup.
+  const setupOwnsScreen = Boolean(settingsWiFiSetup) || !hasEnteredControlCenter;
   const macAppUpdatePromptedFor = useRef("");
   useEffect(() => {
+    // While setup owns the screen the wizard offers the update itself in its
+    // calm dialog and starts the visible check from its button. The native
+    // Sparkle dialog must not come first. The offer returns here once setup
+    // has finished.
     if (
       hostedSetup ||
+      setupOwnsScreen ||
       !macAppUpdateAvailable ||
       !macAppUpdateOfferedVersion ||
       firmwareUpdateInProgress ||
@@ -4660,6 +4669,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     hostedSetup,
     macAppUpdateAvailable,
     macAppUpdateOfferedVersion,
+    setupOwnsScreen,
     windowsHost,
   ]);
   const displaySessionActive = Boolean(
@@ -5155,10 +5165,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           deviceCompletedThemeSetup(device)
         )),
   });
-  // Once setup has admitted the customer to the Control Center, it never owns
-  // the window again. Theme and screensaver installs can temporarily make the
-  // device unready; that is install progress, not a new customer setup.
-  const setupOwnsScreen = Boolean(settingsWiFiSetup) || !hasEnteredControlCenter;
   // A VibeTV lost after setup is searched for once. The saved one found again
   // reconnects on its own; any other answer, or that reconnect failing, is the
   // customer's choice over the current screen.
