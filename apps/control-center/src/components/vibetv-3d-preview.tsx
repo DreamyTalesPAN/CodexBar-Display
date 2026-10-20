@@ -93,6 +93,11 @@ export function VibeTV3DPreview({
   const onScreenSettled = useCallback(() => {
     screenSettledRef.current = true;
   }, []);
+  // A settled screen (e.g. no VibeTV yet) can still switch to "Loading
+  // preview" when a VibeTV and its frame arrive: then it is not ready again.
+  const onScreenLoading = useCallback(() => {
+    screenSettledRef.current = false;
+  }, []);
 
   useEffect(() => {
     onReadyRef.current = onReady;
@@ -323,6 +328,7 @@ export function VibeTV3DPreview({
           device={device}
           displayFrame={displayFrame}
           onScreenSettled={onScreenSettled}
+          onScreenLoading={onScreenLoading}
           screenOnly
           updateOwnedDisconnect={updateOwnedDisconnect}
           usage={usage}
