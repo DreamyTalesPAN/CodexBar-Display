@@ -8482,6 +8482,13 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
 
+## 2026-10-20 — #784: focus ring on open — a dialog's first control shows no focus ring until the keyboard is used
+
+- User approval: Paul decided on 20.10.2026 (via the communicator): the focus ring on a dialog's first control shows only for keyboard use; the rendered result is pending his review. This line: #784 focus ring on open. Before → after: #784 focus ring on open: "Restart Control Center", What's new "Got it", "Close" on the setup dialogs and the device picker rows showed the black focus ring on their first control as the dialog opened → #784 focus ring on open: the dialog takes focus itself without a ring; one Tab puts the ring on the first control, and a dialog opened with the keyboard still focuses its first control.
+- Approved customer-visible result: #784 focus ring on open: a dialog that opens shows no black ring on any button or row until the customer presses Tab; the ring when tabbing is as drawn in "Calm Redesign - alle Screens".
+- Scope: #784 focus ring on open: `apps/control-center/src/components/ui/dialog.tsx`, `apps/control-center/src/components/ui/alert-dialog.tsx`, `apps/control-center/src/components/whats-new-dialog.tsx`, the two confirmation dialogs that set `autoFocus`, their tests, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #784 focus ring on open: no new content
+
 ## 2026-10-20 — #778: an invalid field with keyboard focus shows the full ink focus ring
 
 - User approval: pending — Paul reviews (Codex follow-up #778); before → after: a focused invalid field showed the red, reduced invalid ring → the full ink focus ring on a focused invalid field (light and dark), the red border stays and the red ring stays when the field is not focused. Nothing else changes.

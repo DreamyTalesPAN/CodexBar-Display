@@ -315,6 +315,23 @@ describe("Dialogs as drawn in the template", () => {
     expect(dialog.textContent).not.toContain("Choose your VibeTV");
   });
 
+  it("opens with focus on the dialog, so no row shows a focus ring until the keyboard is used", async () => {
+    render(
+      <SetupDevicePickerDialog
+        candidates={[
+          { deviceId: "4F2A", target: "192.168.178.163", transport: "wifi", known: true },
+          { deviceId: "91C0", target: "cable://vibetv", transport: "cable" },
+        ]}
+        error={null}
+        onConnect={vi.fn()}
+        onOpenChange={vi.fn()}
+      />,
+    );
+    const dialog = screen.getByRole("dialog", { name: "Your VibeTV is not reachable" });
+    await waitFor(() => expect(document.activeElement).toBe(dialog));
+    expect(screen.getAllByRole("radio").includes(document.activeElement as HTMLElement)).toBe(false);
+  });
+
   it("lists the VibeTVs as plain radio rows, not setup cards (frame 47)", () => {
     render(
       <SetupDevicePickerDialog
