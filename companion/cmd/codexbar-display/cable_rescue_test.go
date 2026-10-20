@@ -325,6 +325,29 @@ func TestRunInstallUpdateCableRescueClearsAStaleMarkerWhoseVibeTVAnswers(t *test
 	}
 }
 
+// Another VibeTV on a reused port name neither clears the marker nor gets
+// written (Codex on #819).
+func TestRunInstallUpdateCableRescueKeepsTheMarkerWhenAnotherVibeTVAnswersOnItsPort(t *testing.T) {
+	_, manifestURL, _ := prepareCableFirmwareUpdateTest(t)
+	pinCableRescue(t)
+	writeRescueMarkerFixture(t, "COM4", time.Hour)
+	listCablePortsFn = func() ([]string, error) { return []string{"COM4"}, nil }
+	findLegacyCableVibeTVFn = func() (usb.CableDevice, error) {
+		return usb.CableDevice{}, errors.New("no VibeTV with pre-Cable firmware answered hello")
+	}
+	readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{DeviceID: "other", Board: "esp32-lilygo-t-display-s3", Firmware: "2.0.0"}, nil
+	}
+	flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
+		t.Fatal("wrote to another VibeTV on the marked port")
+		return nil
+	}
+	output, err := captureStdout(t, func() error { return runInstallUpdate(rescueArgs(manifestURL)) })
+	if err == nil || !rescueMarkerPresent(t) || !strings.Contains(output, "another VibeTV answers") {
+		t.Fatalf("expected no write and the marker kept: err=%v marker=%v\n%s", err, rescueMarkerPresent(t), output)
+	}
+}
+
 func TestRunInstallUpdateCableRescueFlashesTheMarkedPortWhenNoHelloComes(t *testing.T) {
 	_, manifestURL, firmwareVersion := prepareCableFirmwareUpdateTest(t)
 	pinCableRescue(t)

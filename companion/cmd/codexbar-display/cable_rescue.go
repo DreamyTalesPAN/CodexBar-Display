@@ -112,13 +112,22 @@ func resumableRescueMarker(home string) (firmwareupdate.RescueMarker, bool) {
 		return firmwareupdate.RescueMarker{}, false
 	}
 	// A write that succeeded but was not verified leaves a marker although the
-	// VibeTV may boot and answer normally later. Then it is not half-written,
-	// and the marker must not send another VibeTV's rescue to it (Codex on #819).
+	// VibeTV may boot and answer normally later. Only an answer that matches the
+	// recorded rescue (same board, the old or the target firmware) proves that;
+	// then the marker is stale. Any other answer is another VibeTV on a reused
+	// port name: the marker stays for the half-written one, and this port is not
+	// written either (Codex review on #819).
 	if hello, helloErr := readCableFirmwareHelloFn(marker.Port); helloErr == nil &&
 		(strings.TrimSpace(hello.DeviceID) != "" || strings.TrimSpace(hello.Firmware) != "") {
-		fmt.Printf("Cable rescue: the VibeTV on %s answers again (firmware %s); its marker is stale\n", marker.Port, strings.TrimSpace(hello.Firmware))
-		if clearErr := firmwareupdate.ClearRescueMarker(home); clearErr != nil {
-			fmt.Printf("warning: clearing the stale rescue marker failed: %v\n", clearErr)
+		fw := strings.TrimSpace(hello.Firmware)
+		sameBoard := strings.EqualFold(strings.TrimSpace(hello.Board), strings.TrimSpace(marker.Board))
+		if sameBoard && (fw == strings.TrimSpace(marker.TargetFirmware) || fw == strings.TrimSpace(marker.Firmware)) {
+			fmt.Printf("Cable rescue: the VibeTV on %s answers again (firmware %s); its marker is stale\n", marker.Port, fw)
+			if clearErr := firmwareupdate.ClearRescueMarker(home); clearErr != nil {
+				fmt.Printf("warning: clearing the stale rescue marker failed: %v\n", clearErr)
+			}
+		} else {
+			fmt.Printf("Cable rescue: another VibeTV answers on %s (board %s, firmware %s); keeping the marker for the half-written one and writing nothing there\n", marker.Port, strings.TrimSpace(hello.Board), fw)
 		}
 		return firmwareupdate.RescueMarker{}, false
 	}
