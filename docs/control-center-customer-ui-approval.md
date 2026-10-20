@@ -8475,6 +8475,13 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/src/components/live-vibetv-preview.tsx`, `apps/control-center/src/components/vibetv-3d-preview.tsx`, the recovery test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
+## 2026-10-20 — #784: approval marker after merging main
+
+- User approval: Merge of main into this branch; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
 ## 2026-10-19 — Calm Updates screen as drawn in the approved master, plus the states derived from the calm rules (#752)
 - User approval: pending — Paul reviews (Updates built as drawn in the approved master + derived states, decided by the communicator 19.10.)
 - Approved customer-visible result: none yet; waits for Paul's yes. Before: two cards "Mac App" and "VibeTV" with Installed / Available version chips, "Last checked <date, time with seconds>" per card, an "Alert" box for the Mac-App-first rule and the update progress, a heading "Up to date" with a "What's new" link, and one full-width lime button ("Check for updates" / "Update"). After: one headline with a dot ("Everything is up to date", "Update available", "Checking for updates", "Update check failed", "Updating VibeTV", "VibeTV is restarting"); one framed card with a row "Mac App" ("App" on Windows) and a row "VibeTV firmware", each with an icon, one version number (the installed one) and "Up to date"; "Checked today, 08:44" (or "yesterday" / the date) and an outline "Check for updates" button beside the page title; a grey "What's new in <version>" note card with the newest entry's title and "Read notes" (opens the existing What's new dialog). Update available: the row that has the update shows a lime "Update" button (Mac App: Sparkle updater or verified download; firmware: starts the update) and says "Version <x> is available"; the firmware row keeps "Update Mac App first" / "Checking Mac App" inside its row while the app comes first. Installing: a thin progress bar and one "> step" line (shared process steps) inside the firmware row. Update complete / attention: title and sentence inside the firmware row. Failed check: a dialog "Could not check for updates" with "Check the internet connection, then try again.", a lime "Try again" and "Close" (no X); the failed update dialog is unchanged.
