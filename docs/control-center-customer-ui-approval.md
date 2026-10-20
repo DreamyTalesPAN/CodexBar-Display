@@ -7865,3 +7865,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #829 unchanged texts, dialogs and layout; setup continues after the firmware update also before a provider is chosen.
 - Scope: #829 `apps/control-center/src/components/control-center-types.ts` (+ test), `apps/control-center/src/components/control-center-app.tsx`, a lint fix in `apps/control-center/src/components/setup/setup-connect.ts`, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #829 Codex fix not announced
+
+## 2026-10-20 — #829: approval marker after merging main at e7e8319d
+
+- User approval: no visible change – UI approval not needed (merge of main (e7e8319d) into #829; the own entries of #829 keep their approvals)
+- Approved customer-visible result: #829 as in its own entries plus the entries merged with e7e8319d; nothing else changes.
+- Scope: the merge of e7e8319d and this approval record. Pull request branch #829 only, not merged, not released.
+- What's new: none — merge of e7e8319d, no customer-visible change of its own
