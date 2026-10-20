@@ -7846,3 +7846,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #813: correction — Paul's 7198 approval does not cover this PR yet
+
+- User approval: pending — #813 correction (communicator, 20.10.2026): Paul's "rest passt" for build 7198 covered only what he saw in normal use (#781, #783, #784, #798, #803); the approval recorded for #813 a moment ago was premature and is reverted, its entries are pending again until he says yes to #813 itself.
+- Approved customer-visible result: #813 unchanged; this entry only corrects the record.
+- Scope: #813 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #813 record correction only
