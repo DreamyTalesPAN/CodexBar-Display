@@ -289,6 +289,13 @@ func startProviderCollector(ctx context.Context, opts Options, deps runtimeDeps,
 	return collector, cancel
 }
 
+// cableFirmwareTooOldRetryInterval is how long the loop leaves a Cable VibeTV
+// alone whose firmware predates USB-C (issue #616). Each resolve opens its
+// port, which restarts it, so the short retry restarted it every two seconds
+// next to a setup about to update it. Setup connects the updated VibeTV by
+// Cable, which wakes the loop at once.
+const cableFirmwareTooOldRetryInterval = time.Minute
+
 func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle func(context.Context) error) error {
 	cycleTimeout := cycleRunTimeout()
 	var lastCycleStart time.Time
@@ -386,6 +393,9 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 			// keep the normal interval - retrying those faster fixes nothing.
 			if deviceUnreachableError(runtimeErr) && failureRetryInterval < waitFor {
 				waitFor = failureRetryInterval
+			}
+			if errcode.Of(runtimeErr.Err) == errcode.TransportCableFirmwareTooOld {
+				waitFor = cableFirmwareTooOldRetryInterval
 			}
 			if runtimeErr.Kind == runtimeErrorCycleTimeout {
 				deps.logf("cycle timeout: code=%s op=%s retry=%s recovery=%q err=%v\n",
