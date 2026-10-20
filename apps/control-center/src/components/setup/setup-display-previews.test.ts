@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { UsageProviderInfo, UsageSnapshot } from "../control-center-types";
+import { buildFrameData } from "../live-vibetv-preview";
 import {
   displayPreviewFor,
   displayPreviewsFor,
+  providerSlotsFor,
 } from "./setup-display-previews";
 
 function provider(fields: Partial<UsageProviderInfo>): UsageProviderInfo {
@@ -184,5 +186,93 @@ describe("displayPreviewsFor", () => {
         windows: [],
       },
     ]);
+  });
+});
+
+describe("provider slots in the synthesized frames", () => {
+  const stamped = "2026-10-20T08:00:00Z";
+  const usage = {
+    providers: [
+      provider({
+        id: "claude",
+        label: "Claude",
+        collectedAt: stamped,
+        windows: [
+          { id: "session", label: "Session", usedPercent: 30, resetSecs: 7200 },
+          { id: "weekly", label: "Weekly", usedPercent: 55, resetSecs: 3600 },
+        ],
+      }),
+      provider({
+        id: "codex",
+        label: "Codex",
+        collectedAt: stamped,
+        windows: [{ id: "weekly", label: "Weekly", usedPercent: 12, resetSecs: 10800 }],
+      }),
+      provider({ id: "cursor", label: "Cursor", collectedAt: stamped, resetSecs: 600 }),
+    ],
+  } as UsageSnapshot;
+  const enabled = [
+    { id: "claude", label: "Claude" },
+    { id: "codex", label: "Codex" },
+    { id: "cursor", label: "Cursor" },
+  ];
+
+  it("gives every tile the same two provider rows, so pv1*/pv2* themes draw their reset rows", () => {
+    const previews = displayPreviewsFor(usage, enabled);
+
+    for (const preview of previews) {
+      expect(preview.frame?.providerSlots).toEqual([
+        { id: "claude", label: "Claude", percent: 55, resetSecs: 3600 },
+        { id: "codex", label: "Codex", percent: 12, resetSecs: 10800 },
+      ]);
+    }
+    const data = buildFrameData(stamped, previews[2].frame!, new Date("2026-10-20T08:00:00Z"));
+    expect(data.providerSlots).toMatchObject([
+      { label: "Claude", percent: 55, resetSecs: 3600, available: true },
+      { label: "Codex", percent: 12, resetSecs: 10800, available: true },
+    ]);
+  });
+
+  it("leaves out a provider that is stale, unavailable or has no deadline", () => {
+    const rows = providerSlotsFor(
+      [
+        provider({ id: "a", label: "A", stale: true }),
+        provider({ id: "b", label: "B", usageUnavailable: true }),
+        provider({ id: "c", label: "C", resetSecs: undefined, session: 5 }),
+        provider({ id: "d", label: "D", resetSecs: 900 }),
+      ],
+      undefined,
+    );
+
+    expect(rows.map((row) => row.id)).toEqual(["d"]);
+  });
+
+  it("states each reset as of the shown frame's reading time", () => {
+    const rows = providerSlotsFor(
+      [
+        provider({ id: "a", label: "A", collectedAt: "2026-10-20T08:00:00Z", resetSecs: 3600 }),
+        provider({ id: "b", label: "B", collectedAt: "2026-10-20T08:10:00Z", resetSecs: 3600 }),
+      ],
+      "2026-10-20T08:10:00Z",
+    );
+
+    expect(rows.map((row) => row.resetSecs)).toEqual([3000, 3600]);
+  });
+
+  it("takes the smallest remaining percentage in remaining mode, as the host does", () => {
+    const rows = providerSlotsFor(
+      [
+        provider({
+          usageMode: "remaining",
+          windows: [
+            { id: "session", label: "Session", usedPercent: 70, resetSecs: 100 },
+            { id: "weekly", label: "Weekly", usedPercent: 40, resetSecs: 200 },
+          ],
+        }),
+      ],
+      undefined,
+    );
+
+    expect(rows[0]).toMatchObject({ percent: 40, resetSecs: 100 });
   });
 });

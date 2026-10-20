@@ -175,3 +175,75 @@ describe("Display mode tiles with the active theme", () => {
     expect(document.querySelectorAll('[data-slot="display-mode-preview"]')[0].textContent).toContain("Claude");
   });
 });
+
+describe("Display mode tiles keep time-dependent fields moving", () => {
+  const NIGHT_PACK = {
+    ...PACK,
+    spec: {
+      p: [
+        { t: "tx", x: 0, y: 0, w: 240, h: 20, s: 20, c: "#fff", b: "tm" },
+        { t: "tx", x: 0, y: 30, w: 240, h: 20, s: 20, c: "#fff", pl: 1, b: "pv1l" },
+        { t: "tx", x: 0, y: 60, w: 240, h: 20, s: 20, c: "#fff", pl: 1, b: "pv1r" },
+        { t: "tx", x: 0, y: 90, w: 240, h: 20, s: 20, c: "#fff", pl: 2, b: "pv2l" },
+        { t: "tx", x: 0, y: 120, w: 240, h: 20, s: 20, c: "#fff", pl: 2, b: "pv2r" },
+      ],
+    },
+  };
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function withSlots(): SetupDisplayModePreview {
+    const base = live("Claude", 64);
+    return {
+      ...base,
+      frame: {
+        ...base.frame!,
+        providerSlots: [
+          { id: "claude", label: "Claude", percent: 64, resetSecs: 3 * 3600 },
+          { id: "codex", label: "Codex", percent: 28, resetSecs: 5 * 3600 },
+        ],
+      },
+    };
+  }
+
+  it("draws the provider rows a night-clock style theme binds", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, status: 200, json: async () => NIGHT_PACK }) as Response),
+    );
+    show([withSlots()]);
+    await settle();
+
+    const text = tiles(0)[0].textContent ?? "";
+    expect(text).toContain("Claude");
+    expect(text).toContain("Codex");
+    expect(text).toContain("3h 0m");
+    expect(text).toContain("5h 0m");
+  });
+
+  it("counts the reset down as time passes, also under reduced motion", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout", "Date"] });
+    vi.setSystemTime(new Date("2026-10-20T08:00:00Z"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, status: 200, json: async () => NIGHT_PACK }) as Response),
+    );
+    const preview = withSlots();
+    preview.frameAt = "2026-10-20T08:00:00Z";
+    show([preview]);
+    await settle();
+
+    expect(tiles(0)[0].textContent).toContain("3h 0m");
+
+    await act(async () => {
+      vi.advanceTimersByTime(61_000);
+    });
+
+    const text = tiles(0)[0].textContent ?? "";
+    expect(text).toContain("2h 58m");
+    expect(text).toContain("4h 58m");
+    expect(text).not.toContain("3h 0m");
+  });
+});

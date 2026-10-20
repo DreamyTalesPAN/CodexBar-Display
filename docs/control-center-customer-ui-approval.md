@@ -8047,3 +8047,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #821 Automatic shows ONE theme tile, the same size as Manual, whose provider (name and values) changes every 2 s with a calm 500 ms crossfade; no small or grey tiles beside it; Manual shows one fixed tile; reduced motion changes without the fade.
 - Scope: #821 single tile in `apps/control-center/src/components/setup/setup-display-theme-tiles.tsx`, `apps/control-center/src/app/globals.css` (unused carousel keyframes removed), the tile tests and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #821 single tile, no new content
+
+## 2026-10-20 — #821 tile data: provider rows and a moving clock in the setup tiles
+
+- User approval: pending — Paul reviews #821 tile data (Codex review fixes); before → after in the #821 tile data of setup step 11: (1) a theme that binds the cross-provider reset rows (for example night-clock, "NEXT RESETS") showed no such rows on the #821 tile data → it shows the same two provider rows the VibeTV shows, built only from what the usage service delivered; (2) the time and the reset countdowns on the #821 tile data stood still at the moment the tile first appeared → they keep counting every second, like the VibeTV; reduced motion only drops the fade between providers, not the clock. Nothing else in #821 changes.
+- Approved customer-visible result: #821 tile data in setup step 11 shows the same provider reset rows, clock and countdowns as the VibeTV; pending Paul's review.
+- Scope: #821 tile data in `apps/control-center/src/components/setup/setup-display-previews.ts`, `apps/control-center/src/components/setup/setup-display-theme-tiles.tsx`, their tests and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #821 tile data fix, no new content

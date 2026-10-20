@@ -86,6 +86,50 @@ export function useThemeRenderPack(
     : { pack: null, status: "loading" };
 }
 
+/** How often the tiles read the clock again; countdowns flip on any second. */
+const CLOCK_TICK_MS = 1000;
+
+/**
+ * The current time, read again every second so the clock and the reset
+ * countdowns in a theme keep moving like VibeTV's own. One value is shared by
+ * every tile of a card. It holds while the page is hidden, where nobody sees it
+ * and the timer would keep a minimised window busy, and catches up when the
+ * page is shown again. Reduced motion does not stop it: that setting is about
+ * the fade between providers, not about the time.
+ */
+export function useClockNow(): Date {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    let timer: number | undefined;
+    const stop = () => {
+      if (timer !== undefined) {
+        window.clearInterval(timer);
+        timer = undefined;
+      }
+    };
+    const start = () => {
+      stop();
+      if (document.visibilityState === "hidden") {
+        return;
+      }
+      timer = window.setInterval(() => setNow(new Date()), CLOCK_TICK_MS);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState !== "hidden") {
+        setNow(new Date());
+      }
+      start();
+    };
+    start();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
+  return now;
+}
+
 /** The one tile's size, as in template frame 22. */
 const FRONT_SIZE = 104;
 
@@ -112,6 +156,7 @@ export function ThemeTileStrip({
 }) {
   const count = frames.length;
   const current = count ? ((index % count) + count) % count : 0;
+  const now = useClockNow();
   return (
     <span
       className="flex h-[136px] w-full items-center overflow-hidden bg-muted px-1"
@@ -126,6 +171,7 @@ export function ThemeTileStrip({
             active={position === current}
             frame={frame}
             key={`${frame.providerLabel}-${position}`}
+            now={now}
             pack={pack}
             reducedMotion={reducedMotion}
           />
@@ -138,20 +184,22 @@ export function ThemeTileStrip({
 function ThemeTile({
   active,
   frame,
+  now,
   pack,
   reducedMotion,
 }: {
   active: boolean;
   frame: SetupDisplayModePreview;
+  now: Date;
   pack: ThemeRenderPack;
   reducedMotion: boolean;
 }) {
   const data = useMemo(
     () =>
       frame.frame
-        ? buildFrameData(frame.frameAt, frame.frame, new Date())
+        ? buildFrameData(frame.frameAt, frame.frame, now)
         : null,
-    [frame.frame, frame.frameAt],
+    [frame.frame, frame.frameAt, now],
   );
   return (
     <span
