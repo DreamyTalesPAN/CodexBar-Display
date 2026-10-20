@@ -983,7 +983,7 @@ func providerSignInSentence(id, label string) string {
 	if ProviderSignInStartable(id) {
 		return "Sign in to " + label + " so VibeTV can read its usage."
 	}
-	return "VibeTV reads " + label + " usage from " + label + "'s own app, so make sure it is installed and signed in on this computer."
+	return "VibeTV can't read " + label + " until the " + label + " app is installed and running."
 }
 
 // providerCouldNotReadSentence is the sentence for a failure VibeTV retries by itself.

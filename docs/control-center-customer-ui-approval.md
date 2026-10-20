@@ -10062,48 +10062,49 @@ issue scope, or release permission never implies UI permission.
 ## 2026-10-20 — #784: approval marker after merging main
 ## 2026-10-15 — Offer the Mac App update only on the Mac (#561)
 
-- User approval: Paul asked on 2026-10-15 to fix the Codex review finding on PR #639 ("ja, fix das alles"): the Windows app must not offer a "Mac App" update. He has not personally previewed this exact build.
+- User approval: pending — #782 Offer the Mac App update only on the Mac (#561): Paul's "ja, fix das alles" of 2026-10-15 told the session to fix a Codex finding; it is no yes to this visible result, and he had not previewed the build. The inline hint this entry describes was later rejected by Paul (see the entry "Mac App update as its own dialog before not found"). Earlier wording: Paul asked on 2026-10-15 to fix the Codex review finding on PR #639 ("ja, fix das alles"): the Windows app must not offer a "Mac App" update. He has not personally previewed this exact build.
 - Approved customer-visible result: the "Update the Mac App" hint on the "VibeTV not found" pages appears only in the Mac App. The Windows app shows these pages as before.
 - Scope: `control-center-app.tsx` and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — removes a hint from Windows, nothing to announce
 
 ## 2026-10-15 — Mac App update hint also while waiting for a WiFi VibeTV (#561)
 
-- User approval: Paul asked on 2026-10-15 to finish PR #639 ("mach den feddich, ci grün, merge ready"), which includes the open Codex review finding: the approved hint was missing from the "Connect the USB cable" help that appears while setup waits for a WiFi VibeTV without a cable. Main is merged in with #641; the UI review gate cannot read a merge commit as approval marker, so this entry also stands for that merge. No new wording.
+- User approval: pending — #782 Mac App update hint also while waiting for a WiFi VibeTV (#561): Paul's "mach den feddich, ci grün, merge ready" of 2026-10-15 is an order to finish the PR, not a yes to the visible result; the inline hint this entry describes was later rejected by Paul (see the entry "Mac App update as its own dialog before not found"). Earlier wording: Paul asked on 2026-10-15 to finish PR #639 ("mach den feddich, ci grün, merge ready"), which includes the open Codex review finding: the approved hint was missing from the "Connect the USB cable" help that appears while setup waits for a WiFi VibeTV without a cable. Main is merged in with #641; the UI review gate cannot read a merge commit as approval marker, so this entry also stands for that merge. No new wording.
 - Approved customer-visible result: the same "Update the Mac App" hint as approved above, now also in that waiting help dialog, only in the Mac App and only when a newer Mac App exists. Nothing else changes.
 - Scope: `setup-device-screen.tsx`, `setup-wizard.tsx`, their test, the pinned actions in `.github/workflows/claude.yml` (same change as #640), the merge of main and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — completes the unreleased hint, nothing to announce
 
 ## 2026-10-16 — Mac App update as its own dialog before "not found" (#561, design 1d)
 
-- User approval: Paul rejected the inline hint of the entries above on 2026-10-15 after seeing it on the Mac ("das gebe ich nicht frei"), so those entries no longer describe an approved look. He had the hint redesigned in Claude Design (project "Screen-Redesign mit VibeTV", page "Setup - Mac App Update (561)") and chose variant 1d on 2026-10-16 ("1d").
+- User approval: approved by Paul in the communicator chat, 2026-10-16 00:00: "1d" (time unknown) — entry: #782 Mac App update as its own dialog before "not found" (#561, design 1d) — Paul chose variant 1d of the Claude Design page "Setup - Mac App Update (561)" on 2026-10-16; he had rejected the inline hint of the earlier entries on 2026-10-15 (the entry records both; the quote is the one from the entry)
 - Approved customer-visible result: in the Mac App only, when setup finds no VibeTV and a newer Mac App exists, a dialog "Update the Mac App first" appears before "We couldn't find your VibeTV" and before "Connect the USB cable": "We couldn't find your VibeTV. Version <version> is out, and an older app may not find it. Setup scans again after the update." Footer: "Scan again" (outline) and "Update Mac App" (signal), plus the close button. "Scan again" or closing leads to the usual not-found help without any hint; the old inline card is gone. Windows shows no Mac App dialog.
 - Scope: `setup-device-dialogs.tsx`, `setup-device-screen.tsx`, `setup-wizard.tsx`, `setup-dialog.tsx` (description may carry the version in mono), their tests, and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — completes the unreleased #561 hint, nothing to announce
 
 ## 2026-10-16 — #561: approval marker after merging main with #615
 
-- User approval: Paul chose design 1d for #639 on 2026-10-16 (entry above). Main moved on with #615 (overnight audit, `WithLatestDisplayFrame` around the setup wizard) and #640 while the branch was in review, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- User approval: no visible change – UI approval not needed (#782 #561: approval marker after merging main with #615: merge of main (#615, #640) into the branch; no new wording, no visible change of its own; the look stays as in the entry "Mac App update as its own dialog before not found")
 - Approved customer-visible result: as approved in the 2026-10-16 #561 entry above; nothing else changes.
 - Scope: the merge of main into this branch, the `macAppUpdate` prop moved into the wrapped `SetupWizard` in `control-center-app.tsx`, and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
 
 ## 2026-10-16 — #561: approval marker after merging main with #619 and #628
 
-- User approval: Paul chose design 1d for #639 on 2026-10-16 (entry above). Main moved on with #619 and #628 while the branch was in review, so main is merged in again. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- User approval: no visible change – UI approval not needed (#782 #561: approval marker after merging main with #619 and #628: merge of main (#619, #628) into the branch; no new wording, no visible change of its own; the look stays as in the entry "Mac App update as its own dialog before not found")
 - Approved customer-visible result: as approved in the 2026-10-16 #561 entry above; nothing else changes. "Update Mac App" keeps Sparkle's visible check, as #619 keeps it for Update buttons.
 - Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — #782 no customer-visible change of its own (added so the entry fits the no-visible-change form)
 
 ## 2026-10-15 — Offer the Mac App update on the VibeTV-not-found pages (#561)
 
-- User approval: Paul approved this change in the comment on PR #639 on 2026-10-15 ("du kannst meine freigabe in das ui review gate eintragen"). He has not personally previewed this exact build.
+- User approval: pending — #782 Offer the Mac App update on the VibeTV-not-found pages (#561): Paul's "du kannst meine freigabe in das ui review gate eintragen" of 2026-10-15 was given for the inline hint, which he rejected the same day according to the later entry "Mac App update as its own dialog before not found", so it counts for nothing now. Earlier wording: Paul approved this change in the comment on PR #639 on 2026-10-15 ("du kannst meine freigabe in das ui review gate eintragen"). He has not personally previewed this exact build.
 - Approved customer-visible result: When a newer Mac App is available, the "VibeTV not found" pages show a hint that an update exists with the button `Update the Mac App`. Without a newer Mac App the pages look as before.
 - Scope: `setup-device-dialogs.tsx`, `setup-wizard.tsx`, `control-center-app.tsx`, the focused dialog test, and this approval record. No merge, release, or device write is implied.
 - What's new: none — the hint appears only while a problem is being solved, nothing a customer needs to learn.
 
 ## 2026-10-16 — Mac App update offer: not on Windows, also on the WiFi-waiting not-found path (#561)
 
-- User approval: Paul chose variant 1d on 2026-10-16 (Claude Design "Setup - Mac App Update (561)"); this push only fixes where it shows (not on Windows; also on the WiFi-waiting not-found path); look and copy unchanged.
+- User approval: pending — #782 Mac App update offer: not on Windows, also on the WiFi-waiting not-found path (#561): Paul chose variant 1d on 2026-10-16, but this entry holds no quote of his words and its change (where the offer shows: not on Windows, also on the WiFi-waiting path) was not seen by him. Earlier wording: Paul chose variant 1d on 2026-10-16 (Claude Design "Setup - Mac App Update (561)"); this push only fixes where it shows (not on Windows; also on the WiFi-waiting not-found path); look and copy unchanged.
 - Approved customer-visible result: As in the 2026-10-15 entry (#561) above: the update hint with `Update the Mac App` appears on the "VibeTV not found" pages only in a Mac window and only when a newer Mac App exists. The WiFi-waiting not-found page shows the same hint. Windows shows nothing new. Look and copy unchanged.
 - Scope: `apps/control-center/src/components/control-center-app.mac-app-offer.test.tsx` (new test: Mac shows the offer, Windows gets none) and this approval record. The WiFi-waiting forwarding (`setup-device-screen.tsx`) is covered by the existing test in `setup-device-dialogs.test.tsx`. No merge, release, or device write is implied.
 - What's new: none — the hint appears only while a problem is being solved, nothing a customer needs to learn.
@@ -10147,7 +10148,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-17 — #632 Codex fix: busy computer notice checks for other dialogs before paint
 
-- User approval: none needed for this entry; Codex review fix of #632, no visible change; not seen by Paul. The approval of the entry above still stands.
+- User approval: no visible change – UI approval not needed (#782 #632 Codex fix: busy computer notice checks for other dialogs before paint: Codex review fix of #632, no visible change (layout effect timing only); not seen by Paul)
 - Approved customer-visible result: none on screen. The check that keeps the busy computer notice out of the way of a page dialog now runs before the screen repaints (observer set up in a layout effect).
 - Scope: `apps/control-center/src/components/system-busy-dialog.tsx`, its test and this approval record. Pull request branch only, not merge or release.
 - What's new: none — a timing fix, no new capability
@@ -10265,7 +10266,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-19 — Merge of main (v1.0.65 release round + #638) into the small-fixes group
 
-- User approval: Merge of main (v1.0.65 release round + #638) into this group; no visible change of its own; not seen by Paul
+- User approval: no visible change – UI approval not needed (#782 Merge of main (v1.0.65 release round + #638) into the small-fixes group: Merge of main (v1.0.65 release round + #638) into this group; no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
 - Approved customer-visible result: as in this branch's entries and main's entries
 - Scope: the merge conflict resolutions in `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/setup/setup-device-screen.tsx`, their tests, `companion/internal/codexbar/provider_setup.go` and its tests, `companion/internal/companionapi/preferences_test.go`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no customer-visible change of its own
@@ -10274,6 +10275,7 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: no visible change – UI approval not needed (merge commit into #784; no visible change of its own; entry: #784: approval marker after merging main)
 - User approval: no visible change – UI approval not needed (merge commit into #780; no visible change of its own; entry: #780: approval marker after merging main)
+- User approval: no visible change – UI approval not needed (#782: approval marker after merging main: Merge of main into this branch; no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
@@ -10791,3 +10793,23 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #813 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
 - Scope: #813 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #813 approval record only
+## 2026-10-20 — #782: one sentence for providers with their own app (setup log and popup)
+
+- User approval: pending — #782 wording as decided by the communicator on 20.10.2026 (text decision for Paul's 7198 review); Paul sees it in build 7198. Before → after: #782 "VibeTV reads <Provider> usage from <Provider>'s own app, so make sure it is installed and signed in on this computer." → #782 "VibeTV can't read <Provider> until the <Provider> app is installed and running." (the template sentence), the same in the setup log and in the popup.
+- Approved customer-visible result: #782 one sentence for a provider that needs its own app, wherever setup shows it.
+- Scope: #782 the setup sentence in the Control Center (and, in #782, the Companion's setup log and the shared sentence file), their tests and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #782 wording not announced
+
+## 2026-10-20 — #782: correction — Paul's 7198 approval does not cover this PR yet
+
+- User approval: pending — #782 correction (communicator, 20.10.2026): Paul's "rest passt" for build 7198 covered only what he saw in normal use (#781, #783, #784, #798, #803); the approval recorded for #782 a moment ago was premature and is reverted, its entries are pending again until he says yes to #782 itself.
+- Approved customer-visible result: #782 unchanged; this entry only corrects the record.
+- Scope: #782 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #782 record correction only
+
+## 2026-10-20 — #782: approval lines rewritten to the two accepted forms
+
+- User approval: no visible change – UI approval not needed (#782 record rewrite for the gate in #823; no customer-visible change)
+- Approved customer-visible result: #782 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
+- Scope: #782 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #782 approval record only

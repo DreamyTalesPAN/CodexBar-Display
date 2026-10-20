@@ -2,7 +2,7 @@
   { "state": "auth_required", "providerId": "claude", "label": "Claude",
     "sentence": "Sign in to Claude so VibeTV can read its usage." },
   { "state": "auth_required", "providerId": "gemini", "label": "Gemini",
-    "sentence": "VibeTV reads Gemini usage from Gemini's own app, so make sure it is installed and signed in on this computer." },
+    "sentence": "VibeTV can't read Gemini until the Gemini app is installed and running." },
   { "state": "browser_sign_in_required", "providerId": "claude", "label": "Claude",
     "sentence": "Sign in to Claude in your browser, then close the browser." },
   { "state": "permission_required", "providerId": "codex", "label": "Codex",
