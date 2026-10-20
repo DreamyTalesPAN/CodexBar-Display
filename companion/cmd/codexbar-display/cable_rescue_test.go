@@ -19,6 +19,10 @@ const rescueTestBoard = "esp8266-smalltv-st7789"
 
 const rescueTestChip = "0000aabb11223344"
 
+// rescueTestChipDeviceID is the deviceId firmware on rescueTestChip reports
+// (ESP.getChipId: 0x11 | 0xaabb<<8).
+const rescueTestChipDeviceID = "11189009"
+
 func legacyRescueDevice() (usb.CableDevice, error) {
 	return usb.CableDevice{Port: "/dev/mock-legacy", Hello: protocol.DeviceHello{Board: rescueTestBoard, Firmware: "1.0.0"}}, nil
 }
@@ -385,7 +389,7 @@ func TestRunInstallUpdateCableRescueClearsAStaleMarkerWhoseVibeTVAnswers(t *test
 	var flashedPort string
 	readCableFirmwareHelloFn = func(port string) (protocol.DeviceHello, error) {
 		if port == "COM4" {
-			return protocol.DeviceHello{DeviceID: "healthy-marked", Board: rescueTestBoard, Firmware: "1.0.1"}, nil
+			return protocol.DeviceHello{DeviceID: rescueTestChipDeviceID, Board: rescueTestBoard, Firmware: "1.0.1"}, nil
 		}
 		return protocol.DeviceHello{DeviceID: "device-cable", Board: rescueTestBoard, Firmware: *firmwareVersion}, nil
 	}
@@ -404,6 +408,33 @@ func TestRunInstallUpdateCableRescueClearsAStaleMarkerWhoseVibeTVAnswers(t *test
 	}
 }
 
+// Codex on #840: another VibeTV with the same board and firmware that got the
+// marked port name is not the marked chip. Its hello must not clear the only
+// record of the half-written one, and its port is not written.
+func TestRunInstallUpdateCableRescueKeepsTheMarkerForAnotherChipOnItsPort(t *testing.T) {
+	_, manifestURL, _ := prepareCableFirmwareUpdateTest(t)
+	pinCableRescue(t)
+	writeRescueMarkerFixture(t, "COM4", time.Hour)
+	listCablePortsFn = func() ([]string, error) { return []string{"COM4"}, nil }
+	findLegacyCableVibeTVFn = func() (usb.CableDevice, error) {
+		return usb.CableDevice{}, errors.New("no VibeTV with pre-Cable firmware answered hello")
+	}
+	readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{DeviceID: "16198106", Board: rescueTestBoard, Firmware: "1.0.1"}, nil
+	}
+	flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
+		t.Fatal("another VibeTV on the marked port must not be written")
+		return nil
+	}
+	output, _ := captureStdout(t, func() error { return runInstallUpdate(rescueArgs(manifestURL)) })
+	if strings.Contains(output, "marker is stale") {
+		t.Fatalf("another chip must not make the marker stale:\n%s", output)
+	}
+	if !rescueMarkerPresent(t) {
+		t.Fatal("the marker of the half-written VibeTV must stay")
+	}
+}
+
 // A stale marker whose cached image was deleted is still cleared once its
 // VibeTV answers, so it cannot block every later rescue (Codex on #819).
 func TestRunInstallUpdateCableRescueClearsAStaleMarkerWhoseImageIsGone(t *testing.T) {
@@ -417,7 +448,7 @@ func TestRunInstallUpdateCableRescueClearsAStaleMarkerWhoseImageIsGone(t *testin
 	findLegacyCableVibeTVFn = legacyRescueDevice
 	readCableFirmwareHelloFn = func(port string) (protocol.DeviceHello, error) {
 		if port == "COM4" {
-			return protocol.DeviceHello{DeviceID: "healthy-marked", Board: rescueTestBoard, Firmware: "1.0.1"}, nil
+			return protocol.DeviceHello{DeviceID: rescueTestChipDeviceID, Board: rescueTestBoard, Firmware: "1.0.1"}, nil
 		}
 		return protocol.DeviceHello{DeviceID: "device-cable", Board: rescueTestBoard, Firmware: *firmwareVersion}, nil
 	}

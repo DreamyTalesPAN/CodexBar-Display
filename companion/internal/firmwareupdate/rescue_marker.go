@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -132,6 +133,24 @@ func ClearRescueMarker(home string) error {
 // plugged into another USB socket. It is the one listed port that was not there
 // when the write started, is not the marked port, and does not answer a hello.
 // No candidate, or more than one, means no port: nothing may be written then.
+// ChipDeviceID is the deviceId firmware on the marked chip reports in its hello:
+// ESP.getChipId(), which the SDK derives from the same eFuse words as ChipMAC
+// ("%08x%08x" of MAC1, MAC0), like esptool's chip_id. ok is false without a
+// readable ChipMAC.
+func ChipDeviceID(chipMAC string) (string, bool) {
+	chipMAC = strings.TrimSpace(chipMAC)
+	if len(chipMAC) != 16 {
+		return "", false
+	}
+	mac1, err1 := strconv.ParseUint(chipMAC[:8], 16, 32)
+	mac0, err0 := strconv.ParseUint(chipMAC[8:], 16, 32)
+	if err1 != nil || err0 != nil {
+		return "", false
+	}
+	id := uint32(mac0>>24) | uint32((mac1&0xFFFFFF)<<8)
+	return strconv.FormatUint(uint64(id), 10), true
+}
+
 func MovedRescuePort(marker RescueMarker, listed []string, readHello func(string) (protocol.DeviceHello, error)) (string, bool) {
 	if marker.Ports == nil {
 		return "", false

@@ -157,7 +157,16 @@ func resumableRescueMarker(home string) (firmwareupdate.RescueMarker, bool) {
 		(strings.TrimSpace(hello.DeviceID) != "" || strings.TrimSpace(hello.Firmware) != "") {
 		fw := strings.TrimSpace(hello.Firmware)
 		sameBoard := strings.EqualFold(strings.TrimSpace(hello.Board), strings.TrimSpace(marker.Board))
-		if sameBoard && (fw == strings.TrimSpace(marker.TargetFirmware) || fw == strings.TrimSpace(marker.Firmware)) {
+		// Board and firmware alone also fit another VibeTV that got the marked
+		// port name. A hello with a deviceId must come from the marked chip
+		// (Codex on #840); pre-Cable firmware sends none, so it keeps the old rule.
+		sameChip := true
+		if id := strings.TrimSpace(hello.DeviceID); id != "" {
+			if want, ok := firmwareupdate.ChipDeviceID(marker.ChipMAC); ok {
+				sameChip = id == want
+			}
+		}
+		if sameBoard && sameChip && (fw == strings.TrimSpace(marker.TargetFirmware) || fw == strings.TrimSpace(marker.Firmware)) {
 			fmt.Printf("Cable rescue: the VibeTV on %s answers again (firmware %s); its marker is stale\n", marker.Port, fw)
 			if clearErr := firmwareupdate.ClearRescueMarker(home); clearErr != nil {
 				fmt.Printf("warning: clearing the stale rescue marker failed: %v\n", clearErr)
