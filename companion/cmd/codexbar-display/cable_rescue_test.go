@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/firmwareupdate"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
@@ -207,6 +208,50 @@ func TestRunInstallUpdateCableRescueKeepsTheMarkerWhenTheFailureMayHaveErased(t 
 			t.Fatalf("a resumed rescue must keep its marker: err=%v marker=%v\n%s", err, rescueMarkerPresent(t), output)
 		}
 	})
+}
+
+type serialOpenTestError struct{}
+
+func (serialOpenTestError) Error() string           { return "open-port path=/dev/mock-legacy: Serial port busy" }
+func (serialOpenTestError) ErrorCode() errcode.Code { return errcode.TransportSerialOpen }
+
+// A port that would not open never received a flash command: the fresh marker
+// goes again (Codex on #819).
+func TestRunInstallUpdateCableRescueClearsTheMarkerWhenThePortNeverOpened(t *testing.T) {
+	_, manifestURL, _ := prepareCableFirmwareUpdateTest(t)
+	pinCableRescue(t)
+	findLegacyCableVibeTVFn = legacyRescueDevice
+	flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
+		return serialOpenTestError{}
+	}
+	output, err := captureStdout(t, func() error { return runInstallUpdate(rescueArgs(manifestURL)) })
+	if err == nil || rescueMarkerPresent(t) {
+		t.Fatalf("err=%v marker=%v\n%s", err, rescueMarkerPresent(t), output)
+	}
+}
+
+// A pending marker for a half-written VibeTV wins over another pre-Cable
+// VibeTV that still answers (Codex on #819).
+func TestRunInstallUpdateCableRescuePrefersThePendingMarkerOverAnotherLegacyVibeTV(t *testing.T) {
+	_, manifestURL, firmwareVersion := prepareCableFirmwareUpdateTest(t)
+	pinCableRescue(t)
+	marker := writeRescueMarkerFixture(t, "COM4", time.Hour)
+	listCablePortsFn = func() ([]string, error) { return []string{"COM4", "/dev/mock-legacy"}, nil }
+	findLegacyCableVibeTVFn = legacyRescueDevice
+	readCableFirmwareHelloFn = func(port string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{DeviceID: "device-cable", Board: rescueTestBoard, Firmware: *firmwareVersion}, nil
+	}
+	var flashedPort string
+	flashCableRescueFn = func(_ context.Context, port string, _ []byte, opts usb.ROMFlashOptions) error {
+		flashedPort = port
+		opts.OnWriteStarted()
+		*firmwareVersion = "1.0.1"
+		return nil
+	}
+	output, err := captureStdout(t, func() error { return runInstallUpdate(rescueArgs(manifestURL)) })
+	if err != nil || flashedPort != marker.Port {
+		t.Fatalf("flashed %q, want the marked %q: err=%v\n%s", flashedPort, marker.Port, err, output)
+	}
 }
 
 func TestRunInstallUpdateCableRescueFlashesTheMarkedPortWhenNoHelloComes(t *testing.T) {

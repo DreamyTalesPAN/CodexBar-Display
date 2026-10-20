@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -145,14 +147,18 @@ func runInstallUpdate(args []string) (retErr error) {
 			}
 			fmt.Printf("Cable rescue probe %d/%d failed: %v\n", probe, probes, err)
 		}
-		if err != nil {
-			// Issue #818: a rescue write that failed after the erase leaves a
-			// VibeTV that boot-loops and never says hello. Its marker is the
-			// proof that the ROM loader on that port may be written again.
-			if resumed, ok := resumableRescueMarker(home); ok {
-				marker, recovering, err = resumed, true, nil
-				device = usb.CableDevice{Port: marker.Port, Hello: protocol.DeviceHello{Board: marker.Board, Firmware: marker.Firmware}}
+		// Issue #818: a rescue write that failed after the erase leaves a
+		// VibeTV that boot-loops and never says hello. Its marker is the proof
+		// that the ROM loader on that port may be written again. It also wins
+		// over another pre-Cable VibeTV that does answer: rescuing that one
+		// first would overwrite and later clear the only record of this one.
+		if resumed, ok := resumableRescueMarker(home); ok &&
+			(err != nil || !strings.EqualFold(strings.TrimSpace(device.Port), strings.TrimSpace(resumed.Port))) {
+			if err == nil {
+				fmt.Printf("Cable rescue: the VibeTV on %s is left half-written; rescuing it before the one on %s\n", resumed.Port, device.Port)
 			}
+			marker, recovering, err = resumed, true, nil
+			device = usb.CableDevice{Port: marker.Port, Hello: protocol.DeviceHello{Board: marker.Board, Firmware: marker.Firmware}}
 		}
 		if err != nil {
 			return &commandError{Op: "cable-rescue-device", Code: errcode.UpgradeFlashFirmware, Err: err}
@@ -304,7 +310,10 @@ func runInstallUpdate(args []string) (retErr error) {
 			marker.Port, marker.TargetFirmware, marker.ImagePath = cablePort, targetVersion, imagePath
 			if !recovering {
 				marker.Board, marker.Firmware = caps.Board, caps.Firmware
-				marker.ImageSHA256, _ = sha256File(imagePath)
+				// From the bytes that will be written: a second read could fail
+				// and leave a marker no resume can ever match.
+				sum := sha256.Sum256(image)
+				marker.ImageSHA256 = hex.EncodeToString(sum[:])
 			}
 			uploadErr = flashCableRescueWithRetry(ctx, home, marker, image, recovering)
 		}

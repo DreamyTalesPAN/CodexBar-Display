@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/firmwareupdate"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 )
@@ -53,7 +54,10 @@ func flashCableRescueWithRetry(ctx context.Context, home string, marker firmware
 			return nil
 		}
 		fmt.Printf("Cable rescue write %d/%d failed: %v\n", i+1, len(attempts), err)
-		if !errors.Is(err, usb.ErrROMLoaderNotEntered) && !errors.Is(err, usb.ErrNotESP8266AppImage) {
+		// The port that would not open, the loader that never synced and the
+		// refused image all failed before any flash command.
+		if !errors.Is(err, usb.ErrROMLoaderNotEntered) && !errors.Is(err, usb.ErrNotESP8266AppImage) &&
+			errcode.Of(err) != errcode.TransportSerialOpen {
 			untouched = false
 		}
 		if ctx.Err() != nil || errors.Is(err, usb.ErrNotESP8266AppImage) || i == len(attempts)-1 {
