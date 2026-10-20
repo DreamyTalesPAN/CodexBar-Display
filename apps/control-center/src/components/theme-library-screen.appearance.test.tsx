@@ -124,6 +124,13 @@ it("lists both types on All, with the count of each type in the segment", () => 
   expect(within(items[3]).getByText("Screensaver")).toBeTruthy();
 });
 
+it("keeps the card's inner space at the template's 10 px: 1 px border plus 9 px padding", () => {
+  render(<Page />);
+  const card = screen.getAllByRole("listitem")[0];
+  expect(card.classList).toContain("p-[9px]");
+  expect(card.classList).not.toContain("p-2.5");
+});
+
 it("switches the list with the segment by click; the arrow keys move between the segments", async () => {
   render(<Page />);
   fireEvent.click(screen.getByRole("radio", { name: "Screensavers 2" }));

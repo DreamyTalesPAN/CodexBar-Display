@@ -1427,7 +1427,8 @@ function ThemeListItem({
 
   return (
     <Item
-      className="gap-2.5 rounded-[var(--radius-card)] p-2.5"
+      // The card's 1 px border plus 9 px = the template's 10 px inner space, so the picture is as wide as drawn.
+      className="gap-2.5 rounded-[var(--radius-card)] p-[9px]"
       id={item.kind === "published" ? catalogThemeRowId(item.themeId) : undefined}
       role="listitem"
       variant={item.themeId === displayThemeId ? "muted" : "outline"}
