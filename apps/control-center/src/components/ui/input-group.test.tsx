@@ -4,9 +4,10 @@ import { InputGroup, InputGroupInput } from "./input-group";
 
 // The classes that draw the focus ring of an input group and its invalid state.
 const FOCUS_RING = "has-[[data-slot=input-group-control]:focus-visible]:ring-ring";
-const INVALID_FOCUS_RING = "has-[[data-slot][aria-invalid=true]:focus-visible]:ring-destructive";
-const DARK_INVALID_FOCUS_RING = "dark:has-[[data-slot][aria-invalid=true]:focus-visible]:ring-destructive";
-const INVALID_RING = "has-[[data-slot][aria-invalid=true]]:ring-destructive/20";
+const INVALID_FOCUS_RING =
+  "has-[[data-slot][aria-invalid=true]]:has-[[data-slot=input-group-control]:focus-visible]:ring-destructive";
+// Calm redesign: a solid 1 px ring plus the border = 2 px, no faint glow.
+const INVALID_RING = "has-[[data-slot][aria-invalid=true]]:ring-destructive";
 
 // Class list of the input group's own element (the outer div).
 function groupClasses(html: string): string[] {
@@ -27,7 +28,6 @@ describe("input group focus ring", () => {
     const classes = groupClasses(html);
 
     expect(classes).toContain(INVALID_FOCUS_RING);
-    expect(classes).toContain(DARK_INVALID_FOCUS_RING);
   });
 
   it("keeps the full red focus ring when a consumer passes its own classes", () => {
