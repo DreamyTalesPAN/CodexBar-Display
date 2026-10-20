@@ -8533,3 +8533,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the Usage page looks as drawn in frames "Usage" (#usage) and "Usage at 1920 x 1080" (#usage-large) of "Calm Redesign - alle Screens".
 - Scope: `apps/control-center/src/components/usage-screen.tsx`, `apps/control-center/src/components/usage-screen.test.tsx`, `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #783: Usage page margin is 4cqw of the page area, like Updates and Support (7197 review, point 3, margin expression)
+
+- User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #783 point 3 (Usage scaling), margin expression. Before → after: the growing page margin on Usage was 4 % of the window width (48 px up to 96 px) → it is 4 % of the page area beside the sidebar (still 48 px up to 96 px), the same expression the Updates and Support pages use; the look is the same at the clamp ends, a few pixels narrower in between.
+- Approved customer-visible result: the Usage page margin looks as drawn in frames "Usage" (#usage) and "Usage at 1920 x 1080" (#usage-large) of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
