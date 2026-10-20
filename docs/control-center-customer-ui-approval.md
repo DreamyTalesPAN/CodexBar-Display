@@ -7857,3 +7857,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #827 merge 02905756 as in this branch's entries and the merged ones; nothing else changes.
 - Scope: #827 merge 02905756 and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #827 merge 02905756 has no customer-visible change of its own
+
+## 2026-10-20 — #727: approval marker after merging main at e7e8319d
+
+- User approval: no visible change – UI approval not needed (merge of main (e7e8319d) into #727; tests and docs only)
+- Approved customer-visible result: #727 adds accessibility checks only; nothing customers see changes.
+- Scope: #727 merge e7e8319d, the Theme Studio axe test moved to theme-studio.axe.test.tsx, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #727 tests only
