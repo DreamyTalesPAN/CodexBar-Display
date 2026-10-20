@@ -8474,3 +8474,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the 3D VibeTV appears only with its theme drawn, as in frame 1 of "Calm Redesign - alle Screens".
 - Scope: `apps/control-center/src/components/live-vibetv-preview.tsx`, `apps/control-center/src/components/vibetv-3d-preview.tsx`, the recovery test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #784: approval marker after merging main
+
+- User approval: Merge of main into this branch; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
