@@ -10509,6 +10509,59 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #781 Theme Studio Details with the Color field, palette and "More colours…" together at 1200x800, 1000x700 and 1920x1080 (pictures "Vorlage (Claude Design)" | "App mit PR #781").
 - Scope: #781 `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #781 layout fix not announced
+## 2026-10-20 — #802: tests follow the all-cards-alike Appearance design (Codex review)
+
+- User approval: no visible change – UI approval not needed (#802: unit test and card-size goldens only; the active card now expects the same outline variant as the others plus the Active pill, and the 240 px card goldens follow the 200 px cards)
+- Approved customer-visible result: #802 unchanged; this entry only records test updates.
+- Scope: `apps/control-center/src/components/control-center-app.display-preferences.test.tsx`, `apps/control-center/test-fixtures/theme-preview-vector-goldens.json` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — test-only change, no customer-visible change
+
+## 2026-10-17 — Process steps look like the Setup Wizard log
+
+- User approval: Paul's design rule of 2026-10-17 (via the communicator): process steps look like the Setup Wizard status log everywhere (one component ProcessSteps, no cursor block); he has not yet seen this build.
+- Approved customer-visible result: Every list of running process steps uses the Setup Wizard's log look: one "> text" line per step, in the same mono type, each step fading in, finished steps paler, no blinking block. Changed places, before → after:
+  - Appearance › Themes and Screensavers, install box (`InlineInstallProgress` in `theme-library-screen.tsx`): before: "Installing", the current step as a sentence and earlier steps as small plain text; after: all steps as "> text" lines, finished ones paler. Title, progress bar and "Installed" unchanged.
+  - Updates, VibeTV firmware update (`InlineUpdateProgress` in `updates-screen.tsx`): before: the running step as a sentence in body text; after: the same step as one "> text" line. Title, progress bar, restart text, and the complete and attention messages unchanged.
+  - Setup Wizard status logs: no visible change; the component is extracted from them and keeps the blinking caret while work runs.
+  - Diagnostics: no running steps are listed, so nothing changes.
+- Scope: `apps/control-center/src/components/process-steps.tsx` (new), `apps/control-center/src/components/setup/setup-log.tsx`, `apps/control-center/src/components/theme-library-screen.tsx` (InlineInstallProgress), `apps/control-center/src/components/updates-screen.tsx` (InlineUpdateProgress), their tests, and this record. Pull request branch only, not merge or release.
+- What's new: none — the same steps, shown in the setup log look
+
+## 2026-10-17 — Codex fix: install steps keep their place when they turn finished
+
+- User approval: none needed for this entry; it records a Codex review fix (P2) to the install box of the entry above: a step keeps its line when it turns finished, so it no longer fades in a second time. No visible change beyond the entry above; not seen by Paul.
+- Approved customer-visible result: as in the entry above; nothing else changes.
+- Scope: `InlineInstallProgress` key in `apps/control-center/src/components/theme-library-screen.tsx`, its test, and this record. Pull request branch only, not merge or release.
+- What's new: none — same steps, one fix to the animation
+
+## 2026-10-17 — Test expectation follows the install steps look
+
+- User approval: none needed for this entry; it changes only a test expectation: the screensaver and theme install test now expects the install's first step as "> Preparing … install." (the entry above), as CI on the previous head showed. No visible change beyond the entry above; not seen by Paul.
+- Approved customer-visible result: as in the entry above; nothing else changes.
+- Scope: `apps/control-center/src/components/control-center-app.screensaver-install.test.tsx` and this record. Pull request branch only, not merge or release.
+- What's new: none — same steps, a test expectation only
+
+## 2026-10-17 — Setup Wizard log: no blinking caret
+
+- User approval: Paul's rule of 2026-10-17 (no cursor block anywhere in process steps), decided on the #712 review and relayed by the communicator; he has not yet seen this build. It supersedes the statement in the entry above that the Setup Wizard log keeps its caret.
+- Approved customer-visible result: Setup Wizard status logs (welcome, providers, device, theme install): before: a blinking caret block at the end of the log while work runs; after: none. Lines, box, fade-in and everything else unchanged.
+- Scope: `apps/control-center/src/components/process-steps.tsx`, `apps/control-center/src/components/setup/setup-log.tsx` (caret and `running` prop removed), the four wizard callers that passed `running` (setup-welcome-screen, setup-providers-screen, setup-theme-screen, setup-device-screen), their tests, and this record. Pull request branch only, not merge or release.
+- What's new: none — removes a visual element; no new copy
+
+## 2026-10-20 — #802: approval marker after merging claude/process-steps-component
+
+- User approval: merge of claude/process-steps-component (ProcessSteps, the Setup Wizard step-line look) into #802; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: #802 as in its own entries (pending, Paul reviews) plus the entries of the process-steps branch.
+- Scope: the merge of claude/process-steps-component and this approval record. Pull request branch #802 only, not merged, not released.
+- What's new: none — merge of the shared ProcessSteps component, no customer-visible change of its own
+
+## 2026-10-20 — #802: Appearance install on the button, bigger lime Active pill (7198 review, Paul's pictures)
+
+- User approval: pending — Paul asked for this on 20.10.2026 after his review of build 7198 and the first pictures (via the communicator); the rendered result is pending his review. This line: #802 install state and pills. Before → after: while installing, the card grew by a progress bar and a box with step lines, and afterwards kept a box "Installed – Theme is active on VibeTV." → the card never changes its height: its own lime Install button turns into a disabled "Installing" with a spinner, nothing else is added, and after the install only the pill on the picture remains; the "Active" pill is bigger (14 px text, 24 px high) in lime #CCFF00 with black text, the "Installed" pill is as big and light so Active stands out; no extra "Try again" row, a failed install is the usual dialog and the card's Install button retries.
+- Approved customer-visible result: pictures for Paul in `vibetv-testbench/review-1016/ui/802-install-button/` (card while installing, card after, close-up of the pills), 1200 px, "App heute (7198)" next to "neu".
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx`, its unit tests, the customer-flow script `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #802 install state and pills: no new content, the same install with another look
+
 ## 2026-10-20 — #784: the keyboard focus ring is the template's olive
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: the keyboard focus ring is the template's olive — Before → after: #784 the 2 px keyboard focus ring was ink (#1B1B1B light, #EDEDED dark) → #784 the template's olive (#506600 light, #CCFF00 dark); the red ring on invalid fields (#817) stays.
@@ -10836,3 +10889,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #783 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
 - Scope: #783 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #783 approval record only
+## 2026-10-20 — #802: approval marker after merging claude/group-calm-redesign again
+
+- User approval: merge of claude/group-calm-redesign into #802 (docs and setup-providers changes of the base, approval record kept from both sides); no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: #802 as in its own entries (pending, Paul reviews) plus the entries of the base branch.
+- Scope: the merge and this approval record. Pull request branch #802 only, not merged, not released.
+- What's new: none — merge of the base branch, no customer-visible change of its own

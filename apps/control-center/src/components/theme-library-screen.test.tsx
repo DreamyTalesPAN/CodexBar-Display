@@ -236,7 +236,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
     expect(html).not.toMatch(/<button[^>]*>(?:<svg[\s\S]*?<\/svg>)?Installed</);
   });
 
-  it("shows Active as a dark pill on the picture of the theme VibeTV shows", () => {
+  it("shows Active as a lime pill with black text on the picture of the theme VibeTV shows", () => {
     const livePath = "/themes/u/live-th-3-1a2b3c.json";
     const html = renderToStaticMarkup(
       <ThemeLibraryScreen
@@ -256,7 +256,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
     );
     const pill = html.match(/<span[^>]*data-testid="theme-status-pill"[^>]*>([^<]*)</);
     expect(pill?.[1]).toBe("Active");
-    expect(pill?.[0]).toContain("bg-foreground text-background");
+    expect(pill?.[0]).toContain("bg-primary text-black");
   });
 
   // An own theme and a later catalog theme shared the id `my-theme`. The
@@ -549,7 +549,8 @@ describe("ThemeLibraryScreen Appearance sections", () => {
 
   // Issue #579: with Show screensaver off, the installed row still read
   // "Screensaver is ready on VibeTV." below the notice that it is turned off.
-  it("says only that the screensaver is installed while Show screensaver is off", () => {
+  // Paul's review of 7198: a finished install leaves no notice in the card.
+  it("leaves no notice in the card when an install is finished, also while Show screensaver is off", () => {
     const list = (enabled: boolean) =>
       renderToStaticMarkup(
         <ThemeLibraryScreen
@@ -576,9 +577,13 @@ describe("ThemeLibraryScreen Appearance sections", () => {
         />,
       );
 
-    expect(list(true)).toContain("Screensaver is ready on VibeTV.");
-    expect(list(false)).toContain("Night Clock is installed.");
-    expect(list(false)).not.toContain("Screensaver is ready on VibeTV.");
+    for (const enabled of [true, false]) {
+      const html = list(enabled);
+      expect(html).not.toContain("Screensaver is ready on VibeTV.");
+      expect(html).not.toContain("Night Clock is installed.");
+      expect(html).not.toContain('role="status"');
+      expect(html).not.toContain('role="progressbar"');
+    }
   });
 
   // Issue #558: the Screensavers list said "theme" in these lines of its own.
@@ -605,10 +610,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
       );
 
     expect(list()).toContain(`title="${noun} installs are not available right now."`);
-    // An install the page knows no line of yet.
-    expect(
-      list({ phase: "installing", themeId, title: "", startedAt: "", logs: [] }),
-    ).toContain(`Preparing ${noun.toLowerCase()} install.`);
+    // (The first step of a running install is worded in theme-library-screen.install-notice.test.tsx.)
   });
 
   // Issue #558: the reasons an Install button gives are written for themes.

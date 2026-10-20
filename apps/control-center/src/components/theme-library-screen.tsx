@@ -41,12 +41,10 @@ import {
   ItemActions,
   ItemContent,
   ItemDescription,
-  ItemFooter,
   ItemGroup,
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
-import { Progress } from "@/components/ui/progress";
 import { SetupDialog } from "@/components/setup/setup-dialog";
 import { systemBusyCopy } from "./system-busy-dialog";
 import { Spinner } from "@/components/ui/spinner";
@@ -104,9 +102,7 @@ import {
 } from "./appearance-toolbar";
 import { ThemeRenderPreview } from "./theme-render-preview";
 import { ReplaceDraftDialog } from "./theme-studio/replace-draft-dialog";
-import { clampProgress } from "./update-jobs";
 import { SetupStepFailedDialog } from "./setup/setup-provider-dialogs";
-import { ProcessSteps, type ProcessStep } from "./process-steps";
 import type { ApiError, StandbySettings } from "./control-center-types";
 import {
   ThemeStudioScreen,
@@ -1416,7 +1412,9 @@ function ThemeListItem({
     // the same while the app still reads VibeTV's settings (#579).
     installFinished:
       visibleInstallStatus && installStatus?.phase === "complete" && !preparingInstall,
-    installed,
+    // A failed install of a theme VibeTV already holds is retried from this
+    // button: the card has no "Try again" row of its own any more.
+    installed: installed && !retryingFailedInstall,
     selected: item.themeId === selectedThemeId,
     disabled,
     updateAvailable,
@@ -1430,11 +1428,18 @@ function ThemeListItem({
   // (An installed row keeps its pill while another action holds the buttons.)
   const rowInstalled =
     installLabel === "Installed" || (installed && !retryingFailedInstall);
-  const statusPill: "Active" | "Installed" | null = rowInstalled
-    ? item.themeId === displayThemeId
-      ? "Active"
-      : "Installed"
-    : null;
+  // This row's install is running: its Install button turns into
+  // "Installing" with a spinner; the card itself never changes its height.
+  const rowInstalling =
+    preparingInstall ||
+    installLabel === "Installing" ||
+    (visibleInstallStatus && installStatus?.phase === "installing");
+  const statusPill: "Active" | "Installed" | null =
+    rowInstalled || installed
+      ? item.themeId === displayThemeId
+        ? "Active"
+        : "Installed"
+      : null;
 
   return (
     <Item
@@ -1455,13 +1460,13 @@ function ThemeListItem({
         >
           <ThemePreview onPack={setPublishedPack} theme={item} />
         </Button>
-        {/* A pill on the picture says what the row is: Active (dark) for the theme VibeTV shows, Installed (light) for the others on VibeTV. */}
+        {/* A pill on the picture says what the row is: Active (lime, black text) for the theme VibeTV shows, Installed (light) for the others on VibeTV. */}
         {statusPill ? (
           <span
             className={cn(
-              "pointer-events-none absolute top-1.5 right-1.5 inline-flex h-5 items-center rounded-full px-2 text-[12px] leading-none font-semibold",
+              "pointer-events-none absolute top-2 right-2 inline-flex h-6 items-center rounded-full px-3 text-[14px] leading-none font-semibold",
               statusPill === "Active"
-                ? "bg-foreground text-background"
+                ? "bg-primary text-black"
                 : "bg-card text-foreground shadow-[0_0_0_1px_color-mix(in_srgb,var(--foreground)_14%,transparent)]",
             )}
             data-testid="theme-status-pill"
@@ -1522,11 +1527,23 @@ function ThemeListItem({
         {/* Install is the primary (lime) action at the right edge. Once the
             row has nothing to install, the slot shows the other states as
             text; "Installed" is the pill on the picture, not a row here. */}
-        {rowInstalled ? null : (
+        {rowInstalling ? (
+          // Same lime button, same width, the spinner says it is running.
+          <Button
+            aria-busy
+            className="h-7 min-w-[104px] px-3 disabled:opacity-100"
+            disabled
+            type="button"
+            size="sm"
+          >
+            <Spinner data-icon="inline-start" />
+            <span>Installing</span>
+          </Button>
+        ) : rowInstalled ? null : (
           <Button
             className={cn(
               "h-7 px-3",
-              installIsText && "px-0 font-normal disabled:opacity-100 disabled:text-muted-foreground",
+              installIsText ? "px-0 font-normal disabled:opacity-100 disabled:text-muted-foreground" : "min-w-[104px]",
             )}
             disabled={disabled}
             onClick={() => {
@@ -1543,102 +1560,63 @@ function ThemeListItem({
           </Button>
         )}
       </ItemActions>
-      {visibleInstallStatus ? (
-        <ItemFooter className="basis-full block">
-          <InlineInstallProgress
-            canRetry={!disabled}
-            // While Show screensaver is off VibeTV shows none, so "ready on
-            // VibeTV" said too much (issue #579): the sentence Settings uses.
-            installedDetail={
-              screensaverInstallBlockedReason === SCREENSAVER_OFF_REASON
-                ? `${item.title} is installed.`
-                : undefined
-            }
-            onRetry={() => onInstallTheme(item)}
-            status={installStatus!}
-            usage={item.usage}
-          />
-        </ItemFooter>
-      ) : null}
+      <InstallOverlays
+        canRetry={!disabled}
+        onRetry={() => onInstallTheme(item)}
+        status={visibleInstallStatus ? installStatus! : null}
+        usage={item.usage}
+      />
     </Item>
   );
 }
 
-function InlineInstallProgress({
+/**
+ * A failed install is the usual overlay dialog. A running one has no steps in
+ * the card (it never changes its height): its button says "Installing".
+ */
+function InstallOverlays({
   canRetry,
-  installedDetail,
   onRetry,
   status,
   usage,
 }: {
   canRetry: boolean;
-  installedDetail?: string;
+  onRetry: () => void;
+  status: ThemeInstallStatus | null;
+  usage: ThemeStudioUsage;
+}) {
+  return status?.phase === "error" ? (
+    <InstallErrorDialog canRetry={canRetry} onRetry={onRetry} status={status} usage={usage} />
+  ) : null;
+}
+
+function InstallErrorDialog({
+  canRetry,
+  onRetry,
+  status,
+  usage,
+}: {
+  canRetry: boolean;
   onRetry: () => void;
   status: ThemeInstallStatus;
   usage: ThemeStudioUsage;
 }) {
   const [dismissedErrorAt, setDismissedErrorAt] = useState<string | null>(null);
-  // The notice of the last row opens below the edge of the window (issue
-  // #579). When an install starts or ends, the page moves as far as it takes
-  // to show it, and not at all when it is in view. A finished install found
-  // when the list is opened leaves the page where it is.
-  const noticeRef = useRef<HTMLDivElement>(null);
-  const shownPhaseRef = useRef<ThemeInstallStatus["phase"] | null>(null);
-  useEffect(() => {
-    if (status.phase === "installing" || shownPhaseRef.current === "installing") {
-      // Optional call: the unit tests' DOM has no scrollIntoView.
-      noticeRef.current?.scrollIntoView?.({ block: "nearest" });
-    }
-    shownPhaseRef.current = status.phase;
-  }, [status.phase]);
-  // What this list installs, for the lines the page words itself (issue #558).
   const noun = usage === "screensaver" ? "Screensaver" : "Theme";
-  if (status.phase === "error") {
-    const dismissed = dismissedErrorAt === status.startedAt;
-    const retry = () => {
-      setDismissedErrorAt(null);
-      onRetry();
-    };
-    return <>
-      <SetupStepFailedDialog
-        error={dismissed ? null : status.failure || {
-          code: "theme_install_failed",
-          message: `${noun} install failed.`,
-          nextAction: status.error || `Keep VibeTV connected and try installing the ${noun.toLowerCase()} again.`,
-        }}
-        onOpenChange={(open) => { if (!open) setDismissedErrorAt(status.startedAt); }}
-        onRetry={canRetry ? retry : undefined}
-      />
-      {dismissed && canRetry ? <Button onClick={retry} size="sm" type="button" variant="outline">Try again</Button> : null}
-    </>;
-  }
-  const complete = status.phase === "complete";
-  const detail = complete
-    ? installedDetail || status.message || (usage === "screensaver" ? "Screensaver is ready on VibeTV." : "Theme is active on VibeTV.")
-    : status.message || status.logs[status.logs.length - 1] || `Preparing ${noun.toLowerCase()} install.`;
-  const title = complete ? "Installed" : "Installing";
-  // The steps of a running install read as the setup log does. Ids keep their
-  // log position, so a step that has been shown does not fly in again.
-  const logOffset = Math.max(0, status.logs.length - 4);
-  const steps: ProcessStep[] = [
-    ...status.logs.slice(-4, -1).map((text, index) => ({
-      id: `${logOffset + index}-${text}`,
-      text,
-      tone: "done" as const,
-    })),
-    { id: `${status.logs.length - 1}-${detail}`, text: detail },
-  ];
+  const retry = () => {
+    setDismissedErrorAt(null);
+    onRetry();
+  };
   return (
-    <div className="flex flex-col gap-3" ref={noticeRef} role="status" aria-live="polite">
-      {complete ? null : <Progress aria-label={title} className="animate-pulse" value={clampProgress(status.progress)} />}
-      <Alert>
-        {complete ? <ShieldCheck aria-hidden /> : <Spinner />}
-        <AlertTitle>{title}</AlertTitle>
-        <AlertDescription>
-          {complete ? <p>{detail}</p> : <ProcessSteps steps={steps} />}
-        </AlertDescription>
-      </Alert>
-    </div>
+    <SetupStepFailedDialog
+      error={dismissedErrorAt === status.startedAt ? null : status.failure || {
+        code: "theme_install_failed",
+        message: `${noun} install failed.`,
+        nextAction: status.error || `Keep VibeTV connected and try installing the ${noun.toLowerCase()} again.`,
+      }}
+      onOpenChange={(open) => { if (!open) setDismissedErrorAt(status.startedAt); }}
+      onRetry={canRetry ? retry : undefined}
+    />
   );
 }
 

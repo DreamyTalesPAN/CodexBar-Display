@@ -1019,8 +1019,11 @@ it("keeps the new VibeTV's theme selected when a read for the first VibeTV answe
   fireEvent.click(screen.getByRole("radio", { name: /^Themes/ }));
   await window.wait(1);
   const row = (themeId: string) => document.getElementById(`catalog-theme-${themeId}`);
-  expect(row("gauge")?.dataset.variant).toBe("muted");
+  // Every card looks the same; the Active pill on the picture marks the theme VibeTV shows.
+  expect(row("gauge")?.dataset.variant).toBe("outline");
   expect(row("codex")?.dataset.variant).toBe("outline");
+  expect(row("gauge")?.querySelector('[data-testid="theme-status-pill"]')?.textContent).toBe("Active");
+  expect(row("codex")?.querySelector('[data-testid="theme-status-pill"]')?.textContent).not.toBe("Active");
 });
 
 it("keeps the display mode cards focused while the mode is saved", async () => {
