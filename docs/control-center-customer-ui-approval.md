@@ -8453,3 +8453,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: lime buttons and the "What's new" dialog look like frames 5, 13, 24 and 37 of "Calm Redesign - alle Screens".
 - Scope: `apps/control-center/src/components/ui/button.tsx`, `apps/control-center/src/components/whats-new-dialog.tsx`, their tests and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #784: build 2b QA, the Settings buttons "Run setup" and "Reset…" have the template's width (frame 3)
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: "Run setup" and "Reset…" in Settings were 4 px narrower than drawn (12 px of side space) → they have 14 px of side space, like the other outline buttons (89 → 93 px for "Run setup", 71 → 75 px for "Reset…"). Nothing else changes.
+- Approved customer-visible result: the Settings buttons look like frame 3 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/settings-screen.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
