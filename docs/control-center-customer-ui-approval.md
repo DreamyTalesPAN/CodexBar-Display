@@ -10003,3 +10003,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the top row of the Theme Studio looks like frames 7-9 of "Calm Redesign - alle Screens".
 - Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #784: build 2b QA, lime buttons fill their whole box and "What's new" spaces its entries as drawn
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: every lime button (Create, Install, Connect, Continue, Got it, Run diagnostics and so on) showed a 1 px frame of the page colour inside its box, so it looked 2 px lower and narrower than drawn → the lime fills the whole box (the same size, 36 px or 44 px high, as in the template); in "What's new" the entries were 24 px apart and "Show me in Themes / Settings" sat 2 px too close to the sentence above it and 6 px too far from the next entry → the entries are 20 px apart and the link sits 4 px under the sentence, as in frame 37. Nothing else changes.
+- Approved customer-visible result: lime buttons and the "What's new" dialog look like frames 5, 13, 24 and 37 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/ui/button.tsx`, `apps/control-center/src/components/whats-new-dialog.tsx`, their tests and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #784: build 2b QA, the Settings buttons "Run setup" and "Reset…" have the template's width (frame 3)
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: "Run setup" and "Reset…" in Settings were 4 px narrower than drawn (12 px of side space) → they have 14 px of side space, like the other outline buttons (89 → 93 px for "Run setup", 71 → 75 px for "Reset…"). Nothing else changes.
+- Approved customer-visible result: the Settings buttons look like frame 3 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/settings-screen.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
