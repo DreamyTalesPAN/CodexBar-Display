@@ -265,6 +265,28 @@ describe("Theme Studio small window", () => {
   });
 });
 
+describe("Theme Studio Details in a low window", () => {
+  it("gives Details their natural height so the left column scrolls as one and the colour field and palette are never cut off", async () => {
+    const text = { ...createDesignElement("text", 1), text: "Hello" };
+    render(<AIThemeStudioScreen initialTheme={{ packName: "Palette", source: "custom", spec: { ...createBlankThemeSpec(), primitives: [text] } }} />);
+    Element.prototype.setPointerCapture = () => {};
+    Element.prototype.releasePointerCapture = () => {};
+    const picked = document.querySelector('[aria-label^="Select "]') as Element;
+    fireEvent.pointerDown(picked, { button: 0, pointerId: 1 });
+    fireEvent.pointerUp(picked, { button: 0, pointerId: 1 });
+    const trigger = await screen.findByRole("button", { name: "Details" });
+    if (trigger.getAttribute("aria-expanded") !== "true") fireEvent.click(trigger);
+    const tools = await screen.findByRole("region", { name: "Selected element tools" });
+    const column = document.getElementById("theme-design-canvas")!.parentElement!;
+    // Between the Details content and the left column only the column scrolls: no scroll area of its own that would cut the palette off.
+    for (let node: HTMLElement | null = tools.parentElement; node && node !== column; node = node.parentElement) {
+      expect(node.className, node.className).not.toMatch(/overflow-y-auto|overflow-auto|overflow-hidden/);
+      expect(node.className, node.className).not.toMatch(/(^|\s)(lg:)?max-h-/);
+    }
+    expect(column.className).toContain("overflow-y-auto");
+  });
+});
+
 describe("Theme Studio reference images", () => {
   function stubImageDecoding() {
     globalThis.createImageBitmap = vi.fn(async () => ({ width: 10, height: 10, close: () => {} })) as unknown as typeof createImageBitmap;

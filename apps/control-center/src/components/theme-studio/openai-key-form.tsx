@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SetupDialog } from "@/components/setup/setup-dialog";
 import { Input } from "@/components/ui/input";
@@ -64,11 +64,22 @@ export function OpenAIKeyForm({
   const [connecting, setConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState("");
 
+  // Bumped when a credential mutation (save, check, disconnect) begins: the mount-time read is then stale and must not write back.
+  const mutationGeneration = useRef(0);
+  const initialReadController = useRef<AbortController | null>(null);
+  function invalidateInitialRead() {
+    mutationGeneration.current += 1;
+    initialReadController.current?.abort();
+  }
+
   useEffect(() => onConfiguredChange?.(configured), [configured]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const controller = new AbortController();
+    initialReadController.current = controller;
+    const generation = mutationGeneration.current;
     void fetchAIThemeCapabilities(controller.signal)
       .then((capabilities) => {
+        if (controller.signal.aborted || generation !== mutationGeneration.current) return;
         const state = openAIState(capabilities);
         setEnabled(state.enabled);
         setConfigured(state.configured);
@@ -96,6 +107,7 @@ export function OpenAIKeyForm({
     const key = password.trim();
     if ((!key && configured !== "pending") || connecting || !consent) return;
     setPassword("");
+    invalidateInitialRead();
     setBusy(true);
     setConnectionError("");
     try {
@@ -121,6 +133,7 @@ export function OpenAIKeyForm({
     }
   }
   function disconnect() {
+    invalidateInitialRead();
     setBusy(true);
     void deleteAIThemeCredential("openai")
       .then(() => {

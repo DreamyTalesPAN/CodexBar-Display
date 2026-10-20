@@ -10227,3 +10227,16 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #798 the Updates heading never offers an update the customer cannot take.
 - Scope: #798 `apps/control-center/src/components/updates-screen.tsx`, its calm test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #798 Codex fix not announced
+## 2026-10-20 — #781: Codex fix, a late key check no longer brings a disconnected key back
+
+- User approval: no visible change – UI approval not needed (#781: Codex fix to the OpenAI key form; the first read of the stored-key state is dropped once Disconnect, Save or the key check has started, so a slow older answer can no longer show a deleted key as "Change key"; no new look, text or layout)
+- Approved customer-visible result: #781 key dialog and Settings row look exactly as before; only a stale answer after Disconnect is ignored.
+- Scope: #781 `apps/control-center/src/components/theme-studio/openai-key-form.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #781 fix of a review finding, no new text or feature
+
+## 2026-10-20 — #781: Theme Studio colour field and its whole palette fit together in a low window (7197 review, point 6)
+
+- User approval: pending — #781 point 6 follow-up; the rendered result is pending Paul's review. Before → after: #781 at a 1200x800 window the Details area was a small scroll box of its own (about 100–160 px high), so the Color field, the palette and "More colours…" were cut off and never visible together → #781 Details take their natural height and the whole left column (preview and Details) scrolls as one; the palette scrolls into view when it opens, so the Color field, the 12 swatches and "More colours…" are visible together under the preview as in the template (picture 06-farbwahl) at 1200x800, 1000x700 and 1920x1080. The preview itself looks and sits as before.
+- Approved customer-visible result: #781 Theme Studio Details with the Color field, palette and "More colours…" together at 1200x800, 1000x700 and 1920x1080 (pictures "Vorlage (Claude Design)" | "App mit PR #781").
+- Scope: #781 `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #781 layout fix not announced
