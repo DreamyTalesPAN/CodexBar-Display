@@ -1668,6 +1668,9 @@ func pendingNativeUpdateBlocksBundle(
 enum InstallationFailure: Equatable {
     case backgroundApproval
     case serviceStart
+    // macOS killed the runtime helper because this app is signed differently
+    // from the copy that first registered the runtime (issue #626).
+    case launchBlockedBySignature
     case updateMismatch
     case applicationIncomplete
     case legacyRepair
@@ -1701,6 +1704,8 @@ func installationPreviewFailure(_ value: String) -> InstallationFailure? {
         return .backgroundApproval
     case "service-start":
         return .serviceStart
+    case "launch-blocked":
+        return .launchBlockedBySignature
     case "update-mismatch":
         return .updateMismatch
     case "application-incomplete":
@@ -1709,6 +1714,55 @@ func installationPreviewFailure(_ value: String) -> InstallationFailure? {
         return .legacyRepair
     default:
         return nil
+    }
+}
+
+// macOS ties an app-managed LaunchAgent to the signature of the app that first
+// registered it. A copy signed differently (a test build over a release, or the
+// other way round) has its helper killed at every start with "Launch Constraint
+// Violation", and unregistering and registering again keeps the first
+// signature, so Restart service cannot help (issue #626). The helper's crash
+// report is the only place the cause shows. Its first line is a JSON header,
+// the rest the JSON report.
+func crashReportShowsLaunchConstraintViolation(_ report: String, helperPath: String) -> Bool {
+    guard let newline = report.firstIndex(of: "\n"),
+          let body = try? JSONSerialization.jsonObject(
+              with: Data(report[report.index(after: newline)...].utf8)
+          ) as? [String: Any],
+          let termination = body["termination"] as? [String: Any],
+          let processPath = body["procPath"] as? String else {
+        return false
+    }
+    return termination["namespace"] as? String == "CODESIGNING"
+        && termination["indicator"] as? String == "Launch Constraint Violation"
+        && URL(fileURLWithPath: processPath).standardizedFileURL.path
+            == URL(fileURLWithPath: helperPath).standardizedFileURL.path
+}
+
+func runtimeLaunchWasBlockedBySignature(
+    crashDirectory: URL,
+    helperPath: String,
+    since: Date
+) -> Bool {
+    guard let urls = try? FileManager.default.contentsOfDirectory(
+        at: crashDirectory,
+        includingPropertiesForKeys: [.contentModificationDateKey],
+        options: [.skipsHiddenFiles]
+    ) else {
+        return false
+    }
+    return urls.contains { url in
+        let name = url.lastPathComponent
+        guard name.hasPrefix("codexbar-display-"),
+              name.hasSuffix(".ips"),
+              let modified = try? url.resourceValues(
+                  forKeys: [.contentModificationDateKey]
+              ).contentModificationDate,
+              modified >= since,
+              let report = try? String(contentsOf: url, encoding: .utf8) else {
+            return false
+        }
+        return crashReportShowsLaunchConstraintViolation(report, helperPath: helperPath)
     }
 }
 
@@ -1757,6 +1811,7 @@ enum InstallationStatusKind: Equatable {
     case welcome
     case backgroundApproval
     case serviceRestart
+    case launchBlocked
     case updateMismatch
     case applicationIncomplete
     case legacyRepair
@@ -1793,6 +1848,15 @@ extension InstallationFailure {
                 failed: true,
                 retryTitle: "Restart service",
                 kind: .serviceRestart
+            )
+        case .launchBlockedBySignature:
+            // Customer text approved by Marcus (question 75a, 2026-10-20).
+            return InstallationStatus(
+                title: "macOS blocked VibeTV’s background service",
+                detail: "This copy of VibeTV is signed differently from the one your Mac first allowed. Quit VibeTV, move it to the Trash, then download it again from vibetv.shop and open it.",
+                failed: true,
+                retryTitle: "Download VibeTV again",
+                kind: .launchBlocked
             )
         case .updateMismatch:
             return InstallationStatus(
@@ -2674,6 +2738,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                     in: URL(fileURLWithPath: snapshot.crashDirectoryPath, isDirectory: true),
                     matching: "codexbar-display-",
                     limit: 3
+                ),
+                "launchBlockedBySignatureLast24Hours": runtimeLaunchWasBlockedBySignature(
+                    crashDirectory: URL(fileURLWithPath: snapshot.crashDirectoryPath, isDirectory: true),
+                    helperPath: helperURL.path,
+                    since: Date().addingTimeInterval(-24 * 60 * 60)
                 ),
                 "recentLogs": recentTextFiles(
                     in: URL(fileURLWithPath: snapshot.supportDirectoryPath, isDirectory: true)
@@ -3709,6 +3778,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                         variant: .primary
                     ),
                 ]
+            case .launchBlocked:
+                recoveryButtons = [
+                    makeNativeSetupButton(
+                        title: "Download VibeTV again",
+                        action: #selector(downloadVibeTVAgain),
+                        symbolName: "arrow.down.circle",
+                        variant: .primary
+                    ),
+                ]
             case .codexBarRepair:
                 recoveryButtons = [
                     makeNativeSetupButton(
@@ -3987,6 +4065,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private func prepareCompanion(fromStartScreen: Bool = false) async -> RuntimePreparationOutcome {
         let repairRequested = runtimeReregistrationRequested
         runtimeReregistrationRequested = false
+        let preparationStartedAt = Date()
         guard isInstalledApplicationsBundle(Bundle.main.bundleURL) else {
             NSLog(
                 "VibeTV Control Center runtime migration skipped: move the app to /Applications first"
@@ -4185,7 +4264,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         guard runtimeHealthGatePassed(health) else {
             let failure = runtimePortConflictDetail().map(
                 InstallationFailure.portConflict
-            ) ?? installationFailure(for: health)
+            ) ?? runtimeStartFailure(for: health, since: preparationStartedAt)
             NSLog(
                 "VibeTV Control Center runtime health gate failed; legacy artifacts remain untouched: \(health)"
             )
@@ -4280,6 +4359,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 "VibeTV Control Center local-network privacy preflight finished without a device response: \((error as NSError).localizedDescription)"
             )
         }
+    }
+
+    // A service start that failed because macOS killed the helper for its
+    // signature needs a new download, not another restart (issue #626).
+    private func runtimeStartFailure(
+        for health: RuntimeHealthEvaluation,
+        since: Date
+    ) -> InstallationFailure {
+        let failure = installationFailure(for: health)
+        let helperPath = Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Helpers/codexbar-display")
+            .path
+        let crashDirectory = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/DiagnosticReports", isDirectory: true)
+        guard failure == .serviceStart,
+              runtimeLaunchWasBlockedBySignature(
+                  crashDirectory: crashDirectory,
+                  helperPath: helperPath,
+                  since: since
+              ) else {
+            return failure
+        }
+        NSLog(
+            "VibeTV Control Center runtime helper was killed by macOS (Launch Constraint Violation): this copy is signed differently from the one that first registered the runtime"
+        )
+        return .launchBlockedBySignature
     }
 
     private func ensureBundledRuntimeServiceRegistered(repairRequested: Bool) async

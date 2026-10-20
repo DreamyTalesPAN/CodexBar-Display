@@ -160,6 +160,76 @@ func runURLSchemeTests() {
             && serviceStatus.kind == .serviceRestart,
         "service startup failures must offer the focused restart recovery"
     )
+    let blockedStatus = InstallationFailure.launchBlockedBySignature.installationStatus
+    require(
+        blockedStatus.title == "macOS blocked VibeTV’s background service"
+            && blockedStatus.detail.contains("download it again from vibetv.shop")
+            && blockedStatus.retryTitle == "Download VibeTV again"
+            && blockedStatus.kind == .launchBlocked,
+        "a helper killed for its signature must send the customer to a new download, not to Restart service"
+    )
+    require(
+        installationPreviewFailure("launch-blocked") == .launchBlockedBySignature,
+        "the blocked-service screen must be previewable for the click test"
+    )
+    let helperPath = "/Applications/VibeTV Control Center.app/Contents/Helpers/codexbar-display"
+    func crashReport(indicator: String, path: String = helperPath) -> String {
+        #"{"app_name":"codexbar-display","bug_type":"309"}"# + "\n"
+            + #"{"procPath":"\#(path)","termination":{"flags":66,"code":4,"namespace":"CODESIGNING","indicator":"\#(indicator)"}}"#
+    }
+    require(
+        crashReportShowsLaunchConstraintViolation(
+            crashReport(indicator: "Launch Constraint Violation"),
+            helperPath: helperPath
+        ),
+        "a launch constraint kill of the bundled helper must be recognised"
+    )
+    require(
+        !crashReportShowsLaunchConstraintViolation(
+            crashReport(indicator: "Invalid Page"),
+            helperPath: helperPath
+        )
+            && !crashReportShowsLaunchConstraintViolation(
+                crashReport(
+                    indicator: "Launch Constraint Violation",
+                    path: "/Applications/Other.app/Contents/Helpers/codexbar-display"
+                ),
+                helperPath: helperPath
+            )
+            && !crashReportShowsLaunchConstraintViolation("not a report", helperPath: helperPath),
+        "only a launch constraint kill of this app's own helper may change the recovery"
+    )
+    let crashDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("vibetv-626-\(UUID().uuidString)", isDirectory: true)
+    try? FileManager.default.createDirectory(at: crashDirectory, withIntermediateDirectories: true)
+    let staleReport = crashDirectory.appendingPathComponent("codexbar-display-2026-10-15-075801.ips")
+    try? crashReport(indicator: "Launch Constraint Violation").write(to: staleReport, atomically: true, encoding: .utf8)
+    try? FileManager.default.setAttributes(
+        [.modificationDate: Date().addingTimeInterval(-3_600)],
+        ofItemAtPath: staleReport.path
+    )
+    require(
+        !runtimeLaunchWasBlockedBySignature(
+            crashDirectory: crashDirectory,
+            helperPath: helperPath,
+            since: Date().addingTimeInterval(-60)
+        ),
+        "a crash report from before this start must not decide the recovery"
+    )
+    try? crashReport(indicator: "Launch Constraint Violation").write(
+        to: crashDirectory.appendingPathComponent("codexbar-display-2026-10-20-095314.ips"),
+        atomically: true,
+        encoding: .utf8
+    )
+    require(
+        runtimeLaunchWasBlockedBySignature(
+            crashDirectory: crashDirectory,
+            helperPath: helperPath,
+            since: Date().addingTimeInterval(-60)
+        ),
+        "a launch constraint kill during this start must be found in the crash reports"
+    )
+    try? FileManager.default.trashItem(at: crashDirectory, resultingItemURL: nil)
     let updateStatus = InstallationFailure.updateMismatch.installationStatus
     require(
         updateStatus.title == "VibeTV update didn’t finish"
