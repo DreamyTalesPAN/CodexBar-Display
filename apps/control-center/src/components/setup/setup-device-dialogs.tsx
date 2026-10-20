@@ -182,7 +182,7 @@ function NotFoundChoice({
   return (
     <li>
       <button
-        className="flex w-full items-center gap-4 border-b border-foreground/10 py-3.5 text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+        className="flex w-full items-center gap-4 border-b border-foreground/10 py-3.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
         disabled={busy}
         onClick={onSelect}
         type="button"
@@ -381,7 +381,7 @@ function DevicePickerRow({ candidate, onSelect, selected, tabStop }: DevicePicke
   return (
     <button
       aria-checked={selected}
-      className="flex w-full items-center gap-4 rounded-md border-b border-foreground/10 py-3.5 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring"
+      className="flex w-full items-center gap-4 rounded-md border-b border-foreground/10 py-3.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
       onClick={onSelect}
       role="radio"
       tabIndex={tabStop ? 0 : -1}
