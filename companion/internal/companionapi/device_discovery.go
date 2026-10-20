@@ -222,14 +222,16 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 		// WiFi VibeTV that differs in either is another VibeTV. One that matches
 		// both may be this one: WiFi wins as before instead of a duplicate, and
 		// updating it lets the next search tell the two apart.
+		// A pending rescue marker wins over another pre-Cable VibeTV, exactly as
+		// install-update does, so the entry shown is the hardware the rescue
+		// writes to (Codex review on #819).
 		var legacy *usb.LegacyCableFirmwareError
-		if errors.As(cableErr, &legacy) && !slices.ContainsFunc(devices, func(device deviceSearchEntry) bool {
+		if rescueEntry != nil {
+			devices = append(devices, *rescueEntry)
+		} else if errors.As(cableErr, &legacy) && !slices.ContainsFunc(devices, func(device deviceSearchEntry) bool {
 			return device.Board == legacy.Board && device.Firmware == legacy.Firmware
 		}) {
 			devices = append(devices, legacyCableSearchEntry(legacy))
-		}
-		if legacy == nil && rescueEntry != nil {
-			devices = append(devices, *rescueEntry)
 		}
 		for _, cable := range cableDevices {
 			hello := cable.Hello.Normalize()

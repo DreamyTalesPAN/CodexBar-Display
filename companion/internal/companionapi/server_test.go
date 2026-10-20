@@ -15373,14 +15373,16 @@ func TestDeviceSearchOffersAHalfWrittenVibeTVForItsRescue(t *testing.T) {
 		noWiFi       bool
 		imageChanged bool
 		want         bool
+		legacyOther  bool
 	}{
-		{"marked port connected", []string{"COM1", "com4"}, time.Hour, false, false, false, true},
-		{"marked port gone", []string{"COM1"}, time.Hour, false, false, false, false},
-		{"marker too old", []string{"COM4"}, firmwareupdate.RescueMarkerMaxAge + time.Hour, false, false, false, false},
-		{"VibeTV answers again", []string{"COM4"}, time.Hour, true, false, false, false},
-		{"no WiFi on this computer", []string{"COM4"}, time.Hour, false, true, false, true},
-		{"marked image changed", []string{"COM4"}, time.Hour, false, false, true, false},
-		{"working VibeTV on another port", []string{"COM4", "COM7"}, time.Hour, true, false, false, true},
+		{"marked port connected", []string{"COM1", "com4"}, time.Hour, false, false, false, true, false},
+		{"marked port gone", []string{"COM1"}, time.Hour, false, false, false, false, false},
+		{"marker too old", []string{"COM4"}, firmwareupdate.RescueMarkerMaxAge + time.Hour, false, false, false, false, false},
+		{"VibeTV answers again", []string{"COM4"}, time.Hour, true, false, false, false, false},
+		{"no WiFi on this computer", []string{"COM4"}, time.Hour, false, true, false, true, false},
+		{"marked image changed", []string{"COM4"}, time.Hour, false, false, true, false, false},
+		{"working VibeTV on another port", []string{"COM4", "COM7"}, time.Hour, true, false, false, true, false},
+		{"another pre-Cable VibeTV answers", []string{"COM4", "COM7"}, time.Hour, false, false, false, true, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// Another VibeTV on WiFi lets the scan settle at once; the rescue
@@ -15398,6 +15400,9 @@ func TestDeviceSearchOffersAHalfWrittenVibeTVForItsRescue(t *testing.T) {
 			}
 			server.listCablePorts = func() ([]string, error) { return tc.ports, nil }
 			server.discoverCableDevices = func(context.Context) ([]usb.CableDevice, error) {
+				if tc.legacyOther {
+					return nil, &usb.LegacyCableFirmwareError{Board: "esp8266-smalltv-st7789", Firmware: "1.0.0-other"}
+				}
 				if tc.cableHello {
 					port := "COM4"
 					if slices.Contains(tc.ports, "COM7") {
@@ -15433,6 +15438,9 @@ func TestDeviceSearchOffersAHalfWrittenVibeTVForItsRescue(t *testing.T) {
 			}
 			rescue := deviceSearchEntry{Target: cableDeviceTarget, Transport: "cable", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", Rescue: true}
 			offered := slices.Contains(got.Devices, rescue)
+			if tc.legacyOther && slices.ContainsFunc(got.Devices, func(d deviceSearchEntry) bool { return d.Firmware == "1.0.0-other" }) {
+				t.Fatalf("the marker must win over another pre-Cable VibeTV, like install-update: %s", rec.Body.String())
+			}
 			if offered != tc.want {
 				t.Fatalf("rescue offered=%v want %v: status=%d body=%s", offered, tc.want, rec.Code, rec.Body.String())
 			}
