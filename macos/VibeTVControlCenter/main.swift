@@ -1689,9 +1689,12 @@ func installationFailure(
 // once per launch, before it shows the failure screen.
 func shouldRestartServiceAutomatically(
     after failure: InstallationFailure,
-    alreadyRestarted: Bool
+    alreadyRestarted: Bool,
+    repairAttempt: Bool
 ) -> Bool {
-    failure == .serviceStart && !alreadyRestarted
+    // A CodexBar repair is never restarted here: the generic retry clears its
+    // repair flag and would report success without launching CodexBar.
+    failure == .serviceStart && !alreadyRestarted && !repairAttempt
 }
 
 func installationPreviewFailure(_ value: String) -> InstallationFailure? {
@@ -2303,6 +2306,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             guard let self else {
                 return
             }
+            // Read before prepareCompanion can change the flag.
+            let repairAttempt = self.codexBarRepairRequired
             let outcome = await self.prepareCompanion(fromStartScreen: true)
             self.preparationTask = nil
             if self.pendingCodexBarRepairRerun {
@@ -2344,7 +2349,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 self.codexBarRepairRequired = false
                 if shouldRestartServiceAutomatically(
                     after: failure,
-                    alreadyRestarted: self.serviceRestartedAutomatically
+                    alreadyRestarted: self.serviceRestartedAutomatically,
+                    repairAttempt: repairAttempt
                 ) {
                     // #836: same action as the "Restart service" button.
                     self.serviceRestartedAutomatically = true
