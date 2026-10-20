@@ -8516,3 +8516,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #816: approval marker after merging claude/group-calm-redesign at ece7b388
+
+- User approval: merge of claude/group-calm-redesign (ece7b388) into #816; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: #816 as in its own entries (pending, Paul reviews) plus the entries merged with ece7b388; nothing else changes.
+- Scope: the merge of ece7b388 and this approval record. Pull request branch #816 only, not merged, not released.
+- What's new: none — merge of ece7b388, no customer-visible change of its own
