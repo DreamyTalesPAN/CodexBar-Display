@@ -8620,3 +8620,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #803 point 11: Support as in frame `#support` of "Calm Redesign - alle Screens" (pictures 11 and 11b, right side), in a large and a small window.
 - Scope: #803 point 11: `apps/control-center/src/components/logs-screen.tsx`, `apps/control-center/src/components/control-center-shell.tsx` (the same margin and panel-icon change that #798 point 10 makes for Updates, so the two merge cleanly), its test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #803 point 11: no new content, the same page with a wider layout
+
+## 2026-10-20 — #803: Support margin also grows on wide windows (fix of the 7197 point 11 entry)
+
+- User approval: pending — #803 fix of the entry above; the rendered result is pending Paul's review. Before → after: #803 from a 1024 px wide window the old fixed 48 px margin (lg:px-12) won over the growing one → #803 the margin grows with the window up to 96 px at every width, as the entry above describes.
+- Approved customer-visible result: #803 Support page margin as in the 7197 template points 10 and 11 at large windows.
+- Scope: #803 `apps/control-center/src/components/control-center-shell.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #803 margin fix not announced
