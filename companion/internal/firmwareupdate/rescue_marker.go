@@ -29,6 +29,10 @@ type RescueMarker struct {
 	TargetFirmware string `json:"targetFirmware"`
 	ImagePath      string `json:"imagePath"`
 	ImageSHA256    string `json:"imageSha256"`
+	// ChipMAC is the eFuse MAC of the ESP8266 whose firmware was erased. A
+	// resumed rescue writes only that chip, so another VibeTV on a reused port
+	// stays untouched.
+	ChipMAC string `json:"chipMac,omitempty"`
 	// Ports lists the Cable ports that were there when the write started. A
 	// VibeTV plugged into another USB socket shows up on a port missing here.
 	// Nil means unknown, and then no moved VibeTV is looked for.
