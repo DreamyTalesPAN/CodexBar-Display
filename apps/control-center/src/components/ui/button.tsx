@@ -9,7 +9,9 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary-hover",
+        // The fill runs under the transparent border (bg-clip-border): with the base's bg-clip-padding the button
+        // showed 2 px less lime than its 44 px / 36 px box (the template fills the whole box).
+        default: "bg-clip-border bg-primary text-primary-foreground hover:bg-primary-hover",
         outline:
           "border-foreground/[0.22] bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:

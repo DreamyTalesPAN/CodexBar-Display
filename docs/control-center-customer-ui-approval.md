@@ -8410,7 +8410,63 @@ issue scope, or release permission never implies UI permission.
 - User approval: none needed — no visible change: the grey backdrop of "Repairing VibeTV Control Center" and "VibeTV Control Center needs attention" is unchanged (Paul's build-2 decision, frames 32 and 33); it only takes no clicks any more, so the sidebar and tabs stay usable while the dialog is open, as approved before (the customer flow "background service outage" failed on the backdrop catching the click on Usage).
 - Approved customer-visible result: none; no visible change.
 - Scope: `apps/control-center/src/components/setup/setup-recovery-dialogs.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.test.tsx`, the comment in `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
 
+## 2026-10-20 — #784: build 2b QA, the 3D VibeTV on Overview is turned like the template (frame 1)
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the 3D VibeTV seen from the right and nearly from the front at rest (camera about 24 degrees off the front, a little higher) and its sway began mid-swing, which at the first look showed it turned even further to the front → the device rests turned about 27 degrees off the front, seen a little from below as drawn in the template, and the sway starts from that resting angle.
+- Approved customer-visible result: the Overview picture of the VibeTV shows the device at the angle of frame 1 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #784: build 2b QA, no sidebar toggle beside the title of Updates and Support (frames 10, 11)
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the sidebar-toggle icon stood left of the title "Updates" and "Support" → those two pages show the title alone, as drawn in the template; every other page keeps the icon, and a narrow window keeps it on all pages because it is the only way to the menu there.
+- Approved customer-visible result: Updates and Support start with their title, as in frames 10 and 11.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #784: build 2b QA, "Your VibeTV is not reachable" lists plain radio rows (frame 47)
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the dialog showed the setup device cards (thumbnail, WiFi and "Previously connected" chips, ring, check mark) → it shows plain radio rows between hairlines as drawn in frame 47: round radio, "VibeTV 4F2A", "192.168.178.163 · Firmware 1.4.2" below, "WiFi · Previously connected" (or "Cable") at the right; the dialog is 480 px wide as drawn. The words are unchanged.
+- Approved customer-visible result: the picker dialog looks like frame 47 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/setup/setup-device-dialogs.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #784: build 2b QA, the 3D VibeTV on Overview has the template's size (frame 1), replaces the angle entry above
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the 3D VibeTV filled a stage up to 900 x 580 px, so the device was about 15 % larger than in the template and pushed the four facts (Mac App, VibeTV, Display, Firmware) about 190 px lower than drawn; its sway started mid-swing, so the first look showed it turned further to the front than the template; it was seen from a little higher → the device is framed as in frame 1 (about 240 px wide screen on a 1200 px window, seen a little from below, turned about 25 degrees off the front), the facts sit where the template draws them, and the sway starts from that resting angle. Dragging and the sway are unchanged.
+- Approved customer-visible result: the Overview picture of the VibeTV and the line of facts below it look like frame 1 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx`, `apps/control-center/src/components/overview-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #784: build 2b QA, the keyboard focus ring of a device-picker row has rounded corners
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the focus ring around the row you reach with Tab in "Your VibeTV is not reachable" had square corners → it has rounded corners like the other rings of the dialog. Nothing else changes.
+- Approved customer-visible result: the picker row shows a rounded focus ring when reached by keyboard.
+- Scope: `apps/control-center/src/components/setup/setup-device-dialogs.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #784: build 2b QA, lime buttons fill their whole box and "What's new" spaces its entries as drawn
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: every lime button (Create, Install, Connect, Continue, Got it, Run diagnostics and so on) showed a 1 px frame of the page colour inside its box, so it looked 2 px lower and narrower than drawn → the lime fills the whole box (the same size, 36 px or 44 px high, as in the template); in "What's new" the entries were 24 px apart and "Show me in Themes / Settings" sat 2 px too close to the sentence above it and 6 px too far from the next entry → the entries are 20 px apart and the link sits 4 px under the sentence, as in frame 37. Nothing else changes.
+- Approved customer-visible result: lime buttons and the "What's new" dialog look like frames 5, 13, 24 and 37 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/ui/button.tsx`, `apps/control-center/src/components/whats-new-dialog.tsx`, their tests and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #784: build 2b QA, the Settings buttons "Run setup" and "Reset…" have the template's width (frame 3)
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: "Run setup" and "Reset…" in Settings were 4 px narrower than drawn (12 px of side space) → they have 14 px of side space, like the other outline buttons (89 → 93 px for "Run setup", 71 → 75 px for "Reset…"). Nothing else changes.
+- Approved customer-visible result: the Settings buttons look like frame 3 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/settings-screen.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #784: build 2b QA, a lime button with another fill (the round Send button) keeps no lime frame
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the entry above filled the lime buttons with a lime border; this change fills them by letting the fill run under the border instead, so a lime-variant button that is given another fill (the round grey/black "Send" button in the Theme Studio) shows no thin lime ring. The lime buttons look as in the entry above. Nothing else changes.
+- Approved customer-visible result: lime buttons fill their whole box; the round Send button in the Theme Studio is a plain circle as in frames 7-9 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/ui/button.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
 
 ## 2026-10-19 — Appearance: one page with type switch, search, filters and one Create button (#790, #791, #792, #794)
 
@@ -8473,42 +8529,6 @@ issue scope, or release permission never implies UI permission.
 - User approval: none needed — no visible change: the flow no longer demands that the 520 px preview dialog shows a larger preview than a card on a wide window (the approved template draws it that way, 238 px against 275 px), and the card-size goldens follow the card gaps already in this pull request (284.7 → 275.3 px); the vector hashes are unchanged.
 - Approved customer-visible result: none; the test and its goldens only.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs`, `apps/control-center/test-fixtures/theme-preview-vector-goldens.json` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no new content
-
-## 2026-10-20 — #784: build 2b QA, the 3D VibeTV on Overview is turned like the template (frame 1)
-
-- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the 3D VibeTV seen from the right and nearly from the front at rest (camera about 24 degrees off the front, a little higher) and its sway began mid-swing, which at the first look showed it turned even further to the front → the device rests turned about 27 degrees off the front, seen a little from below as drawn in the template, and the sway starts from that resting angle.
-- Approved customer-visible result: the Overview picture of the VibeTV shows the device at the angle of frame 1 of "Calm Redesign - alle Screens".
-- Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no new content
-
-## 2026-10-20 — #784: build 2b QA, no sidebar toggle beside the title of Updates and Support (frames 10, 11)
-
-- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the sidebar-toggle icon stood left of the title "Updates" and "Support" → those two pages show the title alone, as drawn in the template; every other page keeps the icon, and a narrow window keeps it on all pages because it is the only way to the menu there.
-- Approved customer-visible result: Updates and Support start with their title, as in frames 10 and 11.
-- Scope: `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no new content
-
-## 2026-10-20 — #784: build 2b QA, "Your VibeTV is not reachable" lists plain radio rows (frame 47)
-
-- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the dialog showed the setup device cards (thumbnail, WiFi and "Previously connected" chips, ring, check mark) → it shows plain radio rows between hairlines as drawn in frame 47: round radio, "VibeTV 4F2A", "192.168.178.163 · Firmware 1.4.2" below, "WiFi · Previously connected" (or "Cable") at the right; the dialog is 480 px wide as drawn. The words are unchanged.
-- Approved customer-visible result: the picker dialog looks like frame 47 of "Calm Redesign - alle Screens".
-- Scope: `apps/control-center/src/components/setup/setup-device-dialogs.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.test.tsx` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no new content
-
-## 2026-10-20 — #784: build 2b QA, the 3D VibeTV on Overview has the template's size (frame 1), replaces the angle entry above
-
-- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the 3D VibeTV filled a stage up to 900 x 580 px, so the device was about 15 % larger than in the template and pushed the four facts (Mac App, VibeTV, Display, Firmware) about 190 px lower than drawn; its sway started mid-swing, so the first look showed it turned further to the front than the template; it was seen from a little higher → the device is framed as in frame 1 (about 240 px wide screen on a 1200 px window, seen a little from below, turned about 25 degrees off the front), the facts sit where the template draws them, and the sway starts from that resting angle. Dragging and the sway are unchanged.
-- Approved customer-visible result: the Overview picture of the VibeTV and the line of facts below it look like frame 1 of "Calm Redesign - alle Screens".
-- Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx`, `apps/control-center/src/components/overview-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no new content
-
-## 2026-10-20 — #784: build 2b QA, the keyboard focus ring of a device-picker row has rounded corners
-
-- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the focus ring around the row you reach with Tab in "Your VibeTV is not reachable" had square corners → it has rounded corners like the other rings of the dialog. Nothing else changes.
-- Approved customer-visible result: the picker row shows a rounded focus ring when reached by keyboard.
-- Scope: `apps/control-center/src/components/setup/setup-device-dialogs.tsx` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no new content
 
 ## 2026-10-20 — #802: merge of the #784 build 2b QA fixes, no change of its own
 

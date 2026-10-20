@@ -508,7 +508,7 @@ export function SettingsScreen({
           </div>
           <Button
             aria-describedby="vibetv-run-setup-help"
-            className="shrink-0"
+            className="shrink-0 px-3.5"
             disabled={localActionBusy}
             onClick={onResetSetup}
             size="sm"
@@ -533,7 +533,7 @@ export function SettingsScreen({
             </div>
             <Button
               aria-describedby="vibetv-factory-reset-help"
-              className="shrink-0 text-[oklch(0.55_0.19_27)]"
+              className="shrink-0 px-3.5 text-[oklch(0.55_0.19_27)]"
               disabled={localActionBusy || !deviceIsCustomerConnected(device)}
               onClick={() => setEraseRequested(true)}
               size="sm"
