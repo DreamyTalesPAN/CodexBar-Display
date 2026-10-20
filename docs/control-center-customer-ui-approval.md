@@ -8516,3 +8516,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #817 invalid fields (input, textarea, select, checkbox, input group) keep the red border and show the full-strength red focus ring under keyboard focus; unfocused invalid fields look as before.
 - Scope: #817 changes `components/ui/input.tsx`, `textarea.tsx`, `select.tsx`, `checkbox.tsx`, `input-group.tsx`, their tests, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #817 focus ring colour on invalid fields, no new content
+
+## 2026-10-20 — #817 waits for Paul's look at the red focus ring
+
+- User approval: pending — Paul reviews the rendered #817 red focus ring on invalid fields before this PR merges (Codex review on #817: the newest entry must stay pending).
+- Approved customer-visible result: #817 as in its entries above (red focus ring under keyboard focus, red border kept, one style for every field); this entry adds nothing visible.
+- Scope: this approval record for #817 only. Pull request branch only, not merged, not released.
+- What's new: none — #817 pending marker, no new content
