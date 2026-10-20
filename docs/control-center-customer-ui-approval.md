@@ -8670,3 +8670,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #803 Support page margin as in the 7197 template points 10 and 11 at large windows.
 - Scope: #803 `apps/control-center/src/components/control-center-shell.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #803 margin fix not announced
+
+## 2026-10-20 — #803: approval marker after merging claude/group-calm-redesign at ea818ad4
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (ea818ad4) into #803; the own entries of #803 keep their approvals)
+- Approved customer-visible result: #803 as in its own entries plus the entries merged with ea818ad4; nothing else changes.
+- Scope: the merge of ea818ad4 and this approval record. Pull request branch #803 only, not merged, not released.
+- What's new: none — merge of ea818ad4, no customer-visible change of its own
