@@ -45,7 +45,29 @@ func SaveRescueMarker(home string, marker RescueMarker) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	// Written next to the old marker and renamed over it, so a full disk or a
+	// crash leaves the previous marker intact instead of a truncated one.
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".cable-rescue-pending-*.json")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer func() { _ = os.Remove(tmpPath) }()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpPath, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
 }
 
 // LoadRescueMarker returns the marker only while it is complete and recent.

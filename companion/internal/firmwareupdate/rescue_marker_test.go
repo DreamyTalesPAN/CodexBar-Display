@@ -2,6 +2,8 @@ package firmwareupdate
 
 import (
 	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -55,5 +57,30 @@ func TestRescueMarkerIgnoresStaleAndBrokenFiles(t *testing.T) {
 	}
 	if _, ok := LoadRescueMarker(home, now); ok {
 		t.Fatal("a broken marker must not authorize a flash")
+	}
+}
+
+func TestRescueMarkerFailedSaveLeavesThePreviousMarkerIntact(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("directory permissions do not block file creation on Windows")
+	}
+	home := t.TempDir()
+	testenv.Home(t, home)
+	now := time.Now()
+	first := RescueMarker{Port: "COM4", TargetFirmware: "1.0.9", ImagePath: "/x/fw.bin", ImageSHA256: "abc", WriteStartedAt: now}
+	if err := SaveRescueMarker(home, first); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Dir(RescueMarkerPath(home))
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	if err := SaveRescueMarker(home, RescueMarker{Port: "COM9", TargetFirmware: "2.0.0", ImagePath: "/y", WriteStartedAt: now}); err == nil {
+		t.Skip("directory is still writable (running as root?)")
+	}
+	got, ok := LoadRescueMarker(home, now)
+	if !ok || got.Port != "COM4" || got.TargetFirmware != "1.0.9" {
+		t.Fatalf("a failed save must keep the previous marker: %+v ok=%v", got, ok)
 	}
 }

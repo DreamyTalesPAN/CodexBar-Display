@@ -42,13 +42,9 @@ func flashCableRescueWithRetry(ctx context.Context, home string, marker firmware
 			Progress: func(percent int) {
 				fmt.Printf("Writing firmware: %d%%\n", percent)
 			},
-			OnWriteStarted: func() {
-				started = true
-				marker.WriteStartedAt = time.Now()
-				if saveErr := firmwareupdate.SaveRescueMarker(home, marker); saveErr != nil {
-					fmt.Printf("warning: refreshing the rescue marker failed: %v\n", saveErr)
-				}
-			},
+			// The marker saved above stays as it is: rewriting it after the
+			// erase could only damage the one thing that leads back here.
+			OnWriteStarted: func() { started = true },
 		})
 		if err == nil {
 			return nil
