@@ -202,6 +202,24 @@ describe("Theme Studio composer (master 19.10.)", () => {
     expect(screen.getByRole("button", { name: "Create" }).getAttribute("class")).toContain("size-8 rounded-full");
   });
 
+  it("draws the composer in the template's sizes: 32 px buttons, 12 px gaps, no space under it, editor 520 px high in an 800 px window", async () => {
+    render(<AIThemeStudioScreen />);
+    const classes = (element: Element) => element.getAttribute("class")?.split(/\s+/) ?? [];
+    const idea = await screen.findByLabelText("Your idea");
+    const row = screen.getByRole("button", { name: "Create" }).parentElement as HTMLElement;
+    // Textarea and button row each start 11 px under the line above (plus the 1 px frame), the row ends 7 px above it.
+    expect(classes(idea)).toEqual(expect.arrayContaining(["min-h-0", "pt-[11px]"]));
+    expect(classes(row)).toEqual(expect.arrayContaining(["pt-[11px]", "pb-[7px]"]));
+    expect(classes(screen.getByRole("button", { name: "Add manually" }))).toContain("size-8");
+    expect(classes(screen.getByRole("button", { name: "Attach reference images" }))).toContain("size-8");
+    // The round Send button wins over the shell's own radius rule only with the important marker.
+    expect(classes(screen.getByRole("button", { name: "Create" }))).toContain("rounded-full!");
+    // The empty alert area under the composer takes no margin.
+    expect(classes(screen.getByRole("region", { name: "AI creation" }).nextElementSibling!)).toContain("empty:mt-0");
+    // 650 px of main minus 98 px = the template's 520 px editor at 800 px window height.
+    expect(classes(document.querySelector("[data-theme-studio-root] main")!)).toContain("lg:mb-[98px]");
+  });
+
   it("says what the field is for once there is a conversation, instead of a typed idea", async () => {
     vi.mocked(planAIThemeLayout).mockReturnValue(new Promise(() => {}));
     render(<AIThemeStudioScreen />);

@@ -8126,3 +8126,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the top row of the Theme Studio looks like frames 7-9 of "Calm Redesign - alle Screens".
 - Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #781: build 2b QA, the Theme Studio's preview, composer and File menu sit where the template draws them (frames 7-9)
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the preview card started 49 px too low (top at 211 px, template 162 px in an 800 px window) because the editor ran down to the window bottom → the editor is 520 px high at that window size, the card sits in the middle of it and the composer ends on its bottom edge; the composer was 98 px high with 44 px buttons and a 12 px gap under it → it is 83 px high with 32 px buttons (Cancel / Add, Attach, Send) and no gap under it; the round Send button was drawn as a rounded square → it is a circle; the File menu entries were 38 px apart and the menu opened 3 px too high → entries are 36 px high with no gap between them and the menu opens 6 px under "File".
+- Approved customer-visible result: the Theme Studio looks like frames 7-9 of "Calm Redesign - alle Screens" (preview card, composer and File menu at the template's positions and sizes).
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
