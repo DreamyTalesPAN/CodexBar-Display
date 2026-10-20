@@ -39,12 +39,14 @@ const light = themeBlock(":root {");
 const dark = themeBlock(".dark {");
 
 describe("keyboard focus ring colour", () => {
-  it("uses the ink colour on the light theme", () => {
-    expect(token(light, "ring")).toBe(token(light, "foreground"));
+  // Paul, 20.10.2026 (via the communicator): the ring is the template's olive
+  // (--ring in "Calm Redesign - alle Screens": #506600 light, #CCFF00 dark).
+  it("uses the template's olive on the light theme", () => {
+    expect(token(light, "ring")).toBe("#506600");
   });
 
-  it("uses the ink colour on the dark theme", () => {
-    expect(token(dark, "ring")).toBe(token(dark, "foreground"));
+  it("uses the template's lime on the dark theme", () => {
+    expect(token(dark, "ring")).toBe("#CCFF00");
   });
 
   it("keeps at least 3:1 against the page background, in both themes", () => {
