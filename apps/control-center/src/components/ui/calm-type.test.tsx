@@ -52,3 +52,10 @@ it("keeps the 13 px body token when a caller adds a text colour", () => {
     "text-body text-muted-foreground",
   );
 });
+
+it("fills the whole box of a lime button: the border has the fill's colour, not transparent", () => {
+  render(<Button>Connect</Button>);
+  const button = screen.getByRole("button", { name: "Connect" });
+  expect(button.classList).toContain("border-primary");
+  expect(button.classList).not.toContain("border-transparent");
+});
