@@ -299,16 +299,24 @@ describe("calm Updates screen", () => {
   });
 
   it("a required migration whose download is missing or disabled is never 'up to date'", () => {
-    for (const dmgDownloadStatus of ["missing_asset", "disabled"] as const) {
+    // Also when the release is newer than the installed app (Codex on #798).
+    for (const [dmgDownloadStatus, updateAvailable] of [
+      ["missing_asset", false],
+      ["disabled", false],
+      ["missing_asset", true],
+      ["disabled", true],
+    ] as const) {
       const { container } = render(
         <UpdatesScreen
           {...upToDate}
           companionRelease={{
             ...upToDate.companionRelease!,
             status: "available",
-            updateAvailable: false,
+            updateAvailable,
             dmgDownloadStatus,
           }}
+          // A legacy install outside /Applications: the download is its only way.
+          companionInfo={{ app: { version: "1.0.64", installedInApplications: false } }}
           requiresMacAppMigration
         />,
       );
