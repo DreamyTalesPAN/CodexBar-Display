@@ -6,6 +6,7 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, expect, it } from "vitest";
 
+import { expectNoAxeViolations } from "@/test/axe";
 import { SystemBusyDialog, systemBusyCopy } from "./system-busy-dialog";
 
 afterEach(cleanup);
@@ -33,3 +34,9 @@ for (const role of ["dialog", "alertdialog"]) {
     expect(busy()).not.toBeNull();
   });
 }
+
+it("has no accessibility violations while it is open", async () => {
+  render(page(null));
+  expect(busy()).not.toBeNull();
+  await expectNoAxeViolations(document.body.innerHTML);
+});
