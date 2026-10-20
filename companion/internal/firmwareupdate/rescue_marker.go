@@ -157,35 +157,3 @@ func MovedRescuePort(marker RescueMarker, listed []string, readHello func(string
 	}
 	return candidates[0], true
 }
-
-// MovedRescueResponder finds the one new port whose hello shows the rescue's
-// board and target firmware. A VibeTV that booted the written firmware after a
-// late verification looks like this, so its marker is stale. Other answers are
-// another VibeTV and are not matched here. No candidate, or more than one,
-// means no port.
-func MovedRescueResponder(marker RescueMarker, listed []string, readHello func(string) (protocol.DeviceHello, error)) (string, bool) {
-	if marker.Ports == nil {
-		return "", false
-	}
-	before := make(map[string]bool, len(marker.Ports))
-	for _, port := range marker.Ports {
-		before[strings.ToUpper(strings.TrimSpace(port))] = true
-	}
-	marked := strings.ToUpper(strings.TrimSpace(marker.Port))
-	var responders []string
-	for _, port := range listed {
-		key := strings.ToUpper(strings.TrimSpace(port))
-		if key == "" || key == marked || before[key] {
-			continue
-		}
-		if hello, err := readHello(port); err == nil &&
-			strings.EqualFold(strings.TrimSpace(hello.Board), strings.TrimSpace(marker.Board)) &&
-			strings.TrimSpace(hello.Firmware) == strings.TrimSpace(marker.TargetFirmware) {
-			responders = append(responders, port)
-		}
-	}
-	if len(responders) != 1 {
-		return "", false
-	}
-	return responders[0], true
-}

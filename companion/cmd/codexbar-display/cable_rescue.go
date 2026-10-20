@@ -125,20 +125,15 @@ func resumableRescueMarker(home string) (firmwareupdate.RescueMarker, bool) {
 		// Replugged into another USB socket: only one new port, silent and
 		// not the marked one, may be resumed. Anything else stays unwritten.
 		moved, found := firmwareupdate.MovedRescuePort(marker, ports, readCableFirmwareHelloFn)
-		if found {
-			fmt.Printf("Cable rescue: the VibeTV left half-written moved from %s to %s; resuming there\n", marker.Port, moved)
-			marker.Port = moved
-			// The ports listed now are the new baseline. The port it left is gone
-			// from this list, so a later return to that socket counts as a replug.
-			marker.Ports = ports
-		} else if responder, answers := firmwareupdate.MovedRescueResponder(marker, ports, readCableFirmwareHelloFn); answers {
-			// A VibeTV that booted after a late verification answers on its new
-			// port: the hello check below decides whether the marker is stale.
-			marker.Port = responder
-		} else {
+		if !found {
 			fmt.Printf("Cable rescue: marked port %s is not present, nothing to resume\n", marker.Port)
 			return firmwareupdate.RescueMarker{}, false
 		}
+		fmt.Printf("Cable rescue: the VibeTV left half-written moved from %s to %s; resuming there\n", marker.Port, moved)
+		marker.Port = moved
+		// The ports listed now are the new baseline. The port it left is gone
+		// from this list, so a later return to that socket counts as a replug.
+		marker.Ports = ports
 	}
 	// A write that succeeded but was not verified leaves a marker although the
 	// VibeTV may boot and answer normally later. Only an answer that matches the

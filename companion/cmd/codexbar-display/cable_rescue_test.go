@@ -284,33 +284,6 @@ func TestRunInstallUpdateCableRescueWritesNothingForAMarkerWithoutAChip(t *testi
 	}
 }
 
-// A VibeTV whose firmware booted after a late verification answers on a new
-// port. Its matching hello clears the stale marker, and nothing is written.
-func TestRunInstallUpdateCableRescueClearsAStaleMarkerWhenTheVibeTVAnswersOnANewPort(t *testing.T) {
-	_, manifestURL, _ := prepareCableFirmwareUpdateTest(t)
-	pinCableRescue(t)
-	markerWithPorts(t, "COM4", []string{"COM1", "COM4"})
-	listCablePortsFn = func() ([]string, error) { return []string{"COM1", "COM5"}, nil }
-	findLegacyCableVibeTVFn = func() (usb.CableDevice, error) {
-		return usb.CableDevice{}, errors.New("no VibeTV with pre-Cable firmware answered hello")
-	}
-	readCableFirmwareHelloFn = func(port string) (protocol.DeviceHello, error) {
-		if port == "COM5" {
-			return protocol.DeviceHello{DeviceID: "device-cable", Board: rescueTestBoard, Firmware: "1.0.1"}, nil
-		}
-		return protocol.DeviceHello{}, errors.New("boot loop: no hello")
-	}
-	flashed := false
-	flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
-		flashed = true
-		return nil
-	}
-	output, _ := captureStdout(t, func() error { return runInstallUpdate(rescueArgs(manifestURL)) })
-	if flashed || rescueMarkerPresent(t) {
-		t.Fatalf("flashed=%v marker=%v\n%s", flashed, rescueMarkerPresent(t), output)
-	}
-}
-
 type serialOpenTestError struct{}
 
 func (serialOpenTestError) Error() string           { return "open-port path=/dev/mock-legacy: Serial port busy" }
