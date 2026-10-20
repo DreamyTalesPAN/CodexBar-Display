@@ -6,6 +6,44 @@ import { Dialog as DialogPrimitive } from "radix-ui"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 
+/**
+ * True when the focused element, the one that opens the dialog, shows keyboard
+ * focus. A mouse click, or the app opening the dialog by itself, does not.
+ */
+function openedWithKeyboard(opener: Element | null): boolean {
+  if (!(opener instanceof HTMLElement) || opener === document.body) return false
+  try {
+    return opener.matches(":focus-visible")
+  } catch {
+    return false
+  }
+}
+
+const TEXT_ENTRY = "input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]), textarea"
+
+/**
+ * A dialog that opens shows no focus ring until the user uses the keyboard.
+ * Radix would focus the first control, and its ring then shows after a mouse
+ * click too. So focus goes to the dialog itself (no outline), and one Tab
+ * lands on the first control with its ring. Screen readers still announce the
+ * dialog by its title. Kept: keyboard opens, where the first control (or the
+ * dialog's own choice) takes focus, and a text field, which takes typing at
+ * once.
+ */
+export function focusDialogOnOpen(event: Event, opener: Element | null) {
+  if (event.defaultPrevented || openedWithKeyboard(opener)) return
+  const content = event.currentTarget
+  if (!(content instanceof HTMLElement)) return
+  const first = content.querySelector<HTMLElement>(
+    'button:not(:disabled), [href], input:not(:disabled):not([type=hidden]), select:not(:disabled), textarea:not(:disabled), [role="radio"], [role="option"], [tabindex]:not([tabindex="-1"])'
+  )
+  if (first?.matches(TEXT_ENTRY)) return
+  event.preventDefault()
+  content.focus({ preventScroll: true })
+}
+
+export { openedWithKeyboard }
+
 function Dialog({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Root>) {
@@ -70,6 +108,7 @@ function DialogContent({
         onOpenAutoFocus={(event) => {
           opener.current = document.activeElement
           onOpenAutoFocus?.(event)
+          focusDialogOnOpen(event, opener.current)
         }}
         onCloseAutoFocus={(event) => {
           onCloseAutoFocus?.(event)

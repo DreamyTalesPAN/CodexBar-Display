@@ -9,6 +9,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  openedWithKeyboard,
 } from "@/components/ui/dialog";
 import { catalogThemeRowId, type WhatsNewEntry } from "@/lib/whats-new";
 import { providerShortcutKeys } from "./settings-screen";
@@ -37,10 +38,13 @@ export function WhatsNewDialog({
       <DialogContent
         aria-describedby={undefined}
         // In a short window only the list scrolls: the title stays on top and
-        // `Got it`, which has the focus, stays in view below it.
+        // `Got it` stays in view below it.
         className="flex max-h-[calc(100dvh-2rem)] flex-col sm:max-w-[520px]"
         onOpenAutoFocus={(event) => {
-          // Enter closes the notice. The first control would open Settings.
+          // Opened by the keyboard: Enter closes the notice, as the first
+          // control would open Settings. Otherwise no control shows a ring
+          // until the customer tabs (the dialog takes focus itself).
+          if (!openedWithKeyboard(document.activeElement)) return;
           event.preventDefault();
           gotIt.current?.focus();
         }}

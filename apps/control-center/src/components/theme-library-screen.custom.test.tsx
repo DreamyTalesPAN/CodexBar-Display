@@ -151,9 +151,10 @@ describe("ThemeLibraryScreen custom themes", () => {
     const question = document.querySelector('[role="alertdialog"]')!;
     expect(question.contains(document.activeElement)).toBe(true);
     await expectNoAxeViolations(document.body.innerHTML);
-    // Cancel has focus.
+    // The question has focus itself, with no ring on Cancel until a Tab.
+    expect(document.activeElement).toBe(question);
     await act(async () => {
-      (document.activeElement as HTMLButtonElement).click();
+      Array.from(question.querySelectorAll("button")).find((b) => b.textContent === "Cancel")!.click();
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     expect(document.activeElement).toBe(opener);
