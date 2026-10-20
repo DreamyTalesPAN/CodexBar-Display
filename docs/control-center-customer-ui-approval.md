@@ -8599,3 +8599,24 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #802 as in its own entries (pending, Paul reviews) plus the entries merged with ece7b388; nothing else changes.
 - Scope: the merge of ece7b388 and this approval record. Pull request branch #802 only, not merged, not released.
 - What's new: none — merge of ece7b388, no customer-visible change of its own
+
+## 2026-10-20 — #802: Appearance "Installed" is a pill on the theme picture (7197 review, point 7)
+
+- User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #802 point 7 (Installed as a pill). Before → after: an installed theme card had a row "✓ Installed" at the right of its bottom line → that row is gone; a pill sits at the top right on the theme picture: "Active" (dark) on the theme VibeTV shows, "Installed" (light) on the other installed themes and screensavers.
+- Approved customer-visible result: the Appearance cards look as drawn in frames "Darstellung" (#appearance-all, #appearance-ss, #appearance-filter) of "Calm Redesign - alle Screens": pill "Active" dark and "Installed" light on the picture, no "✓ Installed" row.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx`, its tests, `apps/control-center/scripts/test-customer-flows.mjs` (the flow looks for the pill instead of the button) and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #802: Appearance cards are smaller, 200 px wide, centred as a group (7197 review, point 8)
+
+- User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #802 point 8 (smaller cards). Before → after: three cards per row were stretched over the full page width (about 255 px each, 24 px apart) with the type (Theme / Screensaver) beside the name → still three per row, but each card is 200 px wide, 32 px apart, the group is centred (also at 1920 px, not stretched), and the type sits under the name.
+- Approved customer-visible result: the Appearance cards look as drawn in frames "Darstellung" (#appearance-all, #appearance-ss, #appearance-filter) of "Calm Redesign - alle Screens", also at 1920 px wide.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx`, `apps/control-center/src/components/theme-library-screen.appearance.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #802: Theme preview dialog picture is centred with 6 px corners (7197 review, point 9)
+
+- User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #802 point 9 (theme preview dialog). Before → after: the picture in the theme preview dialog sat at the left edge with square corners → it is centred in the dialog and has 6 px corners, the same as the card picture.
+- Approved customer-visible result: the dialog looks as drawn in frame "Dialoge: Theme preview" (#dialog-theme-preview) of "Calm Redesign - alle Screens": picture centred, radius 6 px.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx`, `apps/control-center/src/components/theme-library-screen.appearance.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content

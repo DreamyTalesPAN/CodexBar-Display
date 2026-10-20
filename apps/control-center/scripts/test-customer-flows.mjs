@@ -6697,8 +6697,10 @@ async function testPublishedAppearanceInstallsUseTheirSlots(browser, appUrl) {
     () => installRequests.length === 1,
     "expected one published live-theme install request",
   );
+  // "Installed" is a pill on the picture now, not a button (7197 review, point 7).
   await liveThemeRow
-    .getByRole("button", { name: "Installed", exact: true })
+    .getByTestId("theme-status-pill")
+    .filter({ hasText: /^(Installed|Active)$/ })
     .waitFor();
 
   await clickNavigation(page, "Screensavers");
@@ -10928,7 +10930,8 @@ async function testThemeInstallShowsIntermediateProgress(browser, appUrl) {
   await page
     .getByRole("listitem")
     .filter({ hasText: "Fixture Synthwave Theme" })
-    .getByRole("button", { name: "Installed" })
+    .getByTestId("theme-status-pill")
+    .filter({ hasText: /^(Installed|Active)$/ })
     .waitFor({ timeout: 10_000 });
 
   assert(

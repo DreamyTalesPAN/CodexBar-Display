@@ -211,6 +211,54 @@ describe("ThemeLibraryScreen Appearance sections", () => {
     );
   });
 
+  // 7197 review, point 7: "Installed" is a pill on the picture, not a row with a check mark.
+  it("shows Installed as a pill on the picture and has no Installed button", () => {
+    const livePath = "/themes/u/live-th-3-1a2b3c.json";
+    const html = renderToStaticMarkup(
+      <ThemeLibraryScreen
+        busyAction={null}
+        companionStatus="online"
+        device={{ ...device, ready: true, activeTheme: "live-theme" }}
+        onInstallCustomTheme={async () => false}
+        onInstallTheme={vi.fn()}
+        onOpenScreensaverSettings={vi.fn()}
+        onSelectTheme={vi.fn()}
+        selectedThemeId=""
+        storefrontConfigured={false}
+        themeInstallEnabled
+        themes={[{ ...themes[0], themeSpecPath: livePath }, themes[1]]}
+        usage="live"
+      />,
+    );
+    const pills = [...html.matchAll(/<span[^>]*data-testid="theme-status-pill"[^>]*>([^<]*)</g)];
+    expect(pills.map((match) => match[1])).toEqual(["Installed"]);
+    expect(pills[0][0]).toContain("bg-card");
+    expect(html).not.toMatch(/<button[^>]*>(?:<svg[\s\S]*?<\/svg>)?Installed</);
+  });
+
+  it("shows Active as a dark pill on the picture of the theme VibeTV shows", () => {
+    const livePath = "/themes/u/live-th-3-1a2b3c.json";
+    const html = renderToStaticMarkup(
+      <ThemeLibraryScreen
+        busyAction={null}
+        companionStatus="online"
+        device={{ ...device, ready: true, activeTheme: "live-theme" }}
+        onInstallCustomTheme={async () => false}
+        onInstallTheme={vi.fn()}
+        onOpenScreensaverSettings={vi.fn()}
+        onSelectTheme={vi.fn()}
+        selectedThemeId="live-theme"
+        storefrontConfigured={false}
+        themeInstallEnabled
+        themes={[{ ...themes[0], themeSpecPath: livePath }, themes[1]]}
+        usage="live"
+      />,
+    );
+    const pill = html.match(/<span[^>]*data-testid="theme-status-pill"[^>]*>([^<]*)</);
+    expect(pill?.[1]).toBe("Active");
+    expect(pill?.[0]).toContain("bg-foreground text-background");
+  });
+
   // An own theme and a later catalog theme shared the id `my-theme`. The
   // customer changed the own theme and saved it, which gave the saved copy
   // another id. The awake VibeTV still reports the id and holds the old file,
@@ -336,8 +384,11 @@ describe("ThemeLibraryScreen Appearance sections", () => {
       render("live", "/themes/u/mt-4-abcdef.json"),
       "Theme is already installed.",
     );
-    expect(current?.[1]).toBe("Installed");
-    expect(current?.[0]).toContain(' disabled=""');
+    // The current file is installed: a pill on the picture, no button.
+    expect(current).toBeNull();
+    expect(render("live", "/themes/u/mt-4-abcdef.json")).toContain(
+      'title="Theme is already installed."',
+    );
     // A VibeTV that cannot take an install keeps the word of the action.
     const notReady = render("live", earlier, false);
     expect(notReady).not.toContain("Theme is already installed.");

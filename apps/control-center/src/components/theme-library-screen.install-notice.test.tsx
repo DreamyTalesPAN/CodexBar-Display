@@ -95,7 +95,10 @@ it("shows the row's button as Installed as soon as its notice says Installed", (
   for (const busyAction of ["install", "settings"]) {
     view.rerender(list({ ...install, phase: "complete" }, busyAction, "gauge"));
     expect(screen.getByRole("status").textContent).toContain("Installed");
-    expect(screen.getByRole("button", { name: "Installed" })).toHaveProperty("disabled", true);
+    // "Installed" is the pill on the picture now, not a button.
+    expect(screen.queryByRole("button", { name: "Installed" })).toBeNull();
+    // (This row is the one the customer picked, so its pill says Active.)
+    expect(screen.getByTestId("theme-status-pill").textContent).toBe("Active");
     expect(screen.queryByRole("button", { name: "Wait" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Installing" })).toBeNull();
   }

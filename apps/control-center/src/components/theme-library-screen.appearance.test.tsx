@@ -124,11 +124,30 @@ it("lists both types on All, with the count of each type in the segment", () => 
   expect(within(items[3]).getByText("Screensaver")).toBeTruthy();
 });
 
-it("keeps the card's inner space at the template's 10 px: 1 px border plus 9 px padding", () => {
+it("keeps the card's inner space at the template's 8 px: 1 px border plus 7 px padding", () => {
   render(<Page />);
   const card = screen.getAllByRole("listitem")[0];
-  expect(card.classList).toContain("p-[9px]");
-  expect(card.classList).not.toContain("p-2.5");
+  expect(card.classList).toContain("p-[7px]");
+  expect(card.classList).not.toContain("p-2");
+});
+
+// 7197 review, point 8: cards 200 px wide, 32 px apart, three in a row at most, as a group in the middle.
+it("lays the cards out as 200 px columns with 32 px gaps, centred and not stretched", () => {
+  render(<Page />);
+  const group = screen.getAllByRole("listitem")[0].parentElement!;
+  expect(group.style.gridTemplateColumns).toBe("repeat(auto-fill, 200px)");
+  expect(group.classList).toContain("gap-8!");
+  expect(group.classList).toContain("justify-center");
+  expect(group.classList).toContain("max-w-[664px]");
+});
+
+// 7197 review, point 8: the type sits under the name, not beside it.
+it("puts the type under the name", () => {
+  render(<Page />);
+  const card = screen.getAllByRole("listitem")[0];
+  const type = within(card).getByText(/^(Theme|Screensaver)$/);
+  expect(type.previousElementSibling?.getAttribute("data-slot")).toBe("item-title");
+  expect(type.parentElement?.classList).toContain("flex-col");
 });
 
 it("switches the list with the segment by click; the arrow keys move between the segments", async () => {
@@ -308,4 +327,16 @@ it("keeps the search, the Filters button and the segments able to wrap on a narr
   render(<Page />);
   const row = screen.getByRole("searchbox", { name: "Search" }).closest("div")!.parentElement!;
   expect(row.className).toContain("flex-wrap");
+});
+
+// 7197 review, point 9: the picture in the preview dialog is centred and has the card picture's 6 px corners.
+it("centres the preview picture in the dialog with the same 6 px corners as the card picture", () => {
+  render(<Page />);
+  const cardPicture = screen.getAllByRole("listitem")[0].querySelector("span.relative.block");
+  fireEvent.click(screen.getByRole("button", { name: "Preview Claude Creature" }));
+  const dialog = screen.getByRole("dialog");
+  const picture = dialog.querySelector("span.relative.block")!;
+  expect(picture.parentElement?.classList).toContain("mx-auto");
+  expect(picture.classList).toContain("rounded-[6px]");
+  expect(cardPicture?.classList).toContain("rounded-[6px]");
 });
