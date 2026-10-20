@@ -8509,3 +8509,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the picker row shows a rounded focus ring when reached by keyboard.
 - Scope: `apps/control-center/src/components/setup/setup-device-dialogs.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #802: merge of the #784 build 2b QA fixes, no change of its own
+
+- User approval: none needed — no visible change of its own: this commit only merges the calm redesign base (#784) with its build 2b QA fixes (the 3D VibeTV frame, no sidebar toggle beside Updates and Support, plain radio rows in the device picker), which carry their own approval entries above; nothing of this pull request's own look changes.
+- Approved customer-visible result: none; no visible change.
+- Scope: merge of `origin/claude/group-calm-redesign` (`apps/control-center/src/components/vibetv-3d-preview.tsx`, `overview-screen.tsx`, `control-center-shell.tsx`, `setup/setup-device-dialogs.tsx` and their tests) and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
