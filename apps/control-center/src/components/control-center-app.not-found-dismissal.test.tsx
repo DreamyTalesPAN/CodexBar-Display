@@ -1,0 +1,173 @@
+// @vitest-environment jsdom
+//
+// #787: "Not now" on the "We couldn't find your VibeTV" dialog must hold for
+// the whole outage. A short "starting" or inconclusive status in between is
+// not a VibeTV that was found, so the dialog stays closed. Only a connected
+// VibeTV ends the outage and lets the dialog come back.
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { createElement } from "react";
+import { afterEach, expect, it, vi } from "vitest";
+
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { markWhatsNewSeen } from "@/lib/whats-new";
+import { ControlCenterApp } from "./control-center-app";
+
+const themeSpec = { active: true, path: "/themes/codex/spec-v7.json", hash: "hash-v7", renderOk: true };
+const connected = {
+  active: true,
+  connected: true,
+  paired: true,
+  ready: true,
+  connectionState: "ready",
+  deviceId: "16198106",
+  target: "http://192.168.178.183",
+  board: "esp8266",
+  firmware: "9999.0.524",
+  activeTheme: "codex",
+  display: { themeSpec },
+  health: { ok: true },
+};
+// The same reconnecting VibeTV in both: only the probe result differs. An
+// inconclusive probe has no error code, so it is not "not found" either.
+const notFound = {
+  ...connected,
+  connected: false,
+  ready: false,
+  connectionState: "reconnecting",
+  stream: { errorCode: "device_not_found" },
+};
+const inconclusive = {
+  ...connected,
+  connected: false,
+  ready: false,
+  connectionState: "reconnecting",
+  stream: { healthy: false, running: true },
+};
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return {
+    ok: status < 400,
+    status,
+    json: async () => body,
+  } as unknown as Response;
+}
+
+function startWindow() {
+  const companion = { device: connected as Record<string, unknown> };
+  markWhatsNewSeen();
+  vi.useFakeTimers();
+  vi.stubGlobal("matchMedia", () => ({
+    matches: true,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/v1/status")) {
+        return jsonResponse({
+          ok: true,
+          companion: { version: "9.9.9", installationMode: "dmg" },
+          device: companion.device,
+        });
+      }
+      if (url.endsWith("/v1/display-frame/latest")) {
+        return jsonResponse({
+          ok: true,
+          deviceId: connected.deviceId,
+          frame: {
+            v: 2,
+            provider: "codex",
+            label: "Codex",
+            usageSlots: [{ id: "weekly", label: "Weekly", percent: 29 }],
+          },
+        });
+      }
+      if (url.includes("/api/theme-pack/")) {
+        return jsonResponse({
+          themeId: "codex",
+          spec: { p: [] },
+          specPath: themeSpec.path,
+          specHash: themeSpec.hash,
+          assets: {},
+        });
+      }
+      return jsonResponse({ ok: false, error: { code: "HTTP_404" } }, 404);
+    }),
+  );
+  const view = render(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(ControlCenterApp, { catalog: { themes: [] } as never }),
+    ),
+  );
+  return {
+    companion,
+    wait: async (seconds: number) => {
+      for (let second = 0; second < seconds; second += 1) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1000);
+        });
+      }
+    },
+    container: view.container,
+  };
+}
+
+const notFoundDialog = () => screen.queryByRole("dialog", { name: "We couldn't find your VibeTV" });
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
+
+it("keeps Not now through an inconclusive probe of the same outage", async () => {
+  const app = startWindow();
+  await app.wait(10);
+  app.companion.device = notFound;
+  await app.wait(30);
+  expect(notFoundDialog()).not.toBeNull();
+
+  fireEvent.click(within(notFoundDialog()!).getByRole("button", { name: "Not now" }));
+  await app.wait(1);
+  expect(notFoundDialog()).toBeNull();
+
+  app.companion.device = inconclusive;
+  await app.wait(5);
+  expect(notFoundDialog()).toBeNull();
+
+  app.companion.device = notFound;
+  await app.wait(30);
+  expect(notFoundDialog()).toBeNull();
+});
+
+it("shows the not-found dialog again once VibeTV was connected and is lost again", async () => {
+  const app = startWindow();
+  await app.wait(10);
+  app.companion.device = notFound;
+  await app.wait(30);
+  expect(notFoundDialog()).not.toBeNull();
+
+  fireEvent.click(within(notFoundDialog()!).getByRole("button", { name: "Not now" }));
+  await app.wait(1);
+  expect(notFoundDialog()).toBeNull();
+
+  app.companion.device = connected;
+  await app.wait(10);
+  expect(notFoundDialog()).toBeNull();
+
+  app.companion.device = notFound;
+  await app.wait(30);
+  expect(notFoundDialog()).not.toBeNull();
+});
