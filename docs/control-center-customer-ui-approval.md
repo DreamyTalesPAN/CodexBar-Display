@@ -7858,3 +7858,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #819 the firmware version named in setup is the one that will really be written; texts and layout unchanged.
 - Scope: #819 `apps/control-center/src/components/control-center-app.tsx` (rescue flag on the firmware check), `companion/internal/companionapi/firmware_update.go`, `companion/internal/companionapi/device_cable.go`, the server test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #819 Codex fix not announced
+
+## 2026-10-20 — #819: approval marker after merging main at e7e8319d
+
+- User approval: no visible change – UI approval not needed (merge of main (e7e8319d) into #819; the own entries of #819 keep their approvals)
+- Approved customer-visible result: #819 as in its own entries plus the entries merged with e7e8319d; nothing else changes.
+- Scope: the merge of e7e8319d and this approval record. Pull request branch #819 only, not merged, not released.
+- What's new: none — merge of e7e8319d, no customer-visible change of its own
