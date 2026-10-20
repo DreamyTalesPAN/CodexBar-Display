@@ -200,6 +200,9 @@ func TestRunInstallUpdateCableRescueKeepsTheMarkerWhenTheFailureMayHaveErased(t 
 		findLegacyCableVibeTVFn = func() (usb.CableDevice, error) {
 			return usb.CableDevice{}, errors.New("no VibeTV with pre-Cable firmware answered hello")
 		}
+		readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+			return protocol.DeviceHello{}, errors.New("boot loop: no hello")
+		}
 		flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
 			return usb.ErrROMLoaderNotEntered
 		}
@@ -238,10 +241,13 @@ func TestRunInstallUpdateCableRescuePrefersThePendingMarkerOverAnotherLegacyVibe
 	marker := writeRescueMarkerFixture(t, "COM4", time.Hour)
 	listCablePortsFn = func() ([]string, error) { return []string{"COM4", "/dev/mock-legacy"}, nil }
 	findLegacyCableVibeTVFn = legacyRescueDevice
+	var flashedPort string
 	readCableFirmwareHelloFn = func(port string) (protocol.DeviceHello, error) {
+		if flashedPort == "" {
+			return protocol.DeviceHello{}, errors.New("boot loop: no hello")
+		}
 		return protocol.DeviceHello{DeviceID: "device-cable", Board: rescueTestBoard, Firmware: *firmwareVersion}, nil
 	}
-	var flashedPort string
 	flashCableRescueFn = func(_ context.Context, port string, _ []byte, opts usb.ROMFlashOptions) error {
 		flashedPort = port
 		opts.OnWriteStarted()
@@ -276,6 +282,37 @@ func TestRunInstallUpdateCableRescueWaitsWhileAnotherVibeTVIsLeftHalfWritten(t *
 	}
 }
 
+// A write that succeeded but was not verified can leave a marker for a VibeTV
+// that answers normally later; that marker is stale and must not redirect the
+// rescue of another VibeTV (Codex on #819).
+func TestRunInstallUpdateCableRescueClearsAStaleMarkerWhoseVibeTVAnswers(t *testing.T) {
+	_, manifestURL, firmwareVersion := prepareCableFirmwareUpdateTest(t)
+	pinCableRescue(t)
+	writeRescueMarkerFixture(t, "COM4", time.Hour)
+	listCablePortsFn = func() ([]string, error) { return []string{"COM4", "/dev/mock-legacy"}, nil }
+	findLegacyCableVibeTVFn = legacyRescueDevice
+	var flashedPort string
+	readCableFirmwareHelloFn = func(port string) (protocol.DeviceHello, error) {
+		if port == "COM4" {
+			return protocol.DeviceHello{DeviceID: "healthy-marked", Board: rescueTestBoard, Firmware: "1.0.1"}, nil
+		}
+		return protocol.DeviceHello{DeviceID: "device-cable", Board: rescueTestBoard, Firmware: *firmwareVersion}, nil
+	}
+	flashCableRescueFn = func(_ context.Context, port string, _ []byte, opts usb.ROMFlashOptions) error {
+		flashedPort = port
+		opts.OnWriteStarted()
+		*firmwareVersion = "1.0.1"
+		return nil
+	}
+	output, err := captureStdout(t, func() error { return runInstallUpdate(rescueArgs(manifestURL)) })
+	if flashedPort != "/dev/mock-legacy" {
+		t.Fatalf("flashed %q, want the legacy VibeTV, not the healthy marked one: err=%v\n%s", flashedPort, err, output)
+	}
+	if !strings.Contains(output, "marker is stale") {
+		t.Fatalf("the stale marker was not reported:\n%s", output)
+	}
+}
+
 func TestRunInstallUpdateCableRescueFlashesTheMarkedPortWhenNoHelloComes(t *testing.T) {
 	_, manifestURL, firmwareVersion := prepareCableFirmwareUpdateTest(t)
 	pinCableRescue(t)
@@ -290,13 +327,16 @@ func TestRunInstallUpdateCableRescueFlashesTheMarkedPortWhenNoHelloComes(t *test
 		t.Fatal("verification must stay on the marked port")
 		return "", nil
 	}
+	var flashedPort, flashedImage string
 	readCableFirmwareHelloFn = func(port string) (protocol.DeviceHello, error) {
 		if port != "COM4" {
 			t.Fatalf("verification read %q, want the marked port", port)
 		}
+		if flashedPort == "" {
+			return protocol.DeviceHello{}, errors.New("boot loop: no hello")
+		}
 		return protocol.DeviceHello{DeviceID: "device-cable", Board: rescueTestBoard, Firmware: *firmwareVersion}, nil
 	}
-	var flashedPort, flashedImage string
 	flashCableRescueFn = func(_ context.Context, port string, image []byte, opts usb.ROMFlashOptions) error {
 		flashedPort, flashedImage = port, string(image)
 		opts.OnWriteStarted()

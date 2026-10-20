@@ -109,6 +109,17 @@ func resumableRescueMarker(home string) (firmwareupdate.RescueMarker, bool) {
 		fmt.Printf("Cable rescue: marked image does not match its checksum, nothing to resume\n")
 		return firmwareupdate.RescueMarker{}, false
 	}
+	// A write that succeeded but was not verified leaves a marker although the
+	// VibeTV may boot and answer normally later. Then it is not half-written,
+	// and the marker must not send another VibeTV's rescue to it (Codex on #819).
+	if hello, helloErr := readCableFirmwareHelloFn(marker.Port); helloErr == nil &&
+		(strings.TrimSpace(hello.DeviceID) != "" || strings.TrimSpace(hello.Firmware) != "") {
+		fmt.Printf("Cable rescue: the VibeTV on %s answers again (firmware %s); its marker is stale\n", marker.Port, strings.TrimSpace(hello.Firmware))
+		if clearErr := firmwareupdate.ClearRescueMarker(home); clearErr != nil {
+			fmt.Printf("warning: clearing the stale rescue marker failed: %v\n", clearErr)
+		}
+		return firmwareupdate.RescueMarker{}, false
+	}
 	fmt.Printf("Cable rescue: no VibeTV said hello, but port %s holds one left half-written; resuming through its ROM loader\n", marker.Port)
 	return marker, true
 }
