@@ -181,7 +181,7 @@ it("puts the details in their own row below the preview, never over it and never
   const wrapper = svg.parentElement!.parentElement!.parentElement!;
   const before = wrapper.className;
   // Free space above and below the preview is the same, and the details row is as high as that space.
-  expect(surface.className).toContain("grid-rows-[minmax(0,1fr)_auto_minmax(3rem,1fr)]");
+  expect(surface.className).toContain("grid-rows-[minmax(0,1fr)_auto_minmax(3rem,1fr)_98px]");
   expect(before).toContain("row-start-2");
   // Below the wide layout the column scrolls, so the details take the height they need.
   expect(surface.className).toContain("max-lg:grid-rows-[auto_auto_auto]");

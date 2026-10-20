@@ -56,7 +56,8 @@ export function OpenAIKeyForm({
   /** "Not now": closes the dialog the form sits in. */
   onDismiss: () => void;
 }) {
-  const [enabled, setEnabled] = useState(false);
+  // null while the helper is still being asked: the dialog shows its final layout from the first frame, with no "unavailable" notice that vanishes again.
+  const [enabled, setEnabled] = useState<boolean | null>(null);
   const [configured, setConfigured] = useState<boolean | "pending">(initialConfigured);
   const [consent, setConsent] = useState(readConsent);
   const [password, setPassword] = useState("");
@@ -143,7 +144,7 @@ export function OpenAIKeyForm({
             autoComplete="off"
             spellCheck={false}
             value={password}
-            disabled={!enabled || connecting}
+            disabled={enabled === false || connecting}
             onChange={(e) => setPassword(e.target.value)}
             placeholder={hasStoredKey(configured) ? "Paste a new key to replace it" : "Paste your key here"}
             className="text-[13px] md:text-[13px]"
@@ -164,7 +165,7 @@ export function OpenAIKeyForm({
           I agree to send my prompt and design to OpenAI. Usage is billed to my account.
         </label>
       ) : null}
-      {!enabled ? (
+      {enabled === false ? (
         <p role="alert" className="text-sm text-destructive">
           AI is unavailable. Try again later.
         </p>

@@ -216,8 +216,8 @@ describe("Theme Studio composer (master 19.10.)", () => {
     expect(classes(screen.getByRole("button", { name: "Create" }))).toContain("rounded-full!");
     // The empty alert area under the composer takes no margin.
     expect(classes(screen.getByRole("region", { name: "AI creation" }).nextElementSibling!)).toContain("empty:mt-0");
-    // 650 px of main minus 98 px = the template's 520 px editor at 800 px window height.
-    expect(classes(document.querySelector("[data-theme-studio-root] main")!)).toContain("lg:mb-[98px]");
+    // The composer sits on the bottom edge: no fixed margin under the editor.
+    expect(classes(document.querySelector("[data-theme-studio-root] main")!)).not.toContain("lg:mb-[98px]");
   });
 
   it("says what the field is for once there is a conversation, instead of a typed idea", async () => {
