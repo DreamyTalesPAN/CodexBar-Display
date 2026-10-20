@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { isRemoteThemePackUrl } from "./theme-pack-url";
+import { readThemeTags, type ThemeTag } from "./theme-tags";
 import type { ThemeStudioUsage } from "./theme-studio";
 
 export type ThemeSource = "shopify" | "github-catalog" | "fallback";
@@ -30,6 +31,7 @@ export type ThemeProduct = {
   compatibleBoards?: string[];
   requiresFirmware?: string;
   requiredCapabilities?: string[];
+  tags?: ThemeTag[];
   source: ThemeSource;
 };
 
@@ -118,6 +120,7 @@ type ThemePackCatalog = {
     compatibleBoards?: string[];
     requiresFirmware?: string;
     requiredCapabilities?: string[];
+    tags?: string[];
     sha256?: string;
     bytes?: number;
   }>;
@@ -383,6 +386,7 @@ function mapThemePackCatalogEntry(
     compatibleBoards: theme.compatibleBoards,
     requiresFirmware: theme.requiresFirmware,
     requiredCapabilities: theme.requiredCapabilities,
+    tags: readThemeTags(theme.tags),
     source: "github-catalog",
   };
 }
@@ -452,6 +456,7 @@ export function mergeThemeProductWithCatalog(
       technicalTheme.requiresFirmware || product.requiresFirmware,
     requiredCapabilities:
       technicalTheme.requiredCapabilities || product.requiredCapabilities,
+    tags: technicalTheme.tags || product.tags,
     themeVersion: technicalTheme.themeVersion || product.themeVersion,
     themeRev: technicalTheme.themeRev || product.themeRev,
     themeSpecPath: technicalTheme.themeSpecPath || product.themeSpecPath,
