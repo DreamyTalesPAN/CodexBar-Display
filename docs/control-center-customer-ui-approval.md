@@ -4635,9 +4635,7 @@ issue scope, or release permission never implies UI permission.
 - Validation: Both sides' wizard/browser regressions are retained. The main firmware-onboarding table now runs for Cable and WiFi, with Cable requests forbidden from contacting the saved WiFi target. No device write, new candidate installation, main-branch merge or release is authorized by this integration.
 ## 2026-09-08 — Shared provider notices and Gemini migration (#425)
 
-- User approval: "ok passt so", after reviewing the desktop screenshots in this
-  task. The user explicitly applied Screen 07's notice treatment to every
-  provider, then requested action buttons in the same row as the notice text.
+- User approval: approved by Paul in the communicator chat, 2026-09-08 00:00: "ok passt so" (time unknown) — entry: #465 Shared provider notices and Gemini migration (#425) — date from the entry heading — "ok passt so", after reviewing the desktop screenshots in this task. The user explicitly applied Screen 07's notice treatment to every provider, then requested action buttons in the same row as the notice text.
 - Approved customer-visible result: All provider notices use one shared card
   layout in setup and Settings: provider name and toggle above a separator,
   small explanatory text below it, with Copy, Retry or the available migration
@@ -4658,8 +4656,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-09-08 — Remove unsupported quota equivalence claim (#425)
 
-- User approval: "Das passt mir so. Jetzt push das", after reviewing the
-  corrected Gemini screenshot and explanation in this task.
+- User approval: approved by Paul in the communicator chat, 2026-09-08 00:00: "Das passt mir so. Jetzt push das" (time unknown) — entry: #465 Remove unsupported quota equivalence claim (#425) — date from the entry heading — "Das passt mir so. Jetzt push das", after reviewing the corrected Gemini screenshot and explanation in this task.
 - Approved customer-visible result: Keep the approved shared provider notice
   layout and actions. Replace the unsupported claim about equivalent limits
   and resets with `You can turn on Antigravity instead.` When enabled, say
@@ -4671,9 +4668,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-09-08 — Keep completed provider notices during background collection
 
-- User approval: After testing the local DMG, the user requested that a known
-  provider notice must not return to the loading state while idle; the loading
-  indication should follow an explicit click on the refresh action.
+- User approval: pending — #465 Keep completed provider notices during background collection: After testing the local DMG Paul asked for this behaviour, but the entry holds no verbatim quote of Paul's words about this visible result. Earlier wording: After testing the local DMG, the user requested that a known provider notice must not return to the loading state while idle; the loading indication should follow an explicit click on the refresh action.
 - Approved customer-visible result: Background inventory refresh preserves the
   completed provider health and guidance while collection runs. Initial and
   newly enabled providers still show checking, and an explicit row retry still
@@ -4681,9 +4676,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-09-08 — Skip Display Mode for one enabled provider (#423)
 
-- User approval: "Nur wenn ich zwei oder mehr AI Provider ausgewählt habe,
-  soll ich auf Display Mode kommen und da wählen können zwischen Automatic
-  und Manual. Lass uns das in diesem PR auch noch fixen."
+- User approval: approved by Paul in the communicator chat, 2026-09-08 00:00: "Nur wenn ich zwei oder mehr AI Provider ausgewählt habe, soll ich auf Display Mode kommen und da wählen können zwischen Automatic und Manual. Lass uns das in diesem PR auch noch fixen." (time unknown) — entry: #465 Skip Display Mode for one enabled provider (#423) — date from the entry heading — "Nur wenn ich zwei oder mehr AI Provider ausgewählt habe, soll ich auf Display Mode kommen und da wählen können zwischen Automatic und Manual. Lass uns das in diesem PR auch noch fixen."
 - Approved customer-visible result: Continue on the provider step saves Manual
   with the sole enabled provider and skips Display Mode. Two or more enabled
   providers still show the Automatic/Manual choice, regardless of which ones
@@ -4693,9 +4686,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-09-08 — Reach providers after a successful connection
 
-- User approval: After installing the test DMG, the user reported being stuck
-  on the completed connection/firmware log and unable to reach the provider
-  list: "jetzt bin ich wieder hier stuck und komme nicht weiter zur providerliste".
+- User approval: pending — #465 Reach providers after a successful connection: Paul's quote ("jetzt bin ich wieder hier stuck ...") is a bug report, not a yes to the fixed screen. Earlier wording: After installing the test DMG, the user reported being stuck on the completed connection/firmware log and unable to reach the provider list: "jetzt bin ich wieder hier stuck und komme nicht weiter zur providerliste".
 - Approved customer-visible result: Completing Connect and the firmware check
   opens provider selection when the connected device is waiting for usage,
   including when a previous provider setup is saved. The provider step keeps its existing
@@ -4705,8 +4696,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-09-08 — Reconnect regression coverage
 
-- User approval: The same request to fix being stuck after Connect and reach
-  the provider list authorizes the connection-flow correction above.
+- User approval: pending — #465 Reconnect regression coverage: Follows the entry above, which has no approval quote; the entry holds no verbatim quote of Paul's words about this visible result. Earlier wording: The same request to fix being stuck after Connect and reach the provider list authorizes the connection-flow correction above.
 - Approved customer-visible result: Successful connection and completed firmware
   work open providers before continuing to a missing theme; live usage arriving
   later does not skip that choice. Browser expectations now exercise this same
@@ -4715,7 +4705,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-09-12 — Theme first and used/remaining in setup and Settings
 
-- User approval: Paul requested the updated Claude Design project: "es soll jetzt ne möglichkeit geben, usage als used oder remaining anzuzeigen ... das geht 1x beim setup im wizard und danach in settings" and "im setup soll man erst das theme auswählen, dann folgen display mode und show usage as, jew. mit richtiger preview von dem theme, das ich ausgewählt habe. ... bau das beides noch ein".
+- User approval: approved by Paul in the communicator chat, 2026-09-12 00:00: "im setup soll man erst das theme auswählen, dann folgen display mode und show usage as, jew. mit richtiger preview von dem theme, das ich ausgewählt habe." (time unknown) — entry: #465 Theme first and used/remaining in setup and Settings — date stated in the entry — Paul requested the updated Claude Design project: "es soll jetzt ne möglichkeit geben, usage als used oder remaining anzuzeigen ... das geht 1x beim setup im wizard und danach in settings" and "im setup soll man erst das theme auswählen, dann folgen display mode und show usage as, jew. mit richtiger preview von dem theme, das ich ausgewählt habe. ... bau das beides noch ein".
 - Approved customer-visible result: Setup chooses providers, then a theme, Display Mode (only for two or more enabled providers), and Show usage as. Used and Remaining cards render the selected theme with the existing usage snapshot. Settings exposes the same choice using the active theme. Saving updates CodexBar's existing usageBarsShowUsed preference, already used by the Companion API and device stream. Missing readings remain unavailable; failed writes remain on the originating screen.
 - Design source: Live Claude Design MCP, project 36eb7a1c-bd59-42f0-b120-3f1eb3905e4b, Setup Wizard Redesign.dc.html and Control Center Redesign.dc.html, including their imported design system.
 - Rebase: PR #427 updated onto PR #407 c00485e, including main 1d470ea. Retain this PR's previously approved global inline provider notices and #407's actual-usage readiness gate.
@@ -4731,29 +4721,33 @@ issue scope, or release permission never implies UI permission.
 
 ## Settings preview correction
 
-- User approval: "in den settings nicht das richtige theme zeigen, da bei der visualisierung bleiben wie vorher. auch bei show usage as"
+- User approval: pending — #465 Settings preview correction: Paul's quote has no date in the entry, so it cannot be recorded in the dated form. Earlier wording: "in den settings nicht das richtige theme zeigen, da bei der visualisierung bleiben wie vorher. auch bei show usage as"
 - Approved customer-visible result: Settings uses the previous compact provider/percentage/bar visualization for both Display Mode and Show usage as. Setup retains its selected-theme previews. The Used/Remaining preference and its persistence are unchanged.
 
 ## 2026-09-15 — Rebase provider and usage setup onto current PR #407
 
-- User approval: Paul explicitly requested “ok nochmal rebasen auf pr 407, da ist noch einiges dazugekommen”, preserving the provider, theme-first setup and simple Settings previews approved in this task.
+- User approval: pending — #465 Rebase provider and usage setup onto current PR #407: Paul's "ok nochmal rebasen auf pr 407 ..." (2026-09-15) is an order to rebase, not a yes to a visible result. Earlier wording: Paul explicitly requested “ok nochmal rebasen auf pr 407, da ist noch einiges dazugekommen”, preserving the provider, theme-first setup and simple Settings previews approved in this task.
 - Approved customer-visible result: Retain PR #407's device-matching live preview admission and completed firmware-update handling together with explicit provider continuation, Theme → Display Mode → Show usage as, and compact Settings visuals. Back to Theme also updates the existing wizard navigation override; the parent still owns missing-theme recovery. No new layout, hardware write, installation or release is introduced.
 
 ## 2026-09-15 — Align inherited firmware onboarding coverage
 
-- User approval: Paul requested rebasing this PR onto current PR #407 and previously authorized fixing resulting CI failures within this setup scope.
+- User approval: no visible change – UI approval not needed (#465 Align inherited firmware onboarding coverage: test coverage only: the approved setup flow stays unchanged, a browser test now confirms the existing choices; no visible change; entry text: Paul requested rebasing this PR onto current PR #407 and previously authorized fixing resulting CI failures within this setup scope)
 - Approved customer-visible result: The approved connection → provider confirmation → theme → usage choice flow remains unchanged. The inherited successful firmware-onboarding browser case now confirms these existing choices before asserting a valid final preview, while retaining terminal polling and exactly-one-upload/install assertions.
+- What's new: none — #465 no customer-visible change of its own (added so the entry fits the no-visible-change form)
 
 ## 2026-09-15 — Preserve no-device setup recovery coverage
 
-- User approval: Paul requested the current PR #407 rebase and authorized fixing integration test failures for these approved setup flows.
+- User approval: no visible change – UI approval not needed (#465 Preserve no-device setup recovery coverage: regression test only, no runtime change; no visible change; entry text: Paul requested the current PR #407 rebase and authorized fixing integration test failures for these approved setup flows)
 - Approved customer-visible result: No runtime change. When the unfinished theme setup loses its only VibeTV and discovery returns no candidates, the existing welcome/search screen remains visible. The regression asserts this screen plus no Control Center admission and no theme install. The focused one/two-provider theme and usage flow passes.
+- What's new: none — #465 no customer-visible change of its own (added so the entry fits the no-visible-change form)
 
 ## 2026-09-09 — Windows token-history unavailable state
 
+- User approval: pending — #465 Windows token-history unavailable state: this entry holds only a heading, with no approval text and no result recorded; Paul has not approved anything here.
+
 ## 2026-09-15 — Merge the firmware onboarding fix from main into PR #407
 
-- User approval: Paul explicitly requested “merge main in pr 407, dann wieder bug detector + ci fixen until green”. This authorizes integrating main and fixing resulting review/CI regressions on the PR branch.
+- User approval: pending — #465 Merge the firmware onboarding fix from main into PR #407: Paul's "merge main in pr 407 ..." (2026-09-15) is an order to merge, and the entry also describes setup behaviour (continue after a verified firmware update without an installed theme). Earlier wording: Paul explicitly requested “merge main in pr 407, dann wieder bug detector + ci fixen until green”. This authorizes integrating main and fixing resulting review/CI regressions on the PR branch.
 - Approved customer-visible result: Preserve the required matching live preview before leaving the wizard while retaining main's completed firmware-update and attention handling. Fresh devices without an installed theme can continue setup after a verified firmware update; loss of an existing theme remains visible. Cable reads its baseline over USB and WiFi over HTTP, then both apply the same existing theme-verification rule. Attention never starts another automatic firmware upload.
 - Validation: Both sides' wizard/browser regressions are retained. The main firmware-onboarding table now runs for Cable and WiFi, with Cable requests forbidden from contacting the saved WiFi target. No device write, new candidate installation, main-branch merge or release is authorized by this integration.
 
@@ -4929,13 +4923,13 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-09-20 — Approved agent theme states and shared announcement
 
-- User approval: Paul approved the theme preview ("Top. Das so einarbeiten ins Claude Design."), explicitly specified the two full-theme inversions and existing status line, authorized integrating the bundles on the feature branch, and requested the updated Claude Creature sprites from the same design.
+- User approval: approved by Paul in the communicator chat, 2026-09-20 00:00: "Top. Das so einarbeiten ins Claude Design." (time unknown) — entry: #465 Approved agent theme states and shared announcement — date from the entry heading — Paul approved the theme preview ("Top. Das so einarbeiten ins Claude Design."), explicitly specified the two full-theme inversions and existing status line, authorized integrating the bundles on the feature branch, and requested the updated Claude Creature sprites from the same design.
 - Approved customer-visible result: Existing theme label shows the actual agent (for example "Codex is working", "Codex needs you", "Codex is done", "Codex hit an error", or "Nothing running"). Themes use their approved state sprites; a missing sprite triggers two hard full-frame inversions at 0–200 and 350–550 ms. Nothing running stays quiet, disabling motion restores normal colors, and firmware notices retain priority. Mini uses the approved small props beside its eyes, Tiny Office uses the approved poses, and Creature uses the current Claude Design poses.
 - Scope: Theme bundles and their existing live/Theme Studio previews, shared device rendering, compatibility checks, and regression tests. This does not approve a new Control Center lifecycle page, hardware writes, main merge, or release.
 
 ## 2026-09-21 — Agent activity settings from Claude Design
 
-- User approval: Paul explicitly requested the designed settings ("Haste auch die ganzen settings implementiert und getestet? Wir haben ja die dazugehörigen settings auch designed in Claude design"), completed Design login and instructed "bin eingeloggt. check die settings und bau die so". This records that specific design implementation approval.
+- User approval: approved by Paul in the communicator chat, 2026-09-21 00:00: "bin eingeloggt. check die settings und bau die so" (time unknown) — entry: #465 Agent activity settings from Claude Design — date from the entry heading — Paul explicitly requested the designed settings ("Haste auch die ganzen settings implementiert und getestet? Wir haben ja die dazugehörigen settings auch designed in Claude design"), completed Design login and instructed "bin eingeloggt. check die settings und bau die so". This records that specific design implementation approval.
 - Approved customer-visible result: Settings contains the Agent activity group from `Control Center - Agent Activity.dc.html` (project `36eb7a1c-bd59-42f0-b120-3f1eb3905e4b`, etag `1789894480238945`): Show agent activity; Blink the screen when an agent needs you; Remind me again with 5 minutes, 15 minutes or Never; Quiet from with Never quiet, 22:00–08:00 or 00:00–07:00. Defaults are enabled, blink enabled, 5 minutes and Never quiet. Dependent controls disable when their parent is off. The existing error dialog handles unavailable or unconfirmed settings. The existing screen preview follows these settings. Dedicated state artwork keeps the already approved sprite behavior; themes without that artwork use the shared two-blink fallback and configured waiting reminders.
 - Scope: Settings section, existing preference controls/API, live preview and regression coverage. Reuse the current UI principles, grouped rows and error dialog. No new Overview/session interface, main merge, publication, signing or release is approved by this entry.
 
@@ -4959,7 +4953,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-09-21 — Overview session cards from Claude Design
 
-- User approval: Paul requested the missing cards under the Overview preview: "auf dem overview screen hier sollten doch unten jetzt so cards der versch. agents sein. dazu gibts auch n claude design."
+- User approval: approved by Paul in the communicator chat, 2026-09-21 00:00: "auf dem overview screen hier sollten doch unten jetzt so cards der versch. agents sein. dazu gibts auch n claude design." (time unknown) — entry: #465 Overview session cards from Claude Design — date from the entry heading — Paul requested the missing cards under the Overview preview: "auf dem overview screen hier sollten doch unten jetzt so cards der versch. agents sein. dazu gibts auch n claude design."
 - Approved customer-visible result: Add the Sessions grid from `Control Center - Agent Activity.dc.html` (project `36eb7a1c-bd59-42f0-b120-3f1eb3905e4b`, verified unchanged etag `1789894480238945`) below the existing device preview. Each observed session has its source name, readable phase and last observed activity age. Waiting sessions get the existing update-green dot; idle sessions are muted. Cards stay still. Missing/stale observations show unavailable, while a healthy empty snapshot shows Nothing running. Because the current observer provides last-observed timestamps rather than session/phase start times, time labels explicitly say Last activity instead of inventing a duration.
 - Scope: Existing Overview, existing status polling data and regression coverage. Keep the connection hero and health row. This supersedes the earlier deferral of Overview session cards; no new observer, provider behavior, main merge, signing or release.
 
@@ -4995,13 +4989,13 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-09-22 — Automatic display follows observed agent activity
 
-- User approval: "wie siehts aus mit dem display mode automatic? bisher hat der auf basis von token difference umgeschaltet, glaube ich. zieh das um auf die neue agent activity."
+- User approval: approved by Paul in the communicator chat, 2026-09-22 00:00: "wie siehts aus mit dem display mode automatic? bisher hat der auf basis von token difference umgeschaltet, glaube ich. zieh das um auf die neue agent activity." (time unknown) — entry: #465 Automatic display follows observed agent activity — date from the entry heading — "wie siehts aus mit dem display mode automatic? bisher hat der auf basis von token difference umgeschaltet, glaube ich. zieh das um auf die neue agent activity."
 - Approved customer-visible result: Automatic follows the new Agent activity source instead of token or usage deltas. Needs-you states take priority, then the existing engine priority; the most recently observed session in that phase leads. Idle/unavailable/unmapped activity retains the current available provider. The master switch controls this behavior too; Manual stays pinned. The Automatic tile describes this behavior and its dependency on Agent activity. No new setting or connection control is added.
 - Validation: regression tests cover activity-only switching, waiting priority, token spikes, master-off, Manual, stale observations and missing/disabled usage providers. Remove the old usage-delta and filesystem-activity heuristics rather than retain a second activity owner.
 
 ## 2026-09-22 — Automatic preview matches observed selection
 
-- User approval: The request to move Automatic from token differences to the new Agent activity also governs its preview in Setup and Settings.
+- User approval: approved by Paul in the communicator chat, 2026-09-22 00:00: "wenn ne session fertig ist, geht es zu schnell über zu nothing running. mach das einstellbar in den settings." (time unknown) — entry: #465 Automatic preview matches observed selection — date from the entry heading; the quote is in a later approval line of the same entry — The request to move Automatic from token differences to the new Agent activity also governs its preview in Setup and Settings.
 - Approved customer-visible result: Remove the old timed provider rotation from the Automatic tile. Its existing preview follows the provider acknowledged by VibeTV, using the shared display-frame path; no browser-side activity inference or new controls. Without a display frame yet, preview the first available provider choice.
 - Validation: Codex review 5279093171 identified the stale rotation. The shared preview now updates only with supplied data; tests cover current-provider ordering and real selection changes.
 
@@ -5015,7 +5009,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-09-23 — Control Center Overview and Settings design
 
-- User approval: Paul requested, "mach hier weiter" at commit `8f6cd7ce783855f6f5eb20ee9f2e3c98c027c6e9` and "setze dieses design um für overview und settings" using `Control Center - Agent Activity.dc.html` in Claude Design project `36eb7a1c-bd59-42f0-b120-3f1eb3905e4b`. He explicitly added, "wir haben bei settings noch eine zusätzliche einstellung hinzugefügt, die bleibt."
+- User approval: approved by Paul in the communicator chat, 2026-09-23 00:00: "setze dieses design um für overview und settings" (time unknown) — entry: #465 Control Center Overview and Settings design — date from the entry heading — Paul requested, "mach hier weiter" at commit `8f6cd7ce783855f6f5eb20ee9f2e3c98c027c6e9` and "setze dieses design um für overview und settings" using `Control Center - Agent Activity.dc.html` in Claude Design project `36eb7a1c-bd59-42f0-b120-3f1eb3905e4b`. He explicitly added, "wir haben bei settings noch eine zusätzliche einstellung hinzugefügt, die bleibt."
 - Approved customer-visible result: Overview shows the active theme on the supplied VibeTV model as an interactive 3D preview and uses quiet session rows, with a prominent status badge for agents that need attention. The previous centered connection hero and four-card health grid give way to this hierarchy while connection and unavailable states remain truthful. Settings presents Agent activity as simple rows without an enclosing border, shadow, or row dividers. The existing master, blink, reminder, and quiet controls keep their behavior, and the later "Keep ‘Done’ on screen" setting remains available with its 30-second default and independent blink behavior.
 - Scope: Presentation and copy for Overview and Settings on the feature branch, plus focused regression coverage. This entry supersedes the earlier Overview layout instruction to keep the connection hero and health row. It does not authorize a main-branch merge, release, installation, or device write.
 
@@ -5129,7 +5123,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-09-30 — Integrate current main into the agent activity branch
 
-- User approval: On 2026-09-30 Paul asked to bring the agent activity branch up to date with main, resolve the conflicts and keep a single branch.
+- User approval: approved by Paul in the communicator chat, 2026-09-30 00:00: "ok, dann push" (time unknown) — entry: #465 Integrate current main into the agent activity branch — date stated in the entry; the quote is in a later approval line of the same entry — On 2026-09-30 Paul asked to bring the agent activity branch up to date with main, resolve the conflicts and keep a single branch.
 - Approved customer-visible result: Everything main shipped since #466 stays as approved: the Windows wording, the one-provider skip of Display Mode (#423), the USB rescue update and every CodexBar provider on Windows. The Windows prerequisite notice ("VibeTV reads <Provider> usage from <Provider>'s own app on this computer. …" with "Open setup guide") appears in the provider row's notice, which replaced the provider popup on this branch, instead of in a popup; its wording is unchanged. In this branch's theme-first order the one-provider skip removes Display Mode between theme and "Show usage as", and a second provider switched on afterwards shows Display Mode again. The Overview keeps the approved 3D preview and session cards, so it has no app status row to word for Windows. The five-state themes are republished above main's versions: Mini Classic 1.2.3 (ThemeSpec revision 10) and Claude Creature 1.3.3 (revision 10). Main's published Mini 1.2.1/1.2.2 and Creature 1.3.1/1.3.2 downloads stay byte-identical.
 - Scope: Conflict resolution on the feature branch only. No main write, release, installation or device operation.
 
@@ -7275,70 +7269,70 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-09 — A cleaner What's new dialog
 
-- User approval: Paul shared a screenshot of the built dialog and asked for a cleaner design on 2026-10-09.
+- User approval: pending — #465 A cleaner What's new dialog: Paul asked for a cleaner What's new dialog on 2026-10-09, but the entry holds no verbatim quote of Paul's words about this visible result. Earlier wording: Paul shared a screenshot of the built dialog and asked for a cleaner design on 2026-10-09.
 - Approved customer-visible result: The same five updates appear as a compact, divided list. The large icon tiles are gone, titles and descriptions are smaller, and the links sit quietly beside their entries on wider windows. The heading reads `What's new in version <installed version>` when the version is known, saving a separate line. The footer and its Got it button stay visible when the list scrolls.
 - Scope: the What's new dialog and its entry data only. The wording, navigation, ordering, and notice behavior are unchanged.
 - What's new: none — this changes only the design of the existing notice
 
 ## 2026-10-09 — Keep the What's new layout focused on desktop
 
-- User approval: Paul clarified that customers use the app on desktop, so the notice does not need a separate mobile design.
+- User approval: pending — #465 Keep the What's new layout focused on desktop: Paul's clarification about desktop on 2026-10-09 is paraphrased; the entry holds no verbatim quote of Paul's words about this visible result. Earlier wording: Paul clarified that customers use the app on desktop, so the notice does not need a separate mobile design.
 - Approved customer-visible result: Links remain beside their entries and the footer keeps its standard desktop button layout. A short desktop window still scrolls only the update list.
 - Scope: layout classes in `apps/control-center/src/components/whats-new-dialog.tsx` and this approval record.
 - What's new: none — this simplifies the design of the existing notice
 
 ## 2026-10-09 — Support report keeps other accounts' paths intact (#576)
 
-- User approval: Paul asked in this chat to fix valid Codex bug review comments on PR #576. This corrects the approved 2026-10-09 home-folder rule above, which says other folders under `/Users` stay unchanged.
+- User approval: pending — #465 Support report keeps other accounts' paths intact (#576): Paul ordered the Codex bug fix on 2026-10-09; the entry holds no quote about the visible result (support report content) and does not state no visible change. Earlier wording: Paul asked in this chat to fix valid Codex bug review comments on PR #576. This corrects the approved 2026-10-09 home-folder rule above, which says other folders under `/Users` stay unchanged.
 - Approved customer-visible result: In the copied or downloaded support report, the computer's known home folder still reads `~` in paths and the existing diagnostic sentence forms. A different account whose name merely starts the same way stays intact: for home `/Users/Jane Doe`, `/Users/Jane Doer/file` and `/Users/Jane Doe Smith/file` remain exactly those paths; the same holds for Windows and network-share paths. No screen wording or action changes.
 - Scope: `apps/control-center/src/components/support-report.ts`, `support-report.test.ts`, and this approval record; checked with unit tests and lint.
 - What's new: none — a correction to support report redaction
 
 ## 2026-10-13 — Agent activity on current main: device notices as dialogs, shorter Automatic sentence (#465)
 
-- User approval: Paul reviewed screenshots of the merged screens in this chat on 2026-10-13. He asked for a shorter Automatic sentence ("vibetv follows your agents, based on what they're doing"), for the weak WiFi signal and the theme that cannot be shown as popups instead of header text ("errors sind doch immer overlays"), and for the provider step to follow the sign-in design released the same day. On the new screenshots he answered "das sieht jetzt alles gut aus".
+- User approval: approved by Paul in the communicator chat, 2026-10-13 00:00: "das sieht jetzt alles gut aus" (time unknown) — entry: Agent activity on current main: device notices as dialogs, shorter Automatic sentence (#465) — date stated in the entry — Paul reviewed screenshots of the merged screens in this chat on 2026-10-13. He asked for a shorter Automatic sentence ("vibetv follows your agents, based on what they're doing"), for the weak WiFi signal and the theme that cannot be shown as popups instead of header text ("errors sind doch immer overlays"), and for the provider step to follow the sign-in design released the same day. On the new screenshots he answered "das sieht jetzt alles gut aus".
 - Approved customer-visible result: (1) The Automatic card in setup and Settings reads `VibeTV follows your agents, based on what they're doing.` With a timer chosen in Settings it reads `VibeTV follows your agents and switches providers on a timer while they are idle.` (2) When VibeTV cannot draw its theme, a dialog over the page says `VibeTV can't show this theme` / `Choose another theme.` with the button `Choose a theme`, which opens the theme library; it does not appear inside the theme library. (3) A weak WiFi signal opens a dialog `Weak WiFi signal` / `Move VibeTV closer to your router.` with `OK`. A closed dialog stays closed until its cause has gone and returned. The header shows the connection status only. (4) Provider rows and the provider message follow main (#590); the inline notice of this branch is removed. (5) Settings has one choice for used or remaining (`Show usage as`); the separate `Usage display` row is removed.
 - Scope: `control-center-app.tsx`, `shell-connection-status.tsx`, `setup-display-mode-screen.tsx`, `settings-screen.tsx`, the provider row files as merged from main, their tests, and this approval record. Not merge or release.
 - What's new: none — no entry is added; agent activity gets its own entry when it ships
 
 ## 2026-10-13 — Agent activity is on by default; Mini keeps its 1.2.2 eyes (#465)
 
-- User approval: Paul in this chat on 2026-10-13. On the default: "standardmäßig an, kann ich aber in den settings ausschalten". On Mini Classic, after seeing 1.2.3 on his VibeTV ("gif ... viel zu klein, stockt, und zu weit links"): "lass das so wie 1.2.2 aber für agent status machst du einfach rechts neben das gif die animationen. das gif bewegt sich nicht und bleibt genau so groß wie jetzt."
+- User approval: approved by Paul in the communicator chat, 2026-10-13 00:00: "standardmäßig an, kann ich aber in den settings ausschalten" (time unknown) — entry: Agent activity is on by default; Mini keeps its 1.2.2 eyes (#465) — date stated in the entry — Paul in this chat on 2026-10-13. On the default: "standardmäßig an, kann ich aber in den settings ausschalten". On Mini Classic, after seeing 1.2.3 on his VibeTV ("gif ... viel zu klein, stockt, und zu weit links"): "lass das so wie 1.2.2 aber für agent status machst du einfach rechts neben das gif die animationen. das gif bewegt sich nicht und bleibt genau so groß wie jetzt."
 - Approved customer-visible result: (1) `Show agent activity` is on for a new install and for an install that never chose; Settings switches it off. Switching it on installs VibeTV's own hooks in the installed agents, as before. (2) Mini Classic 1.2.3 shows the eyes exactly as 1.2.2 (the same GIF, 76 x 76, centred). The agent state animation plays to the right of it and is empty while idle.
 - Scope: `companion/internal/runtimeconfig/agent_activity.go`, the Mini Classic theme pack and its generator, and this approval record. Not merge or release. The speed of the Mini state animation beside the GIF has not been judged on the device yet.
 - What's new: none — agent activity gets its own entry when it ships
 
 ## 2026-10-13 — Mini Classic stays 1.2.2; the status line names the agent state in large text (#465)
 
-- User approval: Paul in this chat on 2026-10-13, looking at his VibeTV. On Mini Classic: "oben in der status bar steht ja schon claude code is working. das reicht mir" and "die sprites neben dem gif können dann weg". On the status line: "viel zu klein geschrieben, die muss ganze breite ausfüllen"; asked how, he chose the short provider name.
+- User approval: approved by Paul in the communicator chat, 2026-10-13 00:00: "oben in der status bar steht ja schon claude code is working. das reicht mir" (time unknown) — entry: Mini Classic stays 1.2.2; the status line names the agent state in large text (#465) — date stated in the entry — Paul in this chat on 2026-10-13, looking at his VibeTV. On Mini Classic: "oben in der status bar steht ja schon claude code is working. das reicht mir" and "die sprites neben dem gif können dann weg". On the status line: "viel zu klein geschrieben, die muss ganze breite ausfüllen"; asked how, he chose the short provider name.
 - Approved customer-visible result: (1) Mini Classic is unchanged from 1.2.2; version 1.2.3 with state artwork is withdrawn before it was published. (2) When the agent belongs to the provider on screen, the status line uses the provider's short label: `Claude is working`, `Codex needs you`, `Claude is done`. That sentence fits the theme's large text. An agent of another provider, or of none, keeps its own name (`Claude Code is working`). This replaces the Mini Classic part of the previous entry.
 - Scope: `companion/internal/daemon/daemon.go` and its test, the Mini Classic theme pack and catalog, two provider flows in `test-customer-flows.mjs` that read the provider message from its popup, and this approval record. Not merge or release.
 - What's new: none — agent activity gets its own entry when it ships
 
 ## 2026-10-13 — Claude Creature status line at full width; one working state on the device (#465)
 
-- User approval: Paul in this chat on 2026-10-13, with a photo of Claude Creature on his VibeTV: "schrift ist aber immer noch sehr klein. außerdem wird die coding animation ab und zu neu gezeichnet".
+- User approval: pending — Claude Creature status line at full width; one working state on the device (#465): Paul's quote ("schrift ist aber immer noch sehr klein ...") of 2026-10-13 is a complaint about the old look, not a yes to the new one. Earlier wording: Paul in this chat on 2026-10-13, with a photo of Claude Creature on his VibeTV: "schrift ist aber immer noch sehr klein. außerdem wird die coding animation ab und zu neu gezeichnet".
 - Approved customer-visible result: (1) Claude Creature 1.3.3 gives the status line the full width (232 px instead of 212), so `Claude is working` and `Claude needs you` are drawn in the theme's large text. (2) The device is told `working` for thinking, tool use and compacting alike; the status line and the animation are no longer repainted when an agent moves between them. Paul has not yet confirmed the result on the device.
 - Scope: `companion/internal/daemon/daemon.go` and its tests, the Claude Creature theme pack and its generator, a clearer failure message in one browser flow helper, and this approval record. Not merge or release. Clippy, Pixel Battery, Synthwave and Tiny Office have narrower status lanes and still show long sentences small.
 - What's new: none — agent activity gets its own entry when it ships
 
 ## 2026-10-14 — Status line of Clippy, Synthwave and Tiny Office (#465)
 
-- User approval: Paul in this chat on 2026-10-14, after a rendered overview of the four themes in every agent state: "fix clippy außerdem sollte die schrift bei clippy mittig in der zeile positioniert sein, nicht top. synthwave ebenfalls fixen. tiny office ist abgeschnitten. da muss die statuszeile größer werden". For Tiny Office he chose a taller status strip with a smaller office picture.
+- User approval: approved by Paul in the communicator chat, 2026-10-14 00:00: "fix clippy außerdem sollte die schrift bei clippy mittig in der zeile positioniert sein, nicht top. synthwave ebenfalls fixen. tiny office ist abgeschnitten. da muss die statuszeile größer werden" (time unknown) — entry: Status line of Clippy, Synthwave and Tiny Office (#465) — date stated in the entry — Paul in this chat on 2026-10-14, after a rendered overview of the four themes in every agent state: "fix clippy außerdem sollte die schrift bei clippy mittig in der zeile positioniert sein, nicht top. synthwave ebenfalls fixen. tiny office ist abgeschnitten. da muss die statuszeile größer werden". For Tiny Office he chose a taller status strip with a smaller office picture.
 - Approved customer-visible result: (1) Clippy 1.2.0: the status line sits vertically centred in the title bar and ends before the window buttons. (2) Synthwave 1.2.0: the status line spans the full width above the USAGE heading in large text. (3) Tiny Office 0.7.0: a 32 px status strip with the sentence in large text across the full width; the office picture starts 16 px lower and loses its top wall rows; "used"/"remaining" now follows the two usage labels ("Session used", "Weekly used"). `Claude hit an error` is longer than the lane and stays small in Synthwave and Tiny Office. Not yet seen on a real VibeTV.
 - Scope: `scripts/build-agent-state-themes.mjs`, the three theme packs and catalog, and this approval record. Not merge or release.
 - What's new: none — agent activity gets its own entry when it ships
 
 ## 2026-10-14 — An agent failure reads "failed" (#465)
 
-- User approval: Paul in this chat on 2026-10-14: "ja, ändere errors globally zu failed".
+- User approval: approved by Paul in the communicator chat, 2026-10-14 00:00: "ja, ändere errors globally zu failed" (time unknown) — entry: An agent failure reads "failed" (#465) — date stated in the entry — Paul in this chat on 2026-10-14: "ja, ändere errors globally zu failed".
 - Approved customer-visible result: VibeTV's status line says `<Name> failed` instead of `<Name> hit an error` (for example `Claude failed`), so it fits the themes' large text. The Overview session card shows `Failed` instead of `Hit an error`. Tiny Office 0.7.0 shows `used`/`remaining` small in the reset row and the countdown as `Reset 1h 0m`; its usage labels keep their full lane for long names. Not yet seen on a real VibeTV.
 - Scope: `firmware_shared/agent_activity.h`, `apps/control-center/src/lib/agent-theme-state.ts`, `agent-sessions.tsx`, the Tiny Office theme pack and generator, their tests, `docs/theme-dev-guide.md`, and this approval record. Not merge or release.
 - What's new: none — agent activity gets its own entry when it ships
 
 ## 2026-10-14 — Tiny Office: used/remaining back after the usage names (#465)
 
-- User approval: Paul in this chat on 2026-10-14, rejecting the reset-row placement: "nein. mach das wieder neben den namen."
+- User approval: approved by Paul in the communicator chat, 2026-10-14 00:00: "nein. mach das wieder neben den namen." (time unknown) — entry: Tiny Office: used/remaining back after the usage names (#465) — date stated in the entry — Paul in this chat on 2026-10-14, rejecting the reset-row placement: "nein. mach das wieder neben den namen."
 - Approved customer-visible result: Tiny Office 0.7.0 shows `Session used` and `Weekly used` (or `remaining`) in the usage label lanes; the reset row is `Reset` and the countdown as before. This replaces the Tiny Office part of the previous entry. For a very long window name such as `Codex Spark Weekly`, the device cuts `remaining` at the right edge of the lane; the name itself always fits.
 - Scope: the Tiny Office theme pack and generator, its test, and this approval record. Not merge or release.
 - What's new: none — agent activity gets its own entry when it ships
@@ -7346,14 +7340,21 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-14 — Customer flow closes the lost VibeTV's picker before running setup again (#465)
 
-- User approval: Paul asked in this chat on 2026-10-14 to push everything and fix CI ("push das alles, fix ci").
+- User approval: no visible change – UI approval not needed (Customer flow closes the lost VibeTV's picker before running setup again (#465): customer-flow test only (the entry's result says none), no visible change; entry text: Paul asked in this chat on 2026-10-14 to push everything and fix CI ("push das alles, fix ci"))
 - Approved customer-visible result: none. Test only: on a slow CI runner the existing picker for a lost VibeTV ("Choose your VibeTV — Your VibeTV is not reachable") opened before the flow reached "Run setup again" in Settings and covered the button. The flow now closes that picker first, as a customer would. The app is unchanged.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Not merge or release.
 - What's new: none — no customer-visible change
 
 ## 2026-10-14 — Customer flow waits for the theme refresh after a firmware update (#465)
 
-- User approval: Paul asked in this chat on 2026-10-14 to push everything and fix CI ("push das alles, fix ci").
+- User approval: no visible change – UI approval not needed (Customer flow waits for the theme refresh after a firmware update (#465): customer-flow test only (the entry's result says none), no visible change; entry text: Paul asked in this chat on 2026-10-14 to push everything and fix CI ("push das alles, fix ci"))
 - Approved customer-visible result: none. Test only: `testFirmwareUpdateShowsCustomerProgress` checked the theme refresh the instant "Update complete" appeared; on the CI runner the refresh starts a moment later. The flow now waits up to 10 s for it, still requires exactly one refresh of the active theme, and names what it saw when it fails. The app is unchanged.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Not merge or release.
 - What's new: none — no customer-visible change
+
+## 2026-10-20 — #465: approval lines rewritten to the two accepted forms
+
+- User approval: no visible change – UI approval not needed (#465 record rewrite for the gate in #823; no customer-visible change)
+- Approved customer-visible result: #465 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
+- Scope: #465 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #465 approval record only
