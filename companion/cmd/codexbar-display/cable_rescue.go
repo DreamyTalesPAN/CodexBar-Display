@@ -122,6 +122,9 @@ func resumableRescueMarker(home string) (firmwareupdate.RescueMarker, bool) {
 		}
 		fmt.Printf("Cable rescue: the VibeTV left half-written moved from %s to %s; resuming there\n", marker.Port, moved)
 		marker.Port = moved
+		// The ports listed now are the new baseline. The port it left is gone
+		// from this list, so a later return to that socket counts as a replug.
+		marker.Ports = ports
 	}
 	// A write that succeeded but was not verified leaves a marker although the
 	// VibeTV may boot and answer normally later. Only an answer that matches the
