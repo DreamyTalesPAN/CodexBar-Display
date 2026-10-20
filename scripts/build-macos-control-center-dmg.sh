@@ -83,7 +83,7 @@ validate_app_bundle() {
   [[ -d "$APP_DIR" ]] || die "app bundle not found: ${APP_DIR}"
   [[ -f "${APP_DIR}/Contents/Info.plist" ]] || die "app bundle is missing Contents/Info.plist"
   [[ -d "${APP_DIR}/Contents/MacOS" ]] || die "app bundle is missing Contents/MacOS"
-  find "${APP_DIR}/Contents/MacOS" -mindepth 1 -maxdepth 1 -type f -perm -111 | grep -q . \
+  find "${APP_DIR}/Contents/MacOS" -mindepth 1 -maxdepth 1 -type f -perm -111 -print -quit | grep -q . \
     || die "app bundle has no executable file under Contents/MacOS"
 
   if command -v codesign >/dev/null 2>&1; then

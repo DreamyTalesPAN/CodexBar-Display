@@ -638,7 +638,8 @@ func TestProbeProviderSetupForProviderUsesExactAutoUsage(t *testing.T) {
 		return []byte("CodexBar 0.44.0"), nil
 	}
 	var usageArgs []string
-	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+	var usageTimeout, usageTimeLeft time.Duration
+	runUsageCommandFn = func(ctx context.Context, timeout time.Duration, _ string, args ...string) ([]byte, error) {
 		if len(args) >= 2 && args[0] == "config" && args[1] == "providers" {
 			return []byte(`[
 				{"provider":"codex","displayName":"Codex","enabled":true},
@@ -646,6 +647,10 @@ func TestProbeProviderSetupForProviderUsesExactAutoUsage(t *testing.T) {
 			]`), nil
 		}
 		usageArgs = append([]string(nil), args...)
+		usageTimeout = timeout
+		if deadline, ok := ctx.Deadline(); ok {
+			usageTimeLeft = time.Until(deadline)
+		}
 		return []byte(`[
 			{"provider":"codex","source":"oauth","usage":{"primary":{"usedPercent":7},"secondary":{"usedPercent":13}}},
 			{"provider":"antigravity","source":"cli","usage":{"primary":{"usedPercent":17},"secondary":{"usedPercent":23},"updatedAt":"2026-07-24T08:00:00Z"}}
@@ -662,6 +667,11 @@ func TestProbeProviderSetupForProviderUsesExactAutoUsage(t *testing.T) {
 	want := []string{"usage", "--json", "--provider", "antigravity", "--source", "auto", "--web-timeout", "8"}
 	if !reflect.DeepEqual(usageArgs, want) {
 		t.Fatalf("unexpected exact usage args: got %v want %v", usageArgs, want)
+	}
+	// CodexBar's Claude CLI path answered after 55 s on a customer's Mac whose
+	// only Claude sign-in was Claude Code's Keychain item (#786).
+	if usageTimeout < time.Minute || usageTimeLeft < time.Minute {
+		t.Fatalf("exact usage call got %s with %s left, less than the 55 s Claude CLI path needs", usageTimeout, usageTimeLeft)
 	}
 }
 
