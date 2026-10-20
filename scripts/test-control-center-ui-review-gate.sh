@@ -51,7 +51,7 @@ approval_entry() {
 # An entry that waits for Paul's yes in the PR review: no approval yet.
 pending_approval_entry() {
   local label="$1"
-  printf '\n## %s\n\n- User approval: pending — Paul reviews this PR (test).\n- Approved customer-visible result: %s\n%s\n' \
+  printf '\n## %s\n\n- User approval: pending — Paul reviews this PR (test).\n- Approved customer-visible result: The result of %s\n%s\n' \
     "$label" "$label" "$WHATS_NEW_NONE"
 }
 
@@ -351,6 +351,63 @@ test_approval_pending_review_is_due() {
   approve_ui_change_with_lines "$repo" \
     "- User approval: Paul decided on 20.10.2026; the rendered result is Pending his review." \
     "- Approved customer-visible result: The overview reads Ready."
+  expect_gate_due "$repo"
+}
+
+test_markdown_draft_result_is_due() {
+  local repo="${TMP_ROOT}/markdown-draft"
+  approve_ui_change_with_lines "$repo" \
+    "- User approval: Paul asked for this change in the issue." \
+    "- Approved customer-visible result: **Draft**, to be confirmed by Paul."
+  expect_gate_due "$repo"
+}
+
+# The fix the gate asks for: a later commit replaces the pending approval with
+# the given one, without adding a new entry.
+give_pending_approval() {
+  local repo="$1"
+  local file="$repo/docs/control-center-customer-ui-approval.md"
+  sed 's/^- User approval: pending — Paul reviews this PR (test)\.$/- User approval: Paul approved the rendered result in the PR review (test)./' \
+    "$file" > "$file.new"
+  mv "$file.new" "$file"
+}
+
+test_pending_entry_corrected_later_passes() {
+  local with_base
+  for with_base in yes no; do
+    local repo="${TMP_ROOT}/pending-corrected-${with_base}"
+    setup_repo "$repo"
+    [[ "$with_base" == no ]] || git -C "$repo" update-ref refs/remotes/origin/main HEAD
+    commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+      "Change customer-facing UI"
+    pending_approval_entry "Pending overview" \
+      >> "$repo/docs/control-center-customer-ui-approval.md"
+    git -C "$repo" add docs/control-center-customer-ui-approval.md
+    git -C "$repo" commit -q -m "Pending approval for overview"
+    expect_gate_due "$repo"
+
+    give_pending_approval "$repo"
+    expect_gate_success "$repo"
+    git -C "$repo" commit -q -am "Paul approved the overview"
+    expect_gate_success "$repo"
+  done
+}
+
+# A correction commit is no new marker: UI it changes itself stays due.
+test_correction_commit_does_not_cover_its_own_ui() {
+  local repo="${TMP_ROOT}/correction-with-ui"
+  setup_repo "$repo"
+  git -C "$repo" update-ref refs/remotes/origin/main HEAD
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Change customer-facing UI"
+  pending_approval_entry "Pending overview" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" add docs/control-center-customer-ui-approval.md
+  git -C "$repo" commit -q -m "Pending approval for overview"
+  give_pending_approval "$repo"
+  printf 'export const late = "Later";\n' \
+    >> "$repo/apps/control-center/src/components/overview-screen.tsx"
+  git -C "$repo" commit -q -am "Approve and change the overview again"
   expect_gate_due "$repo"
 }
 
@@ -749,6 +806,9 @@ test_pull_request_merge_commit_uses_pr_head
 test_pending_approval_is_due
 test_draft_approval_is_due
 test_approval_pending_review_is_due
+test_markdown_draft_result_is_due
+test_pending_entry_corrected_later_passes
+test_correction_commit_does_not_cover_its_own_ui
 test_result_that_describes_a_draft_passes
 test_pending_entry_before_a_given_one_is_due
 test_every_entry_since_base_is_checked

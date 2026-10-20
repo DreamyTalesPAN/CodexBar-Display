@@ -31,6 +31,8 @@ const WHATS_NEW_FILE = "apps/control-center/src/lib/whats-new.ts";
 // drafts, a pending provider).
 const PENDING_APPROVAL_PATTERN = /\b(pending|draft)\b/i;
 const PENDING_RESULT_PATTERN = /^(pending|draft)\b/i;
+// Markdown around the first word ("**Draft**") does not hide it.
+const LEADING_MARKDOWN = /^[\s*_`~]+/;
 
 const uiFilePatterns = [
   /^apps\/control-center\/src\/components\//,
@@ -43,7 +45,11 @@ const uiFilePatterns = [
 const analysisRef = analysisHeadRef();
 const approvalCommit = latestApprovalCommit(analysisRef);
 const workingTreeChangedFiles = changedFilesInWorkingTree();
-const workingTreeApprovalChanged = workingTreeChangedFiles.includes(APPROVAL_FILE);
+const workingTreeApprovalEdited = workingTreeChangedFiles.includes(APPROVAL_FILE);
+// Only a change that adds an entry is an approval marker; one that corrects
+// lines of entries already there (pending → the given approval) is not.
+const workingTreeApprovalChanged =
+  workingTreeApprovalEdited && addedEntries(workingTreeApprovalDiff()).length > 0;
 const workingTreeApprovalValid = workingTreeApprovalChanged
   ? diffAddsApprovalEvidence(workingTreeApprovalDiff())
   : false;
@@ -66,18 +72,20 @@ const uiChangedFiles = unique([
 const approvalCoversUi = workingTreeApprovalChanged && workingTreeApprovalValid;
 const unapprovedUiFiles = approvalCoversUi ? [] : uiChangedFiles;
 // Every entry this change adds is checked for pending or draft, also those of
-// earlier commits (#799): against the base it branched from when known, else
-// the newest approval commit.
+// earlier commits (#799), as it reads now: against the base the change
+// branched from when known, else the parent of the newest approval commit.
 const comparisonBase = changeBase(analysisRef);
-const committedAddedDiff = comparisonBase
-  ? approvalDiff(comparisonBase, analysisRef)
-  : approvalCommit
-    ? commitDiff(approvalCommit)
-    : "";
-const pendingEntries = [
-  ...addedEntries(committedAddedDiff),
-  ...(workingTreeApprovalChanged ? addedEntries(workingTreeApprovalDiff()) : []),
-].filter(isPendingOrDraft);
+const addedSince =
+  comparisonBase || (approvalCommit && tryGit(["rev-parse", "--verify", `${approvalCommit}^1`])) || null;
+const addedDiff = addedSince
+  ? workingTreeApprovalEdited
+    ? tryGit(["diff", "--unified=0", addedSince, "--", APPROVAL_FILE])
+    : approvalDiff(addedSince, analysisRef)
+  : [
+      approvalCommit ? commitDiff(approvalCommit) : "",
+      workingTreeApprovalEdited ? workingTreeApprovalDiff() : "",
+    ].join("\n");
+const pendingEntries = addedEntries(addedDiff).filter(isPendingOrDraft);
 const invalidApprovalMarker =
   (workingTreeApprovalChanged && !workingTreeApprovalValid) ||
   (!workingTreeApprovalChanged && Boolean(approvalCommit) && !committedApprovalValid);
@@ -100,7 +108,7 @@ if (due) {
   const reason = invalidApprovalMarker
     ? `The newest approval marker does not add the required lines: "${APPROVAL_PREFIXES.join('", "')}", and "${WHATS_NEW_PREFIX}" with "none — <reason>" or ids from ${WHATS_NEW_FILE} in backticks.`
     : pendingEntries.length > 0
-      ? `${pendingEntries.length} approval entry/entries this change adds says pending or draft, which is no approval yet. Replace it with the given approval before merge.`
+      ? `${pendingEntries.length} approval entr${pendingEntries.length === 1 ? "y" : "ies"} added by this change say${pendingEntries.length === 1 ? "s" : ""} pending or draft, which is no approval yet. Replace it with the given approval before merge.`
       : `Customer-facing UI changed in ${unapprovedUiFiles.length} file(s) without a matching approval entry.`;
   const message = [
     reason,
@@ -125,9 +133,12 @@ function analysisHeadRef() {
   return "HEAD";
 }
 
+// The newest commit that adds an entry. A commit that only corrects lines of
+// entries already there is no new marker: the corrected entry keeps covering
+// what it covered.
 function latestApprovalCommit(ref) {
-  const result = tryGit(["log", "-n", "1", "--format=%H", ref, "--", APPROVAL_FILE]);
-  return result || null;
+  const commits = lines(tryGit(["log", "--format=%H", ref, "--", APPROVAL_FILE]));
+  return commits.find((commit) => addedEntries(commitDiff(commit)).length > 0) || null;
 }
 
 function changedFilesSince(commit, ref) {
@@ -307,7 +318,9 @@ function entryField(entry, prefix) {
 function isPendingOrDraft(entry) {
   return (
     PENDING_APPROVAL_PATTERN.test(entryField(entry, "- User approval:")) ||
-    PENDING_RESULT_PATTERN.test(entryField(entry, "- Approved customer-visible result:"))
+    PENDING_RESULT_PATTERN.test(
+      entryField(entry, "- Approved customer-visible result:").replace(LEADING_MARKDOWN, ""),
+    )
   );
 }
 
