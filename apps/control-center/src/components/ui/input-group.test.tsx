@@ -4,8 +4,8 @@ import { InputGroup, InputGroupInput } from "./input-group";
 
 // The classes that draw the focus ring of an input group and its invalid state.
 const FOCUS_RING = "has-[[data-slot=input-group-control]:focus-visible]:ring-ring";
-const INVALID_FOCUS_RING = "has-[[data-slot][aria-invalid=true]:focus-visible]:ring-ring";
-const DARK_INVALID_FOCUS_RING = "dark:has-[[data-slot][aria-invalid=true]:focus-visible]:ring-ring";
+const INVALID_FOCUS_RING = "has-[[data-slot][aria-invalid=true]:focus-visible]:ring-destructive";
+const DARK_INVALID_FOCUS_RING = "dark:has-[[data-slot][aria-invalid=true]:focus-visible]:ring-destructive";
 const INVALID_RING = "has-[[data-slot][aria-invalid=true]]:ring-destructive/20";
 
 // Class list of the input group's own element (the outer div).
@@ -18,7 +18,7 @@ function groupClasses(html: string): string[] {
 }
 
 describe("input group focus ring", () => {
-  it("keeps the full ink focus ring on an invalid control with keyboard focus", () => {
+  it("shows the full red focus ring on an invalid control with keyboard focus", () => {
     const html = renderToStaticMarkup(
       <InputGroup>
         <InputGroupInput aria-invalid="true" />
@@ -30,7 +30,7 @@ describe("input group focus ring", () => {
     expect(classes).toContain(DARK_INVALID_FOCUS_RING);
   });
 
-  it("keeps the full ink focus ring when a consumer passes its own classes", () => {
+  it("keeps the full red focus ring when a consumer passes its own classes", () => {
     const html = renderToStaticMarkup(
       <InputGroup className="w-40 max-w-full">
         <InputGroupInput aria-invalid="true" />

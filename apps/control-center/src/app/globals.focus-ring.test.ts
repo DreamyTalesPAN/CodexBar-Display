@@ -52,13 +52,18 @@ describe("keyboard focus ring colour", () => {
     expect(contrast(token(dark, "ring"), token(dark, "background"))).toBeGreaterThanOrEqual(3);
   });
 
-  it("keeps the ink ring on invalid inputs with keyboard focus, in both themes", () => {
+  // Paul, 20.10.2026: an invalid field under keyboard focus shows the full RED
+  // ring (not the ink one, not a faint glow), in both themes.
+  it("shows the full red ring on invalid inputs with keyboard focus, in both themes", () => {
     const input = readFileSync(
       path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "components", "ui", "input.tsx"),
       "utf8",
     );
-    expect(input).toContain("aria-invalid:focus-visible:ring-ring");
-    expect(input).toContain("dark:aria-invalid:focus-visible:ring-ring");
+    expect(input).toContain("aria-invalid:focus-visible:ring-destructive");
+    expect(input).toContain("dark:aria-invalid:focus-visible:ring-destructive");
+    expect(input).not.toContain("aria-invalid:focus-visible:ring-ring");
+    expect(contrast(token(light, "destructive"), token(light, "background"))).toBeGreaterThanOrEqual(3);
+    expect(contrast(token(dark, "destructive"), token(dark, "background"))).toBeGreaterThanOrEqual(3);
   });
 
   it("draws the default outline of native controls at full strength", () => {
