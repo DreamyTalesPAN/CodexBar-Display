@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -101,6 +102,67 @@ func TestCableRescueCancelledInThePauseClearsAChiplessMarker(t *testing.T) {
 	}
 	if rescueMarkerPresent(t) {
 		t.Fatal("a chipless marker must be cleared after a cancel in the pause")
+	}
+}
+
+// Codex on #840: a resume on a port the VibeTV seems to have moved to keeps the
+// marker on its first port until the ROM loader confirms the recorded chip.
+// An unrelated silent adapter on the new port must not take the marker over.
+func TestCableRescueMovedPortIsSavedOnlyAfterTheChipMatches(t *testing.T) {
+	prepareCableFirmwareUpdateTest(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	prevPause := cableRescueRetryPause
+	cableRescueRetryPause = time.Millisecond
+	t.Cleanup(func() { cableRescueRetryPause = prevPause })
+	original := firmwareupdate.RescueMarker{
+		Port: "COM4", Ports: []string{"COM1", "COM4"}, Board: rescueTestBoard, Firmware: "1.0.0", TargetFirmware: "1.0.1",
+		ImagePath: filepath.Join(t.TempDir(), "firmware.bin"), ChipMAC: rescueTestChip, WriteStartedAt: time.Now().Add(-time.Hour),
+	}
+	if err := firmwareupdate.SaveRescueMarker(home, original); err != nil {
+		t.Fatal(err)
+	}
+	moved := original
+	moved.Port, moved.Ports = "COM9", []string{"COM1", "COM9"}
+	portOnDisk := func() string {
+		saved, ok := firmwareupdate.LoadRescueMarker(home, time.Now())
+		if !ok {
+			t.Fatal("the marker must stay")
+		}
+		return saved.Port
+	}
+
+	// Another chip answers the loader on COM9: stopped before the erase.
+	flashCableRescueFn = func(_ context.Context, port string, _ []byte, opts usb.ROMFlashOptions) error {
+		if port != "COM9" || opts.ExpectChip != rescueTestChip {
+			t.Fatalf("write on %q expecting %q", port, opts.ExpectChip)
+		}
+		return fmt.Errorf("%w: the chip is 00000000deadbeef, expected %s", usb.ErrBeforeErase, rescueTestChip)
+	}
+	if err := flashCableRescueWithRetry(context.Background(), home, moved, []byte("cable firmware"), true); err == nil {
+		t.Fatal("a chip mismatch must fail the resume")
+	}
+	if got := portOnDisk(); got != "COM4" {
+		t.Fatalf("marker port = %q after a chip mismatch on the new port, want COM4", got)
+	}
+
+	// The recorded chip answers on COM9: from then on the marker follows it.
+	var portWhenWriting string
+	flashCableRescueFn = func(_ context.Context, _ string, _ []byte, opts usb.ROMFlashOptions) error {
+		if err := opts.OnChipIdentified(rescueTestChip); err != nil {
+			return err
+		}
+		portWhenWriting = portOnDisk()
+		opts.OnWriteStarted()
+		return nil
+	}
+	if err := flashCableRescueWithRetry(context.Background(), home, moved, []byte("cable firmware"), true); err != nil {
+		t.Fatalf("resume on the confirmed chip: %v", err)
+	}
+	if portWhenWriting != "COM9" {
+		t.Fatalf("marker port = %q once the chip matched, want COM9", portWhenWriting)
 	}
 }
 

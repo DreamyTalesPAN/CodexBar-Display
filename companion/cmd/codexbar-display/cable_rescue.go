@@ -49,8 +49,16 @@ func flashCableRescueWithRetry(ctx context.Context, home string, marker firmware
 			marker.Ports = ports
 		}
 	}
-	if saveErr := firmwareupdate.SaveRescueMarker(home, marker); saveErr != nil {
-		return fmt.Errorf("save the rescue marker before writing: %w", saveErr)
+	// A resume on a port the VibeTV seems to have moved to keeps the marker on
+	// disk as it was until the ROM loader confirms the recorded chip there: the
+	// new port may be an unrelated silent adapter, and rebinding the marker to
+	// it would hide the real VibeTV's return to its first socket (Codex on #840).
+	saved, onDisk := firmwareupdate.LoadRescueMarker(home, time.Now())
+	moved := resumed && onDisk && !strings.EqualFold(strings.TrimSpace(saved.Port), strings.TrimSpace(marker.Port))
+	if !moved {
+		if saveErr := firmwareupdate.SaveRescueMarker(home, marker); saveErr != nil {
+			return fmt.Errorf("save the rescue marker before writing: %w", saveErr)
+		}
 	}
 	// The chip is saved into the marker before the erase. Every later attempt
 	// writes only that chip: a resumed rescue starts with the chip it recorded.
