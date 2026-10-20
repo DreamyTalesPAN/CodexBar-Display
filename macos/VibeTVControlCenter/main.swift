@@ -433,6 +433,17 @@ func makeControlCenterWebViewConfiguration() -> WKWebViewConfiguration {
     return configuration
 }
 
+/// The WebKit of macOS 14.0 to 14.5 still suspends a covered page eight
+/// minutes after it stopped running in the foreground, `.none` included
+/// (WebKit bug 270609; the fix shipped with Safari 17.6 in macOS 14.6). Every
+/// script the app runs in the page restarts those eight minutes, so on these
+/// systems the app runs an empty script once a minute.
+func controlCenterPageNeedsKeepAlive(_ version: OperatingSystemVersion) -> Bool {
+    (version.majorVersion, version.minorVersion) < (14, 6)
+}
+
+let controlCenterPageKeepAliveInterval: Duration = .seconds(60)
+
 func makeLocalNetworkPrivacyProbeRequest(
     urlString: String = localNetworkPrivacyProbeURLString,
     timeout: TimeInterval = localNetworkPrivacyProbeTimeout
@@ -1939,6 +1950,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var reloadAttempts = 0
     private var webContentTerminations: [Date] = []
     private var scheduledReload: Task<Void, Never>?
+    private var pageKeepAlive: Task<Void, Never>?
     private var preparationTask: Task<Void, Never>?
     private var closePreparationInFlight = false
     private var allowPreparedWindowClose = false
@@ -3313,6 +3325,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
         self.window = window
         self.webView = webView
+        startPageKeepAliveIfNeeded()
         closePreparationInFlight = false
         allowPreparedWindowClose = false
         scheduledCloseFallback?.cancel()
@@ -3321,6 +3334,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         // fetch the freshly bundled UI instead of reviving an older cached
         // Control Center whose device-selection logic may be stale.
         loadControlCenter(cachePolicy: .reloadIgnoringLocalCacheData)
+    }
+
+    /// Only on systems whose WebKit still suspends a covered page (#655).
+    private func startPageKeepAliveIfNeeded() {
+        guard pageKeepAlive == nil,
+              controlCenterPageNeedsKeepAlive(
+                ProcessInfo.processInfo.operatingSystemVersion
+              ) else {
+            return
+        }
+        pageKeepAlive = Task { [weak self] in
+            while (try? await Task.sleep(for: controlCenterPageKeepAliveInterval)) != nil {
+                _ = try? await self?.webView?.evaluateJavaScript("0")
+            }
+        }
     }
 
     private func makeMainWindow() -> NSWindow {
@@ -3751,6 +3779,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
         scheduledReload?.cancel()
         scheduledReload = nil
+        // A closed window has no page to keep running; createWindow starts a new one.
+        pageKeepAlive?.cancel()
+        pageKeepAlive = nil
         closePreparationInFlight = false
         allowPreparedWindowClose = false
         scheduledCloseFallback?.cancel()
