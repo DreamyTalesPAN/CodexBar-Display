@@ -458,7 +458,11 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 	}
 	result.Engine.Status = ProviderReady
 
-	probeCtx, cancel := context.WithTimeout(configuredCtx, ProviderCheckBudget)
+	budget := ProviderCheckBudget
+	if exactProvider != "" {
+		budget = ExactProviderCheckBudget
+	}
+	probeCtx, cancel := context.WithTimeout(configuredCtx, budget)
 	defer cancel()
 	// Windows probes every switched-on provider one by one with its own
 	// budget (runUsageAllEnabled), so a shared ceiling -- the one here or
@@ -500,7 +504,7 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 			result.Providers = []ProviderReadiness{providerResult(exactProvider, ProviderNotConfigured)}
 			return result
 		}
-		out, commandErr = runUsageCommandFn(probeCtx, perProviderProbeTimeout, bin,
+		out, commandErr = runUsageCommandFn(probeCtx, exactProviderProbeTimeout, bin,
 			"usage", "--json",
 			"--provider", exactProvider,
 			"--source", "auto",

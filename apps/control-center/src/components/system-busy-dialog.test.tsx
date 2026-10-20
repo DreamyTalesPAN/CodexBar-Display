@@ -9,6 +9,7 @@ import { createElement } from "react";
 import { afterEach, expect, it } from "vitest";
 
 import { SetupDialog } from "./setup/setup-dialog";
+import { expectNoAxeViolations } from "@/test/axe";
 import { SystemBusyDialog, systemBusyCopy } from "./system-busy-dialog";
 
 afterEach(cleanup);
@@ -83,4 +84,10 @@ it("takes the notice down before the next paint when a page dialog mounts with i
   act(() => rerender(sameRender(true)));
   await Promise.resolve();
   expect(busy()).toBeNull();
+});
+
+it("has no accessibility violations while it is open", async () => {
+  render(page(null));
+  expect(busy()).not.toBeNull();
+  await expectNoAxeViolations(document.body.innerHTML);
 });
