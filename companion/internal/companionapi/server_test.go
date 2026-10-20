@@ -15377,6 +15377,7 @@ func TestDeviceSearchOffersAHalfWrittenVibeTVForItsRescue(t *testing.T) {
 	}{
 		{"marked port connected", []string{"COM1", "com4"}, time.Hour, false, false, false, true, false},
 		{"marked port gone", []string{"COM1"}, time.Hour, false, false, false, false, false},
+		{"VibeTV replugged to a new port", []string{"COM1", "COM7"}, time.Hour, false, false, false, true, false},
 		{"marker too old", []string{"COM4"}, firmwareupdate.RescueMarkerMaxAge + time.Hour, false, false, false, false, false},
 		{"VibeTV answers again", []string{"COM4"}, time.Hour, true, false, false, false, false},
 		{"no WiFi on this computer", []string{"COM4"}, time.Hour, false, true, false, true, false},
@@ -15399,6 +15400,11 @@ func TestDeviceSearchOffersAHalfWrittenVibeTVForItsRescue(t *testing.T) {
 				server.localNetworkAvailable = func() bool { return false }
 			}
 			server.listCablePorts = func() ([]string, error) { return tc.ports, nil }
+			// A new port that stays silent is the replugged VibeTV; COM4 and COM1
+			// were listed when the rescue started.
+			server.readCableHello = func(string) (protocol.DeviceHello, error) {
+				return protocol.DeviceHello{}, errors.New("no hello")
+			}
 			server.discoverCableDevices = func(context.Context) ([]usb.CableDevice, error) {
 				if tc.legacyOther {
 					return nil, &usb.LegacyCableFirmwareError{Board: "esp8266-smalltv-st7789", Firmware: "1.0.0-other"}
@@ -15423,7 +15429,7 @@ func TestDeviceSearchOffersAHalfWrittenVibeTVForItsRescue(t *testing.T) {
 				}
 			}
 			if err := firmwareupdate.SaveRescueMarker(server.home, firmwareupdate.RescueMarker{
-				Port: "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
+				Port: "COM4", Ports: []string{"COM1", "COM4"}, Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
 				ImagePath: imagePath, ImageSHA256: hex.EncodeToString(sum[:]), WriteStartedAt: time.Now().Add(-tc.age),
 			}); err != nil {
 				t.Fatal(err)

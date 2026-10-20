@@ -44,7 +44,7 @@ func TestRescueMarkerIgnoresStaleAndBrokenFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, ok := LoadRescueMarker(home, now); ok {
-		t.Fatal("a marker older than a day must not authorize a flash")
+		t.Fatal("a marker older than RescueMarkerMaxAge must not authorize a flash")
 	}
 	if err := SaveRescueMarker(home, RescueMarker{TargetFirmware: "1.0.9", ImagePath: "/x", WriteStartedAt: now}); err != nil {
 		t.Fatal(err)

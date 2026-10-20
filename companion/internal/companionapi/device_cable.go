@@ -143,16 +143,27 @@ func (s *Server) cableDeviceInfo(ctx context.Context, cfg runtimeconfig.Config, 
 	}, stream), true, false, false)
 }
 
-// rescueMarkerPortPresent reports whether the port of a pending rescue marker is
-// connected right now; without it no rescue write can resume.
-func (s *Server) rescueMarkerPortPresent(marker firmwareupdate.RescueMarker) bool {
+// rescueMarkerPort returns the port a pending rescue marker's VibeTV is on: the
+// marked port while it is connected, else the one port it was moved to by a
+// replug. Without a port no rescue write can resume. The search for a moved
+// VibeTV probes new ports, so it waits while a firmware update holds them.
+func (s *Server) rescueMarkerPort(marker firmwareupdate.RescueMarker) (string, bool) {
 	if s.listCablePorts == nil {
-		return false
+		return "", false
 	}
 	ports, err := s.listCablePorts()
-	return err == nil && slices.ContainsFunc(ports, func(port string) bool {
+	if err != nil {
+		return "", false
+	}
+	if slices.ContainsFunc(ports, func(port string) bool {
 		return strings.EqualFold(strings.TrimSpace(port), strings.TrimSpace(marker.Port))
-	})
+	}) {
+		return marker.Port, true
+	}
+	if s.readCableHello == nil || s.firmwareUpdateActive.Load() {
+		return "", false
+	}
+	return firmwareupdate.MovedRescuePort(marker, ports, s.readCableHello)
 }
 
 // halfWrittenRescueEntry is the VibeTV a failed Cable rescue left without
@@ -163,9 +174,11 @@ func (s *Server) halfWrittenRescueEntry(responding []usb.CableDevice) (deviceSea
 	if !ok {
 		return deviceSearchEntry{}, false
 	}
-	if !s.rescueMarkerPortPresent(marker) {
+	port, present := s.rescueMarkerPort(marker)
+	if !present {
 		return deviceSearchEntry{}, false
 	}
+	marker.Port = port
 	// A VibeTV that answers on the marked port is not half-written any more;
 	// one that answers on another port is another VibeTV.
 	if slices.ContainsFunc(responding, func(device usb.CableDevice) bool {

@@ -40,6 +40,13 @@ func flashCableRescueWithRetry(ctx context.Context, home string, marker firmware
 		return fmt.Errorf("the VibeTV on %s is left half-written; connect it by Cable and update it first", pending.Port)
 	}
 	marker.WriteStartedAt = time.Now()
+	if !resumed {
+		// The ports listed before the first write tell a VibeTV that was
+		// replugged into another socket apart from the ports already there.
+		if ports, listErr := listCablePortsFn(); listErr == nil {
+			marker.Ports = ports
+		}
+	}
 	if saveErr := firmwareupdate.SaveRescueMarker(home, marker); saveErr != nil {
 		return fmt.Errorf("save the rescue marker before writing: %w", saveErr)
 	}
@@ -101,9 +108,20 @@ func resumableRescueMarker(home string) (firmwareupdate.RescueMarker, bool) {
 		return firmwareupdate.RescueMarker{}, false
 	}
 	ports, err := listCablePortsFn()
-	if err != nil || !portListed(ports, marker.Port) {
+	if err != nil {
 		fmt.Printf("Cable rescue: marked port %s is not present, nothing to resume\n", marker.Port)
 		return firmwareupdate.RescueMarker{}, false
+	}
+	if !portListed(ports, marker.Port) {
+		// Replugged into another USB socket: only one new port, silent and
+		// not the marked one, may be resumed. Anything else stays unwritten.
+		moved, found := firmwareupdate.MovedRescuePort(marker, ports, readCableFirmwareHelloFn)
+		if !found {
+			fmt.Printf("Cable rescue: marked port %s is not present, nothing to resume\n", marker.Port)
+			return firmwareupdate.RescueMarker{}, false
+		}
+		fmt.Printf("Cable rescue: the VibeTV left half-written moved from %s to %s; resuming there\n", marker.Port, moved)
+		marker.Port = moved
 	}
 	// A write that succeeded but was not verified leaves a marker although the
 	// VibeTV may boot and answer normally later. Only an answer that matches the
