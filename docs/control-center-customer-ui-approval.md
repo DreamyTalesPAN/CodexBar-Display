@@ -8557,3 +8557,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #803: approval marker for the merge of claude/group-calm-redesign at 315b6e57 (gate fix)
+
+- User approval: merge of claude/group-calm-redesign 315b6e57 into #803; no visible change of its own; not seen by Paul. This entry repeats the marker above with unique lines, so the gate reads it.
+- Approved customer-visible result: #803 as in its own entries (pending, Paul reviews) plus the entries merged with 315b6e57; nothing else changes.
+- Scope: this approval record for the merge of 315b6e57. Pull request branch #803 only, not merged, not released.
+- What's new: none — merge of 315b6e57, no customer-visible change of its own
