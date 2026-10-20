@@ -7824,3 +7824,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #826 unchanged texts, dialogs and layout. After a firmware update whose only open point was the display stream, setup no longer stays on the dialog if frames arrive within about two minutes; all other attention results keep the dialog as before.
 - Scope: #826 `apps/control-center/src/components/setup/setup-connect.ts`, `apps/control-center/src/components/control-center-app.tsx` and the test `apps/control-center/src/components/setup/setup-wizard.test.tsx`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — #826 not announced to customers
+
+## 2026-10-20 — #829: a stream that only waits for an AI provider also counts as recovered (Codex review)
+
+- User approval: pending — #829 Codex fix, no new wording; not seen by Paul. Before → after: #829 a VibeTV whose stream runs but reports "no AI provider set up yet" (the normal state before the provider step) kept setup on the attention dialog → #829 setup treats it as a recovered stream, as the Companion's own firmware check already does.
+- Approved customer-visible result: #829 unchanged texts, dialogs and layout; setup continues after the firmware update also before a provider is chosen.
+- Scope: #829 `apps/control-center/src/components/control-center-types.ts` (+ test), `apps/control-center/src/components/control-center-app.tsx`, a lint fix in `apps/control-center/src/components/setup/setup-connect.ts`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #829 Codex fix not announced

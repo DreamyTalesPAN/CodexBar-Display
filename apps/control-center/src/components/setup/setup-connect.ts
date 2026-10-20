@@ -77,7 +77,9 @@ export function useSetupConnect(
   // stream watch left over from an earlier run never finishes a newer one.
   const runIdRef = useRef(0);
   const stepsRef = useRef(steps);
-  stepsRef.current = steps;
+  useEffect(() => {
+    stepsRef.current = steps;
+  }, [steps]);
   useEffect(
     () => () => {
       runIdRef.current += 1;

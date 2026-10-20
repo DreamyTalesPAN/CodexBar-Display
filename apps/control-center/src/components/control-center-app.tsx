@@ -68,6 +68,7 @@ import {
   providerSetupIsChecking,
   providerSetupNeedsEngineRecovery,
   providerSetupRequiresRecovery,
+  streamAwaitsProviderSetup,
   type ActiveTab,
   type AppearanceSection,
   type ApiError,
@@ -5404,7 +5405,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     },
     streamRecovered: async () => {
       const refreshed = await refreshDevice({ quiet: true });
-      return refreshed?.stream?.healthy === true;
+      return (
+        refreshed?.stream?.healthy === true ||
+        streamAwaitsProviderSetup(refreshed)
+      );
     },
     installFirmware: async (connected) => {
       lastFirmwareErrorRef.current = null;

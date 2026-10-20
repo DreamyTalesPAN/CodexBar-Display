@@ -17,6 +17,8 @@ import {
   providerSetupNeedsEngineRecovery,
   providerSetupRequiresRecovery,
   automaticPoolForEnabledProviders,
+  streamAwaitsProviderSetup,
+  type DeviceInfo,
 } from "./control-center-types";
 
 describe("device connection contract", () => {
@@ -742,5 +744,40 @@ describe("automaticPoolForEnabledProviders", () => {
   it("leaves a Manual provider that is missing from the inventory alone", () => {
     const manual = { ...automatic, mode: "fixed" as const, providerIds: ["retired"] };
     expect(automaticPoolForEnabledProviders(manual, ["claude"], ["codex"])).toBeNull();
+  });
+});
+
+describe("streamAwaitsProviderSetup", () => {
+  const device = {
+    target: "http://192.168.1.20",
+    stream: {
+      running: true,
+      healthy: false,
+      errorCode: "provider_setup_required",
+      target: "http://192.168.1.20",
+    },
+  } as DeviceInfo;
+
+  it("accepts a running stream to this VibeTV that only waits for a provider", () => {
+    expect(streamAwaitsProviderSetup(device)).toBe(true);
+  });
+
+  it("rejects a stopped stream, another error, or another VibeTV", () => {
+    expect(
+      streamAwaitsProviderSetup({ ...device, stream: { ...device.stream, running: false } }),
+    ).toBe(false);
+    expect(
+      streamAwaitsProviderSetup({
+        ...device,
+        stream: { ...device.stream, errorCode: "display_send_failed" },
+      }),
+    ).toBe(false);
+    expect(
+      streamAwaitsProviderSetup({
+        ...device,
+        stream: { ...device.stream, target: "http://192.168.1.21" },
+      }),
+    ).toBe(false);
+    expect(streamAwaitsProviderSetup(null)).toBe(false);
   });
 });

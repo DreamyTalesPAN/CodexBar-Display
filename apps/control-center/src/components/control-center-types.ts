@@ -712,6 +712,25 @@ export function legacyWiFiDeviceAnsweredCable(
 // A reachable VibeTV whose display stream is running for this exact device but
 // has no AI usage to draw. Mirrors providerSetupStreamForTarget on the
 // Companion side without letting an old stream error prove connectivity.
+/**
+ * The stream runs and reaches this VibeTV, but no AI provider is set up yet.
+ * The Companion's firmware verifier accepts this as proof that the stream came
+ * back (`providerSetupStreamForTarget` in display_render.go); the page must
+ * agree, or setup waits on a stream that is fine.
+ */
+export function streamAwaitsProviderSetup(
+  device: DeviceInfo | null | undefined,
+) {
+  const deviceTarget = comparableDeviceTarget(device?.target);
+  const streamTarget = comparableDeviceTarget(device?.stream?.target);
+  return (
+    device?.stream?.running === true &&
+    device.stream.errorCode === "provider_setup_required" &&
+    streamTarget !== "" &&
+    deviceTarget === streamTarget
+  );
+}
+
 export function deviceAwaitsProviderSetup(
   device: DeviceInfo | null | undefined,
 ) {
