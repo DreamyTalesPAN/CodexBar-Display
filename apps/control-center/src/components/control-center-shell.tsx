@@ -113,8 +113,9 @@ export function ControlCenterShell({
     }
     onTabChange(tab);
   };
-  // Usage: the page margin grows with the window (48 px up to 96 px), as in the
-  // template's frames "Usage" and "Usage at 1920 x 1080".
+  // Usage: the page margin grows with the window, 48 px up to 96 px (7197
+  // template point 3, 4cqw of the page area; "@container" is on SidebarInset).
+  // lg: too, because this shell still sets lg:px-10 on header and content.
   const growingMargin = activeTab === "usage";
   return (
     <SidebarProvider
@@ -151,11 +152,11 @@ export function ControlCenterShell({
           <SidebarRail />
         </Sidebar>
 
-        <SidebarInset className="control-center-shell control-center-shell__main min-w-0">
+        <SidebarInset className="@container control-center-shell control-center-shell__main min-w-0">
           <header className={cn(
               "control-center-shell__header flex min-h-[72px] items-center justify-between gap-4 bg-background px-4 py-3 md:h-[86px] md:px-6 lg:px-10 lg:py-0",
               growingMargin &&
-                "md:px-[clamp(48px,4vw,96px)] lg:px-[clamp(48px,4vw,96px)]",
+                "md:px-[clamp(48px,4cqw,96px)] lg:px-[clamp(48px,4cqw,96px)]",
             )}>
             <div className="flex min-w-0 items-center gap-3">
               <SidebarTrigger aria-label="Open navigation" className="shrink-0" />
@@ -172,7 +173,7 @@ export function ControlCenterShell({
             className={cn(
               "control-center-shell__content px-5 py-0 sm:px-7 lg:px-10",
               growingMargin &&
-                "md:px-[clamp(48px,4vw,96px)] lg:px-[clamp(48px,4vw,96px)]",
+                "md:px-[clamp(48px,4cqw,96px)] lg:px-[clamp(48px,4cqw,96px)]",
             )}
           >
             {children}

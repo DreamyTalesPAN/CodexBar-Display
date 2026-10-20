@@ -8715,3 +8715,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the merged #783 entries of 7197 points 2 and 3 (pending, Paul reviews); nothing else changes.
 - Scope: this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #783: Usage page margin is 4cqw of the page area, like Updates and Support (7197 review, point 3, margin expression)
+
+- User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #783 point 3 (Usage scaling), margin expression. Before → after: the growing page margin on Usage was 4 % of the window width (48 px up to 96 px) → it is 4 % of the page area beside the sidebar (still 48 px up to 96 px), the same expression the Updates and Support pages use; the look is the same at the clamp ends, a few pixels narrower in between.
+- Approved customer-visible result: the Usage page margin looks as drawn in frames "Usage" (#usage) and "Usage at 1920 x 1080" (#usage-large) of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #800: approval marker after merging claude/group-usage (4cqw margin, 7197 review point 3)
+
+- User approval: Merge of claude/group-usage (#783) into this branch, which brings the #783 entry "Usage page margin is 4cqw of the page area" (7197 point 3, margin expression); no visible change of its own in #800; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: as in the merged #783 entry of 7197 point 3 (pending, Paul reviews); nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own

@@ -103,8 +103,8 @@ describe("ControlCenterShell", () => {
           </ControlCenterShell>
         </TooltipProvider>,
       );
-    expect(render("usage")).toContain("lg:px-[clamp(48px,4vw,96px)]");
-    expect(render("settings")).not.toContain("clamp(48px,4vw,96px)");
+    expect(render("usage")).toContain("lg:px-[clamp(48px,4cqw,96px)]");
+    expect(render("settings")).not.toContain("clamp(48px,4cqw,96px)");
   });
 
   it("does not duplicate transient device status in the header", () => {
