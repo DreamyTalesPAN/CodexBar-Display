@@ -25,8 +25,9 @@ const uint8_t kLilygoEsp32S3Image[] = {
     0xe9, 0x05, 0x02, 0x4f, 0x80, 0x69, 0x37, 0x40,
     0xee, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00};
 
-// Start of the gzip stream the Companion uploads (.bin.gz). eboot unpacks it
-// at boot; its inner header is not visible to the upload handler.
+// Start of a gzip stream (.bin.gz). Its inner header is not visible to the
+// upload handler, and the Companion unpacks .bin.gz before a WiFi upload, so
+// the WiFi updater refuses it (Codex review on #828).
 const uint8_t kGzipImage[] = {0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 // Classic ESP32 app image: entry in the ESP32 IRAM at 0x40080000.
@@ -53,8 +54,8 @@ bool testImageStarts() {
   bool ok = true;
   ok &= expect(IsEsp8266FirmwareImageStart(kEsp8266Image, sizeof(kEsp8266Image)),
                "the released ESP8266 VibeTV image must be accepted");
-  ok &= expect(IsEsp8266FirmwareImageStart(kGzipImage, sizeof(kGzipImage)),
-               "the compressed .bin.gz the Companion sends must be accepted");
+  ok &= expect(!IsEsp8266FirmwareImageStart(kGzipImage, sizeof(kGzipImage)),
+               "a gzip upload must be rejected: its inner image cannot be checked first");
   ok &= expect(!IsEsp8266FirmwareImageStart(kLilygoEsp32S3Image, sizeof(kLilygoEsp32S3Image)),
                "the LilyGO ESP32-S3 release image must be rejected");
   ok &= expect(!IsEsp8266FirmwareImageStart(kEsp32Image, sizeof(kEsp32Image)),
