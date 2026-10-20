@@ -8729,3 +8729,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the merged #783 entry of 7197 point 3 (pending, Paul reviews); nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #800: approval marker commit for the merge of claude/group-usage (4cqw margin, 7197 review point 3)
+
+- User approval: Merge of claude/group-usage (#783) into this branch (7197 point 3, margin expression, #783 entry); no visible change of its own in #800; not seen by Paul. The UI review gate cannot read a merge commit as approval marker, so this record is its own commit after the merge.
+- Approved customer-visible result: as in the merged #783 entry of 7197 point 3 (pending, Paul reviews); nothing else changes.
+- Scope: this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
