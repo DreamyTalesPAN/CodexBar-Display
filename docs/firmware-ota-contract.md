@@ -75,8 +75,10 @@ The WiFi updater checks the first block of every upload before anything is
 staged (#652): a raw image must enter in the ESP8266 IRAM (`0x40100000` to
 `0x4010FFFF`), so an ESP32 image such as the LilyGO T-Display S3 build is
 rejected with `Update failed: not a VibeTV firmware image` and the VibeTV
-restarts on its current firmware. A gzip image (`.bin.gz`) passes; its
-contents stay covered by the sender-side manifest check.
+restarts on its current firmware. WiFi accepts only the unpacked image: a
+gzip image (`.bin.gz`) is refused the same way, because its inner header cannot
+be checked before the write. The Companion unpacks the release's `.bin.gz`
+before a WiFi upload; only the Cable path sends the compressed image.
 
 ## Current transports
 
