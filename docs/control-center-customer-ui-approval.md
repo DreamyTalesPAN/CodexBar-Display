@@ -7820,7 +7820,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-19 — Step lists: "Still … – hang tight." lines and no cursor block
 
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Step lists: "Still … – hang tight." lines and no cursor block
+- User approval: Paul, 19.10.2026 via the communicator: variant A, at most 5 "Still … – hang tight." lines every 8 s, calm look without cursor block.
 - Approved customer-visible result: while a setup step runs longer than 8 s, one more line "> Still <step in lower-case continuous form> – hang tight." is added under it every 8 s, up to 5 lines per step; a step that ends in a past tense gets "> Still working on it – hang tight."; the last sentence of a multi-sentence step text is used ("Upload interrupted. Retrying." → "> Still retrying – hang tight."); the running step no longer shows a blinking black cursor block at the end of the log, on every step list (theme install, device connection, welcome, provider loading). The providers screen keeps its own "still checking, hang tight" line every 20 s and gets no "Still" line.
   Before → after, example: theme install, "> Refreshing display stream." with a blinking black block after it → "> Refreshing display stream." then after 8 s "> Still refreshing display stream – hang tight.", after 16 s a second identical line, no block.
 - Scope: `apps/control-center/src/components/setup/setup-log.tsx`, `apps/control-center/src/components/setup/setup-log.test.tsx`, `apps/control-center/src/components/setup/setup-log-still.test.tsx` (new), `apps/control-center/src/components/setup/setup-providers-screen.tsx` (opt-out only), `apps/control-center/src/components/control-center-app.tsx` (comment only), `apps/control-center/src/app/globals.css` (unused caret keyframe removed). Pull request branch only, not merge or release.
@@ -7828,28 +7828,21 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-19 — Step lists: Codex review fix for the Still lines (no new approval)
 
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Step lists: Codex review fix for the Still lines (no new approval)
+- User approval: none for this fix itself. It narrows the approved result of the entry "Step lists: "Still … – hang tight." lines and no cursor block" above; Paul has not seen it separately.
 - Approved customer-visible result: as in the entry above, plus two details: a progress text with a colon ("Updating VibeTV: 40%.") gives "> Still updating VibeTV – hang tight." without the percentage, and a step that is retried starts its Still lines from zero.
 - Scope: `apps/control-center/src/components/setup/setup-log.tsx`, `apps/control-center/src/components/setup/setup-log-still.test.tsx`. Pull request branch only, not merge or release.
 - What's new: none — review fix inside the approved step-line change.
 
 ## 2026-10-19 — Step lists: second Codex review fix for the Still lines (no new approval)
 
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Step lists: second Codex review fix for the Still lines (no new approval)
+- User approval: none for this fix itself. It narrows the approved result of the entry "Step lists: "Still … – hang tight." lines and no cursor block" above; Paul has not seen it separately.
 - Approved customer-visible result: as in the entry above. Only the counting changes: a restored log that reuses a line's position for a new step starts its Still lines from zero; a past-tense word inside a running step ("Checking installed firmware.") no longer gets the generic line.
 - Scope: `apps/control-center/src/components/setup/setup-log.tsx`, `apps/control-center/src/components/setup/setup-log-still.test.tsx`. Pull request branch only, not merge or release.
 - What's new: none — review fix inside the approved step-line change.
 
 ## 2026-10-20 — #813: approval marker after merging main
 
-- User approval: no visible change – UI approval not needed (merge commit into #813; no visible change of its own; entry: #813: approval marker after merging main)
+- User approval: Merge of main into this branch; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
-
-## 2026-10-20 — #813: Paul's approval of build 7198 recorded
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" — #813 approval record for build 7198 (everything except the Appearance cards #802); the #813 entries above now carry it, merge markers are marked as no visible change, entries added after build 7198 stay pending.
-- Approved customer-visible result: #813 as described in its entries above, as seen in build 7198.
-- Scope: #813 this approval record only. Pull request branch only, not merged, not released.
-- What's new: none — #813 approval record only
