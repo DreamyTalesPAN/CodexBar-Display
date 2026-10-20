@@ -185,8 +185,13 @@ export function UpdatesScreen({
   // enterable from here).
   const firmwareUpdateBlocked =
     vibetvUpdateAvailable && (macAppMustUpdateFirst || checkingMacApp);
+  // A required migration with nothing verified to download keeps the firmware
+  // locked above, but it is no update the customer can take: no "Update
+  // available" beside a closed button (Codex review on #798).
+  const macAppDownloadOffered =
+    macAppDownloadAction && !(requiresMacAppMigration && !verifiedDmgDownloadUrl);
   const anyUpdateAvailable =
-    vibetvUpdateAvailable || macAppDownloadAction || macAppNativeAction;
+    vibetvUpdateAvailable || macAppDownloadOffered || macAppNativeAction;
   const refreshing = busyAction === "firmware-check";
   const installingUpdate = updateStatus
     ? updateStatus.phase === "installing"

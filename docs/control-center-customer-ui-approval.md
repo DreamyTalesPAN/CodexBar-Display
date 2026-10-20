@@ -10220,3 +10220,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #781 Theme Studio header with a notice and the Color palette as in the 7197 template (picture 06-farbwahl), at 960, 1200 and 1920 px.
 - Scope: #781 `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, `apps/control-center/src/components/theme-studio/editor-fields.tsx`, their tests and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #781 layout fixes not announced
+
+## 2026-10-20 — #798: a blocked Mac App migration never says "Update available" (Codex review)
+
+- User approval: pending — #798 Codex fix, no new wording; the rendered result is pending Paul's review. Before → after: #798 a legacy Mac App outside /Applications whose required migration has no download (missing or disabled) said "Update available" with the ink dot beside a closed Update button when the release was newer → #798 it says "No update available" with the muted dot, as for the same case without a newer release; the firmware stays locked until the Mac App is updated.
+- Approved customer-visible result: #798 the Updates heading never offers an update the customer cannot take.
+- Scope: #798 `apps/control-center/src/components/updates-screen.tsx`, its calm test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #798 Codex fix not announced
