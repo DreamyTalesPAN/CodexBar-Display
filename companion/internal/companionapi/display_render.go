@@ -11,6 +11,15 @@ import (
 
 var firmwareHealthVerifyTime = 30 * time.Second
 
+// displayStreamWaitTime is how long a normal restart waits for the first frame.
+var displayStreamWaitTime = 30 * time.Second
+
+// firmwareStreamVerifyTime is how long the check after a firmware update waits
+// for the first frames. The runtime holds its device writes for the whole
+// update, and its next frame can land a full 30 s interval after the update
+// ends (issue #826), so the normal wait is too short to judge the stream.
+var firmwareStreamVerifyTime = 90 * time.Second
+
 type displayVerification struct {
 	Token        string
 	FullCount    uint64
