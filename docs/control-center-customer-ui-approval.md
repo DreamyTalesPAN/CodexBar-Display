@@ -5,6 +5,13 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-10-20 — Mac: a background service blocked by macOS sends the customer to a new download (#626)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 11:43: "ja" (to "Passt das so für dich? Mit „#827 ja“ wird es nach den Tests gemergt.", picture heute-vs-pr827.png); text and buttons before that by Marcus 75a, 20.10.2026 (question 75).
+- Approved customer-visible result: when macOS kills VibeTV's background service because this copy of the app is signed differently from the copy that first registered it ("Launch Constraint Violation" in the helper's crash report), the native start screen shows the title "macOS blocked VibeTV’s background service", the text "This copy of VibeTV is signed differently from the one your Mac first allowed. Quit VibeTV, move it to the Trash, then download it again from vibetv.shop and open it.", the primary button "Download VibeTV again" (opens the existing download page), and the usual "Create report" and "Open support log". "Restart service" is not offered on this screen. Every other service start failure keeps its current screen. The native support report gains the field `launchBlockedBySignatureLast24Hours`.
+- Scope: `macos/VibeTVControlCenter/main.swift`, `URLSchemeTests.swift`, `scripts/test-macos-control-center-app-bundle.sh`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a recovery screen only for copies signed differently from the official app, not announced to customers
+
 ## 2026-10-16 — Subscription providers first in the provider list (#651)
 
 - User approval: Marcus, 16.10.2026, channel Abstimmungschat (question 27, answer "ja").
@@ -7817,6 +7824,33 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: unchanged.
 - Scope: merge of `origin/main` into this pull request branch, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no customer-visible change
+
+## 2026-10-20 — #827: Paul's approval of the "macOS blocked VibeTV's background service" screen
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 11:43: "ja" — #827 picture "App heute (main) | App mit PR #827" (heute-vs-pr827.png).
+- Approved customer-visible result: #827 the native start screen for a background service killed by macOS for a different signature, exactly as in the entry "a background service blocked by macOS sends the customer to a new download (#626)" above.
+- Scope: #827 this approval record only (records Paul's approval of the entry above). Pull request branch only, not merged, not released.
+- What's new: none — #827 approval record only
+## 2026-10-19 — A slow provider check finishes instead of timing out (#786)
+
+- User approval: Marcus, 19.10.2026, question 64 via the orchestrator, answer "ja": a single provider check may take up to 90 s, after at most 50 s the row shows that it is being checked, the result arrives on its own, and the check of all providers keeps its 40 s.
+- Approved customer-visible result: When a customer switches one provider on or clicks "Check again" on it, that provider's check may now take up to 90 seconds before the row reports "The provider check timed out.", on the Mac and on Windows, instead of 40 seconds. If the check still runs after 50 seconds, "Check again" ends and the row shows that the provider is being checked until the result arrives; the row then shows the result without another click. A Mac whose only Claude sign-in is Claude Code (about 55 seconds through CodexBar) ends with Claude working instead of the timeout. No copy, layout or control changes; the check of all providers at once keeps its 40 seconds.
+- Scope: `companion/internal/codexbar/providers.go`, `provider_setup.go`, `companion/internal/companionapi/provider_setup.go`, `preferences.go`, their tests, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a check that now finishes needs no notice
+
+## 2026-10-20 — #805: approval marker after merging main at b74db67b
+
+- User approval: merge of main (b74db67b) into #805; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: #805 as in its own entries (pending, Paul reviews) plus the entries merged with b74db67b; nothing else changes.
+- Scope: the merge of b74db67b and this approval record. Pull request branch #805 only, not merged, not released.
+- What's new: none — merge of b74db67b, no customer-visible change of its own
+
+## 2026-10-20 — #827: approval marker for the merge 02905756 of main
+
+- User approval: no visible change – UI approval not needed (#827 merge 02905756 of main; the merged entries keep their own approvals)
+- Approved customer-visible result: #827 merge 02905756 as in this branch's entries and the merged ones; nothing else changes.
+- Scope: #827 merge 02905756 and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #827 merge 02905756 has no customer-visible change of its own
 
 ## 2026-10-19 — Theme tags in the catalog (data only, #793)
 - User approval: none needed; data only, no visible change; not seen by Paul. The Features and Providers filter groups come in the later Appearance filter PR and need his yes there.
