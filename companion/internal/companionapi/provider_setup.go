@@ -583,11 +583,9 @@ func (s *Server) finishProviderRetry(providerID string, providerRevision uint64,
 }
 
 // whileProviderRevision runs follow only if the provider's revision is still
-// the given one, and holds back the log entry of a switch of the provider
-// until follow is done: the switch takes providerFollowupMu after it changed
-// the revision (awaitProviderFollowups) and logs its own step only then. So a
-// follow-up either sees the new revision and does nothing, or finishes before
-// the switch is logged. providerPreferences.mu is not held while follow runs,
+// the given one. A provider switch holds providerFollowupMu while it applies
+// the change, so a follow-up either sees the new revision and does nothing,
+// or finishes before the switch is applied at all. providerPreferences.mu is not held while follow runs,
 // because it writes the setup log. It returns false when follow did not run.
 func (s *Server) whileProviderRevision(providerID string, providerRevision uint64, follow func()) bool {
 	s.providerFollowupMu.Lock()
@@ -595,17 +593,11 @@ func (s *Server) whileProviderRevision(providerID string, providerRevision uint6
 	if s.currentProviderRevision(providerID) != providerRevision {
 		return false
 	}
+	if s.providerFollowupHeldHook != nil {
+		s.providerFollowupHeldHook()
+	}
 	follow()
 	return true
-}
-
-// awaitProviderFollowups waits for a follow-up that passed its revision check
-// before the caller changed the revision. A follow-up that starts later sees
-// the new revision and does nothing.
-func (s *Server) awaitProviderFollowups() {
-	s.providerFollowupMu.Lock()
-	//lint:ignore SA2001 the empty section is the point: it waits until a running follow-up has finished.
-	s.providerFollowupMu.Unlock()
 }
 
 // followProviderRetry logs what the check found and lets the usage service

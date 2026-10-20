@@ -165,6 +165,17 @@ func (a providerPreferenceAdapter) Write(ctx context.Context, settingID string, 
 		return preferenceDescriptor{}, errors.New("provider preference requires boolean")
 	}
 
+	// The switch and a check follow-up exclude each other (Codex on #805): a
+	// follow-up that passed its revision check finishes before this switch is
+	// applied, and one that starts later sees the new revision and stands down.
+	// Lock order everywhere: providerFollowupMu, then providerPreferences.mu.
+	a.server.providerFollowupMu.Lock()
+	followupLocked := true
+	defer func() {
+		if followupLocked {
+			a.server.providerFollowupMu.Unlock()
+		}
+	}()
 	a.server.providerPreferences.mu.Lock()
 	settings, err := a.server.providerSettingsLocked(ctx, false)
 	if err != nil {
@@ -221,12 +232,11 @@ func (a providerPreferenceAdapter) Write(ctx context.Context, settingID string, 
 		}
 	}
 	a.server.providerPreferences.mu.Unlock()
+	a.server.providerFollowupMu.Unlock()
+	followupLocked = false
 	if descriptor.ID == "" {
 		return preferenceDescriptor{}, errPreferenceNotFound
 	}
-	// A check follow-up that already passed its revision check finishes before
-	// this switch is logged; a later one sees the new revision and stands down.
-	a.server.awaitProviderFollowups()
 	// Logged before the check starts, so the switch always precedes its result.
 	choice := descriptor.Label + " turned off."
 	if enabled {

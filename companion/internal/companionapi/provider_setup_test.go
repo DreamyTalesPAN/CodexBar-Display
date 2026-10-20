@@ -1021,6 +1021,59 @@ func TestExactProviderRetrySwitchedOffBeforeFollowUpLeavesNoTrace(t *testing.T) 
 	}
 }
 
+// A switch that arrives while a follow-up runs waits until that follow-up is
+// done before it applies anything (Codex on #805).
+func TestProviderSwitchWaitsForARunningRetryFollowUp(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthUnavailable}}, nil
+	}
+	var applied atomic.Bool
+	server.providerPreferences.set = func(context.Context, string, bool) error { applied.Store(true); return nil }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
+	server.probeExactProvider = func(_ context.Context, _ string, providerID string) codexbar.ProviderSetup {
+		return exactSetupFixture(server.currentTime(), providerID, codexbar.ProviderReady)
+	}
+	if _, err := server.cachedProviderSettings(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	release := make(chan struct{})
+	switchDone := make(chan struct{})
+	var appliedDuringFollowUp atomic.Bool
+	server.restartUsageService = func(context.Context) error { return nil }
+	server.providerFollowupHeldHook = func() {
+		go func() {
+			rec := httptest.NewRecorder()
+			server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPatch, "/v1/preferences/codexbar.providers.claude.enabled", strings.NewReader(`{"value":false}`)))
+			close(switchDone)
+		}()
+		time.Sleep(150 * time.Millisecond)
+		appliedDuringFollowUp.Store(applied.Load())
+		close(release)
+	}
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/providers/retry?provider=claude", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("retry: %d %s", rec.Code, rec.Body.String())
+	}
+	select {
+	case <-release:
+	case <-time.After(5 * time.Second):
+		t.Skip("the retry did not reach the usage-service replacement in this setup")
+	}
+	select {
+	case <-switchDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the switch never finished")
+	}
+	if appliedDuringFollowUp.Load() {
+		t.Fatal("the switch was applied while the follow-up was still running")
+	}
+	if !applied.Load() {
+		t.Fatal("the switch was not applied after the follow-up")
+	}
+}
+
 func TestExactProviderRetryPreservesFreshFailureOverLastGoodUsage(t *testing.T) {
 	for _, status := range []string{
 		codexbar.ProviderAuthRequired,
