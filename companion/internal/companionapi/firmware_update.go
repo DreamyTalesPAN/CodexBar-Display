@@ -1424,6 +1424,7 @@ func (s *Server) cachedRescueTarget(board, installedFirmware string) (string, bo
 	}
 	port, present := s.rescueMarkerPort(marker)
 	if !present ||
+		strings.TrimSpace(marker.ChipMAC) == "" ||
 		!strings.EqualFold(strings.TrimSpace(marker.Board), strings.TrimSpace(board)) ||
 		strings.TrimSpace(marker.Firmware) != strings.TrimSpace(installedFirmware) ||
 		!firmwareupdate.RescueImageIntact(marker) {

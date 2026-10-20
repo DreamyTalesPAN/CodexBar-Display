@@ -171,7 +171,9 @@ func (s *Server) rescueMarkerPort(marker firmwareupdate.RescueMarker) (string, b
 // update reaches it, through the ROM loader on that port.
 func (s *Server) halfWrittenRescueEntry(responding []usb.CableDevice) (deviceSearchEntry, bool) {
 	marker, ok := firmwareupdate.LoadRescueMarker(s.home, time.Now())
-	if !ok {
+	// A marker without a chip identity is not resumed, so it is not offered
+	// either (Codex on #840).
+	if !ok || strings.TrimSpace(marker.ChipMAC) == "" {
 		return deviceSearchEntry{}, false
 	}
 	port, present := s.rescueMarkerPort(marker)

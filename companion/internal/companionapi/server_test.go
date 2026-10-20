@@ -15429,6 +15429,7 @@ func TestDeviceSearchOffersAHalfWrittenVibeTVForItsRescue(t *testing.T) {
 				}
 			}
 			if err := firmwareupdate.SaveRescueMarker(server.home, firmwareupdate.RescueMarker{
+				ChipMAC: "0000aabb11223344",
 				Port: "COM4", Ports: []string{"COM1", "COM4"}, Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
 				ImagePath: imagePath, ImageSHA256: hex.EncodeToString(sum[:]), WriteStartedAt: time.Now().Add(-tc.age),
 			}); err != nil {
@@ -15471,6 +15472,7 @@ func TestFirmwareLatestNamesTheCachedRescueTarget(t *testing.T) {
 	}
 	sum := sha256.Sum256([]byte("cable firmware"))
 	if err := firmwareupdate.SaveRescueMarker(server.home, firmwareupdate.RescueMarker{
+		ChipMAC: "0000aabb11223344",
 		Port: "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
 		ImagePath: imagePath, ImageSHA256: hex.EncodeToString(sum[:]), WriteStartedAt: time.Now().Add(-time.Minute),
 	}); err != nil {
@@ -15519,6 +15521,7 @@ func TestFirmwareLatestNamesTheCachedRescueTarget(t *testing.T) {
 	// rescue's board and firmware (Codex review on #819).
 	cabled := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "other"})
 	if err := firmwareupdate.SaveRescueMarker(cabled.home, firmwareupdate.RescueMarker{
+		ChipMAC: "0000aabb11223344",
 		Port: "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
 		ImagePath: imagePath, ImageSHA256: hex.EncodeToString(sum[:]), WriteStartedAt: time.Now().Add(-time.Minute),
 	}); err != nil {
@@ -15585,6 +15588,7 @@ func TestFirmwareLatestRescueCheckDoesNotProbeDuringAnUpdate(t *testing.T) {
 	}
 	sum := sha256.Sum256([]byte("cable firmware"))
 	if err := firmwareupdate.SaveRescueMarker(server.home, firmwareupdate.RescueMarker{
+		ChipMAC: "0000aabb11223344",
 		Port: "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
 		ImagePath: imagePath, ImageSHA256: hex.EncodeToString(sum[:]), WriteStartedAt: time.Now().Add(-time.Minute),
 	}); err != nil {
