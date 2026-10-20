@@ -8019,3 +8019,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet; waits for Paul's review of the rendered result. See the entries above.
 - Scope: `apps/control-center/src/components/setup/setup-display-mode-screen.tsx`, `apps/control-center/src/components/setup/setup-display-theme-tiles.tsx`, `apps/control-center/src/components/setup/setup-display-previews.ts`, `apps/control-center/src/components/setup/setup-wizard.tsx`, `apps/control-center/src/components/setup/setup-preview-gallery.tsx`, `apps/control-center/src/components/live-vibetv-preview.tsx` (type and helper exports only) and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #821: setup step 11 tiles show known zero token totals as 0 (Codex review on #821)
+
+- User approval: pending — Paul reviews #821 (Codex review fix); before → after in the #821 setup tiles: a token-counter theme showed "--" for providers whose token history was read and is zero → it shows 0, as the VibeTV does. Nothing else in #821 changes.
+- Approved customer-visible result: #821 setup step 11 tiles show the same token totals as the VibeTV.
+- Scope: `apps/control-center/src/components/setup/setup-display-previews.ts`, its test and this approval record for #821. Pull request branch only, not merged, not released.
+- What's new: none — #821 token-total fix, no new content

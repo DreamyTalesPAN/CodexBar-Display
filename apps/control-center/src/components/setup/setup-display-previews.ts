@@ -14,6 +14,7 @@ import type { SetupDisplayModePreview } from "./setup-display-mode-screen";
  */
 export function displayFrameFor(
   provider: UsageProviderInfo,
+  tokenUsageReady = false,
 ): DisplayFrame | null {
   if (provider.stale === true || provider.usageUnavailable === true) {
     return null;
@@ -52,6 +53,9 @@ export function displayFrameFor(
     sessionTokens: provider.sessionTokens,
     weekTokens: provider.weekTokens,
     totalTokens: provider.totalTokens,
+    // /v1/usage leaves zero token totals out once the token history is read;
+    // the snapshot's readiness says those zeros are known (Codex on #821).
+    ...(tokenUsageReady ? { tokenTotalsKnown: true } : {}),
   };
 }
 
@@ -65,12 +69,13 @@ export function displayFrameFor(
 export function displayPreviewFor(
   provider: UsageProviderInfo | undefined,
   now = new Date(),
+  tokenUsageReady = false,
 ): SetupDisplayModePreview | null {
   if (!provider) {
     return null;
   }
   const unavailable = provider.stale === true || provider.usageUnavailable === true;
-  const frame = displayFrameFor(provider);
+  const frame = displayFrameFor(provider, tokenUsageReady);
   return {
     providerLabel: provider.label,
     ...(frame ? { frame, frameAt: provider.collectedAt } : {}),
@@ -113,7 +118,7 @@ export function displayPreviewsFor(
   );
   return providers.map(
     (provider) =>
-      displayPreviewFor(reported.get(provider.id)) ?? {
+      displayPreviewFor(reported.get(provider.id), new Date(), usage?.tokenUsageReady === true) ?? {
         providerLabel: provider.label,
         resetLabel: null,
         windows: [],

@@ -117,6 +117,16 @@ describe("displayPreviewFor: the frame the theme draws", () => {
   });
 });
 
+describe("displayPreviewsFor: token totals the usage service already read", () => {
+  it("marks zero token totals as known once the snapshot's token history is ready", () => {
+    // /v1/usage leaves all-zero totals out but sets tokenUsageReady (Codex on #821).
+    const ready = { tokenUsageReady: true, providers: [provider({ id: "codex", label: "Codex" })] } as UsageSnapshot;
+    const notReady = { providers: [provider({ id: "codex", label: "Codex" })] } as UsageSnapshot;
+    expect(displayPreviewsFor(ready, [{ id: "codex", label: "Codex" }])[0]?.frame?.tokenTotalsKnown).toBe(true);
+    expect(displayPreviewsFor(notReady, [{ id: "codex", label: "Codex" }])[0]?.frame?.tokenTotalsKnown).toBeUndefined();
+  });
+});
+
 describe("displayPreviewsFor", () => {
   const usage = {
     providers: [
