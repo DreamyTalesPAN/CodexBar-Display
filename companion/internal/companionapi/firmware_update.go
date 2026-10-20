@@ -669,7 +669,10 @@ func (s *Server) verifyCableFirmwareUpdateResult(ctx context.Context, jobID stri
 
 	s.setFirmwareUpdateStage(jobID, "verifying_render")
 	if last, err := s.waitForVerifiedCableDisplayRender(ctx, port, hello.DeviceID, cfg.DeviceToken, health, stream); err != nil {
-		if !unchangedLivePicture(health, last) {
+		// Only a fresh read that found the counters unchanged qualifies; a read
+		// that failed afterwards (cable gone) keeps the attention result (Codex
+		// review on #838).
+		if !errors.Is(err, errDisplayRenderNotAdvanced) || !unchangedLivePicture(health, last) {
 			return firmwareAttentionOutcome("render"), "Firmware is current, but the picture could not be verified.", nil
 		}
 		s.appendFirmwareUpdateDiagnostic(jobID, "render: live picture unchanged since the stream restart")

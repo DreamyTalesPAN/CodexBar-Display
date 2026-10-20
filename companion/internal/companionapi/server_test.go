@@ -12626,7 +12626,7 @@ func TestFirmwareUpdateCableAcceptsUnchangedLivePicture(t *testing.T) {
 			server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
 				health := livePicture()
 				tc.after(&health)
-				return health, errors.New("display render not ready: render counters did not advance")
+				return health, fmt.Errorf("display render not ready: %w", errDisplayRenderNotAdvanced)
 			}
 			server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
 				_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"verifying_health","phase":"complete","outcome":"already_current","firmware":"1.0.41","observedFirmware":"1.0.41","target":"cable://vibetv","deviceId":"device-cable-update","artifactValidated":true,"helloVerified":true}`+"\n")
@@ -15452,5 +15452,34 @@ func TestStatusAndDiagnosticsCarrySystemBusy(t *testing.T) {
 		if got["since"] != "2026-10-14T09:13:00Z" || got["memoryPressure"] != "warn" || got["swapUsedMB"] != float64(23040) || got["load1"] != float64(214) {
 			t.Fatalf("%s: systemBusy = %v", endpoint, got)
 		}
+	}
+}
+
+// An unchanged live picture may only stand in for a fresh, successful read:
+// when the last read fails (cable gone), the error must not qualify (Codex on #838).
+func TestDisplayRenderUnchangedOnlyFromAFreshRead(t *testing.T) {
+	full, partial := uint64(5), uint64(2)
+	baseline := deviceHealth{OK: true}
+	baseline.Render.FullCount = &full
+	baseline.Render.PartialCount = &partial
+	baseline.Render.LastKind = "usage"
+
+	reads := 0
+	_, err := waitForDisplayRenderWithHealthReader(context.Background(), cableDeviceTarget, baseline, displayStreamInfo{}, func() (deviceHealth, error) {
+		reads++
+		if reads == 1 {
+			return baseline, nil
+		}
+		return deviceHealth{}, errors.New("serial port gone")
+	})
+	if err == nil || errors.Is(err, errDisplayRenderNotAdvanced) {
+		t.Fatalf("a failed last read must not count as unchanged counters: %v", err)
+	}
+
+	_, err = waitForDisplayRenderWithHealthReader(context.Background(), cableDeviceTarget, baseline, displayStreamInfo{}, func() (deviceHealth, error) {
+		return baseline, nil
+	})
+	if !errors.Is(err, errDisplayRenderNotAdvanced) {
+		t.Fatalf("fresh unchanged reads must report errDisplayRenderNotAdvanced: %v", err)
 	}
 }
