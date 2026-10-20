@@ -5420,6 +5420,12 @@ async function testProviderlessInstallKeepsTheCompanionOutcome(
   const companion = await routeCompanionOnline(page, installRequests, () => {}, {
     installStatusSequence: [
       {
+        phase: "installing",
+        message: "Uploading theme files.",
+        progress: 60,
+        logs: ["Preparing theme files.", "Uploading theme files."],
+      },
+      {
         phase: "complete",
         message: awaitingProvider,
         progress: 100,
@@ -5446,7 +5452,19 @@ async function testProviderlessInstallKeepsTheCompanionOutcome(
   // Paul, 20.10.2026: a dialog or a sentence only when the customer has to do
   // something. The theme appears by itself once usage is there, so the caveat
   // is not shown at all; the card only stops saying "Installing".
-  await page.getByRole("button", { name: /Installing/ }).first().waitFor({ timeout: 10_000 }).catch(() => {});
+  // The install is observed before its end is checked: the card shows
+  // "Installing", or the Companion has served the first status, and the
+  // Companion has then served the completion. A timeout here fails the check.
+  await waitForCondition(
+    async () =>
+      companion.themeInstallStatusRequests() >= 1 ||
+      (await page.getByRole("button", { name: /Installing/ }).count()) > 0,
+    "The install was never observed in progress",
+  );
+  await waitForCondition(
+    () => companion.themeInstallStatusRequests() >= 2,
+    "The Companion's completion of the install was never served",
+  );
   await page.waitForFunction(
     () => ![...document.querySelectorAll("button")].some((b) => /Installing/.test(b.textContent || "")),
     null,
@@ -12678,6 +12696,9 @@ async function routeCompanionOnline(
     setThemeInstallJob(nextJob) {
       activeInstallJobId = nextJob?.id || "";
       currentStatusThemeInstallJob = nextJob;
+    },
+    themeInstallStatusRequests() {
+      return installStatusIndex;
     },
   };
 }
