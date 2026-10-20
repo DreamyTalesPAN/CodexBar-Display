@@ -391,13 +391,13 @@ describe("SetupProvidersScreen", () => {
       onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
       pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
-    expect(within(screen.getByRole("dialog")).getByText("GitHub Copilot needs its own app")).toBeTruthy();
+    expect(within(screen.getByRole("dialog")).getByText("GitHub Copilot needs a GitHub sign-in")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "OK" }));
     expect(within(screen.getByRole("dialog")).getByText("OpenAI")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "OK" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Show provider message for GitHub Copilot" }));
-    expect(within(screen.getByRole("dialog")).getByText("GitHub Copilot needs its own app")).toBeTruthy();
+    expect(within(screen.getByRole("dialog")).getByText("GitHub Copilot needs a GitHub sign-in")).toBeTruthy();
   });
 
   // The Companion can start the sign-in of these four only; every other
@@ -431,7 +431,7 @@ describe("SetupProvidersScreen", () => {
     expect(dialog.getAllByRole("button").map((button) => button.textContent))
       .toEqual(["Close", "Open setup guide"]);
     // Frame 39 of the template: "<Provider> needs its own app", Close beside the guide.
-    expect(dialog.getByRole("heading", { name: "GitHub Copilot needs its own app" })).toBeTruthy();
+    expect(dialog.getByRole("heading", { name: "GitHub Copilot needs a GitHub sign-in" })).toBeTruthy();
     fireEvent.click(dialog.getByRole("button", { name: "Open setup guide" }));
     expect(onOpenSetupGuide).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -447,7 +447,7 @@ describe("SetupProvidersScreen", () => {
       [claudeSignedOut, vi.fn(), "Sign in to Claude so VibeTV can read its usage.", "Claude"],
       // Only the own-app case is drawn in the template; the others keep the provider's name.
       [timedOut, vi.fn(), "GitHub Copilot did not answer in time, and VibeTV tries again by itself.", "GitHub Copilot"],
-      [signedOut, undefined, "VibeTV can't read GitHub Copilot until the GitHub Copilot app is installed and running.", "GitHub Copilot needs its own app"],
+      [signedOut, undefined, "VibeTV can't read GitHub Copilot until the GitHub Copilot app is installed and running.", "GitHub Copilot needs a GitHub sign-in"],
     ] as const) {
       const { unmount } = renderDom(<SetupProvidersScreen usage={usage} providers={[item]}
         onOpenSetupGuide={guide} onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}

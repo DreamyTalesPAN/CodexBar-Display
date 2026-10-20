@@ -8523,3 +8523,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #784 every keyboard focus ring (input, select, button, checkbox, switch, tab) in the template's --ring colour, 2 px, keyboard-only.
 - Scope: #784 `apps/control-center/src/app/globals.css` (--ring), its test `globals.focus-ring.test.ts`, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #784 focus ring colour not announced
+
+## 2026-10-20 — #784: the Copilot popup heading says it needs a GitHub sign-in
+
+- User approval: pending — #784 Copilot heading as decided by the communicator on 20.10.2026 (text decision for Paul's 7198 review); Paul sees it in build 7198. Before → after: #784 the Copilot popup in setup said "GitHub Copilot needs its own app" above a text about a GitHub sign-in → #784 "GitHub Copilot needs a GitHub sign-in".
+- Approved customer-visible result: #784 the Copilot popup heading matches its sentence; every other provider keeps "<Provider> needs its own app" or its name.
+- Scope: #784 `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #784 Copilot heading not announced
