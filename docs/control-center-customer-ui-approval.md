@@ -8561,55 +8561,55 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-19 — Support: "n of 6 passed" and a Fix link for the usage engine (#795)
 
-- User approval: pending — Paul reviews (Support "Fix" + "n of 6 passed" as drawn in the approved master "Calm Redesign - alle Screens", frame 11, #795); look unchanged except: before, Diagnostics showed only "Run diagnostics" and no check had a Fix link; after, a muted "n of m passed" (the real count of the last run) stands left of "Run diagnostics", and a failing usage engine row shows an underlined "Fix" link at its right end that starts the same usage engine repair as the existing "Repair" button. Other checks show no Fix link.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Support: "n of 6 passed" and a Fix link for the usage engine (#795)
 - Approved customer-visible result: none yet; waits for Paul's yes.
 - Scope: `apps/control-center/src/components/diagnostics-panel.tsx`, `apps/control-center/src/components/diagnostics-panel.test.tsx` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no new content
 
 ## 2026-10-19 — Support: Fix only for a failing usage engine check (#795, Codex fix)
 
-- User approval: pending — Paul reviews (Support "Fix" + "n of 6 passed" as drawn in the approved master "Calm Redesign - alle Screens", frame 11, #795); look unchanged except: before (this PR's first version), a usage engine check that had not been checked yet (attention) also showed a "Fix" link; after, "Fix" shows only for a failing usage engine check. The "n of m passed" counter and the rest are as in the entry above.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Support: Fix only for a failing usage engine check (#795, Codex fix)
 - Approved customer-visible result: none yet; waits for Paul's yes.
 - Scope: `apps/control-center/src/components/diagnostics-panel.tsx` and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no new content
 
 ## 2026-10-19 — #803: approval marker after merging the calm redesign base (Support Fix link)
 
-- User approval: Merge of the calm redesign base (#784 incl. main with #638) into this branch; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- User approval: no visible change – UI approval not needed (merge commit into #803; no visible change of its own; entry: #803: approval marker after merging the calm redesign base (Support Fix link))
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
 
 ## 2026-10-19 — #803: approval marker after merging the calm redesign base again (Support QA)
 
-- User approval: Merge of the newest calm redesign base (#784 with the Support QA fixes) into this branch; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- User approval: no visible change – UI approval not needed (merge commit into #803; no visible change of its own; entry: #803: approval marker after merging the calm redesign base again (Support QA))
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
 
 ## 2026-10-19 — #803: Codex fix, Diagnostics header wraps on a narrow window
 
-- User approval: pending — Paul reviews (Codex review fix); look unchanged except, before → after: on a narrow window (below about 345 px of content width) the count "n of m passed" and the Run diagnostics button wrap onto a second line under the Diagnostics heading → before they stay on one line and the button can be clipped; at normal widths nothing changes.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #803: Codex fix, Diagnostics header wraps on a narrow window — before → after: on a narrow window (below about 345 px of content width) the count "n of m passed" and the Run diagnostics button wrap onto a second line under the Diagnostics heading → before they stay on one line and the button can be clipped; at normal widths nothing changes.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/diagnostics-panel.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
 ## 2026-10-19 — #803: approval marker after merging the newest calm redesign base (Theme Studio header)
 
-- User approval: pending — Paul reviews (#803 merged with the newest #784 head, 9c18d75f); look unchanged except what the #784 entries and this PR's Support entries describe; no new visible change of its own.
+- User approval: no visible change – UI approval not needed (merge commit into #803; no visible change of its own; entry: #803: approval marker after merging the newest calm redesign base (Theme Studio header))
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: merge of origin/claude/group-calm-redesign (#784, 9c18d75f) into this branch, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
 ## 2026-10-19 — #803: merge of the #784 outage-dialog fix, no change of its own
 
-- User approval: none needed — no visible change: this commit only merges the calm redesign base (#784) with its fix that makes the grey backdrop of the outage dialogs take no clicks; nothing of this pull request's own look changes.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #803: merge of the #784 outage-dialog fix, no change of its own
 - Approved customer-visible result: none; no visible change.
 - Scope: merge of `origin/claude/group-calm-redesign` (`apps/control-center/src/components/setup/setup-recovery-dialogs.tsx`, its test, the flow comment) and this approval record. Pull request branch only, not merged, not released.
 
 ## 2026-10-20 — #803: merge of the #784 build 2b QA fixes, no change of its own
 
-- User approval: none needed — no visible change of its own: this commit only merges the calm redesign base (#784) with its build 2b QA fixes (the 3D VibeTV frame, no sidebar toggle beside Updates and Support, plain radio rows in the device picker), which carry their own approval entries above; nothing of this pull request's own look changes.
+- User approval: no visible change – UI approval not needed (merge commit into #803; no visible change of its own; entry: #803: merge of the #784 build 2b QA fixes, no change of its own)
 - Approved customer-visible result: none; no visible change.
 - Scope: merge of `origin/claude/group-calm-redesign` (`apps/control-center/src/components/vibetv-3d-preview.tsx`, `overview-screen.tsx`, `control-center-shell.tsx`, `setup/setup-device-dialogs.tsx` and their tests) and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
@@ -8652,21 +8652,21 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-20 — #803: approval marker after merging claude/group-calm-redesign at fd754339
 
-- User approval: merge of claude/group-calm-redesign (fd754339, #784 points 1, 4, 5 of the 7197 template) into #803; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- User approval: no visible change – UI approval not needed (merge commit into #803; no visible change of its own; entry: #803: approval marker after merging claude/group-calm-redesign at fd754339)
 - Approved customer-visible result: #803 as in its own entries (pending, Paul reviews) plus the entries of #784 (pending, Paul reviews).
 - Scope: the merge of fd754339 and this approval record. Pull request branch #803 only, not merged, not released.
 - What's new: none — merge of fd754339, no customer-visible change of its own
 
 ## 2026-10-20 — #803: Support without width limit, panel icon in the header, growing page margin (7197 template point 11)
 
-- User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #803 point 11 (Support). Before → after: #803 point 11: the Support page was at most 760 px wide, drew no panel icon beside its title on a window wider than 768 px, and had the fixed side margin of the other tabs → #803 point 11: no width limit, the header shows the panel icon like the other tabs, and the page margin is as on Usage: 48 px, growing with the window (4 % of the page width) up to 96 px.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #803: Support without width limit, panel icon in the header, growing page margin (7197 tem — Before → after: #803 point 11: the Support page was at most 760 px wide, drew no panel icon beside its title on a window wider than 768 px, and had the fixed side margin of the other tabs → #803 point 11: no width limit, the header shows the panel icon like the other tabs, and the page margin is as on Usage: 48 px, growing with the window (4 % of the page width) up to 96 px.
 - Approved customer-visible result: #803 point 11: Support as in frame `#support` of "Calm Redesign - alle Screens" (pictures 11 and 11b, right side), in a large and a small window.
 - Scope: #803 point 11: `apps/control-center/src/components/logs-screen.tsx`, `apps/control-center/src/components/control-center-shell.tsx` (the same margin and panel-icon change that #798 point 10 makes for Updates, so the two merge cleanly), its test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #803 point 11: no new content, the same page with a wider layout
 
 ## 2026-10-20 — #803: Support margin also grows on wide windows (fix of the 7197 point 11 entry)
 
-- User approval: pending — #803 fix of the entry above; the rendered result is pending Paul's review. Before → after: #803 from a 1024 px wide window the old fixed 48 px margin (lg:px-12) won over the growing one → #803 the margin grows with the window up to 96 px at every width, as the entry above describes.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #803: Support margin also grows on wide windows (fix of the 7197 point 11 entry) — Before → after: #803 from a 1024 px wide window the old fixed 48 px margin (lg:px-12) won over the growing one → #803 the margin grows with the window up to 96 px at every width, as the entry above describes.
 - Approved customer-visible result: #803 Support page margin as in the 7197 template points 10 and 11 at large windows.
 - Scope: #803 `apps/control-center/src/components/control-center-shell.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #803 margin fix not announced
@@ -8677,3 +8677,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #803 as in its own entries plus the entries merged with ea818ad4; nothing else changes.
 - Scope: the merge of ea818ad4 and this approval record. Pull request branch #803 only, not merged, not released.
 - What's new: none — merge of ea818ad4, no customer-visible change of its own
+
+## 2026-10-20 — #803: Paul's approval of build 7198 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" — #803 approval record for build 7198 (everything except the Appearance cards #802); the #803 entries that were in build 7198 now carry it, merge markers are marked as no visible change, entries added after build 7198 stay pending.
+- Approved customer-visible result: #803 as described in its entries above, as seen in build 7198.
+- Scope: #803 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #803 approval record only
