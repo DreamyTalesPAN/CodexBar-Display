@@ -254,6 +254,28 @@ func TestRunInstallUpdateCableRescuePrefersThePendingMarkerOverAnotherLegacyVibe
 	}
 }
 
+// A pending marker whose VibeTV is unplugged right now is not overwritten by
+// the rescue of another pre-Cable VibeTV (Codex on #819).
+func TestRunInstallUpdateCableRescueWaitsWhileAnotherVibeTVIsLeftHalfWritten(t *testing.T) {
+	_, manifestURL, _ := prepareCableFirmwareUpdateTest(t)
+	pinCableRescue(t)
+	marker := writeRescueMarkerFixture(t, "COM4", time.Hour)
+	listCablePortsFn = func() ([]string, error) { return []string{"/dev/mock-legacy"}, nil }
+	findLegacyCableVibeTVFn = legacyRescueDevice
+	flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
+		t.Fatal("flashed another VibeTV while one is left half-written")
+		return nil
+	}
+	output, err := captureStdout(t, func() error { return runInstallUpdate(rescueArgs(manifestURL)) })
+	if err == nil || !strings.Contains(err.Error(), "left half-written") {
+		t.Fatalf("expected the rescue to wait for COM4: err=%v\n%s", err, output)
+	}
+	home, _ := os.UserHomeDir()
+	if kept, ok := firmwareupdate.LoadRescueMarker(home, time.Now()); !ok || kept.Port != marker.Port {
+		t.Fatalf("the pending marker must stay: %+v ok=%v", kept, ok)
+	}
+}
+
 func TestRunInstallUpdateCableRescueFlashesTheMarkedPortWhenNoHelloComes(t *testing.T) {
 	_, manifestURL, firmwareVersion := prepareCableFirmwareUpdateTest(t)
 	pinCableRescue(t)
