@@ -8054,3 +8054,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #821 tile data in setup step 11 shows the same provider reset rows, clock and countdowns as the VibeTV; pending Paul's review.
 - Scope: #821 tile data in `apps/control-center/src/components/setup/setup-display-previews.ts`, `apps/control-center/src/components/setup/setup-display-theme-tiles.tsx`, their tests and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #821 tile data fix, no new content
+
+## 2026-10-20 — #821 frame fidelity: idle wording and provider rows match the device
+
+- User approval: pending — #821 frame fidelity (Codex review fixes); before → after in the setup step 11 tiles: (1) #821 frame fidelity: a provider that is fresh and idle (nothing used, no reset deadline) read "Reset unavailable" on the tile → it reads "No active session", as on the VibeTV; (2) #821 frame fidelity: a provider that delivers only the plain session and weekly figures without windows showed a reset row in themes with cross-provider rows → it shows none, as on the VibeTV. Nothing else changes.
+- Approved customer-visible result: #821 frame fidelity: the tile frame carries the same freshness state the host stamps on a fresh frame and builds provider rows only from delivered windows; pending Paul's review.
+- Scope: #821 frame fidelity in `apps/control-center/src/components/setup/setup-display-previews.ts`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #821 frame fidelity fix, no new content

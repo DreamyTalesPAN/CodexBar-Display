@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { UsageProviderInfo, UsageSnapshot } from "../control-center-types";
-import { buildFrameData } from "../live-vibetv-preview";
+import { buildFrameData, renderTextPrimitive } from "../live-vibetv-preview";
 import {
   displayPreviewFor,
   displayPreviewsFor,
@@ -239,7 +239,11 @@ describe("provider slots in the synthesized frames", () => {
         provider({ id: "a", label: "A", stale: true }),
         provider({ id: "b", label: "B", usageUnavailable: true }),
         provider({ id: "c", label: "C", resetSecs: undefined, session: 5 }),
-        provider({ id: "d", label: "D", resetSecs: 900 }),
+        provider({
+          id: "d",
+          label: "D",
+          windows: [{ id: "session", label: "Session", usedPercent: 5, resetSecs: 900 }],
+        }),
       ],
       undefined,
     );
@@ -247,11 +251,21 @@ describe("provider slots in the synthesized frames", () => {
     expect(rows.map((row) => row.id)).toEqual(["d"]);
   });
 
+  it("gives a legacy provider without windows no row, even with root resetSecs", () => {
+    // The host builds rows from Frame.UsageWindows only (providerResetSlots).
+    const legacy = provider({ id: "cursor", label: "Cursor", resetSecs: 900 });
+    expect(legacy.windows).toBeUndefined();
+    expect(providerSlotsFor([legacy], undefined)).toEqual([]);
+    expect(
+      displayPreviewFor(legacy, new Date(), false, [legacy])?.frame?.providerSlots,
+    ).toEqual([]);
+  });
+
   it("states each reset as of the shown frame's reading time", () => {
     const rows = providerSlotsFor(
       [
-        provider({ id: "a", label: "A", collectedAt: "2026-10-20T08:00:00Z", resetSecs: 3600 }),
-        provider({ id: "b", label: "B", collectedAt: "2026-10-20T08:10:00Z", resetSecs: 3600 }),
+        provider({ id: "a", label: "A", collectedAt: "2026-10-20T08:00:00Z", windows: [{ id: "session", label: "Session", usedPercent: 10, resetSecs: 3600 }] }),
+        provider({ id: "b", label: "B", collectedAt: "2026-10-20T08:10:00Z", windows: [{ id: "session", label: "Session", usedPercent: 10, resetSecs: 3600 }] }),
       ],
       "2026-10-20T08:10:00Z",
     );
@@ -274,5 +288,57 @@ describe("provider slots in the synthesized frames", () => {
     );
 
     expect(rows[0]).toMatchObject({ percent: 40, resetSecs: 100 });
+  });
+});
+
+describe("reset trust in the synthesized frames", () => {
+  const stamped = "2026-10-20T08:00:00Z";
+  const at = new Date(stamped);
+  const idleWindows = [
+    { id: "session", label: "Session", usedPercent: 0 },
+    { id: "weekly", label: "Weekly", usedPercent: 0 },
+  ];
+
+  it("reads a fresh window with nothing used and no deadline as idle, not unavailable", () => {
+    const frame = displayPreviewFor(
+      provider({ collectedAt: stamped, resetSecs: undefined, session: 0, weekly: 0, windows: idleWindows }),
+    )?.frame;
+
+    expect(frame).toMatchObject({
+      resetTrust: "live",
+      resetTrustSecs: 5 * 3600,
+      resetSource: "codex",
+    });
+    const data = buildFrameData(stamped, frame!, at);
+    expect(data.usageWindows.map((window) => window.idle)).toEqual([true, true]);
+    expect(
+      renderTextPrimitive({ type: "text", text: "{reset}" }, data),
+    ).toBe("No active session");
+  });
+
+  it("keeps a window that has a deadline live, counting down from the reading time", () => {
+    const frame = displayPreviewFor(
+      provider({
+        collectedAt: stamped,
+        windows: [{ id: "session", label: "Session", usedPercent: 10, resetSecs: 3600 }],
+      }),
+    )?.frame;
+
+    expect(frame).toMatchObject({ resetTrust: "live", resetTrustSecs: 5 * 3600 });
+    expect(buildFrameData(stamped, frame!, at).usageWindows[0]).toMatchObject({
+      resetSecs: 3600,
+      idle: false,
+    });
+  });
+
+  it("marks the frame stale and clears countdowns without a reading time, as the host does", () => {
+    const frame = displayPreviewFor(
+      provider({
+        windows: [{ id: "session", label: "Session", usedPercent: 0, resetSecs: 3600 }],
+      }),
+    )?.frame;
+
+    expect(frame).toMatchObject({ resetTrust: "stale", resetTrustSecs: 0, resetSecs: 0 });
+    expect(frame?.usageWindows?.[0].resetSecs).toBe(0);
   });
 });

@@ -4,14 +4,18 @@ import { formatReset } from "../usage-screen";
 import type { DisplayFrame } from "../live-vibetv-preview";
 import type { SetupDisplayModePreview } from "./setup-display-mode-screen";
 
+function providerWindowSlots(provider: UsageProviderInfo) {
+  return (provider.windows ?? []).map((window) => ({
+    id: window.id,
+    label: window.label,
+    percent: window.usedPercent,
+    resetSecs: window.resetSecs,
+  }));
+}
+
 function windowSlotsOf(provider: UsageProviderInfo) {
   return provider.windows?.length
-    ? provider.windows.map((window) => ({
-        id: window.id,
-        label: window.label,
-        percent: window.usedPercent,
-        resetSecs: window.resetSecs,
-      }))
+    ? providerWindowSlots(provider)
     : [
         provider.sessionUnavailable
           ? null
@@ -52,7 +56,10 @@ export function providerSlotsFor(
         : Math.floor((basis - collected) / 1000);
     let soonest = 0;
     let percent: number | undefined;
-    for (const slot of windowSlotsOf(provider)) {
+    // Only the windows /v1/usage actually delivered, as the host iterates
+    // Frame.UsageWindows: a legacy provider with just root session/weekly has
+    // none and gets no row, even when resetSecs is set.
+    for (const slot of providerWindowSlots(provider)) {
       if (!Number.isFinite(slot.percent)) {
         continue;
       }
@@ -86,6 +93,51 @@ export function providerSlotsFor(
 }
 
 /**
+ * The freshness fields the host stamps on every frame it sends, mirroring
+ * Frame.ApplyResetTrust (companion/internal/protocol/protocol.go).
+ *
+ * /v1/usage does not deliver resetTrust, resetTrustSecs or resetSource -- the
+ * host only computes them when it sends a frame -- so they are derived here the
+ * way ApplyResetTrust does for a frame that is fresh (sourceLive) and leaves at
+ * the instant its data was read (age 0): the full trust horizon (5 h), the
+ * provider key as source (ResetSourceKey with no window; the device only checks
+ * that a source exists), and "live" -- with or without a deadline, so an idle
+ * account (nothing used, no reset) is a measured idle account, not unavailable.
+ * Without a reading time or an attributable source the host marks the frame
+ * "stale" and clears every countdown, and so does this.
+ */
+const RESET_TRUST_HORIZON_SECS = 5 * 3600;
+
+function resetSourceKey(provider: string): string {
+  const source = provider.trim().toLowerCase();
+  return source.length > 0 && source.length <= 31 && /^[a-z0-9_:.-]+$/.test(source)
+    ? source
+    : "";
+}
+
+function withResetTrust(frame: DisplayFrame, collectedAt: string | undefined): DisplayFrame {
+  const basisKnown = Boolean(collectedAt) && !Number.isNaN(new Date(collectedAt!).getTime());
+  const source = resetSourceKey(frame.provider ?? "");
+  if (!basisKnown || !source) {
+    return {
+      ...frame,
+      resetSecs: 0,
+      usageWindows: frame.usageWindows?.map((window) => ({ ...window, resetSecs: 0 })),
+      providerSlots: frame.providerSlots?.map((slot) => ({ ...slot, resetSecs: 0 })),
+      resetTrust: "stale",
+      resetTrustSecs: 0,
+      resetSource: source,
+    };
+  }
+  return {
+    ...frame,
+    resetTrust: "live",
+    resetTrustSecs: RESET_TRUST_HORIZON_SECS,
+    resetSource: source,
+  };
+}
+
+/**
  * The frame the theme renderer draws for one provider, built only from what
  * the usage service delivered for it. Nothing is calculated here: percentages,
  * labels, reset times and the used/remaining mode are passed through as read.
@@ -106,7 +158,7 @@ export function displayFrameFor(
   if (!readable.length) {
     return null;
   }
-  return {
+  return withResetTrust({
     v: 1,
     provider: provider.id,
     label: provider.label,
@@ -126,7 +178,7 @@ export function displayFrameFor(
     // /v1/usage leaves zero token totals out once the token history is read;
     // the snapshot's readiness says those zeros are known (Codex on #821).
     ...(tokenUsageReady ? { tokenTotalsKnown: true } : {}),
-  };
+  }, provider.collectedAt);
 }
 
 /**
