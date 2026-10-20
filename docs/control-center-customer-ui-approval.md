@@ -8613,3 +8613,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #803 as in its own entries (pending, Paul reviews) plus the entries of #784 (pending, Paul reviews).
 - Scope: the merge of fd754339 and this approval record. Pull request branch #803 only, not merged, not released.
 - What's new: none — merge of fd754339, no customer-visible change of its own
+
+## 2026-10-20 — #803: Support without width limit, panel icon in the header, growing page margin (7197 template point 11)
+
+- User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #803 point 11 (Support). Before → after: #803 point 11: the Support page was at most 760 px wide, drew no panel icon beside its title on a window wider than 768 px, and had the fixed side margin of the other tabs → #803 point 11: no width limit, the header shows the panel icon like the other tabs, and the page margin is as on Usage: 48 px, growing with the window (4 % of the page width) up to 96 px.
+- Approved customer-visible result: #803 point 11: Support as in frame `#support` of "Calm Redesign - alle Screens" (pictures 11 and 11b, right side), in a large and a small window.
+- Scope: #803 point 11: `apps/control-center/src/components/logs-screen.tsx`, `apps/control-center/src/components/control-center-shell.tsx` (the same margin and panel-icon change that #798 point 10 makes for Updates, so the two merge cleanly), its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #803 point 11: no new content, the same page with a wider layout
