@@ -24,7 +24,11 @@ import type {
 } from "../control-center-types";
 import { candidateKey, type SetupTransport } from "./setup-connection";
 import { SetupDeviceCard } from "./setup-device-card";
-import { SetupCableHelpDialog } from "./setup-device-dialogs";
+import {
+  type MacAppUpdateOffer,
+  SetupCableHelpDialog,
+  SetupMacAppUpdateDialog,
+} from "./setup-device-dialogs";
 import { moveAmongRadios, selectedItemClass } from "./setup-selectable-card";
 import { cn } from "@/lib/utils";
 import type { ConnectPhase } from "./setup-connect-log";
@@ -42,6 +46,9 @@ type SetupDeviceScreenProps = {
   /** Names the work in flight, so the button reports it instead of "Connecting" throughout. */
   connectPhase?: ConnectPhase;
   logLines: SetupLogLine[];
+  /** A newer Mac App exists; offered first while no VibeTV turns up (#561). */
+  macAppUpdate?: MacAppUpdateOffer;
+  onDismissMacAppUpdate?: () => void;
   aiFixPrompt?: () => string;
   onConnect: () => void;
   onBack?: () => void;
@@ -75,6 +82,8 @@ export function SetupDeviceScreen({
   connecting = false,
   connectPhase,
   logLines,
+  macAppUpdate,
+  onDismissMacAppUpdate = () => {},
   aiFixPrompt,
   onConnect,
   onBack,
@@ -365,11 +374,22 @@ export function SetupDeviceScreen({
       ) : null}
 
       {wifiSetupPhase === "waiting" && !wifiWaitingViaCable ? (
-        <SetupCableHelpDialog
-          onEnterAddressManually={onEnterAddressManually}
-          onScanAgain={onSearchAgain}
-          scanning={searching}
-        />
+        macAppUpdate ? (
+          <SetupMacAppUpdateDialog
+            offer={macAppUpdate}
+            onDismiss={onDismissMacAppUpdate}
+            onScanAgain={() => {
+              onDismissMacAppUpdate();
+              onSearchAgain();
+            }}
+          />
+        ) : (
+          <SetupCableHelpDialog
+            onEnterAddressManually={onEnterAddressManually}
+            onScanAgain={onSearchAgain}
+            scanning={searching}
+          />
+        )
       ) : null}
 
       {showCandidates ? (
