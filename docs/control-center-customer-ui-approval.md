@@ -8540,3 +8540,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the Usage page margin looks as drawn in frames "Usage" (#usage) and "Usage at 1920 x 1080" (#usage-large) of "Calm Redesign - alle Screens".
 - Scope: `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
+## 2026-10-20 — #783: two Codex fixes on the Usage overlay button and narrow windows
+
+- User approval: pending — #783 Codex fixes; the rendered result is pending Paul's review. Before → after: #783 the provider overlay said "Sign in to <provider>" also when that sign-in can only be done in Settings, and the click just opened Settings → #783 the button then says "Open AI providers" (the existing wording of the permission overlay). #783 below a 428 px wide page area the provider card was cut off on the right → #783 the card shrinks to the width there; from 428 px on it stays 428 px as approved.
+- Approved customer-visible result: #783 the overlay button names where it leads; Usage cards never cut off; normal and wide windows unchanged (7197 template point 3).
+- Scope: #783 `apps/control-center/src/components/provider-action-dialog.tsx`, `apps/control-center/src/components/usage-screen.tsx`, their tests and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #783 Codex fixes not announced
