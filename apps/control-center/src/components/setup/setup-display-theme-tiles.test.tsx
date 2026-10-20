@@ -145,7 +145,8 @@ describe("Display mode tiles with the active theme", () => {
     expect(codex.getAttribute("data-state")).toBe("skeleton");
     expect(codex.textContent).not.toMatch(/\d/);
     expect(codex.querySelector("svg")).toBeNull();
-    expect(screen.getByRole("img", { name: "Codex: no usage yet" })).toBeTruthy();
+    // Codex waits behind Claude on the one tile until its turn (#821 single tile).
+    expect(screen.getByRole("img", { name: "Codex: no usage yet", hidden: true })).toBeTruthy();
   });
 
   it("shows a skeleton for Manual when its provider has no values", async () => {
@@ -156,11 +157,11 @@ describe("Display mode tiles with the active theme", () => {
     expect(tiles(1)[0].getAttribute("data-state")).toBe("skeleton");
   });
 
-  it("keeps skeleton tiles while the theme is still loading", () => {
+  it("keeps a skeleton tile while the theme is still loading", () => {
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
     show([live("Claude", 64), live("Codex", 28)]);
 
-    expect(tiles(0)).toHaveLength(2);
+    expect(tiles(0)).toHaveLength(1);
     expect(tiles(0).every((tile) => tile.getAttribute("data-state") === "skeleton")).toBe(true);
     expect(document.body.textContent).not.toContain("64");
   });

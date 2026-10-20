@@ -86,28 +86,15 @@ export function useThemeRenderPack(
     : { pack: null, status: "loading" };
 }
 
-/** Tile sizes and gap of the strip: the one in front, the ones behind it. */
+/** The one tile's size, as in template frame 22. */
 const FRONT_SIZE = 104;
-const BEHIND_SIZE = 84;
-const TILE_GAP = 10;
-const BEHIND_SCALE = BEHIND_SIZE / FRONT_SIZE;
-// Paul, 20.10.2026: at most three tiles show (the front one and two behind, as
-// in the template). Further providers wait invisibly at the back and come into
-// view as the strip turns; nothing is cut off or shrunk.
-const VISIBLE_TILES = 3;
-
-/** Where a tile sits for a given place in line: 0 is the front. */
-function slotOffset(slot: number): number {
-  return slot === 0 ? 0 : FRONT_SIZE + TILE_GAP + (slot - 1) * (BEHIND_SIZE + TILE_GAP);
-}
 
 /**
- * The strip a mode card shows: the active theme once per provider, each with
- * that provider's own readings. The provider at `index` is drawn large in
- * front, the others wait behind it in turn and recede. When `index` moves on,
- * every tile slides one place toward the front; the one that was in front
- * fades in at the back. Only the order and the movement are decided here.
- * Under reduced motion the order changes without any movement.
+ * What a mode card shows: ONE tile with the active theme (Paul, 20.10.2026).
+ * In Automatic the tile changes provider every rotation step: the provider at
+ * `index` fades in over the one before it, with that provider's own readings.
+ * Manual passes one frame and nothing changes. Under reduced motion the
+ * provider changes without the fade.
  *
  * A provider with no readings yet gets a quiet placeholder where the numbers
  * would be; nothing is filled in for it.
@@ -124,13 +111,7 @@ export function ThemeTileStrip({
   reducedMotion?: boolean;
 }) {
   const count = frames.length;
-  const shown = Math.min(count, VISIBLE_TILES);
-  const width = shown ? slotOffset(shown - 1) + (shown > 1 ? BEHIND_SIZE : FRONT_SIZE) : 0;
-  // The back tile only fades in once the strip has moved at all, so the first
-  // draw is still.
-  const [moved, setMoved] = useState(index !== 0);
-  if (!moved && index !== 0) setMoved(true);
-
+  const current = count ? ((index % count) + count) % count : 0;
   return (
     <span
       className="flex h-[136px] w-full items-center overflow-hidden bg-muted px-1"
@@ -138,22 +119,17 @@ export function ThemeTileStrip({
     >
       <span
         className="relative mx-auto block shrink-0"
-        style={{ height: FRONT_SIZE, width }}
+        style={{ height: FRONT_SIZE, width: FRONT_SIZE }}
       >
-        {frames.map((frame, position) => {
-          const slot = (position - index + count) % count;
-          return (
-            <ThemeTile
-              active={slot === 0}
-              enters={!reducedMotion && moved && count > 1 && count <= VISIBLE_TILES && slot === count - 1}
-              frame={frame}
-              key={`${frame.providerLabel}-${position}`}
-              pack={pack}
-              reducedMotion={reducedMotion}
-              slot={slot}
-            />
-          );
-        })}
+        {frames.map((frame, position) => (
+          <ThemeTile
+            active={position === current}
+            frame={frame}
+            key={`${frame.providerLabel}-${position}`}
+            pack={pack}
+            reducedMotion={reducedMotion}
+          />
+        ))}
       </span>
     </span>
   );
@@ -161,18 +137,14 @@ export function ThemeTileStrip({
 
 function ThemeTile({
   active,
-  enters,
   frame,
   pack,
   reducedMotion,
-  slot,
 }: {
   active: boolean;
-  enters: boolean;
   frame: SetupDisplayModePreview;
   pack: ThemeRenderPack;
   reducedMotion: boolean;
-  slot: number;
 }) {
   const data = useMemo(
     () =>
@@ -181,41 +153,18 @@ function ThemeTile({
         : null,
     [frame.frame, frame.frameAt],
   );
-  // A waiting tile sits invisibly on the last visible place, so it fades in
-  // there when its turn comes; one that leaves the front fades out in place
-  // first and only then moves there.
-  const waiting = slot >= VISIBLE_TILES;
-  const transform = `translateX(${slotOffset(Math.min(slot, VISIBLE_TILES - 1))}px) scale(${active ? 1 : BEHIND_SCALE})`;
   return (
     <span
+      aria-hidden={active ? undefined : true}
       className={cn(
-        "absolute top-0 left-0 block overflow-hidden rounded-[6px] bg-black",
-        active ? "opacity-100" : waiting ? "opacity-0" : "opacity-30",
-        !reducedMotion &&
-          "transition-[transform,opacity] duration-500 ease-out will-change-transform",
+        "absolute inset-0 block overflow-hidden rounded-[6px] bg-black",
+        active ? "opacity-100" : "opacity-0",
+        !reducedMotion && "transition-opacity duration-500 ease-out",
       )}
-      aria-hidden={waiting || undefined}
-      data-position={slot}
       data-provider={frame.providerLabel}
       data-slot="display-mode-tile"
       data-state={data ? "live" : "skeleton"}
-      style={{
-        animation: enters
-          ? "vibetv-tile-wrap 500ms cubic-bezier(0, 0, 0.2, 1) both"
-          : undefined,
-        height: FRONT_SIZE,
-        // The tile that just left the front fades out where it stood and in at
-        // the back (vibetv-tile-wrap) instead of sliding across the others.
-        transitionProperty: enters ? "opacity" : undefined,
-        transition:
-          waiting && !reducedMotion
-            ? "opacity 250ms ease-out, transform 0s linear 250ms"
-            : undefined,
-        transform,
-        ["--tile-to" as string]: transform,
-        transformOrigin: "left center",
-        width: FRONT_SIZE,
-              }}
+      data-visible={active ? "true" : "false"}
     >
       {data ? (
         <ThemeSpecPreview
@@ -237,24 +186,18 @@ function ThemeTile({
 }
 
 /** What a card shows while the theme is still being read: the tile frames, empty. */
-export function ThemeTileSkeleton({ count }: { count: number }) {
+export function ThemeTileSkeleton({ count: _count }: { count: number }) {
   return (
     <span
-      className="flex h-[136px] w-full items-center justify-center gap-2.5 bg-muted px-1"
+      className="flex h-[136px] w-full items-center justify-center bg-muted px-1"
       data-slot="display-mode-preview"
     >
-      {Array.from({ length: Math.max(1, count) }, (_, position) => (
-        <span
-          aria-hidden
-          className={cn(
-            "block aspect-square min-w-0 shrink animate-pulse rounded-[6px] bg-foreground/15",
-            position === 0 ? "w-[104px]" : "w-[84px] opacity-30",
-          )}
-          data-slot="display-mode-tile"
-          data-state="skeleton"
-          key={position}
-        />
-      ))}
+      <span
+        aria-hidden
+        className="block aspect-square w-[104px] animate-pulse rounded-[6px] bg-foreground/15"
+        data-slot="display-mode-tile"
+        data-state="skeleton"
+      />
     </span>
   );
 }

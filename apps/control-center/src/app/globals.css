@@ -132,28 +132,6 @@ body {
   }
 }
 
-/* A Setup display-mode tile that went from the front to the back of the
-   strip: it fades out where it stood while the others slide forward, then is
-   at the back (--tile-to is that place) and fades in there, rather than
-   sliding across the others. */
-@keyframes vibetv-tile-wrap {
-  0% {
-    opacity: 1;
-    transform: translateX(0) scale(1);
-  }
-  35% {
-    opacity: 0;
-    transform: translateX(0) scale(1);
-  }
-  36% {
-    opacity: 0;
-    transform: var(--tile-to);
-  }
-  100% {
-    opacity: 0.3;
-    transform: var(--tile-to);
-  }
-}
 
 @media (prefers-reduced-motion: reduce) {
   *,

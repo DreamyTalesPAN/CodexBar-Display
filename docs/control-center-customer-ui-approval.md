@@ -8040,3 +8040,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the #821 carousel shows the front tile and two behind it, as in frame 22; further providers wait invisibly at the back and fade in as the strip turns; nothing is cut off or shrunk.
 - Scope: #821 carousel in `apps/control-center/src/components/setup/setup-display-theme-tiles.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #821 carousel limit, no new content
+
+## 2026-10-20 — #821 single tile: Automatic shows one tile that changes provider
+
+- User approval: pending — Paul asked on 20.10.2026 for #821 (via the communicator): "lass einfach eine kachel anzeigen … auf der einen kachel wechseln halt die werte alle 2 sekunden"; rendered #821 single tile pending his look at the GIF.
+- Approved customer-visible result: #821 Automatic shows ONE theme tile, the same size as Manual, whose provider (name and values) changes every 2 s with a calm 500 ms crossfade; no small or grey tiles beside it; Manual shows one fixed tile; reduced motion changes without the fade.
+- Scope: #821 single tile in `apps/control-center/src/components/setup/setup-display-theme-tiles.tsx`, `apps/control-center/src/app/globals.css` (unused carousel keyframes removed), the tile tests and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #821 single tile, no new content
