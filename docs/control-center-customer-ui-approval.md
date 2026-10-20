@@ -8502,3 +8502,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #822 Sparkle order: while setup is on screen no native update dialog opens on its own; #822 Sparkle order: once setup has handed over to the Control Center, the Mac App's update dialog opens once per version exactly as before; #822 Sparkle order: the calm dialog itself is unchanged.
 - Scope: #822 Sparkle order: `apps/control-center/src/components/control-center-app.tsx`, `apps/control-center/src/components/control-center-app.mac-update-prompt.test.tsx`, `apps/control-center/src/components/control-center-app.mac-app-offer.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #822 Sparkle order: only the order of two existing dialogs changes, nothing a customer needs to learn
+
+## 2026-10-20 — #822 update offer: "Not now" holds per version (Codex review)
+
+- User approval: pending — #822 follows Paul's approved update offer (#561, 20.10.2026); this makes "once per version" true while setup stays open; rendered #822 result pending his look.
+- Approved customer-visible result: #822 when a newer release arrives while setup stays open after the previous offer was dismissed, setup offers the newer one once; the dialog itself is unchanged.
+- Scope: #822 `apps/control-center/src/components/setup/setup-wizard.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #822 per-version dismissal, no new content

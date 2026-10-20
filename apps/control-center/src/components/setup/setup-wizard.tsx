@@ -204,8 +204,15 @@ export function SetupWizard(props: SetupWizardProps) {
   const [addressDialogOpen, setAddressDialogOpen] = useState(false);
   const [notFoundDismissed, setNotFoundDismissed] = useState(false);
   // Offered once: after "Scan again" or closing it, not-found shows its usual help (#561).
-  const [macAppUpdateDismissed, setMacAppUpdateDismissed] = useState(false);
-  const pendingMacAppUpdate = macAppUpdateDismissed ? undefined : props.macAppUpdate;
+  // Dismissed per version (Codex on #822): a newer release that arrives while
+  // setup stays open is offered again, once.
+  const [dismissedMacAppVersion, setDismissedMacAppVersion] = useState<string | null>(null);
+  const pendingMacAppUpdate =
+    props.macAppUpdate && props.macAppUpdate.version !== dismissedMacAppVersion
+      ? props.macAppUpdate
+      : undefined;
+  const setMacAppUpdateDismissed = (_dismissed: true) =>
+    setDismissedMacAppVersion(props.macAppUpdate?.version ?? null);
   // The completion this step asked for is still on its way. Held here rather
   // than passed in: the wizard is what awaits it.
   const [providersContinuing, setProvidersContinuing] = useState(false);
