@@ -314,8 +314,16 @@ func runInstallUpdate(args []string) (retErr error) {
 				// and leave a marker no resume can ever match.
 				sum := sha256.Sum256(image)
 				marker.ImageSHA256 = hex.EncodeToString(sum[:])
+			} else if !rescueImageMatchesMarker(image, marker) {
+				// The cached image was checked when the marker was picked, but
+				// it can change before this read. Only the bytes the marker
+				// names may be written; the marker stays for the next attempt
+				// (Codex review on #819).
+				uploadErr = fmt.Errorf("the cached firmware image changed since the failed write; nothing was written")
 			}
-			uploadErr = flashCableRescueWithRetry(ctx, home, marker, image, recovering)
+			if uploadErr == nil {
+				uploadErr = flashCableRescueWithRetry(ctx, home, marker, image, recovering)
+			}
 		}
 	} else if cableMode {
 		// The release's gzip image is about 30% smaller, and the ESP8266
