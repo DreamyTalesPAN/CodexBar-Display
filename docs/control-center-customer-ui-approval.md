@@ -8489,6 +8489,76 @@ issue scope, or release permission never implies UI permission.
 - Scope: #784 focus ring on open: `apps/control-center/src/components/ui/dialog.tsx`, `apps/control-center/src/components/ui/alert-dialog.tsx`, `apps/control-center/src/components/whats-new-dialog.tsx`, the two confirmation dialogs that set `autoFocus`, their tests, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #784 focus ring on open: no new content
 
+## 2026-10-20 — #784: Overview fills the window's height (7197 template point 1)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: Overview fills the window's height (7197 template point 1) — Before → after: #784 point 1: the Overview was a block under the title, with the four numbers right below the VibeTV and a 392 px VibeTV → #784 point 1: the page fills the window's height, the four numbers sit at the bottom (32 px below them), "VibeTV is connected" and the VibeTV are centred as one group in the space above, and the VibeTV image is 440 px wide.
+- Approved customer-visible result: #784 point 1: Overview as in frame `#overview` of "Calm Redesign - alle Screens" (picture 01, right side), in a large and in a small window.
+- Scope: #784 point 1: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/control-center-shell.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #784 point 1: no new content, the same page laid out differently
+
+## 2026-10-20 — #784: keyboard focus ring and invalid ring are 2 px (7197 template point 4)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: keyboard focus ring and invalid ring are 2 px (7197 template point 4) — Before → after: #784 point 4: the keyboard focus ring on input, select, button, checkbox, switch and tab was a 1 px border plus a 2 px or 3 px halo → #784 point 4: border plus a 1 px ring in the ring colour, 2 px in total; an invalid field (aria-invalid) shows the same 2 px, in red, also under the keyboard (consistent with #817). Still shown for keyboard focus only, not when a dialog opens.
+- Approved customer-visible result: #784 point 4: focus and error rings as in frame `#controls-focus` of "Calm Redesign - alle Screens" (picture 04, right side).
+- Scope: #784 point 4: the shared controls in `apps/control-center/src/components/ui/` (input, textarea, select, checkbox, switch, button, tabs, input-group, badge, item, toggle), the two row buttons in `settings-screen.tsx` and `setup/setup-device-dialogs.tsx`, `globals.focus-ring.test.ts`, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #784 point 4: no new content, a thinner ring
+
+## 2026-10-20 — #784: own dropdown instead of the native select (7197 template point 5)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: own dropdown instead of the native select (7197 template point 5) — Before → after: #784 point 5: the Theme Studio's three dropdowns (Live information to show, Reset for, Reading to show) opened the system menu with a blue chosen item, and the shared dropdown list used a different look → #784 point 5: every dropdown a customer sees is our own list below the field: the chosen item is bolder with a grey background and a check mark, the item under the pointer a lighter grey, nothing blue; the field shows the 2 px focus ring while open.
+- Approved customer-visible result: #784 point 5: dropdown as in frames `#settings-dropdown` and `#controls-focus` of "Calm Redesign - alle Screens" (picture 05, right side).
+- Scope: #784 point 5: `apps/control-center/src/components/ui/select.tsx`, `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, the two browser test scripts that drive those dropdowns, the select test, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #784 point 5: no new content, the same choices in a different list
+
+## 2026-10-20 — #784: Overview numbers span the window and the dropdown list is as wide as its field (7197 points 1 and 5, picture check)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: Overview numbers span the window and the dropdown list is as wide as its field (7197 — Before → after: #784 point 1 (picture check): the four numbers were capped at 1180 px width and went to two columns below 1024 px window width → they span the page width as in the template and stay in four columns from 960 px; #784 point 5 (picture check): the dropdown list was 12 px wider than its field → it is exactly as wide as the field.
+- Approved customer-visible result: #784 points 1 and 5: as in the frames `#overview` and `#settings-dropdown` of "Calm Redesign - alle Screens" at 1920 × 1080 and about 1000 × 700.
+- Scope: #784 points 1 and 5: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/ui/select.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #784 points 1 and 5 (picture check): no new content
+
+## 2026-10-20 — #784: the keyboard focus ring is the template's olive
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: the keyboard focus ring is the template's olive — Before → after: #784 the 2 px keyboard focus ring was ink (#1B1B1B light, #EDEDED dark) → #784 the template's olive (#506600 light, #CCFF00 dark); the red ring on invalid fields (#817) stays.
+- Approved customer-visible result: #784 every keyboard focus ring (input, select, button, checkbox, switch, tab) in the template's --ring colour, 2 px, keyboard-only.
+- Scope: #784 `apps/control-center/src/app/globals.css` (--ring), its test `globals.focus-ring.test.ts`, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #784 focus ring colour not announced
+
+## 2026-10-20 — #784: the Copilot popup heading says it needs a GitHub sign-in
+
+- User approval: pending — #784 Copilot heading as decided by the communicator on 20.10.2026 (text decision for Paul's 7198 review); Paul sees it in build 7198. Before → after: #784 the Copilot popup in setup said "GitHub Copilot needs its own app" above a text about a GitHub sign-in → #784 "GitHub Copilot needs a GitHub sign-in".
+- Approved customer-visible result: #784 the Copilot popup heading matches its sentence; every other provider keeps "<Provider> needs its own app" or its name.
+- Scope: #784 `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #784 Copilot heading not announced
+
+## 2026-10-20 — #784: Paul's approval of build 7198 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" — #784 approval record for build 7198 (everything except the Appearance cards #802); the #784 entries above now carry it, merge markers are marked as no visible change, entries added after build 7198 stay pending.
+- Approved customer-visible result: #784 as described in its entries above, as seen in build 7198.
+- Scope: #784 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #784 approval record only
+
+## 2026-10-20 — #784: result lines of approved entries cleaned up
+
+- User approval: no visible change – UI approval not needed (#784: result lines of approved entries cleaned up: record cleanup, wording only: entries that already carry Paul's approval no longer open their result line with an old status word)
+- Approved customer-visible result: #784 unchanged; only the wording of the approval record.
+- Scope: #784 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #784 record cleanup
+
+## 2026-10-20 — #784: approval lines rewritten to the two accepted forms
+
+- User approval: no visible change – UI approval not needed (#784 record rewrite for the gate in #823; no customer-visible change)
+- Approved customer-visible result: #784 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
+- Scope: #784 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #784 approval record only
+
+## 2026-10-20 — #784: Copilot sign-in heading only on its sign-in dialog
+
+- User approval: pending — #784 Copilot heading scope: the decided heading "GitHub Copilot needs a GitHub sign-in" (20.10.2026) now shows only on the dialog that used to say "GitHub Copilot needs its own app"; a timed-out Copilot ("did not answer in time, and VibeTV tries again by itself") keeps the plain heading "GitHub Copilot" again.
+- Approved customer-visible result: #784 the Copilot sign-in dialog is headed "GitHub Copilot needs a GitHub sign-in"; the timed-out Copilot dialog is headed "GitHub Copilot", as before commit 9c129d1c.
+- Scope: #784 Setup Wizard provider dialog heading only. Pull request branch only, not merged, not released.
+- What's new: none — #784 dialog heading scope only
+
 ## 2026-10-19 — Calm Updates screen as drawn in the approved master, plus the states derived from the calm rules (#752)
 - User approval: pending — Paul reviews (Updates built as drawn in the approved master + derived states, decided by the communicator 19.10.)
 - Approved customer-visible result: none yet; waits for Paul's yes. Before: two cards "Mac App" and "VibeTV" with Installed / Available version chips, "Last checked <date, time with seconds>" per card, an "Alert" box for the Mac-App-first rule and the update progress, a heading "Up to date" with a "What's new" link, and one full-width lime button ("Check for updates" / "Update"). After: one headline with a dot ("Everything is up to date", "Update available", "Checking for updates", "Update check failed", "Updating VibeTV", "VibeTV is restarting"); one framed card with a row "Mac App" ("App" on Windows) and a row "VibeTV firmware", each with an icon, one version number (the installed one) and "Up to date"; "Checked today, 08:44" (or "yesterday" / the date) and an outline "Check for updates" button beside the page title; a grey "What's new in <version>" note card with the newest entry's title and "Read notes" (opens the existing What's new dialog). Update available: the row that has the update shows a lime "Update" button (Mac App: Sparkle updater or verified download; firmware: starts the update) and says "Version <x> is available"; the firmware row keeps "Update Mac App first" / "Checking Mac App" inside its row while the app comes first. Installing: a thin progress bar and one "> step" line (shared process steps) inside the firmware row. Update complete / attention: title and sentence inside the firmware row. Failed check: a dialog "Could not check for updates" with "Check the internet connection, then try again.", a lime "Try again" and "Close" (no X); the failed update dialog is unchanged.
@@ -8680,34 +8750,6 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of ece7b388 and this approval record. Pull request branch #798 only, not merged, not released.
 - What's new: none — merge of ece7b388, no customer-visible change of its own
 
-## 2026-10-20 — #784: Overview fills the window's height (7197 template point 1)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: Overview fills the window's height (7197 template point 1) — Before → after: #784 point 1: the Overview was a block under the title, with the four numbers right below the VibeTV and a 392 px VibeTV → #784 point 1: the page fills the window's height, the four numbers sit at the bottom (32 px below them), "VibeTV is connected" and the VibeTV are centred as one group in the space above, and the VibeTV image is 440 px wide.
-- Approved customer-visible result: #784 point 1: Overview as in frame `#overview` of "Calm Redesign - alle Screens" (picture 01, right side), in a large and in a small window.
-- Scope: #784 point 1: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/control-center-shell.tsx` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — #784 point 1: no new content, the same page laid out differently
-
-## 2026-10-20 — #784: keyboard focus ring and invalid ring are 2 px (7197 template point 4)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: keyboard focus ring and invalid ring are 2 px (7197 template point 4) — Before → after: #784 point 4: the keyboard focus ring on input, select, button, checkbox, switch and tab was a 1 px border plus a 2 px or 3 px halo → #784 point 4: border plus a 1 px ring in the ring colour, 2 px in total; an invalid field (aria-invalid) shows the same 2 px, in red, also under the keyboard (consistent with #817). Still shown for keyboard focus only, not when a dialog opens.
-- Approved customer-visible result: #784 point 4: focus and error rings as in frame `#controls-focus` of "Calm Redesign - alle Screens" (picture 04, right side).
-- Scope: #784 point 4: the shared controls in `apps/control-center/src/components/ui/` (input, textarea, select, checkbox, switch, button, tabs, input-group, badge, item, toggle), the two row buttons in `settings-screen.tsx` and `setup/setup-device-dialogs.tsx`, `globals.focus-ring.test.ts`, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — #784 point 4: no new content, a thinner ring
-
-## 2026-10-20 — #784: own dropdown instead of the native select (7197 template point 5)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: own dropdown instead of the native select (7197 template point 5) — Before → after: #784 point 5: the Theme Studio's three dropdowns (Live information to show, Reset for, Reading to show) opened the system menu with a blue chosen item, and the shared dropdown list used a different look → #784 point 5: every dropdown a customer sees is our own list below the field: the chosen item is bolder with a grey background and a check mark, the item under the pointer a lighter grey, nothing blue; the field shows the 2 px focus ring while open.
-- Approved customer-visible result: #784 point 5: dropdown as in frames `#settings-dropdown` and `#controls-focus` of "Calm Redesign - alle Screens" (picture 05, right side).
-- Scope: #784 point 5: `apps/control-center/src/components/ui/select.tsx`, `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, the two browser test scripts that drive those dropdowns, the select test, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — #784 point 5: no new content, the same choices in a different list
-
-## 2026-10-20 — #784: Overview numbers span the window and the dropdown list is as wide as its field (7197 points 1 and 5, picture check)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: Overview numbers span the window and the dropdown list is as wide as its field (7197 — Before → after: #784 point 1 (picture check): the four numbers were capped at 1180 px width and went to two columns below 1024 px window width → they span the page width as in the template and stay in four columns from 960 px; #784 point 5 (picture check): the dropdown list was 12 px wider than its field → it is exactly as wide as the field.
-- Approved customer-visible result: #784 points 1 and 5: as in the frames `#overview` and `#settings-dropdown` of "Calm Redesign - alle Screens" at 1920 × 1080 and about 1000 × 700.
-- Scope: #784 points 1 and 5: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/ui/select.tsx` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — #784 points 1 and 5 (picture check): no new content
-
 ## 2026-10-20 — #798: approval marker after merging claude/group-calm-redesign at fd754339
 
 - User approval: merge of claude/group-calm-redesign (fd754339, #784 points 1, 4, 5 of the 7197 template) into #798; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
@@ -8750,40 +8792,6 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — test-only change, no customer-visible change
 
-## 2026-10-20 — #784: the keyboard focus ring is the template's olive
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: the keyboard focus ring is the template's olive — Before → after: #784 the 2 px keyboard focus ring was ink (#1B1B1B light, #EDEDED dark) → #784 the template's olive (#506600 light, #CCFF00 dark); the red ring on invalid fields (#817) stays.
-- Approved customer-visible result: #784 every keyboard focus ring (input, select, button, checkbox, switch, tab) in the template's --ring colour, 2 px, keyboard-only.
-- Scope: #784 `apps/control-center/src/app/globals.css` (--ring), its test `globals.focus-ring.test.ts`, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — #784 focus ring colour not announced
-
-## 2026-10-20 — #784: the Copilot popup heading says it needs a GitHub sign-in
-
-- User approval: pending — #784 Copilot heading as decided by the communicator on 20.10.2026 (text decision for Paul's 7198 review); Paul sees it in build 7198. Before → after: #784 the Copilot popup in setup said "GitHub Copilot needs its own app" above a text about a GitHub sign-in → #784 "GitHub Copilot needs a GitHub sign-in".
-- Approved customer-visible result: #784 the Copilot popup heading matches its sentence; every other provider keeps "<Provider> needs its own app" or its name.
-- Scope: #784 `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — #784 Copilot heading not announced
-
-## 2026-10-20 — #784: Paul's approval of build 7198 recorded
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" — #784 approval record for build 7198 (everything except the Appearance cards #802); the #784 entries above now carry it, merge markers are marked as no visible change, entries added after build 7198 stay pending.
-- Approved customer-visible result: #784 as described in its entries above, as seen in build 7198.
-- Scope: #784 this approval record only. Pull request branch only, not merged, not released.
-- What's new: none — #784 approval record only
-
-## 2026-10-20 — #784: result lines of approved entries cleaned up
-
-- User approval: no visible change – UI approval not needed (#784: result lines of approved entries cleaned up: record cleanup, wording only: entries that already carry Paul's approval no longer open their result line with an old status word)
-- Approved customer-visible result: #784 unchanged; only the wording of the approval record.
-- Scope: #784 this approval record only. Pull request branch only, not merged, not released.
-- What's new: none — #784 record cleanup
-
-## 2026-10-20 — #784: approval lines rewritten to the two accepted forms
-
-- User approval: no visible change – UI approval not needed (#784 record rewrite for the gate in #823; no customer-visible change)
-- Approved customer-visible result: #784 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
-- Scope: #784 this approval record only. Pull request branch only, not merged, not released.
-- What's new: none — #784 approval record only
 
 ## 2026-10-20 — #798: approval marker after merging claude/group-calm-redesign again
 
