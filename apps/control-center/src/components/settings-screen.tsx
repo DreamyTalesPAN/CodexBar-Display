@@ -706,7 +706,7 @@ function RadioRow({
     <button
       aria-label={label}
       aria-pressed={selected}
-      className="grid w-full grid-cols-[16px_minmax(0,1fr)] items-start gap-3 rounded-md text-left text-[13px] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+      className="grid w-full grid-cols-[16px_minmax(0,1fr)] items-start gap-3 rounded-md text-left text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
       disabled={disabled}
       onClick={onSelect}
       type="button"
