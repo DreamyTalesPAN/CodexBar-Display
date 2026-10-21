@@ -9010,6 +9010,13 @@ issue scope, or release permission never implies UI permission.
 - Scope: #783 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #783 approval record only
 
+## 2026-10-21 — #783: Customer-flow test waits for token history only with usage data
+
+- User approval: no visible change – UI approval not needed (test-only: the provider-readiness customer-flow assertion matches the no-usage hiding rule of #783; the app is unchanged)
+- Approved customer-visible result: none; the customer sees the same Usage screen as before.
+- Scope: apps/control-center/scripts/test-customer-flows.mjs only (port of 2815e311 from #864).
+- What's new: none — test-only change, no customer-visible change
+
 ## 2026-10-19 — Pace on Usage (#789, stacked on #783)
 
 - User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Paul reviews (pace on Usage per the approved master + 19.10. decisions)
@@ -9303,6 +9310,20 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #800 as in its own entries plus the entries merged with 3af4b175; nothing else changes.
 - Scope: the merge of 3af4b175 and this approval record. Pull request branch #800 only, not merged, not released.
 - What's new: none — merge of 3af4b175, no customer-visible change of its own
+
+## 2026-10-21 — #800: expire preview reset countdowns with their trust
+
+- User approval: no visible change – UI approval not needed (bug fix: stop the preview reset countdown when its measurement trust expires, matching the device)
+- Approved customer-visible result: the existing Gauge footer and reset bindings show Reset unavailable once reset trust expires, with no new copy or layout.
+- Scope: shared reset countdown calculation in live-vibetv-preview and its 60-second trust regression test; pre-review P3 for #800.
+- What's new: none — correction to existing preview and device parity only
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at ba55b31f
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (ba55b31f) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with ba55b31f; nothing else changes.
+- Scope: the merge of ba55b31f and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of ba55b31f, no customer-visible change of its own
 
 ## 2026-10-21 — #592 on #800: Two at once, Limits on VibeTV
 
