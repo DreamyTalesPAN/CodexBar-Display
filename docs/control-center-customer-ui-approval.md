@@ -9660,3 +9660,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #864 as in its own entries plus the entries merged with 585afefc; nothing else changes.
 - Scope: the merge of 585afefc and this approval record. Pull request branch #864 only, not merged, not released.
 - What's new: none — merge of 585afefc, no customer-visible change of its own
+
+## 2026-10-21 — #864: approval marker after merging claude/usage-pace at 8d0fe117
+
+- User approval: no visible change – UI approval not needed (merge of claude/usage-pace (8d0fe117) into #864; the own entries of #864 keep their approvals)
+- Approved customer-visible result: #864 as in its own entries plus the entries merged with 8d0fe117; nothing else changes.
+- Scope: the merge of 8d0fe117 and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — merge of 8d0fe117, no customer-visible change of its own
