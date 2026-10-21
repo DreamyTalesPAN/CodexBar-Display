@@ -371,3 +371,59 @@ func TestRunCycleWithDepsFallbackFollowsLimitsHiddenSince(t *testing.T) {
 		t.Fatalf("the fallback frame lost every window: %+v", second)
 	}
 }
+
+// Codex review on #864: a stale reading without an error restates the last
+// good frame as well, so a limit the customer hid after that frame was kept
+// must leave it on the next cycle, not only when collection fails.
+func TestRunCycleRestatedLastGoodDropsALimitHiddenSince(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	retained := false
+	display := &runtimeconfig.ProviderDisplayConfig{Mode: "fixed", ProviderIDs: []string{"codex"}}
+	var sent []protocol.Frame
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	deps := runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			frame := providerFrameWithWindows("codex", now,
+				protocol.UsageWindow{ID: "session", Label: "Session", Percent: 13, ResetSec: 7200},
+				protocol.UsageWindow{ID: "weekly", Label: "Weekly", Percent: 72, ResetSec: 360000},
+			)
+			frame.Frame.V = protocol.ProtocolVersionV2
+			frame.Stale = retained
+			return []codexbar.ParsedFrame{frame}, nil
+		},
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{ProviderDisplay: display}, nil
+		},
+		transportName: "usb",
+		logf:          func(string, ...any) {},
+		sendLine: func(_ string, line []byte) error {
+			sent = append(sent, decodeFrameLine(t, line))
+			return nil
+		},
+	}
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil || len(sent) != 1 {
+		t.Fatalf("first cycle: err=%v sent=%d", err, len(sent))
+	}
+
+	// The customer hides Session while the reading is only retained.
+	retained = true
+	display.HiddenWindows = map[string][]string{"codex": {"session"}}
+	now = now.Add(2 * time.Second)
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil || len(sent) != 2 {
+		t.Fatalf("retained cycle: err=%v sent=%d", err, len(sent))
+	}
+	last := sent[len(sent)-1]
+	if last.Error != "" || last.UsageUnavailable {
+		t.Fatalf("expected the restated last good reading, got %+v", last)
+	}
+	// The wire frame carries its limits as slots, which the device reads.
+	for _, slot := range last.UsageSlots {
+		if slot.ID == "session" {
+			t.Fatalf("restated frame still shows the hidden Session limit: %+v", last.UsageSlots)
+		}
+	}
+}

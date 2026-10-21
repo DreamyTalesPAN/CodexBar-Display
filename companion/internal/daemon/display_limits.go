@@ -27,6 +27,16 @@ func applyDisplayLimits(frame protocol.Frame, providers []codexbar.ParsedFrame, 
 	return frame
 }
 
+// limitLastGood applies the current display choice to a last good frame before
+// it is sent in place of a reading. Every such substitution goes through here,
+// so a limit hidden since the frame was kept never comes back on a restated one.
+func limitLastGood(frame protocol.Frame, deps runtimeDeps) protocol.Frame {
+	if cfg, ok := loadRuntimeConfig(deps); ok {
+		return limitCachedFrame(frame, cfg.ProviderDisplay)
+	}
+	return frame
+}
+
 // limitCachedFrame applies the current display choice to a frame kept from an
 // earlier reading, which VibeTV resends while collection fails. That frame was
 // shaped by the choice of its time, so what the customer has hidden since is

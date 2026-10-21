@@ -221,9 +221,10 @@ func (s *Server) handleProviderDisplayNext(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	s.saveProviderDisplay(w, providerDisplaySelection{
-		Mode:        providerDisplayModeFixed,
-		ProviderIDs: []string{eligible[next%len(eligible)]},
-		Configured:  true,
+		Mode:          providerDisplayModeFixed,
+		ProviderIDs:   []string{eligible[next%len(eligible)]},
+		HiddenWindows: selection.HiddenWindows,
+		Configured:    true,
 	}, settings)
 }
 
