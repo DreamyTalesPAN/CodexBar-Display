@@ -13,10 +13,10 @@ export const SHOW_PACE_PREFERENCE_ID = "vibetv.display.showPace";
 
 /**
  * What the Settings section "Pace" shows, or null for no section. The section
- * is there only when the engine sends CodexBar's pace at all (a lane carries
- * its stage), which today's Windows engine does not. The muted line appears
- * only while the switch is on and the active catalog theme has no place for
- * pace; a theme the catalog does not know gets no claim.
+ * is there only when the engine sends CodexBar's pace at all (the retained
+ * provider pace carries its stage), which today's Windows engine does not.
+ * The muted line appears only while the switch is on and the active catalog
+ * theme has no place for pace; a theme the catalog does not know gets no claim.
  */
 export function paceSetting(
   displayPreferences: PreferenceDescriptor[],
@@ -28,7 +28,7 @@ export function paceSetting(
     (item) => item.id === SHOW_PACE_PREFERENCE_ID,
   );
   const engineSendsPace = usage?.providers.some((provider) =>
-    provider.windows?.some((window) => Boolean(window.stage)),
+    provider.pace?.some((pace) => Boolean(pace.stage)),
   );
   if (!descriptor || !engineSendsPace) {
     return null;

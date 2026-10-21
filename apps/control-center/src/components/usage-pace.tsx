@@ -29,14 +29,13 @@ export function lanePace(window: UsageWindowInfo): LanePace | null {
   if (!tone || typeof expectedUsedPercent !== "number" || !Number.isFinite(expectedUsedPercent)) {
     return null;
   }
-  const hasDelta = typeof deltaPercent === "number" && Number.isFinite(deltaPercent);
-  // Reserve and deficit name the gap in words, so they need CodexBar's number.
-  if (!hasDelta && tone !== "onTrack") {
+  // Every tone needs a real delta within the device protocol's bounds.
+  if (typeof deltaPercent !== "number" || !Number.isFinite(deltaPercent) || deltaPercent < -100 || deltaPercent > 100) {
     return null;
   }
   return {
     tone,
-    delta: hasDelta ? Math.abs(Math.round(deltaPercent)) : 0,
+    delta: Math.abs(Math.round(deltaPercent)),
     expected: Math.max(0, Math.min(100, expectedUsedPercent)),
   };
 }

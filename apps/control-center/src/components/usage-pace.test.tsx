@@ -163,6 +163,39 @@ describe("pace in the lane bar", () => {
     expect(container.textContent).not.toMatch(/\bahead\b|\bbehind\b/i);
   });
 
+  it.each([undefined, null, "0", NaN, Infinity, -Infinity])("draws no on-track pace for invalid delta %s", (deltaPercent) => {
+    const { container } = renderProvider({
+      windows: [{
+        id: "session", label: "Session", usedPercent: 50, stage: "onTrack",
+        expectedUsedPercent: 50, deltaPercent: deltaPercent as number,
+      }],
+    });
+    expect(ticks(container)).toHaveLength(0);
+    expect(container.textContent).not.toContain("On pace");
+  });
+
+  it.each([-101, 101, -100.1, 100.1])("draws no pace for out-of-range delta %s", (deltaPercent) => {
+    const { container } = renderProvider({
+      windows: ["ahead", "behind", "onTrack"].map((stage, index) => ({
+        id: String(index), label: stage, usedPercent: 50, stage,
+        expectedUsedPercent: 50, deltaPercent,
+      })),
+    });
+    expect(ticks(container)).toHaveLength(0);
+    expect(container.textContent).not.toMatch(/in reserve|in deficit|On pace/);
+  });
+
+  it.each([-100, 100])("keeps the inclusive delta boundary %s", (deltaPercent) => {
+    const { container } = renderProvider({
+      windows: [{
+        id: "session", label: "Session", usedPercent: 50,
+        stage: deltaPercent < 0 ? "behind" : "ahead", expectedUsedPercent: 50, deltaPercent,
+      }],
+    });
+    expect(ticks(container)).toHaveLength(1);
+    expect(container.textContent).toContain(`100% in ${deltaPercent < 0 ? "reserve" : "deficit"}`);
+  });
+
   it("adds CodexBar's run-out time to the deficit line", () => {
     const { getByText } = renderProvider({
       windows: [
