@@ -30,18 +30,19 @@ const claude = {
   writable: true,
 };
 
-// The catalog theme the newest "New theme" entry announces.
-const gauge = {
-  id: "gauge",
-  themeId: "gauge",
-  title: "Gauge",
+// The catalog theme the first "Show me in Themes" link announces: the oldest of
+// the newest three "New theme" entries.
+const tokenCounter = {
+  id: "token-counter",
+  themeId: "token-counter",
+  title: "Token Counter",
   isFree: true,
   priceLabel: "Free",
-  packUrl: "/theme-packs/gauge.zip",
+  packUrl: "/theme-packs/token-counter.zip",
   packSha256: "a".repeat(64),
   packSizeBytes: 100,
   source: "github-catalog",
-  themeSpecPath: "/themes/u/gauge.json",
+  themeSpecPath: "/themes/u/token-counter.json",
   usage: "live",
 };
 
@@ -215,7 +216,7 @@ function startWindow({
     createElement(
       TooltipProvider,
       null,
-      createElement(ControlCenterApp, { catalog: { themes: [gauge] } as never }),
+      createElement(ControlCenterApp, { catalog: { themes: [tokenCounter] } as never }),
     ),
   );
   return {
@@ -257,12 +258,12 @@ it("tells a set-up customer what is new once, on Overview, until they close it",
   const text = notice()?.textContent ?? "";
   expect(text).toContain("Version 1.0.63");
   for (const sentence of [
-    "New theme: Gauge",
-    "A half ring that fills as you use your limit.",
     "New theme: Token Counter",
     "The tokens of your session as one large number.",
     "New theme: Pace Meter",
     "New: Pace shows whether your session and weekly limits will last – in reserve, on pace or in deficit.",
+    "New theme: Two Limits",
+    "New: Two Limits shows two sources at once on your VibeTV – two providers or two accounts.",
     "Switch providers with a shortcut",
     "Press ⌃⌥⌘P in any app to show the next provider on VibeTV.",
     "Choose how often VibeTV switches",
@@ -277,9 +278,9 @@ it("tells a set-up customer what is new once, on Overview, until they close it",
   expect(
     within(notice()!).getAllByRole("heading", { level: 3 }).map((title) => title.textContent),
   ).toEqual([
-    "New theme: Gauge",
     "New theme: Token Counter",
     "New theme: Pace Meter",
+    "New theme: Two Limits",
     "Switch providers with a shortcut",
     "Choose how often VibeTV switches",
   ]);
@@ -494,7 +495,7 @@ it("opens Themes from a new theme at that theme and counts the notice as read", 
   // Issue #584: the list is longer than the window; the row of the theme the
   // entry announces is brought into view.
   expect(shown).toEqual([
-    screen.getByRole("button", { name: "Preview Gauge" }).closest("[role=listitem]"),
+    screen.getByRole("button", { name: "Preview Token Counter" }).closest("[role=listitem]"),
   ]);
 });
 
@@ -509,7 +510,7 @@ it("brings the new theme into view again when the list above it grows, until the
     within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[0],
   );
   await window.wait(1);
-  const row = screen.getByRole("button", { name: "Preview Gauge" }).closest("[role=listitem]");
+  const row = screen.getByRole("button", { name: "Preview Token Counter" }).closest("[role=listitem]");
   shown.length = 0;
 
   pageGrew();
@@ -572,7 +573,7 @@ it("brings the place into view once in an app that cannot watch the page's heigh
 
   expect(screen.getByRole("heading", { name: "Themes" })).toBeTruthy();
   expect(shown).toEqual([
-    screen.getByRole("button", { name: "Preview Gauge" }).closest("[role=listitem]"),
+    screen.getByRole("button", { name: "Preview Token Counter" }).closest("[role=listitem]"),
   ]);
 });
 

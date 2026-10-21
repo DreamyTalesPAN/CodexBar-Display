@@ -9233,3 +9233,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: nothing is approved yet. The theme "Two Limits" shows two limits (or two providers at once) with the pace bar, the reserve or deficit piece and the sentences of the #800 Pace themes; layout and colours are open for the Claude Design round.
 - Scope: theme pack two-limits (theme, manifest, render pack, catalog entry), its documentation and its test. Its preview image in docs/assets still shows the #592 look.
 - What's new: none — the visible parts go to a Claude Design round first
+
+## 2026-10-21 — #864: What's new entry for the Two Limits theme
+
+- User approval: pending — #864 What's new entry for the Two Limits theme (draft text, Paul sees it with the Two-at-once design round)
+- Approved customer-visible result: nothing is approved yet. A customer who updates is told once, with the other new themes, "New theme: Two Limits" and the draft sentence "New: Two Limits shows two sources at once on your VibeTV – two providers or two accounts."; the entry links to the theme in Themes.
+- Scope: one What's-new entry (`theme-two-limits`) in apps/control-center/src/lib/whats-new.ts, its test fixture and expectations in control-center-app.whats-new.test.tsx (the notice now shows the newest three themes, Gauge is no longer among them), and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: `theme-two-limits`
