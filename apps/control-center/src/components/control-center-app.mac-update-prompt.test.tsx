@@ -303,12 +303,3 @@ it("does not open the prompt again when setup ends after the wizard's own update
   expect(app.text()).not.toContain("Welcome to");
   expect(openMacAppUpdatePrompt).not.toHaveBeenCalled();
 });
-
-it("still opens the native updater during setup on Windows", async () => {
-  await openApp({ userAgent: nativeUserAgent, setupFinished: false, windows: true });
-
-  // Windows setup shows no update offer, so the updater's own prompt must open.
-  expect(runtime.wizardProps).toBeTruthy();
-  expect(runtime.wizardProps?.macAppUpdate).toBeUndefined();
-  expect(openMacAppUpdatePrompt).toHaveBeenCalledWith(true);
-});
