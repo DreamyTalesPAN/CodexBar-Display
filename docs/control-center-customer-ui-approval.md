@@ -8053,6 +8053,27 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of 392e4e18 and this approval record. Pull request branch #838 only, not merged, not released.
 - What's new: none — merge of 392e4e18, no customer-visible change of its own
 
+## 2026-10-20 — #840: approval marker after rebasing onto main at 5f09bf54
+
+- User approval: no visible change – UI approval not needed (#840 base switched from claude/818-rom-rescue-retry to main after #819 was merged as 5f09bf54; merged the final #819 branch and main, which carry the same tree; the own entries of #840 keep their approvals)
+- Approved customer-visible result: #840 as in its own entries plus the entries merged with #819 and main; nothing else changes.
+- Scope: the merge of the final #819 branch and main and this approval record. Pull request branch #840 only, not merged, not released.
+- What's new: none — merge only, no customer-visible change of its own
+
+## 2026-10-20 — #840: approval marker after merging main at 392e4e18
+
+- User approval: no visible change – UI approval not needed (merge of main (392e4e18) into #840; the own entries of #840 keep their approvals)
+- Approved customer-visible result: #840 as in its own entries plus the entries merged with 392e4e18; nothing else changes.
+- Scope: the merge of 392e4e18 and this approval record. Pull request branch #840 only, not merged, not released.
+- What's new: none — merge of 392e4e18, no customer-visible change of its own
+
+## 2026-10-21 — #840: approval marker after merging main at e3503bda
+
+- User approval: no visible change – UI approval not needed (merge of main (e3503bda) into #840; the own entries of #840 keep their approvals)
+- Approved customer-visible result: #840 as in its own entries plus the entries merged with e3503bda; nothing else changes.
+- Scope: the merge of e3503bda and this approval record. Pull request branch #840 only, not merged, not released.
+- What's new: none — merge of e3503bda, no customer-visible change of its own
+
 ## 2026-10-14 — Windows: an app update found while the app runs installs only with the window closed
 
 - User approval: approved by Paul in the communicator chat, 2026-10-14 00:00: "ok klingt gut" (time unknown) — entry: #785 Windows: an app update found while the app runs installs only with the window closed — Paul's yes to the proposal (no automatic install with the window open, quiet install with the window closed, launch install, Update and the tray item unchanged, the Mac App unchanged); the entry records it as said on 2026-10-14, after "ja das ist natürlich kacke"
