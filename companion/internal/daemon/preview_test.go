@@ -1,11 +1,13 @@
 package daemon
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 )
 
 func previewSnapshot(provider string, collectedAt time.Time, windows ...protocol.UsageWindow) ProviderUsageSnapshot {
@@ -208,4 +210,80 @@ func isolatePreviewHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
+}
+
+// The preview is the stream's own selection: for each state, every provider's
+// Automatic frame is exactly what the stream sends with the timer on it.
+func TestPreviewFramesAutomaticIsTheStreamsFrameForEveryState(t *testing.T) {
+	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
+	window := protocol.UsageWindow{ID: "session", Label: "Session", Percent: 10, ResetSec: 600}
+	live := func(id string) ProviderUsageSnapshot { return previewSnapshot(id, now, window) }
+	stale := func(id string) ProviderUsageSnapshot {
+		s := previewSnapshot(id, now.Add(-time.Minute), window)
+		s.Stale = true
+		return s
+	}
+	unavailable := func(id string) ProviderUsageSnapshot {
+		return ProviderUsageSnapshot{Provider: id, NoReading: true, Frame: protocol.Frame{Provider: id, Label: id, UsageUnavailable: true}}
+	}
+	cases := []struct {
+		name     string
+		snaps    []ProviderUsageSnapshot
+		lastGood string
+	}{
+		{"all current", []ProviderUsageSnapshot{live("codex"), live("claude")}, ""},
+		{"one stale", []ProviderUsageSnapshot{stale("claude"), live("codex")}, ""},
+		{"all stale, no last good", []ProviderUsageSnapshot{stale("claude"), stale("codex")}, ""},
+		{"all stale, last good", []ProviderUsageSnapshot{stale("claude"), stale("codex")}, "codex"},
+		{"all unavailable, no last good", []ProviderUsageSnapshot{unavailable("claude"), unavailable("codex")}, ""},
+		{"all unavailable, last good", []ProviderUsageSnapshot{unavailable("claude"), unavailable("codex")}, "codex"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			isolatePreviewHome(t)
+			if tc.lastGood != "" {
+				good := live(tc.lastGood).Frame
+				good.V = protocol.ProtocolVersionV2
+				if err := persistLastGood(good, now.Add(-time.Minute)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var providers []codexbar.ParsedFrame
+			for _, s := range tc.snaps {
+				p := parsedOf(s)
+				p.Frame.V = protocol.ProtocolVersionV2
+				providers = append(providers, p)
+			}
+			for i, preview := range PreviewFrames(PersistedUsage{Providers: tc.snaps}, true, now) {
+				state := &runtimeState{selector: codexbar.NewProviderSelector(), rotationProvider: tc.snaps[i].Provider, rotationAt: now}
+				deps := rotationTestDeps(3600, &runtimeconfig.ProviderDisplayConfig{Mode: "automatic"})
+				deps.now = func() time.Time { return now }
+				deps.usageBarsShowUsed = func() bool { return true }
+				bootstrapStateFromPersistedLastGood(state, now, deps)
+				result := selectCycleFrameFromProviders(state, providers, now, deps, nil, "select-provider", "", "", "")
+				_, want, result := restateLastGoodWhenNotFresh(state, deps, result)
+				if want.Error == "" && want.Provider != tc.snaps[i].Provider {
+					if preview.Automatic != nil {
+						t.Fatalf("%s: stream shows %q there, preview %+v", tc.snaps[i].Provider, want.Provider, preview.Automatic)
+					}
+					continue
+				}
+				want.V = protocol.ProtocolVersionV2
+				want = want.ApplyResetTrust(result.resetBasisAt, now, result.usageFresh)
+				if preview.Automatic == nil || !reflect.DeepEqual(*preview.Automatic, want) {
+					t.Fatalf("%s: stream sends %+v, preview %+v", tc.snaps[i].Provider, want, preview.Automatic)
+				}
+			}
+		})
+	}
+}
+
+func TestPreviewFramesAllUnavailableWithoutLastGoodIsTheStreamsErrorFrame(t *testing.T) {
+	isolatePreviewHome(t)
+	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
+	none := ProviderUsageSnapshot{Provider: "codex", NoReading: true, Frame: protocol.Frame{Provider: "codex", Label: "Codex", UsageUnavailable: true}}
+	got := PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{none}}, true, now)[0].Automatic
+	if got == nil || got.Error != protocol.ErrorFrame(runtimeErrorFrameCode(runtimeErrorNoProviders)).Error {
+		t.Fatalf("expected the no-providers error frame: %+v", got)
+	}
 }

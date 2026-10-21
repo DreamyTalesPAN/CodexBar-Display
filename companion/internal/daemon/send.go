@@ -47,8 +47,10 @@ func configuredTheme(cliTheme string) string {
 	return runtimeconfig.NormalizeTheme(cfg.Theme)
 }
 
-func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
-	publicPort := publicDeviceTarget(port)
+// restateLastGoodWhenNotFresh is the stream's step between selection and the
+// device-specific fields: the authoritative frame, the frame with the usage
+// bars preference, and the result with its basis and source.
+func restateLastGoodWhenNotFresh(state *runtimeState, deps runtimeDeps, result cycleResult) (protocol.Frame, protocol.Frame, cycleResult) {
 	authoritativeFrame := result.frame
 	frame := applyUsageBarsPreference(authoritativeFrame.Normalize(), deps.usageBarsShowUsed())
 	if !result.usageFresh && result.failureErr == nil {
@@ -77,6 +79,12 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 			frame = applyUsageBarsPreference(authoritativeFrame.Normalize(), deps.usageBarsShowUsed())
 		}
 	}
+	return authoritativeFrame, frame, result
+}
+
+func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
+	publicPort := publicDeviceTarget(port)
+	authoritativeFrame, frame, result := restateLastGoodWhenNotFresh(state, deps, result)
 	if result.systemBusy {
 		// The values on screen are old because the computer is starved, and
 		// VibeTV says so where it names the provider (#606).
