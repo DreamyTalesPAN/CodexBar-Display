@@ -4915,6 +4915,79 @@ void testUsagePaceParsesAndRepaintsOnlyThemesThatShowIt() {
   TEST_ASSERT_EQUAL_UINT32(0, event.themeSpecChangedFields);
 }
 
+// The pace bar table, row for row the same as paceBarRows in
+// apps/control-center/src/components/live-vibetv-preview.test.ts. Each row: the
+// bar's percent in the frame's usage mode, CodexBar's delta and state, then where
+// the fill, the piece and the plan tick stand. The plan is clamped to 0..100, so a
+// deficit larger than the use plans 0, and a reserve past 100 plans 100.
+struct PaceBarRow {
+  const char* mode;
+  int percent;
+  int delta;
+  uint8_t state;
+  int fill;
+  int piece;
+  int plan;
+  bool hatched;
+};
+
+void testUsagePaceBarTable() {
+  using codexbar_display::usage_window_contract::kPaceDeficit;
+  using codexbar_display::usage_window_contract::kPaceLastsToReset;
+  using codexbar_display::usage_window_contract::kPaceOnPace;
+  using codexbar_display::usage_window_contract::kPaceReserve;
+  const PaceBarRow rows[] = {
+    {"used", 0, -6, kPaceReserve, 0, 6, 6, false},
+    {"used", 1, -6, kPaceReserve, 1, 7, 7, false},
+    {"used", 50, -6, kPaceReserve, 50, 56, 56, false},
+    {"used", 99, -6, kPaceReserve, 99, 100, 100, false},
+    {"used", 100, -6, kPaceReserve, 100, 100, 100, false},
+    {"used", 0, 14, kPaceDeficit, 0, 0, 0, true},
+    {"used", 1, 14, kPaceDeficit, 0, 1, 0, true},
+    {"used", 50, 14, kPaceDeficit, 36, 50, 36, true},
+    {"used", 99, 14, kPaceDeficit, 85, 99, 85, true},
+    {"used", 100, 14, kPaceDeficit, 86, 100, 86, true},
+    {"used", 0, -1, kPaceOnPace, 0, 0, 1, false},
+    {"used", 1, -1, kPaceOnPace, 1, 1, 2, false},
+    {"used", 50, -1, kPaceOnPace, 50, 50, 51, false},
+    {"used", 99, -1, kPaceOnPace, 99, 99, 100, false},
+    {"used", 100, -1, kPaceOnPace, 100, 100, 100, false},
+    {"remaining", 100, -6, kPaceReserve, 94, 100, 94, false},
+    {"remaining", 99, -6, kPaceReserve, 93, 99, 93, false},
+    {"remaining", 50, -6, kPaceReserve, 44, 50, 44, false},
+    {"remaining", 1, -6, kPaceReserve, 0, 1, 0, false},
+    {"remaining", 0, -6, kPaceReserve, 0, 0, 0, false},
+    {"remaining", 100, 14, kPaceDeficit, 100, 100, 100, true},
+    {"remaining", 99, 14, kPaceDeficit, 99, 100, 100, true},
+    {"remaining", 50, 14, kPaceDeficit, 50, 64, 64, true},
+    {"remaining", 1, 14, kPaceDeficit, 1, 15, 15, true},
+    {"remaining", 0, 14, kPaceDeficit, 0, 14, 14, true},
+    {"remaining", 100, -1, kPaceOnPace, 100, 100, 99, false},
+    {"remaining", 99, -1, kPaceOnPace, 99, 99, 98, false},
+    {"remaining", 50, -1, kPaceOnPace, 50, 50, 49, false},
+    {"remaining", 1, -1, kPaceOnPace, 1, 1, 0, false},
+    {"remaining", 0, -1, kPaceOnPace, 0, 0, 0, false},
+  };
+  const char* spec = R"JSON({"v":1,"id":"pace-bar","rev":1,"p":[
+    {"t":"p","x":0,"y":0,"w":100,"h":10,"b":"usageSlot1Pace","c":"#808080","rc":"#00FF00","dc":"#FF0000"}
+  ]})JSON";
+  for (const PaceBarRow& row : rows) {
+    FrameData frame;
+    frame.usageMode = row.mode;
+    frame.usageSlot1Percent = frame.usageWindows[0].percent = row.percent;
+    frame.usageSlot1ResetSecs = frame.usageWindows[0].resetSecs = 12000;
+    frame.usageSlot1Available = frame.usageWindows[0].available = true;
+    frame.usageWindows[0].pace = {static_cast<int16_t>(row.delta), row.state, kPaceLastsToReset};
+    char label[64];
+    std::snprintf(label, sizeof(label), "%s %d%% delta %d", row.mode, row.percent, row.delta);
+    const std::vector<RecordedCommand> drawn = paceCommands(spec, frame);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(row.fill, drawn[0].percent, label);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(row.piece, drawn[0].pieceTo, label);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(row.plan, drawn[0].planAt, label);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(row.hatched, drawn[0].hatched, label);
+  }
+}
+
 }  // namespace
 
 // Defined in test_device_clock.cpp.
@@ -5087,6 +5160,7 @@ int main() {
   RUN_TEST(testWindowWithUsageAndNoDeadlineIsNotIdle);
   RUN_TEST(testUsagePaceTextsRenderCodexBarPace);
   RUN_TEST(testUsagePaceColoursAndBarMarks);
+  RUN_TEST(testUsagePaceBarTable);
   RUN_TEST(testUsagePaceArcDrawsPieceHatchAndTick);
   RUN_TEST(testUsagePaceBarRepaintCoversItsTick);
   RUN_TEST(testPaceTickOnAFullyThickRingReachesTheCentre);
