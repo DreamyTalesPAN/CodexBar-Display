@@ -8381,3 +8381,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none; Settings shows the same Used / Remaining state as before.
 - Scope: control-center-app.tsx effect for the unavailable usage mode; pull request branch #877 only.
 - What's new: none — lint fix, no customer-visible change
+
+## 2026-10-22 — #877: Used / Remaining re-read runs from the usage poll (no timer)
+
+- User approval: no visible change – UI approval not needed (lint-level restructuring: the #895 re-read that the timer in 99050316 delayed now runs from the usage poll result itself; same reads, same Settings state for the customer)
+- Approved customer-visible result: none; Settings shows the same Used / Remaining state as before.
+- Scope: control-center-app.tsx only (usage poll result, moved derivations); pull request branch #877 only.
+- What's new: none — lint fix, no customer-visible change

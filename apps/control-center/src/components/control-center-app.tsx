@@ -3415,6 +3415,53 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     return true;
   }, [catalog.themes, device, firmwareUpdateStatus, installTheme]);
 
+  const disabledTabs: ActiveTab[] = hasEnteredControlCenter
+    ? []
+    : ["overview", "usage", "settings", "theme-library", "updates", "logs"];
+  const activeShellTab = disabledTabs.includes(activeTab)
+    ? "overview"
+    : activeTab;
+
+  const refreshDisplayPreferences = useCallback(async () => {
+    // Start after the changes that are on their way: a read beside one finds
+    // the value from before it and may answer after it.
+    for (;;) {
+      const pendingWrites = displayPreferenceWritesRef.current;
+      await pendingWrites;
+      if (pendingWrites === displayPreferenceWritesRef.current) {
+        break;
+      }
+    }
+    const revision = displayPreferencesRevisionRef.current;
+    try {
+      const payload = await runCompanion<{ items: PreferenceDescriptor[] }>(
+        "/v1/preferences?section=display",
+        undefined,
+        { preserveLastError: true },
+      );
+      // A change made while this read was under way already shows the newer
+      // value; the answer describes the state before it.
+      if (revision !== displayPreferencesRevisionRef.current) {
+        return;
+      }
+      setDisplayPreferences(
+        (payload.items || []).filter((item) => item.section === "display"),
+      );
+    } catch {
+      // A Mac App without this section offers no such settings; the rows
+      // stay hidden.
+    }
+  }, [runCompanion]);
+
+  // A fresh Mac reports CodexBar's Used / Remaining as unavailable until the
+  // first serve snapshot arrives (#895). While it is unavailable, each usage
+  // read that lands in Settings asks once more; the read that brings it ends that.
+  const usageModeUnavailable = displayPreferences.some(
+    (item) =>
+      item.id === "codexbar.usageBarsShowUsed" &&
+      item.availability.state === "unavailable",
+  );
+
   const refreshUsage = useCallback(
     (options?: { quiet?: boolean }) => {
       const quiet = Boolean(options?.quiet);
@@ -3440,6 +3487,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           setUsage(payload);
           setUsageError(null);
           setCompanionStatus("online");
+          // #895: a usage read that lands in Settings asks once more while
+          // CodexBar's mode is unknown.
+          if (activeShellTab === "settings" && usageModeUnavailable) {
+            void refreshDisplayPreferences();
+          }
           if (!quiet) {
             const refreshEvent = usageRefreshEvent(payload);
             addEvent({
@@ -3491,10 +3543,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       return read;
     },
     [
+      activeShellTab,
       addEvent,
       markCompanionAccessBlocked,
       markCompanionUnavailable,
+      refreshDisplayPreferences,
       runCompanion,
+      usageModeUnavailable,
     ],
   );
 
@@ -3631,37 +3686,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     },
     [runCompanion],
   );
-
-  const refreshDisplayPreferences = useCallback(async () => {
-    // Start after the changes that are on their way: a read beside one finds
-    // the value from before it and may answer after it.
-    for (;;) {
-      const pendingWrites = displayPreferenceWritesRef.current;
-      await pendingWrites;
-      if (pendingWrites === displayPreferenceWritesRef.current) {
-        break;
-      }
-    }
-    const revision = displayPreferencesRevisionRef.current;
-    try {
-      const payload = await runCompanion<{ items: PreferenceDescriptor[] }>(
-        "/v1/preferences?section=display",
-        undefined,
-        { preserveLastError: true },
-      );
-      // A change made while this read was under way already shows the newer
-      // value; the answer describes the state before it.
-      if (revision !== displayPreferencesRevisionRef.current) {
-        return;
-      }
-      setDisplayPreferences(
-        (payload.items || []).filter((item) => item.section === "display"),
-      );
-    } catch {
-      // A Mac App without this section offers no such settings; the rows
-      // stay hidden.
-    }
-  }, [runCompanion]);
 
   // The control shows the stored value, so a refused write leaves it where it
   // was and the error says why. Writes go out one after the other: two quick
@@ -4892,12 +4916,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const controlCenterAvailable =
     hasActiveDevice && !connectionRecoveryRequired && !recoveryPickerOpen;
-  const disabledTabs: ActiveTab[] = hasEnteredControlCenter
-    ? []
-    : ["overview", "usage", "settings", "theme-library", "updates", "logs"];
-  const activeShellTab = disabledTabs.includes(activeTab)
-    ? "overview"
-    : activeTab;
 
   const clearRuntimeRepairTimeout = useCallback(() => {
     if (runtimeRepairTimeout.current !== null) {
@@ -5125,21 +5143,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     refreshProviderDisplay,
     refreshProviderPreferences,
   ]);
-
-  // A fresh Mac reports CodexBar's Used / Remaining as unavailable until the
-  // first serve snapshot arrives (#895). While it is unavailable, each usage
-  // read that lands in Settings asks once more; the read that brings it ends that.
-  const usageModeUnavailable = displayPreferences.some(
-    (item) =>
-      item.id === "codexbar.usageBarsShowUsed" &&
-      item.availability.state === "unavailable",
-  );
-  useEffect(() => {
-    if (activeShellTab === "settings" && usage && usageModeUnavailable) {
-      const timer = window.setTimeout(() => void refreshDisplayPreferences(), 0);
-      return () => window.clearTimeout(timer);
-    }
-  }, [activeShellTab, refreshDisplayPreferences, usage, usageModeUnavailable]);
 
   const setupDeviceSummary = deviceReady
     ? `VibeTV ${device?.deviceId || ""} on ${device?.target || "an unknown address"}`.trim()
