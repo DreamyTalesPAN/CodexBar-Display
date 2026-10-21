@@ -9195,3 +9195,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #798 as in its own entries plus the entries merged with ff601365; nothing else changes.
 - Scope: the merge of ff601365 and this approval record. Pull request branch #798 only, not merged, not released.
 - What's new: none — merge of ff601365, no customer-visible change of its own
+
+## 2026-10-21 — #798: Updates headline and Checked time for blocked and disabled answers (#849)
+
+- User approval: pending — #798 / #849: Updates headline no longer claims "Update available" when no update can be started, and the "Checked" time also counts a disabled release answer
+- Approved customer-visible result: the headline reads "No update available" instead of "Update available" when the only update cannot start; "Checked" also shows the time of a disabled Mac App answer.
+- Scope: apps/control-center/src/components/updates-screen.tsx and its two test files. Pull request branch #798 only, not merged, not released.
+- What's new: none — the headline and the Checked time are corrections of existing wording and times; no new notice

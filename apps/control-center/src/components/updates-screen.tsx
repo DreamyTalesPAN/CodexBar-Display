@@ -190,8 +190,12 @@ export function UpdatesScreen({
   // available" beside a closed button (Codex review on #798).
   const macAppDownloadOffered =
     macAppDownloadAction && !(requiresMacAppMigration && !verifiedDmgDownloadUrl);
+  // Only a Mac App that must update first and has nothing to start takes the
+  // firmware out of the headline; while its check is still open it stays.
   const anyUpdateAvailable =
-    vibetvUpdateAvailable || macAppDownloadOffered || macAppNativeAction;
+    (vibetvUpdateAvailable && !macAppMustUpdateFirst) ||
+    macAppDownloadOffered ||
+    macAppNativeAction;
   const refreshing = busyAction === "firmware-check";
   const installingUpdate = updateStatus
     ? updateStatus.phase === "installing"
@@ -343,7 +347,8 @@ export function UpdatesScreen({
       ),
   );
   const checkedText = lastCheckedText(
-    companionRelease?.status === "available"
+    companionRelease?.status === "available" ||
+      companionRelease?.status === "disabled"
       ? companionRelease.checkedAt
       : undefined,
     firmwareCheckAnswered ? firmwareUpdate?.checkedAt : undefined,

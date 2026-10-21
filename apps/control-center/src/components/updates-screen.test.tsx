@@ -571,6 +571,22 @@ describe("UpdatesScreen Mac-App-first gate", () => {
       expect(screen.getByText(`Checked ${date}, ${time("2026-10-07T12:32:07Z")}`)).toBeTruthy();
     });
 
+    it("counts a disabled Mac App answer as a check when no firmware check answers", () => {
+      vi.useFakeTimers({ now: new Date("2026-10-07T15:00:00Z"), toFake: ["Date"] });
+      render(
+        <UpdatesScreen
+          {...checked}
+          companionRelease={{
+            ...checked.companionRelease,
+            checkedAt: "2026-10-07T12:32:07Z",
+            status: "disabled",
+          }}
+          firmwareUpdate={null}
+        />,
+      );
+      expect(screen.getByText(`Checked today, ${time("2026-10-07T12:32:07Z")}`)).toBeTruthy();
+    });
+
     it("claims no check that did not answer", () => {
       render(
         <UpdatesScreen
