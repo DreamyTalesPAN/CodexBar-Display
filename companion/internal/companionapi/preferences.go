@@ -296,7 +296,11 @@ func (s *Server) preferenceRegistry() []preferenceAdapter {
 	if len(s.preferenceAdapters) > 0 {
 		return s.preferenceAdapters
 	}
-	return []preferenceAdapter{providerPreferenceAdapter{server: s}, displayPreferenceAdapter{server: s}}
+	return []preferenceAdapter{
+		providerPreferenceAdapter{server: s},
+		displayPreferenceAdapter{server: s},
+		usagePreferenceAdapter{goos: runtime.GOOS, read: codexbar.UsageBarsShowUsed, write: codexbar.SetUsageBarsShowUsed},
+	}
 }
 
 func (s *Server) handlePreferences(w http.ResponseWriter, r *http.Request) {
