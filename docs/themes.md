@@ -18,6 +18,7 @@ The current catalog includes nine live themes:
 | Tiny Office | <img src="assets/vibetv-theme-tiny-office.png" alt="Tiny Office screen preview" width="180"> | Pixel-art developer desk with an animated monitor; idle and coding scenes. See [tiny-office-theme.md](tiny-office-theme.md). |
 | Token Counter | <img src="assets/vibetv-theme-token-counter.png" alt="Token Counter screen preview" width="180"> | One large session token total with the reset countdown. |
 | Gauge | <img src="assets/vibetv-theme-gauge.png" alt="Gauge screen preview" width="180"> | A half ring fills with the first usage window; needs firmware with `progress-arc-v1`. |
+| Pace Meter | — | Usage bars with a pace marker and pace text for each of two usage slots; needs firmware with `usage-pace-v1`. |
 
 ## Included Screensavers
 

@@ -1005,6 +1005,37 @@ func TestNextProviderShortcutPassesOverAReadingVibeTVWouldNotBeSent(t *testing.T
 	}
 }
 
+// Codex review on #864: a provider whose only reported window the customer hid
+// has nothing to show, so the shortcut passes over it as it does an unavailable one.
+func TestNextProviderShortcutPassesOverAProviderWhoseWindowsAreAllHidden(t *testing.T) {
+	server, _ := nextProviderServer(t,
+		&runtimeconfig.ProviderDisplayConfig{
+			Mode:          providerDisplayModeFixed,
+			ProviderIDs:   []string{"codex"},
+			HiddenWindows: map[string][]string{"claude": {"session"}},
+		},
+		[]codexbar.ProviderSetting{
+			{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+			{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+			{ID: "gemini", Label: "Gemini", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+		},
+		"codex", "codex", "gemini")
+	current := server.loadUsage
+	server.loadUsage = func(now time.Time) (daemon.PersistedUsage, bool) {
+		usage, ok := current(now)
+		usage.Providers = append(usage.Providers, daemon.ProviderUsageSnapshot{
+			Provider: "claude", CollectedAt: now.Add(-time.Minute),
+			Frame: protocol.Frame{Provider: "claude", Session: 40, UsageWindows: []protocol.UsageWindow{{ID: "session"}}},
+		})
+		return usage, ok
+	}
+
+	selection, _ := pressNextProvider(t, server)
+	if len(selection.ProviderIDs) != 1 || selection.ProviderIDs[0] != "gemini" {
+		t.Fatalf("answered %+v, want Claude passed over for Gemini", selection)
+	}
+}
+
 // With one provider to show there is nothing to switch to, and with none there
 // is nothing to show: the choice stays exactly as it was, Automatic included.
 func TestNextProviderShortcutChangesNothingBelowTwoShowableProviders(t *testing.T) {
