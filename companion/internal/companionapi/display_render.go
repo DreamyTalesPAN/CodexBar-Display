@@ -131,6 +131,12 @@ func (s *Server) waitForDisplayRenderWithStream(
 	})
 }
 
+const displayRenderPollInterval = 750 * time.Millisecond
+
+// errDisplayRenderNotAdvanced marks a render check whose last health read
+// succeeded but showed the same render counters as the baseline.
+var errDisplayRenderNotAdvanced = errors.New("render counters did not advance")
+
 func waitForDisplayRenderWithHealthReader(
 	ctx context.Context,
 	target string,
@@ -138,7 +144,21 @@ func waitForDisplayRenderWithHealthReader(
 	stream displayStreamInfo,
 	readHealth func() (deviceHealth, error),
 ) (deviceHealth, error) {
-	deadline := time.Now().Add(displayRenderWaitTime)
+	return waitForDisplayRenderPolling(ctx, target, baseline, stream, displayRenderWaitTime, displayRenderPollInterval, readHealth)
+}
+
+// waitForDisplayRenderPolling is the render check with its wait and poll
+// interval as arguments, so tests can run the timeout paths in milliseconds.
+func waitForDisplayRenderPolling(
+	ctx context.Context,
+	target string,
+	baseline deviceHealth,
+	stream displayStreamInfo,
+	wait time.Duration,
+	poll time.Duration,
+	readHealth func() (deviceHealth, error),
+) (deviceHealth, error) {
+	deadline := time.Now().Add(wait)
 	var last deviceHealth
 	var lastErr error
 	for {
@@ -153,14 +173,16 @@ func waitForDisplayRenderWithHealthReader(
 				return health, nil
 			}
 			detail := strings.TrimSpace(health.Display.ThemeSpec.RenderError)
-			if detail == "" {
-				if !displayRenderAdvanced(baseline, health) {
-					detail = "render counters did not advance"
-				} else {
-					detail = "lastKind=" + strings.TrimSpace(health.Render.LastKind)
-				}
+			switch {
+			case detail == "" && !displayRenderAdvanced(baseline, health):
+				// A fresh, successful read whose counters did not move: the only
+				// result an unchanged live picture may stand in for (#835).
+				lastErr = fmt.Errorf("display render not ready: %w", errDisplayRenderNotAdvanced)
+			case detail == "":
+				lastErr = fmt.Errorf("display render not ready: lastKind=%s", strings.TrimSpace(health.Render.LastKind))
+			default:
+				lastErr = fmt.Errorf("display render not ready: %s", detail)
 			}
-			lastErr = fmt.Errorf("display render not ready: %s", detail)
 		} else {
 			lastErr = err
 		}
@@ -176,7 +198,7 @@ func waitForDisplayRenderWithHealthReader(
 				lastErr = ctx.Err()
 			}
 			return last, lastErr
-		case <-time.After(750 * time.Millisecond):
+		case <-time.After(poll):
 		}
 	}
 }

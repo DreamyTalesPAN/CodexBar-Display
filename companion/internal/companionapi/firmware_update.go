@@ -692,13 +692,35 @@ func (s *Server) verifyCableFirmwareUpdateResult(ctx context.Context, jobID stri
 	}
 
 	s.setFirmwareUpdateStage(jobID, "verifying_render")
-	if _, err := s.waitForVerifiedCableDisplayRender(ctx, port, hello.DeviceID, cfg.DeviceToken, health, stream); err != nil {
-		return firmwareAttentionOutcome("render"), "Firmware is current, but the picture could not be verified.", nil
+	if last, err := s.waitForVerifiedCableDisplayRender(ctx, port, hello.DeviceID, cfg.DeviceToken, health, stream); err != nil {
+		// Only a fresh read that found the counters unchanged qualifies; a read
+		// that failed afterwards (cable gone) keeps the attention result (Codex
+		// review on #838).
+		if !errors.Is(err, errDisplayRenderNotAdvanced) || !unchangedLivePicture(health, last) {
+			return firmwareAttentionOutcome("render"), "Firmware is current, but the picture could not be verified.", nil
+		}
+		s.appendFirmwareUpdateDiagnostic(jobID, "render: live picture unchanged since the stream restart")
 	}
 	s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
 		result.RenderVerified = true
 	})
 	return firmwareUpdateOutcome(snapshot), "", nil
+}
+
+// unchangedLivePicture reports whether VibeTV still shows the healthy live
+// picture it showed before the stream restart. The firmware redraws only when
+// a frame changes the screen, so a frame with the same values leaves the
+// render counters where they were (issue #835). The last draw may be the
+// minute countdown on that picture ("reset"). Nothing was drawn in between:
+// same boot, same counters, no new theme render failure.
+func unchangedLivePicture(before, after deviceHealth) bool {
+	beforeFull, beforePartial, beforeOK := displayRenderCounters(before)
+	afterFull, afterPartial, afterOK := displayRenderCounters(after)
+	return before.OK && after.OK && beforeOK && afterOK &&
+		beforeFull == afterFull && beforePartial == afterPartial &&
+		strings.TrimSpace(before.System.BootID) == strings.TrimSpace(after.System.BootID) &&
+		before.Display.ThemeSpec.RenderFailures == after.Display.ThemeSpec.RenderFailures &&
+		renderSurfaceHealthy(after) && liveScreenRenderKind(after.Render.LastKind)
 }
 
 func firmwareUpdateOutcome(snapshot firmwareUpdateJob) string {
