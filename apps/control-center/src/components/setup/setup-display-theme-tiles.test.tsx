@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { displayPreviewsFor, pinnedPreview, type PreviewFrames } from "./setup-display-previews";
 import {
   DisplayModeChoice,
+  SetupDisplayModeScreen,
   type SetupDisplayModePreview,
 } from "./setup-display-mode-screen";
 import { useThemeRenderPack } from "./setup-display-theme-tiles";
@@ -31,17 +32,19 @@ const PACK = {
 };
 
 function live(label: string, percent: number): SetupDisplayModePreview {
+  const frame = {
+    v: 1,
+    provider: label.toLowerCase(),
+    label,
+    usageMode: "used",
+    usageWindows: [{ id: "session", label: "Session", percent, resetSecs: 3600 }],
+  };
   return {
     providerLabel: label,
     resetLabel: null,
     windows: [{ label: "Session", percent }],
-    frame: {
-      v: 1,
-      provider: label.toLowerCase(),
-      label,
-      usageMode: "used",
-      usageWindows: [{ id: "session", label: "Session", percent, resetSecs: 3600 }],
-    },
+    frame,
+    pinnedFrame: frame,
     frameAt: new Date().toISOString(),
   };
 }
@@ -178,25 +181,25 @@ describe("Display mode tiles with the active theme", () => {
     expect(url).toContain("specPath=");
   });
 
-  it("shows a skeleton instead of numbers for a provider with no values yet", async () => {
+  it("leaves a provider without values unavailable instead of loading forever", async () => {
     show([live("Claude", 64), noValues("Codex")]);
     await settle();
 
     const [claude, codex] = tiles(0);
     expect(claude.getAttribute("data-state")).toBe("live");
-    expect(codex.getAttribute("data-state")).toBe("skeleton");
+    expect(codex.getAttribute("data-state")).toBe("unavailable");
     expect(codex.textContent).not.toMatch(/\d/);
     expect(codex.querySelector("svg")).toBeNull();
     // Codex waits behind Claude on the one tile until its turn (#821 single tile).
     expect(screen.getByRole("img", { name: "Codex: no usage yet", hidden: true })).toBeTruthy();
   });
 
-  it("shows a skeleton for Manual when its provider has no values", async () => {
+  it("shows the existing no-usage state for Manual when its provider has no values", async () => {
     show([live("Claude", 64)], null);
     await settle();
 
-    expect(tiles(1)).toHaveLength(1);
-    expect(tiles(1)[0].getAttribute("data-state")).toBe("skeleton");
+    expect(tiles(1)).toHaveLength(0);
+    expect(document.querySelectorAll('[data-slot="display-mode-preview"]')[1].textContent).toContain("No usage yet");
   });
 
   it("shows final unavailable state, not a loading skeleton, for an error frame", async () => {
@@ -305,6 +308,90 @@ describe("Display mode tiles keep time-dependent fields moving", () => {
 describe("Display mode tiles retry a theme pack that is not ready yet", () => {
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it("loads on supported WebKit versions without AbortSignal.any", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(AbortSignal, "any")!;
+    Object.defineProperty(AbortSignal, "any", { configurable: true, value: undefined });
+    try {
+      show([live("Claude", 64)]);
+      await settle();
+      expect(tiles(0)[0]?.getAttribute("data-state")).toBe("live");
+    } finally {
+      Object.defineProperty(AbortSignal, "any", descriptor);
+    }
+  });
+
+  it.each(["response", "body"])("releases Continue when the pack %s hangs, then retries", async (phase) => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout", "Date"] });
+    let ready = false;
+    let requestSignal: AbortSignal | undefined;
+    vi.stubGlobal("fetch", vi.fn((_url, init) => {
+      if (ready) return Promise.resolve({ ok: true, json: async () => PACK } as Response);
+      requestSignal = init?.signal;
+      const pending = new Promise<never>((_resolve, reject) => {
+        requestSignal?.addEventListener("abort", () => reject(
+          phase === "body" ? new DOMException("Body aborted", "AbortError") : requestSignal?.reason,
+        ), { once: true });
+      });
+      return phase === "response"
+        ? pending
+        : Promise.resolve(Object.assign(new Response(), { json: () => pending }));
+    }));
+    const preview = live("Claude", 64);
+    const { unmount } = render(<SetupDisplayModeScreen
+      automaticPreview={preview}
+      automaticPreviews={[preview]}
+      manualPreview={preview}
+      mode="automatic"
+      onContinue={vi.fn()}
+      onSelectMode={vi.fn()}
+      onSelectProvider={vi.fn()}
+      providers={[{ id: "claude", label: "Claude" }]}
+      selectedProviderId="claude"
+      theme={THEME}
+    />);
+    const continueButton = () => screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement;
+    expect(continueButton().disabled).toBe(true);
+    await settle();
+    await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+
+    expect(requestSignal?.aborted).toBe(true);
+    expect(document.querySelector('[data-state="skeleton"]')).toBeNull();
+    expect(continueButton().disabled).toBe(false);
+
+    // A retry that also hangs must not put the step back behind a skeleton.
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
+    expect(continueButton().disabled).toBe(false);
+    expect(document.querySelector('[data-state="skeleton"]')).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+    ready = true;
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+
+    expect(tiles(0)[0].getAttribute("data-state")).toBe("live");
+    expect(continueButton().disabled).toBe(false);
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("cancels a pending request on unmount without scheduling a retry", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout", "Date"] });
+    let requestSignal: AbortSignal | undefined;
+    vi.stubGlobal("fetch", vi.fn((_url, init) => {
+      requestSignal = init?.signal;
+      return new Promise<Response>((_resolve, reject) => {
+        requestSignal?.addEventListener("abort", () => reject(requestSignal?.reason), { once: true });
+      });
+    }));
+    show([live("Claude", 64)]);
+    cleanup();
+    await settle();
+
+    expect(requestSignal?.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
   });
 
   it("draws the theme once the Companion answers after failing at first", async () => {

@@ -30,17 +30,19 @@ const PACK = {
 };
 
 function live(label: string, percent: number): SetupDisplayModePreview {
+  const frame = {
+    v: 1,
+    provider: label.toLowerCase(),
+    label,
+    usageMode: "used",
+    usageWindows: [{ id: "session", label: "Session", percent, resetSecs: 3600 }],
+  };
   return {
     providerLabel: label,
     resetLabel: null,
     windows: [{ label: "Session", percent }],
-    frame: {
-      v: 1,
-      provider: label.toLowerCase(),
-      label,
-      usageMode: "used",
-      usageWindows: [{ id: "session", label: "Session", percent, resetSecs: 3600 }],
-    },
+    frame,
+    pinnedFrame: frame,
     frameAt: new Date().toISOString(),
   };
 }
@@ -146,13 +148,15 @@ describe("Automatic shows one theme tile that changes provider (#821 single tile
     }
   });
 
-  it("keeps a provider without values as a grey placeholder on its turn", async () => {
+  it("shows unavailable usage on the turn of a provider without a companion frame", async () => {
     show([live("Claude", 64), { providerLabel: "Cursor", resetLabel: null, windows: [] }]);
     await settle();
     act(() => { vi.advanceTimersByTime(ROTATION_HOLD_MS); });
-    const shown = tiles(0).find((tile) => tile.dataset.visible === "true");
-    expect(shown?.dataset.provider).toBe("Cursor");
-    expect(shown?.dataset.state).toBe("skeleton");
+    const shown = document.querySelectorAll('[data-slot="display-mode-preview"]')[0];
+    expect(shown.textContent).toContain("Cursor");
+    expect(shown.textContent).toContain("Usage unavailable");
+    expect(shown.querySelector('[data-state="skeleton"]')).toBeNull();
+    expect(shown.textContent).not.toContain("64");
   });
 
   it("does not rotate Manual", async () => {
@@ -160,6 +164,7 @@ describe("Automatic shows one theme tile that changes provider (#821 single tile
     await settle();
     const manual = () => tiles(1).find((tile) => tile.dataset.visible === "true")?.dataset.provider;
     const first = manual();
+    expect(first).toBe("Claude");
     act(() => { vi.advanceTimersByTime(ROTATION_HOLD_MS * 3); });
     expect(manual()).toBe(first);
     expect(tiles(1)).toHaveLength(1);

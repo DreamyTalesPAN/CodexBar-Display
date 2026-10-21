@@ -320,3 +320,30 @@ func TestUsagePreviewFramesUseTheLocalStreamClock(t *testing.T) {
 		}
 	}
 }
+
+func TestUsagePreviewFramesKeepCompletedUnavailableTokensUnknown(t *testing.T) {
+	isolatePreviewHome(t)
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
+			Provider: "codex", CollectedAt: now, TokenStatsCollectedAt: now,
+			Frame: protocol.Frame{
+				V: 2, Provider: "codex", Label: "Codex", UsageMode: "used",
+				UsageWindows: []protocol.UsageWindow{{ID: "session", Label: "Session", Percent: 12, ResetSec: 3600}},
+			},
+		}}}, true
+	}
+
+	got := getUsage(t, server, "/v1/usage?previewFrames=1")
+	if !got.TokenUsageReady || got.PreviewFrames == nil || len(got.PreviewFrames.Providers) != 1 {
+		t.Fatalf("completed history must be ready with a preview: %+v", got)
+	}
+	preview := got.PreviewFrames.Providers[0]
+	for _, frame := range []*protocol.Frame{preview.Automatic, &preview.Pinned} {
+		if frame == nil || frame.TokenTotalsKnown || frame.SessionTokens != 0 || frame.WeekTokens != 0 || frame.TotalTokens != 0 {
+			t.Fatalf("completed unavailable history must not invent known totals: %+v", frame)
+		}
+	}
+}

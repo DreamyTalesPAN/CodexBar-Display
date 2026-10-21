@@ -85,8 +85,8 @@ export function useThemeRenderPack(
           scheduleRetry();
         }
       })
-      .catch((error) => {
-        if (error instanceof DOMException && error.name === "AbortError") {
+      .catch(() => {
+        if (controller.signal.aborted) {
           return;
         }
         setState({ key, pack: null, status: "error" });
@@ -239,7 +239,7 @@ function ThemeTile({
       )}
       data-provider={frame.providerLabel}
       data-slot="display-mode-tile"
-      data-state={data ? "live" : frame.frame?.error ? "unavailable" : "skeleton"}
+      data-state={data ? "live" : "unavailable"}
       data-visible={active ? "true" : "false"}
     >
       {data ? (
@@ -253,7 +253,7 @@ function ThemeTile({
       ) : (
         <span
           aria-label={`${frame.providerLabel}: no usage yet`}
-          className="block size-full animate-pulse bg-foreground/15"
+          className="block size-full bg-foreground/15"
           role="img"
         />
       )}

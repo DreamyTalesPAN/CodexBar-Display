@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { UsageProviderInfo, UsageSnapshot } from "../control-center-types";
-import { buildFrameData, type DisplayFrame } from "../live-vibetv-preview";
+import { boundValue, buildFrameData, type DisplayFrame } from "../live-vibetv-preview";
 import {
   displayPreviewFor,
   displayPreviewsFor,
@@ -184,6 +184,26 @@ describe("the frames come from the companion", () => {
     expect(previews[0].frame).toBe(automatic);
     expect(previews[0].frameAt).toBe(stamped);
     expect(pinnedPreview(previews[0]).frame).toBe(pinned);
+  });
+
+  it.each([false, true])("keeps unknown companion token totals unavailable when tokenUsageReady is %s", (tokenUsageReady) => {
+    const previews = displayPreviewsFor({ ...usage, tokenUsageReady }, enabled, frames);
+    for (const preview of [previews[0], pinnedPreview(previews[0])]) {
+      const data = buildFrameData(stamped, preview.frame!);
+      expect(["st", "wt", "tt"].map((key) => boundValue(key, data))).toEqual(["--", "--", "--"]);
+    }
+  });
+
+  it.each([0, 123])("preserves a known companion token total of %s", (totalTokens) => {
+    // A measured zero is omitted on the wire; the host's known flag preserves it.
+    const frame = { ...automatic, tokenTotalsKnown: true, ...(totalTokens ? { totalTokens } : {}) };
+    const previews = displayPreviewsFor(usage, enabled, {
+      ...frames,
+      providers: [{ id: "codex", automatic: frame, pinned: frame }],
+    });
+    for (const preview of [previews[0], pinnedPreview(previews[0])]) {
+      expect(boundValue("tt", buildFrameData(stamped, preview.frame!))).toBe(String(totalTokens));
+    }
   });
 
   it("keeps a provider the companion built no frame for a placeholder", () => {
