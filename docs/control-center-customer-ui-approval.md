@@ -15112,3 +15112,18 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve the incoming feature together with the existing calm customer flows in the integration candidate.
 - Scope: Merge claude/calm-updates into claude/paultest-build8; retain all source approval entries.
 - What's new: none — integration of existing feature entries only.
+
+## 2026-10-20 — #802: Appearance install on the button, bigger lime Active pill (7198 review, Paul's pictures)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:30: "passt so" (pictures of the install button and the pills, vibetv-testbench/review-1016/ui/802-install-button/) — entry: #802 install state and pills. Before → after: while installing, the card grew by a progress bar and a box with step lines, and afterwards kept a box "Installed – Theme is active on VibeTV." → the card never changes its height: its own lime Install button turns into a disabled "Installing" with a spinner, nothing else is added, and after the install only the pill on the picture remains; the "Active" pill is bigger (14 px text, 24 px high) in lime #CCFF00 with black text, the "Installed" pill is as big and light so Active stands out; no extra "Try again" row, a failed install is the usual dialog and the card's Install button retries.
+- Approved customer-visible result: pictures for Paul in `vibetv-testbench/review-1016/ui/802-install-button/` (card while installing, card after, close-up of the pills), 1200 px, "App heute (7198)" next to "neu".
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx`, its unit tests, the customer-flow script `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #802 install state and pills: no new content, the same install with another look
+
+
+## 2026-10-21 — #802: approval marker after merging claude/group-calm-redesign at 260c4843
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (260c4843) into #802; the own entries of #802 keep their approvals)
+- Approved customer-visible result: #802 as in its own entries plus the entries merged with 260c4843; nothing else changes.
+- Scope: the merge of 260c4843 and this approval record. Pull request branch #802 only, not merged, not released.
+- What's new: none — merge of 260c4843, no customer-visible change of its own
