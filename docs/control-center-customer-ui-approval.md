@@ -9017,3 +9017,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: an incompatible usage engine shows the existing Repair control once; no new text.
 - Scope: the diagnostics panel's usage-engine check row and its test. Pull request branch #803 only.
 - What's new: none — the duplicate Fix control on the usage_engine row is removed when the engine block already shows Repair
+
+## 2026-10-21 — #803: approval marker after merging claude/group-calm-redesign at b095ff2d
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (b095ff2d) into #803; the own entries of #803 keep their approvals)
+- Approved customer-visible result: #803 as in its own entries plus the entries merged with b095ff2d; nothing else changes.
+- Scope: the merge of b095ff2d and this approval record. Pull request branch #803 only, not merged, not released.
+- What's new: none — merge of b095ff2d, no customer-visible change of its own
