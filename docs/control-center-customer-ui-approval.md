@@ -9349,3 +9349,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: without a known installed version the Updates screen shows the unknown state ("No update available") instead of "Everything is up to date"; with a known version nothing changes.
 - Scope: `apps/control-center/src/components/updates-screen.tsx` and its test `updates-screen.calm.test.tsx`, plus this approval record. Pull request branch only, not merged, not released.
 - What's new: none — bug fix, not announced to customers
+
+## 2026-10-21 — #798: Updates attempt key keeps milliseconds
+
+- User approval: no visible change – UI approval not needed (bug fix: two local VibeTV update failures within one second both open the "Update failed" dialog; the attempt key now keeps milliseconds, the time shown stays HH:mm:ss)
+- Approved customer-visible result: each failed local VibeTV update opens its "Update failed" dialog, also when a second one follows the closed one within the same second; nothing else changes.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (attempt start time), its test `updates-screen.test.tsx`, plus this approval record. Pull request branch only, not merged, not released.
+- What's new: none — bug fix, not announced to customers

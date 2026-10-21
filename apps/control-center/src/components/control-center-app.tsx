@@ -3026,7 +3026,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     const shouldUpgradeActiveTheme = Boolean(
       activeThemeUpgrade.theme && activeThemeUpgrade.needed,
     );
-    const startedAt = formatTime();
+    // Identifies this attempt in the Updates screen (its dismissal key), so
+    // it keeps milliseconds; formatTime() would repeat within one second.
+    const startedAt = new Date().toISOString();
     const initialLogs = ["Preparing VibeTV update."];
     const firmwareIsKnownCurrent = Boolean(
       firmwareUpdate?.status === "current" &&

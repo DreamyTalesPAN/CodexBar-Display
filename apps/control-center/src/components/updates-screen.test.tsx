@@ -45,6 +45,27 @@ describe("UpdatesScreen VibeTV update card", () => {
     expect(retry).toHaveBeenCalledTimes(1);
   });
 
+  // Two attempts that fail within the same second carry different start
+  // times in milliseconds; the second failure must open even though the first
+  // was closed.
+  it("opens a second failure that comes within the same second as the closed one", () => {
+    const props = {
+      companionStatus: "online" as const,
+      companionRelease: { checkedAt: "2026-10-21T10:00:00Z", status: "available" as const, updateAvailable: false, message: "Mac App is up to date." },
+      device: { connected: true, board: "esp8266-smalltv-st7789", firmware: "1.0.39" },
+      firmwareUpdate: { checkedAt: "2026-10-21T10:00:00Z", status: "update_available" as const, updateAvailable: true, latestFirmware: "1.0.40" },
+      onInstallUpdate: vi.fn(),
+      onCreateReport: vi.fn(),
+      updateStatus: { phase: "error" as const, startedAt: "2026-10-21T10:00:00.100Z", error: "Update was not installed.", logs: [] },
+    };
+    const view = render(<UpdatesScreen {...props} />);
+    expect(screen.getByRole("dialog", { name: "Update failed" })).toBeTruthy();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    view.rerender(<UpdatesScreen {...props} updateStatus={{ ...props.updateStatus, startedAt: "2026-10-21T10:00:00.900Z" }} />);
+    expect(screen.getByRole("dialog", { name: "Update failed" })).toBeTruthy();
+  });
+
   it("opens a failed check after the customer closed an update error", () => {
     const props = {
       companionStatus: "online" as const,
