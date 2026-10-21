@@ -10,6 +10,12 @@ export type PreviewFrames = {
   providers?: { id: string; automatic?: DisplayFrame; pinned?: DisplayFrame; pairs?: Record<string, DisplayFrame> }[];
 };
 
+/** The usage read that carries the preview frames, with the limits the customer has chosen but not saved yet. */
+export function usagePreviewPath(quiet: boolean, hiddenWindows?: Record<string, string[]>): string {
+  const hidden = hiddenWindows ? `&hiddenWindows=${encodeURIComponent(JSON.stringify(hiddenWindows))}` : "";
+  return `/v1/usage?${quiet ? "" : "refresh=1&"}previewFrames=1${hidden}`;
+}
+
 /** Formats the companion's frame for the plain tile; normalization stays in Go. */
 export function displayPreviewFor(
   frame: DisplayFrame | undefined,

@@ -2733,13 +2733,20 @@ it.each(["Escape", "Scan again"])("reports the setup update dismissal to its own
   else fireEvent.click(within(dialog).getByRole("button", { name: action }));
   expect(onDismiss).toHaveBeenCalledTimes(1);
 });
-it.each(["pair", "automatic", "fixed"] as const)("chooses a reported pair limit, waits for a saved host preview and keeps the shared choice when saving %s", async (mode) => {
+it.each(["pair", "automatic", "fixed"] as const)("chooses a reported pair limit, shows the Companion frame for it and keeps the shared choice when saving %s", async (mode) => {
   Element.prototype.hasPointerCapture = () => false;
   Element.prototype.scrollIntoView = () => {};
   const props = baseProps({ step: "display", displayMode: "pair",
     displayProviderIds: ["codex", "claude"],
     displayProviders: [{ id: "codex", label: "Codex" }, { id: "claude", label: "Claude" }],
     providers: [provider(), provider("claude", "Claude")],
+    // The Companion's frame for the pair with the draft limit, which the app
+    // asks for with the draft (onPreviewHiddenWindows).
+    automaticPreviews: [
+      { providerId: "codex", providerLabel: "Codex", resetLabel: null, windows: [], pairFrames: { claude: { provider: "codex+claude", usageWindows: [{ id: "codex:weekly", label: "Codex Weekly", percent: 20 }, { id: "claude:weekly", label: "Claude Weekly", percent: 40 }] } } },
+      { providerId: "claude", providerLabel: "Claude", resetLabel: null, windows: [] },
+    ],
+    onPreviewHiddenWindows: vi.fn(),
     usage: { providers: [
       { id: "codex", label: "Codex", session: 10, weekly: 20, usageMode: "used", windows: [
         { id: "session", label: "Session", usedPercent: 10 },
@@ -2754,8 +2761,8 @@ it.each(["pair", "automatic", "fixed"] as const)("chooses a reported pair limit,
   fireEvent.keyDown(screen.getByRole("combobox", { name: "Limit for Provider 1" }), { key: "Enter" });
   fireEvent.click(screen.getByRole("option", { name: "Weekly" }));
   expect(props.onDisplayContinue).not.toHaveBeenCalled();
-  expect(screen.queryByText("Codex Weekly")).toBeNull();
-  expect(within(screen.getByRole("button", { name: /Two at once/ })).getByText("No usage yet")).toBeTruthy();
+  expect(props.onPreviewHiddenWindows).toHaveBeenLastCalledWith({ codex: ["session"] });
+  expect(within(screen.getByRole("button", { name: /Two at once/ })).getByText("Codex Weekly")).toBeTruthy();
   expect(screen.getByRole("combobox", { name: "Limit for Provider 1" }).textContent).toContain("Weekly");
   if (mode !== "pair") {
     fireEvent.click(screen.getByRole("button", { name: mode === "automatic" ? /Automatic/ : /One provider/ }));

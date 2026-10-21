@@ -2,6 +2,7 @@ package companionapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"strings"
@@ -195,6 +196,11 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	hiddenWindows, err := usagePreviewHiddenWindows(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_hidden_windows", "hiddenWindows must be a JSON object of provider to window ids.", "Send the limits as {\"provider\":[\"window\"]}.")
+		return
+	}
 	now := s.currentTime()
 	showUsed := s.usageBarsShowUsed()
 	manualRefresh := usageRefreshRequested(r)
@@ -226,7 +232,7 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 			resp := usageResponseFromPersisted(now, enabledUsage)
 			if len(resp.Providers) > 0 {
 				if usagePreviewFramesRequested(r) {
-					resp.PreviewFrames = previewFramesFor(usage, inventory, showUsed, s.currentSystemBusy() != nil, s.previewDeviceCapabilities(), now, s.firmwareUpdates, s.runtimeTheme)
+					resp.PreviewFrames = previewFramesFor(usage, inventory, showUsed, s.currentSystemBusy() != nil, s.previewDeviceCapabilities(), now, s.firmwareUpdates, s.runtimeTheme, hiddenWindows)
 				}
 				writeUsage(resp, enabledUsage)
 				return
@@ -283,6 +289,27 @@ func usageForEnabledProviders(usage daemon.PersistedUsage, settings []codexbar.P
 
 func usagePreviewFramesRequested(r *http.Request) bool {
 	return r != nil && r.URL.Query().Get("previewFrames") == "1"
+}
+
+// maxPreviewHiddenWindowsBytes bounds the optional hiddenWindows query value.
+const maxPreviewHiddenWindowsBytes = 2048
+
+// usagePreviewHiddenWindows reads the limits a preview should show instead of
+// the stored ones (the setup draft). Absent means the stored limits.
+func usagePreviewHiddenWindows(r *http.Request) (map[string][]string, error) {
+	if r == nil || !r.URL.Query().Has("hiddenWindows") {
+		return nil, nil
+	}
+	raw := r.URL.Query().Get("hiddenWindows")
+	if len(raw) > maxPreviewHiddenWindowsBytes {
+		return nil, errors.New("hiddenWindows too large")
+	}
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	var hidden map[string][]string
+	if err := decoder.Decode(&hidden); err != nil || hidden == nil || decoder.More() {
+		return nil, errors.New("hiddenWindows is not a JSON object")
+	}
+	return hidden, nil
 }
 
 func usageRefreshRequested(r *http.Request) bool {

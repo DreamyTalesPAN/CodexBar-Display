@@ -127,6 +127,7 @@ import { buildAiFixPrompt } from "./setup/setup-ai-prompt";
 import type { SetupConnectSteps } from "./setup/setup-connect";
 import {
   displayPreviewsFor,
+  usagePreviewPath,
   type PreviewFrames,
 } from "./setup/setup-display-previews";
 import {
@@ -588,6 +589,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const providerPreferencesReadOpeningRef = useRef(0);
   const providerListShownRef = useRef(false);
   const quietUsageReadRef = useRef<Promise<void> | null>(null);
+  // The limits the setup wizard holds as a draft: the preview frames are built
+  // with them until the customer saves.
+  const previewHiddenWindowsRef = useRef<Record<string, string[]> | undefined>(undefined);
   const usageGenerationRef = useRef(0);
   const providerPreferencesRevisionRef = useRef(0);
   const providerPreferenceWritesRef = useRef<Promise<void>>(Promise.resolve());
@@ -3505,7 +3509,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           const { previewFrames: frames, ...payload } = await runCompanion<
             UsageSnapshot & { previewFrames?: PreviewFrames }
           >(
-            quiet ? "/v1/usage?previewFrames=1" : "/v1/usage?refresh=1&previewFrames=1",
+            usagePreviewPath(quiet, previewHiddenWindowsRef.current),
             undefined,
             { preserveLastError: quiet },
           );
@@ -3572,6 +3576,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       markCompanionUnavailable,
       runCompanion,
     ],
+  );
+
+  const setPreviewHiddenWindows = useCallback(
+    (hiddenWindows?: Record<string, string[]>) => {
+      previewHiddenWindowsRef.current = hiddenWindows;
+      // A read started with the previous draft must not answer for this one.
+      quietUsageReadRef.current = null;
+      void refreshUsage({ quiet: true });
+    },
+    [refreshUsage],
   );
 
   const refreshProviderPreferences = useCallback(
@@ -5886,6 +5900,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               displayProviderId={providerDisplay?.providerIds?.[0] ?? null}
               displayProviderIds={providerDisplay?.providerIds ?? []}
               displayHiddenWindows={providerDisplay?.hiddenWindows}
+              onPreviewHiddenWindows={setPreviewHiddenWindows}
               firmwareProgress={firmwareUpdateStatus?.progress}
               firmwareWrittenPercent={
                 firmwareUpdateInProgress

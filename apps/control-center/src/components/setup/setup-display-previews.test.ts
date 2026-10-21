@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { UsageProviderInfo, UsageSnapshot } from "../control-center-types";
 import { boundValue, buildFrameData, type DisplayFrame } from "../live-vibetv-preview";
 import {
+  usagePreviewPath,
   displayPreviewFor,
   displayPreviewsFor,
   pinnedPreview,
@@ -339,5 +340,15 @@ describe("Companion selection and device limits", () => {
       expect(preview.frame?.providerSlots).toEqual(frame.providerSlots);
       expect(preview.frame?.weeklyUnavailable).toBe(true);
     }
+  });
+});
+
+describe("usagePreviewPath", () => {
+  it("asks for the frames with the unsaved limits only when there are some", () => {
+    expect(usagePreviewPath(true)).toBe("/v1/usage?previewFrames=1");
+    expect(usagePreviewPath(false)).toBe("/v1/usage?refresh=1&previewFrames=1");
+    expect(usagePreviewPath(true, { codex: ["session"] })).toBe(
+      `/v1/usage?previewFrames=1&hiddenWindows=${encodeURIComponent('{"codex":["session"]}')}`,
+    );
   });
 });

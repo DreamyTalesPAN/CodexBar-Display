@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -91,7 +93,7 @@ func TestDisplayPreviewFramesAreTheDaemonsFrames(t *testing.T) {
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return usage, true }
 
 	got := getPreviewFrames(t, server)
-	want := daemon.PreviewFrames(usage, true, false, server.previewDeviceCapabilities(), now, nil, "", nil)
+	want := daemon.PreviewFrames(usage, true, false, server.previewDeviceCapabilities(), now, nil, "", nil, nil)
 	if len(got.Providers) != 1 || got.Providers[0].ID != "codex" {
 		t.Fatalf("providers: %+v", got.Providers)
 	}
@@ -315,7 +317,7 @@ func TestUsagePreviewFramesUseTheLocalStreamClock(t *testing.T) {
 	usage := daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{Provider: "codex", CollectedAt: now, Frame: protocol.Frame{V: 2, Provider: "codex", Label: "Codex", Session: 12}}}}
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return usage, true }
 	preview := getPreviewFrames(t, server).Providers[0]
-	want := daemon.PreviewFrames(usage, true, false, server.previewDeviceCapabilities(), now, nil, "", nil)[0]
+	want := daemon.PreviewFrames(usage, true, false, server.previewDeviceCapabilities(), now, nil, "", nil, nil)[0]
 	for mode, frame := range map[string]*protocol.Frame{"automatic": preview.Automatic, "pinned": &preview.Pinned} {
 		gotJSON, _ := json.Marshal(frame.NextClockTransition)
 		wantJSON, _ := json.Marshal(want.Pinned.NextClockTransition)
@@ -488,6 +490,40 @@ func TestUsagePreviewFramesKeepKnownZeroTokensWhenUsageOmitsCounts(t *testing.T)
 	for _, frame := range []*protocol.Frame{preview.Automatic, &preview.Pinned} {
 		if frame == nil || !frame.TokenTotalsKnown || frame.SessionTokens != 0 || frame.WeekTokens != 0 || frame.TotalTokens != 0 {
 			t.Fatalf("known zero token totals lost in preview: %+v", frame)
+		}
+	}
+}
+
+func TestUsagePreviewFramesTakeUnsavedHiddenWindows(t *testing.T) {
+	isolatePreviewHome(t)
+	server := newPreviewTestServer(t)
+	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
+			Provider: "codex", CollectedAt: now,
+			Frame: protocol.Frame{
+				V: 2, Provider: "codex", Label: "Codex", UsageMode: "used",
+				UsageWindows: []protocol.UsageWindow{
+					{ID: "session", Label: "Session", Percent: 10, ResetSec: 600},
+					{ID: "weekly", Label: "Weekly", Percent: 20, ResetSec: 3600},
+				},
+			},
+		}}}, true
+	}
+	hidden := url.QueryEscape(`{"codex":["session"]}`)
+	got := getUsage(t, server, "/v1/usage?previewFrames=1&hiddenWindows="+hidden).PreviewFrames.Providers[0].Pinned
+	if len(got.UsageWindows) != 1 || got.UsageWindows[0].ID != "weekly" {
+		t.Fatalf("unsaved limit not applied: %+v", got.UsageWindows)
+	}
+	if plain := getPreviewFrames(t, server).Providers[0].Pinned; len(plain.UsageWindows) != 2 {
+		t.Fatalf("unsaved limit leaked into the stored setting: %+v", plain.UsageWindows)
+	}
+	for _, bad := range []string{"nope", "[]", "null", `{"codex":"session"}`, `{"codex":["a"]} x`, `{"codex":["` + strings.Repeat("a", 3000) + `"]}`} {
+		recorder := httptest.NewRecorder()
+		server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/usage?previewFrames=1&hiddenWindows="+url.QueryEscape(bad), nil))
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("%q: status=%d", bad, recorder.Code)
 		}
 	}
 }

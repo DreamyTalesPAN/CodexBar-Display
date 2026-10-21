@@ -97,6 +97,8 @@ export type SetupWizardProps = {
   /** Every stored provider of the display choice, for Two at once. */
   displayProviderIds?: string[];
   displayHiddenWindows?: Record<string, string[]>;
+  /** The limits held as a draft (undefined once saved or left); the host builds the preview frames with them. */
+  onPreviewHiddenWindows?: (hiddenWindows?: Record<string, string[]>) => void;
   displayProviders: SetupDisplayModeProvider[];
   /** A display choice is being written; its step has not finished yet. */
   displaySavePending: boolean;
@@ -253,6 +255,15 @@ export function SetupWizard(props: SetupWizardProps) {
     pairIds?: string[];
     hiddenWindows?: Record<string, string[]>;
   } | null>(null);
+  const previewHiddenWindows = displayDraft?.hiddenWindows;
+  const previewHiddenWindowsSent = useRef<Record<string, string[]> | undefined>(undefined);
+  const { onPreviewHiddenWindows } = props;
+  useEffect(() => {
+    if (previewHiddenWindowsSent.current !== previewHiddenWindows) {
+      previewHiddenWindowsSent.current = previewHiddenWindows;
+      onPreviewHiddenWindows?.(previewHiddenWindows);
+    }
+  }, [previewHiddenWindows, onPreviewHiddenWindows]);
   // The counterpart to goBack. Without it the override outlives the visit it
   // was made for. The device step moves forward when its connect sequence ends.
   const goForward = useCallback(() => {
@@ -1176,7 +1187,7 @@ export function SetupWizard(props: SetupWizardProps) {
               ),
             }))
           }
-          pairPreview={displayDraft?.hiddenWindows ? null : pairDisplayPreview(
+          pairPreview={pairDisplayPreview(
             previewOf(pairIds[0]),
             previewOf(pairIds[1]),
           )}

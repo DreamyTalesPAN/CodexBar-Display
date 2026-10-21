@@ -18053,3 +18053,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: The validated 7205 behavior is unchanged by this documentation-only merge.
 - Scope: Retain the final upstream approval block and all integration records.
 - What's new: none — documentation only.
+
+## 2026-10-21 — build9: Two at once card shows the Companion frame after a limit change
+
+- User approval: no visible change – UI approval not needed (bug fix: the Two at once card showed "No usage yet" after a limit change; the limit picker itself is already pending).
+- Approved customer-visible result: The Two at once card shows the Companion's frame for the chosen limits, as saving them would show it.
+- Scope: Setup display step asks the Companion for preview frames with the unsaved limits.
+- What's new: none — bug fix.

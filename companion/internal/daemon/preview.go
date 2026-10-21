@@ -30,7 +30,9 @@ type ProviderPreview struct {
 // runtime bootstraps, so what it returns is what the stream sends: the
 // provider's rows, the restated last-good frame, or the error frame. The
 // device fields and wire-budget trimming use the same steps as sending.
-func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, caps protocol.DeviceCapabilities, now time.Time, updates *FirmwareUpdateCache, cliTheme string, inventory []codexbar.ProviderSetting) []ProviderPreview {
+// hiddenWindows, when set, stands in for the stored limits: the customer's
+// unsaved choice, shown the way saving it would show it.
+func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, caps protocol.DeviceCapabilities, now time.Time, updates *FirmwareUpdateCache, cliTheme string, inventory []codexbar.ProviderSetting, hiddenWindows map[string][]string) []ProviderPreview {
 	_, enabledProviders := enabledProviderInventory(inventory)
 	providerEnabled := func(provider string) (bool, bool) {
 		_, enabled := enabledProviders[normalizeProviderKey(provider)]
@@ -63,6 +65,9 @@ func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, caps protoco
 		display = *cfg.ProviderDisplay
 	}
 	display.Mode, display.ProviderIDs = "automatic", nil
+	if hiddenWindows != nil {
+		display.HiddenWindows = runtimeconfig.NormalizeHiddenWindows(hiddenWindows)
+	}
 	cfg.ProviderDisplay = &display
 	cfg.DisplayRotateSeconds = 3600
 	deps := runtimeDeps{
