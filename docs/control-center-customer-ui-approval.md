@@ -8674,3 +8674,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: on a WebGL 1-only machine the setup shows the photo fallback instead of a 3D model that cannot render; with WebGL 2 nothing changes.
 - Scope: `apps/control-center/src/components/vibetv-3d-support.ts` and its test `vibetv-3d-support.test.ts`, plus this approval record. Pull request branch only, not merged, not released.
 - What's new: none — bug fix, not announced to customers
+
+## 2026-10-21 — #780: approval marker after merging main at 3dc0a15b
+
+- User approval: no visible change – UI approval not needed (merge of main (3dc0a15b) into #780; the own entries of #780 keep their approvals)
+- Approved customer-visible result: #780 as in its own entries plus the entries merged with 3dc0a15b; nothing else changes.
+- Scope: the merge of 3dc0a15b and this approval record. Pull request branch #780 only, not merged, not released.
+- What's new: none — merge of 3dc0a15b, no customer-visible change of its own
