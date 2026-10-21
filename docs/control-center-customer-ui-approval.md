@@ -10639,3 +10639,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #864 as in its own entries plus the entries merged with 8d0fe117; nothing else changes.
 - Scope: the merge of 8d0fe117 and this approval record. Pull request branch #864 only, not merged, not released.
 - What's new: none — merge of 8d0fe117, no customer-visible change of its own
+
+## 2026-10-21 — #592 integration: merge of #864 at 6908c43
+
+- User approval: no visible change – UI approval not needed (merge of claude/592-two-at-once-on-800 (6908c43) into claude/paultest-592a; the companion skips a provider whose every window is hidden, no UI text or layout changes)
+- Approved customer-visible result: paultest-592a as in its own entries plus the entries merged with 6908c43; nothing else changes.
+- Scope: the merge of 6908c43 and this approval record. Test branch claude/paultest-592a only, not merged, not released.
+- What's new: none — merge of 6908c43, no customer-visible change of its own
