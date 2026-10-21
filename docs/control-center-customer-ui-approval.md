@@ -8151,6 +8151,188 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of 61f79061 and this approval record. Pull request branch #856 only, not merged, not released.
 - What's new: none — merge of 61f79061, no customer-visible change of its own
 
+## 2026-10-14 — Windows: an app update found while the app runs installs only with the window closed
+
+- User approval: approved by Paul in the communicator chat, 2026-10-14 00:00: "ok klingt gut" (time unknown) — entry: #785 Windows: an app update found while the app runs installs only with the window closed — Paul's yes to the proposal (no automatic install with the window open, quiet install with the window closed, launch install, Update and the tray item unchanged, the Mac App unchanged); the entry records it as said on 2026-10-14, after "ja das ist natürlich kacke"
+- Approved customer-visible result: In the Windows app only. With the window open (also minimized) the app never installs an update by itself any more: before, the Control Center sent itself to `vibetv://check-for-updates` once per offered version, which on Windows downloads and installs at once, closes the app and runs the installer, and showed "The update could not be installed. …" when that failed although nobody had clicked anything. The update at launch (#565), `Update` on the Updates screen and the tray item "Check for Updates…" install as before. While the app runs with its window closed, it looks for a newer version every 6 hours; when there is one and no VibeTV update or theme install runs, it installs it with the installer's progress window, as at launch, and starts again in the tray with the window closed. No message in any outcome; a version is tried this way at most once in 24 hours, sharing the note of the update at launch. VibeTV gets no new numbers for the few seconds the background service restarts. The Mac App is unchanged: it still opens Sparkle's dialog once per offered version and installs only after the customer's answer. No new wording, screen or control.
+- Scope: `control-center-app.tsx` (the redirect is skipped on Windows), the new `control-center-app.app-update-prompt.test.tsx`, `windows/src-tauri/src/main.rs`, `windows/src-tauri/src/launch_update.rs` and its tests, `docs/windows-shell.md`, and this approval record. Branch only, not merge, release, installation, or a device operation.
+- What's new: none — updates arrive on their own; there is nothing for the customer to find or use
+
+## 2026-10-14 — #610 brought up to date with main after #597 and #612
+
+- User approval: no visible change – UI approval not needed (#785 #610 brought up to date with main after #597 and #612: merge of main (#597, #612) into the branch; the one conflict in windows/src-tauri/src/main.rs keeps both behaviours; no visible change of its own; the look stays as in the entry "Windows: an app update found while the app runs installs only with the window closed")
+- Approved customer-visible result: as recorded in that entry above and in #597's entries; nothing else changes.
+- Scope: merge of main into `claude/win-no-silent-app-update`, and this approval record.
+- What's new: none — #785 no customer-visible change of its own (added so the entry fits the no-visible-change form)
+
+## 2026-10-14 — #610 brought up to date with main after #608
+
+- User approval: no visible change – UI approval not needed (#785 #610 brought up to date with main after #608: merge of main (#608) into the branch, without a conflict outside this record; no visible change of its own; the look stays as in the entry "Windows: an app update found while the app runs installs only with the window closed")
+- Approved customer-visible result: as recorded in that entry above and in #608's entries; nothing else changes.
+- Scope: merge of main into `claude/win-no-silent-app-update`, and this approval record.
+- What's new: none — #785 no customer-visible change of its own (added so the entry fits the no-visible-change form)
+
+## 2026-10-15 — #610: approval marker after merging main with #607, #620 and #629
+
+- User approval: no visible change – UI approval not needed (#785 #610: approval marker after merging main with #607, #620 and #629: merge of main (#607, #620, #629) into this branch; no new wording, no visible change of its own)
+- Approved customer-visible result: as approved in the #610 entries above and in the entries of #607, #620 and #629; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-15 — #610: update-prompt test fixture reports renderOk (after #629)
+
+- User approval: no visible change – UI approval not needed (#785 #610: update-prompt test fixture reports renderOk (after #629): test fixture only (renderOk true after #629), no visible change)
+- Approved customer-visible result: none; test fixture only.
+- Scope: `apps/control-center/src/components/control-center-app.app-update-prompt.test.tsx` and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — test only
+
+## 2026-10-16 — #610: approval marker after merging main with #615
+
+- User approval: no visible change – UI approval not needed (#785 #610: approval marker after merging main with #615: merge of main (#615) into this branch; no new wording, no visible change of its own)
+- Approved customer-visible result: as approved in the #610 entries above and in the #615 entries; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — #610: approval marker after merging main with #619 and #628
+
+- User approval: no visible change – UI approval not needed (#785 #610: approval marker after merging main with #619 and #628: merge of main (#619, #628) into this branch; no new wording, no visible change of its own)
+- Approved customer-visible result: as approved in the #610 entries above and in the entries of #619 and #628; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — #610: update-prompt test follows the quiet Mac check from #619
+
+- User approval: no visible change – UI approval not needed (#785 #610: update-prompt test follows the quiet Mac check from #619: test only: it now expects the quiet Mac check URL from #619, no visible change)
+- Approved customer-visible result: none; test only.
+- Scope: `apps/control-center/src/components/control-center-app.app-update-prompt.test.tsx` and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — test only
+
+## 2026-10-16 — #610: approval marker after merging main with #657
+
+- User approval: no visible change – UI approval not needed (#785 #610: approval marker after merging main with #657: merge of main (#657) into this branch; no new wording, no visible change of its own)
+- Approved customer-visible result: as approved in the #610 entries above; nothing else changes.
+- Scope: the merge of main into this branch and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-17 — Provider list asks for a fresh inventory once when it opens (#555, PR #700)
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, #555); look unchanged except: none.
+- Approved customer-visible result: none. The provider list looks and behaves as before; it shows a plugin installed or removed while the engine ran after the list is opened, instead of at the next restart.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (the request that loads the provider list when Settings or the provider setup opens sends `fresh=1` once; polls do not), three `control-center-app.*.test.tsx` files whose request matcher now also accepts the `&fresh=1` suffix, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a fix of a reported defect, no visible change
+
+## 2026-10-18 — Provider list: a fresh read waits for a plain read in flight (Codex P1, PR #700)
+
+- User approval: pending — Paul reviews this PR (fix of a Codex P1 on the #555 change, #700); look unchanged except: none.
+- Approved customer-visible result: none. The provider list looks and behaves as before; a plugin installed or removed while the engine runs shows after the list is opened, also when the list opens while a plain poll is still in flight.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (a `fresh=1` provider read no longer joins a plain read in flight; it waits for that read and then asks CodexBar; plain polls still join any read in flight) and the new test `apps/control-center/src/components/control-center-app.provider-fresh-read.test.tsx`. Pull request branch only, not merge or release.
+- What's new: none — a fix of a reported defect, no visible change
+
+## 2026-10-18 — Provider list reads fresh when it becomes visible (Codex P1 on #700)
+
+- User approval: pending — Paul reviews this PR (fix of a Codex P1 on the #555 change, #700); look unchanged except: none.
+- Approved customer-visible result: none. The provider list looks and behaves as before; it is up to date when the Providers setup step opens or Settings opens, also when a plugin was installed or removed while setup waited for the device.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (a `fresh=1` provider read is sent once when the provider list becomes visible — the Providers setup step or Settings once inside — not on every render; plain polls send no `fresh=1`) and `apps/control-center/src/components/control-center-app.provider-fresh-read.test.tsx`. Pull request branch only, not merge or release.
+- What's new: none — a fix of a reported defect, no visible change
+
+## 2026-10-18 — Provider list: a failed fresh read is asked again (Codex P2 on #700)
+
+- User approval: pending — Paul reviews this PR (fix of a Codex P2 on the #555 change, #700); look unchanged except: none.
+- Approved customer-visible result: none. The provider list looks and behaves as before; after a failed read the next poll asks CodexBar again, so the list is up to date once the read succeeds.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (the fresh read stays owed while the provider list is visible until one succeeds; polls then send `fresh=1`) and `apps/control-center/src/components/control-center-app.provider-fresh-read.test.tsx` (a case for a failed fresh read). Pull request branch only, not merge or release.
+- What's new: none — a fix of a reported defect, no visible change
+
+## 2026-10-18 — Provider list: each opening gets its own fresh read (Codex P2 on #700)
+
+- User approval: pending — Paul reviews this PR (fix of a Codex P2 on the #555 change, #700); look unchanged except: none.
+- Approved customer-visible result: none. The provider list looks and behaves as before; when it is closed and opened again while an earlier fresh read is still running, the new opening asks CodexBar itself, so a plugin changed in between shows.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (a fresh provider read counts only for the opening of the list it was sent for) and `apps/control-center/src/components/control-center-app.provider-fresh-read.test.tsx` (a case for closing and opening again). Pull request branch only, not merge or release.
+- What's new: none — a fix of a reported defect, no visible change
+
+## 2026-10-17 — Theme install finish time stored as an ISO instant
+
+- User approval: pending — Paul reviews this PR (fix of a reported defect, found in review of #693); look unchanged except: none.
+- Approved customer-visible result: none — the theme install finish time is stored as an ISO instant instead of a clock time; nothing on screen changes, the event log keeps its clock time.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (theme install status finish times), `apps/control-center/src/components/update-jobs.ts` (theme status fallback), the new test `update-jobs.test.ts`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — internal time format only, nothing new to show
+
+## 2026-10-19 — Merge of main (v1.0.65 release round + #638) into the Windows app + Companion engine group
+
+- User approval: no visible change – UI approval not needed (#785 Merge of main (v1.0.65 release round + #638) into the Windows app + Companion engine group: Merge of main (v1.0.65 release round + #638) into this group; no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
+- Approved customer-visible result: as in this branch's entries and main's entries
+- Scope: the merge conflict resolutions in `macos/VibeTVControlCenter/main.swift`, `scripts/test-macos-control-center-app-bundle.sh` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #785: approval marker after merging main
+
+- User approval: no visible change – UI approval not needed (#785: approval marker after merging main: Merge of main into this branch; no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #785: approval marker after merging main at e7e8319d
+
+- User approval: no visible change – UI approval not needed (merge of main (e7e8319d) into #785; main.swift keeps both the #785 repair flag and the merged #626 screen check)
+- Approved customer-visible result: #785 as in its own entries plus the entries merged with e7e8319d; nothing else changes.
+- Scope: the merge of e7e8319d and this approval record. Pull request branch #785 only, not merged, not released.
+- What's new: none — merge of e7e8319d, no customer-visible change of its own
+
+## 2026-10-20 — #785: approval lines rewritten to the two accepted forms
+
+- User approval: no visible change – UI approval not needed (#785 record rewrite for the gate in #823; no customer-visible change)
+- Approved customer-visible result: #785 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
+- Scope: #785 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #785 approval record only
+
+## 2026-10-21 — #785: approval marker after merging main at 12504ca6
+
+- User approval: no visible change – UI approval not needed (merge of main (12504ca6) into #785; the own entries of #785 keep their approvals)
+- Approved customer-visible result: #785 as in its own entries plus the entries merged with 12504ca6; nothing else changes.
+- Scope: the merge of 12504ca6 and this approval record. Pull request branch #785 only, not merged, not released.
+- What's new: none — merge of 12504ca6, no customer-visible change of its own
+
+## 2026-10-21 — #785: approval marker after merging main at e3503bda
+
+- User approval: no visible change – UI approval not needed (merge of main (e3503bda) into #785; the own entries of #785 keep their approvals)
+- Approved customer-visible result: #785 as in its own entries plus the entries merged with e3503bda; nothing else changes.
+- Scope: the merge of e3503bda and this approval record. Pull request branch #785 only, not merged, not released.
+- What's new: none — merge of e3503bda, no customer-visible change of its own
+
+## 2026-10-21 — #785: approval marker after merging main at 41bf10cf
+
+- User approval: no visible change – UI approval not needed (merge of main (41bf10cf) into #785; the own entries of #785 keep their approvals)
+- Approved customer-visible result: #785 as in its own entries plus the entries merged with 41bf10cf; nothing else changes.
+- Scope: the merge of 41bf10cf and this approval record. Pull request branch #785 only, not merged, not released.
+- What's new: none — merge of 41bf10cf, no customer-visible change of its own
+
+## 2026-10-21 — #785: approval marker after merging main at f314106c
+
+- User approval: no visible change – UI approval not needed (merge of main (f314106c) into #785; the own entries of #785 keep their approvals)
+- Approved customer-visible result: #785 as in its own entries plus the entries merged with f314106c; nothing else changes.
+- Scope: the merge of f314106c and this approval record. Pull request branch #785 only, not merged, not released.
+- What's new: none — merge of f314106c, no customer-visible change of its own
+
+## 2026-10-21 — #785: approval marker after merging main at 5b9c0cb4
+
+- User approval: no visible change – UI approval not needed (merge of main (5b9c0cb4) into #785; the own entries of #785 keep their approvals)
+- Approved customer-visible result: #785 as in its own entries plus the entries merged with 5b9c0cb4; nothing else changes.
+- Scope: the merge of 5b9c0cb4 and this approval record. Pull request branch #785 only, not merged, not released.
+- What's new: none — merge of 5b9c0cb4, no customer-visible change of its own
+
+## 2026-10-21 — #785: approval marker after merging main at 467fd7fb
+
+- User approval: no visible change – UI approval not needed (merge of main (467fd7fb) into #785; the own entries of #785 keep their approvals)
+- Approved customer-visible result: #785 as in its own entries plus the entries merged with 467fd7fb; nothing else changes.
+- Scope: the merge of 467fd7fb and this approval record. Pull request branch #785 only, not merged, not released.
+- What's new: none — merge of 467fd7fb, no customer-visible change of its own
+
+## 2026-10-21 — #785: approval marker after merging main at 35152cc8
+
+- User approval: no visible change – UI approval not needed (merge of main (35152cc8) into #785; the own entries of #785 keep their approvals)
+- Approved customer-visible result: #785 as in its own entries plus the entries merged with 35152cc8; nothing else changes.
+- Scope: the merge of 35152cc8 and this approval record. Pull request branch #785 only, not merged, not released.
+- What's new: none — merge of 35152cc8, no customer-visible change of its own
+
 ## 2026-10-18 — Calm type: 13 px text in the shared buttons, cards, labels and inputs (#713)
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm type: 13 px text in the shared buttons, cards, labels and inputs (#713)
@@ -8996,6 +9178,13 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #784 as in its own entries plus the entries merged with 35152cc8; nothing else changes.
 - Scope: the merge of 35152cc8 and this approval record. Pull request branch #784 only, not merged, not released.
 - What's new: none — merge of 35152cc8, no customer-visible change of its own
+
+## 2026-10-21 — #784: approval marker after merging main at 3dc0a15b
+
+- User approval: no visible change – UI approval not needed (merge of main (3dc0a15b) into #784; the own entries of #784 keep their approvals)
+- Approved customer-visible result: #784 as in its own entries plus the entries merged with 3dc0a15b; nothing else changes.
+- Scope: the merge of 3dc0a15b and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — merge of 3dc0a15b, no customer-visible change of its own
 
 ## 2026-10-19 — Support: "n of 6 passed" and a Fix link for the usage engine (#795)
 
