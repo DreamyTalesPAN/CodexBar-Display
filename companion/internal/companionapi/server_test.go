@@ -4,6 +4,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -4471,6 +4473,10 @@ func TestInspectDisplayStreamCountsAnErrorStampedWithItsFrame(t *testing.T) {
 	stream := inspectDisplayStream(context.Background(), "http://192.168.178.72")
 	if stream.Healthy || stream.ErrorCode != "provider_setup_required" {
 		t.Fatalf("an error stamped with its frame was ignored: %+v", stream)
+	}
+	// The page compares this stamp with the end of a firmware update (#829).
+	if stream.ErrorAt != frameAt.UTC().Format(time.RFC3339) {
+		t.Fatalf("errorAt=%q, want the error line's time %s", stream.ErrorAt, frameAt.UTC().Format(time.RFC3339))
 	}
 }
 
@@ -12822,6 +12828,104 @@ func TestFirmwareUpdateCableRequiresVerifiedRender(t *testing.T) {
 	}
 }
 
+// Issue #835, Beelink Windows over USB, 2026-10-20: after an update the only
+// frame inside the picture check carried the same values the screen already
+// showed. The firmware redraws only when a frame changes the screen, so the
+// render counters stayed put and the customer got "the picture could not be
+// verified" for a VibeTV showing its picture normally. The same healthy live
+// picture, unchanged since before the stream restart, is a verified picture.
+// A screen that changed or broke while nothing was drawn is not.
+func TestFirmwareUpdateCableAcceptsUnchangedLivePicture(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		lastKind string
+		after    func(*deviceHealth)
+		complete bool
+	}{
+		{name: "unchanged live picture", lastKind: "theme_spec_frame", after: func(*deviceHealth) {}, complete: true},
+		// Beelink, clippy: the minute countdown was the last thing drawn.
+		{name: "unchanged picture after the countdown", lastKind: "reset", after: func(*deviceHealth) {}, complete: true},
+		{name: "parked on the setup screen", lastKind: "connected_setup", after: func(*deviceHealth) {}},
+		{name: "rebooted during the check", lastKind: "theme_spec_frame", after: func(h *deviceHealth) { h.System.BootID = "boot-b" }},
+		{name: "theme render failed", lastKind: "theme_spec_frame", after: func(h *deviceHealth) {
+			failed := false
+			h.Display.ThemeSpec.RenderOK = &failed
+			h.Display.ThemeSpec.RenderFailures = 1
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "device-cable-update", DeviceToken: "pair-token"}
+			server := newTestServer(t, cfg)
+			server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock-cable", nil }
+			server.readCableHello = func(string) (protocol.DeviceHello, error) {
+				return protocol.DeviceHello{
+					DeviceID: "device-cable-update",
+					Board:    "esp8266-smalltv-st7789",
+					Firmware: "1.0.41",
+					Features: []string{protocol.FeatureCableTransferV1, protocol.FeatureCableHealthV1},
+					Capabilities: protocol.CapabilityBlock{
+						Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable"},
+					},
+				}, nil
+			}
+			livePicture := func() deviceHealth {
+				fullCount, partialCount, renderOK := uint64(2), uint64(14), true
+				health := deviceHealth{OK: true}
+				health.System.BootID = "boot-a"
+				health.Display.ActiveTheme = "clippy"
+				health.Display.ThemeSpec.Active = true
+				health.Display.ThemeSpec.Path = "/themes/u/clippy-3-fe3fd4.json"
+				health.Display.ThemeSpec.RenderOK = &renderOK
+				health.Render.FullCount = &fullCount
+				health.Render.PartialCount = &partialCount
+				health.Render.LastKind = tc.lastKind
+				return health
+			}
+			server.readCableHealth = func(string, string) (deviceHealth, error) { return livePicture(), nil }
+			server.refreshStream = func(context.Context, string) error { return nil }
+			server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+				return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
+			}
+			// The real wait hands back its last reading with the error.
+			server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+				health := livePicture()
+				tc.after(&health)
+				return health, fmt.Errorf("display render not ready: %w", errDisplayRenderNotAdvanced)
+			}
+			server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+				_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"verifying_health","phase":"complete","outcome":"already_current","firmware":"1.0.41","observedFirmware":"1.0.41","target":"cable://vibetv","deviceId":"device-cable-update","artifactValidated":true,"helloVerified":true}`+"\n")
+				return nil
+			}
+
+			rec := httptest.NewRecorder()
+			server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`)))
+			var started firmwareUpdateJobResponse
+			if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+				t.Fatal(err)
+			}
+			var job firmwareUpdateJob
+			// The updater's own events can already say "complete" while the
+			// server still checks the picture; only FinishedAt marks the end.
+			for attempt := 0; attempt < 500; attempt++ {
+				job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+				if job.FinishedAt != nil {
+					break
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			if tc.complete {
+				if job.Phase != "complete" || job.Outcome != "already_current" || job.Result == nil || !job.Result.RenderVerified {
+					t.Fatalf("an unchanged live picture must complete the update: phase=%q outcome=%q message=%q result=%+v", job.Phase, job.Outcome, job.Message, job.Result)
+				}
+				return
+			}
+			if job.Phase != "attention" || job.Result == nil || job.Result.RenderVerified {
+				t.Fatalf("a changed or broken screen must stay unverified: phase=%q result=%+v", job.Phase, job.Result)
+			}
+		})
+	}
+}
+
 func TestFirmwareUpdateCableDoesNotOverridePostUpdateVerificationError(t *testing.T) {
 	cfg := runtimeconfig.Config{
 		ConnectionMode: "cable",
@@ -13112,7 +13216,7 @@ func TestFirmwareUpdateCurrentFirmwareWithStreamFailureNeedsAttention(t *testing
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if job.Phase != "attention" || job.Outcome != "firmware_current_stream_attention" || job.Result == nil || !job.Result.HealthVerified || job.Result.StreamVerified {
+	if job.Phase != "attention" || job.Outcome != "firmware_current_stream_restart_attention" || job.Result == nil || !job.Result.HealthVerified || job.Result.StreamVerified {
 		t.Fatalf("current firmware with a broken stream must need attention without another flash: %+v", job)
 	}
 }
@@ -15614,5 +15718,278 @@ func TestStatusAndDiagnosticsCarrySystemBusy(t *testing.T) {
 		if got["since"] != "2026-10-14T09:13:00Z" || got["memoryPressure"] != "warn" || got["swapUsedMB"] != float64(23040) || got["load1"] != float64(214) {
 			t.Fatalf("%s: systemBusy = %v", endpoint, got)
 		}
+	}
+}
+
+// An unchanged live picture may only stand in for a fresh, successful read:
+// when the last read fails (cable gone), the error must not qualify (Codex on #838).
+func TestDisplayRenderUnchangedOnlyFromAFreshRead(t *testing.T) {
+	// The wait and poll interval are short here: the error paths must not
+	// cost the production 12 seconds each (Codex on #838).
+	started := time.Now()
+	defer func() {
+		if elapsed := time.Since(started); elapsed > 3*time.Second {
+			t.Errorf("render check error paths took %v; they must use a short deadline", elapsed)
+		}
+	}()
+	full, partial := uint64(5), uint64(2)
+	baseline := deviceHealth{OK: true}
+	baseline.Render.FullCount = &full
+	baseline.Render.PartialCount = &partial
+	baseline.Render.LastKind = "usage"
+
+	reads := 0
+	_, err := waitForDisplayRenderPolling(context.Background(), cableDeviceTarget, baseline, displayStreamInfo{}, 30*time.Millisecond, 5*time.Millisecond, func() (deviceHealth, error) {
+		reads++
+		if reads == 1 {
+			return baseline, nil
+		}
+		return deviceHealth{}, errors.New("serial port gone")
+	})
+	if err == nil || errors.Is(err, errDisplayRenderNotAdvanced) {
+		t.Fatalf("a failed last read must not count as unchanged counters: %v", err)
+	}
+
+	_, err = waitForDisplayRenderPolling(context.Background(), cableDeviceTarget, baseline, displayStreamInfo{}, 30*time.Millisecond, 5*time.Millisecond, func() (deviceHealth, error) {
+		return baseline, nil
+	})
+	if !errors.Is(err, errDisplayRenderNotAdvanced) {
+		t.Fatalf("fresh unchanged reads must report errDisplayRenderNotAdvanced: %v", err)
+	}
+}
+
+// Issue #818: a rescue write that failed after the erase leaves a VibeTV that
+// boot-loops and says no hello. While its marked port is connected, the search
+// offers it for the rescue instead of "No VibeTV found".
+func TestDeviceSearchOffersAHalfWrittenVibeTVForItsRescue(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		ports        []string
+		age          time.Duration
+		cableHello   bool
+		noWiFi       bool
+		imageChanged bool
+		want         bool
+		legacyOther  bool
+	}{
+		{"marked port connected", []string{"COM1", "com4"}, time.Hour, false, false, false, true, false},
+		{"marked port gone", []string{"COM1"}, time.Hour, false, false, false, false, false},
+		{"marker too old", []string{"COM4"}, firmwareupdate.RescueMarkerMaxAge + time.Hour, false, false, false, false, false},
+		{"VibeTV answers again", []string{"COM4"}, time.Hour, true, false, false, false, false},
+		{"no WiFi on this computer", []string{"COM4"}, time.Hour, false, true, false, true, false},
+		{"marked image changed", []string{"COM4"}, time.Hour, false, false, true, false, false},
+		{"working VibeTV on another port", []string{"COM4", "COM7"}, time.Hour, true, false, false, true, false},
+		{"another pre-Cable VibeTV answers", []string{"COM4", "COM7"}, time.Hour, false, false, false, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Another VibeTV on WiFi lets the scan settle at once; the rescue
+			// entry must come next to it.
+			wifi := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = fmt.Fprint(w, `{"kind":"hello","board":"esp32-lilygo-t-display-s3","firmware":"1.0.45","deviceId":"wifi-b","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`)
+			}))
+			defer wifi.Close()
+			server := newTestServer(t, runtimeconfig.Config{})
+			server.subnetTargets = func() []string { return []string{wifi.URL} }
+			if tc.noWiFi {
+				server.subnetTargets = func() []string { return nil }
+				server.defaultWiFiTarget = func() string { return "" }
+				server.localNetworkAvailable = func() bool { return false }
+			}
+			server.listCablePorts = func() ([]string, error) { return tc.ports, nil }
+			server.discoverCableDevices = func(context.Context) ([]usb.CableDevice, error) {
+				if tc.legacyOther {
+					return nil, &usb.LegacyCableFirmwareError{Board: "esp8266-smalltv-st7789", Firmware: "1.0.0-other"}
+				}
+				if tc.cableHello {
+					port := "COM4"
+					if slices.Contains(tc.ports, "COM7") {
+						port = "COM7"
+					}
+					return []usb.CableDevice{{Port: port, Hello: protocol.DeviceHello{DeviceID: "cable-a", Board: "esp8266-smalltv-st7789", Firmware: "1.0.9"}}}, nil
+				}
+				return nil, errors.New("no VibeTV answered")
+			}
+			imagePath := filepath.Join(t.TempDir(), "firmware.bin")
+			if err := os.WriteFile(imagePath, []byte("cable firmware"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			sum := sha256.Sum256([]byte("cable firmware"))
+			if tc.imageChanged {
+				if err := os.WriteFile(imagePath, []byte("something else"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := firmwareupdate.SaveRescueMarker(server.home, firmwareupdate.RescueMarker{
+				Port: "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
+				ImagePath: imagePath, ImageSHA256: hex.EncodeToString(sum[:]), WriteStartedAt: time.Now().Add(-tc.age),
+			}); err != nil {
+				t.Fatal(err)
+			}
+			rec := httptest.NewRecorder()
+			server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`)))
+			var got struct {
+				Devices []deviceSearchEntry `json:"devices"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			rescue := deviceSearchEntry{Target: cableDeviceTarget, Transport: "cable", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", Rescue: true}
+			offered := slices.Contains(got.Devices, rescue)
+			if tc.legacyOther && slices.ContainsFunc(got.Devices, func(d deviceSearchEntry) bool { return d.Firmware == "1.0.0-other" }) {
+				t.Fatalf("the marker must win over another pre-Cable VibeTV, like install-update: %s", rec.Body.String())
+			}
+			if offered != tc.want {
+				t.Fatalf("rescue offered=%v want %v: status=%d body=%s", offered, tc.want, rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+// A half-written VibeTV is finished from the image cached for the failed
+// rescue; the check names that version even when the manifest moved on
+// (Codex review on #819).
+func TestFirmwareLatestNamesTheCachedRescueTarget(t *testing.T) {
+	manifest := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"release":"v1.0.99","artifacts":[{"board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.10"}]}`))
+	}))
+	defer manifest.Close()
+	t.Setenv(firmwareManifestEnvVar, manifest.URL+"/firmware-manifest.json")
+	server := newTestServer(t, runtimeconfig.Config{})
+	imagePath := filepath.Join(t.TempDir(), "firmware.bin")
+	if err := os.WriteFile(imagePath, []byte("cable firmware"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte("cable firmware"))
+	if err := firmwareupdate.SaveRescueMarker(server.home, firmwareupdate.RescueMarker{
+		Port: "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
+		ImagePath: imagePath, ImageSHA256: hex.EncodeToString(sum[:]), WriteStartedAt: time.Now().Add(-time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ports := []string{"COM4"}
+	server.listCablePorts = func() ([]string, error) { return ports, nil }
+	latest := func(query string) firmwareLatestResponse {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/updates/latest?board=esp8266-smalltv-st7789&"+query, nil))
+		var got firmwareLatestResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode: %v body=%s", err, rec.Body.String())
+		}
+		return got
+	}
+	if got := latest("firmware=1.0.0&rescue=1"); !got.UpdateAvailable || got.LatestFirmware != "1.0.9" {
+		t.Fatalf("the half-written VibeTV must be offered the cached 1.0.9: %+v", got)
+	}
+	// Another VibeTV (other firmware) still gets the manifest's version.
+	if got := latest("firmware=1.0.5&rescue=1"); got.LatestFirmware != "1.0.10" {
+		t.Fatalf("another VibeTV must get the manifest version: %+v", got)
+	}
+	// A VibeTV with the same board and firmware that is not being rescued is
+	// updated from the manifest, so it is offered the manifest's version
+	// (Codex review on #819).
+	if got := latest("firmware=1.0.0"); got.LatestFirmware != "1.0.10" {
+		t.Fatalf("a non-rescue VibeTV must get the manifest version: %+v", got)
+	}
+	// With the marked port unplugged no rescue can resume, so no cached target.
+	ports = []string{"COM7"}
+	if got := latest("firmware=1.0.0&rescue=1"); got.LatestFirmware != "1.0.10" {
+		t.Fatalf("without the marked port the manifest version applies: %+v", got)
+	}
+	// A VibeTV that answers on the marked port again makes the marker stale: the
+	// install updates from the manifest, so the check names its version.
+	ports = []string{"COM4"}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{DeviceID: "healthy", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0"}, nil
+	}
+	if got := latest("firmware=1.0.0&rescue=1"); got.LatestFirmware != "1.0.10" {
+		t.Fatalf("a stale marker must not name the cached version: %+v", got)
+	}
+
+	// A config still in Cable mode for another VibeTV does not replace the
+	// rescue's board and firmware (Codex review on #819).
+	cabled := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "other"})
+	if err := firmwareupdate.SaveRescueMarker(cabled.home, firmwareupdate.RescueMarker{
+		Port: "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
+		ImagePath: imagePath, ImageSHA256: hex.EncodeToString(sum[:]), WriteStartedAt: time.Now().Add(-time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cabled.listCablePorts = func() ([]string, error) { return []string{"COM4"}, nil }
+	cabled.readCableHello = func(string) (protocol.DeviceHello, error) { return protocol.DeviceHello{}, errors.New("no hello") }
+	rec := httptest.NewRecorder()
+	cabled.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/updates/latest?board=esp8266-smalltv-st7789&firmware=1.0.0&rescue=1", nil))
+	var got firmwareLatestResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || !got.UpdateAvailable || got.LatestFirmware != "1.0.9" {
+		t.Fatalf("the rescue check must ignore the configured Cable VibeTV: %+v err=%v body=%s", got, err, rec.Body.String())
+	}
+}
+
+// Without WiFi a pre-Cable VibeTV on the Cable still gets its rescue offer:
+// the rescue needs no network (Codex review on #819).
+func TestDeviceSearchOffersTheLegacyCableRescueWithoutWiFi(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.subnetTargets = func() []string { return nil }
+	server.localNetworkAvailable = func() bool { return false }
+	server.discoverCableDevices = func(context.Context) ([]usb.CableDevice, error) {
+		return nil, legacyCableSearchError{&usb.LegacyCableFirmwareError{Board: "esp8266-smalltv-st7789", Firmware: "1.0.39"}}
+	}
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`)))
+	var got struct {
+		Error apiError `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Error.Code != "cable_firmware_too_old" || got.Error.Device == nil || !got.Error.Device.Rescue {
+		t.Fatalf("the legacy rescue must not be hidden by the missing WiFi: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// A first-time rescue check (no marker) names the selected VibeTV's own
+// manifest version, not the configured Cable VibeTV's (Codex review on #819).
+func TestFirmwareLatestRescueCheckIgnoresTheConfiguredCableVibeTV(t *testing.T) {
+	manifest := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"release":"v1.0.99","artifacts":[{"board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.10"}]}`))
+	}))
+	defer manifest.Close()
+	t.Setenv(firmwareManifestEnvVar, manifest.URL+"/firmware-manifest.json")
+	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "other"})
+	server.readCableHello = func(string) (protocol.DeviceHello, error) { return protocol.DeviceHello{}, errors.New("absent") }
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/updates/latest?board=esp8266-smalltv-st7789&firmware=1.0.0&rescue=1", nil))
+	var got firmwareLatestResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || !got.UpdateAvailable || got.LatestFirmware != "1.0.10" || got.InstalledFirmware != "1.0.0" {
+		t.Fatalf("the rescue check must use the selected VibeTV: %+v err=%v body=%s", got, err, rec.Body.String())
+	}
+}
+
+// Between the rescue's two write attempts the check must not open the marked
+// port for a hello (Codex review on #819).
+func TestFirmwareLatestRescueCheckDoesNotProbeDuringAnUpdate(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	imagePath := filepath.Join(t.TempDir(), "firmware.bin")
+	if err := os.WriteFile(imagePath, []byte("cable firmware"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte("cable firmware"))
+	if err := firmwareupdate.SaveRescueMarker(server.home, firmwareupdate.RescueMarker{
+		Port: "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
+		ImagePath: imagePath, ImageSHA256: hex.EncodeToString(sum[:]), WriteStartedAt: time.Now().Add(-time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	server.listCablePorts = func() ([]string, error) { return []string{"COM4"}, nil }
+	probed := false
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		probed = true
+		return protocol.DeviceHello{}, errors.New("busy")
+	}
+	server.firmwareUpdateActive.Store(true)
+	defer server.firmwareUpdateActive.Store(false)
+	if target, ok := server.cachedRescueTarget("esp8266-smalltv-st7789", "1.0.0"); !ok || target != "1.0.9" || probed {
+		t.Fatalf("target=%q ok=%v probed=%v", target, ok, probed)
 	}
 }
