@@ -9304,6 +9304,27 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of 3af4b175 and this approval record. Pull request branch #800 only, not merged, not released.
 - What's new: none — merge of 3af4b175, no customer-visible change of its own
 
+## 2026-10-21 — #800: expire preview reset countdowns with their trust
+
+- User approval: no visible change – UI approval not needed (bug fix: stop the preview reset countdown when its measurement trust expires, matching the device)
+- Approved customer-visible result: the existing Gauge footer and reset bindings show Reset unavailable once reset trust expires, with no new copy or layout.
+- Scope: shared reset countdown calculation in live-vibetv-preview and its 60-second trust regression test; pre-review P3 for #800.
+- What's new: none — correction to existing preview and device parity only
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at ba55b31f
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (ba55b31f) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with ba55b31f; nothing else changes.
+- Scope: the merge of ba55b31f and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of ba55b31f, no customer-visible change of its own
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at 1b03f96d
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (1b03f96d) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with 1b03f96d; nothing else changes.
+- Scope: the merge of 1b03f96d and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of 1b03f96d, no customer-visible change of its own
+
 ## 2026-10-21 — #592 on #800: Two at once, Limits on VibeTV
 
 - User approval: pending — #592 two providers at once (Two at once mode, Limits on VibeTV, Two Limits theme); visible parts go to a Claude Design round before Paul sees them
@@ -10557,17 +10578,14 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-21 — #800: expire preview reset countdowns with their trust
 
-- User approval: no visible change – UI approval not needed (bug fix: stop the preview reset countdown when its measurement trust expires, matching the device)
-- Approved customer-visible result: the existing Gauge footer and reset bindings show Reset unavailable once reset trust expires, with no new copy or layout.
-- Scope: shared reset countdown calculation in live-vibetv-preview and its 60-second trust regression test; pre-review P3 for #800.
-- What's new: none — correction to existing preview and device parity only
+## 2026-10-21 — #864: approval marker after merging claude/usage-pace at 585afefc
 
-## 2026-10-21 — #800: approval marker after merging claude/group-usage at ba55b31f
+- User approval: no visible change – UI approval not needed (merge of claude/usage-pace (585afefc) into #864; the own entries of #864 keep their approvals)
+- Approved customer-visible result: #864 as in its own entries plus the entries merged with 585afefc; nothing else changes.
+- Scope: the merge of 585afefc and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — merge of 585afefc, no customer-visible change of its own
 
-- User approval: no visible change – UI approval not needed (merge of claude/group-usage (ba55b31f) into #800; the own entries of #800 keep their approvals)
-- Approved customer-visible result: #800 as in its own entries plus the entries merged with ba55b31f; nothing else changes.
-- Scope: the merge of ba55b31f and this approval record. Pull request branch #800 only, not merged, not released.
-- What's new: none — merge of ba55b31f, no customer-visible change of its own
+## 2026-10-21 — #864: approval marker after merging claude/usage-pace at 8d0fe117
 
 ## 2026-10-21 — #800: approval marker after merging claude/group-usage at 1b03f96d
 
@@ -10617,3 +10635,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: pending — Synthwave's pace bars move up 4 pixels and their percentage numbers with them, so “40% deficit” and “6% reserve” have clear space beneath the bars instead of touching them. Claude Creature and Cozy Meadow are unchanged in this commit; their font-size request is open.
 - Scope: Synthwave theme pack revision only (theme JSON geometry, rebuilt immutable pack, catalog). The shared firmware renderer and preview fitting are not changed. The “used” header above “USAGE” in Two at once is also unchanged, because a theme cannot hide the static “USAGE” per mode.
 - What's new: none — spacing correction to an existing layout.
+- User approval: no visible change – UI approval not needed (merge of claude/usage-pace (8d0fe117) into #864; the own entries of #864 keep their approvals)
+- Approved customer-visible result: #864 as in its own entries plus the entries merged with 8d0fe117; nothing else changes.
+- Scope: the merge of 8d0fe117 and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — merge of 8d0fe117, no customer-visible change of its own
