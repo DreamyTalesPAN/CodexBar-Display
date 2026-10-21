@@ -193,7 +193,10 @@ func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.Par
 	}
 	if cfg.ProviderDisplay.Mode == providerDisplayModePair {
 		// Two at once shows the current member alone while the other has no
-		// current reading, so the selection must not settle on that other one.
+		// current reading, including when none of its chosen windows remain.
+		for i := range filtered {
+			filtered[i].Frame = withVisibleUsageWindows(filtered[i].Frame, cfg.ProviderDisplay)
+		}
 		return preferAvailableProviders(filtered)
 	}
 	return filtered

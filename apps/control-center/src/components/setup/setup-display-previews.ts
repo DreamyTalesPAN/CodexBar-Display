@@ -20,6 +20,9 @@ export function displayPreviewFor(
   }
   const unavailable = provider.stale === true || provider.usageUnavailable === true;
   const windows = visibleUsageWindows(provider.windows ?? [], hiddenWindowIds);
+  if (provider.windows?.length && windows.length === 0) {
+    return { providerLabel: provider.label, resetLabel: null, windows: [] };
+  }
   return {
     providerLabel: provider.label,
     resetLabel: unavailable
@@ -76,17 +79,15 @@ export function displayPreviewsFor(
 
 /**
  * The usage windows VibeTV shows for a provider: the ones the customer did not
- * hide. With every one hidden all of them stay, as the companion does, so the
- * panel never goes blank.
+ * hide. Source loss must not bring a hidden window back.
  */
 export function visibleUsageWindows<T extends { id: string }>(
   windows: T[],
   hiddenWindowIds: string[] | undefined,
 ): T[] {
-  const visible = windows.filter(
+  return windows.filter(
     (window) => !hiddenWindowIds?.includes(window.id),
   );
-  return visible.length ? visible : windows;
 }
 
 /**
@@ -100,6 +101,9 @@ export function pairDisplayPreview(
 ): SetupDisplayModePreview | null {
   if (!first || !second) {
     return null;
+  }
+  if (!first.windows.length || !second.windows.length) {
+    return first.windows.length ? first : second;
   }
   const unknownReset = formatReset(0);
   const counting = [first, second].find(

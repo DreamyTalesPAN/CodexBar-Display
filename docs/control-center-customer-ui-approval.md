@@ -10295,3 +10295,24 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Both rapid pair edits remain saved, including swaps, while the existing calm Settings layout and selectors stay unchanged.
 - Scope: merge d7bdd0c3, preserve every approval block, adapt calm Settings callbacks to partial slot changes, and run the held-PATCH regressions on the integration.
 - What's new: none — integrate the pair save bug fix.
+
+## 2026-10-21 — #864: F1 keep the last visible limit inside queued edits
+
+- User approval: no visible change – UI approval not needed (bug fix: queued unticks cannot hide the last visible limit)
+- Approved customer-visible result: Rapid unticks keep the first choice and leave the final visible limit selected, even while an earlier display save is pending.
+- Scope: display-limits-settings updater and its queued two-untick regression.
+- What's new: none — restore the existing last-visible-limit editing rule.
+
+## 2026-10-21 — #864: F2 keep hidden limits hidden after source loss
+
+- User approval: pending — when the chosen limit disappears, One provider shows unavailable instead of resurrecting a hidden limit; Two at once shows the other readable member alone
+- Approved customer-visible result: Hidden limits stay unticked and can be selected explicitly again. A reading with no chosen limit left stays unavailable in the single-provider preview and on VibeTV; a readable pair member keeps its own reading and countdown.
+- Scope: daemon visible-window filtering and pair selection, shared display previews, and regression tests for source loss and checkbox editing.
+- What's new: none — correct hidden-limit behavior, pending review of the changed unavailable state.
+
+## 2026-10-21 — #864 integration: carry F1–F3 into calm Settings
+
+- User approval: no visible change – UI approval not needed (bug fix: integrate cc8903fd while preserving calm Settings and the separate pending F2 approval)
+- Approved customer-visible result: The integration carries the queued-edit and concurrent-save fixes plus the source-loss behavior documented in F2; F2 still requires its pending approval.
+- Scope: merge cc8903fd into claude/paultest-592a, retain every approval block from both parents, and leave the calm Settings layout intact.
+- What's new: none — integration only; F2 approval remains pending.

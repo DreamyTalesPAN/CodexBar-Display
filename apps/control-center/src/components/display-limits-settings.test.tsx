@@ -74,6 +74,34 @@ describe("DisplayLimitsSettings", () => {
     expect(row("Claude", "session")).toHaveProperty("disabled", false);
   });
 
+  it("keeps the last visible limit when two unticks drain from the save queue", () => {
+    const hidden = { claude: ["claude-weekly-scoped-fable"] };
+    const onChange = show({ hiddenWindows: hidden });
+
+    // Both clicks see the same render while an earlier save is pending.
+    fireEvent.click(row("Claude", "session"));
+    fireEvent.click(row("Claude", "weekly"));
+
+    const afterFirst = onChange.mock.calls[0][0](hidden);
+    const afterSecond = onChange.mock.calls[1][0](afterFirst);
+    expect(afterFirst).toEqual({ claude: ["session", "claude-weekly-scoped-fable"] });
+    expect(afterSecond).toEqual(afterFirst);
+  });
+
+  it("keeps a hidden limit unticked and editable after the chosen source disappears", () => {
+    const onChange = vi.fn();
+    render(<DisplayLimitsSettings
+      display={{ configured: true, mode: "fixed", providerIds: ["claude"], valid: true, hiddenWindows: { claude: ["weekly"] } }}
+      onChange={onChange} providers={providers} theme={null}
+      usage={{ providers: [{ ...usage.providers[0], windows: [usage.providers[0].windows![1]] }] }}
+    />);
+    const weekly = row("Claude", "weekly");
+    expect(weekly.getAttribute("aria-checked")).toBe("false");
+    expect(weekly).toHaveProperty("disabled", false);
+    fireEvent.click(weekly);
+    expect(onChange.mock.calls[0][0]({ claude: ["weekly"] })).toEqual({});
+  });
+
   it("says which ticked limits the theme has room for", () => {
     show({});
     const claude = screen.getByRole("group", { name: "Claude limits" }).textContent;
