@@ -8073,3 +8073,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #840 as in its own entries plus the entries merged with e3503bda; nothing else changes.
 - Scope: the merge of e3503bda and this approval record. Pull request branch #840 only, not merged, not released.
 - What's new: none — merge of e3503bda, no customer-visible change of its own
+
+## 2026-10-21 — #579: support report file name test pins a non-UTC zone
+
+- User approval: no visible change – UI approval not needed (test-only: the file name test pins a non-UTC zone; the local date was already on main; no screen changes)
+- Approved customer-visible result: none; the support report file name stays as it is on main (local date and time).
+- Scope: apps/control-center/src/components/support-report.test.ts only.
+- What's new: none — test-only change.
