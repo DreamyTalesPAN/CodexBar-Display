@@ -3,10 +3,8 @@
 import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 
-const repoRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
-  encoding: "utf8",
-  stdio: ["ignore", "pipe", "pipe"],
-}).trim();
+const GIT_MAX_BUFFER = 1 << 28;
+const repoRoot = git(["rev-parse", "--show-toplevel"]);
 process.chdir(repoRoot);
 
 const APPROVAL_FILE = "docs/control-center-customer-ui-approval.md";
@@ -38,7 +36,8 @@ const workingTreeChangedFiles = changedFilesInWorkingTree();
 const workingTreeApprovalChanged = workingTreeChangedFiles.includes(APPROVAL_FILE);
 const approvalText = workingTreeApprovalChanged
   ? (existsSync(APPROVAL_FILE) ? readFileSync(APPROVAL_FILE, "utf8") : "")
-  : tryGit(["show", `${analysisRef}:${APPROVAL_FILE}`]);
+  : git(["show", `${analysisRef}:${APPROVAL_FILE}`]);
+const baseApprovalText = approvalBaseText();
 const addedApprovalEntries = introducedApprovalEntries();
 const invalidApprovalEntries = [
   { title: 'Approval evidence outside any "## " entry (add it under its own heading)', errors: approvalLinesOutsideEntries() },
@@ -93,7 +92,7 @@ if (due) {
   process.exit(1);
 }
 
-if (addedApprovalEntries.some((entry) => /^- User approval:\s*pending\b/m.test(entry))) {
+if (addedApprovalEntries.some((entry) => lines(entry).some((line) => /^- User approval:\s*pending\b/.test(line)))) {
   printPendingApprovalNotice();
 }
 
@@ -109,7 +108,7 @@ function analysisHeadRef() {
 }
 
 function latestApprovalCommit(ref) {
-  const result = tryGit(["log", "-n", "1", "--format=%H", ref, "--", APPROVAL_FILE]);
+  const result = git(["log", "-n", "1", "--format=%H", ref, "--", APPROVAL_FILE]);
   return result || null;
 }
 
@@ -130,28 +129,24 @@ function changedFilesInWorkingTree() {
 
 function workingTreeApprovalDiff() {
   return [
-    tryGit(["diff", "--", APPROVAL_FILE]),
-    tryGit(["diff", "--cached", "--", APPROVAL_FILE]),
+    git(["diff", "--", APPROVAL_FILE]),
+    git(["diff", "--cached", "--", APPROVAL_FILE]),
     untrackedFileContents(APPROVAL_FILE),
   ].join("\n");
 }
 
 function commitDiff(commit) {
-  return tryGit(["show", "--format=", "--unified=0", commit, "--", APPROVAL_FILE]);
+  return git(["show", "--format=", "--unified=0", commit, "--", APPROVAL_FILE]);
 }
 
 function untrackedFileContents(file) {
-  if (!lines(tryGit(["ls-files", "--others", "--exclude-standard", "--", file])).includes(file)) {
+  if (!lines(git(["ls-files", "--others", "--exclude-standard", "--", file])).includes(file)) {
     return "";
   }
-  try {
-    return readFileSync(file, "utf8")
-      .split("\n")
-      .map((line) => `+${line}`)
-      .join("\n");
-  } catch {
-    return "";
-  }
+  return readFileSync(file, "utf8")
+    .split("\n")
+    .map((line) => `+${line}`)
+    .join("\n");
 }
 
 function diffAddsApprovalEvidence(diff) {
@@ -224,7 +219,7 @@ function approvalEntries(text) {
 // cannot hide an earlier broken or pending one. Consume matches so copying an
 // existing entry still counts as an addition and fails the uniqueness check.
 function introducedApprovalEntries() {
-  const existing = approvalEntries(approvalBaseText());
+  const existing = approvalEntries(baseApprovalText);
   return approvalEntries(approvalText).filter((entry) => {
     const index = existing.indexOf(entry);
     if (index < 0) return true;
@@ -234,17 +229,24 @@ function introducedApprovalEntries() {
 }
 
 function approvalBaseText() {
-  const baseRef = pullRequestBase() || `origin/${process.env["GITHUB_BASE_REF"] || "main"}`;
+  // A push must compare with the previous tip, not origin/main after the push.
+  const baseRef = process.env["GITHUB_EVENT_NAME"] === "push"
+    ? JSON.parse(readFileSync(process.env["GITHUB_EVENT_PATH"], "utf8")).before
+    : pullRequestBase() || `origin/${process.env["GITHUB_BASE_REF"] || "main"}`;
   const base = tryGit(["merge-base", baseRef, analysisRef]);
-  const previous = base || (approvalCommit ? `${approvalCommit}^` : null);
-  return previous ? tryGit(["show", `${previous}:${APPROVAL_FILE}`]) : "";
+  if (!base) {
+    throw new Error(`Cannot determine approval comparison base (${baseRef}). Fetch the base ref and complete history before running the gate.`);
+  }
+  // A log genuinely absent from the base is new; a failed read is not absence.
+  if (!git(["ls-tree", "--name-only", base, "--", APPROVAL_FILE])) return "";
+  return git(["show", `${base}:${APPROVAL_FILE}`]);
 }
 
 // Only "## " entries are validated, so evidence above the first one would pass
 // unchecked. Lines the base already had do not count as added.
 function approvalLinesOutsideEntries() {
   const outside = (text) => lines(text.replace(/\r\n/g, "\n").split(/^(?=## )/m)[0]);
-  const base = outside(approvalBaseText());
+  const base = outside(baseApprovalText);
   return outside(approvalText).filter(
     (line) =>
       !base.includes(line) &&
@@ -266,7 +268,9 @@ function approvalErrors(entry) {
   }
   if (approvals.length === 1) {
     const value = approvals[0].slice("- User approval:".length).trim();
-    const approved = /^approved by Paul\b/.test(value) && /"[^"\n]+"|“[^”\n]+”|„[^“\n]+“|«[^»\n]+»/.test(value);
+    const approved = /^approved by Paul\b/.test(value) &&
+      [...value.matchAll(/"[^"\n]*"|“[^”\n]*”|„[^“\n]*“|«[^»\n]*»/g)]
+        .some(([quote]) => quote.slice(1, -1).trim());
     const pending = /^pending\s*[—–-]\s*\S/.test(value);
     const invisible = /^no visible change\s*[—–-]\s*UI approval not needed\s*\(\s*\S.*\)\.?$/.test(value);
     if (!approved && !pending && !invisible) {
@@ -337,10 +341,15 @@ function printSummary({
 }
 
 function git(args) {
-  return execFileSync("git", args, {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  }).trim();
+  try {
+    return execFileSync("git", args, {
+      encoding: "utf8",
+      maxBuffer: GIT_MAX_BUFFER,
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  } catch (error) {
+    throw new Error(`Required git read failed (git ${args.join(" ")}): ${error.stderr?.trim() || error.message}`);
+  }
 }
 
 function tryGit(args) {

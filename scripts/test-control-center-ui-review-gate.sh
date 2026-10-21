@@ -541,6 +541,98 @@ test_headless_evidence_lines_fail() {
   assert_contains "$output" "User approval: no visible change"
 }
 
+# A large historical log must still expose an earlier invalid PR entry.
+test_large_approval_log_is_validated() {
+  local repo="${TMP_ROOT}/large-log" output
+  setup_repo "$repo"
+  node -e 'process.stdout.write("Historical context.\n".repeat(60000))' >> "$repo/docs/control-center-customer-ui-approval.md"
+  commit_approval "$repo" "Large historical marker"
+  commit_approval "$repo" "Small historical marker"
+  git -C "$repo" update-ref refs/remotes/origin/main HEAD
+  expect_gate_success "$repo"
+  approval_entry "Earlier missing scope" | sed '/^- Scope:/d' >> "$repo/docs/control-center-customer-ui-approval.md"
+  commit_approval "$repo" "Later valid marker"
+  output="$(run_gate "$repo")" && die "expected large log to expose the invalid earlier entry"
+  assert_contains "$output" 'Earlier missing scope: missing Scope:'
+}
+
+# A failed required blob read must never turn into an empty, valid log.
+test_required_git_reads_fail_closed() {
+  local repo="${TMP_ROOT}/read-failure" output spec
+  setup_repo "$repo"
+  commit_approval "$repo" "Valid new entry"
+  mkdir -p "$repo/bin"
+  printf '#!/usr/bin/env bash\nif [[ "$1" == show && "$2" == "$GATE_FAIL_SPEC" ]]; then\n  echo "simulated required read failure" >&2\n  exit 1\nfi\nexec "%s" "$@"\n' "$(command -v git)" > "$repo/bin/git"
+  chmod +x "$repo/bin/git"
+  for spec in "HEAD:docs/control-center-customer-ui-approval.md" "$(git -C "$repo" rev-parse origin/main):docs/control-center-customer-ui-approval.md" --format=; do
+    output="$(PATH="$repo/bin:$PATH" GATE_FAIL_SPEC="$spec" run_gate "$repo")" && die "expected required read failure to block"
+    assert_contains "$output" 'Required git read failed'
+    assert_contains "$output" 'simulated required read failure'
+    assert_not_contains "$output" 'gate: ok'
+  done
+}
+
+# Missing refs and shallow history cannot narrow validation to the last marker.
+test_missing_comparison_base_fails_closed() {
+  local repo="${TMP_ROOT}/missing-base" output depth clone
+  setup_repo "$repo"
+  commit_approval "$repo" "Earlier broken entry" ""
+  commit_approval "$repo" "Later valid entry"
+  git -C "$repo" update-ref -d refs/remotes/origin/main
+  output="$(run_gate "$repo")" && die "expected missing base to block"
+  assert_contains "$output" 'Cannot determine approval comparison base'
+  assert_not_contains "$output" 'gate: ok'
+  for depth in 1 2; do
+    clone="${TMP_ROOT}/shallow-${depth}"
+    git clone -q --depth "$depth" "file://$repo" "$clone"
+    git -C "$clone" update-ref -d refs/remotes/origin/main
+    output="$(run_gate_pull_request "$clone")" && die "expected shallow history without a base to block"
+    assert_contains "$output" 'Cannot determine approval comparison base'
+    assert_contains "$output" 'history'
+    assert_not_contains "$output" 'gate: ok'
+  done
+}
+
+test_indented_pending_notice_reaches_ci_summary() {
+  local repo="${TMP_ROOT}/indented-pending" output summary="${TMP_ROOT}/indented-summary.md"
+  setup_repo "$repo"
+  pending_approval_entry "Indented pending" | sed 's/^- /  - /' >> "$repo/docs/control-center-customer-ui-approval.md"
+  commit_approval "$repo" "Later non-pending marker"
+  output="$(GITHUB_STEP_SUMMARY="$summary" run_gate_pull_request "$repo")" || die "expected indented pending to pass"
+  assert_contains "$output" "::notice title=Control Center UI approval pending::${PENDING_NOTICE}"
+  assert_contains "$(cat "$summary")" "$PENDING_NOTICE"
+}
+
+test_whitespace_only_quotes_are_rejected() {
+  local repo quote output index=0
+  for quote in '" "' '“   ”' '„   “' '«   »'; do
+    repo="${TMP_ROOT}/empty-quote-$((index++))"
+    setup_repo "$repo"
+    approval_entry "Whitespace quote" | sed "s/^- User approval:.*/- User approval: approved by Paul in chat: $quote/" >> "$repo/docs/control-center-customer-ui-approval.md"
+    commit_approval "$repo" "Later valid entry"
+    output="$(run_gate "$repo")" && die "expected whitespace-only quote to fail"
+    assert_contains "$output" 'Whitespace quote: User approval: must be approved by Paul with a quote'
+  done
+}
+
+test_push_validates_all_entries_since_previous_tip() {
+  local repo="${TMP_ROOT}/push-base" output before event="${TMP_ROOT}/push-event.json"
+  setup_repo "$repo"
+  before="$(git -C "$repo" rev-parse HEAD)"
+  approval_entry "Pushed missing scope" | sed '/^- Scope:/d' >> "$repo/docs/control-center-customer-ui-approval.md"
+  commit_approval "$repo" "Pushed valid marker"
+  git -C "$repo" update-ref refs/remotes/origin/main HEAD
+  printf '{"before":"%s"}\n' "$before" > "$event"
+  output="$(cd "$repo" && GITHUB_EVENT_NAME=push GITHUB_EVENT_PATH="$event" node "$GATE" 2>&1)" && die "expected earlier invalid pushed entry to fail"
+  assert_contains "$output" 'Pushed missing scope: missing Scope:'
+}
+
+test_large_approval_log_is_validated
+test_required_git_reads_fail_closed
+test_missing_comparison_base_fails_closed
+test_indented_pending_notice_reaches_ci_summary
+test_whitespace_only_quotes_are_rejected
+test_push_validates_all_entries_since_previous_tip
 test_headless_evidence_lines_fail
 test_required_fields_and_approval_forms
 test_merge_base_scopes_validation
