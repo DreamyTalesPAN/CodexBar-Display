@@ -8885,3 +8885,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the existing no-usage tiles appear after an unavailable reading, and Automatic can continue; only the initial usage read or theme-pack load holds the step.
 - Scope: display-mode screen, theme tiles, wizard usage-loading input and their regression tests; PR #821 only.
 - What's new: none — distinguish pending reads from the existing unavailable state with one shared skeleton rule.
+
+## 2026-10-21 — #821: bound theme render-pack requests
+
+- User approval: no visible change – UI approval not needed (bug fix: #821 a stalled theme response or JSON body releases the display step after 15 seconds)
+- Approved customer-visible result: existing plain tiles replace an unresponsive theme preview and Continue becomes available while the existing five-second retry path recovers the theme.
+- Scope: shared fetchThemeRenderPackRevision timeout, theme-loader cleanup handling and fake-timer setup regression tests; PR #821 only.
+- What's new: none — remove an unbounded loading state without new controls or copy.

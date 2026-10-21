@@ -85,8 +85,8 @@ export function useThemeRenderPack(
           scheduleRetry();
         }
       })
-      .catch((error) => {
-        if (error instanceof DOMException && error.name === "AbortError") {
+      .catch(() => {
+        if (controller.signal.aborted) {
           return;
         }
         setState({ key, pack: null, status: "error" });
