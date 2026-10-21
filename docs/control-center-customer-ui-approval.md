@@ -9210,3 +9210,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #802 as in its own entries plus the entries merged with ff601365; nothing else changes.
 - Scope: the merge of ff601365 and this approval record. Pull request branch #802 only, not merged, not released.
 - What's new: none — merge of ff601365, no customer-visible change of its own
+
+## 2026-10-21 — #802: keyboard focus stays when an updated theme card leaves "Update available" (#857)
+
+- User approval: no visible change – UI approval not needed (#802 / #857: keyboard focus moves to the filter when an updated card leaves the "Update available" list)
+- Approved customer-visible result: #802 as in its own entries; the focus of a keyboard user goes to the Filters button instead of the page body, nothing looks different.
+- Scope: a card that leaves the filtered list while it holds the focus hands the focus to the Filters button. Pull request branch #802 only, not merged, not released.
+- What's new: none — focus fix, no visual change

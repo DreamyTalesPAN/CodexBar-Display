@@ -1,6 +1,7 @@
 "use client";
 
 import { ListFilter, Search, X } from "lucide-react";
+import type { RefObject } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,7 @@ const TEXT_LINK = "text-[13px] font-semibold underline underline-offset-4";
 
 export function AppearanceToolbar({
   counts,
+  filtersRef,
   groups,
   onClearFilters,
   onQueryChange,
@@ -43,6 +45,7 @@ export function AppearanceToolbar({
   usage,
 }: {
   counts: Record<ThemeLibraryUsage, number>;
+  filtersRef?: RefObject<HTMLButtonElement | null>;
   groups: AppearanceToolbarGroup[];
   onClearFilters: () => void;
   onQueryChange: (query: string) => void;
@@ -110,6 +113,7 @@ export function AppearanceToolbar({
                 selected.length > 0 &&
                   "border-foreground bg-foreground text-background hover:bg-foreground hover:text-background aria-expanded:bg-foreground aria-expanded:text-background",
               )}
+              ref={filtersRef}
               variant="outline"
               type="button"
             >

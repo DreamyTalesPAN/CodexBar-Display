@@ -9,7 +9,7 @@ import {
   ShieldCheck,
   Wifi,
 } from "lucide-react";
-import type { ComponentProps, ReactNode } from "react";
+import type { ComponentProps, ReactNode, RefObject } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
@@ -349,6 +349,7 @@ export function ThemeLibraryScreen({
   const deleteReturnFocusRef = useRef<HTMLElement | null>(null);
   // Focus goes here after a delete; the page has no heading of its own.
   const createButtonRef = useRef<HTMLButtonElement>(null);
+  const filtersRef = useRef<HTMLButtonElement>(null);
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const [loadingEditorRow, setLoadingEditorRow] = useState("");
   // Counts what was opened in the editor, to tell a theme that arrives late.
@@ -882,6 +883,7 @@ export function ThemeLibraryScreen({
 
       <div className="mt-8">
         <AppearanceToolbar
+          filtersRef={filtersRef}
           counts={{
             all: allItems.length,
             live: liveItems.length,
@@ -1000,6 +1002,7 @@ export function ThemeLibraryScreen({
                   onDeleteTheme={requestDeleteTheme}
                   onInstallTheme={installLibraryTheme}
                   onPreviewTheme={setPreviewTheme}
+                  filtersRef={filtersRef}
                   preparingInstallRow={preparingInstallRow}
                   selectedThemeId={
                     theme.usage === "screensaver"
@@ -1354,6 +1357,7 @@ function ThemeListItem({
   onDeleteTheme,
   onEditTheme,
   onInstallTheme,
+  filtersRef,
   onPreviewTheme,
   preparingInstallRow,
   screensaverInstallBlockedReason,
@@ -1374,6 +1378,7 @@ function ThemeListItem({
   onDeleteTheme: (theme: UserThemeRecord) => void;
   onEditTheme: (item: ThemeLibraryItem) => void;
   onInstallTheme: (item: ThemeLibraryItem) => void;
+  filtersRef: RefObject<HTMLButtonElement | null>;
   onPreviewTheme: (theme: ThemeLibraryItem) => void;
   preparingInstallRow: string;
   screensaverInstallBlockedReason: string;
@@ -1424,6 +1429,7 @@ function ThemeListItem({
   const installStartedHereRef = useRef(false);
   const wasInstalledRef = useRef(false);
   const previewButtonRef = useRef<HTMLButtonElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
   const blockedLabel = labelForInstallBlocker(blocker);
   const disabled = actionInFlight || (installed && !retryingFailedInstall) || Boolean(blocker);
   // The reasons are this file's own fixed sentences, written for themes; this
@@ -1494,9 +1500,20 @@ function ThemeListItem({
       previewButtonRef.current?.focus();
     }
   }, [rowInstalled]);
+  // The card leaves the list when its update completes under the Update
+  // available filter, and the focus on its button goes with it. The Filters
+  // button takes the focus instead (#857). Unmounting is the last moment the
+  // card still holds it.
+  useLayoutEffect(() => {
+    const card = cardRef.current;
+    return () => {
+      if (card?.contains(document.activeElement)) filtersRef.current?.focus();
+    };
+  }, [filtersRef]);
 
   return (
     <Item
+      ref={cardRef}
       // The card's 1 px border plus 7 px = the template's 8 px inner space, so the picture is as wide as drawn.
       className="gap-2 rounded-[var(--radius-card)] p-[7px]"
       id={item.kind === "published" ? catalogThemeRowId(item.themeId) : undefined}
