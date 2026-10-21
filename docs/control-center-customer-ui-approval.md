@@ -15421,3 +15421,62 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve the refreshed feature together with the existing calm customer flows in the integration candidate.
 - Scope: Merge claude/group-calm-redesign into claude/paultest-build9 and retain all source approval blocks.
 - What's new: none — integration of existing feature entries only.
+
+## 2026-10-21 — #785: approval marker after merging main at 35152cc8
+
+- User approval: no visible change – UI approval not needed (merge of main (35152cc8) into #785; the own entries of #785 keep their approvals)
+- Approved customer-visible result: #785 as in its own entries plus the entries merged with 35152cc8; nothing else changes.
+- Scope: the merge of 35152cc8 and this approval record. Pull request branch #785 only, not merged, not released.
+- What's new: none — merge of 35152cc8, no customer-visible change of its own
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #663: Same device-switch reset as #645 for display brightness (no visible change)
+- User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #674: approval marker after merging #645 and main (no visible change))
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible chang
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #674: Codex review fix of #645, a late settings answer for another VibeTV no longer choose
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #663: Same device-switch reset as #645 for display brightness (no visible change)
+- User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #674: approval marker after merging #645 and main (no visible change); occurrence 2)
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible chang
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #674: Codex review fix of #645, a late settings answer for another VibeTV no longer choose
+
+## 2026-10-21 — #783: Customer-flow test waits for token history only with usage data
+
+- User approval: no visible change – UI approval not needed (test-only: the provider-readiness customer-flow assertion matches the no-usage hiding rule of #783; the app is unchanged)
+- Approved customer-visible result: none; the customer sees the same Usage screen as before.
+- Scope: apps/control-center/scripts/test-customer-flows.mjs only (port of 2815e311 from #864).
+- What's new: none — test-only change, no customer-visible change
+
+## 2026-10-21 — #783: Leave uncounted provider days empty
+
+- User approval: pending — while the token count is still running, days a provider has not counted yet show no value instead of 0 in the Usage chart; settled days unchanged
+- Approved customer-visible result: Missing days stay empty until that provider's token history settles; reported values and settled zero-filling remain unchanged.
+- Scope: buildProviderTokenChart and its regression tests; pull request branch only.
+- What's new: none — correction of provisional chart values, no new feature
+
+## 2026-10-21 — #783: Preserve the token-history notice dismissal
+
+- User approval: no visible change – UI approval not needed (bug fix: the dismissed token-history notice stays closed through a temporary incomplete answer)
+- Approved customer-visible result: A dismissed notice stays closed through missing or unready answers; a ready result with history clears the dismissal so a later new incident can be shown.
+- Scope: ControlCenterApp notice state and polling regression tests; pull request branch only.
+- What's new: none — fixes a repeated notice, no new feature
+
+## 2026-10-21 — #783: Keep Refresh reachable without token history
+
+- User approval: pending — the Usage page keeps its Refresh button when token history is unavailable (after the notice was closed); Paul sees it in the next build
+- Approved customer-visible result: The existing chart-header Refresh icon stays on Usage when the chart is hidden for unavailable history, with the same action and busy state and no new text.
+- Scope: UsageScreen shared Refresh button and regression tests; coordinator decision for pre-review finding 3, pull request branch only.
+- What's new: none — restores access to the existing Refresh action
+
+## 2026-10-21 — #783: approval marker after merging main at 3dc0a15b
+
+- User approval: no visible change – UI approval not needed (merge of main (3dc0a15b) into #783; the own entries of #783 keep their approvals)
+- Approved customer-visible result: #783 as in its own entries plus the entries merged with 3dc0a15b; nothing else changes.
+- Scope: the merge of 3dc0a15b and this approval record. Pull request branch #783 only, not merged, not released.
+- What's new: none — merge of 3dc0a15b, no customer-visible change of its own
+
+## 2026-10-21 — paultest-build9: refresh claude/group-usage (#783)
+
+- User approval: pending — build9 integration of claude/group-usage at 1b03f96df362 for Paul’s Mac test build 7204.
+- Approved customer-visible result: Preserve the refreshed feature together with the existing calm customer flows in the integration candidate.
+- Scope: Merge claude/group-usage into claude/paultest-build9 and retain all source approval blocks.
+- What's new: none — integration of existing feature entries only.
