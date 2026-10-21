@@ -3959,18 +3959,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           }
           // In the Setup log's sentences.
           const shown = byCustomer
-            ? displayModeChange(previous, selection)
+            ? displayModeChange(previous, selection, (id) =>
+                providerPreferencesRef.current?.find(
+                  (preference) => preference.providerId === id,
+                )?.label || "the chosen provider",
+              )
             : null;
           if (shown !== null) {
             addEvent({
               label: "Display mode saved",
-              detail: shown
-                ? `Always show ${
-                    providerPreferencesRef.current?.find(
-                      (preference) => preference.providerId === shown,
-                    )?.label || "the chosen provider"
-                  }.`
-                : "Automatic: VibeTV switches between your providers.",
+              detail: shown,
               tone: "ready",
             });
           }
@@ -6278,19 +6276,32 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 }
 
 /**
- * What a saved display selection changed, for Recent activity: the provider
- * VibeTV now always shows, "" for Automatic, or null when neither the mode nor
- * that provider changed. Nothing read yet counts as Automatic, the default, so
- * confirming the default is no change; another pool under Automatic is none
- * either.
+ * What a saved display selection changed, for Recent activity, in the Setup
+ * log's sentences; null when neither the mode nor the shown providers changed.
+ * Nothing read yet counts as Automatic, the default, so confirming the default
+ * is no change; another pool under Automatic is none either. Two at once names
+ * both sources, so a change to either one, or to their order, is recorded.
  */
 export function displayModeChange(
   previous: Pick<ProviderDisplaySelection, "mode" | "providerIds"> | null,
   selection: Pick<ProviderDisplaySelection, "mode" | "providerIds">,
+  labelOf: (providerId: string) => string,
 ): string | null {
   const shown = (value: typeof previous) =>
-    !value || value.mode === "automatic" ? "" : value.providerIds[0] ?? "";
-  return shown(previous) === shown(selection) ? null : shown(selection);
+    !value || value.mode === "automatic"
+      ? ""
+      : value.providerIds.slice(0, value.mode === "pair" ? 2 : 1).join(",");
+  if (shown(previous) === shown(selection)) {
+    return null;
+  }
+  if (selection.mode === "pair") {
+    const [top, bottom] = selection.providerIds;
+    return `Show ${labelOf(top)} and ${labelOf(bottom)} at once`;
+  }
+  const only = selection.providerIds[0];
+  return selection.mode === "automatic" || !only
+    ? "Automatic: VibeTV switches between your providers."
+    : `Always show ${labelOf(only)}.`;
 }
 
 export function setupThemeCatalogError(
