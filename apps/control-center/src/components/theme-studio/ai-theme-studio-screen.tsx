@@ -272,6 +272,12 @@ export function AIThemeStudioScreen({
   const attachmentInput = useRef<HTMLInputElement>(null);
   const [enabled, setEnabled] = useState(false);
   const [configured, setConfigured] = useState<boolean | "pending">(false);
+  // Bumped by every stored-key change: a capability read that started before it is stale and must not write back (#847).
+  const keyGeneration = useRef(0);
+  function changeConfigured(value: boolean | "pending") {
+    keyGeneration.current += 1;
+    setConfigured(value);
+  }
   const [connecting, setConnecting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
@@ -359,11 +365,12 @@ export function AIThemeStudioScreen({
 
   useEffect(() => {
     const controller = new AbortController();
+    const generation = keyGeneration.current;
     void fetchAIThemeCapabilities(controller.signal)
       .then((capabilities) => {
         const state = openAIState(capabilities);
         setEnabled(state.enabled);
-        setConfigured(state.configured);
+        if (generation === keyGeneration.current) setConfigured(state.configured);
       })
       .catch(() => {
         if (!controller.signal.aborted) setEnabled(false);
@@ -807,12 +814,13 @@ export function AIThemeStudioScreen({
       setMessages((all) => [...all, ...([["user", asked], ["assistant", content]] as const).map(([role, text]) => ({ role, content: text.slice(0, 2000), createdAt: new Date().toISOString(), ...(role === "user" && shown.length ? { images: shown } : {}) }))].slice(-AI_THEME_LOCAL_HISTORY_LIMIT));
     };
     try {
+      const generation = keyGeneration.current;
       const capabilities = await fetchAIThemeCapabilities(controller.signal);
       if (
         !capabilities.providers.some((p) => p.id === "openai" && p.configured && !p.verificationRequired)
       ) {
         if (request.current !== controller || controller.signal.aborted) return;
-        setConfigured(capabilities.providers.some((p) => p.id === "openai" && p.configured) ? "pending" : false);
+        if (generation === keyGeneration.current) changeConfigured(capabilities.providers.some((p) => p.id === "openai" && p.configured) ? "pending" : false);
         setStatus(
           "Reconnect your AI account to continue. Your design is unchanged.",
         );
@@ -1673,7 +1681,7 @@ export function AIThemeStudioScreen({
           <OpenAIKeyForm
               inSetup
               initialConfigured={configured}
-              onConfiguredChange={setConfigured}
+              onConfiguredChange={changeConfigured}
               onDismiss={closePanel}
               onConnectingChange={setConnecting}
               onConnected={(kept) => {

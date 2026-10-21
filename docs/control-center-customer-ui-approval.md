@@ -15655,3 +15655,31 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve the refreshed feature together with the existing calm customer flows in the integration candidate.
 - Scope: Merge claude/group-small-fixes into claude/paultest-build9 and retain all source approval blocks.
 - What's new: none — integration of existing feature entries only.
+
+## 2026-10-21 — #781: Theme Studio key state ignores stale capability answers (#847)
+
+- User approval: no visible change – UI approval not needed (bug fix: a late capability answer no longer overwrites the key state in Theme Studio)
+- Approved customer-visible result: #781 as in its own entries; the Theme Studio key state no longer flips back from a late capability answer, nothing else changes.
+- Scope: the Theme Studio screen's capability reads (mount and before a generate). Pull request branch #781 only, not merged, not released.
+- What's new: none — bug fix that removes a wrong state write, no new text or layout
+
+## 2026-10-21 — #781: approval marker after merging main at 3dc0a15b
+
+- User approval: no visible change – UI approval not needed (merge of main (3dc0a15b) into #781; the own entries of #781 keep their approvals)
+- Approved customer-visible result: #781 as in its own entries plus the entries merged with 3dc0a15b; nothing else changes.
+- Scope: the merge of 3dc0a15b and this approval record. Pull request branch #781 only, not merged, not released.
+- What's new: none — merge of 3dc0a15b, no customer-visible change of its own
+
+## 2026-10-21 — #781: closing the key dialog no longer hides a verified key
+
+- User approval: no visible change – UI approval not needed (bug fix: closing the key dialog no longer hides a verified key)
+- Approved customer-visible result: #781 as in its own entries; opening and closing the Theme Studio key dialog before its status read answers no longer shows "Not connected" for a verified key, nothing else changes.
+- Scope: the Theme Studio key form's reports of the stored-key state to its opener. Pull request branch #781 only, not merged, not released.
+- What's new: none — bug fix that removes a wrong state write, no new text or layout
+
+## 2026-10-21 — paultest-build9: refresh claude/group-theme-studio (#781)
+
+- User approval: pending — build9 integration of claude/group-theme-studio at 28f5129e55cc for Paul’s Mac test build 7204.
+- Approved customer-visible result: Preserve the refreshed feature together with the existing calm customer flows in the integration candidate.
+- Scope: Merge claude/group-theme-studio into claude/paultest-build9 and retain all source approval blocks.
+- What's new: none — integration of existing feature entries only.
