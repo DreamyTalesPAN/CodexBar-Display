@@ -8802,3 +8802,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #781 as in its own entries; opening and closing the Theme Studio key dialog before its status read answers no longer shows "Not connected" for a verified key, nothing else changes.
 - Scope: the Theme Studio key form's reports of the stored-key state to its opener. Pull request branch #781 only, not merged, not released.
 - What's new: none — bug fix that removes a wrong state write, no new text or layout
+
+## 2026-10-21 — #781: prove pending-key retry updates the Settings row
+
+- User approval: no visible change – UI approval not needed (test-only evidence: #781 already reports verified key state before closing its Settings dialog)
+- Approved customer-visible result: unchanged; the existing pending-key retry leaves the Settings row connected after the dialog closes.
+- Scope: openai-key-form.test.tsx regression coverage only; no product code changes.
+- What's new: none — test-only review evidence

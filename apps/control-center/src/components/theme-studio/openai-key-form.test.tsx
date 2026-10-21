@@ -192,6 +192,23 @@ describe("Theme Studio AI row in Settings", () => {
     await waitFor(() => expect((screen.getByRole("button", { name: "Save key" }) as HTMLButtonElement).disabled).toBe(false));
   });
 
+  it("reports a successful pending-key retry before closing the Settings dialog", async () => {
+    vi.mocked(fetchAIThemeCapabilities).mockResolvedValue({
+      enabled: true,
+      providers: [{ id: "openai", configured: true, verificationRequired: true }],
+    } as unknown as ReturnType<typeof capabilities>);
+    vi.mocked(verifyAIThemeCredential).mockResolvedValue(true);
+    render(<ThemeStudioKeyRow />);
+    fireEvent.click(await screen.findByRole("button", { name: "Change key" }));
+    const retry = await screen.findByRole("button", { name: "Retry connection check" });
+    fireEvent.click(screen.getByRole("checkbox"));
+    await waitFor(() => expect((retry as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(retry);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByText("Connected")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Change key" })).toBeTruthy();
+  });
+
   it("keeps a verified key when the dialog is opened and closed before the reads answer (#847)", async () => {
     let answerRow!: (value: ReturnType<typeof capabilities>) => void;
     let answerForm!: (value: ReturnType<typeof capabilities>) => void;
