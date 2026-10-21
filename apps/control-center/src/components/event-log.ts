@@ -1,4 +1,5 @@
 import { type ControlCenterEvent, type UsageSnapshot } from "./control-center-types";
+import { hostDateTimeFormat } from "./control-center-runtime";
 
 // The Help menu hands the last 20 of these to an AI along with the current
 // screen, so the log has to be at least that deep.
@@ -51,7 +52,7 @@ export function usageRefreshEvent(payload: UsageSnapshot): {
 }
 
 export function formatTime(): string {
-  return new Intl.DateTimeFormat("de-DE", {
+  return hostDateTimeFormat({
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",

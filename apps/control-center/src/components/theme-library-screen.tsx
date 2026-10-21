@@ -86,7 +86,7 @@ import {
 } from "@/lib/theme-studio-storage";
 import type { ThemeStudioDeviceCapabilities } from "@/lib/theme-studio-capabilities";
 import type { ThemeProduct } from "@/lib/themes";
-import { themeRenderPackUrl } from "./control-center-runtime";
+import { hostDateTimeFormat, themeRenderPackUrl } from "./control-center-runtime";
 import {
   themeShowsTokenTotals,
   type ThemeRenderPack,
@@ -1879,7 +1879,7 @@ function formatRecoveryTime(value: string): string {
   if (Number.isNaN(date.getTime())) {
     return "recently";
   }
-  return new Intl.DateTimeFormat(undefined, {
+  return hostDateTimeFormat({
     dateStyle: "medium",
     timeStyle: "short",
   }).format(date);

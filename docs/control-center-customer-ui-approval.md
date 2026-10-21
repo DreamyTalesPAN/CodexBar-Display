@@ -8332,3 +8332,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #785 as in its own entries plus the entries merged with 35152cc8; nothing else changes.
 - Scope: the merge of 35152cc8 and this approval record. Pull request branch #785 only, not merged, not released.
 - What's new: none — merge of 35152cc8, no customer-visible change of its own
+
+## 2026-10-21 — #890: Times follow the computer's region and 12/24-hour setting
+
+- User approval: pending — the Control Center times and dates use the computer's region and 12/24-hour setting (Mac and Windows), not the fixed de-DE or en-US; Paul checks the result on both platforms before this is released.
+- Approved customer-visible result: times and dates in the Control Center follow the computer's region and 12/24-hour setting; the device preview keeps its de-DE 24-hour format because the device firmware draws its own clock.
+- Scope: the time and date formatters of the Control Center pages, the user agent of the Mac App and the Windows App (carries the locale), and the Windows user-locale lookup. Draft pull request, not merged, not released.
+- What's new: none — draft for after v1.0.66; the What's new entry is added with the release, not in this draft

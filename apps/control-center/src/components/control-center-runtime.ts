@@ -12,6 +12,7 @@ const MAC_BROWSER_SIGN_IN_PROVIDERS = new Set(["claude", "cursor"]);
 const NATIVE_CONTROL_CENTER_USER_AGENT_PREFIX = "VibeTVControlCenter/";
 const PROVIDER_SHORTCUT_UNAVAILABLE_USER_AGENT_SUFFIX =
   " ProviderShortcut/unavailable";
+const HOST_LOCALE_USER_AGENT_PATTERN = / Locale\/(\S+)/;
 
 export function restartLocalControlCenterApp(): void {
   launchNativeControlCenterAction(RESTART_CONTROL_CENTER_URL);
@@ -34,10 +35,25 @@ export function nativeControlCenterAppBuild(userAgent: string): {
   }
   const [version, build] = userAgent
     .slice(NATIVE_CONTROL_CENTER_USER_AGENT_PREFIX.length)
-    .replace(PROVIDER_SHORTCUT_UNAVAILABLE_USER_AGENT_SUFFIX, "")
-    .trim()
+    .split(" ")[0]
     .split("+");
   return { version: version || undefined, build: build || undefined };
+}
+
+/**
+ * The computer's region and 12/24-hour setting as a BCP 47 locale, such as
+ * "en-DE-u-hc-h23" (issue #890). The shells pass it in the user agent. Without
+ * it the page keeps de-DE with 24 hours.
+ */
+export function hostTimeLocale(userAgent: string): string {
+  return userAgent.match(HOST_LOCALE_USER_AGENT_PATTERN)?.[1] ?? "de-DE";
+}
+
+/** The one formatter for the times and dates the customer reads (issue #890). */
+export function hostDateTimeFormat(
+  options: Intl.DateTimeFormatOptions,
+): Intl.DateTimeFormat {
+  return new Intl.DateTimeFormat(hostTimeLocale(navigator.userAgent), options);
 }
 
 /**
