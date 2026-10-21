@@ -12,6 +12,7 @@ import { activeLiveThemeId } from "@/lib/active-theme-upgrade";
 import { validateThemeSpec } from "@/lib/theme-studio";
 import {
   loadUserThemes,
+  USER_THEMES_STORAGE_KEY,
   type ThemeStudioDocument,
 } from "@/lib/theme-studio-storage";
 import type { ThemeProduct } from "@/lib/themes";
@@ -130,6 +131,18 @@ export function OverviewScreen({
   usage,
   windowsHost = false,
 }: OverviewScreenProps) {
+  // Theme Studio unmounts Overview, so returning reads its latest save once.
+  // Changes in another window refresh it without parsing on every status poll.
+  const [savedThemes, setSavedThemes] = useState(loadUserThemes);
+  useEffect(() => {
+    const changed = (event: StorageEvent) => {
+      if (event.key === null || event.key === USER_THEMES_STORAGE_KEY) {
+        setSavedThemes(loadUserThemes());
+      }
+    };
+    window.addEventListener("storage", changed);
+    return () => window.removeEventListener("storage", changed);
+  }, []);
   const connected = deviceIsCustomerConnected(device);
   const updateOwnedDisconnect = Boolean(
     !connected && firmwareUpdateStatus?.phase === "installing",
@@ -273,7 +286,7 @@ export function OverviewScreen({
           <Fact
             label="Display"
             line="Active theme"
-            value={activeThemeLabel(themes, device)}
+            value={activeThemeLabel(themes, device, savedThemes)}
           />
           <Fact
             label="Firmware"
@@ -332,10 +345,10 @@ function Fact({
 function activeThemeLabel(
   themes: ThemeProduct[],
   device: DeviceInfo | null | undefined,
+  saved: ReturnType<typeof loadUserThemes>,
 ): string {
   // The customer's own themes are saved in this browser, by Theme Studio, with
   // the name they gave them.
-  const saved = loadUserThemes();
   const ownName = (matches: (document: ThemeStudioDocument) => boolean) =>
     (saved.ok ? saved.value.themes : saved.data?.themes || []).find(
       ({ document }) => document.usage !== "screensaver" && matches(document),
