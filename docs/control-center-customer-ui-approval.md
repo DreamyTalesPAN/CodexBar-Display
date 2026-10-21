@@ -15127,3 +15127,18 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #802 as in its own entries plus the entries merged with 260c4843; nothing else changes.
 - Scope: the merge of 260c4843 and this approval record. Pull request branch #802 only, not merged, not released.
 - What's new: none — merge of 260c4843, no customer-visible change of its own
+
+## 2026-10-20 — #803: approval marker after merging claude/group-calm-redesign at ece7b388
+
+- User approval: no visible change – UI approval not needed (merge commit into #803; no visible change of its own; entry: #803: approval marker after merging claude/group-calm-redesign at ece7b388)
+- Approved customer-visible result: #803 as in its own entries (pending, Paul reviews) plus the entries merged with ece7b388; nothing else changes.
+- Scope: the merge of ece7b388 and this approval record. Pull request branch #803 only, not merged, not released.
+- What's new: none — merge of ece7b388, no customer-visible change of its own
+
+
+## 2026-10-21 — #803: approval marker after merging claude/group-calm-redesign at 260c4843
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (260c4843) into #803; the own entries of #803 keep their approvals)
+- Approved customer-visible result: #803 as in its own entries plus the entries merged with 260c4843; nothing else changes.
+- Scope: the merge of 260c4843 and this approval record. Pull request branch #803 only, not merged, not released.
+- What's new: none — merge of 260c4843, no customer-visible change of its own
