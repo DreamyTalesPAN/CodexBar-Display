@@ -9084,3 +9084,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #802 as in its own entries plus the entries merged with fb30d196; nothing else changes.
 - Scope: the merge of fb30d196 and this approval record. Pull request branch #802 only, not merged, not released.
 - What's new: none — merge of fb30d196, no customer-visible change of its own
+
+## 2026-10-21 — #802: one tags property after merging #801
+
+- User approval: no visible change – UI approval not needed (#802 keeps one `tags` property in mergeThemeProductWithCatalog: the catalog-first line from #802; the duplicate line #801 brought in with the main merge is dropped; the test uses tags of the ThemeTag type #801 introduced)
+- Approved customer-visible result: #802 unchanged; filter tags still come from the catalog first, as in its pending catalog-tags entry.
+- Scope: #802 themes.ts merge fix only. Pull request branch only, not merged, not released.
+- What's new: none — #802 merge fix only
