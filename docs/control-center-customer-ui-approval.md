@@ -8960,3 +8960,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #783 as in its own entries plus the entries merged with 5b9c0cb4; nothing else changes.
 - Scope: the merge of 5b9c0cb4 and this approval record. Pull request branch #783 only, not merged, not released.
 - What's new: none — merge of 5b9c0cb4, no customer-visible change of its own
+
+## 2026-10-21 — #783: the loading skeleton leaves out hidden providers
+
+- User approval: no visible change – UI approval not needed (#783 Codex fix: the loading skeleton leaves out hidden providers too)
+- Approved customer-visible result: #783 as in its own entries; a hidden provider no longer gets a token-history loading skeleton beside the empty state. No new text or layout.
+- Scope: #783 Codex fix in the usage screen (pending token-history skeleton counts shown providers only). Pull request branch only, not merged, not released.
+- What's new: none — a switched-off, unsupported or dataless provider no longer draws a loading skeleton, and no text or layout changes

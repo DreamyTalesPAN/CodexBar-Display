@@ -1292,6 +1292,23 @@ describe("UsageScreen", () => {
     expect(html).not.toContain("Token history is unavailable");
   });
 
+  it("draws no chart skeleton for only a hidden provider while token history loads", () => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="online"
+        hiddenProviderIds={["codex"]}
+        usage={{
+          ...usage,
+          tokenUsageReady: false,
+          providers: [{ ...usage.providers[0], cost: undefined }],
+        }}
+      />,
+    );
+    expect(html).not.toContain('data-slot="skeleton"');
+    expect(html).not.toContain("Token history is loading");
+    expect(html).toContain("No provider usage is available yet.");
+  });
+
   it("leaves a hidden provider out of the token total and legend", () => {
     const html = renderToStaticMarkup(
       <UsageScreen
