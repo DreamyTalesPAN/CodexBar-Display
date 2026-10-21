@@ -8991,7 +8991,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-21 — #783: loading skeletons shimmer softly (#598 Variante B)
 
-- User approval: pending — loading skeletons (Usage head, chart and provider cards; also other skeletons in the app) shimmer softly right to left instead of pulsing; flat grey with reduced motion. Paul picked Claude Design page "Usage-Skeleton und Two Limits - Runde 21.10", frame "#598 Usage-Skeleton · Variante B – sanftes Schimmern"; Paul sees it in the next build
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: loading skeletons (Usage head, chart and provider cards; also other skeletons in the app) shimmer softly right to left instead of pulsing; flat grey with reduced motion. Paul picked Claude Design page "Usage-Skeleton und Two Limits - Runde 21.10", frame "#598 Usage-Skeleton · Variante B – sanftes Schimmern"; Paul sees it in the next build
 - Approved customer-visible result: #783 as in its own entries; loading skeletons get a soft glint moving right to left instead of an opacity pulse, and flat grey under reduced motion. Same sizes, layout and text.
 - Scope: the shared Skeleton primitive and its keyframes in globals.css; the usage-screen skeleton loses its redundant reduced-motion classes. Pull request branch only, not merged, not released.
 - What's new: none — a restyle of the loading blocks, no feature to announce; no new entry in whats-new.ts
@@ -9002,3 +9002,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #783 as in its own entries plus the entries merged with 35152cc8; nothing else changes.
 - Scope: the merge of 35152cc8 and this approval record. Pull request branch #783 only, not merged, not released.
 - What's new: none — merge of 35152cc8, no customer-visible change of its own
+
+## 2026-10-21 — #783: Paul's approval of build 7202 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — #783 approval record for build 7202; only the 1 listed 7202 entries of #783 now carry it, everything else stays as it was.
+- Approved customer-visible result: #783 as described in those entries, as seen in build 7202.
+- Scope: #783 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #783 approval record only
