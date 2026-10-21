@@ -106,7 +106,6 @@ func runDoctor() error {
 }
 
 type doctorRuntimeConfig struct {
-	usbOwner    service.Manager
 	configured  bool
 	label       string
 	transport   string
@@ -135,11 +134,7 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 		if err != nil {
 			return doctorRuntimeConfig{}, err
 		}
-		config, err := doctorTaskRuntimeConfig(home, label, task.Arguments)
-		if err == nil && config.transport == "usb" {
-			config.usbOwner = manager
-		}
-		return config, err
+		return doctorTaskRuntimeConfig(home, label, task.Arguments)
 	}
 
 	for _, label := range bundledRuntimeLabels {
