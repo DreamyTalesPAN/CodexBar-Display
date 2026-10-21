@@ -9010,6 +9010,13 @@ issue scope, or release permission never implies UI permission.
 - Scope: #783 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #783 approval record only
 
+## 2026-10-21 — #783: Customer-flow test waits for token history only with usage data
+
+- User approval: no visible change – UI approval not needed (test-only: the provider-readiness customer-flow assertion matches the no-usage hiding rule of #783; the app is unchanged)
+- Approved customer-visible result: none; the customer sees the same Usage screen as before.
+- Scope: apps/control-center/scripts/test-customer-flows.mjs only (port of 2815e311 from #864).
+- What's new: none — test-only change, no customer-visible change
+
 ## 2026-10-19 — Pace on Usage (#789, stacked on #783)
 
 - User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Paul reviews (pace on Usage per the approved master + 19.10. decisions)
