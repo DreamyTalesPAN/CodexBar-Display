@@ -68,6 +68,8 @@ function startWindow() {
     device: connected as Record<string, unknown>,
     requests: [] as string[],
     selectable: false,
+    selectResponseLost: false,
+    selectUpdatesStatus: false,
   };
   markWhatsNewSeen();
   vi.useFakeTimers();
@@ -115,6 +117,8 @@ function startWindow() {
         });
       }
       if (companion.selectable && url.endsWith("/v1/device/select")) {
+        if (companion.selectUpdatesStatus) companion.device = graceConnected;
+        if (companion.selectResponseLost) throw new TypeError("Failed to fetch");
         return jsonResponse({ ok: true, device: graceConnected });
       }
       if (url.includes("/api/theme-pack/")) {
@@ -236,5 +240,50 @@ it("shows the not-found dialog again after a successful select reconnects VibeTV
 
   app.companion.device = notFound;
   await app.wait(30);
+  expect(notFoundDialog()).not.toBeNull();
+});
+
+async function dismissOutage() {
+  const app = startWindow();
+  await app.wait(10);
+  app.companion.device = notFound;
+  await app.wait(30);
+  expect(notFoundDialog()).not.toBeNull();
+  fireEvent.click(within(notFoundDialog()!).getByRole("button", { name: "Not now" }));
+  await app.wait(1);
+  expect(notFoundDialog()).toBeNull();
+  return app;
+}
+
+it("a different device first seen in grace gets its own not-found notice", async () => {
+  const app = await dismissOutage();
+  const other = { deviceId: "16199235", target: "cable://vibetv" };
+  app.companion.device = { ...graceConnected, ...other };
+  await app.wait(10);
+  expect(screen.getByText("VibeTV is connected")).toBeTruthy();
+  expect(screen.getByText(other.deviceId)).toBeTruthy();
+  app.companion.device = { ...notFound, ...other };
+  await app.wait(30);
+  expect(screen.getByText("Not connected")).toBeTruthy();
+  expect(screen.queryAllByRole("dialog").filter(d => d !== notFoundDialog())).toHaveLength(0);
+  expect(notFoundDialog()).not.toBeNull();
+});
+
+it.each([false, true])("selection resets the dismissal (response lost: %s)", async (responseLost) => {
+  const app = await dismissOutage();
+  app.companion.device = graceConnected;
+  await app.wait(5);
+  app.companion.selectable = true;
+  app.companion.selectResponseLost = responseLost;
+  app.companion.selectUpdatesStatus = true;
+  app.companion.device = notFound;
+  await app.wait(30);
+  expect(app.companion.requests.filter((r) => r.endsWith("/v1/device/select"))).toHaveLength(1);
+  expect(screen.getByText("VibeTV is connected")).toBeTruthy();
+  app.companion.selectable = false;
+  app.companion.device = notFound;
+  await app.wait(5);
+  expect(screen.getByText("Not connected")).toBeTruthy();
+  expect(screen.queryAllByRole("dialog").filter(d => d !== notFoundDialog())).toHaveLength(0);
   expect(notFoundDialog()).not.toBeNull();
 });
