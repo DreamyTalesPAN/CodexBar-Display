@@ -179,3 +179,28 @@ it("follows a connection changed to another VibeTV without calling the first one
     "POST /api/local-companion/v1/device/search",
   );
 });
+
+// A connect error the customer closed must stay closed: each status poll
+// rebuilds the pairing rejection for the same active condition (#782).
+it("keeps a closed connect error closed across status polls", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  window.companion.device = {
+    ...wifi,
+    connected: false,
+    ready: false,
+    stream: { errorCode: "pairing_token_rejected" },
+  } as typeof wifi;
+  await window.wait(6);
+  fireEvent.click(screen.getByRole("button", { name: "Support" }));
+  await window.wait(1);
+  expect(window.text()).toContain("VibeTV could not connect.");
+
+  fireEvent.click(screen.getByRole("button", { name: "OK" }));
+  await window.wait(1);
+  expect(window.text()).not.toContain("VibeTV could not connect.");
+
+  await window.wait(15);
+  expect(window.companion.requests.filter((request) => request.endsWith("/v1/status")).length).toBeGreaterThan(2);
+  expect(window.text()).not.toContain("VibeTV could not connect.");
+});

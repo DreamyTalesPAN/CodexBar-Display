@@ -8319,3 +8319,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #782 as in its own entries plus the entries merged with e3503bda; nothing else changes.
 - Scope: the merge of e3503bda and this approval record. Pull request branch #782 only, not merged, not released.
 - What's new: none — merge of e3503bda, no customer-visible change of its own
+
+## 2026-10-21 — #782: a closed connect error stays closed across status polls (Codex review)
+
+- User approval: pending — #782 closed connect error stays closed across status polls; no new wording; not seen by Paul. Before → after: #782 the "VibeTV could not connect." dialog, closed with OK, reopened on the next status poll → #782 it stays closed while the same error stays active.
+- Approved customer-visible result: #782 unchanged texts and layout; the connect dialog closed with OK stays closed while the error stays active.
+- Scope: #782 `apps/control-center/src/components/control-center-errors.ts` (sameActiveError), `apps/control-center/src/components/control-center-app.tsx` (two pairing-rejection call sites), `apps/control-center/src/components/control-center-app.lost-device.test.tsx` (test), and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #782 Codex fix not announced

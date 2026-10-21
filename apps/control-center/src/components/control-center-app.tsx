@@ -168,7 +168,7 @@ import {
   startUsageSurfacePolling,
   USAGE_REFRESH_PENDING_POLL_INTERVAL_MS,
 } from "./usage-surface-polling";
-import { companionUnavailableError, connectionErrorForCustomer, isCompanionConnectionError, isCompanionMissingError, isConnectionRecoveryError, isLocalCompanionFetchFailureReason, isLocalNetworkAccessError, localControlCenterUnavailableError, localNetworkAccessError, localNetworkAccessNeedsUserAction, normalizeCaughtError, normalizeError, normalizeLocalControlCenterError, normalizeUsageError, pairingRejectionForDevice, readLocalNetworkAccessState, themeInstallErrorText } from "./control-center-errors";
+import { companionUnavailableError, connectionErrorForCustomer, isCompanionConnectionError, isCompanionMissingError, isConnectionRecoveryError, isLocalCompanionFetchFailureReason, isLocalNetworkAccessError, localControlCenterUnavailableError, localNetworkAccessError, localNetworkAccessNeedsUserAction, normalizeCaughtError, normalizeError, normalizeLocalControlCenterError, normalizeUsageError, pairingRejectionForDevice, readLocalNetworkAccessState, sameActiveError, themeInstallErrorText } from "./control-center-errors";
 import { ThemeSetupDeviceIdentity, canReconnectLostDevice, deviceMatchesExpectedConnection, deviceMatchesThemeSetupIdentity, markDeviceDisconnected, mergeDeviceInfo, normalizeDeviceTarget, reconcileThemeSetupIdentity } from "./device-merge";
 import { forgetDeviceTarget, readInitialDeviceTarget, readLocalSetupPreviewStep, rememberDeviceTarget, savedThemePaths } from "./device-target-storage";
 import { FirmwareUpdateJob, FirmwareUpdateStatus, ThemeInstallJob, ThemeInstallResult, ThemeInstallStatus, clampProgress, currentFirmwareUpdate, customerInstallLogs, customerUpdateLogs, firmwareUpdateStatusFromJob, firmwareWrittenPercent, pollFirmwareUpdateJob, statusThemeInstallIsNews, takeStatusPath, themeInstallStatusFromJob } from "./update-jobs";
@@ -1421,7 +1421,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setProviderSelectionSetup(payload.setup || null);
         const pairingRejection = pairingRejectionForDevice(payload.device);
         if (pairingRejection) {
-          setLastError(pairingRejection);
+          setLastError((current) => sameActiveError(current, pairingRejection));
         } else if (!quiet || deviceIsReady(payload.device)) {
           setLastError((current) => isConnectionRecoveryError(current) ? null : current);
         }
@@ -1590,7 +1590,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       );
       const pairingRejection = pairingRejectionForDevice(payload.device);
       if (pairingRejection) {
-        setLastError(pairingRejection);
+        setLastError((current) => sameActiveError(current, pairingRejection));
       } else if (deviceIsReady(payload.device)) {
         setLastError((current) => isConnectionRecoveryError(current) ? null : current);
       }
