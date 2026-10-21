@@ -276,6 +276,19 @@ func runURLSchemeTests() {
                 == .serviceStart,
         "runtime diagnostics must select a useful customer recovery state"
     )
+    // Issue #836: a silent service is restarted once by the app itself; only
+    // a second failure shows the screen. Other failures never restart.
+    require(
+        shouldRestartServiceAutomatically(after: .serviceStart, alreadyRestarted: false, repairAttempt: false)
+            && !shouldRestartServiceAutomatically(after: .serviceStart, alreadyRestarted: true, repairAttempt: false)
+            && !shouldRestartServiceAutomatically(after: .serviceStart, alreadyRestarted: false, repairAttempt: true)
+            && !shouldRestartServiceAutomatically(after: .backgroundApproval, alreadyRestarted: false, repairAttempt: false)
+            && !shouldRestartServiceAutomatically(after: .updateMismatch, alreadyRestarted: false, repairAttempt: false)
+            && !shouldRestartServiceAutomatically(after: .applicationIncomplete, alreadyRestarted: false, repairAttempt: false)
+            && !shouldRestartServiceAutomatically(after: .legacyRepair, alreadyRestarted: false, repairAttempt: false)
+            && !shouldRestartServiceAutomatically(after: .portConflict("x"), alreadyRestarted: false, repairAttempt: false),
+        "a silent background service is restarted once by itself, then the screen shows"
+    )
     let backgroundApprovalSequence = [
         runtimeServiceRegistrationOutcome(for: .requiresApproval),
         runtimeServiceRegistrationOutcome(for: .enabled),

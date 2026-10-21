@@ -967,6 +967,14 @@ func describeRepairRenderState(health deviceHealth) string {
 	)
 }
 
+func firmwareUpdatePhaseFinal(phase string) bool {
+	switch strings.TrimSpace(phase) {
+	case "complete", "attention", "error":
+		return true
+	}
+	return false
+}
+
 func firmwareAttentionOutcome(kind string) string {
 	prefix := "firmware_current_"
 	switch kind {
@@ -1156,7 +1164,12 @@ func (s *Server) applyFirmwareUpdateEvent(jobID string, event firmwareUpdateEven
 		if stage := strings.TrimSpace(event.Stage); stage != "" {
 			job.Stage = stage
 		}
-		if phase := strings.TrimSpace(event.Phase); phase != "" {
+		// The updater's events only move the job while it runs. Its "complete",
+		// "attention" or "error" is not the end: the server's own verification
+		// (health, stream, picture; up to 90 s since #829) sets the final phase
+		// together with FinishedAt. The page stops polling at a final phase, so
+		// an early one would show "complete" before an attention.
+		if phase := strings.TrimSpace(event.Phase); phase != "" && !firmwareUpdatePhaseFinal(phase) {
 			job.Phase = phase
 		}
 		if outcome := strings.TrimSpace(event.Outcome); outcome != "" {
