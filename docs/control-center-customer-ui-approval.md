@@ -8494,3 +8494,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #781 as in its own entries plus the entries merged with f314106c; nothing else changes.
 - Scope: the merge of f314106c and this approval record. Pull request branch #781 only, not merged, not released.
 - What's new: none — merge of f314106c, no customer-visible change of its own
+
+## 2026-10-21 — #781: Theme Studio header wraps below 960 px (Codex fix, P2)
+
+- User approval: pending — #781 Theme Studio header: below about 960 px it wraps into two rows again instead of pushing buttons off-screen; wide windows unchanged
+- Approved customer-visible result: #781 Theme Studio header at 960 px and wider stays one row as before; between 768 px and 959 px with the navigation open the header wraps into two rows, so File, undo/redo, the notice and Save / Send to VibeTV stay on screen instead of being pushed out of the window.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` (header row: the one-line layout moves from `md:` to `min-[960px]:`), its test in `ai-theme-studio-screen.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — layout fix of a review finding, no new text or control

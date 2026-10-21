@@ -1025,7 +1025,7 @@ export function AIThemeStudioScreen({
         }
       }}
     >
-        <header className="flex min-h-10 flex-wrap items-center gap-x-1 gap-y-2 md:flex-nowrap">
+        <header className="flex min-h-10 flex-wrap items-center gap-x-1 gap-y-2 min-[960px]:flex-nowrap">
           {onBackToLibrary ? <Button variant="ghost" size="icon" className="-ml-2 size-9" aria-label="Back to library" title="Back to library" disabled={locked} onClick={() => { if (dirty && persistedDraft.current !== document) setLeaving(true); else onBackToLibrary(); }}><ArrowLeft className="size-5" /></Button> : null}
           <h2 className="sr-only">{document.usage === "screensaver" ? "Screensaver Studio" : "Theme Studio"}</h2>
           {/* The box is as wide as the name (as drawn in the template); the input lies over the hidden copy of its text. */}
