@@ -642,13 +642,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, []);
   const finishConnectionChange = useCallback(() => setSettingsWiFiSetup(null), []);
   const finishSetup = useCallback(() => {
-    if (setupFinishedThisSession || !setupCompletedFor(device?.deviceId)) {
-      setActiveTab("overview");
-    }
+    // A firmware update seen during setup moved the app to Updates; setup ends on Overview.
+    // Settings (connection change) and Appearance (theme install dialog) stay where they are.
+    if (activeTab === "updates") setActiveTab("overview");
     rememberCompletedSetup(device?.deviceId);
     setSetupFinishedThisSession(true);
     setHasEnteredControlCenter(true);
-  }, [device?.deviceId, setupFinishedThisSession]);
+  }, [activeTab, device?.deviceId]);
   // The completion response clears providerSelectionRequired before the first
   // renderable frame necessarily exists. Keep this setup's confirmed device
   // usable so the next screen is Display Mode, never a flash of Connect.

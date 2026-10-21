@@ -18073,3 +18073,24 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none; the rendered footer wording is unchanged.
 - Scope: Table-driven footer wording tests (countdown, idle, unavailable; used and remaining; one and two displayed limits; hidden limits) in the native firmware suite and the Control Center preview suite.
 - What's new: none — tests only.
+
+## 2026-10-22 — #893: a theme install still open at setup end keeps Appearance
+
+- User approval: no visible change – UI approval not needed (restores the behaviour before #893 for a theme install that is running or has failed when setup ends: it stays on Appearance, where its dialog is; firmware updates still end on Overview)
+- Approved customer-visible result: none beyond #893 itself; a failed theme install picked up during setup is shown in its dialog on Appearance, as before.
+- Scope: finishSetup in control-center-app.tsx and its tests; pull request branch #893 only.
+- What's new: none — no visible change beyond #893
+
+## 2026-10-22 — #893: a Settings connection change returns to Settings, not Overview
+
+- User approval: no visible change – UI approval not needed (fixes #893 itself: only the first entry into the Control Center ends setup on Overview; the Settings WiFi switch keeps returning to its Settings card as on the base branch)
+- Approved customer-visible result: none beyond #893 itself; confirming WiFi from Settings shows the selected WiFi card again.
+- Scope: finishSetup in control-center-app.tsx; pull request branch #893 only.
+- What's new: none — no visible change beyond #893
+
+## 2026-10-22 — #893: setup end only leaves Updates
+
+- User approval: no visible change – UI approval not needed (fixes #893 itself: setup ends on Overview only when a firmware update moved the app to Updates; a Settings connection change and a running theme install keep their screens as on the base branch)
+- Approved customer-visible result: none beyond #893 itself; confirming WiFi from Settings shows the selected WiFi card again, a reload during a theme install shows its dialog on Appearance.
+- Scope: finishSetup in control-center-app.tsx; pull request branch #893 only.
+- What's new: none — no visible change beyond #893
