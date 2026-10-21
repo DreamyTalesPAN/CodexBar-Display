@@ -15900,3 +15900,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve the refreshed feature together with the existing calm customer flows in the integration candidate.
 - Scope: Merge claude/561-update-offer-calm into claude/paultest-build9 and retain all source approval blocks.
 - What's new: none — integration of existing feature entries only.
+
+## 2026-10-21 — #813: approval marker after merging main at 3dc0a15b
+
+- User approval: no visible change – UI approval not needed (merge of main (3dc0a15b) into #813; the own entries of #813 keep their approvals)
+- Approved customer-visible result: #813 as in its own entries plus the entries merged with 3dc0a15b; nothing else changes.
+- Scope: the merge of 3dc0a15b and this approval record. Pull request branch #813 only, not merged, not released.
+- What's new: none — merge of 3dc0a15b, no customer-visible change of its own
+
+## 2026-10-21 — paultest-build9: refresh claude/process-steps-still-working (#813)
+
+- User approval: pending — build9 integration of claude/process-steps-still-working at 7ff287118758 for Paul’s Mac test build 7204.
+- Approved customer-visible result: Preserve the refreshed feature together with the existing calm customer flows in the integration candidate.
+- Scope: Merge claude/process-steps-still-working into claude/paultest-build9 and retain all source approval blocks.
+- What's new: none — integration of existing feature entries only.
