@@ -649,13 +649,15 @@ fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tau
         .build()?;
     if let Some((rect, maximized)) = remembered {
         if let Some(rect) = rect {
+            // Moved first: a monitor with another scale resizes the window when it
+            // arrives, so the frame is measured and the size set where it stays.
+            let _ = window.set_position(PhysicalPosition::new(rect.x, rect.y));
             let frame = match (window.outer_size(), window.inner_size()) {
                 (Ok(outer), Ok(inner)) => (outer.width - inner.width, outer.height - inner.height),
                 _ => (0, 0),
             };
             let (width, height) = inner_within(rect, frame);
             let _ = window.set_size(PhysicalSize::new(width, height));
-            let _ = window.set_position(PhysicalPosition::new(rect.x, rect.y));
         }
         if maximized {
             let _ = window.maximize();
