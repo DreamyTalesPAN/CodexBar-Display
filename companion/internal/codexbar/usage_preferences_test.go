@@ -2,7 +2,9 @@ package codexbar
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -88,7 +90,89 @@ func TestUsagePreferenceReportsWriteFailure(t *testing.T) {
 	if err := SetUsageBarsShowUsed(context.Background(), false); !errors.Is(err, failure) {
 		t.Fatalf("error = %v", err)
 	}
-	if !UsageBarsShowUsed() {
-		t.Fatal("preserve the existing default when reading fails")
+	forgetServeUsage()
+	if _, err := ReadUsageBarsShowUsed(); err == nil {
+		t.Fatal("a failed read without a serve value must stay unknown")
+	}
+}
+
+// A fresh Mac has no defaults key. CodexBar's own effective value is in
+// the already collected serve snapshot; a missing key must not invent Used.
+func TestUsagePreferenceMissingKeyUsesServeSnapshot(t *testing.T) {
+	originalRunner, originalOS := runUsagePreferenceCommandFn, usagePreferenceGOOS
+	t.Cleanup(func() {
+		runUsagePreferenceCommandFn, usagePreferenceGOOS = originalRunner, originalOS
+		forgetServeUsage()
+	})
+	usagePreferenceGOOS = "darwin"
+	t.Setenv(usageModeEnvVar, "")
+	runUsagePreferenceCommandFn = func(context.Context, string, ...string) ([]byte, error) {
+		return nil, errors.New("domain/default pair does not exist")
+	}
+	raw, err := os.ReadFile("testdata/cli/codexbar-macos-0.75.0/serve-snapshot.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Keep the real recorded payload, advancing only its collection time.
+	var snapshot map[string]any
+	if err := json.Unmarshal(raw, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	snapshot["generatedAt"] = time.Now().UTC().Format(time.RFC3339)
+	raw, _ = json.Marshal(snapshot)
+	server := newDashboardFetchTestServer(t, string(raw))
+	defer server.Close()
+	if _, err := FetchDashboardProviders(context.Background(), dashboardFetchTestInfo(server), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if UsageBarsShowUsed() {
+		t.Fatal("missing defaults key must use CodexBar's effective Remaining value")
+	}
+}
+
+func TestUsagePreferenceServeValueMustBeCurrentAndCannotConfirmWrite(t *testing.T) {
+	originalRunner, originalOS := runUsagePreferenceCommandFn, usagePreferenceGOOS
+	t.Cleanup(func() {
+		runUsagePreferenceCommandFn, usagePreferenceGOOS = originalRunner, originalOS
+		forgetServeUsage()
+	})
+	usagePreferenceGOOS = "darwin"
+	t.Setenv(usageModeEnvVar, "")
+	runUsagePreferenceCommandFn = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if args[0] == "write" {
+			return nil, nil
+		}
+		return nil, errors.New("read unavailable")
+	}
+	for _, test := range []struct {
+		name  string
+		host  string
+		at    time.Time
+		known bool
+	}{
+		{"remaining", `{"usageBarsShowUsed":false}`, time.Now(), true},
+		{"missing", `{}`, time.Now(), false},
+		{"expired", `{"usageBarsShowUsed":false}`, time.Now().Add(-time.Hour), false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			raw, _ := json.Marshal(map[string]any{"schemaVersion": 1, "generatedAt": test.at, "host": json.RawMessage(test.host)})
+			server := newDashboardFetchTestServer(t, string(raw))
+			defer server.Close()
+			if _, err := FetchDashboardProviders(context.Background(), dashboardFetchTestInfo(server), time.Now()); err != nil {
+				t.Fatal(err)
+			}
+			value, err := ReadUsageBarsShowUsed()
+			if (err == nil) != test.known || value {
+				t.Fatalf("value = %v, err = %v", value, err)
+			}
+			if test.known {
+				if err := SetUsageBarsShowUsed(context.Background(), false); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := ReadUsageBarsShowUsed(); err == nil {
+					t.Fatal("pre-write serve snapshot must not confirm the write")
+				}
+			}
+		})
 	}
 }

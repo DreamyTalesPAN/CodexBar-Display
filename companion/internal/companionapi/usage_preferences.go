@@ -2,6 +2,7 @@ package companionapi
 
 import (
 	"context"
+	"errors"
 	"strconv"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
@@ -13,7 +14,7 @@ const usageBarsPreferenceID = "codexbar.usageBarsShowUsed"
 // VibeTV copy; Win-CodexBar has no equivalent setting yet (#874).
 type usagePreferenceAdapter struct {
 	goos  string
-	read  func() bool
+	read  func() (bool, error)
 	write func(context.Context, bool) error
 }
 
@@ -35,11 +36,21 @@ func (a usagePreferenceAdapter) Write(ctx context.Context, _ string, value any) 
 	if err := a.write(ctx, value == "true"); err != nil {
 		return preferenceDescriptor{}, err
 	}
-	return a.descriptor(), nil
+	descriptor := a.descriptor()
+	if descriptor.Availability.State != "available" || descriptor.Value != value {
+		return preferenceDescriptor{}, errors.New("CodexBar usage preference could not be confirmed")
+	}
+	return descriptor, nil
 }
 
 func (a usagePreferenceAdapter) descriptor() preferenceDescriptor {
-	value := strconv.FormatBool(a.read())
+	showUsed, err := a.read()
+	var value any
+	availability := preferenceAvailability{State: "unavailable"}
+	if err == nil {
+		value = strconv.FormatBool(showUsed)
+		availability.State = "available"
+	}
 	return preferenceDescriptor{
 		ID:             usageBarsPreferenceID,
 		Section:        "display",
@@ -52,7 +63,7 @@ func (a usagePreferenceAdapter) descriptor() preferenceDescriptor {
 			{Value: "true", Label: "Used"},
 			{Value: "false", Label: "Remaining"},
 		},
-		Availability:  preferenceAvailability{State: "available"},
+		Availability:  availability,
 		WriteStrategy: "codexbar_command",
 		Writable:      !codexbar.UsageBarsShowUsedOverridden(),
 	}

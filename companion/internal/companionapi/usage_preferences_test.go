@@ -21,7 +21,7 @@ func TestUsagePreferenceRegistry(t *testing.T) {
 			stored, writes := false, 0
 			adapter := usagePreferenceAdapter{
 				goos:  platform,
-				read:  func() bool { return stored },
+				read:  func() (bool, error) { return stored, nil },
 				write: func(_ context.Context, value bool) error { stored = value; writes++; return nil },
 			}
 			server.preferenceAdapters = []preferenceAdapter{adapter}
@@ -114,5 +114,28 @@ func TestUsagePreferenceRegisteredWithCodexBarReader(t *testing.T) {
 	}
 	if found != (runtime.GOOS == "darwin") {
 		t.Fatalf("setting listed on %s: %v", runtime.GOOS, found)
+	}
+}
+
+func TestUsagePreferenceUnknownAndUnconfirmedReadback(t *testing.T) {
+	t.Setenv("CODEXBAR_DISPLAY_USAGE_MODE", "")
+	adapter := usagePreferenceAdapter{
+		goos:  "darwin",
+		read:  func() (bool, error) { return false, errors.New("missing key or read failed") },
+		write: func(context.Context, bool) error { return nil },
+	}
+	items, err := adapter.List(context.Background())
+	if err != nil || len(items) != 1 {
+		t.Fatalf("list = %v, %v", items, err)
+	}
+	if items[0].Value != nil || items[0].EffectiveValue != nil || items[0].Availability.State == "available" {
+		t.Fatalf("unknown mode must have no selected option: %+v", items[0])
+	}
+	if _, err := adapter.Write(context.Background(), usageBarsPreferenceID, "false"); err == nil {
+		t.Fatal("failed read-back must not confirm a write")
+	}
+	adapter.read = func() (bool, error) { return true, nil }
+	if _, err := adapter.Write(context.Background(), usageBarsPreferenceID, "false"); err == nil {
+		t.Fatal("mismatched read-back must not confirm a write")
 	}
 }

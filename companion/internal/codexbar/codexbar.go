@@ -198,27 +198,37 @@ func commandTimeout() time.Duration {
 	return time.Duration(n) * time.Second
 }
 
-// UsageBarsShowUsed reflects CodexBar's "used vs remaining" display mode.
-// It defaults to "used" when the preference is unavailable.
+// UsageBarsShowUsed projects the usage data using CodexBar's effective mode.
+// Existing display callers keep their used-data fallback when it is unknown;
+// editable settings must use ReadUsageBarsShowUsed to preserve that distinction.
 func UsageBarsShowUsed() bool {
+	showUsed, err := ReadUsageBarsShowUsed()
+	return err != nil || showUsed
+}
+
+// ReadUsageBarsShowUsed reads the saved choice, or CodexBar's effective choice
+// from the existing bounded serve reading when no defaults value can be read.
+func ReadUsageBarsShowUsed() (bool, error) {
 	if showUsed, ok := usageBarsShowUsedFromEnv(); ok {
-		return showUsed
+		return showUsed, nil
 	}
 	if usagePreferenceGOOS != "darwin" {
-		return true
+		return true, nil
 	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 	defer cancel()
-
 	out, err := runUsagePreferenceCommandFn(ctx, "defaults", "read", "com.steipete.codexbar", "usageBarsShowUsed")
-	if err != nil {
-		return true
+	if err == nil {
+		if showUsed, ok := parseBoolPreference(out); ok {
+			return showUsed, nil
+		}
 	}
-	if showUsed, ok := parseBoolPreference(out); ok {
-		return showUsed
+	serveUsage.mu.Lock()
+	defer serveUsage.mu.Unlock()
+	if age := time.Since(serveUsage.at); age >= 0 && age <= serveUsage.maxAge && serveUsage.showUsed != nil {
+		return *serveUsage.showUsed, nil
 	}
-	return true
+	return false, errors.New("CodexBar usage preference is unavailable")
 }
 
 // UsageBarsShowUsedOverridden prevents a saved choice from being offered when
@@ -236,6 +246,14 @@ func SetUsageBarsShowUsed(parent context.Context, showUsed bool) error {
 	ctx, cancel := context.WithTimeout(parent, 1500*time.Millisecond)
 	defer cancel()
 	_, err := runUsagePreferenceCommandFn(ctx, "defaults", "write", "com.steipete.codexbar", "usageBarsShowUsed", "-bool", strconv.FormatBool(showUsed))
+	if err == nil {
+		// A pre-write serve answer cannot confirm the newly saved preference.
+		// Keep provider readings; only invalidate this field and fence older fetches.
+		serveUsage.mu.Lock()
+		serveUsage.showUsed = nil
+		serveUsage.forgotten++
+		serveUsage.mu.Unlock()
+	}
 	return err
 }
 

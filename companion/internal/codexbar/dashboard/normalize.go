@@ -11,6 +11,9 @@ import (
 var ErrUnexpectedPayload = errors.New("unexpected dashboard usage payload")
 
 type Snapshot struct {
+	Host struct {
+		UsageBarsShowUsed *bool `json:"usageBarsShowUsed"`
+	} `json:"host"`
 	SchemaVersion int        `json:"schemaVersion"`
 	GeneratedAt   *time.Time `json:"generatedAt"`
 	// StaleAfterSeconds is how long serve itself calls this snapshot current.
