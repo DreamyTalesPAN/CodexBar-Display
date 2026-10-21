@@ -9186,6 +9186,27 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of 3dc0a15b and this approval record. Pull request branch #784 only, not merged, not released.
 - What's new: none — merge of 3dc0a15b, no customer-visible change of its own
 
+## 2026-10-21 — #784: Overview 3D sway stops and pauses while hidden
+
+- User approval: pending — the Overview 3D VibeTV sways once and then stands still (as approved for setup in 7202), paused while the window is hidden
+- Approved customer-visible result: the Overview follows the one-cycle sway from #780, approved in build 7202: after 2.5 seconds without a touch it sways once and settles; a drag starts one more cycle. Hidden windows pause that cycle, and reduced motion stays still. Text and layout remain unchanged.
+- Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx` and its animation regression tests; adapted from #780 commit 65352daf4412c41df5041baea327f079b92c1dff with visibility handling and event-driven rendering. Pull request #784 only, not merged, not released.
+- What's new: none — performance fix to the existing Overview preview
+
+## 2026-10-21 — #784: identify library and busy notices by data attributes
+
+- User approval: no visible change – UI approval not needed (#784 P3a replaces notice mount counters and title matching with stable dialog data attributes)
+- Approved customer-visible result: page notices still wait for other dialogs and take priority over the busy announcement; wording, layout and dismissal remain unchanged.
+- Scope: `theme-library-screen.tsx`, `system-busy-dialog.tsx`, the `SetupDialog` notice attribute, and library notice regression tests. Pull request #784 only, not merged, not released.
+- What's new: none — internal notice identification only
+
+## 2026-10-21 — #784: cache saved theme names between Overview polls
+
+- User approval: no visible change – UI approval not needed (#784 P3b reads the saved theme library once per Overview visit or storage change instead of every status poll)
+- Approved customer-visible result: Overview keeps showing the current theme name, including the customer's saved names and live theme during standby; returning from Theme Studio and changes from another window refresh those names.
+- Scope: `overview-screen.tsx` and its theme-name regression tests. Pull request #784 only, not merged, not released.
+- What's new: none — avoid repeated localStorage JSON parsing
+
 ## 2026-10-20 — #778: an invalid field with keyboard focus shows the full ink focus ring
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 09:05: "ja" (to the picture ui/817-invalid-focus/rot-close.png, question "Passt das so?"; the final #817 look is the red focus ring on every invalid field) — entry: #778: an invalid field with keyboard focus shows the full ink focus ring — before → after: a focused invalid field showed the red, reduced invalid ring → the full ink focus ring on a focused invalid field (light and dark), the red border stays and the red ring stays when the field is not focused. Nothing else changes.
