@@ -16224,6 +16224,11 @@ issue scope, or release permission never implies UI permission.
 - What's new: none — correct existing preview parity with the device frame.
 
 
+- User approval: no visible change – UI approval not needed (scope record: lists the full paths changed by #821)
+- Approved customer-visible result: none from this documentation correction. The entries “2026-10-21 — #821: Display mode Continue waits while a tile is a skeleton (Codex fix)” and “2026-10-21 — #821: enlarge setup display-mode previews” remain pending; this addendum does not approve their visible results.
+- Scope: docs/control-center-customer-ui-approval.md only; the existing #821 records cover `apps/control-center/src/app/globals.css`, `apps/control-center/src/components/control-center-app.tsx`, `apps/control-center/src/components/live-vibetv-preview.tsx`, `apps/control-center/src/components/setup/setup-display-mode-screen.test.tsx`, `apps/control-center/src/components/setup/setup-display-mode-screen.tsx`, `apps/control-center/src/components/setup/setup-display-previews.test.ts`, `apps/control-center/src/components/setup/setup-display-previews.ts`, `apps/control-center/src/components/setup/setup-display-theme-carousel.test.tsx`, `apps/control-center/src/components/setup/setup-display-theme-tiles.test.tsx`, `apps/control-center/src/components/setup/setup-display-theme-tiles.tsx`, `apps/control-center/src/components/setup/setup-preview-gallery.tsx`, `apps/control-center/src/components/setup/setup-wizard.test.tsx`, `apps/control-center/src/components/setup/setup-wizard.tsx` at 322be47abb49e0b409320e6fbd7086babc52164d. These full paths supplement the existing scope; all original entries are preserved.
+- What's new: none — documentation-only scope correction; no product change or announcement.
+
 ## 2026-10-21 — #858: append-only full-path scope record
 
 - User approval: no visible change – UI approval not needed (scope record: lists the full paths changed by #858)
@@ -16455,6 +16460,14 @@ issue scope, or release permission never implies UI permission.
 ## 2026-10-21 — build9: refresh #821 for 7205
 
 - User approval: pending — integrate claude/setup11-live-theme-tiles at 14e785580757 into build 7205.
+- Approved customer-visible result: Preserve this feature together with the existing build9 Settings and three equal display cards.
+- Scope: Integration merge preserving both approval histories.
+- What's new: none — integration only.
+
+
+## 2026-10-21 — build9: refresh #858 for 7205
+
+- User approval: pending — integrate claude/831-preview-frames-from-companion at 237577a14f5c into build 7205.
 - Approved customer-visible result: Preserve this feature together with the existing build9 Settings and three equal display cards.
 - Scope: Integration merge preserving both approval histories.
 - What's new: none — integration only.
