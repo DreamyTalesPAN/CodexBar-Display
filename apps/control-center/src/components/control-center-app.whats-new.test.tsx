@@ -179,7 +179,7 @@ function startWindow({
           assets: {},
         });
       }
-      if (url.endsWith("/v1/preferences?section=providers")) {
+      if (url.includes("/v1/preferences?section=providers")) {
         return jsonResponse({ ok: true, items: [claude] });
       }
       if (url.endsWith("/v1/preferences?section=display")) {
