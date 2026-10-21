@@ -8898,3 +8898,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #822 as in its own entries plus the entries merged with fd9e6fb3; nothing else changes.
 - Scope: the merge of fd9e6fb3 and this approval record. Pull request branch #822 only, not merged, not released.
 - What's new: none — merge of fd9e6fb3, no customer-visible change of its own
+
+## 2026-10-21 — #822: Mac App update prompt after the wizard's own check and on Windows during setup (Codex review)
+
+- User approval: pending — #822 update prompt: on Windows during setup the native update dialog opens again (as before this branch); on a Mac, the setup wizard's own update check no longer leads to a second update dialog when setup ends
+- Approved customer-visible result: On Windows during setup the native update dialog opens as it did before this branch. On a Mac, after "Update Mac App" in the setup wizard, the update dialog does not come a second time when setup ends. No text, screen or button changes.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (the update prompt effect and the wizard offer's `onUpdate`) and this approval record. Pull-request branch #822 only, not merged, not released. WIP: tests not yet written.
+- What's new: none — update prompt timing only, no new text

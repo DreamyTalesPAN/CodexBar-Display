@@ -4665,9 +4665,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     // calm dialog and starts the visible check from its button. The native
     // Sparkle dialog must not come first. The offer returns here once setup
     // has finished.
+    // On Windows the wizard shows no offer (windowsHost), so the native prompt
+    // is not held back for it; the wizard only takes over on a Mac.
     if (
       hostedSetup ||
-      setupOwnsScreen ||
+      (setupOwnsScreen && !windowsHost) ||
       !macAppUpdateAvailable ||
       !macAppUpdateOfferedVersion ||
       firmwareUpdateInProgress ||
@@ -5579,6 +5581,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                   ? {
                       version: macAppUpdateOfferedVersion,
                       onUpdate: () => {
+                        // The wizard's own check counts as this version's prompt:
+                        // setup ending later must not open Sparkle's dialog again.
+                        macAppUpdatePromptedFor.current = macAppUpdateOfferedVersion;
                         window.location.href = "vibetv://check-for-updates";
                       },
                     }
