@@ -2395,7 +2395,7 @@ func TestDeviceDiscoverCableTargetDoesNotPersistSelection(t *testing.T) {
 	}
 
 	server.readCableHello = func(string) (protocol.DeviceHello, error) {
-		return protocol.DeviceHello{DeviceID: "cable-a", Board: "esp8266_smalltv_st7789", Firmware: "1.0.41"}, nil
+		return cableHelloForTest("cable-a"), nil
 	}
 
 	rec := httptest.NewRecorder()
