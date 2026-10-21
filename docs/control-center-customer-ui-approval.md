@@ -8357,7 +8357,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-21 — #782: Paul decisions on support diagnostics and manual refresh (Codex review)
 
-- User approval: pending — #782 Paul decisions 21.10.: manual refresh ends only with values collected after the click; Run diagnostics writes no Recent activity entry; diagnostics and report collection never run at the same time; no new wording
+- User approval: approved by Paul in the communicator chat, 2026-10-21 12:28: "rest passt so" (build 7201 review) — entry: #782 Paul decisions 21.10.: manual refresh ends only with values collected after the click; Run diagnostics writes no Recent activity entry; diagnostics and report collection never run at the same time; no new wording
 - Approved customer-visible result: #782 Run diagnostics writes no Recent activity entry; while Run diagnostics or Create report collects, the other button is disabled; no new text. Manual refresh ends only with values collected after the click.
 - Scope: #782 `apps/control-center/src/components/control-center-app.tsx`, `support-report-actions.tsx`, `diagnostics-panel.tsx`, `logs-screen.tsx` and their tests, `companion/internal/companionapi/usage.go` and `server_test.go`, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new wording
@@ -8382,3 +8382,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #782 a Create report from setup Help or Updates while Run diagnostics collects gets that report instead of nothing; Run diagnostics still writes no Recent activity entry; no new text.
 - Scope: #782 `apps/control-center/src/components/control-center-app.tsx` (one shared collection for Create report and Run diagnostics) and `control-center-app.support-report-card.test.tsx` (test), and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new wording
+
+## 2026-10-21 — #782: Paul's approval of build 7201 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 12:28: "rest passt so" (build 7201 review) — #782 approval record for build 7201; only the 7201 point of #782 now carries it, everything else stays as it was.
+- Approved customer-visible result: #782 as described in that entry, as seen in build 7201.
+- Scope: #782 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #782 approval record only
