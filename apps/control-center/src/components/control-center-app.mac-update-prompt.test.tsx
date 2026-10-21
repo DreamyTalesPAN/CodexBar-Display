@@ -332,3 +332,25 @@ it("withdraws the setup offer when the runtime check fails after a hosted succes
   await app.wait(10);
   expect(openMacAppUpdatePrompt).toHaveBeenCalledTimes(1);
 });
+
+it("offers a late launch update when the runtime release check failed (#892)", async () => {
+  const app = await openApp({ userAgent: nativeUserAgent, setupFinished: false });
+  app.companion.releaseCheckFailed = true;
+  await app.wait(10);
+  expect(runtime.wizardProps?.macAppUpdate).toBeUndefined();
+
+  // The Mac App's launch check found 9.9.10 after the start had gone on.
+  await act(async () => {
+    window.dispatchEvent(
+      new CustomEvent("vibetv:mac-app-update-found", { detail: { version: "9.9.10" } }),
+    );
+  });
+  expect(runtime.wizardProps?.macAppUpdate).toBeDefined();
+  expect(openMacAppUpdatePrompt).not.toHaveBeenCalled();
+
+  // Once setup hands over, the offer prompts like any other.
+  rememberCompletedSetup(device.deviceId);
+  app.companion.device = device;
+  await app.wait(20);
+  expect(openMacAppUpdatePrompt).toHaveBeenCalledTimes(1);
+});

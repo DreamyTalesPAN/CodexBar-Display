@@ -79,6 +79,28 @@ export function onNativeDownloadFinished(
   return () => window.removeEventListener("vibetv:download-finished", handle);
 }
 
+/**
+ * The Mac App's launch update check found an update after the start had gone
+ * on (#892). The shell passes the version, so the page can offer it when the
+ * Companion's own release check failed. Returns the function that stops listening.
+ */
+export function onNativeMacAppUpdateFound(
+  listener: (version: string) => void,
+): () => void {
+  const handle = (event: Event) => {
+    const detail: unknown = (event as CustomEvent).detail;
+    if (typeof detail !== "object" || detail === null) {
+      return;
+    }
+    const { version } = detail as Record<string, unknown>;
+    if (typeof version === "string" && version) {
+      listener(version);
+    }
+  };
+  window.addEventListener("vibetv:mac-app-update-found", handle);
+  return () => window.removeEventListener("vibetv:mac-app-update-found", handle);
+}
+
 // Opens the Mac App's update prompt (issue #566). The Mac App runs a background
 // Sparkle check for it: a dialog only when Sparkle finds the update, never
 // "You're up to date" in the middle of setup (#570). Windows keeps its own check.

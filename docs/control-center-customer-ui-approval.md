@@ -9374,3 +9374,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: an unavailable current update check withdraws the existing setup offer and does not open the native prompt after setup; a successful later check can offer the update again.
 - Scope: control-center-app.tsx release precedence and its regression test; runtime release state remains authoritative in the installed app.
 - What's new: none — fix stale update availability
+
+## 2026-10-21 — #892: a late launch update reaches the page offer
+
+- User approval: no visible change – UI approval not needed (bug fix: #892 keeps an update that the Mac App's launch check finds after the start went on; the existing update offer then appears where a failed release check had hidden it)
+- Approved customer-visible result: no new UI or text; the existing "Update Mac App" offer is shown when the late launch check found an update.
+- Scope: control-center-runtime.ts listener and control-center-app.tsx offer state with its regression test; the Mac shell hands the version over through the existing window-event bridge.
+- What's new: none — the existing update offer learns a late update

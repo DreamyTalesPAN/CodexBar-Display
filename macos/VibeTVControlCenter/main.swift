@@ -308,6 +308,18 @@ func downloadFinishedEventScript(fileName: String, saved: Bool) -> String? {
     return "window.dispatchEvent(new CustomEvent('vibetv:download-finished', { detail: \(String(decoding: detail, as: UTF8.self)) })); true"
 }
 
+/// The script that tells the page the Mac App's launch check found an update
+/// after the start went on (#892). The version reaches the script as JSON.
+func macAppUpdateFoundEventScript(version: String) -> String? {
+    guard let detail = try? JSONSerialization.data(
+        withJSONObject: ["version": version],
+        options: [.sortedKeys]
+    ) else {
+        return nil
+    }
+    return "window.dispatchEvent(new CustomEvent('vibetv:mac-app-update-found', { detail: \(String(decoding: detail, as: UTF8.self)) })); true"
+}
+
 func isApprovedDMGDownloadURL(_ url: URL) -> Bool {
     guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
           components.scheme?.lowercased() == "https",
@@ -5537,9 +5549,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             )
         case .abandoned:
             // The start already went on. Installing now would restart the
-            // app in the middle of setup. The page already offers the update
-            // through the runtime's release state and owns when to prompt
-            // (#822); do not start a native probe that bypasses its setup hold.
+            // app in the middle of setup. The page offers the update and owns
+            // when to prompt (#822); it learns the version here, because the
+            // runtime's release check may have failed (#892).
+            notifyMacAppUpdateFound(item.displayVersionString)
             throw CocoaError(.userCancelled)
         case .installing, .done:
             break
@@ -5705,6 +5718,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     func downloadDidFinish(_ download: WKDownload) {
         if let fileName = savingDownloadFileNames.removeValue(forKey: ObjectIdentifier(download)) {
             notifyDownloadFinished(fileName: fileName, saved: true)
+        }
+    }
+
+    /// Tells the page that the launch check found an update after the start
+    /// went on (#892).
+    private func notifyMacAppUpdateFound(_ version: String) {
+        guard let script = macAppUpdateFoundEventScript(version: version) else {
+            return
+        }
+        webView?.evaluateJavaScript(script) { _, error in
+            if let error {
+                NSLog(
+                    "VibeTV Control Center could not report a late Mac App update: \(error.localizedDescription)"
+                )
+            }
         }
     }
 

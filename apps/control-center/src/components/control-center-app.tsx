@@ -47,6 +47,7 @@ import {
   launchCodexBarRepair,
   nativeProviderShortcut,
   needsLoopbackTargetAddressSpace,
+  onNativeMacAppUpdateFound,
   openMacAppUpdatePrompt,
   readBrowserSignIn,
   repairLocalControlCenterRuntime,
@@ -4589,8 +4590,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       : hostedCompanionRelease?.status === "check_failed" && runtimeRelease
         ? { ...runtimeRelease, ...hostedCompanionRelease }
         : hostedCompanionRelease || runtimeRelease || null;
+  // The Mac App's launch check can find the update after the start went on
+  // (#892). The page offers that version too, when the release check failed.
+  const [lateMacAppUpdateVersion, setLateMacAppUpdateVersion] = useState("");
+  useEffect(() => onNativeMacAppUpdateFound(setLateMacAppUpdateVersion), []);
   const macAppUpdateAvailable = Boolean(
-    companionInfo?.update?.updateAvailable || companionRelease?.updateAvailable,
+    companionInfo?.update?.updateAvailable ||
+      companionRelease?.updateAvailable ||
+      lateMacAppUpdateVersion,
   );
   // A pending Mac App update must resolve immediately once the customer is in
   // the app — most urgently in the mixed state where the device firmware is
@@ -4600,7 +4607,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // found never reaches the Updates tab, and an old app can be the reason
   // (#561).
   const macAppUpdateOfferedVersion =
-    companionRelease?.latestVersion || companionRelease?.release || "";
+    companionRelease?.latestVersion ||
+    companionRelease?.release ||
+    lateMacAppUpdateVersion;
   const activeThemeUpdateAvailable = Boolean(
     activeThemeUpgrade.theme &&
     activeThemeUpgrade.needed &&
