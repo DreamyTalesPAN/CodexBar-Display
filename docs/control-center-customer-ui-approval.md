@@ -9387,3 +9387,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #864 as in its own entries plus the entries merged with 5f6798fd; nothing else changes.
 - Scope: the merge of 5f6798fd and this approval record. Pull request branch #864 only, not merged, not released.
 - What's new: none — merge of 5f6798fd, no customer-visible change of its own
+
+## 2026-10-21 — #864: preserve the saved pair during a temporary missing reading
+
+- User approval: no visible change – UI approval not needed (bug fix: keep the saved Two at once card and both provider pickers visible while a member awaits fresh usage)
+- Approved customer-visible result: Setup and Settings keep the saved pair selected when either enabled member has stale, unavailable, or missing usage; its preview stays unavailable and the saved provider order stays intact. One provider keeps its existing reading requirement.
+- Scope: shared pair picker inputs, setup and Settings pair choices and previews, regression tests, and the theme guide correction for the deliberately empty pair frame label.
+- What's new: none — restore the existing saved choice, no separate announcement.

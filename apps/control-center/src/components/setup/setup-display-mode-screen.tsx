@@ -65,6 +65,8 @@ type SetupDisplayModeScreenProps = {
   manualPreview: SetupDisplayModePreview | null;
   /** Live usage of the two providers Two at once shows together. */
   pairPreview?: SetupDisplayModePreview | null;
+  /** Enabled providers for the pair, including those awaiting fresh usage. */
+  pairProviders?: SetupDisplayModeProvider[];
   /** The first and the second provider of Two at once. */
   pairProviderIds?: string[];
   /**
@@ -103,6 +105,7 @@ export function SetupDisplayModeScreen({
   pairPreview,
   pairProviderIds = [],
   providers,
+  pairProviders = providers,
   saving = false,
   selectedProviderId,
 }: SetupDisplayModeScreenProps) {
@@ -131,6 +134,7 @@ export function SetupDisplayModeScreen({
         onSelectProvider={onSelectProvider}
         pairPreview={pairPreview}
         pairProviderIds={pairProviderIds}
+        pairProviders={pairProviders}
         providers={providers}
         saving={saving}
         selectedProviderId={selectedProviderId}
@@ -152,7 +156,7 @@ export function SetupDisplayModeScreen({
           saving ||
           (mode === "fixed" &&
             !providers.some((provider) => provider.id === selectedProviderId)) ||
-          (mode === "pair" && !pairIsChosen(pairProviderIds, providers))
+          (mode === "pair" && !pairIsChosen(pairProviderIds, pairProviders))
         }
         className="mt-4 w-full"
         onClick={onContinue}
@@ -175,6 +179,7 @@ type DisplayModeChoiceProps = Pick<
   | "onSelectProvider"
   | "pairPreview"
   | "pairProviderIds"
+  | "pairProviders"
   | "providers"
   | "saving"
   | "selectedProviderId"
@@ -206,6 +211,7 @@ export function DisplayModeChoice({
   pairPreview = null,
   pairProviderIds = [],
   providers,
+  pairProviders = providers,
   saving = false,
   selectedProviderId,
 }: DisplayModeChoiceProps) {
@@ -216,7 +222,7 @@ export function DisplayModeChoice({
   );
   const { index } = useProviderRotation(rotation.length);
   // Most customers use one provider; for them a pair is no choice at all.
-  const offersPair = Boolean(onSelectPair) && providers.length >= 2;
+  const offersPair = Boolean(onSelectPair) && pairProviders.length >= 2;
 
   return (
     <div className={cn("flex w-full flex-col gap-4", className)}>
@@ -273,7 +279,7 @@ export function DisplayModeChoice({
                   <SelectValue placeholder="Choose a provider" />
                 </SelectTrigger>
                 <SelectContent>
-                  {providers.map((provider) => (
+                  {pairProviders.map((provider) => (
                     <SelectItem key={provider.id} value={provider.id}>
                       {provider.label}
                     </SelectItem>

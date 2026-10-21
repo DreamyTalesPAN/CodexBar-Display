@@ -5427,7 +5427,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     .filter((id): id is string => Boolean(id));
   const setupPreviews = displayPreviewsFor(
     usage,
-    displayableProviders.map((item) => ({
+    (providerDisplay?.mode === "pair"
+      ? setupProviders.filter((item) => item.value)
+      : displayableProviders
+    ).map((item) => ({
       id: item.providerId,
       label: item.label,
     })),

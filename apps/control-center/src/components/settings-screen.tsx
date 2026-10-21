@@ -216,18 +216,23 @@ export function SettingsScreen({
     id: item.providerId,
     label: item.label,
   }));
+  const pairChoices = displayMode === "pair"
+    ? providers
+        .filter((item) => item.value)
+        .map((item) => ({ id: item.providerId, label: item.label }))
+    : displayChoices;
   const pairIds = defaultPairIds(
     providerPicker.display?.mode === "pair"
       ? providerPicker.display.providerIds
       : [],
     manualProviderId,
-    displayChoices,
+    pairChoices,
   );
   const previewOf = (providerId: string | null | undefined) =>
     automaticPreviews.find(
       (preview) =>
         preview.providerLabel ===
-        displayable.find((item) => item.providerId === providerId)?.label,
+        providers.find((item) => item.providerId === providerId)?.label,
     );
   const activeTheme = useActiveThemeLimits(device);
   const providerError =
@@ -407,6 +412,7 @@ export function SettingsScreen({
           }
           pairPreview={pairDisplayPreview(previewOf(pairIds[0]), previewOf(pairIds[1]))}
           pairProviderIds={pairIds}
+          pairProviders={pairChoices}
           providers={displayChoices}
           selectedProviderId={providerPicker.display?.providerIds[0] ?? null}
         />
