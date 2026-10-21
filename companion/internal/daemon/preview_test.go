@@ -581,3 +581,33 @@ func TestPreviewFramesDiscardTerminalLastGoodWithoutChangingPersistence(t *testi
 		})
 	}
 }
+
+func TestPreviewFramesPairKeepsOrderAndHiddenLimits(t *testing.T) {
+	isolatePreviewHome(t)
+	home, _ := os.UserHomeDir()
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{
+		Mode: "automatic", HiddenWindows: map[string][]string{"codex": {"session"}},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
+	usage := PersistedUsage{Providers: []ProviderUsageSnapshot{
+		previewSnapshot("codex", now, protocol.UsageWindow{ID: "session", Label: "Session", Percent: 90, ResetSec: 600}, protocol.UsageWindow{ID: "weekly", Label: "Weekly", Percent: 20, ResetSec: 3600}),
+		previewSnapshot("claude", now, protocol.UsageWindow{ID: "session", Label: "Session", Percent: 40, ResetSec: 7200}),
+	}}
+	previews := PreviewFrames(usage, true, false, previewTestCaps(2048), now, nil, "", nil)
+	for _, tc := range []struct {
+		frame         protocol.Frame
+		first, second string
+	}{
+		{previews[0].Pairs["claude"], "codex:weekly", "claude:session"},
+		{previews[1].Pairs["codex"], "claude:session", "codex:weekly"},
+	} {
+		if len(tc.frame.UsageWindows) != 2 || tc.frame.UsageWindows[0].ID != tc.first || tc.frame.UsageWindows[1].ID != tc.second {
+			t.Fatalf("pair order or hidden windows lost: %+v", tc.frame)
+		}
+	}
+	if got := previews[0].Pinned.UsageWindows; len(got) != 1 || got[0].ID != "weekly" {
+		t.Fatalf("pinned hidden windows lost: %+v", got)
+	}
+}

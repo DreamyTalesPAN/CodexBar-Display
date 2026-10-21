@@ -667,12 +667,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // Its start time keys the incident; null while there is none.
   const [systemBusySince, setSystemBusySince] = useState<string | null>(null);
   const [systemBusyDismissed, dismissSystemBusy] = useSystemBusyDismissal(systemBusySince);
-  // Page actions ask first; the connect dialog already confirms setup.
   // Issue #265: the Companion names a WiFi signal too weak for updates. Closing
   // the notice hides it until the signal is no longer weak.
   const weakWiFi = weakWiFiSignal(device);
   const [weakWiFiHidden, dismissWeakWiFi] = useWeakWiFiDismissal(device);
-  // "Run setup again" asks first, from Settings and from Support alike.
+  // Page actions ask first; the connect dialog already confirms setup.
   const [setupAgainRequested, setSetupAgainRequested] = useState(false);
   const [vibetvNotFoundDismissed, setVibetvNotFoundDismissed] = useState(false);
   // The "What's new" entries this customer has seen, null while nothing is
@@ -5501,7 +5500,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     (usageFailure && !usageFailureHidden) ||
     systemBusyOpen ||
     weakWiFiOpen ||
-    // The Overview notice (#265, #498) asks first; What's new follows it.
+    // The Overview theme notice (#498) asks first; What's new follows it.
     (activeShellTab === "overview" && overviewNotice.notice !== null);
   const whatsNewEntries = (somethingElseAsks
     ? []

@@ -71,6 +71,8 @@ export type SetupDisplayModePreview = {
   frame?: DisplayFrame;
   /** The same provider's frame when Manual pins it: the host builds its rows from that provider alone. */
   pinnedFrame?: DisplayFrame;
+  providerId?: string;
+  pairFrames?: Record<string, DisplayFrame>;
   /** When those readings were taken, so reset countdowns keep counting down. */
   frameAt?: string;
   /** When VibeTV received the frame whose activity this preview shows (its TTL counts from there). */

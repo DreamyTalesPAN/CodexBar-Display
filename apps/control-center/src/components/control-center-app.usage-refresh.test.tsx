@@ -175,7 +175,7 @@ it("ends the Refreshing mark within seconds of the new values", async () => {
         });
       }
       if (url.includes("/v1/usage")) {
-        if (url.endsWith("?refresh=1")) {
+        if (url.includes("refresh=1")) {
           companion.refreshing = true;
         }
         return jsonResponse({
@@ -330,7 +330,7 @@ function usageBody(session: number, weekly: number, refresh = "fresh") {
     tokenUsageReady: true,
     currentProvider: "codex",
     refresh: { state: refresh },
-    providers: [{ id: "codex", label: "Codex", session, weekly, usageMode: "used" }],
+    providers: [{ id: "codex", label: "Codex", session, weekly, usageMode: "used", cost: { daily: [] } }],
   };
 }
 
@@ -448,7 +448,7 @@ it("keeps the newest usage when an older read resolves last", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Usage" }));
   await wait(1);
   // The customer's refresh starts first and answers last, after the poll read.
-  fireEvent.click(screen.getByRole("button", { name: "Refresh token usage" }));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   await wait(35);
   expect(text()).toContain("77%");
   await act(async () => {
@@ -474,7 +474,7 @@ it.each([
   await wait(10);
   fireEvent.click(screen.getByRole("button", { name: "Usage" }));
   await wait(1);
-  fireEvent.click(screen.getByRole("button", { name: "Refresh token usage" }));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   await wait(35);
   expect(text()).toContain("77%");
   await act(async () => {
@@ -482,7 +482,7 @@ it.each([
   });
   expect(text()).toContain("77%");
   expect(text()).not.toContain("Obsolete usage failure");
-  expect(screen.getByRole("button", { name: "Refresh token usage" }).getAttribute("aria-busy")).toBe("false");
+  expect(String((screen.getByRole("button", { name: /^(Refresh|Refreshing)$/ }) as HTMLButtonElement).disabled)).toBe("false");
 });
 
 it("keeps a newer usage error when a superseded refresh succeeds", async () => {
@@ -499,7 +499,7 @@ it("keeps a newer usage error when a superseded refresh succeeds", async () => {
   await wait(10);
   fireEvent.click(screen.getByRole("button", { name: "Usage" }));
   await wait(1);
-  fireEvent.click(screen.getByRole("button", { name: "Refresh token usage" }));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   pollFails = true;
   await wait(35);
   expect(text()).toContain("Current usage failure");
@@ -518,13 +518,13 @@ it("lets only the newest usage request finish refreshing", async () => {
   await wait(10);
   fireEvent.click(screen.getByRole("button", { name: "Usage" }));
   await wait(1);
-  fireEvent.click(screen.getByRole("button", { name: "Refresh token usage" }));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   await wait(35);
-  expect(screen.getByRole("button", { name: "Refresh token usage" }).getAttribute("aria-busy")).toBe("false");
-  fireEvent.click(screen.getByRole("button", { name: "Refresh token usage" }));
+  expect(String((screen.getByRole("button", { name: /^(Refresh|Refreshing)$/ }) as HTMLButtonElement).disabled)).toBe("false");
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   expect(manualReads).toHaveLength(2);
   await act(async () => { manualReads[0](jsonResponse(usageBody(12, 11))); });
-  expect(screen.getByRole("button", { name: "Refresh token usage" }).getAttribute("aria-busy")).toBe("true");
+  expect(String((screen.getByRole("button", { name: /^(Refresh|Refreshing)$/ }) as HTMLButtonElement).disabled)).toBe("true");
   await act(async () => { manualReads[1](jsonResponse(usageBody(12, 88))); });
-  expect(screen.getByRole("button", { name: "Refresh token usage" }).getAttribute("aria-busy")).toBe("false");
+  expect(String((screen.getByRole("button", { name: /^(Refresh|Refreshing)$/ }) as HTMLButtonElement).disabled)).toBe("false");
 });

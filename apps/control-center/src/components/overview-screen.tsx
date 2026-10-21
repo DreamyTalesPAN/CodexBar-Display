@@ -34,14 +34,10 @@ const VibeTV3DPreview = dynamic(
   { ssr: false },
 );
 
-export type OverviewNotice = "weak-wifi" | "theme-not-shown";
+export type OverviewNotice = "theme-not-shown";
 
 // The words the Overview tiles used before #755, unchanged.
 const NOTICE_COPY: Record<OverviewNotice, { description: string; title: string }> = {
-  "weak-wifi": {
-    description: "Move VibeTV closer to your router.",
-    title: "Weak WiFi signal",
-  },
   "theme-not-shown": {
     description: "VibeTV can't show this theme. Choose another theme.",
     title: "Theme not shown",
@@ -61,8 +57,7 @@ function activeOverviewNotices(device: DeviceInfo | null): OverviewNotice[] {
 }
 
 /**
- * The one Overview notice to show now, or null; the weak WiFi notice comes
- * first. A notice the customer closed stays closed while it is there; once it
+ * The Overview theme notice to show now, or null. A notice the customer closed stays closed while it is there; once it
  * has gone away, its return opens again. It waits while `held` (the busy
  * notice is due): the two would otherwise each wait for the other. The state
  * lives in the app, not in the screen, because the Overview unmounts on other

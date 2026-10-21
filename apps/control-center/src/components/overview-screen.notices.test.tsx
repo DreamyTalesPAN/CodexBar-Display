@@ -39,37 +39,39 @@ describe("useOverviewNotice", () => {
   it("stays closed after the customer closes it, until the notice goes away and comes back", () => {
     const { result, rerender } = renderHook(
       ({ device }) => useOverviewNotice(device, false),
-      { initialProps: { device: weakWiFi as DeviceInfo | null } },
+      { initialProps: { device: themeNotShown as DeviceInfo | null } },
     );
-    expect(result.current.notice).toBe("weak-wifi");
+    expect(result.current.notice).toBe("theme-not-shown");
 
-    act(() => result.current.close("weak-wifi"));
+    act(() => result.current.close("theme-not-shown"));
     expect(result.current.notice).toBeNull();
 
     rerender({ device: connectedDevice });
     expect(result.current.notice).toBeNull();
 
-    rerender({ device: weakWiFi });
-    expect(result.current.notice).toBe("weak-wifi");
+    rerender({ device: themeNotShown });
+    expect(result.current.notice).toBe("theme-not-shown");
   });
 
-  it("shows the theme notice once the weak WiFi notice is closed", () => {
-    const { result } = renderHook(() => useOverviewNotice(bothNotices, false));
-    expect(result.current.notice).toBe("weak-wifi");
-
-    act(() => result.current.close("weak-wifi"));
+  it("leaves weak WiFi to the app-wide notice and keeps the theme notice", () => {
+    const { result, rerender } = renderHook(
+      ({ device }) => useOverviewNotice(device, false),
+      { initialProps: { device: weakWiFi as DeviceInfo } },
+    );
+    expect(result.current.notice).toBeNull();
+    rerender({ device: bothNotices });
     expect(result.current.notice).toBe("theme-not-shown");
   });
 
   it("holds every notice while the busy notice is due", () => {
     const { result, rerender } = renderHook(
-      ({ held }) => useOverviewNotice(weakWiFi, held),
+      ({ held }) => useOverviewNotice(themeNotShown, held),
       { initialProps: { held: true } },
     );
     expect(result.current.notice).toBeNull();
 
     rerender({ held: false });
-    expect(result.current.notice).toBe("weak-wifi");
+    expect(result.current.notice).toBe("theme-not-shown");
   });
 
   it("has no notice in the normal state", () => {
@@ -79,23 +81,23 @@ describe("useOverviewNotice", () => {
 });
 
 describe("OverviewScreen notice dialog", () => {
-  it("asks about a weak WiFi signal with the old words, and Not now reports the close", () => {
+  it("reports a theme notice close through Not now", () => {
     const onCloseNotice = vi.fn();
     render(
       <OverviewScreen
         companionStatus="online"
-        device={weakWiFi}
-        notice="weak-wifi"
+        device={themeNotShown}
+        notice="theme-not-shown"
         onCloseNotice={onCloseNotice}
       />,
     );
 
-    const dialog = screen.getByRole("dialog", { name: "Weak WiFi signal" });
-    expect(dialog.textContent).toContain("Move VibeTV closer to your router.");
+    const dialog = screen.getByRole("dialog", { name: "Theme not shown" });
+    expect(dialog.textContent).toContain("VibeTV can't show this theme. Choose another theme.");
     expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Not now" }));
-    expect(onCloseNotice).toHaveBeenCalledWith("weak-wifi");
+    expect(onCloseNotice).toHaveBeenCalledWith("theme-not-shown");
   });
 
   it("tells that a theme cannot be shown, in a dialog", () => {
@@ -123,14 +125,14 @@ describe("OverviewScreen notice dialog", () => {
     document.body.append(otherDialog);
 
     render(
-      <OverviewScreen companionStatus="online" device={weakWiFi} notice="weak-wifi" />,
+      <OverviewScreen companionStatus="online" device={themeNotShown} notice="theme-not-shown" />,
     );
-    expect(screen.queryByRole("dialog", { name: "Weak WiFi signal" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Theme not shown" })).toBeNull();
 
     act(() => otherDialog.remove());
 
     await waitFor(() => {
-      expect(screen.getByRole("dialog", { name: "Weak WiFi signal" })).toBeTruthy();
+      expect(screen.getByRole("dialog", { name: "Theme not shown" })).toBeTruthy();
     });
   });
 });

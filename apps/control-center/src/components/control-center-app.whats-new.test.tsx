@@ -768,11 +768,11 @@ it("lets the customer's own question come before a busy computer", async () => {
 it("tells a weak WiFi signal first and What's new after it, never both at once", async () => {
   const app = startWindow({ weakWifi: true });
   await app.wait(10);
-  const wifiDialog = () => screen.queryByRole("dialog", { name: "Weak WiFi signal" });
+  const wifiDialog = () => screen.queryByRole("dialog", { name: "VibeTV's Wi-Fi is weak" });
   expect(wifiDialog()).not.toBeNull();
   expect(notice()).toBeNull();
 
-  fireEvent.click(within(wifiDialog()!).getByRole("button", { name: "Not now" }));
+  fireEvent.click(within(wifiDialog()!).getByRole("button", { name: "OK" }));
   await app.wait(1);
   expect(wifiDialog()).toBeNull();
   expect(notice()).not.toBeNull();

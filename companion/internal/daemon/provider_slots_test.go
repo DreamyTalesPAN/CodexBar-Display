@@ -28,7 +28,7 @@ func TestFixedSelectionRetainsSentProviderSlotsDuringCollectionFailure(t *testin
 			if pinned == "three" {
 				lastGood = providers[2].Frame
 			}
-			lastGood.ProviderSlots = providerResetSlots(providers, basis)
+			lastGood.ProviderSlots = providerResetSlots(providers, basis, nil)
 			for i := range providers {
 				providers[i].Stale = true
 			}

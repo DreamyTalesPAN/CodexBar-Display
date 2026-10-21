@@ -323,6 +323,8 @@ describe("Theme Studio AI row in Settings", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Add key" }));
     const checkbox = await screen.findByRole("checkbox");
     expect(checkbox.className).toContain("accent-primary");
+  });
+
   it.each([false, true])("does not mark the replacement key invalid after a failed disconnect (edited: %s)", async (edited) => {
     vi.mocked(fetchAIThemeCapabilities).mockResolvedValue(capabilities(true));
     vi.mocked(deleteAIThemeCredential).mockRejectedValue(new Error("Helper unavailable"));
@@ -331,7 +333,7 @@ describe("Theme Studio AI row in Settings", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Disconnect OpenAI" }));
     const error = await screen.findByRole("alert");
     expect(error.textContent).toBe("Could not disconnect. Try again.");
-    const input = screen.getByLabelText("Replace OpenAI key");
+    const input = screen.getByLabelText("Replace OpenAI key", { selector: "input" });
     if (edited) fireEvent.change(input, { target: { value: "unchecked-replacement" } });
     expect(input.getAttribute("aria-invalid")).not.toBe("true");
     expect(document.getElementById(input.getAttribute("aria-describedby")!)).toBe(error);
@@ -347,7 +349,7 @@ describe("Theme Studio AI row in Settings", () => {
     localStorage.setItem("vibetv.aiTheme.consent", "1");
     render(<ThemeStudioKeyRow />);
     fireEvent.click(await screen.findByRole("button", { name: "Change key" }));
-    const input = await screen.findByLabelText("Replace OpenAI key") as HTMLInputElement;
+    const input = await screen.findByLabelText("Replace OpenAI key", { selector: "input" }) as HTMLInputElement;
     fireEvent.change(input, { target: { value: "unchecked-key" } });
     fireEvent.click(screen.getByRole("button", { name: "Update key" }));
     expect((await screen.findByRole("alert")).textContent).toBe("Connection unavailable");

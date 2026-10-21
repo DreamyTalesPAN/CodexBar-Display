@@ -21,9 +21,10 @@ type previewFramesResponse struct {
 // previewFramesForItem carries one provider's frame as the host would send it
 // in Automatic (absent for one the stream does not rotate to) and when pinned in Manual.
 type previewFramesForItem struct {
-	ID        string          `json:"id"`
-	Automatic *protocol.Frame `json:"automatic,omitempty"`
-	Pinned    protocol.Frame  `json:"pinned"`
+	ID        string                    `json:"id"`
+	Automatic *protocol.Frame           `json:"automatic,omitempty"`
+	Pinned    protocol.Frame            `json:"pinned"`
+	Pairs     map[string]protocol.Frame `json:"pairs,omitempty"`
 }
 
 // previewFramesFor lists providers in CodexBar's order; one without a reading
@@ -33,7 +34,7 @@ func previewFramesFor(usage daemon.PersistedUsage, inventory []codexbar.Provider
 	resp := &previewFramesResponse{GeneratedAt: now.UTC().Format(time.RFC3339Nano), Providers: []previewFramesForItem{}}
 	usage = usageInInventoryOrder(usage, inventory)
 	for _, preview := range daemon.PreviewFrames(usage, showUsed, systemBusy, caps, now.In(time.Local), updates, cliTheme, inventory) {
-		resp.Providers = append(resp.Providers, previewFramesForItem{ID: preview.Provider, Automatic: preview.Automatic, Pinned: preview.Pinned})
+		resp.Providers = append(resp.Providers, previewFramesForItem{ID: preview.Provider, Automatic: preview.Automatic, Pinned: preview.Pinned, Pairs: preview.Pairs})
 	}
 	return resp
 }

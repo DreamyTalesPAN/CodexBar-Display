@@ -130,7 +130,7 @@ func TestRunInstallUpdateCableRescueRejectsOverlappingProcess(t *testing.T) {
 				return nil
 			}
 			verified := false
-			readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+			readCableFirmwareHelloFn = func(context.Context, string) (protocol.DeviceHello, error) {
 				contend("post-flash verification")
 				verified = true
 				return protocol.DeviceHello{DeviceID: rescueTestChipDeviceID, Board: rescueTestBoard, Firmware: "1.0.1"}, nil
@@ -201,7 +201,7 @@ func TestResumableRescueMarkerClearsAFlaggedChiplessMarkerOnReplug(t *testing.T)
 		t.Fatal(err)
 	}
 	listCablePortsFn = func() ([]string, error) { return []string{"COM9"}, nil }
-	readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+	readCableFirmwareHelloFn = func(context.Context, string) (protocol.DeviceHello, error) {
 		return protocol.DeviceHello{}, errors.New("no hello")
 	}
 	if _, ok := resumableRescueMarker(home); ok {
@@ -226,7 +226,7 @@ func TestResumableRescueMarkerKeepsALegacyChiplessMarker(t *testing.T) {
 		t.Fatal(err)
 	}
 	listCablePortsFn = func() ([]string, error) { return []string{"COM9"}, nil }
-	readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+	readCableFirmwareHelloFn = func(context.Context, string) (protocol.DeviceHello, error) {
 		return protocol.DeviceHello{}, errors.New("no hello")
 	}
 	if _, ok := resumableRescueMarker(home); ok {

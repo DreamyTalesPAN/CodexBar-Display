@@ -244,15 +244,16 @@ describe("SetupWizard: Two at once sources", () => {
       displayProviderIds: ["codex", "claude"],
       displayProviders: [{ id: "codex", label: "Codex" }],
       automaticPreviews: [
-        { providerLabel: "Codex", resetLabel: null, windows: [{ label: "Session", percent: 37 }] },
-        { providerLabel: "Claude", resetLabel: null, windows: [{ label: "Session", percent: null }] },
+        { providerId: "codex", providerLabel: "Codex", resetLabel: null, windows: [{ label: "Session", percent: 37 }], pairFrames: { claude: { provider: "codex", label: "Codex", usageWindows: [{ id: "session", label: "Session", percent: 37 }] } } },
+        { providerId: "claude", providerLabel: "Claude", resetLabel: null, windows: [{ label: "Session", percent: null }] },
       ],
     });
     render(<SetupWizard {...props} />);
 
     const pair = screen.getByRole("button", { name: /Two at once/ });
     expect(pair.getAttribute("aria-pressed")).toBe("true");
-    expect(pair.textContent).toContain("Claude Session--");
+    expect(pair.textContent).toContain("Codex");
+    expect(pair.textContent).toContain("37");
     expect(screen.getByRole("combobox", { name: "Provider 1" }).textContent).toBe("Codex");
     expect(screen.getByRole("combobox", { name: "Provider 2" }).textContent).toBe("Claude");
     await act(async () => {

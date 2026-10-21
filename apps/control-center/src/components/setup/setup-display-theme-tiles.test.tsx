@@ -43,6 +43,7 @@ function live(label: string, percent: number): SetupDisplayModePreview {
     usageWindows: [{ id: "session", label: "Session", percent, resetSecs: 3600 }],
   };
   return {
+    providerId: label.toLowerCase(),
     providerLabel: label,
     resetLabel: null,
     windows: [{ label: "Session", percent }],
@@ -63,6 +64,17 @@ function show(
   manual: SetupDisplayModePreview | null = previews[0] ?? null,
   pair = false,
 ) {
+  if (pair && previews[0]) {
+    previews[0].pairFrames = {
+      codex: {
+        provider: "claude+codex", usageMode: "used",
+        usageWindows: [
+          { id: "claude:session", label: "Claude Session", percent: 64 },
+          { id: "codex:session", label: "Codex Session", percent: 28 },
+        ],
+      },
+    };
+  }
   render(
     <Choice
       automaticPreview={previews[0] ?? null}

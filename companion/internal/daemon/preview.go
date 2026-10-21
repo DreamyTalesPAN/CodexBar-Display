@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"os"
 	"slices"
 	"time"
 
@@ -19,6 +20,7 @@ type ProviderPreview struct {
 	Provider  string
 	Automatic *protocol.Frame
 	Pinned    protocol.Frame
+	Pairs     map[string]protocol.Frame
 }
 
 // PreviewFrames builds, for every provider of usage, in that order, the frame
@@ -52,10 +54,21 @@ func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, caps protoco
 			Terminal:    snapshot.Terminal,
 		})
 	}
+	var cfg runtimeconfig.Config
+	if home, err := os.UserHomeDir(); err == nil {
+		cfg, _ = runtimeconfig.Load(home)
+	}
+	display := runtimeconfig.ProviderDisplayConfig{}
+	if cfg.ProviderDisplay != nil {
+		display = *cfg.ProviderDisplay
+	}
+	display.Mode, display.ProviderIDs = "automatic", nil
+	cfg.ProviderDisplay = &display
+	cfg.DisplayRotateSeconds = 3600
 	deps := runtimeDeps{
 		homeDir: func() (string, error) { return "preview", nil },
 		loadConfig: func(string) (runtimeconfig.Config, error) {
-			return runtimeconfig.Config{ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{Mode: "automatic"}, DisplayRotateSeconds: 3600}, nil
+			return cfg, nil
 		},
 		logf:              func(string, ...any) {},
 		now:               func() time.Time { return now },
@@ -65,7 +78,13 @@ func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, caps protoco
 	for _, shown := range providers {
 		preview := ProviderPreview{
 			Provider: shown.Provider,
-			Pinned:   previewPinnedFrame(shown, providers, deps, systemBusy, caps, now, update, theme, providerEnabled),
+			Pinned:   previewSelectedFrame([]string{shown.Provider}, providers, deps, systemBusy, caps, now, update, theme, providerEnabled),
+		}
+		preview.Pairs = make(map[string]protocol.Frame)
+		for _, other := range providers {
+			if other.Provider != shown.Provider {
+				preview.Pairs[other.Provider] = previewSelectedFrame([]string{shown.Provider, other.Provider}, providers, deps, systemBusy, caps, now, update, theme, providerEnabled)
+			}
 		}
 		// A fresh stream per rotation position: the timer sits on this
 		// provider, the rest is the runtime's own start.
@@ -88,15 +107,22 @@ func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, caps protoco
 	return previews
 }
 
-func previewPinnedFrame(shown codexbar.ParsedFrame, providers []codexbar.ParsedFrame, deps runtimeDeps, systemBusy bool, caps protocol.DeviceCapabilities, now time.Time, update *protocol.UpdateState, theme string, providerEnabled func(string) (bool, bool)) protocol.Frame {
+func previewSelectedFrame(ids []string, providers []codexbar.ParsedFrame, deps runtimeDeps, systemBusy bool, caps protocol.DeviceCapabilities, now time.Time, update *protocol.UpdateState, theme string, providerEnabled func(string) (bool, bool)) protocol.Frame {
+	cfg, _ := loadRuntimeConfig(deps)
+	display := *cfg.ProviderDisplay
+	display.Mode, display.ProviderIDs = "fixed", ids
+	if len(ids) == 2 {
+		display.Mode = "pair"
+	}
+	cfg.ProviderDisplay = &display
 	deps.loadConfig = func(string) (runtimeconfig.Config, error) {
-		return runtimeconfig.Config{ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{Mode: "fixed", ProviderIDs: []string{shown.Provider}}}, nil
+		return cfg, nil
 	}
 	state := &runtimeState{selector: codexbar.NewProviderSelector()}
 	bootstrapStateFromPersistedLastGood(state, now, deps)
 	discardLastGoodDisabledByInventory(state, providerEnabled)
 	discardLastGoodTerminal(state, providers)
-	result := selectCycleFrameFromProviders(state, []codexbar.ParsedFrame{shown}, now, deps, nil, "select-provider", "", "", "")
+	result := selectCycleFrameFromProviders(state, slices.Clone(providers), now, deps, nil, "select-provider", "", "", "")
 	result.frame.Update = update
 	result.systemBusy = systemBusy
 	_, frame, result := restateLastGoodWhenNotFresh(state, deps, result)

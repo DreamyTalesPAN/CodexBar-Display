@@ -7,7 +7,7 @@ import type { SetupDisplayModePreview } from "./setup-display-mode-screen";
 /** `previewFrames` of GET /v1/usage?previewFrames=1: the frames the companion builds for the stream, per provider. */
 export type PreviewFrames = {
   generatedAt?: string;
-  providers?: { id: string; automatic?: DisplayFrame; pinned?: DisplayFrame }[];
+  providers?: { id: string; automatic?: DisplayFrame; pinned?: DisplayFrame; pairs?: Record<string, DisplayFrame> }[];
 };
 
 /** Formats the companion's frame for the plain tile; normalization stays in Go. */
@@ -79,6 +79,8 @@ export function displayPreviewsFor(
     return entry
       ? {
           ...preview,
+          providerId: entry.id,
+          pairFrames: entry.pairs,
           providerLabel: provider.label,
           frame: entry.automatic,
           pinnedFrame: entry.pinned,
@@ -169,67 +171,13 @@ export function visibleUsageWindows<T extends { id: string }>(
   );
 }
 
-/**
- * Two at once on the panel: each provider's first shown limit, named after its
- * provider, the way the companion sends the pair to VibeTV. Like the
- * companion it counts down with the first of the two that has a reset time.
- */
+/** Two at once uses the same host selection and wire budget as the device. */
 export function pairDisplayPreview(
   first: SetupDisplayModePreview | undefined,
   second: SetupDisplayModePreview | undefined,
 ): SetupDisplayModePreview | null {
-  if (!first || !second) {
-    return null;
-  }
-  if (!first.windows.length || !second.windows.length) {
-    return first.windows.length ? first : second;
-  }
-  const unknownReset = formatReset(0);
-  const counting = [first, second].find(
-    (preview) => preview.resetLabel && preview.resetLabel !== unknownReset,
+  return displayPreviewFor(
+    second?.providerId ? first?.pairFrames?.[second.providerId] : undefined,
+    first?.frameAt,
   );
-  // Reuse the two live frames already built for the other cards. Each keeps
-  // its first visible window; both countdowns use the first frame's basis.
-  const frameAt = first.frameAt;
-  const usageWindows = [first, second].flatMap((preview) => {
-    const window = preview.frame?.usageWindows?.[0];
-    if (!window || !preview.frame?.provider) return [];
-    const shift = frameAt && preview.frameAt
-      ? (new Date(frameAt).getTime() - new Date(preview.frameAt).getTime()) / 1000
-      : 0;
-    return [{
-      ...window,
-      id: `${preview.frame.provider}:${window.id}`,
-      label: `${preview.providerLabel} ${window.label}`,
-      resetSecs: (window.resetSecs ?? 0) > 0
-        ? Math.max(0, (window.resetSecs ?? 0) - shift)
-        : 0,
-    }];
-  });
-  const frame: DisplayFrame | undefined = usageWindows.length === 2 ? {
-    v: 1,
-    provider: `${first.frame!.provider}+${second.frame!.provider}`,
-    label: "",
-    session: usageWindows[0].percent,
-    weekly: usageWindows[1].percent,
-    usageWindows,
-    usageMode: first.frame!.usageMode,
-    providerSlots: first.frame!.providerSlots,
-    resetSecs: usageWindows.find((window) => (window.resetSecs ?? 0) > 0)?.resetSecs ?? 0,
-    resetSource: first.frame!.resetSource ?? first.frame!.provider,
-    resetTrust: [first, second].some((preview) => preview.frame?.resetTrust === "stale")
-      ? "stale"
-      : first.frame!.resetTrust,
-  } : undefined;
-  return {
-    providerLabel: `${first.providerLabel} + ${second.providerLabel}`,
-    ...(frame ? { frame, frameAt } : {}),
-    resetLabel: (counting ?? first).resetLabel,
-    windows: [first, second].map((preview) => ({
-      label: preview.windows[0]
-        ? `${preview.providerLabel} ${preview.windows[0].label}`
-        : preview.providerLabel,
-      percent: preview.windows[0]?.percent ?? null,
-    })),
-  };
 }
