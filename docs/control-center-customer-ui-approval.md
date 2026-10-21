@@ -9069,3 +9069,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #798 as described in its entries above, as seen in build 7198.
 - Scope: #798 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #798 approval record only
+
+## 2026-10-21 — #798: approval marker after merging claude/group-calm-redesign at fb30d196
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (fb30d196) into #798; the own entries of #798 keep their approvals)
+- Approved customer-visible result: #798 as in its own entries plus the entries merged with fb30d196; nothing else changes.
+- Scope: the merge of fb30d196 and this approval record. Pull request branch #798 only, not merged, not released.
+- What's new: none — merge of fb30d196, no customer-visible change of its own
