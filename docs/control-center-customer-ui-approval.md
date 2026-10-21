@@ -15239,3 +15239,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve the incoming feature together with the existing calm customer flows in the integration candidate.
 - Scope: Merge claude/used-remaining-switch into claude/paultest-build8; retain all source approval entries.
 - What's new: none — integration of existing feature entries only.
+
+## 2026-10-21 — paultest-build8: combined candidate for Mac test build 7203
+
+- User approval: pending — build8 combined candidate after all requested source refreshes, the matching setup Two at once tile, and Used/Remaining in all three Settings modes; Paul reviews this as build 7203.
+- Approved customer-visible result: Keep the calm Settings with Provider 1, Provider 2, swap and Showing now, with one Show Used/Remaining row before Limits on VibeTV; all setup display-mode cards use the active theme tile.
+- Scope: Integration branch claude/paultest-build8 only; all source approval blocks retained, no release or hardware validation claimed.
+- What's new: none — integration checkpoint for Paul's next Mac test.
