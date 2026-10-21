@@ -335,6 +335,7 @@ export function SettingsScreen({
           ) : null}
           <RadioRow
             description="VibeTV shows two sources, one above the other."
+            disabled={displayMode !== "pair" && pairChoices.length < 2}
             label="Two at once"
             onSelect={() => selectMode("pair")}
             selected={displayMode === "pair"}

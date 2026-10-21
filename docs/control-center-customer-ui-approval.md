@@ -10316,3 +10316,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: The integration carries the queued-edit and concurrent-save fixes plus the source-loss behavior documented in F2; F2 still requires its pending approval.
 - Scope: merge cc8903fd into claude/paultest-592a, retain every approval block from both parents, and leave the calm Settings layout intact.
 - What's new: none — integration only; F2 approval remains pending.
+
+## 2026-10-21 — #592 integration: F4 guard entry into Two at once
+
+- User approval: no visible change – UI approval not needed (bug fix: disable unsupported Two at once entry until two providers are eligible, while retaining a saved pair)
+- Approved customer-visible result: Calm Settings cannot submit an invalid new pair when only one provider has readable usage; an already-saved pair and both source selectors remain visible and selectable through transient gaps.
+- Scope: one availability guard on the existing Two at once radio, regression cases for disabled, missing, stale and unavailable second providers, and saved-pair preservation. The inherited F2 unavailable-state approval remains pending.
+- What's new: none — prevent an invalid existing action without changing the calm Settings layout.

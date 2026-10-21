@@ -398,13 +398,46 @@ describe("SettingsScreen standby controls", () => {
     expect(providerSection).toContain(">Gemini</");
   });
 
-  it("leaves the display mode radios usable when no write is in flight", () => {
-    const html = render(standbyDevice);
+  it("leaves eligible display mode radios usable when no write is in flight", () => {
+    const html = render(standbyDevice, savedStandby, {
+      ...providerPicker,
+      items: [provider("claude", "Claude", true), provider("codex", "Codex", true)],
+    });
     const cards =
       html.match(/<button aria-label="(?:Automatic|One provider|Two at once)" aria-pressed="(?:true|false)"[^>]*>/g) || [];
 
     expect(cards.length).toBeGreaterThanOrEqual(2);
     expect(cards.some((card) => card.includes('disabled=""'))).toBe(false);
+  });
+
+  it.each(["one enabled", "missing reading", "stale reading", "unavailable reading"])(
+    "disables Two at once with fewer than two eligible providers (%s)", (gap) => {
+      const html = render(standbyDevice, savedStandby, {
+        ...providerPicker,
+        display: { mode: "automatic", providerIds: ["claude", "codex"], configured: true, valid: true },
+        items: [provider("claude", "Claude", true), provider("codex", "Codex", gap !== "one enabled")],
+        usage: { providers: providerPicker.usage!.providers
+          .filter((reading) => gap !== "missing reading" || reading.id !== "codex")
+          .map((reading) => reading.id === "codex" ? {
+            ...reading, stale: gap === "stale reading", usageUnavailable: gap === "unavailable reading",
+          } : reading) },
+      });
+      expect(html.match(/<button aria-label="Two at once"[^>]*>/)?.[0]).toContain('disabled=""');
+    },
+  );
+
+  it("keeps an already saved pair selectable and visible during a provider gap", () => {
+    const html = render(standbyDevice, savedStandby, {
+      ...providerPicker,
+      display: { mode: "pair", providerIds: ["claude", "codex"], configured: true, valid: true },
+      items: [provider("claude", "Claude", true)],
+      usage: null,
+    });
+    const pair = html.match(/<button aria-label="Two at once"[^>]*>/)?.[0];
+    expect(pair).toContain('aria-pressed="true"');
+    expect(pair).not.toContain('disabled=""');
+    expect(html).toContain('>Provider 1</label>');
+    expect(html).toContain('>Provider 2</label>');
   });
 
   // The design puts the reading beside its label. It stays an <output>, so a
