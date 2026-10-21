@@ -54,6 +54,7 @@ export type SetupDisplayModeProvider = {
  * arrives as `null` and stays visibly unavailable instead of being invented.
  */
 export type SetupDisplayModePreview = {
+  providerId?: string;
   providerLabel: string;
   /**
    * The provider's readings in the shape the theme renderer draws, exactly as

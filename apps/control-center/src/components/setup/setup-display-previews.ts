@@ -1,7 +1,7 @@
 import type { UsageProviderInfo, UsageSnapshot } from "../control-center-types";
 import { remainingResetSecs, secondsSince } from "@/lib/reset-countdown";
 import { formatReset } from "../usage-screen";
-import type { DisplayFrame } from "../live-vibetv-preview";
+import { buildFrameData, hasRenderableUsage, type DisplayFrame, type DisplayFrameSnapshot } from "../live-vibetv-preview";
 import type { SetupDisplayModePreview } from "./setup-display-mode-screen";
 
 function providerWindowSlots(provider: UsageProviderInfo, maxUsageWindows = 0) {
@@ -181,15 +181,16 @@ export function withResetTrust(
     return frame;
   }
   const basisKnown = Boolean(collectedAt) && !Number.isNaN(new Date(collectedAt!).getTime());
-  const source = resetSourceKey(frame.provider ?? "");
+  const source = frame.resetSource ?? resetSourceKey(frame.provider ?? "");
   // ApplyResetTrust: a countdown that was positive when read and has run out by
   // the time the frame leaves turns the frame stale -- "Reset unavailable" on
   // the device -- instead of a measured idle account (`hadCountdown`).
   const age = secondsSince(collectedAt, now);
   const ranOut = hasCountdown(frame, 0) && !hasCountdown(frame, age);
-  // ApplyResetTrust: a basis older than the trust horizon (5 h) is stale too,
-  // whatever deadline it still carries (`ResetTrustSec <= 0`).
-  const trustExpired = age >= RESET_TRUST_HORIZON_SECS;
+  // Synthetic frames start with the host's 5 h horizon; a sent frame already
+  // carries its remaining budget and must never receive a fresh one here.
+  const trustBudget = frame.resetTrustSecs ?? RESET_TRUST_HORIZON_SECS;
+  const trustExpired = age >= trustBudget;
   if (!basisKnown || !source || ranOut || trustExpired) {
     return {
       ...frame,
@@ -203,8 +204,8 @@ export function withResetTrust(
   }
   return {
     ...frame,
-    resetTrust: "live",
-    resetTrustSecs: RESET_TRUST_HORIZON_SECS,
+    resetTrust: frame.resetTrust ?? "live",
+    resetTrustSecs: trustBudget,
     resetSource: source,
   };
 }
@@ -289,6 +290,7 @@ export function displayPreviewFor(
   const unavailable = provider.stale === true || provider.usageUnavailable === true;
   const frame = displayFrameFor(provider, allProviders, now, maxUsageWindows);
   return {
+    providerId: provider.id,
     providerLabel: provider.label,
     ...(frame ? { frame, frameAt: provider.collectedAt } : {}),
     // Fixed selection builds its own row before send.go caps usage windows,
@@ -345,6 +347,7 @@ export function displayPreviewsFor(
         complete,
         maxUsageWindows,
       ) ?? {
+        providerId: provider.id,
         providerLabel: provider.label,
         resetLabel: null,
         windows: [],
@@ -377,29 +380,41 @@ export function pinnedPreview(preview: SetupDisplayModePreview): SetupDisplayMod
  * that frame was for. The daemon decides coding/idle from usage and token deltas
  * after /v1/usage is built, so the device's frame is the only authority; every
  * other provider keeps no verdict (idle), as it would on the device until it is
- * the one being sent.
+ * the one being sent. If collection cannot supply a frame, reuse the matching
+ * verified sent frame, as the host restates lastGood during a transient failure.
  */
 export function withSentActivity(
   previews: SetupDisplayModePreview[],
-  sent: { frame?: DisplayFrame; savedAt?: string } | null | undefined,
+  sent: DisplayFrameSnapshot | null | undefined,
 ): SetupDisplayModePreview[] {
   const provider = sent?.frame?.provider;
   const activity = sent?.frame?.activity;
-  if (!provider || !activity) {
+  if (!provider) {
     return previews;
   }
   // The verdict carries its TTL and the time VibeTV got it, so the tile can let
   // it run out the way the device does (withActivityExpiry).
   const activityTtlSecs = sent.frame?.activityTtlSecs;
-  return previews.map((preview) =>
-    preview.frame?.provider === provider
-      ? {
-          ...preview,
-          activityAt: sent.savedAt,
-          frame: { ...preview.frame, activity, activityTtlSecs },
-        }
-      : preview,
-  );
+  return previews.map((preview) => {
+    if (!preview.frame && preview.providerId === provider && sent.savedAt && hasRenderableUsage(sent)) {
+      const now = new Date();
+      const data = buildFrameData(sent.savedAt, withResetTrust(sent.frame, sent.savedAt, now), now);
+      return {
+        ...preview,
+        frame: sent.frame,
+        frameAt: sent.savedAt,
+        activityAt: sent.savedAt,
+        resetLabel: formatReset(data.resetSecs),
+        windows: data.usageWindows.length ? data.usageWindows.map(({ label, percent }) => ({ label, percent })) : [
+          { label: "Session", percent: data.sessionUnavailable ? null : sent.frame.session ?? null },
+          { label: "Weekly", percent: data.weeklyUnavailable ? null : sent.frame.weekly ?? null },
+        ],
+      };
+    }
+    return preview.frame?.provider === provider && activity
+      ? { ...preview, activityAt: sent.savedAt, frame: { ...preview.frame, activity, activityTtlSecs } }
+      : preview;
+  });
 }
 
 /**

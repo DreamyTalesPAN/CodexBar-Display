@@ -9,6 +9,7 @@ import {
   type SetupDisplayModePreview,
 } from "./setup-display-mode-screen";
 import { useThemeRenderPack } from "./setup-display-theme-tiles";
+import { displayPreviewFor, withSentActivity } from "./setup-display-previews";
 
 /** The step loads the theme pack and hands it to the choice, as the wizard does. */
 function Choice(
@@ -104,6 +105,23 @@ afterEach(() => {
 });
 
 describe("Display mode tiles with the active theme", () => {
+  it("renders the retained sent values instead of a grey tile after collection fails", async () => {
+    const sent = live("Codex", 31);
+    const stale = displayPreviewFor({
+      id: "codex", label: "Codex", session: 31, weekly: 0,
+      stale: true, usageUnavailable: true, usageMode: "used",
+    })!;
+    show(withSentActivity([stale], { ok: true, savedAt: sent.frameAt,
+      frame: { ...sent.frame, resetTrust: "offline", resetTrustSecs: 600, resetSource: "codex:primary" },
+    }));
+    await settle();
+
+    for (const card of [0, 1]) {
+      expect(tiles(card)[0].getAttribute("data-state")).toBe("live");
+      expect(tiles(card)[0].textContent).toContain("31");
+    }
+  });
+
   it("draws one theme tile per provider in Automatic", async () => {
     show([live("Claude", 64), live("Codex", 28), live("Cursor", 12)]);
     await settle();

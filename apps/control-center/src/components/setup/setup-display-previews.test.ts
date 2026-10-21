@@ -309,6 +309,7 @@ describe("displayPreviewsFor", () => {
 
     expect(previews.map((p) => p.providerLabel)).toEqual(["Codex", "Gemini"]);
     expect(previews[1]).toEqual({
+      providerId: "gemini",
       providerLabel: "Gemini",
       resetLabel: null,
       windows: [],
@@ -319,6 +320,7 @@ describe("displayPreviewsFor", () => {
     expect(displayPreviewsFor(usage, [])).toEqual([]);
     expect(displayPreviewsFor(null, enabled("codex"))).toEqual([
       {
+        providerId: "codex",
         providerLabel: "Codex",
         resetLabel: null,
         windows: [],
@@ -562,6 +564,39 @@ describe("reset trust in the synthesized frames", () => {
 });
 
 describe("the activity verdict", () => {
+  it("uses the matching sent retained frame when collection is stale", () => {
+    const readings = ["codex", "claude"].map((id) => provider({ id, label: id,
+      stale: true, usageUnavailable: true, collectedAt: "2026-10-20T08:00:00Z" }));
+    const previews = displayPreviewsFor({ providers: readings } as UsageSnapshot, readings, 1);
+    const sent = { ok: true, savedAt: "2026-10-20T08:29:00Z", frame: {
+      v: 2, provider: "codex", label: "Busy", session: 31, weekly: 0, weeklyUnavailable: true,
+      usageWindows: [{ id: "session", label: "Session", percent: 31, resetSecs: 600 }],
+      resetSecs: 600, resetTrust: "offline", resetTrustSecs: 120, resetSource: "codex:primary",
+      activity: "idle", tokenTotalsKnown: false,
+    } };
+    const shown = withSentActivity(previews, sent);
+    expect(shown[0].frame).toEqual(sent.frame);
+    expect(shown[0].frameAt).toBe(sent.savedAt);
+    expect(shown[0].windows).toEqual([{ label: "Session", percent: 31 }]);
+    expect(shown[0].resetLabel).toBe("Reset in 9m");
+    expect(pinnedPreview(shown[0]).frame).toEqual(sent.frame);
+    expect(shown[1].frame).toBeUndefined();
+    expect(previews[0].frame).toBeUndefined();
+    expect(withSentActivity(previews, { ...sent, frame: { ...sent.frame, usageUnavailable: true } })[0].frame)
+      .toBeUndefined();
+    expect(withSentActivity(previews, { ...sent, ok: false })[0].frame).toBeUndefined();
+  });
+
+  it("preserves the sent frame's offline trust budget and source on later draws", () => {
+    const sentAt = "2026-10-20T08:00:00Z";
+    const frame = { provider: "codex", resetSecs: 600, resetTrust: "offline",
+      resetTrustSecs: 120, resetSource: "codex:primary" };
+    expect(withResetTrust(frame, sentAt, new Date("2026-10-20T08:01:00Z")))
+      .toEqual(frame);
+    expect(withResetTrust(frame, sentAt, new Date("2026-10-20T08:02:00Z")))
+      .toMatchObject({ resetTrust: "stale", resetTrustSecs: 0, resetSecs: 0 });
+  });
+
   it("does not take activity from the usage service, which lacks the daemon's verdict", () => {
     const frame = displayPreviewFor(provider({ collectedAt: "2026-10-20T08:00:00Z", activity: "coding" }))?.frame;
 
