@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
@@ -141,6 +142,7 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	}
 	syncCycleMode := deps.fetchProviders != nil && deps.fetchProvider == nil
 	deps = deps.withDefaults()
+	trackDeviceWriteWait(&deps)
 
 	state := initializeRuntimeState(deps.now(), opts, deps)
 	if opts.Dashboard != nil {
@@ -362,6 +364,13 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 		lastCycleStart = cycleStart
 
 		err := runCycleWithTimeout(ctx, cycleTimeout, runCycle)
+		if deps.deviceWriteWaited != nil && deps.deviceWriteWaited.Swap(false) {
+			// Issue #826: a cycle that was already running when a firmware
+			// update took the device waits at the write gate until the update
+			// ends. That wait is not a sleep either, so the next gap is
+			// measured from the end of the cycle, not from its start.
+			lastCycleStart = deps.now()
+		}
 		if opts.Once {
 			return err
 		}
@@ -513,4 +522,31 @@ func sleepWakeGapThreshold(interval time.Duration) time.Duration {
 
 func SleepWakeGapThreshold(interval time.Duration) time.Duration {
 	return sleepWakeGapThreshold(interval)
+}
+
+// deviceWriteWaitThreshold is how long a cycle may wait at the device write
+// gate before the wait counts as a pause (a firmware update holds the gate).
+const deviceWriteWaitThreshold = time.Second
+
+// trackDeviceWriteWait notes when a cycle had to wait at the device write gate,
+// so the loop does not read that wait as a sleep (issue #826).
+func trackDeviceWriteWait(deps *runtimeDeps) {
+	if deps.beginDeviceWrite == nil {
+		return
+	}
+	waited := &atomic.Bool{}
+	deps.deviceWriteWaited = waited
+	inner := deps.beginDeviceWrite
+	now := deps.now
+	if now == nil {
+		now = wallClockNow
+	}
+	deps.beginDeviceWrite = func() func() {
+		started := now()
+		release := inner()
+		if now().Sub(started) >= deviceWriteWaitThreshold {
+			waited.Store(true)
+		}
+		return release
+	}
 }

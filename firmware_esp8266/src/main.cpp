@@ -17,6 +17,7 @@
 #include "cable_transfer_core.h"
 #include "connected_setup_policy.h"
 #include "device_settings.h"
+#include "firmware_image_policy.h"
 #include "standby_settings.h"
 #include "standby_state.h"
 #include "screensaver_preview.h"
@@ -3952,6 +3953,14 @@ void handleOtaUpload() {
       resetOtaUpdaterAfterFailure();
     }
   } else if (upload.status == UPLOAD_FILE_WRITE) {
+    // Issue #652: an image for another chip (e.g. the LilyGO ESP32-S3 build)
+    // passes the Updater's own checks and leaves the VibeTV dark. Decide on
+    // the first block, before any byte is staged.
+    if (otaUploadError.length() == 0 && upload.totalSize == 0 &&
+        !codexbar_display::esp8266::IsEsp8266FirmwareImageStart(upload.buf, upload.currentSize)) {
+      setOtaError("not a VibeTV firmware image");
+      resetOtaUpdaterAfterFailure();
+    }
     if (otaUploadError.length() == 0 && Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
       setOtaError(Update.getErrorString());
       resetOtaUpdaterAfterFailure();
