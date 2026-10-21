@@ -81,7 +81,7 @@ export type SetupWizardProps = {
   /** The app runs on Windows, where "this Mac" reads "this computer". */
   windowsHost?: boolean;
   /** A newer Mac App exists; offered on the "VibeTV not found" pages (#561). */
-  macAppUpdate?: MacAppUpdateOffer;
+  macAppUpdate?: MacAppUpdateOffer & { onDismiss?: () => void };
   automaticPreviews: SetupDisplayModePreview[];
   connectSteps: SetupConnectSteps;
   connectionMode: string;
@@ -225,8 +225,10 @@ export function SetupWizard(props: SetupWizardProps) {
     props.macAppUpdate && props.macAppUpdate.version !== dismissedMacAppVersion
       ? props.macAppUpdate
       : undefined;
-  const setMacAppUpdateDismissed = (_dismissed: true) =>
+  const dismissMacAppUpdate = () => {
     setDismissedMacAppVersion(props.macAppUpdate?.version ?? null);
+    props.macAppUpdate?.onDismiss?.();
+  };
   // The completion this step asked for is still on its way. Held here rather
   // than passed in: the wizard is what awaits it.
   const [providersContinuing, setProvidersContinuing] = useState(false);
@@ -811,7 +813,7 @@ export function SetupWizard(props: SetupWizardProps) {
           firmwarePercent={props.firmwareWrittenPercent}
           logLines={connectLogLines(connect.state, props.firmwareWrittenPercent)}
           macAppUpdate={macAppUpdateAfterSearch}
-          onDismissMacAppUpdate={() => setMacAppUpdateDismissed(true)}
+          onDismissMacAppUpdate={dismissMacAppUpdate}
           onConnect={startConnect}
           onBack={onBack}
           stopping={connect.leaving}
@@ -859,9 +861,9 @@ export function SetupWizard(props: SetupWizardProps) {
         {searchFailed && !wifiSetup && macAppUpdateAfterSearch ? (
           <SetupMacAppUpdateDialog
             offer={macAppUpdateAfterSearch}
-            onDismiss={() => setMacAppUpdateDismissed(true)}
+            onDismiss={dismissMacAppUpdate}
             onScanAgain={() => {
-              setMacAppUpdateDismissed(true);
+              dismissMacAppUpdate();
               searchAgain();
             }}
           />

@@ -16531,3 +16531,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve this feature together with the existing build9 Settings and three equal display cards.
 - Scope: Integration merge preserving both approval histories.
 - What's new: none — integration only.
+## 2026-10-21 — #822: preserve setup update dismissal after completion
+
+- User approval: no visible change – UI approval not needed (bug fix: #822 forwards Escape and Scan again to the existing per-version native update prompt owner)
+- Approved customer-visible result: dismissing the existing setup offer does not immediately reopen the same update in Sparkle after setup; a later version can still be offered.
+- Scope: setup-wizard.tsx, control-center-app.tsx and their dismissal regression tests; no text or layout changes.
+- What's new: none — remove a duplicate update prompt
+
+
+## 2026-10-21 — build9: refresh #822 for 7205
+
+- User approval: pending — integrate claude/561-update-offer-calm at 401f10140a6e into build 7205.
+- Approved customer-visible result: Preserve this feature together with the existing build9 Settings and three equal display cards.
+- Scope: Integration merge preserving both approval histories.
+- What's new: none — integration only.

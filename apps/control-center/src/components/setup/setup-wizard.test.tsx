@@ -2719,3 +2719,17 @@ describe("SetupWizard: Back while connecting or waiting for WiFi", () => {
     expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
   });
 });
+
+it.each(["Escape", "Scan again"])("reports the setup update dismissal to its owner via %s", (action) => {
+  const onDismiss = vi.fn();
+  const props = baseProps({
+    step: "device", connectionMode: "cable", connectionModeChoiceRequired: false,
+    deviceSearchState: "not-found", deviceCandidates: [],
+    macAppUpdate: { onUpdate: vi.fn(), version: "1.0.65", onDismiss },
+  });
+  render(<SetupWizard {...props} />);
+  const dialog = screen.getByRole("dialog", { name: "Update the Mac App first" });
+  if (action === "Escape") fireEvent.keyDown(dialog, { key: "Escape" });
+  else fireEvent.click(within(dialog).getByRole("button", { name: action }));
+  expect(onDismiss).toHaveBeenCalledTimes(1);
+});
