@@ -9303,3 +9303,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #800 as in its own entries plus the entries merged with 3af4b175; nothing else changes.
 - Scope: the merge of 3af4b175 and this approval record. Pull request branch #800 only, not merged, not released.
 - What's new: none — merge of 3af4b175, no customer-visible change of its own
+
+## 2026-10-21 — #800: expire preview reset countdowns with their trust
+
+- User approval: no visible change – UI approval not needed (bug fix: stop the preview reset countdown when its measurement trust expires, matching the device)
+- Approved customer-visible result: the existing Gauge footer and reset bindings show Reset unavailable once reset trust expires, with no new copy or layout.
+- Scope: shared reset countdown calculation in live-vibetv-preview and its 60-second trust regression test; pre-review P3 for #800.
+- What's new: none — correction to existing preview and device parity only

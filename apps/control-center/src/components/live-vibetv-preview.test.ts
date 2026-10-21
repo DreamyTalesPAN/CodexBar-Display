@@ -1228,6 +1228,28 @@ describe("usage pace", () => {
     expect(boundValue("usageSlot1PaceText", later)).toBe("");
   });
 
+  it("makes every reset binding unavailable when the 60-second trust expires", () => {
+    const source = {
+      provider: "claude", usageMode: "remaining", resetSecs: 12000,
+      resetTrust: "live", resetSource: "claude", resetTrustSecs: 60,
+      usageWindows: [{ id: "session", label: "Session", percent: 91, resetSecs: 12000,
+        pace: { delta: -6, state: "reserve", lasts: true } }],
+      providerSlots: [{ id: "claude", label: "Claude", percent: 91, resetSecs: 12000 }],
+    };
+    const before = buildFrameData(clock.toISOString(), source, new Date(clock.getTime() + 59_000));
+    expect(boundValue("usageSlot1PaceFooter", before)).toBe("lasts until reset - resets 3h 19m");
+    for (const elapsed of [60, 90]) {
+      const expired = buildFrameData(clock.toISOString(), source, new Date(clock.getTime() + elapsed * 1000));
+      expect(boundValue("usageSlot1PaceFooter", expired)).toBe("Reset unavailable");
+      expect(boundValue("usageSlot1Reset", expired)).toBe("Reset unavailable");
+      expect(boundValue("usageSlot1PaceText", expired)).toBe("");
+      expect(expired.usageWindows[0].resetSecs).toBe(0);
+      expect(expired.usageSlot1ResetSecs).toBe(0);
+      expect(expired.providerSlots[0].resetSecs).toBe(0);
+      expect(expired.resetSecs).toBe(0);
+    }
+  });
+
   it("names the provider without the notice and puts the notice in the footer line", () => {
     const frame = { ...paced(91, { delta: -6, state: "reserve", lasts: true }), label: "Claude" };
     expect(boundValue("usageProviderName", frame)).toBe("Claude");
