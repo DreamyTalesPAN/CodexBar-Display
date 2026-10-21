@@ -9402,3 +9402,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none new; the existing "Update Mac App" offer stays while the running Mac App is older than the offered version.
 - Scope: control-center-app.tsx late-offer derivation with its regression tests.
 - What's new: none — the existing update offer learns a late update
+
+## 2026-10-22 — #897: a late launch update is offered under its own version
+
+- User approval: no visible change – UI approval not needed (bug fix: when the Companion's cached release names an older version, the offer names the version the Mac App's launch check found, not the installed one)
+- Approved customer-visible result: none new; the existing "Update Mac App" offer shows the correct version number in that rare case.
+- Scope: control-center-app.tsx offered-version order, with its regression test.
+- What's new: none — the existing update offer names the right version

@@ -391,6 +391,21 @@ it("keeps a late launch update while the Companion reports up to date (#892)", a
   expect(runtime.wizardProps?.macAppUpdate).toBeDefined();
 });
 
+it("names the late launch update's version when the Companion's release is older (#892)", async () => {
+  // The Companion's cached release still names the installed 9.9.9 as latest;
+  // the Mac App's launch check found 9.9.10 and that is the offer.
+  const app = await openApp({ userAgent: nativeUserAgent, setupFinished: false });
+  app.companion.latestVersion = "9.9.9";
+  app.companion.releaseCheckFailed = true;
+  await app.wait(10);
+  await act(async () => {
+    window.dispatchEvent(
+      new CustomEvent("vibetv:mac-app-update-found", { detail: { version: "9.9.10" } }),
+    );
+  });
+  expect(runtime.wizardProps?.macAppUpdate).toMatchObject({ version: "9.9.10" });
+});
+
 it("never reads the Companion version as the running Mac App version (#892)", async () => {
   // Without app.version the Companion's 9.9.10 must not clear a pending 9.9.10.
   const app = await openApp({ userAgent: nativeUserAgent, setupFinished: false });

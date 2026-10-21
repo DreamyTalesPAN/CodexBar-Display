@@ -4615,9 +4615,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // found never reaches the Updates tab, and an old app can be the reason
   // (#561).
   const macAppUpdateOfferedVersion =
+    lateMacAppUpdateVersion ||
     companionRelease?.latestVersion ||
     companionRelease?.release ||
-    lateMacAppUpdateVersion;
+    "";
   const activeThemeUpdateAvailable = Boolean(
     activeThemeUpgrade.theme &&
     activeThemeUpgrade.needed &&
