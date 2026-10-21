@@ -9303,3 +9303,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: nothing is approved yet. The theme Two Limits is no longer in the catalog, in Themes or in What's new. What's new announces Gauge, Token Counter and Pace Meter; Two at once uses Pace Meter and the other themes.
 - Scope: theme-packs/two-limits and its outputs in dist/theme-packs (render packs, ZIPs, catalog entry), the What's new entry theme-two-limits and its test expectations, the display-limits-settings test fixture, docs/themes.md, docs/assets/README.md and its preview image, and this approval record. Pull request branch #864 only, not merged, not released.
 - What's new: none — the Two Limits entry is removed; no new announcement
+
+## 2026-10-21 — #864: Two at once pickers "Provider 1"/"Provider 2", picking the same source swaps (Paul 7202)
+
+- User approval: pending — Paul's 7202 feedback on #864: pickers are called "Provider 1" and "Provider 2"; choosing the other picker's source swaps the two instead of showing "Two at once needs two different providers"; Paul sees the integration in build 7203
+- Approved customer-visible result: nothing is approved yet. Settings and setup name the Two at once pickers "Provider 1" and "Provider 2"; choosing the other picker's source swaps both and saves the distinct pair without the duplicate-provider error. Recent activity keeps "Show <Provider 1> and <Provider 2> at once" with the chosen source names.
+- Scope: setup-display-mode-screen.tsx and Settings/setup interaction tests. Both screens already share the setup swap helper on this branch; keep it and verify saving in both directions. Companion validation and generic error handling stay in place; no dedicated app-side duplicate-provider dialog exists to remove.
+- What's new: none — picker labels and swap regression coverage, no new announcement
