@@ -8438,3 +8438,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #781 as described in its entries above, as seen in build 7198.
 - Scope: #781 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #781 approval record only
+
+## 2026-10-21 — #781: approval marker after merging main at 12504ca6
+
+- User approval: no visible change – UI approval not needed (merge of main (12504ca6) into #781; the own entries of #781 keep their approvals)
+- Approved customer-visible result: #781 as in its own entries plus the entries merged with 12504ca6; nothing else changes.
+- Scope: the merge of 12504ca6 and this approval record. Pull request branch #781 only, not merged, not released.
+- What's new: none — merge of 12504ca6, no customer-visible change of its own
