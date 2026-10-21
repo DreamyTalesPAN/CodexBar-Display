@@ -430,8 +430,9 @@ struct WindowRect {
 }
 
 // Where the window was when a close released it, and whether it was maximized.
-// While maximized, the rectangle is the last normal one (Tauri only reports
-// the maximized bounds); None when the window was never restored.
+// The rectangle is the outer one (caption and borders included). While
+// maximized, it is the last normal one (Tauri only reports the maximized
+// bounds); None when the window was never restored.
 type Remembered = (Option<WindowRect>, bool);
 
 #[derive(Debug, PartialEq)]
@@ -486,6 +487,12 @@ fn fit_into(rect: WindowRect, area: WindowRect) -> WindowRect {
     WindowRect { x, y, width, height }
 }
 
+// The client size for an outer rectangle, given the caption and borders
+// (outer size minus inner size, as Tauri reports them).
+fn inner_within(outer: WindowRect, frame: (u32, u32)) -> (u32, u32) {
+    (outer.width.saturating_sub(frame.0), outer.height.saturating_sub(frame.1))
+}
+
 // None while minimized, because its position says nothing about where it was
 // used; None means "keep the previous one".
 fn remembered_after(
@@ -500,11 +507,12 @@ fn remembered_after(
     Some(remembered_for(current, maximized, previous))
 }
 
-// Worker threads only: the getters wait for the event loop.
+// Worker threads only: the getters wait for the event loop. The outer
+// rectangle is stored, so the clamp sees the caption and borders too.
 fn window_geometry(window: &tauri::WebviewWindow, previous: Option<Remembered>) -> Option<Remembered> {
     let minimized = window.is_minimized().ok()?;
     let position = window.outer_position().ok()?;
-    let size = window.inner_size().ok()?;
+    let size = window.outer_size().ok()?;
     let maximized = window.is_maximized().ok()?;
     let current = WindowRect {
         x: position.x,
@@ -599,7 +607,12 @@ fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tau
         .build()?;
     if let Some((rect, maximized)) = remembered {
         if let Some(rect) = rect {
-            let _ = window.set_size(PhysicalSize::new(rect.width, rect.height));
+            let frame = match (window.outer_size(), window.inner_size()) {
+                (Ok(outer), Ok(inner)) => (outer.width - inner.width, outer.height - inner.height),
+                _ => (0, 0),
+            };
+            let (width, height) = inner_within(rect, frame);
+            let _ = window.set_size(PhysicalSize::new(width, height));
             let _ = window.set_position(PhysicalPosition::new(rect.x, rect.y));
         }
         if maximized {
@@ -1638,9 +1651,9 @@ fn show_message(message: &str) {
 #[cfg(test)]
 mod tests {
     use super::{
-        choose_placement, clear_loaded_theme, close_stands, fit_into, label_for_generation,
-        theme_id_from_deep_link, work_area_of_centre, Placement, WindowRect, remembered_after,
-        remembered_for, store_if_newer,
+        choose_placement, clear_loaded_theme, close_stands, fit_into, inner_within,
+        label_for_generation, theme_id_from_deep_link, work_area_of_centre, Placement,
+        WindowRect, remembered_after, remembered_for, store_if_newer,
     };
     use url::Url;
 
@@ -1763,6 +1776,16 @@ mod tests {
             choose_placement(Some((Some(rect(300, 300, 1280, 900)), false)), &[work]),
             Placement::Remembered { rect: Some(rect(300, 132, 1280, 900)), maximized: false }
         );
+        // The stored rectangle is the outer one: 900 px client plus a 32 px caption
+        // and 8 px borders. Its bottom edge must stay above the taskbar too.
+        let outer = rect(300, 300, 1296, 932);
+        let Placement::Remembered { rect: Some(placed), maximized: false } =
+            choose_placement(Some((Some(outer), false)), &[work])
+        else {
+            panic!("a remembered window must be placed");
+        };
+        assert_eq!(placed, rect(300, 100, 1296, 932));
+        assert_eq!(inner_within(placed, (16, 32)), (1280, 900));
         // Larger than the screen: shrunk to fit, then moved to the corner.
         assert_eq!(
             choose_placement(Some((Some(rect(50, 50, 2560, 1440)), false)), &[work]),
