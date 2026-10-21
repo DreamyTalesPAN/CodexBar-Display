@@ -109,6 +109,9 @@ function startWindow() {
       if (url.endsWith("/v1/device/select")) {
         return jsonResponse({ ok: false, error: notFound }, 404);
       }
+      if (url.endsWith("/v1/setup/reset")) {
+        return jsonResponse({ ok: true, connectionModeChoiceRequired: true });
+      }
       return jsonResponse({ ok: false, error: { code: "HTTP_404" } }, 404);
     }),
   );
@@ -237,7 +240,7 @@ it("keeps a connect error closed on Settings and shows a new one", async () => {
 
 // The running app's connect dialog offers one way forward: Run setup again.
 // No OK and no "Press Connect again" (#782).
-it.each(["Settings", "Support"])("offers Run setup again alone on %s", async (tab) => {
+it.each(["Settings", "Support"])("starts setup directly from the connect dialog on %s", async (tab) => {
   const window = startWindow();
   await window.wait(10);
   window.companion.device = {
@@ -258,6 +261,20 @@ it.each(["Settings", "Support"])("offers Run setup again alone on %s", async (ta
 
   fireEvent.click(within(dialog).getByRole("button", { name: "Run setup again" }));
   await window.wait(1);
-  expect(screen.getByRole("dialog", { name: "Run setup again?" })).toBeTruthy();
+  expect(screen.queryByRole("dialog", { name: "Run setup again?" })).toBeNull();
   expect(screen.queryByRole("dialog", { name: "VibeTV could not connect." })).toBeNull();
+  expect(window.companion.requests.filter((request) =>
+    request === "POST /api/local-companion/v1/setup/reset",
+  )).toHaveLength(1);
+});
+
+it("keeps the confirmation for the Settings Run setup again row", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+
+  fireEvent.click(screen.getByRole("button", { name: "Run setup again" }));
+  expect(screen.getByRole("dialog", { name: "Run setup again?" })).toBeTruthy();
+  expect(window.companion.requests).not.toContain("POST /api/local-companion/v1/setup/reset");
 });

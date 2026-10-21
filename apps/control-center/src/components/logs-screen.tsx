@@ -81,6 +81,7 @@ export type LogsScreenProps = {
   onCreateSupportReport?: () => void;
   onRefresh?: () => void;
   onRunSetupAgain?: () => void;
+  onStartSetup?: () => void;
   onRepairUsageEngine?: () => void;
   repairingUsageEngine?: boolean;
   busyAction?: string | null;
@@ -102,6 +103,7 @@ export function LogsScreen({
   onCreateSupportReport,
   onRefresh,
   onRunSetupAgain,
+  onStartSetup,
   onRepairUsageEngine,
   repairingUsageEngine = false,
   busyAction,
@@ -133,7 +135,7 @@ export function LogsScreen({
                   label: "Run setup again",
                   onSelect: () => {
                     onDismissError?.();
-                    onRunSetupAgain?.();
+                    onStartSetup?.();
                   },
                 }
               : { label: "OK", onSelect: () => onDismissError?.() }

@@ -78,6 +78,7 @@ export type SettingsScreenProps = {
     value: PreferenceValue,
   ) => void | Promise<void>;
   onResetSetup: () => void;
+  onStartSetup?: () => void;
   /** Erases the VibeTV over the USB cable, then starts setup again. */
   onEraseDevice?: () => void;
   /** Opens Support and runs diagnostics there. */
@@ -116,6 +117,7 @@ export function SettingsScreen({
   onConnectionModeChange,
   onDisplayPreferenceChange,
   onResetSetup,
+  onStartSetup,
   onEraseDevice,
   onSaveBrightness,
   providerPicker,
@@ -219,7 +221,7 @@ export function SettingsScreen({
       <SetupStepFailedDialog
         error={dialogError}
         onOpenChange={(open) => !open && onDismissError()}
-        onRetry={dialogError?.code === "pairing_rejected" ? onResetSetup : undefined}
+        onRetry={dialogError?.code === "pairing_rejected" ? onStartSetup : undefined}
         retryLabel="Run setup again"
       />
       <SettingsSection title="Connection">

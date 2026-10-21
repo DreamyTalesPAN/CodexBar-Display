@@ -630,7 +630,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // Its start time keys the incident; null while there is none.
   const [systemBusySince, setSystemBusySince] = useState<string | null>(null);
   const [systemBusyDismissed, dismissSystemBusy] = useSystemBusyDismissal(systemBusySince);
-  // "Run setup again" asks first, from Settings and from Support alike.
+  // Page actions ask first; the connect dialog already confirms setup.
   const [setupAgainRequested, setSetupAgainRequested] = useState(false);
   // The "What's new" entries this customer has seen, null while nothing is
   // stored, and whether Updates has opened the notice again.
@@ -5871,6 +5871,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               }).catch(() => { /* The connection action already displays its error. */ });
             }}
             onResetSetup={() => setSetupAgainRequested(true)}
+            onStartSetup={resetSetup}
             onEraseDevice={eraseDevice}
             windowsHost={windowsHost}
             onDisplayPreferenceChange={updateDisplayPreference}
@@ -5972,6 +5973,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             onRefresh={checkCompanion}
             onRepairUsageEngine={retryUsageService}
             onRunSetupAgain={() => setSetupAgainRequested(true)}
+            onStartSetup={resetSetup}
             repairingUsageEngine={busyAction === "usage-service-repair"}
             supportReportBusy={supportReportBusy}
             windowsHost={windowsHost}

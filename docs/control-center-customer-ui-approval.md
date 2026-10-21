@@ -8683,3 +8683,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the connect dialog ("VibeTV could not connect.") on Settings and Support/Logs shows "VibeTV no longer accepts this computer. Run setup again to connect it." with one button "Run setup again" that starts setup; no OK and no "Press Connect again" sentence. The setup wizard's own connect-step dialog is unchanged.
 - Scope: the running app's pairing-rejection dialog only (pairingRejectionForDevice, code pairing_rejected, and the Settings and Logs dialog buttons). Pull request branch #782 only, not merged, not released.
 - What's new: none — no notice entry until Paul approves the dialog above
+
+## 2026-10-21 — #782: connect dialog starts setup without a second question
+
+- User approval: pending — the connect dialog's "Run setup again" starts setup directly (no second question), as Paul asked ("startet Setup direkt"); Paul sees it in the next build
+- Approved customer-visible result: the pairing-rejection dialog on Settings and Support/Logs starts setup directly when "Run setup again" is clicked; the Settings and Support page actions keep their confirmation.
+- Scope: route the running app's connect-dialog button to the existing setup start handler and cover both dialog entry points and the Settings row with tests. Pull request branch #782 only, not merged, not released.
+- What's new: none — no notice entry until Paul approves the direct setup action above
