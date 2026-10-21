@@ -8340,3 +8340,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #782 Run diagnostics writes no Recent activity entry; while Run diagnostics or Create report collects, the other button is disabled; no new text. Manual refresh ends only with values collected after the click.
 - Scope: #782 `apps/control-center/src/components/control-center-app.tsx`, `support-report-actions.tsx`, `diagnostics-panel.tsx`, `logs-screen.tsx` and their tests, `companion/internal/companionapi/usage.go` and `server_test.go`, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new wording
+
+## 2026-10-21 — #782: approval marker after merging main at 41bf10cf
+
+- User approval: no visible change – UI approval not needed (merge of main (41bf10cf) into #782; the own entries of #782 keep their approvals)
+- Approved customer-visible result: #782 as in its own entries plus the entries merged with 41bf10cf; nothing else changes.
+- Scope: the merge of 41bf10cf and this approval record. Pull request branch #782 only, not merged, not released.
+- What's new: none — merge of 41bf10cf, no customer-visible change of its own
