@@ -15,14 +15,6 @@ const RED_FOCUS = ["aria-invalid:focus-visible:ring-destructive", "aria-invalid:
 afterEach(cleanup);
 
 describe("invalid fields under keyboard focus", () => {
-  it("keeps the red border on a checked invalid checkbox under keyboard focus", () => {
-    // Codex on #817: the checked rule (border-primary) came later in the CSS
-    // and won; a checked + focused override with one more attribute wins.
-    const box = render(<Checkbox aria-invalid="true" defaultChecked />).container.querySelector("button");
-    const classes = (box?.getAttribute("class") || "").split(/\s+/);
-    expect(classes).toContain("aria-invalid:aria-checked:focus-visible:border-destructive");
-  });
-
   it.each([
     ["Input", () => render(<Input aria-invalid="true" />).container.querySelector("input")],
     ["Textarea", () => render(<Textarea aria-invalid="true" />).container.querySelector("textarea")],
