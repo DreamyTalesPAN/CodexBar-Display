@@ -14,7 +14,10 @@ import { markWhatsNewSeen } from "@/lib/whats-new";
 import { ControlCenterApp } from "./control-center-app";
 import { openMacAppUpdatePrompt } from "./control-center-runtime";
 
-const runtime = vi.hoisted(() => ({ hostedShell: false }));
+const runtime = vi.hoisted(() => ({
+  hostedShell: false,
+  wizardProps: null as null | { macAppUpdate?: { onUpdate: () => void } },
+}));
 
 vi.mock("./control-center-runtime", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./control-center-runtime")>();
@@ -23,6 +26,18 @@ vi.mock("./control-center-runtime", async (importOriginal) => {
     openMacAppUpdatePrompt: vi.fn(),
     shouldUseHostedSetupShell: () =>
       runtime.hostedShell || actual.shouldUseHostedSetupShell(),
+  };
+});
+
+// The real wizard renders; the test keeps its props to press its update offer.
+vi.mock("./setup/setup-wizard", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./setup/setup-wizard")>();
+  return {
+    ...actual,
+    SetupWizard: (props: Parameters<typeof actual.SetupWizard>[0]) => {
+      runtime.wizardProps = props;
+      return createElement(actual.SetupWizard, props);
+    },
   };
 });
 
@@ -64,10 +79,12 @@ async function openApp({
   userAgent,
   setupFinished = true,
   firmwareUpdate,
+  windows = false,
 }: {
   userAgent?: string;
   setupFinished?: boolean;
   firmwareUpdate?: typeof installing;
+  windows?: boolean;
 } = {}) {
   const companion = {
     device: setupFinished ? device : notSetUp,
@@ -109,6 +126,7 @@ async function openApp({
             version: "9.9.9",
             installationMode: "dmg",
             app: { version: "9.9.9", installedInApplications: true },
+            runtime: windows ? { os: "windows" } : undefined,
             update: {
               checkedAt: "2026-10-13T08:00:00Z",
               status: "available",
@@ -196,6 +214,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.mocked(openMacAppUpdatePrompt).mockClear();
   runtime.hostedShell = false;
+  runtime.wizardProps = null;
 });
 
 it("does not open the native prompt while setup owns the screen", async () => {
@@ -263,5 +282,34 @@ it("does not open the prompt in the hosted setup shell", async () => {
   runtime.hostedShell = true;
   await openApp({ userAgent: nativeUserAgent });
 
+  expect(openMacAppUpdatePrompt).not.toHaveBeenCalled();
+});
+
+it("does not open the prompt again when setup ends after the wizard's own update check", async () => {
+  const app = await openApp({ userAgent: nativeUserAgent, setupFinished: false });
+  const location = { href: "http://localhost/" };
+  vi.stubGlobal("location", location);
+
+  // "Update Mac App" in the wizard starts the visible check; Sparkle is cancelled.
+  await act(async () => {
+    runtime.wizardProps?.macAppUpdate?.onUpdate();
+  });
+  expect(location.href).toBe("vibetv://check-for-updates");
+
+  // Setup then finishes with the same VibeTV: the same version must not prompt again.
+  rememberCompletedSetup(device.deviceId);
+  app.companion.device = device;
+  await app.wait(20);
+  expect(app.text()).not.toContain("Welcome to");
+  expect(openMacAppUpdatePrompt).not.toHaveBeenCalled();
+});
+
+it("leaves the Windows update to the shell during setup", async () => {
+  await openApp({ userAgent: nativeUserAgent, setupFinished: false, windows: true });
+
+  // Windows setup shows no update offer, and this page never redirects to the
+  // Windows updater: the shell installs it with the window closed.
+  expect(runtime.wizardProps).toBeTruthy();
+  expect(runtime.wizardProps?.macAppUpdate).toBeUndefined();
   expect(openMacAppUpdatePrompt).not.toHaveBeenCalled();
 });

@@ -12543,12 +12543,28 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-21 — #816: approval marker after merging claude/group-calm-redesign at 0a599c37
 
-## 2026-10-21 — #784: Slider thumb ring grey on hover and drag, olive only for keyboard focus (Codex review)
+## 2026-10-21 — #822: approval marker after merging claude/group-calm-redesign at fd9e6fb3
 
-- User approval: pending — #784 slider thumb: mouse hover/drag shows a neutral grey ring, the olive ring only for keyboard focus (Paul decided 21.10. "Maus grau, Tastatur oliv"; not yet seen in a build)
-- Approved customer-visible result: the slider thumb shows a grey ring while the mouse hovers over it or drags it; the olive ring appears only when the thumb has keyboard focus. Nothing else changes.
-- Scope: `apps/control-center/src/components/ui/slider.tsx` (thumb ring classes), its new test `apps/control-center/src/components/ui/slider.focus-ring.test.tsx`, and this approval record. Pull-request branch #784 only, not merged, not released.
-- What's new: none — ring colour of the slider thumb, no new text
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (fd9e6fb3) into #822; the own entries of #822 keep their approvals)
+- Approved customer-visible result: #822 as in its own entries plus the entries merged with fd9e6fb3; nothing else changes.
+- Scope: the merge of fd9e6fb3 and this approval record. Pull request branch #822 only, not merged, not released.
+- What's new: none — merge of fd9e6fb3, no customer-visible change of its own
+
+## 2026-10-21 — #822: Mac App update prompt after the wizard's own check and on Windows during setup (Codex review)
+
+- User approval: pending — #822 update prompt: on Windows during setup the native update dialog opens again (as before this branch); on a Mac, the setup wizard's own update check no longer leads to a second update dialog when setup ends
+- Approved customer-visible result: On Windows during setup the native update dialog opens as it did before this branch. On a Mac, after "Update Mac App" in the setup wizard, the update dialog does not come a second time when setup ends. No text, screen or button changes.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (the update prompt effect and the wizard offer's `onUpdate`) and this approval record. Pull-request branch #822 only, not merged, not released. WIP: tests not yet written.
+- What's new: none — update prompt timing only, no new text
+
+## 2026-10-21 — #822: tests for the Codex fixes (one prompt per version, Windows keeps its updater during setup)
+
+- User approval: no visible change – UI approval not needed (#822 tests for the Codex fixes: one prompt per version, Windows keeps its updater during setup)
+- Approved customer-visible result: No visible change. The tests pin the update prompt timing from the previous commit: on a Mac the wizard's update check does not lead to a second update dialog, and on Windows the updater dialog still opens during setup. No text, screen or button changes.
+- Scope: `apps/control-center/src/components/control-center-app.mac-update-prompt.test.tsx` (new tests and the wizard capture in the test file) and this approval record. Pull-request branch #822 only, not merged, not released.
+- What's new: none — test-only change, no new text
+
+## 2026-10-21 — #822: approval marker after merging claude/group-calm-redesign at 0a599c37
 
 ## 2026-10-21 — #784: approval marker after merging main at 41bf10cf
 
@@ -12752,3 +12768,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #798 Updates screen as in its own entries; in narrow windows (below lg) the checked timestamp and Check button sit below the page title instead of overlapping it; wide windows unchanged.
 - Scope: the Updates title row in apps/control-center/src/components/updates-screen.tsx and its class test. Pull request branch #798 only, not merged, not released.
 - What's new: none — layout fix of the Updates title row, no new feature
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (0a599c37) into #822; the own entries of #822 keep their approvals)
+- Approved customer-visible result: #822 as in its own entries plus the entries merged with 0a599c37; nothing else changes.
+- Scope: the merge of 0a599c37 and this approval record. Pull request branch #822 only, not merged, not released.
+- What's new: none — merge of 0a599c37, no customer-visible change of its own
