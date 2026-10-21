@@ -8682,6 +8682,20 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of 3dc0a15b and this approval record. Pull request branch #780 only, not merged, not released.
 - What's new: none — merge of 3dc0a15b, no customer-visible change of its own
 
+## 2026-10-21 — #780: Back keeps the next connection choice explicit
+
+- User approval: no visible change – UI approval not needed (bug fix: Back during pairing keeps a later single-result scan from reconnecting or updating without the customer's next choice)
+- Approved customer-visible result: after Back, setup waits on the existing connection or device choice even if only one path remains; the next explicit Connect or transport choice resumes setup. Initial single-device autoconnect remains unchanged.
+- Scope: `setup-wizard.tsx`, `setup-connection.ts`, and `setup-wizard.test.tsx` under `apps/control-center/src/components/setup`, plus this approval record. Pull request #780 only, not merged, not released.
+- What's new: none — bug fix, not announced to customers
+
+## 2026-10-21 — #780: failed 3D loading restores the existing preview
+
+- User approval: no visible change – UI approval not needed (bug fix: a real 3D renderer or model-load failure restores the existing photo or live 2D fallback instead of leaving setup artwork blank)
+- Approved customer-visible result: a failed 3D preview behaves like unsupported 3D; the device photo or live 2D preview is visible. Normal 3D loading still shows no flat-picture flash, and the live-screen handover waits until its preview is visible.
+- Scope: `vibetv-3d-preview.tsx` and its test, `setup/setup-device-card.tsx`, `setup/setup-live-screen.tsx`, and `setup/setup-3d-preview.test.tsx` under `apps/control-center/src/components`, plus this approval record. Pull request #780 only, not merged, not released.
+- What's new: none — bug fix, not announced to customers
+
 ## 2026-10-20 — Setup step 11: display mode tiles show the active theme with live values
 
 - User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: Setup step 11: display mode tiles show the active theme with live values — before → after: (1) Automatic shows one tile per provider that is switched on, each the theme picture with that provider's own current values (the one VibeTV is on 104 px and full strength, the others 84 px at 30 % strength, as drawn in frame 22) → before one plain tile of CLAUDE / SESSION / WEEKLY bars that changed provider every 2 seconds; (2) Manual shows one such tile for the chosen provider → before the same plain tile; (3) a provider that has no values yet shows a quiet grey placeholder tile where the picture would be → before the words "No usage yet" or "Usage unavailable"; no example numbers are drawn anywhere, and the app calculates nothing: it shows only what the usage service delivers; (4) while the theme is still being read the tiles show the same placeholders, and if it cannot be read the plain tiles stay as before. Settings keeps its plain tiles for now.
@@ -8823,6 +8837,111 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of 9702a6ef and this approval record. Pull request branch #821 only, not merged, not released.
 - What's new: none — merge of 9702a6ef, no customer-visible change of its own
 
+## 2026-10-21 — #821: approval marker after merging claude/group-setup-b at 2073aaec
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-setup-b (2073aaec) into #821; the own entries of #821 keep their approvals)
+- Approved customer-visible result: #821 as in its own entries plus the entries merged with 2073aaec; nothing else changes.
+- Scope: the merge of 2073aaec and this approval record. Pull request branch #821 only, not merged, not released.
+- What's new: none — merge of 2073aaec, no customer-visible change of its own
+
+## 2026-10-21 — #821: Display mode Continue waits for real usage
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: #821 setup step Display mode: Continue becomes active only when the tiles show real usage, not during the loading skeletons (Paul 21.10. 7201 feedback)
+- Approved customer-visible result: on the Display mode step Continue stays inactive while a tile still shows its skeleton, and becomes active once the tiles show usage or an unavailable reading.
+- Scope: setup-display-mode-screen.tsx (Continue gate) and its test. Pull request branch #821 only, not merged, not released.
+- What's new: none — the Continue fix on the Display mode step is pending Paul's approval; not in a release
+
+## 2026-10-21 — #821: Display mode Continue waits while a tile is a skeleton (Codex fix)
+
+- User approval: no visible change – UI approval not needed (#821 Codex fix: Continue also waits while the theme preview itself is still loading; same rule as the pending 7201 fix)
+- Approved customer-visible result: none new; Continue stays inactive exactly while a Display mode card draws its skeleton (theme pack loading, or no provider frames yet), as the pending 7201 entry describes.
+- Scope: setup-display-mode-screen.tsx (Continue gate shares one helper with the tiles; the pack is loaded by the step), its tests, and the two theme tile tests that now pass the pack in. Pull request branch #821 only, not merged, not released.
+- What's new: none — the Continue gate now matches the skeleton rule; no customer-visible change of its own
+
+## 2026-10-21 — #821: approval marker after merging claude/group-setup-b at e55eaf93
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-setup-b (e55eaf93) into #821; the own entries of #821 keep their approvals)
+- Approved customer-visible result: #821 as in its own entries plus the entries merged with e55eaf93; nothing else changes.
+- Scope: the merge of e55eaf93 and this approval record. Pull request branch #821 only, not merged, not released.
+- What's new: none — merge of e55eaf93, no customer-visible change of its own
+
+## 2026-10-21 — #821: approval marker after merging claude/group-setup-b at b821b9ed
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-setup-b (b821b9ed) into #821; the own entries of #821 keep their approvals)
+- Approved customer-visible result: #821 as in its own entries plus the entries merged with b821b9ed; nothing else changes.
+- Scope: the merge of b821b9ed and this approval record. Pull request branch #821 only, not merged, not released.
+- What's new: none — merge of b821b9ed, no customer-visible change of its own
+
+## 2026-10-21 — #821: Paul's approval of build 7202 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — #821 approval record for build 7202; only the 1 listed 7202 entries of #821 now carry it, everything else stays as it was.
+- Approved customer-visible result: #821 as described in those entries, as seen in build 7202.
+- Scope: #821 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #821 approval record only
+
+## 2026-10-21 — #821: approval marker after merging claude/group-setup-b at 1277c824
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-setup-b (1277c824) into #821; the own entries of #821 keep their approvals)
+- Approved customer-visible result: #821 as in its own entries plus the entries merged with 1277c824; nothing else changes.
+- Scope: the merge of 1277c824 and this approval record. Pull request branch #821 only, not merged, not released.
+- What's new: none — merge of 1277c824, no customer-visible change of its own
+
+## 2026-10-21 — #821: keep unavailable token history unknown
+
+- User approval: no visible change – UI approval not needed (bug fix: #821 omitted token counts stay unknown after token collection completes)
+- Approved customer-visible result: unavailable token history shows the existing -- state instead of an invented zero.
+- Scope: setup-display-previews.ts and its regression tests; PR #821 only.
+- What's new: none — correct the existing preview's unavailable-state handling.
+
+## 2026-10-21 — #821: release display selection after unavailable usage
+
+- User approval: no visible change – UI approval not needed (bug fix: #821 completed unavailable usage no longer leaves tiles and Continue loading forever)
+- Approved customer-visible result: the existing no-usage tiles appear after an unavailable reading, and Automatic can continue; only the initial usage read or theme-pack load holds the step.
+- Scope: display-mode screen, theme tiles, wizard usage-loading input and their regression tests; PR #821 only.
+- What's new: none — distinguish pending reads from the existing unavailable state with one shared skeleton rule.
+
+## 2026-10-21 — #821: bound theme render-pack requests
+
+- User approval: no visible change – UI approval not needed (bug fix: #821 a stalled theme response or JSON body releases the display step after 15 seconds)
+- Approved customer-visible result: existing plain tiles replace an unresponsive theme preview and Continue becomes available while the existing five-second retry path recovers the theme.
+- Scope: shared fetchThemeRenderPackRevision timeout, theme-loader cleanup handling and fake-timer setup regression tests; PR #821 only.
+- What's new: none — remove an unbounded loading state without new controls or copy.
+
+## 2026-10-21 — #821: keep theme timeouts compatible with macOS 14.0
+
+- User approval: no visible change – UI approval not needed (bug fix: #821 forward request cancellation without requiring Safari 17.4 AbortSignal.any)
+- Approved customer-visible result: the same bounded theme loading and retry behavior works on the app's supported macOS 14.0 WebKit.
+- Scope: shared render-pack request signal forwarding and one missing-AbortSignal.any regression test; coordinator-approved follow-up commit for PR #821.
+- What's new: none — preserve the existing minimum macOS support.
+
+## 2026-10-21 — #821: enlarge setup display-mode previews
+
+- User approval: pending — Paul (21.10. 7203): "hier sind die previews viel zu klein": the device previews in the setup Display mode cards are larger (240px, same in every card); Paul sees it in the next build.
+- Approved customer-visible result: Automatic and Manual share a native-size 240 × 240 pixelated theme preview, including the loading placeholder; the setup grid stacks cards when two 256px cards do not fit, with a 120px half-scale preview only in exceptionally narrow cards; Automatic crossfades for 180ms of each two-second rotation and shows exactly one provider at rest.
+- Scope: setup-display-mode-screen.tsx (calm setup grid only), setup-display-theme-tiles.tsx (shared preview size and fade duration), setup-display-theme-carousel.test.tsx and this approval record; unit and type checks only, with the real Mac/Windows screen left to the coordinator's next build.
+- What's new: none — refine the pending setup preview layout; no persistent stacking found in the component or regression checks.
+
+## 2026-10-21 — #821: keep unavailable providers inside the theme preview
+
+- User approval: no visible change – UI approval not needed (bug fix: #821 unavailable Automatic providers retain the existing grey theme placeholder and preview size instead of switching to a smaller text fallback; coordinator-authorized review follow-up)
+- Approved customer-visible result: an unavailable provider keeps the same preview area and shows no invented readings; a missing theme still uses the existing plain fallback.
+- Scope: setup-display-mode-screen.tsx (one guard), setup-display-theme-carousel.test.tsx, setup-display-mode-screen.test.tsx and this approval record; regression reproduced before the fix, no hardware or running-app check.
+- What's new: none — restore the existing unavailable placeholder during rotation.
+
+## 2026-10-21 — #821: limit setup theme windows to the device capability
+
+- User approval: no visible change – UI approval not needed (bug fix: #821 an overflow usage window no longer supplies a root theme countdown that the VibeTV cannot display; coordinator-authorized review follow-up)
+- Approved customer-visible result: setup theme frames retain only the usage windows allowed by the device's advertised maxUsageWindows before deriving their root reset; unknown capabilities keep the host's existing uncapped behavior, and the usage snapshot remains unchanged.
+- Scope: control-center-app.tsx passes the existing device capability through setup-display-previews.ts; regressions in setup-display-previews.test.ts cover caps of one and three, retained deadlines, unknown caps and snapshot preservation; no provider-specific rules or hardware changes.
+- What's new: none — correct preview parity with the existing device wire limit.
+
+## 2026-10-21 — #821: approval marker after merging claude/group-setup-b at 01f8694d
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-setup-b (01f8694d) into #821; the own entries of #821 keep their approvals)
+- Approved customer-visible result: #821 as in its own entries plus the entries merged with 01f8694d; nothing else changes.
+- Scope: the merge of 01f8694d and this approval record. Pull request branch #821 only, not merged, not released.
+- What's new: none — merge of 01f8694d, no customer-visible change of its own
+
 ## 2026-10-21 — #831: setup step 11 tiles show the frames the companion builds
 
 - User approval: no visible change – UI approval not needed (#831: setup step 11 tiles render the frames the companion builds instead of a TypeScript copy; same look as approved in 7200)
@@ -8871,48 +8990,6 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the plain setup preview tile whose frame is an error frame shows unavailable values; normal frames are unchanged.
 - Scope: setup-display-previews.ts (displayPreviewFor) and its test. Pull request branch only, not merged, not released.
 - What's new: none — the tile uses the unavailable state it already shows for stale or unread frames
-## 2026-10-21 — #821: approval marker after merging claude/group-setup-b at 2073aaec
-
-- User approval: no visible change – UI approval not needed (merge of claude/group-setup-b (2073aaec) into #821; the own entries of #821 keep their approvals)
-- Approved customer-visible result: #821 as in its own entries plus the entries merged with 2073aaec; nothing else changes.
-- Scope: the merge of 2073aaec and this approval record. Pull request branch #821 only, not merged, not released.
-- What's new: none — merge of 2073aaec, no customer-visible change of its own
-
-## 2026-10-21 — #821: Display mode Continue waits for real usage
-
-- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: #821 setup step Display mode: Continue becomes active only when the tiles show real usage, not during the loading skeletons (Paul 21.10. 7201 feedback)
-- Approved customer-visible result: on the Display mode step Continue stays inactive while a tile still shows its skeleton, and becomes active once the tiles show usage or an unavailable reading.
-- Scope: setup-display-mode-screen.tsx (Continue gate) and its test. Pull request branch #821 only, not merged, not released.
-- What's new: none — the Continue fix on the Display mode step is pending Paul's approval; not in a release
-
-## 2026-10-21 — #821: Display mode Continue waits while a tile is a skeleton (Codex fix)
-
-- User approval: no visible change – UI approval not needed (#821 Codex fix: Continue also waits while the theme preview itself is still loading; same rule as the pending 7201 fix)
-- Approved customer-visible result: none new; Continue stays inactive exactly while a Display mode card draws its skeleton (theme pack loading, or no provider frames yet), as the pending 7201 entry describes.
-- Scope: setup-display-mode-screen.tsx (Continue gate shares one helper with the tiles; the pack is loaded by the step), its tests, and the two theme tile tests that now pass the pack in. Pull request branch #821 only, not merged, not released.
-- What's new: none — the Continue gate now matches the skeleton rule; no customer-visible change of its own
-
-## 2026-10-21 — #821: approval marker after merging claude/group-setup-b at e55eaf93
-
-- User approval: no visible change – UI approval not needed (merge of claude/group-setup-b (e55eaf93) into #821; the own entries of #821 keep their approvals)
-- Approved customer-visible result: #821 as in its own entries plus the entries merged with e55eaf93; nothing else changes.
-- Scope: the merge of e55eaf93 and this approval record. Pull request branch #821 only, not merged, not released.
-- What's new: none — merge of e55eaf93, no customer-visible change of its own
-
-## 2026-10-21 — #821: approval marker after merging claude/group-setup-b at b821b9ed
-
-- User approval: no visible change – UI approval not needed (merge of claude/group-setup-b (b821b9ed) into #821; the own entries of #821 keep their approvals)
-- Approved customer-visible result: #821 as in its own entries plus the entries merged with b821b9ed; nothing else changes.
-- Scope: the merge of b821b9ed and this approval record. Pull request branch #821 only, not merged, not released.
-- What's new: none — merge of b821b9ed, no customer-visible change of its own
-
-## 2026-10-21 — #821: Paul's approval of build 7202 recorded
-
-- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — #821 approval record for build 7202; only the 1 listed 7202 entries of #821 now carry it, everything else stays as it was.
-- Approved customer-visible result: #821 as described in those entries, as seen in build 7202.
-- Scope: #821 this approval record only. Pull request branch only, not merged, not released.
-- What's new: none — #821 approval record only
-
 
 ## 2026-10-21 — #858: merge #821 Continue gate with companion previews
 
@@ -8949,41 +9026,6 @@ issue scope, or release permission never implies UI permission.
 - Scope: fallback tile label and rendered Automatic/Manual regression test.
 - What's new: none — correct existing companion label rendering
 
-## 2026-10-21 — #821: approval marker after merging claude/group-setup-b at 1277c824
-
-- User approval: no visible change – UI approval not needed (merge of claude/group-setup-b (1277c824) into #821; the own entries of #821 keep their approvals)
-- Approved customer-visible result: #821 as in its own entries plus the entries merged with 1277c824; nothing else changes.
-- Scope: the merge of 1277c824 and this approval record. Pull request branch #821 only, not merged, not released.
-- What's new: none — merge of 1277c824, no customer-visible change of its own
-
-## 2026-10-21 — #821: keep unavailable token history unknown
-
-- User approval: no visible change – UI approval not needed (bug fix: #821 omitted token counts stay unknown after token collection completes)
-- Approved customer-visible result: unavailable token history shows the existing -- state instead of an invented zero.
-- Scope: setup-display-previews.ts and its regression tests; PR #821 only.
-- What's new: none — correct the existing preview's unavailable-state handling.
-
-## 2026-10-21 — #821: release display selection after unavailable usage
-
-- User approval: no visible change – UI approval not needed (bug fix: #821 completed unavailable usage no longer leaves tiles and Continue loading forever)
-- Approved customer-visible result: the existing no-usage tiles appear after an unavailable reading, and Automatic can continue; only the initial usage read or theme-pack load holds the step.
-- Scope: display-mode screen, theme tiles, wizard usage-loading input and their regression tests; PR #821 only.
-- What's new: none — distinguish pending reads from the existing unavailable state with one shared skeleton rule.
-
-## 2026-10-21 — #821: bound theme render-pack requests
-
-- User approval: no visible change – UI approval not needed (bug fix: #821 a stalled theme response or JSON body releases the display step after 15 seconds)
-- Approved customer-visible result: existing plain tiles replace an unresponsive theme preview and Continue becomes available while the existing five-second retry path recovers the theme.
-- Scope: shared fetchThemeRenderPackRevision timeout, theme-loader cleanup handling and fake-timer setup regression tests; PR #821 only.
-- What's new: none — remove an unbounded loading state without new controls or copy.
-
-## 2026-10-21 — #821: keep theme timeouts compatible with macOS 14.0
-
-- User approval: no visible change – UI approval not needed (bug fix: #821 forward request cancellation without requiring Safari 17.4 AbortSignal.any)
-- Approved customer-visible result: the same bounded theme loading and retry behavior works on the app's supported macOS 14.0 WebKit.
-- Scope: shared render-pack request signal forwarding and one missing-AbortSignal.any regression test; coordinator-approved follow-up commit for PR #821.
-- What's new: none — preserve the existing minimum macOS support.
-
 ## 2026-10-21 — #858: merge #821 loading and unavailable-state fixes
 
 - User approval: no visible change – UI approval not needed (#858 merge of #821 at 6e08b426: retain companion frames and release Continue after the usage response, preserving unknown token totals and bounded theme loading)
@@ -8991,26 +9033,6 @@ issue scope, or release permission never implies UI permission.
 - Scope: merge #821 into #858, resolve setup preview helpers and tests, preserve every approval block and the macOS-compatible render-pack timeout.
 - What's new: none — preserve existing preview behavior and the three #821 fixes together
 
-## 2026-10-21 — #821: enlarge setup display-mode previews
-
-- User approval: pending — Paul (21.10. 7203): "hier sind die previews viel zu klein": the device previews in the setup Display mode cards are larger (240px, same in every card); Paul sees it in the next build.
-- Approved customer-visible result: Automatic and Manual share a native-size 240 × 240 pixelated theme preview, including the loading placeholder; the setup grid stacks cards when two 256px cards do not fit, with a 120px half-scale preview only in exceptionally narrow cards; Automatic crossfades for 180ms of each two-second rotation and shows exactly one provider at rest.
-- Scope: setup-display-mode-screen.tsx (calm setup grid only), setup-display-theme-tiles.tsx (shared preview size and fade duration), setup-display-theme-carousel.test.tsx and this approval record; unit and type checks only, with the real Mac/Windows screen left to the coordinator's next build.
-- What's new: none — refine the pending setup preview layout; no persistent stacking found in the component or regression checks.
-
-## 2026-10-21 — #821: keep unavailable providers inside the theme preview
-
-- User approval: no visible change – UI approval not needed (bug fix: #821 unavailable Automatic providers retain the existing grey theme placeholder and preview size instead of switching to a smaller text fallback; coordinator-authorized review follow-up)
-- Approved customer-visible result: an unavailable provider keeps the same preview area and shows no invented readings; a missing theme still uses the existing plain fallback.
-- Scope: setup-display-mode-screen.tsx (one guard), setup-display-theme-carousel.test.tsx, setup-display-mode-screen.test.tsx and this approval record; regression reproduced before the fix, no hardware or running-app check.
-- What's new: none — restore the existing unavailable placeholder during rotation.
-
-## 2026-10-21 — #821: limit setup theme windows to the device capability
-
-- User approval: no visible change – UI approval not needed (bug fix: #821 an overflow usage window no longer supplies a root theme countdown that the VibeTV cannot display; coordinator-authorized review follow-up)
-- Approved customer-visible result: setup theme frames retain only the usage windows allowed by the device's advertised maxUsageWindows before deriving their root reset; unknown capabilities keep the host's existing uncapped behavior, and the usage snapshot remains unchanged.
-- Scope: control-center-app.tsx passes the existing device capability through setup-display-previews.ts; regressions in setup-display-previews.test.ts cover caps of one and three, retained deadlines, unknown caps and snapshot preservation; no provider-specific rules or hardware changes.
-- What's new: none — correct preview parity with the existing device wire limit.
 
 ## 2026-10-21 — #858: merge native-size previews and device window cap from #821
 

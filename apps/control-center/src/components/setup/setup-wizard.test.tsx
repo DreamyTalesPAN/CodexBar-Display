@@ -2496,6 +2496,45 @@ describe("SetupWizard: Back while connecting or waiting for WiFi", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it.each(["transport choice", "device choice"])("after Back from %s, a scan with one remaining path waits for Connect", async (choice) => {
+    const pairing = deferred<{ firmware: string }>();
+    const props = baseProps({
+      step: "device", connectionMode: "", connectionModeChoiceRequired: true,
+      activeDeviceId: cable.deviceId,
+      deviceSearchState: "multiple",
+      deviceCandidates: choice === "transport choice" ? [cable, wifi] : [
+        wifi, { ...wifi, deviceId: "vibetv-2", target: "http://192.168.1.43" },
+      ],
+      onConnectionComplete: vi.fn(),
+      connectSteps: {
+        connect: vi.fn().mockReturnValueOnce(pairing.promise).mockResolvedValue({ firmware: "1.0.41" }),
+        checkFirmware: vi.fn().mockResolvedValue({ from: "1.0.41", to: "1.0.42" }),
+        installFirmware: vi.fn().mockResolvedValue(undefined),
+      },
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Connect" })); });
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    await act(async () => pairing.resolve({ firmware: "1.0.41" }));
+
+    // The cable was unplugged / the other VibeTV disappeared during pairing.
+    rerender(<SetupWizard {...props} deviceSearchState="searching" deviceCandidates={[]} />);
+    await act(async () => {
+      rerender(<SetupWizard {...props} deviceCandidates={[wifi]} />);
+    });
+    expect(props.connectSteps.connect).toHaveBeenCalledTimes(1);
+    expect(props.connectSteps.checkFirmware).not.toHaveBeenCalled();
+    expect(props.connectSteps.installFirmware).not.toHaveBeenCalled();
+    expect(props.onConnectionComplete).not.toHaveBeenCalled();
+    expect(screen.getByRole("radio", { name: /VibeTV vibetv-1/ })).toBeTruthy();
+
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Connect" })); });
+    expect(props.connectSteps.connect).toHaveBeenCalledTimes(2);
+    expect(props.connectSteps.connect).toHaveBeenLastCalledWith(wifi);
+    expect(props.connectSteps.installFirmware).toHaveBeenCalledTimes(1);
+    expect(props.onConnectionComplete).toHaveBeenCalledTimes(1);
+  });
+
   it("while the firmware writes: Back is there, the write is not interrupted, then the connection choice shows", async () => {
     const write = deferred<void>();
     const props = await connectOverCable({

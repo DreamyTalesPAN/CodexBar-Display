@@ -43,8 +43,9 @@ export function SetupDeviceCard({
   selected,
   tabStop,
 }: SetupDeviceCardProps) {
-  const [threeReady, setThreeReady] = useState(false);
-  const onThreeReady = useCallback(() => setThreeReady(true), []);
+  const [threeState, setThreeState] = useState<"loading" | "ready" | "failed">("loading");
+  const onThreeReady = useCallback(() => setThreeState("ready"), []);
+  const onThreeFailed = useCallback(() => setThreeState("failed"), []);
   const address = candidateAddress(candidate.target);
   const cable = candidate.transport === "cable";
   return (
@@ -57,7 +58,7 @@ export function SetupDeviceCard({
       type="button"
     >
       <span aria-hidden className="pointer-events-none relative h-16 w-18 shrink-0">
-        {preview3D === false ? (
+        {preview3D === false || threeState === "failed" ? (
           <Image
             alt=""
             className="size-full object-contain"
@@ -66,7 +67,7 @@ export function SetupDeviceCard({
             width={72}
           />
         ) : null}
-        {preview3D ? (
+        {preview3D && threeState !== "failed" ? (
           // A small render of the same 3D VibeTV as the Overview. Its stage is
           // a little wider than the thumbnail (the device fills about 60 % of
           // it) and centred on it; it is drawn only in the background until
@@ -74,7 +75,7 @@ export function SetupDeviceCard({
           <span
             className={cn(
               "absolute top-1/2 left-1/2 w-[112px] -translate-x-1/2 -translate-y-1/2",
-              threeReady ? "" : "opacity-0",
+              threeState === "ready" ? "" : "opacity-0",
             )}
           >
             <SetupVibeTV3DPreview
@@ -82,6 +83,7 @@ export function SetupDeviceCard({
               device={previewDevice}
               displayFrame={previewFrame}
               onReady={onThreeReady}
+              onFailed={onThreeFailed}
               usage={previewUsage}
             />
           </span>
