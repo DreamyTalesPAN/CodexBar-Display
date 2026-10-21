@@ -132,6 +132,16 @@ describe("Display mode tiles with the active theme", () => {
     expect(previews.map((preview) => preview.className)).toEqual([
       previews[0].className, previews[0].className, previews[0].className,
     ]);
+    // All three cards use the same native-size tile and responsive grid.
+    expect(cards[0].parentElement?.className).toContain(
+      "grid-cols-[repeat(auto-fit,minmax(min(100%,256px),1fr))]",
+    );
+    for (const preview of previews) {
+      expect(preview.className).toContain("@container");
+      expect(preview.firstElementChild?.className).toContain("size-[120px]");
+      expect(preview.firstElementChild?.className).toContain("@min-[240px]:size-[240px]");
+      expect(preview.firstElementChild?.className).toBe(previews[0].firstElementChild?.className);
+    }
     const pair = tiles(2);
     expect(pair).toHaveLength(1);
     expect(pair[0].className).toBe(tiles(1)[0].className);

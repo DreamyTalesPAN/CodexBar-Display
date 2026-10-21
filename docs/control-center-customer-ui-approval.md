@@ -16019,3 +16019,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve the refreshed feature together with the existing calm customer flows in the integration candidate.
 - Scope: Merge claude/paultest-592a into claude/paultest-build9 and retain all source approval blocks.
 - What's new: none — integration of existing feature entries only.
+
+## 2026-10-21 — paultest-build9: verify matching 240px setup tiles
+
+- User approval: no visible change – UI approval not needed (build9 regression checks the requested 240px tile and responsive grid for all three setup cards).
+- Approved customer-visible result: Automatic, One provider and Two at once retain the same native-size preview, with the same narrow-window scaling.
+- Scope: Assert the shared rendered size classes and responsive grid in the existing three-card integration test.
+- What's new: none — integration regression coverage only.
