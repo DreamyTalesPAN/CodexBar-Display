@@ -9408,3 +9408,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Rapid unticks keep the first choice and leave the final visible limit selected, even while an earlier display save is pending.
 - Scope: display-limits-settings updater and its queued two-untick regression.
 - What's new: none — restore the existing last-visible-limit editing rule.
+
+## 2026-10-21 — #864: F2 keep hidden limits hidden after source loss
+
+- User approval: pending — when the chosen limit disappears, One provider shows unavailable instead of resurrecting a hidden limit; Two at once shows the other readable member alone
+- Approved customer-visible result: Hidden limits stay unticked and can be selected explicitly again. A reading with no chosen limit left stays unavailable in the single-provider preview and on VibeTV; a readable pair member keeps its own reading and countdown.
+- Scope: daemon visible-window filtering and pair selection, shared display previews, and regression tests for source loss and checkbox editing.
+- What's new: none — correct hidden-limit behavior, pending review of the changed unavailable state.
