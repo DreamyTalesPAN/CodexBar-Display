@@ -225,6 +225,12 @@ const NATIVE_RUNTIME_REPAIR_RESULT_EVENT = "vibetv:runtime-repair-result";
 const NATIVE_CODEXBAR_REPAIR_RESULT_EVENT = "vibetv:codexbar-repair-result";
 const NATIVE_PROVIDER_DISPLAY_CHANGED_EVENT = "vibetv:provider-display-changed";
 
+// A null payload with a null error means the setup changed while collecting.
+type SupportCollection = {
+  payload: SupportDiagnostics | null;
+  error: ApiError | null;
+};
+
 type LocalNetworkRequestInit = RequestInit & {
   targetAddressSpace?: "loopback";
 };
@@ -482,7 +488,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [supportDiagnosticsRunning, setSupportDiagnosticsRunning] =
     useState(false);
   // Both actions send /v1/diagnostics; only one collection runs at a time.
-  const supportCollectingRef = useRef(false);
+  const supportCollectingRef = useRef<Promise<SupportCollection> | null>(null);
   const [lastError, setLastError] = useState<ApiError | null>(null);
   // One error object is one occurrence. Once a surface has closed it, no
   // surface shows it again (Support and Settings alike).
@@ -4288,11 +4294,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     usage,
   ]);
 
-  // Resolves with the collected report, or null when nothing could be read.
-  // The Help menu saves what it gets and says which of the two happened.
-  // Only "report" writes Recent activity; "diagnostics" leaves it alone.
+  // One collection, shared by every caller that asks while it runs. Callers
+  // record their own outcome from the result; nothing here writes Recent activity.
   const loadSupportDiagnostics =
-    useCallback(async (operation: "report" | "diagnostics"): Promise<SupportDiagnostics | null> => {
+    useCallback(async (): Promise<SupportCollection> => {
       const setupGeneration = setupGenerationRef.current;
       try {
         const payload = await collectSupportReport(
@@ -4326,11 +4331,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           windowsHost,
         );
         if (setupGeneration !== setupGenerationRef.current) {
-          return null;
+          return { payload: null, error: null };
         }
         setSupportDiagnostics(payload);
-        const partial = Boolean(payload.collectionErrors?.length);
-        if (!partial) {
+        if (!payload.collectionErrors?.length) {
           setCompanionStatus("online");
           setCompanionInfo(payload.companion || null);
           setProviderSetup(payload.providerSetup || null);
@@ -4338,24 +4342,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             Boolean(payload.companion?.features?.themeInstallEnabled),
           );
         }
-        if (operation === "report") {
-          addEvent({
-            label: partial
-              ? "Support report ready with gaps"
-              : "Support report ready",
-            detail: partial
-              ? "Browser and setup details were saved even though the Mac App did not answer."
-              : `The report has ${payload.checks?.length || 0} checks.`,
-            tone:
-              partial || payload.checks?.some((check) => check.status === "fail")
-                ? "attention"
-                : "ready",
-          });
-        }
-        return payload;
+        return { payload, error: null };
       } catch (error) {
         if (setupGeneration !== setupGenerationRef.current) {
-          return null;
+          return { payload: null, error: null };
         }
         const normalized = normalizeCaughtError(
           error,
@@ -4368,17 +4358,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         }
         setSupportDiagnostics(null);
         setLastError(normalized);
-        if (operation === "report") {
-          addEvent({
-            label: "Support report failed",
-            detail: normalized.nextAction,
-            tone: "attention",
-          });
-        }
-        return null;
+        return { payload: null, error: normalized };
       }
     }, [
-      addEvent,
       activeTab,
       companionInfo,
       companionStatus,
@@ -4402,37 +4384,56 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       windowsHost,
     ]);
 
+  // Joins the collection that is running, or starts one.
+  const collectSupport = useCallback(() => {
+    supportCollectingRef.current ??= loadSupportDiagnostics().finally(() => {
+      supportCollectingRef.current = null;
+    });
+    return supportCollectingRef.current;
+  }, [loadSupportDiagnostics]);
+
   // Create report: the card, Updates and the setup screens. Shows the report on the card.
   const createSupportReport = useCallback(async () => {
-    if (supportCollectingRef.current) {
-      return null;
-    }
-    supportCollectingRef.current = true;
     setSupportReportBusy(true);
     try {
-      const payload = await loadSupportDiagnostics("report");
+      const { payload, error } = await collectSupport();
       setSupportReport(payload);
+      if (payload) {
+        const partial = Boolean(payload.collectionErrors?.length);
+        addEvent({
+          label: partial
+            ? "Support report ready with gaps"
+            : "Support report ready",
+          detail: partial
+            ? "Browser and setup details were saved even though the Mac App did not answer."
+            : `The report has ${payload.checks?.length || 0} checks.`,
+          tone:
+            partial || payload.checks?.some((check) => check.status === "fail")
+              ? "attention"
+              : "ready",
+        });
+      } else if (error) {
+        addEvent({
+          label: "Support report failed",
+          detail: error.nextAction,
+          tone: "attention",
+        });
+      }
       return payload;
     } finally {
-      supportCollectingRef.current = false;
       setSupportReportBusy(false);
     }
-  }, [loadSupportDiagnostics]);
+  }, [addEvent, collectSupport]);
 
   // Run diagnostics: the same snapshot, but the Support report card stays as it is.
   const runSupportDiagnostics = useCallback(async () => {
-    if (supportCollectingRef.current) {
-      return;
-    }
-    supportCollectingRef.current = true;
     setSupportDiagnosticsRunning(true);
     try {
-      await loadSupportDiagnostics("diagnostics");
+      await collectSupport();
     } finally {
-      supportCollectingRef.current = false;
       setSupportDiagnosticsRunning(false);
     }
-  }, [loadSupportDiagnostics]);
+  }, [collectSupport]);
 
   const retryProviderSetup = useCallback(async () => {
     const setupGeneration = setupGenerationRef.current;

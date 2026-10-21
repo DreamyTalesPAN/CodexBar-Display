@@ -13397,3 +13397,60 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #813 as in its own entries plus the entries merged with 467fd7fb; nothing else changes.
 - Scope: the merge of 467fd7fb and this approval record. Pull request branch #813 only, not merged, not released.
 - What's new: none — merge of 467fd7fb, no customer-visible change of its own
+
+## 2026-10-20 — #782: approval marker after merging main
+
+- User approval: no visible change – UI approval not needed (#782: approval marker after merging main: Merge of main into this branch; no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-21 — #782: approval marker after merging main at f314106c
+
+- User approval: no visible change – UI approval not needed (merge of main (f314106c) into #782; the own entries of #782 keep their approvals)
+- Approved customer-visible result: #782 as in its own entries plus the entries merged with f314106c; nothing else changes.
+- Scope: the merge of f314106c and this approval record. Pull request branch #782 only, not merged, not released.
+- What's new: none — merge of f314106c, no customer-visible change of its own
+=========
+
+## 2026-10-21 — #782: Paul decisions on support diagnostics and manual refresh (Codex review)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 12:28: "rest passt so" (build 7201 review) — entry: #782 Paul decisions 21.10.: manual refresh ends only with values collected after the click; Run diagnostics writes no Recent activity entry; diagnostics and report collection never run at the same time; no new wording
+- Approved customer-visible result: #782 Run diagnostics writes no Recent activity entry; while Run diagnostics or Create report collects, the other button is disabled; no new text. Manual refresh ends only with values collected after the click.
+- Scope: #782 `apps/control-center/src/components/control-center-app.tsx`, `support-report-actions.tsx`, `diagnostics-panel.tsx`, `logs-screen.tsx` and their tests, `companion/internal/companionapi/usage.go` and `server_test.go`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new wording
+
+## 2026-10-21 — #782: approval marker after merging main at f314106c
+
+- User approval: no visible change – UI approval not needed (merge of main (f314106c) into #782; the own entries of #782 keep their approvals)
+- Approved customer-visible result: #782 as in its own entries plus the entries merged with f314106c; nothing else changes.
+- Scope: the merge of f314106c and this approval record. Pull request branch #782 only, not merged, not released.
+- What's new: none — merge of f314106c, no customer-visible change of its own
+
+## 2026-10-21 — #782: a report reuses the collection that is running (Codex review)
+
+- User approval: no visible change – UI approval not needed (#782 Codex fix: a report requested elsewhere while diagnostics run reuses that collection instead of failing)
+- Approved customer-visible result: #782 a Create report from setup Help or Updates while Run diagnostics collects gets that report instead of nothing; Run diagnostics still writes no Recent activity entry; no new text.
+- Scope: #782 `apps/control-center/src/components/control-center-app.tsx` (one shared collection for Create report and Run diagnostics) and `control-center-app.support-report-card.test.tsx` (test), and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new wording
+
+## 2026-10-21 — #782: Paul's approval of build 7201 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 12:28: "rest passt so" (build 7201 review) — #782 approval record for build 7201; only the 7201 point of #782 now carries it, everything else stays as it was.
+- Approved customer-visible result: #782 as described in that entry, as seen in build 7201.
+- Scope: #782 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #782 approval record only
+
+## 2026-10-21 — #782: approval marker after merging main at 467fd7fb
+
+- User approval: no visible change – UI approval not needed (merge of main (467fd7fb) into #782; the own entries of #782 keep their approvals)
+- Approved customer-visible result: #782 as in its own entries plus the entries merged with 467fd7fb; nothing else changes.
+- Scope: the merge of 467fd7fb and this approval record. Pull request branch #782 only, not merged, not released.
+- What's new: none — merge of 467fd7fb, no customer-visible change of its own
+
+## 2026-10-21 — #782: Build 7 integration of claude/group-small-fixes
+
+- User approval: pending — build7 integration of claude/group-small-fixes at a8029fc9d9c3 for the requested Pace + Two at once Mac test.
+- Approved customer-visible result: Preserve the incoming feature together with the existing Build 6 customer flows in the local integration candidate.
+- Scope: Merge claude/group-small-fixes into claude/paultest-build7; retain all source approval entries.
+- What's new: none — integration of existing feature entries only.
