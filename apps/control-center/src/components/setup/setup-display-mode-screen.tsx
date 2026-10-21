@@ -56,10 +56,12 @@ export type SetupDisplayModePreview = {
   providerLabel: string;
   /**
    * The provider's readings in the shape the theme renderer draws, exactly as
-   * the usage service delivered them. Absent while it has none to give; the
+   * the companion built the frame for the stream. Absent while it has none to give; the
    * theme tile then shows a placeholder instead of numbers.
    */
   frame?: DisplayFrame;
+  /** The same provider's frame when Manual pins it: the host builds its rows from that provider alone. */
+  pinnedFrame?: DisplayFrame;
   /** When those readings were taken, so reset countdowns keep counting down. */
   frameAt?: string;
   /** When VibeTV received the frame whose activity this preview shows (its TTL counts from there). */

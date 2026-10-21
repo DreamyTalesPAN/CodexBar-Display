@@ -9,18 +9,19 @@ import (
 
 // ProviderPreview is the frame the host would send for one provider: in
 // Automatic, where every provider feeds the cross-provider rows, and pinned in
-// Manual, where only that provider does. Nil when the provider has no current
-// usage to show.
+// Manual, where only that provider does. A provider without current usage gets
+// the host's unavailable frame, with no values and no countdown.
 type ProviderPreview struct {
 	Provider  string
-	Automatic *protocol.Frame
-	Pinned    *protocol.Frame
+	Automatic protocol.Frame
+	Pinned    protocol.Frame
 }
 
-// PreviewFrames builds, for every provider of usage, the frame the stream would
-// send for it right now, with the same row, bars and reset-trust steps as the
-// stream (selectCycleFrameFromProviders, sendCycleResult). The device-specific
-// steps (protocol version, clock, theme, wire budget) are left out.
+// PreviewFrames builds, for every provider of usage, in that order, the frame
+// the stream would send for it right now, with the same row, bars and
+// reset-trust steps as the stream (selectCycleFrameFromProviders,
+// sendCycleResult). The device-specific steps (protocol version, clock, theme,
+// wire budget) are left out.
 func PreviewFrames(usage PersistedUsage, showUsed bool, now time.Time) []ProviderPreview {
 	providers := make([]codexbar.ParsedFrame, 0, len(usage.Providers))
 	for _, snapshot := range usage.Providers {
@@ -44,17 +45,17 @@ func PreviewFrames(usage PersistedUsage, showUsed bool, now time.Time) []Provide
 	return previews
 }
 
-func previewFrame(shown codexbar.ParsedFrame, rowProviders []codexbar.ParsedFrame, showUsed bool, now time.Time) *protocol.Frame {
-	if shown.Stale {
-		return nil
-	}
+func previewFrame(shown codexbar.ParsedFrame, rowProviders []codexbar.ParsedFrame, showUsed bool, now time.Time) protocol.Frame {
 	collectedAt := shown.CollectedAt
 	if collectedAt.IsZero() {
 		collectedAt = now
 	}
 	frame := shown.Frame
+	if shown.Stale {
+		frame = snapshotWithUsageCleared(providerSnapshot{Frame: frame}).Frame
+	}
 	frame.V = protocol.ProtocolVersionV2
 	frame.ProviderSlots = providerResetSlots(rowProviders, collectedAt)
-	frame = applyUsageBarsPreference(frame.Normalize(), showUsed).ApplyResetTrust(collectedAt, now, true)
-	return &frame
+	frame = applyUsageBarsPreference(frame.Normalize(), showUsed).ApplyResetTrust(collectedAt, now, !shown.Stale)
+	return frame
 }

@@ -39,9 +39,6 @@ func TestPreviewFramesMatchTheStreamsRowsAndResetTrust(t *testing.T) {
 	}
 
 	auto := previews[0].Automatic
-	if auto == nil {
-		t.Fatal("codex has current usage and must have an Automatic frame")
-	}
 	// Rows are expressed as of the shown frame's own reading time (-5 min), the
 	// frame is then re-anchored to now: codex 3600-300, claude 9000+300-300.
 	if len(auto.ProviderSlots) != 2 || auto.ProviderSlots[0].ID != "codex" || auto.ProviderSlots[0].ResetSec != 3300 ||
@@ -54,7 +51,7 @@ func TestPreviewFramesMatchTheStreamsRowsAndResetTrust(t *testing.T) {
 
 	// Manual builds the rows from the pinned provider alone.
 	pinned := previews[0].Pinned
-	if pinned == nil || len(pinned.ProviderSlots) != 1 || pinned.ProviderSlots[0].ID != "codex" || pinned.ProviderSlots[0].ResetSec != 3300 {
+	if len(pinned.ProviderSlots) != 1 || pinned.ProviderSlots[0].ID != "codex" || pinned.ProviderSlots[0].ResetSec != 3300 {
 		t.Fatalf("Pinned rows: %+v", pinned)
 	}
 	// Building one frame must not change the other's windows.
@@ -79,15 +76,25 @@ func TestPreviewFramesKeepUnavailableProvidersUnavailable(t *testing.T) {
 	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
 	stale := previewSnapshot("stale", now, protocol.UsageWindow{ID: "session", Label: "Session", Percent: 10, ResetSec: 600})
 	stale.Stale = true
-	unavailable := previewSnapshot("unavailable", now, protocol.UsageWindow{ID: "session", Label: "Session", Percent: 10, ResetSec: 600})
-	unavailable.Frame.UsageUnavailable = true
+	// An enabled provider with no reading yet: the collector's failed-read
+	// snapshot, which carries no values at all.
+	noReading := ProviderUsageSnapshot{Provider: "gemini", NoReading: true, Frame: protocol.Frame{Provider: "gemini", Label: "Gemini", UsageUnavailable: true}}
 	live := previewSnapshot("codex", now, protocol.UsageWindow{ID: "session", Label: "Session", Percent: 10, ResetSec: 600})
 
-	previews := PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{stale, unavailable, live}}, true, now)
+	previews := PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{stale, noReading, live}}, true, now)
+	if len(previews) != 3 {
+		t.Fatalf("every provider keeps its place in the rotation: %+v", previews)
+	}
 	for _, preview := range previews[:2] {
-		if preview.Automatic != nil || preview.Pinned != nil {
-			t.Fatalf("%s must have no frame: %+v", preview.Provider, preview)
+		for _, frame := range []protocol.Frame{preview.Automatic, preview.Pinned} {
+			if !frame.UsageUnavailable || !frame.SessionUnavailable || !frame.WeeklyUnavailable || len(frame.UsageWindows) != 0 ||
+				frame.Session != 0 || frame.ResetSec != 0 {
+				t.Fatalf("%s must be the unavailable frame: %+v", preview.Provider, frame)
+			}
 		}
+	}
+	if previews[1].Automatic.Label != "Gemini" {
+		t.Fatalf("the unavailable frame keeps the provider's name: %+v", previews[1].Automatic)
 	}
 	// Their countdowns stay out of the live provider's rows too.
 	if rows := previews[2].Automatic.ProviderSlots; len(rows) != 1 || rows[0].ID != "codex" {

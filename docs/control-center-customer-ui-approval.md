@@ -8486,3 +8486,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #821 as in its own entries plus the entries merged with 9702a6ef; nothing else changes.
 - Scope: the merge of 9702a6ef and this approval record. Pull request branch #821 only, not merged, not released.
 - What's new: none — merge of 9702a6ef, no customer-visible change of its own
+
+## 2026-10-21 — #831: setup step 11 tiles show the frames the companion builds
+
+- User approval: no visible change – UI approval not needed (#831: setup step 11 tiles render the frames the companion builds instead of a TypeScript copy; same look as approved in 7200)
+- Approved customer-visible result: setup step 11 as in #821; the tiles draw the frames from GET /v1/display/preview-frames, and Automatic also rotates through an enabled provider without a reading, which shows as unavailable.
+- Scope: setup-display-previews.ts (frame synthesis removed), the tiles, control-center-app.tsx (reads the endpoint with the usage), the gallery fixtures and their tests; companion endpoint and daemon.PreviewFrames. Pull request branch only, not merged, not released.
+- What's new: none — same look, one source of truth for the frames

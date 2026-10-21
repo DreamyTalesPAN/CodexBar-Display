@@ -124,7 +124,10 @@ import { MacAppDownloadScreen } from "./setup/mac-app-download-screen";
 import { SetupWelcomeScreen } from "./setup/setup-welcome-screen";
 import { buildAiFixPrompt } from "./setup/setup-ai-prompt";
 import type { SetupConnectSteps } from "./setup/setup-connect";
-import { displayPreviewsFor } from "./setup/setup-display-previews";
+import {
+  displayPreviewsFor,
+  type PreviewFrames,
+} from "./setup/setup-display-previews";
 import {
   PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS,
   providerRowHealthState,
@@ -485,6 +488,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const firmwareUpdateInProgress = firmwareUpdateStatus?.phase === "installing";
   const themeInstallInProgress = themeInstallStatus?.phase === "installing";
   const [usage, setUsage] = useState<UsageSnapshot | null>(null);
+  const [previewFrames, setPreviewFrames] = useState<PreviewFrames | null>(null);
   const [usageError, setUsageError] = useState<ApiError | null>(null);
   const [providerSetup, setProviderSetup] = useState<ProviderSetupInfo | null>(
     null,
@@ -3424,6 +3428,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             { preserveLastError: quiet },
           );
           setUsage(payload);
+          // The frames the setup tiles draw are the ones the companion builds
+          // for the stream, read again with the usage they come from.
+          runCompanion<PreviewFrames>("/v1/display/preview-frames", undefined, {
+            preserveLastError: true,
+          })
+            .then(setPreviewFrames)
+            .catch(() => setPreviewFrames(null));
           setUsageError(null);
           setCompanionStatus("online");
           if (!quiet) {
@@ -5311,12 +5322,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     .filter((item) => item.value)
     .map((item) => item.providerId)
     .filter((id): id is string => Boolean(id));
+  // Automatic rotates over every provider switched on, also one without a
+  // reading yet, which the companion's frame shows as unavailable; only the
+  // Manual list is limited to providers that can display.
   const setupPreviews = displayPreviewsFor(
     usage,
-    displayableProviders.map((item) => ({
-      id: item.providerId,
-      label: item.label,
-    })),
+    setupProviders
+      .filter((item) => item.value)
+      .map((item) => ({ id: item.providerId, label: item.label })),
+    previewFrames,
   );
   // Step 05 keeps offering every live theme: hiding one would make the
   // device's limitation invisible. The Install is gated by the same rules the

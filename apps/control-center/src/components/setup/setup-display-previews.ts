@@ -4,6 +4,12 @@ import { formatReset } from "../usage-screen";
 import type { DisplayFrame } from "../live-vibetv-preview";
 import type { SetupDisplayModePreview } from "./setup-display-mode-screen";
 
+/** GET /v1/display/preview-frames: the frames the companion builds for the stream, per provider. */
+export type PreviewFrames = {
+  generatedAt?: string;
+  providers?: { id: string; automatic?: DisplayFrame; pinned?: DisplayFrame }[];
+};
+
 function providerWindowSlots(provider: UsageProviderInfo) {
   return (provider.windows ?? []).map((window) => ({
     id: window.id,
@@ -51,211 +57,6 @@ function providerRootResetSecs(
     : Math.max(0, provider.resetSecs ?? 0);
 }
 
-type ProviderRow = NonNullable<DisplayFrame["providerSlots"]>[number];
-
-/**
- * One provider's row from the windows /v1/usage delivered for it: its soonest
- * window reset (shifted by `shift` seconds) and the heaviest window's
- * percentage. Null when no window has a reset ahead or a readable percentage.
- * A legacy provider has no windows, so it gets no row, as on the device.
- */
-function providerRowOf(
-  provider: { id: string; label: string; usageMode?: string },
-  windows: { percent?: number; resetSecs?: number }[],
-  shift: number,
-): ProviderRow | null {
-  let soonest = 0;
-  let percent: number | undefined;
-  for (const slot of windows) {
-    const slotPercent = slot.percent ?? Number.NaN;
-    if (!Number.isFinite(slotPercent)) {
-      continue;
-    }
-    const reset = (slot.resetSecs ?? 0) > 0 ? (slot.resetSecs ?? 0) - shift : 0;
-    if (reset > 0 && (soonest === 0 || reset < soonest)) {
-      soonest = reset;
-    }
-    // Used mode: the heaviest window. Remaining mode: the host takes the
-    // heaviest used window and flips it, which is the smallest remaining.
-    percent =
-      percent === undefined
-        ? slotPercent
-        : provider.usageMode === "remaining"
-          ? Math.min(percent, slotPercent)
-          : Math.max(percent, slotPercent);
-  }
-  if (soonest <= 0 || percent === undefined) {
-    return null;
-  }
-  return { id: provider.id, label: provider.label, percent, resetSecs: soonest };
-}
-
-/**
- * The cross-provider rows of the frame, as the host builds them
- * (providerResetSlots in companion/internal/daemon/selection.go): every
- * provider that is neither stale nor unavailable, in the order they are
- * switched on, gives one row with its soonest window reset and the heaviest
- * window's percentage, at most two rows. Each reset is first expressed as of
- * the shown frame's own reading time, because buildFrameData later counts the
- * whole frame down from exactly that instant. Everything is read from what the
- * usage service delivered for each provider; a provider without a reset
- * deadline gets no row, as on the device.
- */
-export function providerSlotsFor(
-  providers: UsageProviderInfo[],
-  basisAt: string | undefined,
-): NonNullable<DisplayFrame["providerSlots"]> {
-  const basis = basisAt ? new Date(basisAt).getTime() : Number.NaN;
-  const rows: NonNullable<DisplayFrame["providerSlots"]> = [];
-  for (const provider of providers) {
-    if (provider.stale === true || provider.usageUnavailable === true) {
-      continue;
-    }
-    const collected = provider.collectedAt
-      ? new Date(provider.collectedAt).getTime()
-      : Number.NaN;
-    const shift =
-      Number.isNaN(basis) || Number.isNaN(collected)
-        ? 0
-        : Math.floor((basis - collected) / 1000);
-    const row = providerRowOf(provider, providerWindowSlots(provider), shift);
-    if (!row) {
-      continue;
-    }
-    rows.push(row);
-    if (rows.length === 2) {
-      break;
-    }
-  }
-  return rows;
-}
-
-/**
- * The freshness fields the host stamps on every frame it sends, mirroring
- * Frame.ApplyResetTrust (companion/internal/protocol/protocol.go).
- *
- * /v1/usage does not deliver resetTrust, resetTrustSecs or resetSource -- the
- * host only computes them when it sends a frame -- so they are derived here the
- * way ApplyResetTrust does for a frame that is fresh (sourceLive) and leaves at
- * the instant its data was read (age 0): the full trust horizon (5 h), the
- * provider key as source (ResetSourceKey with no window; the device only checks
- * that a source exists), and "live" -- with or without a deadline, so an idle
- * account (nothing used, no reset) is a measured idle account, not unavailable.
- * Without a reading time or an attributable source the host marks the frame
- * "stale" and clears every countdown, and so does this.
- */
-const RESET_TRUST_HORIZON_SECS = 5 * 3600;
-
-function resetSourceKey(provider: string): string {
-  const source = provider.trim().toLowerCase();
-  return source.length > 0 && source.length <= 31 && /^[a-z0-9_:.-]+$/.test(source)
-    ? source
-    : "";
-}
-
-/**
- * Mirrors hasResetCountdown / reanchorResetSec: whether any deadline of the
- * frame (root, windows, provider rows) is still ahead after `age` seconds.
- */
-function hasCountdown(frame: DisplayFrame, age: number): boolean {
-  return [frame, ...(frame.usageWindows ?? []), ...(frame.providerSlots ?? [])].some(
-    (carrier) => (carrier.resetSecs ?? 0) > age,
-  );
-}
-
-/**
- * Classifies a frame's countdowns as of `now`, exported so a tile re-runs it on
- * every clock tick: the device does this each time it draws, so an expired
- * deadline or an expired trust horizon turns the frame stale while the screen
- * is open. A frame that is already stale stays stale (its deadlines are gone,
- * so there is nothing left that could make it live again).
- */
-export function withResetTrust(
-  frame: DisplayFrame,
-  collectedAt: string | undefined,
-  now: Date,
-): DisplayFrame {
-  if (frame.resetTrust === "stale") {
-    return frame;
-  }
-  const basisKnown = Boolean(collectedAt) && !Number.isNaN(new Date(collectedAt!).getTime());
-  const source = resetSourceKey(frame.provider ?? "");
-  // ApplyResetTrust: a countdown that was positive when read and has run out by
-  // the time the frame leaves turns the frame stale -- "Reset unavailable" on
-  // the device -- instead of a measured idle account (`hadCountdown`).
-  const age = secondsSince(collectedAt, now);
-  const ranOut = hasCountdown(frame, 0) && !hasCountdown(frame, age);
-  // ApplyResetTrust: a basis older than the trust horizon (5 h) is stale too,
-  // whatever deadline it still carries (`ResetTrustSec <= 0`).
-  const trustExpired = age >= RESET_TRUST_HORIZON_SECS;
-  if (!basisKnown || !source || ranOut || trustExpired) {
-    return {
-      ...frame,
-      resetSecs: 0,
-      usageWindows: frame.usageWindows?.map((window) => ({ ...window, resetSecs: 0 })),
-      providerSlots: frame.providerSlots?.map((slot) => ({ ...slot, resetSecs: 0 })),
-      resetTrust: "stale",
-      resetTrustSecs: 0,
-      resetSource: source,
-    };
-  }
-  return {
-    ...frame,
-    resetTrust: "live",
-    resetTrustSecs: RESET_TRUST_HORIZON_SECS,
-    resetSource: source,
-  };
-}
-
-/**
- * The frame the theme renderer draws for one provider, built only from what
- * the usage service delivered for it. Nothing is calculated here: percentages,
- * labels, reset times and the used/remaining mode are passed through as read.
- * A window the collector could not read is left out, so the renderer shows it
- * as unavailable instead of as a number; a provider with no readable window has
- * no frame at all and the tile draws a placeholder.
- */
-export function displayFrameFor(
-  provider: UsageProviderInfo,
-  tokenUsageReady = false,
-  allProviders: UsageProviderInfo[] = [provider],
-  now = new Date(),
-): DisplayFrame | null {
-  if (provider.stale === true || provider.usageUnavailable === true) {
-    return null;
-  }
-  const slots = windowSlotsOf(provider);
-  const readable = slots.filter((slot) => Number.isFinite(slot.percent));
-  if (!readable.length) {
-    return null;
-  }
-  return withResetTrust({
-    v: 1,
-    provider: provider.id,
-    label: provider.label,
-    session: provider.session,
-    weekly: provider.weekly,
-    sessionUnavailable: provider.sessionUnavailable === true,
-    weeklyUnavailable: provider.weeklyUnavailable === true,
-    resetSecs: providerRootResetSecs(provider, readable),
-    usageMode: provider.usageMode,
-    // A legacy provider has no windows: the frame keeps only its root session
-    // and weekly, and no window slot is invented for them (Codex on #821).
-    usageWindows: provider.windows?.length ? readable : [],
-    // Cross-provider rows (pv1*/pv2* in a theme), from the complete provider set.
-    providerSlots: providerSlotsFor(allProviders, provider.collectedAt),
-    // No activity here: /v1/usage's provider.activity is the collector snapshot
-    // from before the daemon applies its verdict. The verdict is the one in the
-    // frame last sent to the device (withSentActivity).
-    sessionTokens: provider.sessionTokens,
-    weekTokens: provider.weekTokens,
-    totalTokens: provider.totalTokens,
-    // /v1/usage leaves zero token totals out once the token history is read;
-    // the snapshot's readiness says those zeros are known (Codex on #821).
-    ...(tokenUsageReady ? { tokenTotalsKnown: true } : {}),
-  }, provider.collectedAt, now);
-}
-
 /**
  * Turns a provider's usage into what the display-mode panel draws.
  *
@@ -266,17 +67,13 @@ export function displayFrameFor(
 export function displayPreviewFor(
   provider: UsageProviderInfo | undefined,
   now = new Date(),
-  tokenUsageReady = false,
-  allProviders?: UsageProviderInfo[],
 ): SetupDisplayModePreview | null {
   if (!provider) {
     return null;
   }
   const unavailable = provider.stale === true || provider.usageUnavailable === true;
-  const frame = displayFrameFor(provider, tokenUsageReady, allProviders, now);
   return {
     providerLabel: provider.label,
-    ...(frame ? { frame, frameAt: provider.collectedAt } : {}),
     resetLabel: unavailable
       ? null
       : formatReset(
@@ -310,47 +107,37 @@ export function displayPreviewFor(
 export function displayPreviewsFor(
   usage: UsageSnapshot | null,
   providers: { id: string; label: string }[],
+  previewFrames: PreviewFrames | null = null,
 ): SetupDisplayModePreview[] {
   const reported = new Map(
     (usage?.providers || []).map((provider) => [provider.id, provider]),
   );
-  // The complete set the host builds its provider rows from: the providers
-  // switched on, in that order, as far as the usage service has read them.
-  const complete = providers
-    .map((provider) => reported.get(provider.id))
-    .filter((reading): reading is UsageProviderInfo => reading !== undefined);
-  return providers.map(
-    (provider) =>
-      displayPreviewFor(
-        reported.get(provider.id),
-        new Date(),
-        usage?.tokenUsageReady === true,
-        complete,
-      ) ?? {
-        providerLabel: provider.label,
-        resetLabel: null,
-        windows: [],
-      },
+  const framed = new Map(
+    (previewFrames?.providers || []).map((entry) => [entry.id, entry]),
   );
+  return providers.map((provider) => {
+    const preview = displayPreviewFor(reported.get(provider.id)) ?? {
+      providerLabel: provider.label,
+      resetLabel: null,
+      windows: [],
+    };
+    const entry = framed.get(provider.id);
+    // The frames are the companion's, as the host would send them; a provider
+    // it built none for stays a placeholder.
+    return entry?.automatic
+      ? {
+          ...preview,
+          frame: entry.automatic,
+          pinnedFrame: entry.pinned,
+          frameAt: previewFrames?.generatedAt,
+        }
+      : preview;
+  });
 }
 
-/**
- * The Manual tile's frame: its rotation frame with only the pinned provider's
- * own row. The host's fixed mode filters the providers to the pinned one before
- * it builds the rows (companion/internal/daemon/selection.go), and the frame's
- * basis is that provider's own reading, so the shift is zero.
- */
+/** The Manual tile's preview: the frame the host builds with only this provider pinned. */
 export function pinnedPreview(preview: SetupDisplayModePreview): SetupDisplayModePreview {
-  const frame = preview.frame;
-  if (!frame) {
-    return preview;
-  }
-  const row = providerRowOf(
-    { id: frame.provider ?? "", label: frame.label ?? "", usageMode: frame.usageMode },
-    frame.usageWindows ?? [],
-    0,
-  );
-  return { ...preview, frame: { ...frame, providerSlots: row ? [row] : [] } };
+  return { ...preview, frame: preview.pinnedFrame };
 }
 
 /**
@@ -372,12 +159,15 @@ export function withSentActivity(
   // The verdict carries its TTL and the time VibeTV got it, so the tile can let
   // it run out the way the device does (withActivityExpiry).
   const activityTtlSecs = sent.frame?.activityTtlSecs;
+  const withVerdict = (frame?: DisplayFrame) =>
+    frame && { ...frame, activity, activityTtlSecs };
   return previews.map((preview) =>
     preview.frame?.provider === provider
       ? {
           ...preview,
           activityAt: sent.savedAt,
-          frame: { ...preview.frame, activity, activityTtlSecs },
+          frame: withVerdict(preview.frame),
+          pinnedFrame: withVerdict(preview.pinnedFrame),
         }
       : preview,
   );
