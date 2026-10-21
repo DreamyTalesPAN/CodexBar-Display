@@ -185,7 +185,7 @@ function startWindow(themes: unknown[] = []) {
         await companion.holdRead;
         return jsonResponse({ ok: true, items: [found] });
       }
-      if (url.endsWith("/v1/preferences?section=providers")) {
+      if (url.includes("/v1/preferences?section=providers")) {
         return jsonResponse({ ok: true, items: companion.providers });
       }
       if (url.endsWith(`/v1/preferences/${rotation.id}`) && method === "PATCH") {

@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -127,8 +129,6 @@ func TestResetSourceKeyFollowsTheFirmwareIdentifierRules(t *testing.T) {
 		"invalid character drops the identity":       {"claude", "w@x", ""},
 		"space inside drops the identity":            {"claude", "w x", ""},
 		"31 bytes is the largest identity":           {provider25, "abcde", provider25 + ":abcde"},
-		"32 bytes drops the identity":                {provider25, "abcdef", ""},
-		"provider alone over 31 bytes":               {strings.Repeat("a", 32), "", ""},
 	}
 	for name, tc := range cases {
 		if got := ResetSourceKey(tc.provider, tc.window); got != tc.want {
@@ -181,16 +181,59 @@ func TestMarshalNormalizedLineWritesTheFrameAsGiven(t *testing.T) {
 	}
 }
 
-func TestBugResetSourceKeyOverflowKeepsWindowIdentity(t *testing.T) {
-	t.Skip("bug: ResetSourceKey returns \"\" for a provider:window key over 31 bytes. " +
-		"ApplyResetTrust then fills in the bare provider key, so the windows of one long-named provider share a countdown identity. " +
-		"protocol/PROTOCOL.md says resetSource is provider:window and a changed value drops the deadline.")
-
+func TestResetSourceKeyKeepsWindowIdentityPastThe31ByteLimit(t *testing.T) {
+	// Before: a provider:window key over 31 bytes became "", and ApplyResetTrust
+	// then fell back to the bare provider key, so both windows shared a countdown.
 	const provider = "claude-enterprise-team-plan-x"
 	primary := ResetSourceKey(provider, "primary")
 	secondary := ResetSourceKey(provider, "secondary")
 	if primary == "" || secondary == "" || primary == secondary || primary == ResetSourceKey(provider, "") {
 		t.Fatalf("windows of one provider need distinct identities: %q %q", primary, secondary)
+	}
+	for _, key := range []string{primary, secondary} {
+		if len(key) > 31 || !regexp.MustCompile(`^[a-z0-9_.:-]+$`).MatchString(key) {
+			t.Fatalf("key %q must fit the device identifier rules (31 bytes, [a-z0-9_.:-])", key)
+		}
+	}
+	if again := ResetSourceKey(provider, "primary"); again != primary {
+		t.Fatalf("the same identity must keep its key: %q then %q", primary, again)
+	}
+}
+
+func TestResetSourceKeyLeavesEveryFittingIdentityUnchanged(t *testing.T) {
+	// Every provider id in the engine fixtures, with the window ids the engine
+	// emits (parse.go: "primary", "secondary") and no window. None of them may change.
+	files, err := filepath.Glob("../codexbar/testdata/cli/*/*.json")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("engine fixtures not found: %v", err)
+	}
+	providerField := regexp.MustCompile(`"provider"\s*:\s*"([^"]*)"`)
+	providers := map[string]bool{}
+	for _, file := range files {
+		body, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range providerField.FindAllSubmatch(body, -1) {
+			providers[string(m[1])] = true
+		}
+	}
+	if len(providers) < 10 {
+		t.Fatalf("expected many provider ids in the fixtures, found %d", len(providers))
+	}
+	for provider := range providers {
+		for _, window := range []string{"", "primary", "secondary"} {
+			want := strings.ToLower(strings.TrimSpace(provider))
+			if window != "" {
+				want += ":" + window
+			}
+			if len(want) > 31 {
+				t.Fatalf("fixture identity %q does not fit; this test covers fitting ids only", want)
+			}
+			if got := ResetSourceKey(provider, window); got != want {
+				t.Errorf("ResetSourceKey(%q, %q) = %q, want unchanged %q", provider, window, got, want)
+			}
+		}
 	}
 }
 

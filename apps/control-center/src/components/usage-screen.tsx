@@ -198,7 +198,11 @@ export function UsageScreen({
             windowsHost={windowsHost}
           />
         ) : // The notice is a dialog over this page (below), not a box in it.
-        tokenHistoryUnavailable ? null : tokenUsageReady && shownProviders.length > 0 ? (
+        tokenHistoryUnavailable ? (
+          <div className="mb-6 flex justify-end">
+            <UsageRefreshButton onRefresh={onRefresh} refreshing={refreshing || refreshPending} />
+          </div>
+        ) : tokenUsageReady && shownProviders.length > 0 ? (
           <TokenUsageOverTimePanel
             onRefresh={onRefresh}
             providers={shownProviders}
@@ -414,6 +418,29 @@ function TokenUsageSkeleton({ providerCount }: { providerCount: number }) {
   );
 }
 
+function UsageRefreshButton({
+  onRefresh,
+  refreshing,
+}: {
+  onRefresh?: () => void;
+  refreshing: boolean;
+}) {
+  return (
+    <Button
+      aria-busy={refreshing}
+      aria-label="Refresh"
+      className="size-8 shrink-0 text-muted-foreground"
+      disabled={refreshing || !onRefresh}
+      onClick={() => onRefresh?.()}
+      size="icon"
+      type="button"
+      variant="ghost"
+    >
+      {refreshing ? <Spinner /> : <RefreshCw aria-hidden />}
+    </Button>
+  );
+}
+
 function TokenUsageOverTimePanel({
   onRefresh,
   providers,
@@ -471,18 +498,7 @@ function TokenUsageOverTimePanel({
               </Badge>
             ) : null}
           </div>
-          <Button
-            aria-busy={refreshing}
-            aria-label="Refresh"
-            className="size-8 shrink-0 text-muted-foreground"
-            disabled={refreshing || !onRefresh}
-            onClick={() => onRefresh?.()}
-            size="icon"
-            type="button"
-            variant="ghost"
-          >
-            {refreshing ? <Spinner /> : <RefreshCw aria-hidden />}
-          </Button>
+          <UsageRefreshButton onRefresh={onRefresh} refreshing={refreshing} />
         </div>
         <div className="mt-1.5">
           <p className="text-hero break-words font-semibold text-foreground tabular-nums">
@@ -1207,12 +1223,16 @@ export function buildProviderTokenChart(
     }
   });
 
-  // The token history lists only days with tokens. A day it leaves out is a
-  // day without tokens, not a hole in the data: drawn as a hole it broke a
-  // provider's line into pieces and squeezed the time axis (#579).
+  // Only a settled history establishes that a missing day had no tokens
+  // (#579). While counting, leave those days unknown, including internal gaps.
+  const settledZeros = Object.fromEntries(
+    providerHistories.flatMap(({ provider }, index) =>
+      provider.costSettled === true ? [[series[index].dataKey, 0]] : [],
+    ),
+  );
   const days = [...rowsByDay.keys()].sort();
   const chartData = (calendarDays(days[0], days[days.length - 1]) ?? days).map((day) => ({
-    ...Object.fromEntries(series.map((item) => [item.dataKey, 0])),
+    ...settledZeros,
     ...(rowsByDay.get(day) || { day }),
   }));
   const chartConfig: ChartConfig = Object.fromEntries(
