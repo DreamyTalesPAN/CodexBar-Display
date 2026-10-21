@@ -1908,6 +1908,57 @@ inline bool CompiledPrimitiveIsAnimated(
   return false;
 }
 
+// Mirrors displayedResetFooter in the preview. Only a standalone first-limit
+// countdown below the displayed usage rows is a shared footer.
+inline bool RenderDisplayedResetFooter(const CompiledThemeSpec& scene,
+    const CompiledPrimitive& primitive, const FrameData& frame, char* out, size_t outSize) {
+  const char* raw = SafeText(primitive.text);
+  const char* token = nullptr;
+  if (std::strncmp(raw, "Reset in ", 9) == 0) token = raw + 9;
+  if (std::strncmp(raw, "Resets in ", 10) == 0) token = raw + 10;
+  const bool binding = StringEqualsAny(primitive.binding, "usageSlot1Reset", "us1r", "usage.0.reset");
+  if (primitive.binding != nullptr && !binding) return false;
+  if (!binding && (token == nullptr ||
+      (std::strcmp(token, "{usageSlot1Reset}") != 0 &&
+       std::strcmp(token, "{us1r}") != 0 &&
+       std::strcmp(token, "{usage.0.reset}") != 0))) return false;
+  bool displayed[kMaxThemeSpecUsageWindows] = {};
+  for (size_t i = 0; i < scene.primitiveCount; ++i) {
+    const CompiledPrimitive& row = scene.primitives[i];
+    if (&row == &primitive || row.usageSlot == 0 ||
+        !UsageWindowOwnerAvailableFor(frame, row.usageSlot - 1)) continue;
+    if (row.y >= primitive.y) return false;
+    displayed[row.usageSlot - 1] = true;
+  }
+  bool sawDisplayed = false;
+  bool sawAvailable = false;
+  bool allIdle = true;
+  for (size_t i = 0; i < kMaxThemeSpecUsageWindows; ++i) {
+    if (!displayed[i]) continue;
+    sawDisplayed = true;
+    UsageWindowData window = UsageWindowFor(frame, static_cast<int>(i));
+    if (!window.available) window = LegacyUsageSlotFor(frame, static_cast<int>(i));
+    if (!window.available) continue;
+    sawAvailable = true;
+    allIdle = allIdle && ResetSecsAreIdle(window.resetSecs);
+    if (window.resetSecs <= 0 || frame.usageUnavailable) continue;
+    char duration[32] = {};
+    FormatDuration(window.resetSecs, duration, sizeof(duration));
+    std::snprintf(out, outSize, "%s resets in %s", SafeText(window.label), duration);
+    return true;
+  }
+  if (!sawDisplayed) return false;
+  std::snprintf(out, outSize, "%s", ResetTextFor(sawAvailable && allIdle && !frame.usageUnavailable));
+  return true;
+}
+
+inline void RenderCompiledText(const CompiledThemeSpec& scene,
+    const CompiledPrimitive& primitive, const FrameData& frame, char* out, size_t outSize) {
+  if (RenderDisplayedResetFooter(scene, primitive, frame, out, outSize)) return;
+  if (primitive.binding != nullptr) BoundValue(primitive.binding, frame, out, outSize);
+  else RenderTextTemplate(primitive.text, frame, out, outSize);
+}
+
 inline bool CompiledPrimitiveBounds(
     const CompiledThemeSpec& scene,
     const CompiledPrimitive& primitive,
@@ -1957,11 +2008,7 @@ inline bool CompiledPrimitiveBounds(
       }
       if (bounds.width <= 0) {
         char text[128] = {0};
-        if (primitive.binding != nullptr) {
-          BoundValue(primitive.binding, frame, text, sizeof(text));
-        } else {
-          RenderTextTemplate(primitive.text, frame, text, sizeof(text));
-        }
+        RenderCompiledText(scene, primitive, frame, text, sizeof(text));
         bounds.width = ApproxTextWidth(text, primitive.size);
       }
     }
@@ -2014,11 +2061,7 @@ inline bool DrawCompiledPrimitive(
       return false;
     }
     char text[128] = {0};
-    if (primitive.binding != nullptr) {
-      BoundValue(primitive.binding, frame, text, sizeof(text));
-    } else {
-      RenderTextTemplate(primitive.text, frame, text, sizeof(text));
-    }
+    RenderCompiledText(scene, primitive, frame, text, sizeof(text));
     cmd.text = text;
     cmd.fg = primitive.color;
     cmd.bg = primitive.bg;

@@ -564,6 +564,46 @@ void testUsageUnavailableKeepsThemeAndProgress() {
   TEST_ASSERT_EQUAL_STRING("Reset unavailable", reset);
 }
 
+void testFooterUsesFirstDisplayedReset() {
+  FrameData frame;
+  frame.usageSlot1Label = "Session";
+  frame.usageSlot1ResetSecs = kResetSecsIdle;
+  frame.usageSlot1Available = true;
+  frame.usageSlot2Label = "Weekly";
+  frame.usageSlot2ResetSecs = 3 * 86400 + 3600;
+  frame.usageSlot2Available = true;
+  const char* spec = R"JSON({"v":1,"id":"footer","rev":1,"p":[
+    {"t":"tx","y":30,"sl":1,"v":"{usageSlot1Label}"},
+    {"t":"tx","y":30,"sl":2,"v":"{usageSlot2Label}"},
+    {"t":"tx","y":204,"sl":1,"v":"Reset in {usageSlot1Reset}"}
+  ]})JSON";
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  TEST_ASSERT_EQUAL_STRING("Weekly resets in 3d 1h", sink.commands.back().text.c_str());
+  frame.usageSlot1ResetSecs = 360000;
+  sink.commands.clear();
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  TEST_ASSERT_EQUAL_STRING("Session resets in 4d 4h", sink.commands.back().text.c_str());
+  frame.usageSlot1ResetSecs = kResetSecsIdle;
+  frame.usageSlot2ResetSecs = 0; // expired, not idle
+  sink.commands.clear();
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", sink.commands.back().text.c_str());
+  frame.usageSlot2ResetSecs = kResetSecsIdle;
+  sink.commands.clear();
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  TEST_ASSERT_EQUAL_STRING("No active session", sink.commands.back().text.c_str());
+  frame.usageSlot2ResetSecs = 265307;
+  const char* cozy = R"JSON({"v":1,"id":"cozy-meadow","rev":4,"p":[
+    {"t":"tx","y":126,"sl":1,"b":"us1l"},
+    {"t":"p","y":166,"w":160,"h":14,"sl":1,"b":"us1p"},
+    {"t":"tx","y":193,"sl":1,"b":"us1r"}
+  ]})JSON";
+  sink.commands.clear();
+  TEST_ASSERT_TRUE(renderSpec(cozy, frame, sink));
+  TEST_ASSERT_EQUAL_STRING("No active session", sink.commands.back().text.c_str());
+}
+
 // A customer received a VibeTV showing "Resets in Reset unavailable" on the
 // Claude Creature theme: Session at 0% with no active Claude session, so
 // Anthropic sent no session deadline, and the theme's hard-coded "Resets in "
@@ -4457,6 +4497,7 @@ int main() {
   RUN_TEST(testConsumeFrameLineTracksTokenTotalPresence);
   RUN_TEST(testTokenAvailabilityFlipRepaintsTokenBindings);
   RUN_TEST(testUsageUnavailableKeepsThemeAndProgress);
+  RUN_TEST(testFooterUsesFirstDisplayedReset);
   RUN_TEST(testIdleSlotCountdownCollapsesInsteadOfDoublingThePrefix);
   RUN_TEST(testIdleCountdownCollapsesForCompactResetAliases);
   RUN_TEST(testStaleCountdownKeepsTheUnavailableWordingWhileIdleDoesNot);
