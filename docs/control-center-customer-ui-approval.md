@@ -8988,3 +8988,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #783 as in its own entries plus the entries merged with 467fd7fb; nothing else changes.
 - Scope: the merge of 467fd7fb and this approval record. Pull request branch #783 only, not merged, not released.
 - What's new: none — merge of 467fd7fb, no customer-visible change of its own
+
+## 2026-10-21 — #783: loading skeletons shimmer softly (#598 Variante B)
+
+- User approval: pending — loading skeletons (Usage head, chart and provider cards; also other skeletons in the app) shimmer softly right to left instead of pulsing; flat grey with reduced motion. Paul picked Claude Design page "Usage-Skeleton und Two Limits - Runde 21.10", frame "#598 Usage-Skeleton · Variante B – sanftes Schimmern"; Paul sees it in the next build
+- Approved customer-visible result: #783 as in its own entries; loading skeletons get a soft glint moving right to left instead of an opacity pulse, and flat grey under reduced motion. Same sizes, layout and text.
+- Scope: the shared Skeleton primitive and its keyframes in globals.css; the usage-screen skeleton loses its redundant reduced-motion classes. Pull request branch only, not merged, not released.
+- What's new: none — a restyle of the loading blocks, no feature to announce; no new entry in whats-new.ts

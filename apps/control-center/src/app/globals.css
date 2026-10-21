@@ -136,6 +136,26 @@ body {
   }
 }
 
+@keyframes vibetv-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* Loading skeletons: flat grey under reduced motion, a soft glint that moves
+   right to left otherwise. */
+.vibetv-skeleton {
+  background: rgba(27, 27, 27, 0.09);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .vibetv-skeleton {
+    background: linear-gradient(90deg, rgba(27, 27, 27, 0.07), rgba(27, 27, 27, 0.15), rgba(27, 27, 27, 0.07));
+    background-size: 200% 100%;
+    animation: vibetv-shimmer 1.6s ease-in-out infinite;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
