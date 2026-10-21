@@ -16444,3 +16444,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve this feature together with the existing build9 Settings and three equal display cards.
 - Scope: Integration merge preserving both approval histories.
 - What's new: none — integration only.
+## 2026-10-21 — #821: fit display previews in one row above Continue
+
+- User approval: pending — Paul asked on 2026-10-21 22:10 for the previews always in one row and Continue always fully visible; result not yet seen by him
+- Approved customer-visible result: Display mode uses the available content width, keeps its mode cards in one row and shares the largest whole 240px preview scale that fits the measured width and remaining height above Continue; when native size cannot fit, previews use the largest fitting whole CSS-pixel size below 240px. This branch currently contains Automatic and Manual only; the same sizing applies to any additional card without a special case. macOS currently declares no minimum window size, so a window smaller than the text and controls themselves cannot fit without scrolling.
+- Scope: `apps/control-center/src/components/setup/setup-display-mode-screen.tsx`, `apps/control-center/src/components/setup/setup-display-theme-tiles.tsx`, `apps/control-center/src/components/setup/setup-wizard-screen.tsx`, `apps/control-center/src/components/setup/setup-display-size.ts`, `apps/control-center/src/components/setup/setup-display-size.test.ts`, `apps/control-center/src/components/setup/setup-display-theme-carousel.test.tsx`; no text changes or hardware writes.
+- What's new: none — correct the requested setup layout before customer approval.
+
+
+## 2026-10-21 — build9: refresh #821 for 7205
+
+- User approval: pending — integrate claude/setup11-live-theme-tiles at 14e785580757 into build 7205.
+- Approved customer-visible result: Preserve this feature together with the existing build9 Settings and three equal display cards.
+- Scope: Integration merge preserving both approval histories.
+- What's new: none — integration only.
