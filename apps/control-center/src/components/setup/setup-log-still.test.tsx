@@ -2,6 +2,8 @@
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SetupLog, type SetupLogLine } from "./setup-log";
+import { connectLogLines } from "./setup-connect-log";
+import { SetupWelcomeScreen } from "./setup-welcome-screen";
 
 const STILL = /> Still /;
 
@@ -274,5 +276,61 @@ describe("SetupLog while a step runs long", () => {
     advance(8000);
 
     expect(stillRows(container)).toHaveLength(3);
+  });
+
+  it("stops touching the log once the cap is reached, so a scrolled-up customer is not pulled down", () => {
+    const scrollSet = vi.spyOn(Element.prototype, "scrollTop", "set");
+    render(<SetupLog lines={running} running />);
+    advance(8000 * 5);
+
+    scrollSet.mockClear();
+    advance(8000 * 3);
+
+    expect(scrollSet).not.toHaveBeenCalled();
+    scrollSet.mockRestore();
+  });
+
+  it("gives a completed connection no Still line while the snapshot is awaited", () => {
+    const { container } = render(
+      <SetupLog
+        lines={connectLogLines({ address: "192.168.178.153", phase: "done" })}
+        running
+      />,
+    );
+    advance(60000);
+    expect(stillRows(container)).toEqual([]);
+  });
+
+  it("gives a completed firmware update no Still line while the snapshot is awaited", () => {
+    const { container } = render(
+      <SetupLog
+        lines={connectLogLines({
+          address: "192.168.178.153",
+          phase: "done",
+          firmwareFrom: "1.0.55",
+          firmwareTo: "1.0.56",
+        })}
+        running
+      />,
+    );
+    advance(60000);
+    expect(stillRows(container)).toEqual([]);
+  });
+
+  it("gives the welcome log a Still line only while the device search runs", () => {
+    const lines: SetupLogLine[] = [
+      { id: "device", text: "looking for your VibeTV" },
+    ];
+    const { container, rerender } = render(
+      <SetupWelcomeScreen lines={lines} searching />,
+    );
+    advance(8000);
+    expect(stillRows(container)).toEqual([
+      "> Still looking for your VibeTV – hang tight.",
+    ]);
+
+    rerender(<SetupWelcomeScreen lines={lines} searching={false} />);
+    advance(60000);
+    expect(stillRows(container)).toHaveLength(1);
   });
 });

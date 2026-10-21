@@ -8130,3 +8130,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #813 as in its own entries plus the entries merged with e3503bda; nothing else changes.
 - Scope: the merge of e3503bda and this approval record. Pull request branch #813 only, not merged, not released.
 - What's new: none — merge of e3503bda, no customer-visible change of its own
+
+## 2026-10-21 — #813: Still lines only while a step is really running
+
+- User approval: no visible change – UI approval not needed (#813 Codex fixes: Still lines only while a step is really running; no new wording or layout)
+- Approved customer-visible result: no new wording or layout; the log drops wrong "Still …" lines after a finished step or a closed device search, and no longer pulls a scrolled-up log back to the bottom at the five-line cap.
+- Scope: apps/control-center setup log and welcome screen, with the wizard passing the device search state. Pull request branch #813 only, not merged, not released.
+- What's new: none — removes wrong "Still …" lines and a scroll pull, no new wording or layout

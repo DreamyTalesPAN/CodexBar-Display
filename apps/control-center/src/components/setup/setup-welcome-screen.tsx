@@ -8,6 +8,8 @@ import { SetupWizardScreen } from "./setup-wizard-screen";
 
 type SetupWelcomeScreenProps = {
   lines: SetupLogLine[];
+  /** Whether the WiFi search is still running; its log says so only then. */
+  searching?: boolean;
   aiFixPrompt?: () => string;
   onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
   /** The app runs on Windows; the Help menu words its outcomes for it. */
@@ -28,6 +30,7 @@ type SetupWelcomeScreenProps = {
  */
 export function SetupWelcomeScreen({
   lines,
+  searching = true,
   aiFixPrompt,
   onCreateSupportReport,
   windowsHost,
@@ -44,7 +47,7 @@ export function SetupWelcomeScreen({
         Welcome to
       </p>
       <ControlCenterBrand variant="hero" />
-      <SetupLog className="mt-3" lines={lines} running />
+      <SetupLog className="mt-3" lines={lines} running={searching} />
       {onEnterAddressManually ? (
         <Button
           className="text-foreground"
