@@ -112,8 +112,10 @@ export function displayPreviewsFor(
   const reported = new Map(
     (usage?.providers || []).map((provider) => [provider.id, provider]),
   );
+  // The frames come from the usage they were read with: without usage they
+  // are gone too, so a provider whose reading disappeared cannot keep old values.
   const framed = new Map(
-    (previewFrames?.providers || []).map((entry) => [entry.id, entry]),
+    (usage ? previewFrames?.providers || [] : []).map((entry) => [entry.id, entry]),
   );
   return providers.map((provider) => {
     const preview = displayPreviewFor(reported.get(provider.id)) ?? {
@@ -123,8 +125,9 @@ export function displayPreviewsFor(
     };
     const entry = framed.get(provider.id);
     // The frames are the companion's, as the host would send them; a provider
-    // it built none for stays a placeholder.
-    return entry?.automatic
+    // it built none for stays a placeholder. No Automatic frame means the
+    // stream does not rotate to it (rotatingPreviews).
+    return entry
       ? {
           ...preview,
           frame: entry.automatic,
@@ -133,6 +136,15 @@ export function displayPreviewsFor(
         }
       : preview;
   });
+}
+
+/**
+ * The previews Automatic rotates over: the stream drops a provider without a
+ * current reading while another has one, and the companion then builds it a
+ * pinned frame only.
+ */
+export function rotatingPreviews(previews: SetupDisplayModePreview[]): SetupDisplayModePreview[] {
+  return previews.filter((preview) => !preview.pinnedFrame || preview.frame);
 }
 
 /** The Manual tile's preview: the frame the host builds with only this provider pinned. */

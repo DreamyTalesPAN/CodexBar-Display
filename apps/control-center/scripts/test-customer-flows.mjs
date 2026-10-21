@@ -12034,6 +12034,14 @@ async function routeCompanionOnline(
       });
       return;
     }
+    if (pathname === "/v1/display/preview-frames") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true, generatedAt: "2026-06-29T10:47:46Z", providers: [] }),
+      });
+      return;
+    }
     if (pathname === "/v1/usage") {
       if (usageStatus !== 200) {
         await route.fulfill({

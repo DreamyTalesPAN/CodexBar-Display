@@ -22,7 +22,7 @@ import {
   type SetupDisplayModeTheme,
 } from "./setup-display-theme-tiles";
 import { SETUP_REVEAL } from "./setup-reveal";
-import { pinnedPreview } from "./setup-display-previews";
+import { pinnedPreview, rotatingPreviews } from "./setup-display-previews";
 import {
   SelectionCheck,
   SelectionDot,
@@ -336,7 +336,7 @@ function rotationFrames(
   automaticPreviews: SetupDisplayModePreview[] | undefined,
   providers: SetupDisplayModeProvider[],
 ): SetupDisplayModePreview[] {
-  if (automaticPreviews?.length) return automaticPreviews;
+  if (automaticPreviews?.length) return rotatingPreviews(automaticPreviews);
   if (!providers.length) return automaticPreview ? [automaticPreview] : [];
   return providers.map((provider) =>
     provider.label === automaticPreview?.providerLabel

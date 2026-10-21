@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 )
 
@@ -76,6 +77,8 @@ func TestPreviewFramesKeepUnavailableProvidersUnavailable(t *testing.T) {
 	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
 	stale := previewSnapshot("stale", now, protocol.UsageWindow{ID: "session", Label: "Session", Percent: 10, ResetSec: 600})
 	stale.Stale = true
+	// The collector cleared its values when they expired.
+	stale.Frame.UsageUnavailable = true
 	// An enabled provider with no reading yet: the collector's failed-read
 	// snapshot, which carries no values at all.
 	noReading := ProviderUsageSnapshot{Provider: "gemini", NoReading: true, Frame: protocol.Frame{Provider: "gemini", Label: "Gemini", UsageUnavailable: true}}
@@ -86,18 +89,74 @@ func TestPreviewFramesKeepUnavailableProvidersUnavailable(t *testing.T) {
 		t.Fatalf("every provider keeps its place in the rotation: %+v", previews)
 	}
 	for _, preview := range previews[:2] {
-		for _, frame := range []protocol.Frame{preview.Automatic, preview.Pinned} {
+		if preview.Automatic != nil {
+			t.Fatalf("%s is not in the stream's Automatic rotation while codex is current", preview.Provider)
+		}
+		for _, frame := range []protocol.Frame{preview.Pinned} {
 			if !frame.UsageUnavailable || !frame.SessionUnavailable || !frame.WeeklyUnavailable || len(frame.UsageWindows) != 0 ||
 				frame.Session != 0 || frame.ResetSec != 0 {
 				t.Fatalf("%s must be the unavailable frame: %+v", preview.Provider, frame)
 			}
 		}
 	}
-	if previews[1].Automatic.Label != "Gemini" {
-		t.Fatalf("the unavailable frame keeps the provider's name: %+v", previews[1].Automatic)
+	if previews[1].Pinned.Label != "Gemini" {
+		t.Fatalf("the unavailable frame keeps the provider's name: %+v", previews[1].Pinned)
 	}
 	// Their countdowns stay out of the live provider's rows too.
 	if rows := previews[2].Automatic.ProviderSlots; len(rows) != 1 || rows[0].ID != "codex" {
 		t.Fatalf("rows: %+v", rows)
+	}
+}
+
+// The stream with the same state: the preview must be the frame sendCycleResult
+// would put on the wire for the provider the selector shows.
+func streamFrameFor(t *testing.T, providers []codexbar.ParsedFrame, now time.Time, showUsed bool) protocol.Frame {
+	t.Helper()
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	deps := rotationTestDeps(0, nil)
+	deps.now = func() time.Time { return now }
+	result := selectCycleFrameFromProviders(state, providers, now, deps, nil, "", "", "", "")
+	result.frame.V = protocol.ProtocolVersionV2
+	frame := applyUsageBarsPreference(result.frame.Normalize(), showUsed)
+	return frame.ApplyResetTrust(result.resetBasisAt, now, result.usageFresh)
+}
+
+func parsedOf(snapshot ProviderUsageSnapshot) codexbar.ParsedFrame {
+	return codexbar.ParsedFrame{Frame: snapshot.Frame, Provider: snapshot.Provider, CollectedAt: snapshot.CollectedAt, Stale: snapshot.Stale}
+}
+
+func TestPreviewFramesAutomaticSkipsWhatTheStreamSkips(t *testing.T) {
+	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
+	live := previewSnapshot("codex", now, protocol.UsageWindow{ID: "session", Label: "Session", Percent: 10, ResetSec: 600})
+	stale := previewSnapshot("claude", now.Add(-time.Hour), protocol.UsageWindow{ID: "session", Label: "Session", Percent: 50, ResetSec: 600})
+	stale.Stale = true
+
+	previews := PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{stale, live}}, true, now)
+	if previews[0].Automatic != nil || previews[1].Automatic == nil {
+		t.Fatalf("only the current provider rotates: %+v", previews)
+	}
+	if previews[0].Pinned.UsageUnavailable {
+		t.Fatalf("pinning keeps the retained reading: %+v", previews[0].Pinned)
+	}
+	want := streamFrameFor(t, []codexbar.ParsedFrame{parsedOf(stale), parsedOf(live)}, now, true)
+	if got := previews[1].Automatic; got.Provider != want.Provider || got.ResetSec != want.ResetSec || len(got.ProviderSlots) != len(want.ProviderSlots) {
+		t.Fatalf("stream sends %+v, preview %+v", want, got)
+	}
+}
+
+func TestPreviewFramesRetainedReadingIsWhatTheStreamSends(t *testing.T) {
+	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
+	stale := previewSnapshot("claude", now.Add(-time.Minute), protocol.UsageWindow{ID: "session", Label: "Session", Percent: 50, ResetSec: 600})
+	stale.Stale = true
+
+	want := streamFrameFor(t, []codexbar.ParsedFrame{parsedOf(stale)}, now, true)
+	for name, got := range map[string]protocol.Frame{
+		"automatic": *PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{stale}}, true, now)[0].Automatic,
+		"pinned":    PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{stale}}, true, now)[0].Pinned,
+	} {
+		if got.UsageUnavailable || len(got.UsageWindows) != 1 || got.UsageWindows[0].Percent != 50 ||
+			got.ResetTrust != want.ResetTrust || got.ResetSec != want.ResetSec {
+			t.Fatalf("%s: stream sends %+v, preview %+v", name, want, got)
+		}
 	}
 }

@@ -5,6 +5,7 @@ import {
   displayPreviewFor,
   displayPreviewsFor,
   pinnedPreview,
+  rotatingPreviews,
   withActivityExpiry,
   withSentActivity,
 } from "./setup-display-previews";
@@ -227,5 +228,30 @@ describe("withActivityExpiry", () => {
     expect(
       withActivityExpiry({ activity: "coding", activityTtlSecs: 90 }, undefined, at(9999)).activity,
     ).toBe("coding");
+  });
+});
+
+describe("preview frames follow the usage they were read with", () => {
+  const frames = {
+    generatedAt: "2026-10-20T08:00:00Z",
+    providers: [
+      { id: "codex", automatic: { provider: "codex" }, pinned: { provider: "codex" } },
+      { id: "gemini", pinned: { provider: "gemini", usageUnavailable: true } },
+    ],
+  };
+  const providers = [
+    { id: "codex", label: "Codex" },
+    { id: "gemini", label: "Gemini" },
+  ];
+
+  it("drops the frames once usage is gone", () => {
+    const previews = displayPreviewsFor(null, providers, frames);
+    expect(previews.every((preview) => !preview.frame && !preview.pinnedFrame)).toBe(true);
+  });
+
+  it("rotates only over providers the stream rotates to, and still pins the others", () => {
+    const previews = displayPreviewsFor({ providers: [] }, providers, frames);
+    expect(rotatingPreviews(previews).map((preview) => preview.providerLabel)).toEqual(["Codex"]);
+    expect(pinnedPreview(previews[1]).frame).toEqual(frames.providers[1].pinned);
   });
 });

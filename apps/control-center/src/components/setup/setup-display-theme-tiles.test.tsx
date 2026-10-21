@@ -146,7 +146,7 @@ describe("Display mode tiles with the active theme", () => {
     };
     const fetchFrames = vi.fn(async () => ({ ok: true, status: 200, json: async () => payload }) as Response);
     const previews = displayPreviewsFor(
-      null,
+      { providers: [] },
       [{ id: "codex", label: "Codex" }, { id: "gemini", label: "Gemini" }],
       await (await fetchFrames()).json(),
     );

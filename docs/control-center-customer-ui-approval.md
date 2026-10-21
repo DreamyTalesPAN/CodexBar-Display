@@ -8493,3 +8493,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: setup step 11 as in #821; the tiles draw the frames from GET /v1/display/preview-frames, and Automatic also rotates through an enabled provider without a reading, which shows as unavailable.
 - Scope: setup-display-previews.ts (frame synthesis removed), the tiles, control-center-app.tsx (reads the endpoint with the usage), the gallery fixtures and their tests; companion endpoint and daemon.PreviewFrames. Pull request branch only, not merged, not released.
 - What's new: none — same look, one source of truth for the frames
+
+## 2026-10-21 — #858: setup step 11 tiles follow the stream exactly (Codex fixes)
+
+- User approval: no visible change – UI approval not needed (#858 Codex fixes: setup step 11 tiles follow the stream exactly: available providers only, retained last-good values, cleared when usage is unavailable)
+- Approved customer-visible result: setup step 11 as in #831; Automatic rotates only over the providers the stream rotates to, a retained reading keeps its values, and the frames disappear with the usage they came from.
+- Scope: daemon.PreviewFrames and the preview-frames response, displayPreviewsFor/rotatingPreviews and their tests, the customer-flow mock route. Pull request branch only, not merged, not released.
+- What's new: none — the tiles show what the stream sends

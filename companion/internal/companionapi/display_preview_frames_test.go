@@ -56,8 +56,9 @@ func TestDisplayPreviewFramesAreTheDaemonsFrames(t *testing.T) {
 	}
 }
 
-// Automatic rotates over every provider switched on in CodexBar, in its order,
-// also one that has no reading yet; it shows the host's unavailable frame.
+// Every provider switched on in CodexBar is listed in its order. One without a
+// reading yet has the host's unavailable frame when pinned, and no Automatic
+// frame while another provider is current, as the stream drops it there.
 func TestDisplayPreviewFramesCoverEveryEnabledProvider(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
@@ -86,7 +87,10 @@ func TestDisplayPreviewFramesCoverEveryEnabledProvider(t *testing.T) {
 	if len(got.Providers) != 2 || got.Providers[0].ID != "gemini" || got.Providers[1].ID != "codex" {
 		t.Fatalf("enabled providers in CodexBar's order: %+v", got.Providers)
 	}
-	gemini := got.Providers[0].Automatic
+	if got.Providers[0].Automatic != nil {
+		t.Fatalf("the stream never rotates to a provider without a reading: %+v", got.Providers[0].Automatic)
+	}
+	gemini := got.Providers[0].Pinned
 	if gemini.Label != "Gemini" || !gemini.UsageUnavailable || gemini.ResetSec != 0 {
 		t.Fatalf("a provider without a reading must be the unavailable frame: %+v", gemini)
 	}

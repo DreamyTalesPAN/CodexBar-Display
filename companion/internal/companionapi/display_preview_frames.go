@@ -16,18 +16,18 @@ type previewFramesResponse struct {
 }
 
 // previewFramesForItem carries one provider's frame as the host would send it
-// in Automatic and when pinned in Manual.
+// in Automatic (absent for one the stream does not rotate to) and when pinned in Manual.
 type previewFramesForItem struct {
 	ID        string         `json:"id"`
-	Automatic protocol.Frame `json:"automatic"`
+	Automatic *protocol.Frame `json:"automatic,omitempty"`
 	Pinned    protocol.Frame `json:"pinned"`
 }
 
 // handleDisplayPreviewFrames gives the setup tiles the frames the stream would
 // send, built by the daemon's own frame code from the persisted usage, so the
-// app draws them without rebuilding any host logic. Automatic rotates over
-// every provider switched on in CodexBar, in its order; one without a reading
-// yet gets the host's unavailable frame.
+// app draws them without rebuilding any host logic. Providers come in
+// CodexBar's order; one without a reading yet gets the host's unavailable frame,
+// and has no Automatic frame while another provider has a current reading.
 func (s *Server) handleDisplayPreviewFrames(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
