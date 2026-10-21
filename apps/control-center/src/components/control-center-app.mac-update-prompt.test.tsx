@@ -2,7 +2,7 @@
 //
 // Issue #566: nothing tested the automatic Mac App update prompt. In the native
 // Mac App, a newer Mac App version opens the app's own update dialog once per
-// offered version, also during setup, and never while a firmware update runs,
+// offered version, only after setup, and never while a firmware update runs,
 // in a normal browser, or in the hosted setup shell.
 import { act, cleanup, render } from "@testing-library/react";
 import { createElement } from "react";
@@ -89,6 +89,8 @@ async function openApp({
   const companion = {
     device: setupFinished ? device : notSetUp,
     latestVersion: "9.9.10",
+    releaseCheckFailed: false,
+    hostedReleaseChecks: 0,
     firmwareUpdate: firmwareUpdate as typeof installing | undefined,
   };
   // A customer who has read "What's new"; it would lie over Overview.
@@ -129,10 +131,10 @@ async function openApp({
             runtime: windows ? { os: "windows" } : undefined,
             update: {
               checkedAt: "2026-10-13T08:00:00Z",
-              status: "available",
+              status: companion.releaseCheckFailed ? "check_failed" : "available",
               latestVersion: companion.latestVersion,
               installedVersion: "9.9.9",
-              updateAvailable: true,
+              updateAvailable: !companion.releaseCheckFailed,
               message: "A newer Mac App is available.",
             },
           },
@@ -142,6 +144,7 @@ async function openApp({
       }
       // The release check the hosted shell uses instead of the Companion status.
       if (url.includes("/api/companion/latest")) {
+        companion.hostedReleaseChecks += 1;
         return jsonResponse({
           checkedAt: "2026-10-13T08:00:00Z",
           status: "available",
@@ -302,4 +305,30 @@ it("does not open the prompt again when setup ends after the wizard's own update
   await app.wait(20);
   expect(app.text()).not.toContain("Welcome to");
   expect(openMacAppUpdatePrompt).not.toHaveBeenCalled();
+});
+
+
+it("withdraws the setup offer when the runtime check fails after a hosted success", async () => {
+  const app = await openApp({ userAgent: nativeUserAgent, setupFinished: false });
+  expect(runtime.wizardProps?.macAppUpdate).toBeDefined();
+  expect(app.companion.hostedReleaseChecks).toBeGreaterThan(0);
+  const hostedChecks = app.companion.hostedReleaseChecks;
+
+  // The runtime has a new failed check; the hosted answer is still the old
+  // successful check. It must not bring the offer back while offline.
+  app.companion.releaseCheckFailed = true;
+  await app.wait(10);
+  expect(app.companion.hostedReleaseChecks).toBe(hostedChecks);
+  expect(runtime.wizardProps?.macAppUpdate).toBeUndefined();
+  expect(openMacAppUpdatePrompt).not.toHaveBeenCalled();
+
+  rememberCompletedSetup(device.deviceId);
+  app.companion.device = device;
+  await app.wait(20);
+  expect(app.text()).not.toContain("Welcome to");
+  expect(openMacAppUpdatePrompt).not.toHaveBeenCalled();
+
+  app.companion.releaseCheckFailed = false;
+  await app.wait(10);
+  expect(openMacAppUpdatePrompt).toHaveBeenCalledTimes(1);
 });

@@ -9367,3 +9367,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the existing update offer appears only after the whole scan finishes without a VibeTV; cable and manual-IP help remain reachable otherwise.
 - Scope: setup-wizard.tsx and its late-release regression tests; shared existing search state gates both update-offer paths.
 - What's new: none — correct an existing update-offer condition
+
+## 2026-10-21 — #822: honor failed runtime release checks
+
+- User approval: no visible change – UI approval not needed (bug fix: #822 stops stale hosted release success from reviving an update offer after the installed runtime reports check_failed)
+- Approved customer-visible result: an unavailable current update check withdraws the existing setup offer and does not open the native prompt after setup; a successful later check can offer the update again.
+- Scope: control-center-app.tsx release precedence and its regression test; runtime release state remains authoritative in the installed app.
+- What's new: none — fix stale update availability
