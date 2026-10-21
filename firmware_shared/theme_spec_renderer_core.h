@@ -732,8 +732,9 @@ inline const char* ResetTextFor(bool idle) {
   return idle ? kResetIdleText : kResetUnavailableText;
 }
 
-// Only a countdown is a fixed-width reset footer; the idle and unavailable
-// wordings keep the theme's shrink-fit like any other label.
+// Only a countdown that fits is a fixed-width reset footer; the idle and
+// unavailable wordings, and a countdown that fits no variant, keep the theme's
+// shrink-fit like any other label.
 inline bool IsResetCountdownText(const char* text) {
   return std::strcmp(text, kResetIdleText) != 0 &&
          std::strcmp(text, kResetUnavailableText) != 0;
@@ -1916,6 +1917,11 @@ inline bool CompiledPrimitiveIsAnimated(
   return false;
 }
 
+inline bool ResetFooterFits(Sink* sink, const CompiledPrimitive& primitive, const char* text) {
+  return sink == nullptr || primitive.maxWidth <= 0 ||
+         sink->MeasureText(text, primitive.font, primitive.size) <= primitive.maxWidth;
+}
+
 // Mirrors displayedResetFooter in the preview. Only a standalone first-limit
 // countdown below the displayed usage rows is a shared footer.
 inline bool RenderDisplayedResetFooter(const CompiledThemeSpec& scene,
@@ -1955,14 +1961,18 @@ inline bool RenderDisplayedResetFooter(const CompiledThemeSpec& scene,
     if (window.resetSecs <= 0 || frame.usageUnavailable) continue;
     char duration[32] = {};
     FormatDuration(window.resetSecs, duration, sizeof(duration));
-    std::snprintf(out, outSize, "%s resets in %s", SafeText(window.label), duration);
-    if (sink != nullptr && primitive.maxWidth > 0 &&
-        sink->MeasureText(out, primitive.font, primitive.size) > primitive.maxWidth) {
-      std::snprintf(out, outSize, "%s %s", SafeText(window.label), duration);
-      if (displayedCount == 1 &&
-          sink->MeasureText(out, primitive.font, primitive.size) > primitive.maxWidth) {
-        std::snprintf(out, outSize, "Resets %s", duration);
-      }
+    // A pair label ("Claude Weekly") is longer than the limit name ("Weekly").
+    const char* label = SafeText(window.label);
+    const char* limit = std::strchr(frame.provider, '+') != nullptr && std::strchr(label, ' ') != nullptr
+        ? std::strchr(label, ' ') + 1 : label;
+    const char* formats[] = {"%s resets in %s", "%s %s", "%s %s"};
+    const char* names[] = {label, label, limit};
+    for (size_t v = 0; v < 3; ++v) {
+      std::snprintf(out, outSize, formats[v], names[v], duration);
+      if (ResetFooterFits(sink, primitive, out)) break;
+    }
+    if (displayedCount == 1 && !ResetFooterFits(sink, primitive, out)) {
+      std::snprintf(out, outSize, "Resets %s", duration);
     }
     return true;
   }
@@ -2083,7 +2093,7 @@ inline bool DrawCompiledPrimitive(
     }
     char text[128] = {0};
     if (RenderCompiledText(scene, primitive, frame, text, sizeof(text), &sink) &&
-        IsResetCountdownText(text)) {
+        IsResetCountdownText(text) && ResetFooterFits(&sink, primitive, text)) {
       cmd.fitShrink = false;
     }
     cmd.text = text;

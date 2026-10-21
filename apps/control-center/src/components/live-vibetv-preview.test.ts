@@ -1208,6 +1208,26 @@ describe("displayed-limit reset footer", () => {
     }));
     expect(markup.replace(/<[^>]+>/g, "")).toContain("Weekly resets in 3d 1h");
   });
+  it("never clips a pair footer: pair label, then limit name, then shrink", () => {
+    const pair = buildFrameData(now.toISOString(), {
+      v: 1, provider: "claude+codex", usageMode: "remaining",
+      usageWindows: [
+        { id: "claude:weekly", label: "Claude Weekly", percent: 41, resetSecs: 262800 },
+        { id: "codex:weekly", label: "Codex Weekly", percent: 41, resetSecs: 586800 },
+      ],
+    }, now);
+    // The shipped Claude Creature and Pixel Battery footers (font 2, size 2).
+    for (const [x, w, v] of [[4, 231, "Resets in {usageSlot1Reset}"], [10, 220, "Reset in {usageSlot1Reset}"]] as const) {
+      const f = { t: "tx", x, y: 199, w, sl: 1, v, s: 2, f: 2, ft: "shrink" };
+      expect(renderTextPrimitive(f, pair, [lane1, lane2, f])).toBe("Weekly 3d 1h");
+    }
+    const tiny = { ...footer, f: 2, s: 2, w: 60, ft: "shrink" };
+    const markup = renderToStaticMarkup(createElement(ThemeSpecPreview, {
+      pack: { themeId: "mini-classic", spec: { p: [lane1, lane2, tiny] }, assets: {} },
+      status: "ready", themeId: "mini-classic", frame: pair,
+    }));
+    expect(Number([...markup.matchAll(/<text[^>]*font-size="([\d.]+)"/g)].at(-1)?.[1])).toBeLessThan(32);
+  });
   it("shrinks an idle footer without a countdown to fit its width", () => {
     const fontSize = (spec: ThemePrimitive[]) => {
       const markup = renderToStaticMarkup(createElement(ThemeSpecPreview, {

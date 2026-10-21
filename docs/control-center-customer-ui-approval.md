@@ -8356,3 +8356,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none; the rendered footer wording is unchanged.
 - Scope: Table-driven footer wording tests (countdown, idle, unavailable; used and remaining; one and two displayed limits; hidden limits) in the native firmware suite and the Control Center preview suite.
 - What's new: none — tests only.
+
+## 2026-10-22 — #894: Pair footer is never clipped
+- User approval: no visible change – UI approval not needed (bug fix: a Two-at-once footer no longer runs past the screen edge; it names the limit without the provider, then shrinks)
+- Approved customer-visible result: none beyond the fix; "Claude Weekly 3d 1h" that did not fit now reads "Weekly 3d 1h".
+- Scope: Footer wording selection in firmware and preview tries the limit name after the pair label, and a countdown that fits no variant keeps the theme's shrink-fit; native and preview tests with Claude Creature and Pixel Battery footer widths.
+- What's new: none.

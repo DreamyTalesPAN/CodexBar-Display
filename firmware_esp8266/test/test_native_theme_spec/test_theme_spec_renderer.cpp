@@ -651,7 +651,46 @@ void testFooterKeepsOriginalFontSize() {
   sink.commands.clear();
   TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
   TEST_ASSERT_EQUAL_STRING("Long weekly limit 3d 1h", sink.commands.back().text.c_str());
-  TEST_ASSERT_FALSE(sink.commands.back().fitShrink);
+  // It fits no variant at size 2, so the theme's shrink-fit keeps it unclipped.
+  TEST_ASSERT_TRUE(sink.commands.back().fitShrink);
+}
+
+void testPairFooterNeverClips() {
+  FrameData frame;
+  frame.provider = "claude+codex";
+  frame.usageSlot1Label = "Claude Weekly";
+  frame.usageSlot1ResetSecs = 262800;
+  frame.usageSlot1Available = true;
+  frame.usageSlot2Label = "Codex Weekly";
+  frame.usageSlot2ResetSecs = 586800;
+  frame.usageSlot2Available = true;
+  // The shipped Claude Creature and Pixel Battery footers (font 2, size 2).
+  const char* creature = R"JSON({"v":1,"id":"footer","rev":1,"p":[
+    {"t":"tx","y":30,"sl":1,"v":"{usageSlot1Label}"},
+    {"t":"tx","y":30,"sl":2,"v":"{usageSlot2Label}"},
+    {"t":"tx","x":4,"y":199,"w":231,"f":2,"s":2,"ft":"shrink","sl":1,"v":"Resets in {usageSlot1Reset}"}
+  ]})JSON";
+  const char* battery = R"JSON({"v":1,"id":"footer","rev":1,"p":[
+    {"t":"tx","y":30,"sl":1,"v":"{usageSlot1Label}"},
+    {"t":"tx","y":30,"sl":2,"v":"{usageSlot2Label}"},
+    {"t":"tx","x":10,"y":198,"w":220,"f":2,"s":2,"ft":"shrink","sl":1,"v":"Reset in {usageSlot1Reset}"}
+  ]})JSON";
+  for (const char* spec : {creature, battery}) {
+    RecordingSink sink;
+    TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+    TEST_ASSERT_EQUAL_STRING("Weekly 3d 1h", sink.commands.back().text.c_str());
+    TEST_ASSERT_FALSE(sink.commands.back().fitShrink);
+  }
+  // When even the limit name does not fit, the theme's shrink-fit applies.
+  const char* tiny = R"JSON({"v":1,"id":"footer","rev":1,"p":[
+    {"t":"tx","y":30,"sl":1,"v":"{usageSlot1Label}"},
+    {"t":"tx","y":30,"sl":2,"v":"{usageSlot2Label}"},
+    {"t":"tx","y":199,"w":60,"f":2,"s":2,"ft":"shrink","sl":1,"v":"Reset in {usageSlot1Reset}"}
+  ]})JSON";
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(tiny, frame, sink));
+  TEST_ASSERT_EQUAL_STRING("Weekly 3d 1h", sink.commands.back().text.c_str());
+  TEST_ASSERT_TRUE(sink.commands.back().fitShrink);
 }
 
 void testIdleFooterStillShrinksToFit() {
@@ -4626,6 +4665,7 @@ int main() {
   RUN_TEST(testUsageUnavailableKeepsThemeAndProgress);
   RUN_TEST(testFooterUsesFirstDisplayedReset);
   RUN_TEST(testFooterKeepsOriginalFontSize);
+  RUN_TEST(testPairFooterNeverClips);
   RUN_TEST(testIdleFooterStillShrinksToFit);
   RUN_TEST(testFooterWordingTable);
   RUN_TEST(testIdleSlotCountdownCollapsesInsteadOfDoublingThePrefix);
