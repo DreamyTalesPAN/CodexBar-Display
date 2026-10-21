@@ -6,15 +6,18 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 )
 
 // RescueMarkerMaxAge bounds how long a half-written VibeTV is assumed to still
-// sit on its port. After that the port name may belong to something else.
-const RescueMarkerMaxAge = 24 * time.Hour
+// sit on its port or on the port it was moved to. After that the port name may
+// belong to something else.
+const RescueMarkerMaxAge = 14 * 24 * time.Hour
 
 // RescueMarker records that a Cable rescue erased a VibeTV's firmware and did
 // not finish. The VibeTV then boot-loops without a hello, so this marker is
@@ -22,11 +25,19 @@ const RescueMarkerMaxAge = 24 * time.Hour
 type RescueMarker struct {
 	Port string `json:"port"`
 	// Board and Firmware are what the VibeTV reported before the rescue.
-	Board          string    `json:"board,omitempty"`
-	Firmware       string    `json:"firmware,omitempty"`
-	TargetFirmware string    `json:"targetFirmware"`
-	ImagePath      string    `json:"imagePath"`
-	ImageSHA256    string    `json:"imageSha256"`
+	Board          string `json:"board,omitempty"`
+	Firmware       string `json:"firmware,omitempty"`
+	TargetFirmware string `json:"targetFirmware"`
+	ImagePath      string `json:"imagePath"`
+	ImageSHA256    string `json:"imageSha256"`
+	// ChipMAC is the eFuse MAC of the ESP8266 whose firmware was erased. A
+	// resumed rescue writes only that chip, so another VibeTV on a reused port
+	// stays untouched.
+	ChipMAC string `json:"chipMac,omitempty"`
+	// Ports lists the Cable ports that were there when the write started. A
+	// VibeTV plugged into another USB socket shows up on a port missing here.
+	// Nil means unknown, and then no moved VibeTV is looked for.
+	Ports          []string  `json:"ports"`
 	WriteStartedAt time.Time `json:"writeStartedAt"`
 }
 
@@ -116,4 +127,52 @@ func ClearRescueMarker(home string) error {
 		return err
 	}
 	return nil
+}
+
+// MovedRescuePort finds the port a half-written VibeTV moved to after it was
+// plugged into another USB socket. It is the one listed port that was not there
+// when the write started, is not the marked port, and does not answer a hello.
+// No candidate, or more than one, means no port: nothing may be written then.
+// ChipDeviceID is the deviceId firmware on the marked chip reports in its hello:
+// ESP.getChipId(), which the SDK derives from the same eFuse words as ChipMAC
+// ("%08x%08x" of MAC1, MAC0), like esptool's chip_id. ok is false without a
+// readable ChipMAC.
+func ChipDeviceID(chipMAC string) (string, bool) {
+	chipMAC = strings.TrimSpace(chipMAC)
+	if len(chipMAC) != 16 {
+		return "", false
+	}
+	mac1, err1 := strconv.ParseUint(chipMAC[:8], 16, 32)
+	mac0, err0 := strconv.ParseUint(chipMAC[8:], 16, 32)
+	if err1 != nil || err0 != nil {
+		return "", false
+	}
+	id := uint32(mac0>>24) | uint32((mac1&0xFFFFFF)<<8)
+	return strconv.FormatUint(uint64(id), 10), true
+}
+
+func MovedRescuePort(marker RescueMarker, listed []string, readHello func(string) (protocol.DeviceHello, error)) (string, bool) {
+	if marker.Ports == nil {
+		return "", false
+	}
+	before := make(map[string]bool, len(marker.Ports))
+	for _, port := range marker.Ports {
+		before[strings.ToUpper(strings.TrimSpace(port))] = true
+	}
+	marked := strings.ToUpper(strings.TrimSpace(marker.Port))
+	var candidates []string
+	for _, port := range listed {
+		key := strings.ToUpper(strings.TrimSpace(port))
+		if key == "" || key == marked || before[key] {
+			continue
+		}
+		if hello, err := readHello(port); err == nil && (strings.TrimSpace(hello.DeviceID) != "" || strings.TrimSpace(hello.Firmware) != "") {
+			continue
+		}
+		candidates = append(candidates, port)
+	}
+	if len(candidates) != 1 {
+		return "", false
+	}
+	return candidates[0], true
 }
