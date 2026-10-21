@@ -40,8 +40,8 @@ export function displayPreviewFor(
           percent: unavailable ? null : window.percent ?? null,
         }))
       : [
-          { label: "Session", percent: unavailable || frame.sessionUnavailable ? null : frame.session ?? null },
-          { label: "Weekly", percent: unavailable || frame.weeklyUnavailable ? null : frame.weekly ?? null },
+          { label: "Session", percent: unavailable || frame.sessionUnavailable ? null : frame.session ?? 0 },
+          { label: "Weekly", percent: unavailable || frame.weeklyUnavailable ? null : frame.weekly ?? 0 },
         ],
   };
 }

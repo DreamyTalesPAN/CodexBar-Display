@@ -58,10 +58,21 @@ describe("displayPreviewFor", () => {
     expect(preview?.resetLabel).toBeNull();
   });
 
-  it("never turns an absent frame percentage into zero", () => {
+  it.each(["used", "remaining"])("renders omitted wire roots as measured zero in %s mode", (usageMode) => {
+    // Go's omitempty removes a real zero from the API JSON.
+    const frame = JSON.parse('{"v":2,"provider":"codex","label":"Codex","weekly":26,"resetTrust":"live"}');
+    expect(displayPreviewFor({ ...frame, usageMode })?.windows).toEqual([
+      { label: "Session", percent: 0 }, { label: "Weekly", percent: 26 },
+    ]);
+    delete frame.weekly;
+    expect(displayPreviewFor({ ...frame, usageMode })?.windows.map((window) => window.percent)).toEqual([0, 0]);
+    expect(displayPreviewFor({ ...frame, sessionUnavailable: true, weeklyUnavailable: true })?.windows.map((window) => window.percent)).toEqual([null, null]);
+  });
+
+  it("keeps malformed windows and explicitly unavailable roots unreadable", () => {
     expect(displayPreviewFor({ usageWindows: [{ id: "weekly", label: "Weekly" }] })?.windows)
       .toEqual([{ label: "Weekly", percent: null }]);
-    expect(displayPreviewFor({})?.windows.every((window) => window.percent === null)).toBe(true);
+    expect(displayPreviewFor({ usageUnavailable: true })?.windows.every((window) => window.percent === null)).toBe(true);
   });
 
   it("has nothing to draw without a provider", () => {

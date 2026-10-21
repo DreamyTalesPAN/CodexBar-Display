@@ -8724,3 +8724,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: retained unavailable usage stays unavailable, matching VibeTV; provider labels and unrelated data keep rendering.
 - Scope: shared preview frame renderer and regression tests for windows, legacy slots and root lanes.
 - What's new: none — correct existing unavailable rendering
+
+## 2026-10-21 — #858: preserve serialized zero usage in fallback tiles
+
+- User approval: no visible change – UI approval not needed (bug fix: #858 finding 4, decode omitted available root percentages as wire zero)
+- Approved customer-visible result: measured zero remains 0% in used and remaining mode; explicit unavailable flags still show missing usage.
+- Scope: setup fallback formatter and serialized-frame regression tests.
+- What's new: none — correct existing zero-value rendering
