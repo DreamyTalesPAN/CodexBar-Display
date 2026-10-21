@@ -1,7 +1,6 @@
 package companionapi
 
 import (
-	"context"
 	"strings"
 	"time"
 
@@ -70,7 +69,7 @@ func usageInInventoryOrder(usage daemon.PersistedUsage, settings []codexbar.Prov
 
 // Reuse the existing hello source for the selected device; no preview-owned
 // capabilities cache. An unknown limit uses the sender's protocol default.
-func (s *Server) previewDeviceCapabilities(ctx context.Context) protocol.DeviceCapabilities {
+func (s *Server) previewDeviceCapabilities() protocol.DeviceCapabilities {
 	fallback := protocol.DeviceCapabilities{NegotiatedProtocolVersion: 2, SupportsProviderSlotsV1: true, MaxFrameBytes: protocol.DefaultMaxFrameBytes}
 	cfg, err := s.config()
 	if err != nil {
@@ -82,8 +81,13 @@ func (s *Server) previewDeviceCapabilities(ctx context.Context) protocol.DeviceC
 		hello, ok = s.currentCableHello()
 		ok = ok && cableHelloMatchesConfig(hello, cfg.DeviceID)
 	} else if strings.TrimSpace(cfg.DeviceTarget) != "" {
-		hello, err = s.getHelloProbe(ctx, cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime)
-		ok = err == nil && (cfg.DeviceID == "" || hello.DeviceID == cfg.DeviceID)
+		// An old hello still describes capabilities, not current reachability.
+		// Usage polling must never wait for a network probe of an offline device.
+		s.probeMu.Lock()
+		cached, found := s.helloProbeCache[deviceProbeKey(cfg.DeviceTarget, cfg.DeviceToken)]
+		s.probeMu.Unlock()
+		hello = cached.hello
+		ok = found && cached.err == nil && (cfg.DeviceID == "" || hello.DeviceID == cfg.DeviceID)
 	}
 	if ok {
 		return protocol.CapabilitiesFromHello(hello)

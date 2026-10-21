@@ -86,7 +86,7 @@ func TestDisplayPreviewFramesAreTheDaemonsFrames(t *testing.T) {
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return usage, true }
 
 	got := getPreviewFrames(t, server)
-	want := daemon.PreviewFrames(usage, true, false, server.previewDeviceCapabilities(context.Background()), now)
+	want := daemon.PreviewFrames(usage, true, false, server.previewDeviceCapabilities(), now)
 	if len(got.Providers) != 1 || got.Providers[0].ID != "codex" {
 		t.Fatalf("providers: %+v", got.Providers)
 	}
@@ -255,28 +255,41 @@ func TestUsagePreviewFramesRespectDeviceWireBudget(t *testing.T) {
 	}
 }
 
-func TestPreviewDeviceCapabilitiesReuseWiFiHelloProbe(t *testing.T) {
-	requests := 0
-	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/hello" {
-			t.Errorf("unexpected request: %s", r.URL.Path)
-		}
-		requests++
-		_ = json.NewEncoder(w).Encode(protocol.DeviceHello{DeviceID: "preview-device", ProtocolVersion: 2, MaxFrameBytes: 2048,
-			Features:     []string{protocol.FeatureProviderSlotsV1},
-			Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{Active: "wifi", Mode: "wifi"}},
+func TestPreviewDeviceCapabilitiesNeverProbeWiFi(t *testing.T) {
+	for _, cached := range []bool{false, true} {
+		t.Run(fmt.Sprint(cached), func(t *testing.T) {
+			requests := 0
+			device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
+				_ = json.NewEncoder(w).Encode(protocol.DeviceHello{DeviceID: "preview-device", ProtocolVersion: 2, MaxFrameBytes: 2048,
+					Features:     []string{protocol.FeatureProviderSlotsV1},
+					Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{Active: "wifi", Mode: "wifi"}},
+				})
+			}))
+			defer device.Close()
+			now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+			server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "wifi", DeviceID: "preview-device", DeviceTarget: device.URL})
+			server.now = func() time.Time { return now }
+			server.probeCacheTime = time.Second
+			if cached {
+				if _, err := server.getHelloProbe(context.Background(), device.URL, "", time.Second); err != nil {
+					t.Fatal(err)
+				}
+				// Capabilities can be read from an old hello; this is not a reachability check.
+				now = now.Add(time.Minute)
+			}
+			requestsBefore := requests
+			caps := server.previewDeviceCapabilities()
+			if requests != requestsBefore {
+				t.Fatalf("local usage preview triggered %d device requests", requests-requestsBefore)
+			}
+			want := protocol.DefaultMaxFrameBytes
+			if cached {
+				want = 2048
+			}
+			if caps.MaxFrameBytes != want {
+				t.Fatalf("got budget %d, want %d", caps.MaxFrameBytes, want)
+			}
 		})
-	}))
-	defer device.Close()
-	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "wifi", DeviceID: "preview-device", DeviceTarget: device.URL})
-	server.probeCacheTime = time.Minute
-	for range 2 {
-		caps := server.previewDeviceCapabilities(context.Background())
-		if caps.MaxFrameBytes != 2048 || caps.NegotiatedProtocolVersion != 2 || !caps.SupportsProviderSlotsV1 {
-			t.Fatalf("preview must use the selected WiFi device's hello: %+v", caps)
-		}
-	}
-	if requests != 1 {
-		t.Fatalf("preview must reuse the shared hello cache, got %d requests", requests)
 	}
 }
