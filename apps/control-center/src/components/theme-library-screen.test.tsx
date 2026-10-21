@@ -218,7 +218,15 @@ describe("ThemeLibraryScreen Appearance sections", () => {
       <ThemeLibraryScreen
         busyAction={null}
         companionStatus="online"
-        device={{ ...device, ready: true, activeTheme: "live-theme" }}
+        // VibeTV shows another theme; this one is held by the last install.
+        device={{ ...device, ready: true, activeTheme: "other-theme" }}
+        lastInstall={{
+          activePath: livePath,
+          name: "Live Theme",
+          packId: "live-theme",
+          themeId: "live-theme",
+          themeRev: 1,
+        }}
         onInstallCustomTheme={async () => false}
         onInstallTheme={vi.fn()}
         onOpenScreensaverSettings={vi.fn()}

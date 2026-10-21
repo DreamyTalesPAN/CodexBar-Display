@@ -9770,9 +9770,100 @@ issue scope, or release permission never implies UI permission.
 ## 2026-10-19 — #798: approval marker after merging the calm redesign base (Updates)
 
 
+## 2026-10-20 — #784: Overview fills the window's height (7197 template point 1)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: Overview fills the window's height (7197 template point 1) — Before → after: #784 point 1: the Overview was a block under the title, with the four numbers right below the VibeTV and a 392 px VibeTV → #784 point 1: the page fills the window's height, the four numbers sit at the bottom (32 px below them), "VibeTV is connected" and the VibeTV are centred as one group in the space above, and the VibeTV image is 440 px wide.
+- Approved customer-visible result: #784 point 1: Overview as in frame `#overview` of "Calm Redesign - alle Screens" (picture 01, right side), in a large and in a small window.
+- Scope: #784 point 1: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/control-center-shell.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #784 point 1: no new content, the same page laid out differently
+
+## 2026-10-20 — #784: keyboard focus ring and invalid ring are 2 px (7197 template point 4)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: keyboard focus ring and invalid ring are 2 px (7197 template point 4) — Before → after: #784 point 4: the keyboard focus ring on input, select, button, checkbox, switch and tab was a 1 px border plus a 2 px or 3 px halo → #784 point 4: border plus a 1 px ring in the ring colour, 2 px in total; an invalid field (aria-invalid) shows the same 2 px, in red, also under the keyboard (consistent with #817). Still shown for keyboard focus only, not when a dialog opens.
+- Approved customer-visible result: #784 point 4: focus and error rings as in frame `#controls-focus` of "Calm Redesign - alle Screens" (picture 04, right side).
+- Scope: #784 point 4: the shared controls in `apps/control-center/src/components/ui/` (input, textarea, select, checkbox, switch, button, tabs, input-group, badge, item, toggle), the two row buttons in `settings-screen.tsx` and `setup/setup-device-dialogs.tsx`, `globals.focus-ring.test.ts`, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #784 point 4: no new content, a thinner ring
+
+## 2026-10-20 — #784: own dropdown instead of the native select (7197 template point 5)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: own dropdown instead of the native select (7197 template point 5) — Before → after: #784 point 5: the Theme Studio's three dropdowns (Live information to show, Reset for, Reading to show) opened the system menu with a blue chosen item, and the shared dropdown list used a different look → #784 point 5: every dropdown a customer sees is our own list below the field: the chosen item is bolder with a grey background and a check mark, the item under the pointer a lighter grey, nothing blue; the field shows the 2 px focus ring while open.
+- Approved customer-visible result: #784 point 5: dropdown as in frames `#settings-dropdown` and `#controls-focus` of "Calm Redesign - alle Screens" (picture 05, right side).
+- Scope: #784 point 5: `apps/control-center/src/components/ui/select.tsx`, `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, the two browser test scripts that drive those dropdowns, the select test, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #784 point 5: no new content, the same choices in a different list
+
+## 2026-10-20 — #784: Overview numbers span the window and the dropdown list is as wide as its field (7197 points 1 and 5, picture check)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: Overview numbers span the window and the dropdown list is as wide as its field (7197 — Before → after: #784 point 1 (picture check): the four numbers were capped at 1180 px width and went to two columns below 1024 px window width → they span the page width as in the template and stay in four columns from 960 px; #784 point 5 (picture check): the dropdown list was 12 px wider than its field → it is exactly as wide as the field.
+- Approved customer-visible result: #784 points 1 and 5: as in the frames `#overview` and `#settings-dropdown` of "Calm Redesign - alle Screens" at 1920 × 1080 and about 1000 × 700.
+- Scope: #784 points 1 and 5: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/ui/select.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #784 points 1 and 5 (picture check): no new content
+
+## 2026-10-20 — #784: the keyboard focus ring is the template's olive
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: the keyboard focus ring is the template's olive — Before → after: #784 the 2 px keyboard focus ring was ink (#1B1B1B light, #EDEDED dark) → #784 the template's olive (#506600 light, #CCFF00 dark); the red ring on invalid fields (#817) stays.
+- Approved customer-visible result: #784 every keyboard focus ring (input, select, button, checkbox, switch, tab) in the template's --ring colour, 2 px, keyboard-only.
+- Scope: #784 `apps/control-center/src/app/globals.css` (--ring), its test `globals.focus-ring.test.ts`, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #784 focus ring colour not announced
+
+## 2026-10-20 — #784: the Copilot popup heading says it needs a GitHub sign-in
+
+- User approval: pending — #784 Copilot heading as decided by the communicator on 20.10.2026 (text decision for Paul's 7198 review); Paul sees it in build 7198. Before → after: #784 the Copilot popup in setup said "GitHub Copilot needs its own app" above a text about a GitHub sign-in → #784 "GitHub Copilot needs a GitHub sign-in".
+- Approved customer-visible result: #784 the Copilot popup heading matches its sentence; every other provider keeps "<Provider> needs its own app" or its name.
+- Scope: #784 `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #784 Copilot heading not announced
+
+## 2026-10-20 — #784: Paul's approval of build 7198 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" — #784 approval record for build 7198 (everything except the Appearance cards #802); the #784 entries above now carry it, merge markers are marked as no visible change, entries added after build 7198 stay pending.
+- Approved customer-visible result: #784 as described in its entries above, as seen in build 7198.
+- Scope: #784 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #784 approval record only
+
+## 2026-10-20 — #784: result lines of approved entries cleaned up
+
+- User approval: no visible change – UI approval not needed (#784: result lines of approved entries cleaned up: record cleanup, wording only: entries that already carry Paul's approval no longer open their result line with an old status word)
+- Approved customer-visible result: #784 unchanged; only the wording of the approval record.
+- Scope: #784 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #784 record cleanup
+
+## 2026-10-20 — #784: approval lines rewritten to the two accepted forms
+
+- User approval: no visible change – UI approval not needed (#784 record rewrite for the gate in #823; no customer-visible change)
+- Approved customer-visible result: #784 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
+- Scope: #784 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #784 approval record only
+
+## 2026-10-20 — #784: Copilot sign-in heading only on its sign-in dialog
+
+- User approval: pending — #784 Copilot heading scope: the decided heading "GitHub Copilot needs a GitHub sign-in" (20.10.2026) now shows only on the dialog that used to say "GitHub Copilot needs its own app"; a timed-out Copilot ("did not answer in time, and VibeTV tries again by itself") keeps the plain heading "GitHub Copilot" again.
+- Approved customer-visible result: #784 the Copilot sign-in dialog is headed "GitHub Copilot needs a GitHub sign-in"; the timed-out Copilot dialog is headed "GitHub Copilot", as before commit 9c129d1c.
+- Scope: #784 Setup Wizard provider dialog heading only. Pull request branch only, not merged, not released.
+- What's new: none — #784 dialog heading scope only
+
+## 2026-10-20 — #784: approval marker after merging main at 4b0831d7
+
+- User approval: no visible change – UI approval not needed (merge of main (4b0831d7) into #784; the own entries of #784 keep their approvals)
+- Approved customer-visible result: #784 as in its own entries plus the entries merged with 4b0831d7; nothing else changes.
+- Scope: the merge of 4b0831d7 and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — merge of 4b0831d7, no customer-visible change of its own
+
+## 2026-10-20 — #784: approval marker after merging main at 5f09bf54
+
+- User approval: no visible change – UI approval not needed (merge of main (5f09bf54) into #784; the own entries of #784 keep their approvals)
+- Approved customer-visible result: #784 as in its own entries plus the entries merged with 5f09bf54; nothing else changes.
+- Scope: the merge of 5f09bf54 and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — merge of 5f09bf54, no customer-visible change of its own
+
+## 2026-10-21 — #784: approval marker after merging main at 12504ca6
+
+- User approval: no visible change – UI approval not needed (merge of main (12504ca6) into #784; the own entries of #784 keep their approvals)
+- Approved customer-visible result: #784 as in its own entries plus the entries merged with 12504ca6; nothing else changes.
+- Scope: the merge of 12504ca6 and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — merge of 12504ca6, no customer-visible change of its own
+
 ## 2026-10-19 — Appearance: one page with type switch, search, filters and one Create button (#790, #791, #792, #794)
 
-- User approval: pending — Paul reviews (Appearance built as drawn in the approved master "Calm Redesign - alle Screens", frames 04–06, F2–F5); look unchanged except, before → after: (1) the sidebar entry "Appearance" with its two sub-entries "Themes" and "Screensavers" becomes one entry "Appearance" without sub-entries, and the page title is always "Appearance" (before: "Themes" or "Screensavers"); (2) the two lists become one page that opens on "All" with a switch "All n · Themes n · Screensavers n" under the title, and the choice is kept while the app is open (Settings › "Choose screensaver" opens "Screensavers", a theme link opens "Themes"); (3) new: a "Search" field (name only, not case-sensitive, Esc clears; empty result reads "Nothing matches your search or filters.") and a "Filters" button whose popover (300 px, no X, Esc closes) groups the options with a count each for the open list — "Status" (Installed, Update available) always, "Features" (Agent states, Animated, Clock, Usage stats, Pixel art) and "Providers shown" (1 provider, 2 providers, 3 or more) only when the theme catalog carries tags — with "Clear all" and "n results" at the bottom and the picked options as removable chips with "Clear all" under the bar (several options of one group match any, groups match all); (4) the buttons "Create Theme" and "Create Screensaver" become one lime "Create"; in "Themes" and "Screensavers" it starts that type, on "All" it opens a small menu "Theme / Screensaver"; (5) the grey box "Screensaver is off." with the link "Turn on in Settings" on the Screensavers page becomes one muted line "Screensaver is off. Turn it on in Settings." with "Settings" as the link (shown only under "Screensavers"; the switch stays in Settings only), and Install is greyed instead of reading "Turn on first"; (6) each card gets the type word "Theme" or "Screensaver" at the right of its name, a 6 px preview corner, "Edit" underlined at the left and the status at the right ("✓ Installed", lime "Install" or "Update", "Update needed" as plain text) in a 28 px row, with 24 px between the columns and 28 px between the rows. A theme the customer made keeps its "Custom" mark next to the name and its "Delete" link next to "Edit" (not drawn in the master). Codex review fixes on top: the toolbar wraps in a narrow window, the screensaver setting is read again when Screensavers is opened from All, "Show me in Themes" opens the Themes segment, the Settings link has the full focus ring, and the grey fill of the chosen card stays as before (the master draws no chosen card). Merged with the base of 19.10. (2f8c5ec8): the screensaver-off line stays the template's one muted line.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; his only #802 point was the install state, approved separately) — entry: Appearance: one page with type switch, search, filters and one Create button (#790, #791,  — before → after: (1) the sidebar entry "Appearance" with its two sub-entries "Themes" and "Screensavers" becomes one entry "Appearance" without sub-entries, and the page title is always "Appearance" (before: "Themes" or "Screensavers"); (2) the two lists become one page that opens on "All" with a switch "All n · Themes n · Screensavers n" under the title, and the choice is kept while the app is open (Settings › "Choose screensaver" opens "Screensavers", a theme link opens "Themes"); (3) new: a "Search" field (name only, not case-sensitive, Esc clears; empty result reads "Nothing matches your search or filters.") and a "Filters" button whose popover (300 px, no X, Esc closes) groups the options with a count each for the open list — "Status" (Installed, Update available) always, "Features" (Agent states, Animated, Clock, Usage stats, Pixel art) and "Providers shown" (1 provider, 2 providers, 3 or more) only when the theme catalog carries tags — with "Clear all" and "n results" at the bottom and the picked options as removable chips with "Clear all" under the bar (several options of one group match any, groups match all); (4) the buttons "Create Theme" and "Create Screensaver" become one lime "Create"; in "Themes" and "Screensavers" it starts that type, on "All" it opens a small menu "Theme / Screensaver"; (5) the grey box "Screensaver is off." with the link "Turn on in Settings" on the Screensavers page becomes one muted line "Screensaver is off. Turn it on in Settings." with "Settings" as the link (shown only under "Screensavers"; the switch stays in Settings only), and Install is greyed instead of reading "Turn on first"; (6) each card gets the type word "Theme" or "Screensaver" at the right of its name, a 6 px preview corner, "Edit" underlined at the left and the status at the right ("✓ Installed", lime "Install" or "Update", "Update needed" as plain text) in a 28 px row, with 24 px between the columns and 28 px between the rows. A theme the customer made keeps its "Custom" mark next to the name and its "Delete" link next to "Edit" (not drawn in the master). Codex review fixes on top: the toolbar wraps in a narrow window, the screensaver setting is read again when Screensavers is opened from All, "Show me in Themes" opens the Themes segment, the Settings link has the full focus ring, and the grey fill of the chosen card stays as before (the master draws no chosen card). Merged with the base of 19.10. (2f8c5ec8): the screensaver-off line stays the template's one muted line.
 - Approved customer-visible result: none yet; waits for Paul's yes (see the entries above). Nothing new to approve in the later fixes and merges.
 - Scope: `apps/control-center/src/components/{appearance-toolbar,theme-library-screen,control-center-shell,control-center-app,control-center-types}.ts(x)`, `apps/control-center/src/components/theme-studio/theme-studio-preview.tsx`, `apps/control-center/src/lib/appearance-filters.ts`, the tests of these files, `apps/control-center/scripts/test-customer-flows.mjs` (navigation to the Themes and Screensavers segments, the title "Appearance", the screensaver switch now in Settings) and this approval record. Pull request branch only, not merge or release.
 - What's new: none — no new content in this PR; whether the one Appearance page gets a What's new entry is Paul's call (merge and review fixes change nothing)
@@ -9797,6 +9888,7 @@ issue scope, or release permission never implies UI permission.
 ## 2026-10-19 — #803: approval marker after merging the calm redesign base (Support Fix link)
 
 - User approval: Merge of the calm redesign base (#784 incl. main with #638) into this branch; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- User approval: no visible change – UI approval not needed (merge commit into #802; no visible change of its own; entry: #802: approval marker after merging the calm redesign base (one-page Appearance))
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
@@ -9874,35 +9966,35 @@ issue scope, or release permission never implies UI permission.
 ## 2026-10-19 — #798: merge of the #784 outage-dialog fix, no change of its own
 ## 2026-10-19 — #802: Appearance page matched to the template (build 2 QA)
 
-- User approval: pending — Paul reviews (#802 matched to the approved template, build 2 QA); look unchanged except, each one before → after: (1) the lime Create button is 36 px high with 17 px sides → before 44 px high; (2) the cards in the list stand 24 px apart sideways and 28 px apart downwards and are 275 px wide → before 10 px apart both ways and 284 px wide; (3) the theme preview dialog is 520 px wide, shows the picture 240 px wide, and its Close button is a plain text button → before 440 px, a picture as wide as the dialog, and a lime Close button.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; his only #802 point was the install state, approved separately) — entry: #802: Appearance page matched to the template (build 2 QA) — before → after: (1) the lime Create button is 36 px high with 17 px sides → before 44 px high; (2) the cards in the list stand 24 px apart sideways and 28 px apart downwards and are 275 px wide → before 10 px apart both ways and 284 px wide; (3) the theme preview dialog is 520 px wide, shows the picture 240 px wide, and its Close button is a plain text button → before 440 px, a picture as wide as the dialog, and a lime Close button.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/theme-library-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
 ## 2026-10-19 — #802: Codex fixes, Themes test and customer flow follow the Appearance segments
 
-- User approval: pending — Paul reviews (Codex review fix, tests and flow script only); no visible change: the display preference test and the customer flow reach the Themes segment of Appearance, as the other flows already do.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; his only #802 point was the install state, approved separately) — entry: #802: Codex fixes, Themes test and customer flow follow the Appearance segments
 - Approved customer-visible result: none; no visible change.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs`, `apps/control-center/src/components/control-center-app.display-preferences.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
 ## 2026-10-19 — #802: approval marker after merging the newest calm redesign base (Theme Studio header)
 
-- User approval: pending — Paul reviews (#802 merged with the newest #784 head, 9c18d75f, Theme Studio header row); look unchanged except what the #784 entries and this PR's Appearance entries describe; no new visible change of its own.
+- User approval: no visible change – UI approval not needed (merge commit into #802; no visible change of its own; entry: #802: approval marker after merging the newest calm redesign base (Theme Studio header))
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: merge of origin/claude/group-calm-redesign (#784, 9c18d75f) into this branch, `apps/control-center/src/components/control-center-shell.tsx` (the Appearance sub-menu stays removed; the open Theme Studio header from #784 stays), and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
 ## 2026-10-19 — #802: Appearance tells the shell while the Theme Studio is open (build 2 QA)
 
-- User approval: pending — Paul reviews (Theme Studio header as one row per the approved template, build 2 QA); look unchanged except, before → after: with Appearance built as one page, the open Theme Studio shows one header row — the Studio's own (back arrow, design name, File, undo and redo, status line, Save, Send to VibeTV) — with the sidebar open → before a second row "Appearance" sat above it. The Appearance page itself looks the same. This restores the hand-over of #784, which the one-page rebuild had dropped.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; his only #802 point was the install state, approved separately) — entry: #802: Appearance tells the shell while the Theme Studio is open (build 2 QA) — before → after: with Appearance built as one page, the open Theme Studio shows one header row — the Studio's own (back arrow, design name, File, undo and redo, status line, Save, Send to VibeTV) — with the sidebar open → before a second row "Appearance" sat above it. The Appearance page itself looks the same. This restores the hand-over of #784, which the one-page rebuild had dropped.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/control-center-app.tsx`, `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/theme-library-screen.tsx`, `apps/control-center/src/components/theme-library-screen.appearance.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
 ## 2026-10-19 — #802: Codex fix, the Theme Studio preview route shows the Studio's own header only
 
-- User approval: pending — Paul reviews (Codex review fix; development preview route only); no visible change for customers: the development preview of the AI Theme Studio (VIBETV_AI_THEME_PREVIEW) hides the Appearance header above the Studio's own header, as the app does → before the preview showed a duplicate Appearance header.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; his only #802 point was the install state, approved separately) — entry: #802: Codex fix, the Theme Studio preview route shows the Studio's own header only
 - Approved customer-visible result: none; no visible change for customers.
 - Scope: `apps/control-center/src/components/theme-studio/theme-studio-preview.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
@@ -9931,14 +10023,14 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-19 — #803: merge of the #784 outage-dialog fix, no change of its own
 
-- User approval: none needed — no visible change: this commit only merges the calm redesign base (#784) with its fix that makes the grey backdrop of the outage dialogs take no clicks; nothing of this pull request's own look changes.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; his only #802 point was the install state, approved separately) — entry: #802: merge of the #784 outage-dialog fix, no change of its own
 - Approved customer-visible result: none; no visible change.
 - Scope: merge of `origin/claude/group-calm-redesign` (`apps/control-center/src/components/setup/setup-recovery-dialogs.tsx`, its test, the flow comment) and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
 ## 2026-10-19 — #802: customer flow follows the template's preview dialog and card size
 
-- User approval: none needed — no visible change: the flow no longer demands that the 520 px preview dialog shows a larger preview than a card on a wide window (the approved template draws it that way, 238 px against 275 px), and the card-size goldens follow the card gaps already in this pull request (284.7 → 275.3 px); the vector hashes are unchanged.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; his only #802 point was the install state, approved separately) — entry: #802: customer flow follows the template's preview dialog and card size
 - Approved customer-visible result: none; the test and its goldens only.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs`, `apps/control-center/test-fixtures/theme-preview-vector-goldens.json` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
@@ -10446,7 +10538,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-20 — #802: merge of the #784 build 2b QA fixes, no change of its own
 
-- User approval: none needed — no visible change of its own: this commit only merges the calm redesign base (#784) with its build 2b QA fixes (the 3D VibeTV frame, no sidebar toggle beside Updates and Support, plain radio rows in the device picker), which carry their own approval entries above; nothing of this pull request's own look changes.
+- User approval: no visible change – UI approval not needed (merge commit into #802; no visible change of its own; entry: #802: merge of the #784 build 2b QA fixes, no change of its own)
 - Approved customer-visible result: none; no visible change.
 - Scope: merge of `origin/claude/group-calm-redesign` (`apps/control-center/src/components/vibetv-3d-preview.tsx`, `overview-screen.tsx`, `control-center-shell.tsx`, `setup/setup-device-dialogs.tsx` and their tests) and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
@@ -10782,21 +10874,21 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-20 — #802: Appearance "Installed" is a pill on the theme picture (7197 review, point 7)
 
-- User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #802 point 7 (Installed as a pill). Before → after: an installed theme card had a row "✓ Installed" at the right of its bottom line → that row is gone; a pill sits at the top right on the theme picture: "Active" (dark) on the theme VibeTV shows, "Installed" (light) on the other installed themes and screensavers.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; his only #802 point was the install state, approved separately) — entry: #802: Appearance "Installed" is a pill on the theme picture (7197 review, point 7) — Before → after: an installed theme card had a row "✓ Installed" at the right of its bottom line → that row is gone; a pill sits at the top right on the theme picture: "Active" (dark) on the theme VibeTV shows, "Installed" (light) on the other installed themes and screensavers.
 - Approved customer-visible result: the Appearance cards look as drawn in frames "Darstellung" (#appearance-all, #appearance-ss, #appearance-filter) of "Calm Redesign - alle Screens": pill "Active" dark and "Installed" light on the picture, no "✓ Installed" row.
 - Scope: `apps/control-center/src/components/theme-library-screen.tsx`, its tests, `apps/control-center/scripts/test-customer-flows.mjs` (the flow looks for the pill instead of the button) and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
 ## 2026-10-20 — #802: Appearance cards are smaller, 200 px wide, centred as a group (7197 review, point 8)
 
-- User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #802 point 8 (smaller cards). Before → after: three cards per row were stretched over the full page width (about 255 px each, 24 px apart) with the type (Theme / Screensaver) beside the name → still three per row, but each card is 200 px wide, 32 px apart, the group is centred (also at 1920 px, not stretched), and the type sits under the name.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; his only #802 point was the install state, approved separately) — entry: #802: Appearance cards are smaller, 200 px wide, centred as a group (7197 review, point 8) — Before → after: three cards per row were stretched over the full page width (about 255 px each, 24 px apart) with the type (Theme / Screensaver) beside the name → still three per row, but each card is 200 px wide, 32 px apart, the group is centred (also at 1920 px, not stretched), and the type sits under the name.
 - Approved customer-visible result: the Appearance cards look as drawn in frames "Darstellung" (#appearance-all, #appearance-ss, #appearance-filter) of "Calm Redesign - alle Screens", also at 1920 px wide.
 - Scope: `apps/control-center/src/components/theme-library-screen.tsx`, `apps/control-center/src/components/theme-library-screen.appearance.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
 ## 2026-10-20 — #802: Theme preview dialog picture is centred with 6 px corners (7197 review, point 9)
 
-- User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #802 point 9 (theme preview dialog). Before → after: the picture in the theme preview dialog sat at the left edge with square corners → it is centred in the dialog and has 6 px corners, the same as the card picture.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; his only #802 point was the install state, approved separately) — entry: #802: Theme preview dialog picture is centred with 6 px corners (7197 review, point 9) — Before → after: the picture in the theme preview dialog sat at the left edge with square corners → it is centred in the dialog and has 6 px corners, the same as the card picture.
 - Approved customer-visible result: the dialog looks as drawn in frame "Dialoge: Theme preview" (#dialog-theme-preview) of "Calm Redesign - alle Screens": picture centred, radius 6 px.
 - Scope: `apps/control-center/src/components/theme-library-screen.tsx`, `apps/control-center/src/components/theme-library-screen.appearance.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
@@ -10857,14 +10949,14 @@ issue scope, or release permission never implies UI permission.
 - What's new: none — #803 point 11: no new content, the same page with a wider layout
 ## 2026-10-20 — #802: approval marker after merging claude/group-calm-redesign at fd754339
 
-- User approval: merge of claude/group-calm-redesign (fd754339, #784 points 1, 4, 5 of the 7197 template) into #802; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- User approval: no visible change – UI approval not needed (merge commit into #802; no visible change of its own; entry: #802: approval marker after merging claude/group-calm-redesign at fd754339)
 - Approved customer-visible result: #802 as in its own entries (pending, Paul reviews) plus the entries of #784 (pending, Paul reviews).
 - Scope: the merge of fd754339 and this approval record. Pull request branch #802 only, not merged, not released.
 - What's new: none — merge of fd754339, no customer-visible change of its own
 
 ## 2026-10-20 — #802: Appearance card of the active theme has no grey fill, the pill says Active (7197 review, point 7, picture check)
 
-- User approval: pending — Paul approved the template points on 20.10.2026 (7197 review, via the communicator); the rendered result is pending his review. This line: #802 point 7 (Installed as a pill), picture check against the template. Before → after: the card of the active theme had a light grey fill → all cards have the same white card; the dark "Active" pill on the picture is what marks the active theme, as drawn in the template.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; his only #802 point was the install state, approved separately) — entry: #802: Appearance card of the active theme has no grey fill, the pill says Active (7197 rev — Before → after: the card of the active theme had a light grey fill → all cards have the same white card; the dark "Active" pill on the picture is what marks the active theme, as drawn in the template.
 - Approved customer-visible result: the Appearance cards look as drawn in frames "Darstellung" (#appearance-all, #appearance-ss, #appearance-filter) of "Calm Redesign - alle Screens": all cards alike, pill "Active" on the active one.
 - Scope: `apps/control-center/src/components/theme-library-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
@@ -10962,7 +11054,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-17 — Process steps look like the Setup Wizard log
 
-- User approval: Paul's design rule of 2026-10-17 (via the communicator): process steps look like the Setup Wizard status log everywhere (one component ProcessSteps, no cursor block); he has not yet seen this build.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; his only #802 point was the install state, approved separately) — entry: Process steps look like the Setup Wizard log
 - Approved customer-visible result: Every list of running process steps uses the Setup Wizard's log look: one "> text" line per step, in the same mono type, each step fading in, finished steps paler, no blinking block. Changed places, before → after:
   - Appearance › Themes and Screensavers, install box (`InlineInstallProgress` in `theme-library-screen.tsx`): before: "Installing", the current step as a sentence and earlier steps as small plain text; after: all steps as "> text" lines, finished ones paler. Title, progress bar and "Installed" unchanged.
   - Updates, VibeTV firmware update (`InlineUpdateProgress` in `updates-screen.tsx`): before: the running step as a sentence in body text; after: the same step as one "> text" line. Title, progress bar, restart text, and the complete and attention messages unchanged.
@@ -10973,21 +11065,21 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-17 — Codex fix: install steps keep their place when they turn finished
 
-- User approval: none needed for this entry; it records a Codex review fix (P2) to the install box of the entry above: a step keeps its line when it turns finished, so it no longer fades in a second time. No visible change beyond the entry above; not seen by Paul.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; his only #802 point was the install state, approved separately) — entry: Codex fix: install steps keep their place when they turn finished
 - Approved customer-visible result: as in the entry above; nothing else changes.
 - Scope: `InlineInstallProgress` key in `apps/control-center/src/components/theme-library-screen.tsx`, its test, and this record. Pull request branch only, not merge or release.
 - What's new: none — same steps, one fix to the animation
 
 ## 2026-10-17 — Test expectation follows the install steps look
 
-- User approval: none needed for this entry; it changes only a test expectation: the screensaver and theme install test now expects the install's first step as "> Preparing … install." (the entry above), as CI on the previous head showed. No visible change beyond the entry above; not seen by Paul.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; his only #802 point was the install state, approved separately) — entry: Test expectation follows the install steps look
 - Approved customer-visible result: as in the entry above; nothing else changes.
 - Scope: `apps/control-center/src/components/control-center-app.screensaver-install.test.tsx` and this record. Pull request branch only, not merge or release.
 - What's new: none — same steps, a test expectation only
 
 ## 2026-10-17 — Setup Wizard log: no blinking caret
 
-- User approval: Paul's rule of 2026-10-17 (no cursor block anywhere in process steps), decided on the #712 review and relayed by the communicator; he has not yet seen this build. It supersedes the statement in the entry above that the Setup Wizard log keeps its caret.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; his only #802 point was the install state, approved separately) — entry: Setup Wizard log: no blinking caret
 - Approved customer-visible result: Setup Wizard status logs (welcome, providers, device, theme install): before: a blinking caret block at the end of the log while work runs; after: none. Lines, box, fade-in and everything else unchanged.
 - Scope: `apps/control-center/src/components/process-steps.tsx`, `apps/control-center/src/components/setup/setup-log.tsx` (caret and `running` prop removed), the four wizard callers that passed `running` (setup-welcome-screen, setup-providers-screen, setup-theme-screen, setup-device-screen), their tests, and this record. Pull request branch only, not merge or release.
 - What's new: none — removes a visual element; no new copy
@@ -11001,12 +11093,11 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-20 — #802: Appearance install on the button, bigger lime Active pill (7198 review, Paul's pictures)
 
-- User approval: pending — Paul asked for this on 20.10.2026 after his review of build 7198 and the first pictures (via the communicator); the rendered result is pending his review. This line: #802 install state and pills. Before → after: while installing, the card grew by a progress bar and a box with step lines, and afterwards kept a box "Installed – Theme is active on VibeTV." → the card never changes its height: its own lime Install button turns into a disabled "Installing" with a spinner, nothing else is added, and after the install only the pill on the picture remains; the "Active" pill is bigger (14 px text, 24 px high) in lime #CCFF00 with black text, the "Installed" pill is as big and light so Active stands out; no extra "Try again" row, a failed install is the usual dialog and the card's Install button retries.
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:30: "passt so" (pictures of the install button and the pills, vibetv-testbench/review-1016/ui/802-install-button/) — entry: #802 install state and pills. Before → after: while installing, the card grew by a progress bar and a box with step lines, and afterwards kept a box "Installed – Theme is active on VibeTV." → the card never changes its height: its own lime Install button turns into a disabled "Installing" with a spinner, nothing else is added, and after the install only the pill on the picture remains; the "Active" pill is bigger (14 px text, 24 px high) in lime #CCFF00 with black text, the "Installed" pill is as big and light so Active stands out; no extra "Try again" row, a failed install is the usual dialog and the card's Install button retries.
 - Approved customer-visible result: pictures for Paul in `vibetv-testbench/review-1016/ui/802-install-button/` (card while installing, card after, close-up of the pills), 1200 px, "App heute (7198)" next to "neu".
 - Scope: `apps/control-center/src/components/theme-library-screen.tsx`, its unit tests, the customer-flow script `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #802 install state and pills: no new content, the same install with another look
 
-## 2026-10-20 — #784: the keyboard focus ring is the template's olive
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: the keyboard focus ring is the template's olive — Before → after: #784 the 2 px keyboard focus ring was ink (#1B1B1B light, #EDEDED dark) → #784 the template's olive (#506600 light, #CCFF00 dark); the red ring on invalid fields (#817) stays.
 - Approved customer-visible result: #784 every keyboard focus ring (input, select, button, checkbox, switch, tab) in the template's --ring colour, 2 px, keyboard-only.
@@ -11404,26 +11495,26 @@ issue scope, or release permission never implies UI permission.
 - What's new: none — merge of the base branch, no customer-visible change of its own
 ## 2026-10-20 — #784: Copilot sign-in heading only on its sign-in dialog
 
-- User approval: pending — #784 Copilot heading scope: the decided heading "GitHub Copilot needs a GitHub sign-in" (20.10.2026) now shows only on the dialog that used to say "GitHub Copilot needs its own app"; a timed-out Copilot ("did not answer in time, and VibeTV tries again by itself") keeps the plain heading "GitHub Copilot" again.
-- Approved customer-visible result: #784 the Copilot sign-in dialog is headed "GitHub Copilot needs a GitHub sign-in"; the timed-out Copilot dialog is headed "GitHub Copilot", as before commit 9c129d1c.
-- Scope: #784 Setup Wizard provider dialog heading only. Pull request branch only, not merged, not released.
-- What's new: none — #784 dialog heading scope only
+## 2026-10-20 — #802: Paul approved the install button and the pills
 
-## 2026-10-20 — #784: approval marker after merging main at 4b0831d7
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:30: "passt so" — #802 approval record for the Appearance install state: the entry "Appearance install on the button, bigger lime Active pill (7198 review, Paul's pictures)" above now carries it; earlier #802 entries stay as they are.
+- Approved customer-visible result: #802 install on the card's own lime button ("Installing" with a spinner, the card keeps its height, no steps, bar or notice in the card) and the bigger lime "Active" pill with black text next to the light "Installed" pill, as in the pictures in `vibetv-testbench/review-1016/ui/802-install-button/`.
+- Scope: this approval record only. Pull request branch #802 only, not merged, not released.
+- What's new: none — approval record for #802 install state and pills, no new content
 
-- User approval: no visible change – UI approval not needed (merge of main (4b0831d7) into #784; the own entries of #784 keep their approvals)
-- Approved customer-visible result: #784 as in its own entries plus the entries merged with 4b0831d7; nothing else changes.
-- Scope: the merge of 4b0831d7 and this approval record. Pull request branch #784 only, not merged, not released.
-- What's new: none — merge of 4b0831d7, no customer-visible change of its own
+## 2026-10-20 — #802: a finished install with a caveat says it in the usual dialog (Codex/CI, providerless install)
 
-## 2026-10-20 — #784: approval marker after merging main at 5f09bf54
+- User approval: pending — #802: with the notice gone from the card, the companion's sentence of a finished install that carries a caveat (e.g. "Theme installed. VibeTV shows it once AI usage is ready.") would have been lost; it is now the usual overlay dialog "Theme installed" with an OK button, and the plain success sentences stay silent (the pill says it). Before → after: the sentence was a line in the card → it is the dialog text; the card itself does not change. Paul reviews.
+- Approved customer-visible result: #802 dialog "Theme installed" / "Screensaver installed" with the companion's sentence and OK, only for a finished install whose sentence is not the plain success sentence.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx`, its unit test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #802: the same sentence in another place, no new content
 
-- User approval: no visible change – UI approval not needed (merge of main (5f09bf54) into #784; the own entries of #784 keep their approvals)
-- Approved customer-visible result: #784 as in its own entries plus the entries merged with 5f09bf54; nothing else changes.
-- Scope: the merge of 5f09bf54 and this approval record. Pull request branch #784 only, not merged, not released.
-- What's new: none — merge of 5f09bf54, no customer-visible change of its own
+## 2026-10-20 — #802: approval marker after merging claude/group-calm-redesign at ea818ad4
 
-## 2026-10-21 — #784: approval marker after merging main at 12504ca6
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (ea818ad4) into #802; the own entries of #802 keep their approvals)
+- Approved customer-visible result: #802 as in its own entries plus the entries merged with ea818ad4; nothing else changes.
+- Scope: the merge of ea818ad4 and this approval record. Pull request branch #802 only, not merged, not released.
+- What's new: none — merge of ea818ad4, no customer-visible change of its own
 
 - User approval: no visible change – UI approval not needed (merge of main (12504ca6) into #784; the own entries of #784 keep their approvals)
 - Approved customer-visible result: #784 as in its own entries plus the entries merged with 12504ca6; nothing else changes.
@@ -11700,3 +11791,44 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #783 as in its own entries plus the entries merged with e3503bda; nothing else changes.
 - Scope: the merge of e3503bda and this approval record. Pull request branch #783 only, not merged, not released.
 - What's new: none — merge of e3503bda, no customer-visible change of its own
+## 2026-10-20 — #802: no "Theme installed" dialog for a caveat
+
+- User approval: no visible change – UI approval not needed (#802 takes back the "Theme installed" dialog from ac087bf6 before Paul or a customer saw it; Paul's rule: a dialog only when the customer has to do something; the providerless caveat "VibeTV shows it once AI usage is ready" is not shown at all, the theme appears by itself once usage is there)
+- Approved customer-visible result: #802 a finished install shows no dialog and no sentence in the card; the card's button stops saying "Installing", as in the approved install-button entry.
+- Scope: #802 Appearance install completion only. Pull request branch only, not merged, not released.
+- What's new: none — #802 install completion only
+
+## 2026-10-20 — #802: Paul's approval of build 7198 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" — #802 approval record for build 7198: the #802 entries that were in build 7198 (one page, switch, search, filters, Create, card size) now carry it, because Paul's only #802 point in that review was the install state, which his "passt so" (15:30) covers; merge markers are marked as no visible change, entries added after build 7198 stay pending.
+- Approved customer-visible result: #802 as described in its entries above, as seen in build 7198, with the install state as in the install-button entry.
+- Scope: #802 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #802 approval record only
+
+## 2026-10-20 — #802: Active pill from the device slot, failure dialog over the page, focus after install
+
+- User approval: pending — #802 Active pill from the device slot (after a restart, and for a theme with an update offered), install failure dialog shown over the page also while search or filters hide its card, keyboard focus kept on the card after an install; Paul reviews.
+- Approved customer-visible result: #802 the pill "Active" goes to the theme VibeTV reports in its slot, not to the selected catalog theme (before: after a restart an installed theme could read "Installed"; now it reads "Active"; an update offered for the active theme keeps "Active"); the install failure dialog is the same dialog, now also shown when the card is filtered out; no look change for mouse users, keyboard users land on the card's Preview button after an install.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx`, its tests `theme-library-screen.test.tsx` and `theme-library-screen.custom.test.tsx`, and this approval record. Pull request branch #802 only, not merged, not released.
+- What's new: none — #802 pill, dialog and focus only, no new content
+
+## 2026-10-20 — #802: providerless install check observes the install before its end (test only)
+
+- User approval: no visible change – UI approval not needed (#802 test-only change in `test-customer-flows.mjs`: the providerless install check waits for the observed install and no longer ignores a timeout; the app shows the same screens)
+- Approved customer-visible result: #802 no change; the same screens and sentences as in the entries above.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` only. Pull request branch #802 only, not merged, not released.
+- What's new: none — test-only change, no customer-visible content
+
+## 2026-10-20 — #802: catalog tags for the theme filters when pack metadata is incomplete
+
+- User approval: pending — #802 catalog tags for the theme filters (Marcus' #801 suggestion): a theme whose catalog entry has tags but incomplete pack metadata now shows the catalog's tags, so its filter options and counts can change; Paul reviews.
+- Approved customer-visible result: #802 the filter options and counts take the catalog's tags for such a theme; nothing else changes.
+- Scope: `apps/control-center/src/lib/themes.ts` and its unit test `themes.test.ts`, and this approval record. Pull request branch #802 only, not merged, not released.
+- What's new: none — #802 filter tags from the catalog, no new content
+
+## 2026-10-21 — #802: approval marker after merging claude/group-calm-redesign at fb30d196
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (fb30d196) into #802; the own entries of #802 keep their approvals)
+- Approved customer-visible result: #802 as in its own entries plus the entries merged with fb30d196; nothing else changes.
+- Scope: the merge of fb30d196 and this approval record. Pull request branch #802 only, not merged, not released.
+- What's new: none — merge of fb30d196, no customer-visible change of its own

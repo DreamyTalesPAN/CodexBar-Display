@@ -439,13 +439,19 @@ async function enrichThemesWithGitHubCatalog(
   }
 }
 
+export type TaggedThemeProduct = ThemeProduct & { tags?: readonly string[] };
+
 export function mergeThemeProductWithCatalog(
   product: ThemeProduct,
   catalogTheme: ThemeProduct,
-): ThemeProduct {
+): TaggedThemeProduct {
   const technicalTheme = hasCompleteThemePackMetadata(catalogTheme)
     ? catalogTheme
     : product;
+  // The filter tags are the catalog's, whether or not its install metadata is
+  // complete; the product's own tags only stand in while the catalog has none.
+  const catalogTags = (catalogTheme as TaggedThemeProduct).tags;
+  const productOwnTags = (product as TaggedThemeProduct).tags;
   return {
     ...product,
     compatibleBoards:
@@ -461,6 +467,7 @@ export function mergeThemeProductWithCatalog(
     themeRev: technicalTheme.themeRev || product.themeRev,
     themeSpecPath: technicalTheme.themeSpecPath || product.themeSpecPath,
     earlierThemeSpecPaths: technicalTheme.earlierThemeSpecPaths,
+    tags: catalogTags?.length ? catalogTags : productOwnTags,
   };
 }
 

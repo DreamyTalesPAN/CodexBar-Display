@@ -765,6 +765,35 @@ export function ThemeLibraryScreen({
     }
   }
 
+  // A failed install is one dialog of the page, not of its card: a search or a
+  // filter can take the card off the list while the install runs, and the
+  // failure must still be shown. Its row is the one that started the install.
+  const hostInstallStatus = statusForHost(installStatus, windowsHost);
+  const failedInstallItem =
+    hostInstallStatus?.phase === "error"
+      ? installRow
+        ? allItems.find(
+            (item) =>
+              rowKey(item) === installRow &&
+              item.themeId === hostInstallStatus.themeId,
+          )
+        : allItems.find((item) => item.themeId === hostInstallStatus.themeId)
+      : undefined;
+  const failedInstallBlocker = failedInstallItem
+    ? installBlockerFor({
+        // The row of a failed install offers Try again, as before.
+        allowUnreadyInstall: true,
+        device,
+        item: failedInstallItem,
+        screensaverInstallBlockedReason:
+          failedInstallItem.usage === "screensaver"
+            ? screensaverInstallBlockedReason
+            : "",
+        themeInstallBlockedReason: readiness.buttonReason,
+        themeInstallEnabled,
+      })
+    : null;
+
   if (editingTheme) {
     return (
       <ThemeStudioScreen
@@ -949,14 +978,19 @@ export function ThemeLibraryScreen({
                       : ""
                   }
                   device={device}
+                  // The theme VibeTV shows, as its slot reports it; the
+                  // selection stands in only while the slot is not known yet.
                   displayThemeId={
+                    (theme.usage === "screensaver"
+                      ? screensaverThemeId
+                      : liveThemeId) ??
                     (theme.usage === "screensaver"
                       ? screensaverDisplayTheme
                       : liveDisplayTheme
                     )?.themeId
                   }
                   item={theme}
-                  installStatus={statusForHost(installStatus, windowsHost)}
+                  installStatus={hostInstallStatus}
                   key={rowKey(theme)}
                   installRow={installRow}
                   loadingEditorRow={loadingEditorRow}
@@ -983,6 +1017,17 @@ export function ThemeLibraryScreen({
           </>
         )}
       </section>
+
+      {failedInstallItem && hostInstallStatus?.phase === "error" ? (
+        <InstallErrorDialog
+          canRetry={
+            !busyAction && !preparingInstallRow && !failedInstallBlocker
+          }
+          onRetry={() => void installLibraryTheme(failedInstallItem)}
+          status={hostInstallStatus}
+          usage={failedInstallItem.usage}
+        />
+      ) : null}
 
       {previewTheme ? (
         <Dialog open onOpenChange={(open) => !open && setPreviewTheme(null)}>
@@ -1339,7 +1384,6 @@ function ThemeListItem({
   themeStorageLocked: boolean;
   tokenHistoryUnavailable: boolean;
 }) {
-  const theme = item.kind === "published" ? item.product : null;
   const isCustom = item.kind === "custom";
   // A catalog theme's elements are only known once its preview has loaded.
   const [publishedPack, setPublishedPack] = useState<ThemeRenderPack | null>(null);
@@ -1364,29 +1408,22 @@ function ThemeListItem({
         ? installRow === rowKey(item)
         : installStatus.phase !== "complete" || installed));
   const retryingFailedInstall = visibleInstallStatus && installStatus?.phase === "error";
-  const screensaverLockBlocker: ThemeInstallBlocker | null =
-    screensaverInstallBlockedReason
-      ? { reason: screensaverInstallBlockedReason }
-      : null;
   // The VibeTV cannot draw its active theme (#498): the way out is another
   // theme, so that state must not block installing one.
   const themeNotShown = device?.connectionState === "display_render_failed";
-  const blocker =
-    screensaverLockBlocker ??
-    (theme
-      ? buildThemeInstallBlocker({
-          device,
-          theme,
-          allowUnreadyInstall: retryingFailedInstall || themeNotShown,
-          themeInstallBlockedReason,
-          themeInstallEnabled,
-        })
-      : buildCustomThemeInstallBlocker({
-          allowUnreadyInstall: retryingFailedInstall || themeNotShown,
-          device,
-          themeInstallBlockedReason,
-          themeInstallEnabled,
-        }));
+  const blocker = installBlockerFor({
+    allowUnreadyInstall: retryingFailedInstall || themeNotShown,
+    device,
+    item,
+    screensaverInstallBlockedReason,
+    themeInstallBlockedReason,
+    themeInstallEnabled,
+  });
+  // The button of this row started the install that may fail, so the focus
+  // is put back on the card when the button turns into the pill.
+  const installStartedHereRef = useRef(false);
+  const wasInstalledRef = useRef(false);
+  const previewButtonRef = useRef<HTMLButtonElement>(null);
   const blockedLabel = labelForInstallBlocker(blocker);
   const disabled = actionInFlight || (installed && !retryingFailedInstall) || Boolean(blocker);
   // The reasons are this file's own fixed sentences, written for themes; this
@@ -1434,12 +1471,29 @@ function ThemeListItem({
     preparingInstall ||
     installLabel === "Installing" ||
     (visibleInstallStatus && installStatus?.phase === "installing");
+  // Active is the theme VibeTV shows, as its slot reports it. An update that is
+  // offered for that theme keeps the pill, the other rows keep theirs.
+  const isActiveTheme = item.themeId === displayThemeId;
   const statusPill: "Active" | "Installed" | null =
-    rowInstalled || installed
-      ? item.themeId === displayThemeId
-        ? "Active"
-        : "Installed"
-      : null;
+    isActiveTheme && (rowInstalled || installed || updateAvailable)
+      ? "Active"
+      : rowInstalled || installed
+        ? "Installed"
+        : null;
+  useEffect(() => {
+    const becameInstalled = rowInstalled && !wasInstalledRef.current;
+    wasInstalledRef.current = rowInstalled;
+    if (!becameInstalled || !installStartedHereRef.current) {
+      return;
+    }
+    installStartedHereRef.current = false;
+    // The focused Install button is gone with the install; the card's preview
+    // button is always there, so a keyboard user keeps the place in the list.
+    const focused = document.activeElement;
+    if (!focused || focused === document.body) {
+      previewButtonRef.current?.focus();
+    }
+  }, [rowInstalled]);
 
   return (
     <Item
@@ -1455,6 +1509,7 @@ function ThemeListItem({
           aria-label={`Preview ${item.title}`}
           className="h-auto w-full justify-start rounded-[6px] p-0"
           onClick={() => onPreviewTheme(item)}
+          ref={previewButtonRef}
           type="button"
           variant="ghost"
         >
@@ -1548,6 +1603,7 @@ function ThemeListItem({
             disabled={disabled}
             onClick={() => {
               if (!blocker) {
+                installStartedHereRef.current = true;
                 onInstallTheme(item);
               }
             }}
@@ -1560,34 +1616,45 @@ function ThemeListItem({
           </Button>
         )}
       </ItemActions>
-      <InstallOverlays
-        canRetry={!disabled}
-        onRetry={() => onInstallTheme(item)}
-        status={visibleInstallStatus ? installStatus! : null}
-        usage={item.usage}
-      />
     </Item>
   );
 }
 
-/**
- * A failed install is the usual overlay dialog. A running one has no steps in
- * the card (it never changes its height): its button says "Installing".
- */
-function InstallOverlays({
-  canRetry,
-  onRetry,
-  status,
-  usage,
+// What holds a row's Install back, if anything: the screensaver switch, or the
+// device and the theme's readiness. The row and the page's failed-install
+// dialog ask the same question.
+function installBlockerFor({
+  allowUnreadyInstall,
+  device,
+  item,
+  screensaverInstallBlockedReason,
+  themeInstallBlockedReason,
+  themeInstallEnabled,
 }: {
-  canRetry: boolean;
-  onRetry: () => void;
-  status: ThemeInstallStatus | null;
-  usage: ThemeStudioUsage;
-}) {
-  return status?.phase === "error" ? (
-    <InstallErrorDialog canRetry={canRetry} onRetry={onRetry} status={status} usage={usage} />
-  ) : null;
+  allowUnreadyInstall: boolean;
+  device: ThemeLibraryDeviceInfo | null;
+  item: ThemeLibraryItem;
+  screensaverInstallBlockedReason: string;
+  themeInstallBlockedReason: string;
+  themeInstallEnabled: boolean;
+}): ThemeInstallBlocker | null {
+  if (screensaverInstallBlockedReason) {
+    return { reason: screensaverInstallBlockedReason };
+  }
+  return item.kind === "published"
+    ? buildThemeInstallBlocker({
+        device,
+        theme: item.product,
+        allowUnreadyInstall,
+        themeInstallBlockedReason,
+        themeInstallEnabled,
+      })
+    : buildCustomThemeInstallBlocker({
+        allowUnreadyInstall,
+        device,
+        themeInstallBlockedReason,
+        themeInstallEnabled,
+      });
 }
 
 function InstallErrorDialog({
