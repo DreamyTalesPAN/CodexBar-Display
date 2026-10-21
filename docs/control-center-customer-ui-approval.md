@@ -9381,3 +9381,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: no new UI or text; the existing "Update Mac App" offer is shown when the late launch check found an update.
 - Scope: control-center-runtime.ts listener and control-center-app.tsx offer state with its regression test; the Mac shell hands the version over through the existing window-event bridge.
 - What's new: none — the existing update offer learns a late update
+
+## 2026-10-21 — #892: a slow launch update check also shows the existing update offer
+
+- User approval: pending — the existing "Update Mac App" offer now also appears after a slow launch update check (also during setup hold rules of #822 and on Updates); no new text
+- Approved customer-visible result: the existing "Update Mac App" offer appears when the launch update check finishes late and finds an update, including while the setup hold rules of #822 apply and on the Updates tab; no new text or layout.
+- Scope: control-center-runtime.ts listener and control-center-app.tsx offer state with its regression test; the Mac shell hands the late version over through the existing window-event bridge.
+- What's new: none — the existing update offer learns a late update
