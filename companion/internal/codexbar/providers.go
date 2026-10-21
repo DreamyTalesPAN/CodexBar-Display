@@ -196,6 +196,11 @@ func fetchDashboardUsage(ctx context.Context, providerIDs []string, fetch func(c
 
 var engineInventory engineAnswer[[]byte]
 
+// inventoryMaxAge bounds an inventory answer on the Mac, where the inventory is
+// not yet verified to come from the CodexBar config alone. Windows keeps it for
+// the life of the engine (providerProbePerProvider).
+const inventoryMaxAge = time.Minute
+
 // inventorySettingsPath is the settings file the inventory is built from:
 // Win-CodexBar's settings.json on Windows, and on the Mac the CodexBar config
 // the CLI is pointed at (the path commandEnvironment passes as CODEXBAR_CONFIG).
@@ -212,11 +217,11 @@ func inventorySettingsPath(ctx context.Context) string {
 
 // readProviderInventory runs the inventory command with the caller's runner.
 // Where engine answers are reused (reuseEngineAnswers) it returns the last
-// answer instead for as long as the CLI and its settings file are unchanged,
-// for the life of the engine process: Win-CodexBar 0.60.3 builds the inventory
-// from those two files and nothing else. On the Mac the same rule uses the
-// CodexBar config the CLI reads (CODEXBAR_CONFIG); that the Mac CLI takes its
-// inventory from that file alone is not yet checked on a Mac.
+// answer instead for as long as the CLI and its settings file are unchanged.
+// On Windows that is the life of the engine process: Win-CodexBar 0.60.3 builds
+// the inventory from those two files and nothing else. On the Mac the answer is
+// kept only for inventoryMaxAge, because whether the Mac CLI takes its inventory
+// from the CodexBar config (CODEXBAR_CONFIG) alone is not yet checked on a Mac.
 // Every write to the settings file moves its stamp, the CLI's own on a
 // provider switch included, and SetProviderEnabled forgets the answer as well.
 // Only an answer that parses is kept. Win-CodexBar answers with its default
@@ -230,7 +235,11 @@ func inventorySettingsPath(ctx context.Context) string {
 // CLI (probeProviderSetup).
 func readProviderInventory(ctx context.Context, timeout time.Duration, bin string, run func(context.Context, time.Duration, string, ...string) ([]byte, error)) ([]byte, error) {
 	stamp := engineStamp(bin, inventorySettingsPath(ctx))
-	if raw, ok := engineInventory.load(stamp, 0); ok {
+	maxAge := inventoryMaxAge
+	if providerProbePerProvider {
+		maxAge = 0
+	}
+	if raw, ok := engineInventory.load(stamp, maxAge); ok {
 		return raw, nil
 	}
 	// A forget during the run (fresh=1, a provider switch) outdates this
