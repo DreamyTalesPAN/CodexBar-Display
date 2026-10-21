@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { UsageProviderInfo, UsageSnapshot } from "../control-center-types";
-import { buildFrameData, renderTextPrimitive } from "../live-vibetv-preview";
+import { boundValue, buildFrameData, renderTextPrimitive } from "../live-vibetv-preview";
 import {
   displayPreviewFor,
   displayPreviewsFor,
@@ -162,12 +162,19 @@ describe("displayPreviewFor: the frame the theme draws", () => {
 });
 
 describe("displayPreviewsFor: token totals the usage service already read", () => {
-  it("marks zero token totals as known once the snapshot's token history is ready", () => {
-    // /v1/usage leaves all-zero totals out but sets tokenUsageReady (Codex on #821).
-    const ready = { tokenUsageReady: true, providers: [provider({ id: "codex", label: "Codex" })] } as UsageSnapshot;
-    const notReady = { providers: [provider({ id: "codex", label: "Codex" })] } as UsageSnapshot;
-    expect(displayPreviewsFor(ready, [{ id: "codex", label: "Codex" }])[0]?.frame?.tokenTotalsKnown).toBe(true);
-    expect(displayPreviewsFor(notReady, [{ id: "codex", label: "Codex" }])[0]?.frame?.tokenTotalsKnown).toBeUndefined();
+  it.each([false, true])("keeps omitted token totals unavailable when tokenUsageReady is %s", (tokenUsageReady) => {
+    // Completed Unavailable history has a timestamp, but no known token totals.
+    const usage = { tokenUsageReady, providers: [provider({})] } as UsageSnapshot;
+    const frame = displayPreviewsFor(usage, [{ id: "codex", label: "Codex" }])[0].frame!;
+
+    expect(frame.tokenTotalsKnown).toBe(false);
+    const data = buildFrameData(undefined, frame);
+    expect(["st", "wt", "tt"].map((key) => boundValue(key, data))).toEqual(["--", "--", "--"]);
+  });
+
+  it.each([0, 123])("preserves an explicitly reported token total of %s", (totalTokens) => {
+    const frame = displayPreviewFor(provider({ totalTokens }))!.frame!;
+    expect(boundValue("tt", buildFrameData(undefined, frame))).toBe(String(totalTokens));
   });
 });
 
@@ -311,7 +318,7 @@ describe("provider slots in the synthesized frames", () => {
     expect(legacy.windows).toBeUndefined();
     expect(providerSlotsFor([legacy], undefined)).toEqual([]);
     expect(
-      displayPreviewFor(legacy, new Date(), false, [legacy])?.frame?.providerSlots,
+      displayPreviewFor(legacy, new Date(), [legacy])?.frame?.providerSlots,
     ).toEqual([]);
   });
 

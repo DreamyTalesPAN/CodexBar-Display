@@ -8871,3 +8871,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #821 as in its own entries plus the entries merged with 1277c824; nothing else changes.
 - Scope: the merge of 1277c824 and this approval record. Pull request branch #821 only, not merged, not released.
 - What's new: none — merge of 1277c824, no customer-visible change of its own
+
+## 2026-10-21 — #821: keep unavailable token history unknown
+
+- User approval: no visible change – UI approval not needed (bug fix: #821 omitted token counts stay unknown after token collection completes)
+- Approved customer-visible result: unavailable token history shows the existing -- state instead of an invented zero.
+- Scope: setup-display-previews.ts and its regression tests; PR #821 only.
+- What's new: none — correct the existing preview's unavailable-state handling.

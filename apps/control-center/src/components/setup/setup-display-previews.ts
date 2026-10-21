@@ -217,7 +217,6 @@ export function withResetTrust(
  */
 export function displayFrameFor(
   provider: UsageProviderInfo,
-  tokenUsageReady = false,
   allProviders: UsageProviderInfo[] = [provider],
   now = new Date(),
 ): DisplayFrame | null {
@@ -250,9 +249,10 @@ export function displayFrameFor(
     sessionTokens: provider.sessionTokens,
     weekTokens: provider.weekTokens,
     totalTokens: provider.totalTokens,
-    // /v1/usage leaves zero token totals out once the token history is read;
-    // the snapshot's readiness says those zeros are known (Codex on #821).
-    ...(tokenUsageReady ? { tokenTotalsKnown: true } : {}),
+    // Completed token history can still be unavailable. Only reported counts
+    // establish known totals; global tokenUsageReady is not a measurement.
+    tokenTotalsKnown: [provider.sessionTokens, provider.weekTokens, provider.totalTokens]
+      .some((count) => count !== undefined),
   }, provider.collectedAt, now);
 }
 
@@ -266,14 +266,13 @@ export function displayFrameFor(
 export function displayPreviewFor(
   provider: UsageProviderInfo | undefined,
   now = new Date(),
-  tokenUsageReady = false,
   allProviders?: UsageProviderInfo[],
 ): SetupDisplayModePreview | null {
   if (!provider) {
     return null;
   }
   const unavailable = provider.stale === true || provider.usageUnavailable === true;
-  const frame = displayFrameFor(provider, tokenUsageReady, allProviders, now);
+  const frame = displayFrameFor(provider, allProviders, now);
   return {
     providerLabel: provider.label,
     ...(frame ? { frame, frameAt: provider.collectedAt } : {}),
@@ -324,7 +323,6 @@ export function displayPreviewsFor(
       displayPreviewFor(
         reported.get(provider.id),
         new Date(),
-        usage?.tokenUsageReady === true,
         complete,
       ) ?? {
         providerLabel: provider.label,
