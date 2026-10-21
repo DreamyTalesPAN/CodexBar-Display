@@ -54,6 +54,8 @@ export function SetupLiveScreen({
   // on a hardware WebGL, and replaces the flat preview once its model is on
   // screen. The flat preview stays mounted underneath: it is the one that tells
   // the wizard VibeTV shows its theme, and it is all there is without WebGL.
+  // With WebGL it draws only the screen, never the flat picture, and the area
+  // stays empty until the model is on screen.
   const hardware3D = useHardware3D();
   const [threeReady, setThreeReady] = useState(false);
   const onThreeReady = useCallback(() => setThreeReady(true), []);
@@ -90,11 +92,20 @@ export function SetupLiveScreen({
             />
           </div>
         ) : null}
-        <div className={threeReady ? "hidden" : "w-full"}>
+        <div
+          className={
+            threeReady
+              ? "hidden"
+              : hardware3D === false
+                ? "w-full"
+                : "invisible aspect-[640/411] w-[min(640px,calc(100vw-48px))]"
+          }
+        >
           <LiveVibeTVPreview
             device={device}
             displayFrame={displayFrame}
             onPreviewReady={onPreviewReady}
+            screenOnly={hardware3D !== false}
             usage={usage}
           />
         </div>
