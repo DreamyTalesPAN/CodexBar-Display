@@ -91,13 +91,18 @@ function choose(option: string) {
 }
 
 describe("SettingsScreen display preferences", () => {
-  it.each(["automatic", "fixed"] as const)("offers CodexBar's mode under Display mode in %s", (mode) => {
+  it.each(["automatic", "fixed", "pair"] as const)("offers CodexBar's mode under Display mode in %s", (mode) => {
     const onChange = vi.fn();
     const settings = props({ displayPreferences: [rotation, usageMode], onDisplayPreferenceChange: onChange });
     settings.providerPicker.display = { mode, providerIds: [], configured: true, valid: true };
     render(<SettingsScreen {...settings} />);
     const control = screen.getByRole("combobox", { name: "Show" });
     expect(control.closest("#settings-display-mode")).not.toBeNull();
+    expect(screen.getAllByRole("combobox", { name: "Show" })).toHaveLength(1);
+    expect(screen.getByRole("group", { name: "Display mode" }).compareDocumentPosition(control)
+      & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(control.compareDocumentPosition(screen.getByText("Limits on VibeTV"))
+      & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(control.textContent).toBe("Used");
     expect(openSelect("Show")).toEqual(["Used", "Remaining"]);
     choose("Remaining");

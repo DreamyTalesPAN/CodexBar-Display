@@ -10189,3 +10189,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Settings → Display mode has a Show row with Used and Remaining, using the existing preference control; it follows CodexBar's saved choice and is disabled when the usage-mode environment override is set.
 - Scope: CodexBar preference read/write adapter, display preference registration, Settings row, and focused tests; no VibeTV copy, usage conversion, or Windows setting.
 - What's new: none — customer notice waits for Paul's review of build 7203.
+
+## 2026-10-21 — paultest-build8: Show Used or Remaining in every Display mode
+
+- User approval: pending — build8 coordinator follow-up on 21.10.: place the Used/Remaining Show row below the mode-specific choices in Automatic, One provider and Two at once for Paul's Mac test build 7203.
+- Approved customer-visible result: One existing generic Show preference row appears in Display mode before Limits on VibeTV in all three modes; it uses CodexBar's preference and preserves the calm Settings layout from claude/paultest-592a.
+- Scope: Integrate claude/used-remaining-switch (#877) and test all three modes, row placement, existing preference writes and unavailable/overridden choices.
+- What's new: none — existing preference surfaced in the combined test candidate.

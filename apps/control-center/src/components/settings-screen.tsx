@@ -350,6 +350,13 @@ export function SettingsScreen({
             </div>
           ) : null}
         </div>
+        {usageMode ? (
+          <PreferenceRow
+            descriptor={usageMode}
+            disabled={localActionBusy}
+            onChange={onDisplayPreferenceChange}
+          />
+        ) : null}
         {providerShortcut ? (
           <p className="-mt-1 text-[13px] text-muted-foreground">
             {providerShortcut === "available"
