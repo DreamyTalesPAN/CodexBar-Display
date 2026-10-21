@@ -8954,3 +8954,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #817 as in its own entries plus the entries merged with 0a599c37; nothing else changes.
 - Scope: the merge of 0a599c37 and this approval record. Pull request branch #817 only, not merged, not released.
 - What's new: none — merge of 0a599c37, no customer-visible change of its own
+
+## 2026-10-21 — #817: redundant checkbox focus variant removed
+
+- User approval: no visible change – UI approval not needed (#817 Codex cleanup: redundant checkbox focus variant removed; the existing invalid rule already renders the red border)
+- Approved customer-visible result: an invalid checked checkbox keeps its red border as before; no new text, no layout change.
+- Scope: the checkbox class list and the invalid focus ring test file. Pull request branch #817 only.
+- What's new: none — the removed variant was redundant with aria-invalid:aria-checked:border-destructive
