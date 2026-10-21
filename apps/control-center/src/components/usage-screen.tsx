@@ -198,10 +198,10 @@ export function UsageScreen({
             windowsHost={windowsHost}
           />
         ) : // The notice is a dialog over this page (below), not a box in it.
-        tokenHistoryUnavailable ? null : tokenUsageReady && hasProviders ? (
+        tokenHistoryUnavailable ? null : tokenUsageReady && shownProviders.length > 0 ? (
           <TokenUsageOverTimePanel
             onRefresh={onRefresh}
-            providers={providers}
+            providers={shownProviders}
             refreshPending={refreshPending}
             refreshing={refreshing || refreshPending}
             updating={tokenUsageUpdating}
