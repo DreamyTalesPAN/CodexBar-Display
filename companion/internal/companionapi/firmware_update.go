@@ -1449,15 +1449,23 @@ func firmwareUpdateCommandArgs(target, manifestURL string, force bool) []string 
 // resumableRescueMarker), the same board and firmware, and an intact image.
 func (s *Server) cachedRescueTarget(board, installedFirmware string) (string, bool) {
 	marker, ok := firmwareupdate.LoadRescueMarker(s.home, time.Now())
-	if !ok || !s.rescueMarkerPortPresent(marker) ||
+	if !ok {
+		return "", false
+	}
+	port, present, provenSilent := s.rescueMarkerPortProbed(marker)
+	if !present ||
+		strings.TrimSpace(marker.ChipMAC) == "" ||
 		!strings.EqualFold(strings.TrimSpace(marker.Board), strings.TrimSpace(board)) ||
 		strings.TrimSpace(marker.Firmware) != strings.TrimSpace(installedFirmware) ||
 		!firmwareupdate.RescueImageIntact(marker) {
 		return "", false
 	}
+	marker.Port = port
 	// While a firmware update runs (the rescue itself, between its two write
 	// attempts), the port is the update's: no hello probe (Codex review on #819).
-	if s.readCableHello != nil && !s.firmwareUpdateActive.Load() {
+	// A moved port was just proven silent by the search; reading it again would
+	// double the wait (Codex on #840).
+	if s.readCableHello != nil && !s.firmwareUpdateActive.Load() && !provenSilent {
 		if hello, err := s.readCableHello(marker.Port); err == nil &&
 			(strings.TrimSpace(hello.DeviceID) != "" || strings.TrimSpace(hello.Firmware) != "") {
 			return "", false
