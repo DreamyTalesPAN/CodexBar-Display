@@ -852,8 +852,13 @@ function ThemePrimitiveNode({
       primitive.maxWidth || primitive.mw || primitive.width || primitive.w || 0;
     const originalFont = primitive.font || primitive.f || 1;
     const maxSize = Math.max(1, primitive.fontSize || primitive.s || 1);
-    // Preserve the fixed countdown size chosen by the footer formatter.
-    const countdownFooter = footer !== null && footer !== RESET_IDLE && footer !== RESET_UNAVAILABLE;
+    // Preserve the fixed countdown size chosen by the footer formatter, unless
+    // the countdown fits no variant: that one still shrinks.
+    const countdownFooter =
+      footer !== null &&
+      footer !== RESET_IDLE &&
+      footer !== RESET_UNAVAILABLE &&
+      themeTextFittedSize(text, originalFont, maxSize, maxWidth, true) === maxSize;
     const { font, size, lines } = themeTextFit(text, originalFont, maxSize, maxWidth,
       !countdownFooter && (primitive.fit || primitive.ft) === "shrink", height);
     const boxHeight = themeTextValignBoxHeight(height, originalFont, maxSize);
@@ -1917,7 +1922,9 @@ function displayedResetFooter(
     allIdle = allIdle && window.idle;
     if (window.resetSecs > 0) {
       const duration = formatReset(window.resetSecs, false);
-      const variants = [`${window.label} resets in ${duration}`, `${window.label} ${duration}`];
+      // A pair label ("Claude Weekly") is longer than the limit name ("Weekly").
+      const limit = frame.provider.includes("+") ? window.label.replace(/^\S+ /, "") : window.label;
+      const variants = [`${window.label} resets in ${duration}`, `${window.label} ${duration}`, `${limit} ${duration}`];
       if (slots.size === 1) variants.push(`Resets ${duration}`);
       const maxWidth = primitive.maxWidth || primitive.mw || primitive.width || primitive.w || 0;
       const font = primitive.font || primitive.f || 1;
