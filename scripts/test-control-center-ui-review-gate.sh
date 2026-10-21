@@ -39,16 +39,16 @@ WHATS_NEW_NONE="- What's new: none — nothing a customer would look for"
 approval_entry() {
   local label="$1"
   local whats_new="${2-$WHATS_NEW_NONE}"
-  printf '\n## %s\n\n- User approval: Explicit test approval.\n- Approved customer-visible result: %s\n' \
-    "$label" "$label"
+  printf '\n## %s\n\n- User approval: no visible change – UI approval not needed (%s test)\n- Approved customer-visible result: %s\n- Scope: gate test fixture\n' \
+    "$label" "$label" "$label"
   [[ -z "$whats_new" ]] || printf '%s\n' "$whats_new"
 }
 
 # An entry that waits for Paul's yes in the PR review: the gate passes with a notice.
 pending_approval_entry() {
   local label="$1"
-  printf '\n## %s\n\n- User approval: pending — Paul reviews this PR (test).\n- Approved customer-visible result: %s\n%s\n' \
-    "$label" "$label" "$WHATS_NEW_NONE"
+  printf '\n## %s\n\n- User approval: pending — Paul reviews %s (test).\n- Approved customer-visible result: %s\n- Scope: gate test fixture\n%s\n' \
+    "$label" "$label" "$label" "$WHATS_NEW_NONE"
 }
 
 PENDING_NOTICE="UI approval pending: Paul's yes in the PR review is required before merge"
@@ -75,6 +75,7 @@ setup_repo() {
 
   git -C "$repo" add .
   git -C "$repo" commit -q -m "Initial approved UI"
+  git -C "$repo" update-ref refs/remotes/origin/main HEAD
 }
 
 commit_file() {
@@ -261,7 +262,7 @@ test_every_added_entry_needs_its_whats_new_line() {
   approval_entry "Third change" \
     >> "$repo/docs/control-center-customer-ui-approval.md"
   commit_approval "$repo" "Fourth change"
-  expect_gate_success "$repo"
+  expect_gate_due "$repo"
 }
 
 # Two entries in one change that only together hold both approval lines.
@@ -333,6 +334,8 @@ test_pending_approval_notice_reaches_ci_summary() {
   git -C "$repo" add docs/control-center-customer-ui-approval.md
   git -C "$repo" commit -q -m "Pending approval for overview"
 
+  commit_approval "$repo" "Later non-pending entry"
+
   local summary="${TMP_ROOT}/pending-ci-summary.md"
   : > "$summary"
   local output
@@ -396,6 +399,113 @@ test_given_approval_prints_no_pending_notice() {
   assert_not_contains "$output" "UI approval pending"
 }
 
+# Regression: the newest valid marker must not hide a broken earlier commit.
+test_first_broken_entry_is_named() {
+  local repo="${TMP_ROOT}/first-broken"
+  setup_repo "$repo"
+  commit_approval "$repo" "First broken change" ""
+  commit_approval "$repo" "Second valid change"
+  expect_gate_due "$repo"
+  local output
+  output="$(run_gate "$repo" || true)"
+  assert_contains "$output" "First broken change"
+  assert_not_contains "$output" "Second valid change"
+}
+
+# Pending remains allowed even when followed by a non-pending entry.
+test_earlier_pending_entry_prints_notice() {
+  local repo="${TMP_ROOT}/earlier-pending"
+  setup_repo "$repo"
+  pending_approval_entry "First pending change" >> "$repo/docs/control-center-customer-ui-approval.md"
+  commit_approval "$repo" "Second non-pending change"
+  local output
+  output="$(run_gate "$repo")" || die "expected pending followed by non-pending to pass"
+  assert_contains "$output" "$PENDING_NOTICE"
+}
+
+# Validation applies to each whole entry, including staged/unstaged additions.
+test_required_fields_and_approval_forms() {
+  local kind repo output
+  for kind in missing-scope duplicate duplicate-base multiple-approval bad-form unquoted approved invisible-period; do
+    repo="${TMP_ROOT}/entry-${kind}"
+    setup_repo "$repo"
+    case "$kind" in
+      missing-scope)
+        approval_entry "First missing scope" | sed '/^- Scope:/d' >> "$repo/docs/control-center-customer-ui-approval.md"
+        ;;
+      duplicate)
+        approval_entry "First duplicate" >> "$repo/docs/control-center-customer-ui-approval.md"
+        approval_entry "Second duplicate" | sed 's/(Second duplicate test)/(First duplicate test)/' >> "$repo/docs/control-center-customer-ui-approval.md"
+        ;;
+      duplicate-base)
+        approval_entry "Initial UI" >> "$repo/docs/control-center-customer-ui-approval.md"
+        ;;
+      multiple-approval)
+        approval_entry "First multiple approval" >> "$repo/docs/control-center-customer-ui-approval.md"
+        printf '%s\n' '- User approval: pending — a second approval line' >> "$repo/docs/control-center-customer-ui-approval.md"
+        ;;
+      bad-form)
+        approval_entry "First bad form" | sed 's/^- User approval:.*/- User approval: implementation agent says OK/' >> "$repo/docs/control-center-customer-ui-approval.md"
+        ;;
+      unquoted)
+        approval_entry "First unquoted" | sed 's/^- User approval:.*/- User approval: approved by Paul in chat/' >> "$repo/docs/control-center-customer-ui-approval.md"
+        ;;
+      invisible-period)
+        approval_entry "First invisible" | sed '/^- User approval:/s/$/./' >> "$repo/docs/control-center-customer-ui-approval.md"
+        ;;
+      approved)
+        approval_entry "First quoted" | sed 's/^- User approval:.*/- User approval: approved by Paul in chat: "yes, that layout"/' >> "$repo/docs/control-center-customer-ui-approval.md"
+        ;;
+    esac
+    git -C "$repo" add docs/control-center-customer-ui-approval.md
+    approval_entry "Last valid change" >> "$repo/docs/control-center-customer-ui-approval.md"
+    if [[ "$kind" == approved || "$kind" == invisible-period ]]; then
+      expect_gate_success "$repo"
+    else
+      expect_gate_due "$repo"
+      output="$(run_gate "$repo" || true)"
+      assert_not_contains "$output" "Last valid change"
+      case "$kind" in
+        missing-scope) assert_contains "$output" 'First missing scope: missing Scope:' ;;
+        duplicate)
+          assert_contains "$output" 'First duplicate: User approval:'
+          assert_contains "$output" 'Second duplicate: User approval:' ;;
+        duplicate-base) assert_contains "$output" 'Initial UI: User approval:' ;;
+        *) assert_contains "$output" 'First ' ;;
+      esac
+    fi
+  done
+}
+
+# Old base entries are not retroactively validated; even a base that advanced
+# after branching must not hide an entry introduced by this branch.
+test_merge_base_scopes_validation() {
+  local repo="${TMP_ROOT}/merge-base-scope" output feature_head base_branch
+  setup_repo "$repo"
+  commit_approval "$repo" "Historical incomplete entry" ""
+  commit_approval "$repo" "Historical valid marker"
+  git -C "$repo" update-ref refs/remotes/origin/main HEAD
+  expect_gate_success "$repo"
+  base_branch="$(git -C "$repo" symbolic-ref --short HEAD)"
+  git -C "$repo" checkout -q -b feature
+  commit_approval "$repo" "Branch first broken entry" ""
+  commit_approval "$repo" "Branch last valid entry"
+  feature_head="$(git -C "$repo" rev-parse HEAD)"
+  git -C "$repo" checkout -q "$base_branch"
+  commit_file "$repo" "docs/base-follow-up.md" "Advance base"
+  git -C "$repo" merge -q --no-ff "$feature_head" -m "Merge pull request"
+  if output="$(run_gate_pull_request "$repo")"; then
+    die "expected earlier broken PR entry to fail on the merge checkout"
+  fi
+  assert_contains "$output" 'Branch first broken entry: missing'
+  assert_not_contains "$output" 'Historical incomplete entry'
+  assert_not_contains "$output" 'Branch last valid entry'
+}
+
+test_required_fields_and_approval_forms
+test_merge_base_scopes_validation
+test_first_broken_entry_is_named
+test_earlier_pending_entry_prints_notice
 test_non_ui_commits_do_not_block
 test_ui_change_blocks_immediately
 test_working_tree_ui_change_blocks_immediately
