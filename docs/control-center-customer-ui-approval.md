@@ -11405,3 +11405,66 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #821 as in its own entries plus the entries merged with 58ba27d0; nothing else changes.
 - Scope: the merge of 58ba27d0 and this approval record. Pull request branch #821 only, not merged, not released.
 - What's new: none — merge of 58ba27d0, no customer-visible change of its own
+
+## 2026-10-20 — #816: "Not now" on "VibeTV not found" holds through a short status change in the same outage (#787)
+
+- User approval: pending — Paul reviews (Codex finding #787 on #784); before → after: after "Not now" on the Overview's "VibeTV not found" dialog, a short in-between status (reconnecting, inconclusive check) during the same outage cleared the choice and the dialog came back when VibeTV was still missing → "Not now" holds until VibeTV is connected again; after a real reconnect and a new loss the dialog shows again as before. No new or changed text, layout or look.
+- Approved customer-visible result: the "VibeTV not found" dialog as in #784, shown once per outage after "Not now".
+- Scope: `apps/control-center/src/components/control-center-app.tsx`, its new test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #816: "Not now" also holds while the companion keeps a recently seen VibeTV "connected" during reconnecting (Codex review)
+
+- User approval: pending — Paul reviews (Codex review fix on #816); before → after: in the companion's short anti-flap grace a recently seen cable VibeTV is reported connected while it is still reconnecting; that cleared "Not now" and the "VibeTV not found" dialog came back in the same outage → only a connected VibeTV that is no longer reconnecting ends the outage. No new or changed text, layout or look.
+- Approved customer-visible result: as in the #816 entry above.
+- Scope: `apps/control-center/src/components/control-center-app.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #816: approval marker after merging claude/group-calm-redesign
+
+- User approval: no visible change – UI approval not needed (#816: approval marker after merging claude/group-calm-redesign: Merge of claude/group-calm-redesign into this branch; no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #816: approval marker after merging claude/group-calm-redesign
+
+- User approval: no visible change – UI approval not needed (#816: approval marker after merging claude/group-calm-redesign: Merge of claude/group-calm-redesign into this branch; no visible change of its own; the entries it brings carry their own approvals; not seen by Paul) [2]
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #816: approval marker after merging claude/group-calm-redesign at ece7b388
+
+- User approval: no visible change – UI approval not needed (#816: approval marker after merging claude/group-calm-redesign at ece7b388: merge of claude/group-calm-redesign (ece7b388) into #816; no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
+- Approved customer-visible result: #816 as in its own entries (pending, Paul reviews) plus the entries merged with ece7b388; nothing else changes.
+- Scope: the merge of ece7b388 and this approval record. Pull request branch #816 only, not merged, not released.
+- What's new: none — merge of ece7b388, no customer-visible change of its own
+
+## 2026-10-20 — #816: approval lines rewritten to the two accepted forms
+
+- User approval: no visible change – UI approval not needed (#816 record rewrite for the gate in #823; no customer-visible change)
+- Approved customer-visible result: #816 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
+- Scope: #816 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #816 approval record only
+
+## 2026-10-20 — #816: approval marker after merging claude/group-calm-redesign at d748c370
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (d748c370) into #816; the own entries of #816 keep their approvals)
+- Approved customer-visible result: #816 as in its own entries plus the entries merged with d748c370; nothing else changes.
+- Scope: the merge of d748c370 and this approval record. Pull request branch #816 only, not merged, not released.
+- What's new: none — merge of d748c370, no customer-visible change of its own
+
+## 2026-10-20 — #816: approval marker after merging claude/group-calm-redesign at 79a9589b
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (79a9589b) into #816; the own entries of #816 keep their approvals)
+- Approved customer-visible result: #816 as in its own entries plus the entries merged with 79a9589b; nothing else changes.
+- Scope: the merge of 79a9589b and this approval record. Pull request branch #816 only, not merged, not released.
+- What's new: none — merge of 79a9589b, no customer-visible change of its own
+
+## 2026-10-21 — #816: approval marker after merging claude/group-calm-redesign at fb30d196
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (fb30d196) into #816; the own entries of #816 keep their approvals)
+- Approved customer-visible result: #816 as in its own entries plus the entries merged with fb30d196; nothing else changes.
+- Scope: the merge of fb30d196 and this approval record. Pull request branch #816 only, not merged, not released.
+- What's new: none — merge of fb30d196, no customer-visible change of its own
