@@ -9315,3 +9315,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #802 as in its own entries plus the entries merged with 3caaf211; nothing else changes.
 - Scope: the merge of 3caaf211 and this approval record. Pull request branch #802 only, not merged, not released.
 - What's new: none — merge of 3caaf211, no customer-visible change of its own
+
+## 2026-10-21 — #802: approval marker after merging claude/group-calm-redesign at 4371975c
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (4371975c) into #802; the own entries of #802 keep their approvals)
+- Approved customer-visible result: #802 as in its own entries plus the entries merged with 4371975c; nothing else changes.
+- Scope: the merge of 4371975c and this approval record. Pull request branch #802 only, not merged, not released.
+- What's new: none — merge of 4371975c, no customer-visible change of its own
