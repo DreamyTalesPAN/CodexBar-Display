@@ -9560,3 +9560,11 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the existing Close decision survives navigation; a new check or failed update attempt may still open its existing notice.
 - Scope: UpdatesScreen dialog state, its ControlCenterApp owner, the Updates tests and this approval record.
 - What's new: none — bug fix, not announced to customers
+
+
+## 2026-10-21 — #798: Keep unavailable update checks unknown
+
+- User approval: no visible change – UI approval not needed (bug fix: missing firmware data or an offline companion no longer claims everything is up to date)
+- Approved customer-visible result: unavailable checks use the existing unknown state and retained firmware checks lose their green status while the device or companion is disconnected; no new copy or layout.
+- Scope: UpdatesScreen availability checks, targeted regression tests and this approval record.
+- What's new: none — bug fix, not announced to customers

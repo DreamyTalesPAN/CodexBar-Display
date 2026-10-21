@@ -56,6 +56,37 @@ describe("calm Updates screen", () => {
     expect(variant(screen.getByRole("button", { name: "Check for updates" }))).toBe("outline");
   });
 
+  it("does not claim everything is current without a device or firmware answer", () => {
+    render(<UpdatesScreen {...upToDate} device={null} firmwareUpdate={null} />);
+    expect(screen.queryByRole("heading", { name: "Everything is up to date" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "No update available" })).toBeTruthy();
+    expect(screen.getByText("Unknown")).toBeTruthy();
+    expect(screen.getAllByText("Up to date")).toHaveLength(1);
+  });
+
+  it.each(["missing", "unknown"] as const)("does not claim retained checks are current when the companion is %s", (companionStatus) => {
+    const view = render(<UpdatesScreen {...upToDate} />);
+    expect(screen.getAllByText("Up to date")).toHaveLength(2);
+    view.rerender(<UpdatesScreen {...upToDate} companionStatus={companionStatus} companionInfo={null} device={{ ...upToDate.device!, connected: false }} />);
+    expect(screen.queryByRole("heading", { name: "Everything is up to date" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "No update available" })).toBeTruthy();
+    expect(screen.queryByText("Up to date")).toBeNull();
+  });
+
+  it("does not claim a retained comparison is current without device firmware metadata", () => {
+    render(<UpdatesScreen {...upToDate} device={{ connected: true }} />);
+    expect(screen.queryByRole("heading", { name: "Everything is up to date" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "No update available" })).toBeTruthy();
+    expect(screen.getAllByText("Up to date")).toHaveLength(1);
+  });
+
+  it("does not call disconnected firmware current even while the companion is online", () => {
+    render(<UpdatesScreen {...upToDate} device={{ ...upToDate.device!, connected: false }} />);
+    expect(screen.queryByRole("heading", { name: "Everything is up to date" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "No update available" })).toBeTruthy();
+    expect(screen.getAllByText("Up to date")).toHaveLength(1);
+  });
+
   it("checks for updates from the header button", () => {
     const check = vi.fn();
     render(<UpdatesScreen {...upToDate} onCheckUpdates={check} />);

@@ -257,10 +257,11 @@ export function UpdatesScreen({
   // The answer was neither "current" nor an update nor a failure (no release
   // for this board, not supported over this connection): never "up to date".
   const firmwareNoAnswer = Boolean(
-    firmwareUpdate &&
-      !["current", "update_available", "check_failed"].includes(
-        firmwareUpdate.status,
-      ),
+    !macAppRunning ||
+      !device?.connected ||
+      !canCheckFirmware ||
+      !firmwareUpdate ||
+      !["current", "update_available", "check_failed"].includes(firmwareUpdate.status),
   );
   // The Mac App check answered, but not with "available" (disabled, or no
   // asset to install): that does not establish the app is current either.
@@ -273,12 +274,12 @@ export function UpdatesScreen({
     requiresMacAppMigration && !verifiedDmgDownloadUrl,
   );
   const macAppNoAnswer = Boolean(
-    macAppRunning &&
-      companionRelease &&
-      !macAppCheckFailed &&
-      (companionRelease.status !== "available" ||
-        !companionRelease.installedVersion ||
-        macAppMigrationBlocked),
+    !macAppRunning ||
+      !companionRelease ||
+      (!macAppCheckFailed &&
+        (companionRelease.status !== "available" ||
+          !companionRelease.installedVersion ||
+          macAppMigrationBlocked)),
   );
   const pageStatusHeading =
     installingUpdate
