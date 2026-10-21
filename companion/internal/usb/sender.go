@@ -52,13 +52,12 @@ type Sender struct {
 	silentResetAfter time.Duration
 	requestRetryStep time.Duration
 
-	port          SerialPort
-	path          string
-	hello         protocol.DeviceHello
-	helloSeen     bool
-	helloAt       time.Time
-	capabilities  protocol.DeviceCapabilities
-	capsCollected bool
+	port         SerialPort
+	path         string
+	hello        protocol.DeviceHello
+	helloSeen    bool
+	helloAt      time.Time
+	capabilities protocol.DeviceCapabilities
 }
 
 func NewSender() *Sender {
@@ -249,7 +248,6 @@ func (s *Sender) ensurePort(path string) (bool, error) {
 	s.hello = protocol.DeviceHello{}
 	s.helloSeen = false
 	s.capabilities = protocol.UnknownDeviceCapabilities()
-	s.capsCollected = false
 	return true, nil
 }
 
@@ -301,7 +299,6 @@ func (s *Sender) captureHelloAfterOpenLockedContext(ctx context.Context, window 
 	if seen {
 		s.capabilities = protocol.CapabilitiesFromHello(s.hello)
 	}
-	s.capsCollected = true
 	_ = s.port.ResetInputBuffer()
 }
 
@@ -593,7 +590,6 @@ func (s *Sender) FactoryReset(path, deviceID string) error {
 	err = readFactoryResetFromPort(s.port, s.helloWindow, deviceID)
 	// The device restarts after erasing, so the old handshake is stale.
 	s.helloSeen = false
-	s.capsCollected = false
 	if err != nil {
 		return fmt.Errorf("erase VibeTV on %s: %w", path, err)
 	}
@@ -726,7 +722,6 @@ func (s *Sender) ConfigureWiFi(path, deviceID, ssid, password string) error {
 	// The firmware owns its reboot. Reopening this USB-UART pulses reset and
 	// can interrupt the first WiFi join; only invalidate the old handshake.
 	s.helloSeen = false
-	s.capsCollected = false
 	return nil
 }
 
@@ -776,7 +771,6 @@ func (s *Sender) closeCurrentLocked() {
 	s.hello = protocol.DeviceHello{}
 	s.helloSeen = false
 	s.capabilities = protocol.UnknownDeviceCapabilities()
-	s.capsCollected = false
 }
 
 func (s *Sender) Close() {

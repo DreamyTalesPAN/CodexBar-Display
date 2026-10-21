@@ -244,7 +244,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodGet && r.URL.Path == "/framebuffer":
 		s.handleFramebuffer(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/__virtual/state":
-		s.writeJSON(w, r, http.StatusOK, s.Snapshot(), "")
+		s.writeJSON(w, r, s.Snapshot(), "")
 	default:
 		s.respond(w, r, http.StatusNotFound, "not found", "")
 	}
@@ -342,7 +342,7 @@ func (s *Server) handleHello(w http.ResponseWriter, r *http.Request) {
 			Transport: protocol.TransportCapabilities{Active: "wifi", Supported: []string{"usb", "wifi"}, Mode: "station"},
 		},
 	}
-	s.writeJSON(w, r, http.StatusOK, hello, "")
+	s.writeJSON(w, r, hello, "")
 }
 
 func (s *Server) currentDeviceIDLocked() string {
@@ -388,7 +388,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 	s.mu.Unlock()
-	s.writeJSON(w, r, http.StatusOK, payload, "")
+	s.writeJSON(w, r, payload, "")
 }
 
 // lastFrameIsErrorLocked reports whether the frame on screen is the runtime's
@@ -465,7 +465,7 @@ func (s *Server) renderLastKind() string {
 }
 
 func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
-	s.writeJSON(w, r, http.StatusOK, map[string]any{"ok": true, "token": s.cfg.PairingToken}, "paired")
+	s.writeJSON(w, r, map[string]any{"ok": true, "token": s.cfg.PairingToken}, "paired")
 }
 
 func (s *Server) handleFrame(w http.ResponseWriter, r *http.Request) {
@@ -516,7 +516,7 @@ func (s *Server) handleFrame(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAssets(w http.ResponseWriter, r *http.Request) {
 	snapshot := s.Snapshot()
-	s.writeJSON(w, r, http.StatusOK, map[string]any{"mounted": true, "assets": snapshot.Assets}, "")
+	s.writeJSON(w, r, map[string]any{"mounted": true, "assets": snapshot.Assets}, "")
 }
 
 func (s *Server) handleAssetUpload(w http.ResponseWriter, r *http.Request) {
@@ -610,7 +610,7 @@ func (s *Server) handleThemeActive(w http.ResponseWriter, r *http.Request) {
 		s.respond(w, r, http.StatusBadRequest, refusal, "theme activation refused: "+refusal)
 		return
 	}
-	s.writeJSON(w, r, http.StatusOK, map[string]any{"ok": true, "path": path, "hash": sha256Hex(data)}, "theme activated "+path)
+	s.writeJSON(w, r, map[string]any{"ok": true, "path": path, "hash": sha256Hex(data)}, "theme activated "+path)
 }
 
 // storedThemeRefusal is the firmware's 400 answer for a stored spec it will not
@@ -930,7 +930,7 @@ func (s *Server) handleFirmwareUpdate(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleFramebuffer(w http.ResponseWriter, r *http.Request) {
 	snapshot := s.Snapshot()
-	s.writeJSON(w, r, http.StatusOK, map[string]any{
+	s.writeJSON(w, r, map[string]any{
 		"renderOk": !s.cfg.RenderVerificationFails,
 		"frame":    snapshot.LastFrame,
 	}, "")
@@ -961,11 +961,11 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) bool {
 	return false
 }
 
-func (s *Server) writeJSON(w http.ResponseWriter, r *http.Request, status int, payload any, detail string) {
+func (s *Server) writeJSON(w http.ResponseWriter, r *http.Request, payload any, detail string) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
+	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(payload)
-	s.record(r, status, detail)
+	s.record(r, http.StatusOK, detail)
 }
 
 func (s *Server) respond(w http.ResponseWriter, r *http.Request, status int, body, detail string) {
