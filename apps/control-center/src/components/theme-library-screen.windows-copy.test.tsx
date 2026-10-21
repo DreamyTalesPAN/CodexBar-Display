@@ -67,7 +67,6 @@ async function installOwnThemeRefused(windowsHost: boolean) {
           throw new Error("Mac App is restarting.");
         }}
         onInstallTheme={vi.fn()}
-        onSaveStandby={vi.fn()}
         onSelectTheme={vi.fn()}
         selectedThemeId=""
         storefrontConfigured={false}

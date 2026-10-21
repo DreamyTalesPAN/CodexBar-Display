@@ -8326,3 +8326,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #782 unchanged texts and layout; the connect dialog closed with OK stays closed while the error stays active.
 - Scope: #782 `apps/control-center/src/components/control-center-errors.ts` (sameActiveError), `apps/control-center/src/components/control-center-app.tsx` (two pairing-rejection call sites), `apps/control-center/src/components/control-center-app.lost-device.test.tsx` (test), and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #782 Codex fix not announced
+
+## 2026-10-21 — #782: Fix test props so tsc passes
+
+- User approval: no visible change – UI approval not needed (test-only typecheck fix in #782)
+- Approved customer-visible result: #782 unchanged; no customer-visible change. Only a test prop that no longer exists is removed from theme-library-screen.windows-copy.test.tsx.
+- Scope: #782 `apps/control-center/src/components/theme-library-screen.windows-copy.test.tsx` (one prop removed) and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — test-only change
