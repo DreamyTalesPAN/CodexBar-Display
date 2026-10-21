@@ -162,7 +162,7 @@ import {
   clearRetiredAiThemeStorage,
   type ThemeStudioInstallPayload,
 } from "./theme-studio-screen";
-import { UpdatesScreen } from "./updates-screen";
+import { UpdatesScreen, useUpdatesDialogs } from "./updates-screen";
 import { UsageScreen, usageTokenHistoryUnavailableOnVibeTV } from "./usage-screen";
 import { WhatsNewDialog } from "./whats-new-dialog";
 import {
@@ -4590,6 +4590,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       : hostedCompanionRelease?.status === "check_failed" && runtimeRelease
         ? { ...runtimeRelease, ...hostedCompanionRelease }
         : hostedCompanionRelease || runtimeRelease || null;
+  const updatesDialogs = useUpdatesDialogs({
+    companionStatus,
+    device,
+    firmwareUpdate: effectiveFirmwareUpdate,
+    companionRelease,
+    busyAction,
+  });
   const macAppUpdateAvailable = Boolean(
     companionInfo?.update?.updateAvailable || companionRelease?.updateAvailable,
   );
@@ -5917,6 +5924,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
         {activeShellTab === "updates" ? (
           <UpdatesScreen
+            dialogs={updatesDialogs}
             busyAction={busyAction}
             companionRelease={companionRelease}
             companionStatus={companionStatus}

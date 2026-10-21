@@ -49,7 +49,7 @@ function lastChecked(value: string): string {
 
 // The Mac App as this window sees it: its release answer only changes when a
 // status read asks for a new one.
-async function openUpdates() {
+async function openUpdates(failedCheck?: "app" | "firmware") {
   const companion = {
     releaseCheckedAt: firstCheck,
     statusReads: [] as string[],
@@ -94,7 +94,7 @@ async function openUpdates() {
             app: { version: "9.9.9", installedInApplications: true },
             update: {
               checkedAt,
-              status: "available",
+              status: failedCheck === "app" ? "check_failed" : "available",
               latestVersion: "9.9.9",
               installedVersion: "9.9.9",
               updateAvailable: false,
@@ -107,7 +107,7 @@ async function openUpdates() {
       if (url.includes("/api/companion/latest")) {
         return jsonResponse({
           checkedAt: firstCheck,
-          status: "available",
+          status: failedCheck === "app" ? "check_failed" : "available",
           latestVersion: "9.9.9",
           installedVersion: "9.9.9",
           updateAvailable: false,
@@ -121,7 +121,7 @@ async function openUpdates() {
           installedFirmware: device.firmware,
           latestFirmware: device.firmware,
           updateAvailable: false,
-          status: "current",
+          status: failedCheck === "firmware" ? "check_failed" : "current",
         });
       }
       if (url.endsWith("/v1/display-frame/latest")) {
@@ -169,7 +169,7 @@ async function openUpdates() {
   await window.wait(10);
   fireEvent.click(screen.getByRole("button", { name: "Updates" }));
   await window.wait(6);
-  expect(window.text()).toContain(lastChecked(firstCheck));
+  if (failedCheck !== "app") expect(window.text()).toContain(lastChecked(firstCheck));
   expect(companion.statusReads).not.toContain("/v1/status?checkAppUpdate=1");
   return window;
 }
@@ -230,4 +230,20 @@ it("Check for updates keeps keyboard focus during the check and after it", async
   await window.wait(10);
   expect(button.textContent).toBe("Check for updates");
   expectKeepsFocus(button);
+});
+
+
+it.each(["app", "firmware"] as const)("keeps a failed %s check closed after leaving Updates and returning", async (failedCheck) => {
+  const window = await openUpdates(failedCheck);
+  expect(screen.getByRole("dialog", { name: "Could not check for updates" })).toBeTruthy();
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(screen.queryByRole("dialog", { name: "Could not check for updates" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Updates" }));
+  expect(screen.queryByRole("dialog", { name: "Could not check for updates" })).toBeNull();
+
+  // A new check may ask again even if its timestamp is unchanged.
+  fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
+  await window.wait(2);
+  expect(screen.getByRole("dialog", { name: "Could not check for updates" })).toBeTruthy();
 });

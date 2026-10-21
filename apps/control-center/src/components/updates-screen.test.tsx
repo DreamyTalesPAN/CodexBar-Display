@@ -3,9 +3,14 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "@/test/axe";
-import { UpdatesScreen } from "./updates-screen";
+import { UpdatesScreen as UpdatesScreenView, useUpdatesDialogs, type UpdatesScreenProps } from "./updates-screen";
 
 afterEach(cleanup);
+
+function UpdatesScreen(props: Omit<UpdatesScreenProps, "dialogs">) {
+  const dialogs = useUpdatesDialogs(props);
+  return <UpdatesScreenView {...props} dialogs={dialogs} />;
+}
 
 function renderMarkup(element: ReactElement) {
   render(element);

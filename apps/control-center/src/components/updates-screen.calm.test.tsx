@@ -2,13 +2,18 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WHATS_NEW } from "@/lib/whats-new";
-import { UpdatesScreen, type UpdatesScreenProps } from "./updates-screen";
+import { UpdatesScreen as UpdatesScreenView, useUpdatesDialogs, type UpdatesScreenProps } from "./updates-screen";
 
 afterEach(cleanup);
 
+function UpdatesScreen(props: Omit<UpdatesScreenProps, "dialogs">) {
+  const dialogs = useUpdatesDialogs(props);
+  return <UpdatesScreenView {...props} dialogs={dialogs} />;
+}
+
 // The calm Updates screen as drawn in the approved master: one headline, one
 // framed object with a row per component, the "What's new" note card.
-const upToDate: UpdatesScreenProps = {
+const upToDate: Omit<UpdatesScreenProps, "dialogs"> = {
   companionStatus: "online",
   companionInfo: { app: { version: "1.0.64", installedInApplications: true } },
   companionRelease: {

@@ -58,6 +58,7 @@ export type FirmwareUpdateStatus = {
 };
 
 export type UpdatesScreenProps = {
+  dialogs: ReturnType<typeof useUpdatesDialogs>;
   companionStatus: UpdatesCompanionStatus;
   device: UpdatesDeviceInfo | null;
   companionVersion?: string;
@@ -81,7 +82,55 @@ export type UpdatesScreenProps = {
   windowsHost?: boolean;
 };
 
+// The app owns these keys so closing a notice also survives leaving Updates.
+export function useUpdatesDialogs({
+  companionStatus, device, firmwareUpdate, companionRelease, busyAction,
+}: Pick<UpdatesScreenProps, "companionStatus" | "device" | "firmwareUpdate" | "companionRelease" | "busyAction">) {
+  // Only a newer failed check may open a closed notice again.
+  // One per check: a refresh of the firmware alone must not bring back a Mac
+  // App failure the customer closed, and the other way round.
+  const [dismissedMacAppCheck, setDismissedMacAppCheck] = useState<string | null>(null);
+  const [dismissedFirmwareCheck, setDismissedFirmwareCheck] = useState<string | null>(null);
+  // Every check that runs to its end -- "Try again", the header button or
+  // the app's own -- may fail anew, so its end lifts the dismissal. Its
+  // answer can carry the same second as the failure before, so the end of the
+  // check, not a new timestamp, is what opens the dialog again. "Try again"
+  // hides the dialog until its check has started.
+  const [retryingFailedCheck, setRetryingFailedCheck] = useState(false);
+  // The failed-check dialog also needs to know if the update error is open.
+  const [dismissedUpdateError, setDismissedUpdateError] = useState<string | null>(null);
+  const [macAppCheckWasBusy, setMacAppCheckWasBusy] = useState(false);
+  const [firmwareCheckWasBusy, setFirmwareCheckWasBusy] = useState(false);
+  const checking = Boolean(device?.board && device?.firmware && !firmwareUpdate);
+  const checkingMacApp = Boolean(companionStatus === "online" && !companionRelease);
+  const refreshing = busyAction === "firmware-check";
+  const checkBusy = checking || checkingMacApp || refreshing;
+  // A started check (the header button runs both) hides a pending retry;
+  // the end of a check lifts only that check's dismissal.
+  const macAppCheckBusy = checkingMacApp || refreshing;
+  const firmwareCheckBusy = checking || refreshing;
+  if (checkBusy && retryingFailedCheck && (macAppCheckBusy || firmwareCheckBusy)) {
+    setRetryingFailedCheck(false);
+  }
+  if (macAppCheckBusy !== macAppCheckWasBusy) {
+    setMacAppCheckWasBusy(macAppCheckBusy);
+    if (!macAppCheckBusy) setDismissedMacAppCheck(null);
+  }
+  if (firmwareCheckBusy !== firmwareCheckWasBusy) {
+    setFirmwareCheckWasBusy(firmwareCheckBusy);
+    if (!firmwareCheckBusy) setDismissedFirmwareCheck(null);
+  }
+  return {
+    dismissedMacAppCheck, setDismissedMacAppCheck,
+    dismissedFirmwareCheck, setDismissedFirmwareCheck,
+    dismissedUpdateError, setDismissedUpdateError,
+    retryingFailedCheck, setRetryingFailedCheck,
+    checking, checkingMacApp,
+  };
+}
+
 export function UpdatesScreen({
+  dialogs,
   companionStatus,
   device,
   companionVersion,
@@ -101,24 +150,13 @@ export function UpdatesScreen({
   themeUpdateAvailable = false,
   windowsHost = false,
 }: UpdatesScreenProps) {
-  // The failed check the customer closed. Kept here, not in the dialog: the
-  // dialog unmounts while another dialog is open, and only a newer failed
-  // check may open it again.
-  // One per check: a refresh of the firmware alone must not bring back a Mac
-  // App failure the customer closed, and the other way round.
-  const [dismissedMacAppCheck, setDismissedMacAppCheck] = useState<string | null>(null);
-  const [dismissedFirmwareCheck, setDismissedFirmwareCheck] = useState<string | null>(null);
-  // Every check that runs to its end -- "Try again", the header button or
-  // the app's own -- may fail anew, so its end lifts the dismissal. Its
-  // answer can carry the same second as the failure before, so the end of the
-  // check, not a new timestamp, is what opens the dialog again. "Try again"
-  // hides the dialog until its check has started.
-  const [retryingFailedCheck, setRetryingFailedCheck] = useState(false);
-  // The update job whose "Update failed" dialog the customer closed. Kept here
-  // so the failed-check dialog knows whether that dialog is really open.
-  const [dismissedUpdateError, setDismissedUpdateError] = useState<string | null>(null);
-  const [macAppCheckWasBusy, setMacAppCheckWasBusy] = useState(false);
-  const [firmwareCheckWasBusy, setFirmwareCheckWasBusy] = useState(false);
+  const {
+    dismissedMacAppCheck, setDismissedMacAppCheck,
+    dismissedFirmwareCheck, setDismissedFirmwareCheck,
+    dismissedUpdateError, setDismissedUpdateError,
+    retryingFailedCheck, setRetryingFailedCheck,
+    checking, checkingMacApp,
+  } = dialogs;
   const firmwareUpdateCompleted = updateStatus?.phase === "complete";
   // Installed firmware always comes from device truth (live hello or the
   // firmware update check), never from an update job result: a failed job
@@ -126,9 +164,7 @@ export function UpdatesScreen({
   const installedFirmware =
     device?.firmware || firmwareUpdate?.installedFirmware || "Unknown";
   const canCheckFirmware = Boolean(device?.board && device?.firmware);
-  const checking = Boolean(canCheckFirmware && !firmwareUpdate);
   const macAppRunning = companionStatus === "online";
-  const checkingMacApp = Boolean(macAppRunning && !companionRelease);
   const checkingUpdates = checking || checkingMacApp;
   // A completed job suppresses only its own stale aftermath: as long as the
   // fresh check still reports the version the job installed (or has not
@@ -279,21 +315,6 @@ export function UpdatesScreen({
   const updateErrorOpen =
     visibleUpdateStatus?.phase === "error" &&
     dismissedUpdateError !== visibleUpdateStatus.startedAt;
-  // A started check (the header button runs both) hides a pending retry;
-  // the end of a check lifts only that check's dismissal.
-  const macAppCheckBusy = checkingMacApp || refreshing;
-  const firmwareCheckBusy = checking || refreshing;
-  if (checkBusy && retryingFailedCheck && (macAppCheckBusy || firmwareCheckBusy)) {
-    setRetryingFailedCheck(false);
-  }
-  if (macAppCheckBusy !== macAppCheckWasBusy) {
-    setMacAppCheckWasBusy(macAppCheckBusy);
-    if (!macAppCheckBusy) setDismissedMacAppCheck(null);
-  }
-  if (firmwareCheckBusy !== firmwareCheckWasBusy) {
-    setFirmwareCheckWasBusy(firmwareCheckBusy);
-    if (!firmwareCheckBusy) setDismissedFirmwareCheck(null);
-  }
   const actionsLocked =
     installingAnyUpdate ||
     Boolean(busyAction && busyAction !== "firmware-check");

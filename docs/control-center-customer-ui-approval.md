@@ -9552,3 +9552,11 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #798 as in its own entries plus the entries merged with 035ced04; nothing else changes.
 - Scope: the merge of 035ced04 and this approval record. Pull request branch #798 only, not merged, not released.
 - What's new: none — merge of 035ced04, no customer-visible change of its own
+
+
+## 2026-10-21 — #798: Keep dismissed update notices closed across tabs
+
+- User approval: no visible change – UI approval not needed (bug fix: closed update notices stay closed after a tab switch until a new check or update attempt)
+- Approved customer-visible result: the existing Close decision survives navigation; a new check or failed update attempt may still open its existing notice.
+- Scope: UpdatesScreen dialog state, its ControlCenterApp owner, the Updates tests and this approval record.
+- What's new: none — bug fix, not announced to customers
