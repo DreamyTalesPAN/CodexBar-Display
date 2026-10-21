@@ -980,16 +980,17 @@ export function ThemeLibraryScreen({
                       : ""
                   }
                   device={device}
-                  // The theme VibeTV shows, as its slot reports it; the
-                  // selection stands in only while the slot is not known yet.
+                  // A screensaver is Active only with a verified, enabled slot.
+                  // Live themes retain their existing selection fallback.
                   displayThemeId={
-                    (theme.usage === "screensaver"
-                      ? screensaverThemeId
-                      : liveThemeId) ??
-                    (theme.usage === "screensaver"
-                      ? screensaverDisplayTheme
-                      : liveDisplayTheme
-                    )?.themeId
+                    theme.usage === "screensaver"
+                      ? standby?.enabled === true &&
+                        companionStatus === "online" &&
+                        device?.connected === true &&
+                        device.ready === true
+                        ? screensaverThemeId
+                        : undefined
+                      : liveThemeId ?? liveDisplayTheme?.themeId
                   }
                   item={theme}
                   installStatus={hostInstallStatus}

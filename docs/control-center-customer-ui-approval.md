@@ -9539,3 +9539,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #802 as in its own entries plus the entries merged with 035ced04; nothing else changes.
 - Scope: the merge of 035ced04 and this approval record. Pull request branch #802 only, not merged, not released.
 - What's new: none — merge of 035ced04, no customer-visible change of its own
+
+## 2026-10-21 — #802: verify the enabled screensaver before showing Active
+
+- User approval: no visible change – UI approval not needed (bug fix: #802 screensaver Active requires enabled settings and verified device slot)
+- Approved customer-visible result: an off or unverifiable screensaver no longer claims Active; live-theme status keeps its existing rule, with no new text or layout.
+- Scope: screensaver card status and regression tests for disabled, missing and unavailable device evidence. Pull request branch #802 only, not merged, not released.
+- What's new: none — correct an unsupported Active status

@@ -179,6 +179,57 @@ it("shows the screensaver-off notice, with a link to Settings, only under Screen
   expect(onOpenScreensaverSettings).toHaveBeenCalledTimes(1);
 });
 
+it("marks only a verifiably enabled, device-installed screensaver Active", () => {
+  const night = product("night-clock", "Night Clock", "screensaver", {
+    themeSpecPath: "/themes/s/night.json",
+  });
+  const device = {
+    connected: true,
+    paired: true,
+    ready: true,
+    activeTheme: "clippy",
+    standby: { active: false, screensaverPath: night.themeSpecPath },
+  };
+  const standby = { brightnessPercent: 20, enabled: true, timeoutMinutes: 10 };
+  const page = (overrides: Partial<ThemeLibraryScreenProps> = {}) => (
+    <Page
+      device={device}
+      selectedThemeId="clippy"
+      selectedScreensaverId="night-clock"
+      standby={standby}
+      themes={[plain[1], night]}
+      {...overrides}
+    />
+  );
+  const { rerender } = render(page());
+  const nightCard = () => within(document.getElementById("catalog-theme-night-clock")!);
+  // Enabled is the setting, not whether the idle timeout has elapsed.
+  expect(nightCard().getByTestId("theme-status-pill").textContent).toBe("Active");
+  for (const overrides of [
+    { standby: { ...standby, enabled: false } },
+    { standby: null },
+    { companionStatus: "missing" as const },
+    { companionStatus: "unknown" as const },
+    { device: { ...device, connected: false, ready: false } },
+    { device: { ...device, ready: false, connectionState: "display_render_failed" } },
+  ]) {
+    rerender(page(overrides));
+    expect(nightCard().getByTestId("theme-status-pill").textContent).toBe("Installed");
+    // The agreed fix leaves the existing live-theme rule alone.
+    expect(within(document.getElementById("catalog-theme-clippy")!).getByText("Active")).toBeTruthy();
+  }
+  // A selection and a just-completed job cannot stand in for the device slot.
+  rerender(page({
+    device: { ...device, standby: { active: false } },
+    busyAction: "install",
+    installStatus: {
+      phase: "complete", themeId: night.themeId, title: night.title,
+      startedAt: "10:00:00", logs: [],
+    },
+  }));
+  expect(nightCard().getByTestId("theme-status-pill").textContent).toBe("Installed");
+});
+
 it("searches by name only, ignoring case, and Esc clears the field", () => {
   render(<Page themes={withTags} />);
   const search = screen.getByRole("searchbox", { name: "Search" });
