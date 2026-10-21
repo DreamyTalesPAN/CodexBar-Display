@@ -3,6 +3,8 @@ import type { ThemeProduct } from "@/lib/themes";
 import { type ApiError } from "./control-center-types";
 import { formatTime } from "./event-log";
 import { themeInstallErrorText } from "./control-center-errors";
+import { pollCompanionJob, type RunCompanion } from "@/lib/companion-request";
+export type { RunCompanion } from "@/lib/companion-request";
 
 export type ThemeInstallResult = {
   themeId: string;
@@ -84,12 +86,6 @@ export type ThemeInstallStatus = {
   failure?: ApiError;
 };
 
-export type RunCompanion = <T>(
-  path: string,
-  init?: RequestInit,
-  options?: { preserveLastError?: boolean; timeoutMs?: number },
-) => Promise<T>;
-
 export async function pollFirmwareUpdateJob({
   applyUpdateJob,
   jobId,
@@ -99,34 +95,29 @@ export async function pollFirmwareUpdateJob({
   jobId: string;
   runCompanion: RunCompanion;
 }): Promise<FirmwareUpdateJob> {
-  for (let attempt = 0; attempt < 1200; attempt += 1) {
-    await delay(500);
-    const payload = await runCompanion<{ job: FirmwareUpdateJob }>(
-      `/v1/updates/install/status?jobId=${encodeURIComponent(jobId)}`,
-      undefined,
-      { preserveLastError: true },
-    );
-    applyUpdateJob(payload.job);
-    if (
-      payload.job.phase === "complete" ||
-      payload.job.phase === "attention" ||
-      payload.job.phase === "error"
-    ) {
-      return payload.job;
-    }
-    if (payload.job.phase !== "installing") {
-      throw {
-        code: "firmware_update_status_invalid",
-        message: "VibeTV returned an unknown update status.",
-        nextAction: "Keep VibeTV powered on, then create a support report.",
-      } satisfies ApiError;
-    }
-  }
-  throw {
-    code: "firmware_update_timeout",
-    message: "VibeTV update is taking longer than expected.",
-    nextAction: "Keep VibeTV powered on, then create a support report.",
-  } satisfies ApiError;
+  return pollCompanionJob({
+    path: `/v1/updates/install/status?jobId=${encodeURIComponent(jobId)}`,
+    runCompanion,
+    applyJob: applyUpdateJob,
+    isFinished: (job) => {
+      if (job.phase === "complete" || job.phase === "attention" || job.phase === "error") return true;
+      if (job.phase !== "installing") {
+        throw {
+          code: "firmware_update_status_invalid",
+          message: "VibeTV returned an unknown update status.",
+          nextAction: "Keep VibeTV powered on, then create a support report.",
+        } satisfies ApiError;
+      }
+      return false;
+    },
+    attempts: 1200,
+    wait: delay,
+    timeoutError: {
+      code: "firmware_update_timeout",
+      message: "VibeTV update is taking longer than expected.",
+      nextAction: "Keep VibeTV powered on, then create a support report.",
+    },
+  });
 }
 
 // The app's own latest version comes with the status and is repeated there for
