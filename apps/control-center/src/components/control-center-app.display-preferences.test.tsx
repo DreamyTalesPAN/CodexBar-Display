@@ -1395,7 +1395,7 @@ it("refreshes usage after saving Remaining and ignores a pre-write usage answer"
 
   let answerOld = () => {};
   window.companion.holdUsageRead = new Promise<void>((resolve) => { answerOld = resolve; });
-  const usageReads = () => window.companion.requests.filter((request) => /GET .*\/v1\/usage$/.test(request)).length;
+  const usageReads = () => window.companion.requests.filter((request) => /GET .*\/v1\/usage(\?|$)/.test(request)).length;
   const before = usageReads();
   await window.wait(30);
   expect(usageReads()).toBe(before + 1);

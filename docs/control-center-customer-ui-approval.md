@@ -18164,3 +18164,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none; the pace bar drawing is unchanged.
 - Scope: Table-driven pace bar tests at 0, 1, 50, 99 and 100 percent used, for reserve, deficit and on pace, in used and remaining mode, with the plan clamped past 0 or 100; in the native firmware suite and the Control Center preview suite.
 - What's new: none — tests only.
+
+## 2026-10-22 — build9: refresh heads for 7205 (tests follow merged behaviour)
+
+- User approval: no visible change – UI approval not needed (test-only: footer table, usage-read matcher and Copilot dialog tests follow the merged behaviour)
+- Approved customer-visible result: Nothing visible changes.
+- Scope: Test expectations in live-vibetv-preview, display-preferences and setup-providers-screen tests.
+- What's new: none — tests only.

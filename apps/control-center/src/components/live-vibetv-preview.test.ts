@@ -1556,7 +1556,9 @@ describe("footer wording table", () => {
           t: "tx", y: 204, sl: 1, f: 2, s: 2, ft: "shrink", v: "Reset in {usageSlot1Reset}",
           ...(row.width > 0 ? { w: row.width } : {}),
         };
-        const primitives = row.shown === 2 ? [lane1, lane2, footer] : [lane1, footer];
+        // Text lanes like the native table: an unavailable limit keeps its name, so it still counts as displayed.
+        const labels: ThemePrimitive[] = [1, 2].slice(0, row.shown).map((sl) => ({ t: "tx", y: 30, sl, v: `{usageSlot${sl}Label}` }));
+        const primitives = [...labels, footer];
         expect(renderTextPrimitive(footer, built, primitives)).toBe(row.expected);
       });
     }

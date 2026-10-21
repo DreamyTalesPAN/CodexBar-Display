@@ -119,7 +119,7 @@ describe("SetupProvidersScreen", () => {
     const { rerender } = renderDom(<SetupProvidersScreen {...props} />);
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
     expect(within(screen.getByRole("dialog")).getByText(
-      "VibeTV reads GitHub Copilot usage from GitHub Copilot's own app, so make sure it is installed and signed in on this computer.",
+      "GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet.",
     )).toBeTruthy();
     expect(screen.queryByText(failed.health.reported)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "OK" }));
@@ -189,12 +189,12 @@ describe("SetupProvidersScreen", () => {
       pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
     const dialog = within(screen.getByRole("dialog"));
     expect(dialog.getByText(
-      "VibeTV reads GitHub Copilot usage from GitHub Copilot's own app, so make sure it is installed and signed in on this computer.",
+      "GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet.",
     )).toBeTruthy();
     expect(dialog.queryByText("No available fetch strategy for copilot.")).toBeNull();
     expect(dialog.queryByRole("button", { name: /Copy provider message/ })).toBeNull();
     expect(dialog.getAllByRole("button").map((button) => button.textContent))
-      .toEqual(["OK", "Open setup guide", "Close"]);
+      .toEqual(["Close", "Open setup guide"]);
     fireEvent.click(dialog.getByRole("button", { name: "Open setup guide" }));
     expect(onOpenSetupGuide).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("dialog")).toBeNull();
