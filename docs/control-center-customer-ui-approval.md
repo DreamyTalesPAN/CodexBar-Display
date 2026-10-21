@@ -9534,3 +9534,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #800 as in its own entries plus the entries merged with ba55b31f; nothing else changes.
 - Scope: the merge of ba55b31f and this approval record. Pull request branch #800 only, not merged, not released.
 - What's new: none — merge of ba55b31f, no customer-visible change of its own
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at 1b03f96d
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (1b03f96d) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with 1b03f96d; nothing else changes.
+- Scope: the merge of 1b03f96d and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of 1b03f96d, no customer-visible change of its own
