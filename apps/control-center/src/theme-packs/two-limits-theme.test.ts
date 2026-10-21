@@ -77,22 +77,63 @@ describe("Two Limits theme pack", () => {
     const screen = screenText(render());
 
     expect(screen).toContain("Claude + Codex");
-    expect(screen).toContain("Claude Weekly");
-    expect(screen).toContain("Codex Weekly");
-    expect(screen).toContain("72% used");
+    // The wire contract offers a combined provider/window label, not two fields.
+    expect(screen).toContain("Claude Weekly used");
+    expect(screen).toContain("Codex Weekly used");
+    expect(screen).toContain("72%");
+    expect(screen).toContain("32%");
+    expect(screen).not.toMatch(/\d+% (used|left|remaining)/);
+    expect(screen).not.toMatch(/resets/i);
     // The sentence and the pace bar are the ones of the other Pace themes.
     expect(screen).toContain("31% in deficit");
     const html = render();
     expect(html).toContain("<pattern");
+    expect(html).toMatch(/<pattern\b[^>]*>[\s\S]*?fill="#E7A3AC"[\s\S]*?<\/pattern>/);
     expect(html).toMatch(/fill="#FFFFFF"[^>]*width="2"|width="2"[^>]*fill="#FFFFFF"/);
+  });
+
+  it.each([
+    { state: "reserve", delta: -6, sentence: "6% in reserve", color: "#C9F26B" },
+    { state: "on pace", delta: 0, sentence: "On pace", color: "#EDEDED" },
+    { state: "deficit", delta: 14, sentence: "14% in deficit", color: "#E7A3AC" },
+  ])("shows small $state sentences in the state colour for both limits", ({ state, delta, sentence, color }) => {
+    const frame = pairFrame();
+    frame.usageWindows.forEach((window) => { window.pace = { state, delta }; });
+    const html = render(frame);
+    const sentences = [...html.matchAll(/<text\b([^>]*)>([\s\S]*?)<\/text>/g)]
+      .filter(([, , text]) => screenText(text) === sentence);
+
+    expect(sentences).toHaveLength(2);
+    for (const [, attributes] of sentences) {
+      expect(attributes).toContain(`fill="${color}"`);
+      expect(attributes).toContain('font-size="8"');
+    }
   });
 
   it("leaves the pace out when the usage engine sent none", () => {
     const screen = screenText(render(pairFrame(false)));
 
-    expect(screen).toContain("72% used");
+    expect(screen).toContain("72%");
     expect(screen).not.toContain("deficit");
     expect(render(pairFrame(false))).not.toContain("<pattern");
+  });
+
+  it("hides absent limits without inventing percentages or pace", () => {
+    const frame = buildFrameData(clock.toISOString(), {
+      provider: "claude+codex", label: "Claude + Codex", usageWindows: [],
+    }, clock);
+    const html = render(frame);
+
+    // Existing slot visibility hides missing data; it has no dash binding.
+    expect(screenText(html)).toBe("Claude + Codex");
+    expect(screenText(html)).not.toMatch(/\d+%|reserve|deficit|On pace/);
+    expect(html).not.toContain("<pattern");
+  });
+
+  it("keeps device notices visible without adding a reset line", () => {
+    const html = render({ ...pairFrame(), updateNotice: "Update available" });
+    expect(screenText(html)).toContain("Update available");
+    expect(screenText(html)).not.toMatch(/resets/i);
   });
 });
 
