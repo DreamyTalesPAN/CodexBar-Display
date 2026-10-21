@@ -14792,3 +14792,76 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve the incoming feature together with the existing calm customer flows in the integration candidate.
 - Scope: Merge claude/group-calm-redesign into claude/paultest-build8; retain all source approval entries.
 - What's new: none — integration of existing feature entries only.
+
+## 2026-10-16 — #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible change)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible chang [2]
+- Approved customer-visible result: none. When another VibeTV connects, a Brightness change still waiting to be sent is dropped instead of being sent to that VibeTV; the slider and all wording stay as they are.
+- Scope: `resetDeviceSettings` in `apps/control-center/src/components/control-center-app.tsx`, its test in `control-center-app.display-preferences.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix, no customer-visible change
+
+
+## 2026-10-19 — #674: Codex review fix of #645, a late settings answer for another VibeTV no longer chooses the selected theme (no visible change)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #674: Codex review fix of #645, a late settings answer for another VibeTV no longer choose [2]
+- Approved customer-visible result: none with one VibeTV. When another VibeTV connects while a read of the first one's settings is still on its way, that late answer no longer marks the first VibeTV's active theme as selected under Appearance › Themes; the selection follows the VibeTV connected now, as Brightness and the Settings screensaver switch already do.
+- Scope: `readSettings` in `apps/control-center/src/components/control-center-app.tsx`, its test in `control-center-app.display-preferences.test.tsx`, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — review fix, no customer-visible change
+
+
+## 2026-10-17 — Usage: Paul approves the token chart without gaps (#579, carried from #603; refers to the pending entry of 2026-10-16)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage: Paul approves the token chart without gaps (#579, carried from #603; refers to the 
+- Approved customer-visible result: the token chart as described in the pending entry above: each provider's line runs unbroken, and a day on which a provider used no tokens sits on the zero line, with 0 in the tooltip. Nothing beyond that entry.
+- Scope: this approval record only; no code change in this entry. Pull request branch only, not merge or release.
+- What's new: none — approval record
+## 2026-10-17 — Usage: a provider whose only reading is a retained 0% stays visible (#670)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage: a provider whose only reading is a retained 0% stays visible (#670)
+- Approved customer-visible result: As in the #670 entry above, that provider's tile stays on Usage and shows its real 0% lanes ("0% session used", "0% weekly used") with the Updating spinner. Before this fix the tile was hidden. No new wording.
+- Scope: `usage-screen.tsx` (provider visibility counts a retained reading) and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix, no new notice
+## 2026-10-17 — Sign-in replies: a sign-in left during a check is forgotten once the check is healthy (#679)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Sign-in replies: a sign-in left during a check is forgotten once the check is healthy (#67
+- Approved customer-visible result: No change. A late sign-in reply for a provider that was healthy in between (after its check ended) no longer reopens its overlay, as the #679 entry above describes. No new wording.
+- Scope: `provider-action-dialog.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix, no customer-visible change of its own
+## 2026-10-17 — Usage: the "Runs out in" countdown runs from the snapshot time (#210, #412)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage: the "Runs out in" countdown runs from the snapshot time (#210, #412)
+- Approved customer-visible result: As in the entry above, a red "Runs out in …" line under a window's bar only when CodexBar says that window will not last to its reset. Its duration counts down from when the reading was taken and the line goes away when the time is up. No new wording.
+- Scope: `usage-screen.tsx` (runs-out countdown) and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix, no new notice
+## 2026-10-17 — Usage: named windows keep CodexBar's label, e.g. "Fable only" (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage: named windows keep CodexBar's label, e.g. "Fable only" (#669)
+- Approved customer-visible result: A named CodexBar window keeps its label as delivered ("100% Fable only remaining"); session and weekly keep their lowercase wording ("45% session used", "26% weekly used"). No new wording.
+- Scope: `usage-screen.tsx` (label of named CodexBar windows), `usage-screen.test.tsx` (label expectations and one new test), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — label fix only, no new notice
+## 2026-10-18 — Usage error: the standard dialog darkening (visible change)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage error: the standard dialog darkening (visible change)
+- Approved customer-visible result: none yet; Paul's yes is pending. Visible change: the page behind the usage error dialog is darkened like every other dialog (was: not darkened, tiles usable under it). Words and buttons unchanged.
+- Scope: `usage-screen.tsx` (usage error: standard backdrop) and `usage-screen.error-overlay.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — look change only, no new notice
+## 2026-10-21 — #783: loading skeletons shimmer softly (#598 Variante B)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: loading skeletons (Usage head, chart and provider cards; also other skeletons in the app) shimmer softly right to left instead of pulsing; flat grey with reduced motion. Paul picked Claude Design page "Usage-Skeleton und Two Limits - Runde 21.10", frame "#598 Usage-Skeleton · Variante B – sanftes Schimmern"; Paul sees it in the next build
+- Approved customer-visible result: #783 as in its own entries; loading skeletons get a soft glint moving right to left instead of an opacity pulse, and flat grey under reduced motion. Same sizes, layout and text.
+- Scope: the shared Skeleton primitive and its keyframes in globals.css; the usage-screen skeleton loses its redundant reduced-motion classes. Pull request branch only, not merged, not released.
+- What's new: none — a restyle of the loading blocks, no feature to announce; no new entry in whats-new.ts
+
+## 2026-10-21 — #783: approval marker after merging main at 35152cc8
+
+- User approval: no visible change – UI approval not needed (merge of main (35152cc8) into #783; the own entries of #783 keep their approvals)
+- Approved customer-visible result: #783 as in its own entries plus the entries merged with 35152cc8; nothing else changes.
+- Scope: the merge of 35152cc8 and this approval record. Pull request branch #783 only, not merged, not released.
+- What's new: none — merge of 35152cc8, no customer-visible change of its own
+
+## 2026-10-21 — #783: Paul's approval of build 7202 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — #783 approval record for build 7202; only the 1 listed 7202 entries of #783 now carry it, everything else stays as it was.
+- Approved customer-visible result: #783 as described in those entries, as seen in build 7202.
+- Scope: #783 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #783 approval record only
