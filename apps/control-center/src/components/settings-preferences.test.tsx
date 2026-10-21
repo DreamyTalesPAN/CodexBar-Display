@@ -263,10 +263,6 @@ describe("SettingsScreen display sources", () => {
     (unavailable) => {
       const base = props();
       render(<SettingsScreen {...base}
-        automaticPreviews={[
-          { providerLabel: "Codex", resetLabel: null, windows: [{ label: "Session", percent: 37 }] },
-          { providerLabel: "Claude", resetLabel: null, windows: [{ label: "Session", percent: null }] },
-        ]}
         providerPicker={{
           ...base.providerPicker,
           items: [item("codex", "Codex"), item("claude", "Claude")],

@@ -10274,3 +10274,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: The integration keeps its existing calm Settings rows without preview cards; both pair selectors keep their saved enabled members through a temporary missing reading.
 - Scope: Merge claude/592-two-at-once-on-800, preserve both branches' approval records, resolve Settings with its existing layout and pair choices, and adapt the regression test to that layout.
 - What's new: none — integration of the pair bug fix, no new layout or announcement.
+
+## 2026-10-21 — #864 integration: align pair regression fixtures with calm Settings props
+
+- User approval: no visible change – UI approval not needed (bug fix: remove unused preview props from the calm Settings pair regression fixture)
+- Approved customer-visible result: No product change; the regression uses the integration Settings interface, which has no preview cards.
+- Scope: settings-preferences.test.tsx typecheck correction after integration.
+- What's new: none — test fixture only.
