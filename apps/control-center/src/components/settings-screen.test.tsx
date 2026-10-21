@@ -640,22 +640,24 @@ describe("SettingsScreen standby controls", () => {
     expect(pressed(automatic)).toEqual(["Automatic"]);
     expect(automatic).toContain("VibeTV always shows the one source you pick.");
     expect(automatic).toContain("VibeTV shows two sources, one above the other.");
-    for (const label of ["Source", "Top", "Bottom"]) {
+    for (const label of ["Source", "Provider 1", "Provider 2"]) {
       expect(automatic).not.toContain(`>${label}</label>`);
     }
 
     const one = section("fixed");
     expect(pressed(one)).toEqual(["One provider"]);
     expect(one).toContain(">Source</label>");
-    expect(one).not.toContain(">Top</label>");
+    expect(one).not.toContain(">Provider 1</label>");
     // No preview cards in Settings.
     expect(one).not.toContain('data-slot="display-mode-preview"');
 
     const two = section("pair", ["claude", "codex"]);
     expect(pressed(two)).toEqual(["Two at once"]);
-    expect(two).toContain(">Top</label>");
-    expect(two).toContain(">Bottom</label>");
+    expect(two).toContain(">Provider 1</label>");
+    expect(two).toContain(">Provider 2</label>");
     expect(two).not.toContain(">Source</label>");
+    expect(two).not.toContain(">Top</label>");
+    expect(two).not.toContain(">Bottom</label>");
     expect(two).not.toContain("First");
     expect(two).not.toContain("Second");
   });

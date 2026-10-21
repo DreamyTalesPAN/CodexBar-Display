@@ -264,7 +264,7 @@ export function DisplayModeChoice({
 
       {mode === "pair" && offersPair && onSelectPair ? (
         <div className={cn("grid w-full grid-cols-2 gap-4 text-left", SETUP_REVEAL)}>
-          {(["First", "Second"] as const).map((name, position) => (
+          {(["Provider 1", "Provider 2"] as const).map((name, position) => (
             <Field key={name}>
               <FieldLabel htmlFor={`vibetv-pair-${position}`}>{name}</FieldLabel>
               <Select
@@ -274,7 +274,7 @@ export function DisplayModeChoice({
                 }
                 value={pairProviderIds[position] ?? ""}
               >
-                <SelectTrigger aria-label={`${name} provider`} id={`vibetv-pair-${position}`}>
+                <SelectTrigger aria-label={name} id={`vibetv-pair-${position}`}>
                   <SelectValue placeholder="Choose a provider" />
                 </SelectTrigger>
                 <SelectContent>
@@ -337,7 +337,7 @@ export function pairIsChosen(
  * The pair with one position changed. Picking the provider the other position
  * holds swaps the two, so the pair never names one provider twice.
  */
-function withPairProvider(
+export function withPairProvider(
   providerIds: string[],
   position: number,
   providerId: string,

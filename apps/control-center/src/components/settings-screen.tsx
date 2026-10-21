@@ -34,6 +34,7 @@ import { ThemeStudioKeyRow } from "./theme-studio/openai-key-form";
 import { isProviderItem, type ProviderPickerProps } from "./provider-picker";
 import {
   defaultPairIds,
+  withPairProvider,
 } from "./setup/setup-display-mode-screen";
 import { DisplayLimitsSettings } from "./display-limits-settings";
 import { useActiveThemeLimits } from "./live-vibetv-preview";
@@ -331,15 +332,15 @@ export function SettingsScreen({
             <div className="mt-2 flex flex-col gap-3">
               <SourceSelect
                 id="vibetv-pair-top"
-                label="Top"
-                onChange={(providerId) => selectPair([providerId, pairIds[1]])}
+                label="Provider 1"
+                onChange={(providerId) => selectPair(withPairProvider(pairIds, 0, providerId))}
                 providers={displayChoices}
                 value={pairIds[0] ?? ""}
               />
               <SourceSelect
                 id="vibetv-pair-bottom"
-                label="Bottom"
-                onChange={(providerId) => selectPair([pairIds[0], providerId])}
+                label="Provider 2"
+                onChange={(providerId) => selectPair(withPairProvider(pairIds, 1, providerId))}
                 providers={displayChoices}
                 value={pairIds[1] ?? ""}
               />
