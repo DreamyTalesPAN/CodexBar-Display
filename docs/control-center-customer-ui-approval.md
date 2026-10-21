@@ -10135,3 +10135,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the reduced Two Limits layout uses a dark background, large percentages without a mode suffix, thin pace bars and small state-coloured pace sentences. The existing combined provider/window label and mode sit on the left; a small grey provider/system-notice line remains at the bottom. Missing slots stay hidden because the existing theme format has no unavailable-dash binding; the second panel starts below the divider to avoid an overlap. Device review remains pending.
 - Scope: theme-packs/two-limits/theme.json and manifest.json, regenerated dist/theme-packs outputs, apps/control-center/src/theme-packs/two-limits-theme.test.ts and this approval record. No firmware, Companion or app UI change.
 - What's new: none — layout refinement of the existing Two Limits theme; its existing announcement remains unchanged.
+
+## 2026-10-21 — paultest-592a: Showing now line under Automatic
+
+- User approval: pending — Settings › Display mode › Automatic shows "Showing now: <provider>" for the provider VibeTV last received (Paul's pick Variante A); Paul sees it in the next build
+- Approved customer-visible result: nothing is approved yet. Under Automatic, a muted line "Showing now: <provider label>" names the provider of the last frame the Companion sent to this VibeTV. It shows only while the stream is healthy and the provider is in the list; otherwise nothing is shown.
+- Scope: `apps/control-center/src/components/settings-screen.tsx`, `apps/control-center/src/components/control-center-types.ts` (stream type), `apps/control-center/src/components/settings-screen.test.tsx` and this approval record. Local integration branch claude/paultest-592a only; the Companion field is on PR #864.
+- What's new: none — a status line under an existing radio

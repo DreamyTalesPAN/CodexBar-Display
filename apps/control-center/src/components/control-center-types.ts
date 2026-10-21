@@ -306,6 +306,8 @@ export type DeviceInfo = {
     healthy?: boolean;
     running?: boolean;
     lastSentAt?: string;
+    /** Provider of the last frame sent; a Two at once pair reports its top member. */
+    lastProviderId?: string;
     target?: string;
     lastTarget?: string;
     detail?: string;

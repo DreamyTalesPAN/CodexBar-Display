@@ -590,6 +590,33 @@ describe("SettingsScreen standby controls", () => {
     expect(displayMode("automatic", [])).not.toContain("Switch providers");
   });
 
+  // Variante A (#592): under Automatic, the provider VibeTV last received, and
+  // only while the stream is healthy.
+  it("names the provider VibeTV last received under Automatic", () => {
+    const section = (mode: "automatic" | "fixed", device: DeviceInfo) => {
+      const html = render(device, savedStandby, {
+        ...providerPicker,
+        display: { mode, providerIds: ["claude"], configured: true, valid: true },
+        items: [provider("claude", "Claude", true), provider("codex", "Codex", true)],
+      });
+      return html.slice(
+        html.indexOf(">Display mode</h2>"),
+        html.indexOf(">Limits on VibeTV</h2>"),
+      );
+    };
+    const streaming = (lastProviderId?: string): DeviceInfo => ({
+      ...standbyDevice,
+      stream: { healthy: true, running: true, lastProviderId },
+    });
+
+    expect(section("automatic", streaming("claude"))).toContain("Showing now: Claude");
+    expect(section("automatic", streaming("gemini"))).not.toContain("Showing now:");
+    expect(section("automatic", streaming())).not.toContain("Showing now:");
+    expect(section("automatic", standbyDevice)).not.toContain("Showing now:");
+    expect(section("automatic", { ...streaming("claude"), ready: false })).not.toContain("Showing now:");
+    expect(section("fixed", streaming("claude"))).not.toContain("Showing now:");
+  });
+
   // Variante A (#592): three radios; the chosen one carries its source rows.
   it("shows Display mode as three radios with the source rows under the chosen one", () => {
     const section = (mode: "automatic" | "fixed" | "pair", providerIds = ["claude"]) => {

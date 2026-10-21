@@ -205,6 +205,11 @@ export function SettingsScreen({
     ? currentProviderId
     : displayable[0]?.providerId;
   const displayMode = providerPicker.display?.mode ?? "automatic";
+  // The provider VibeTV last received, named only while the stream is healthy.
+  const showingNow =
+    deviceIsReady(device) && device?.stream?.healthy === true
+      ? providers.find((item) => item.providerId === device.stream?.lastProviderId)?.label
+      : undefined;
   const displayChoices = displayable.map((item) => ({
     id: item.providerId,
     label: item.label,
@@ -282,6 +287,9 @@ export function SettingsScreen({
             onSelect={() => selectMode("automatic")}
             selected={displayMode === "automatic"}
           />
+          {displayMode === "automatic" && showingNow ? (
+            <p className="text-[13px] text-muted-foreground">{`Showing now: ${showingNow}`}</p>
+          ) : null}
           {displayMode === "automatic" && rotation ? (
             <div className="mt-2">
               <PreferenceRow
