@@ -173,9 +173,9 @@ func runInstallUpdate(args []string) (retErr error) {
 			strings.TrimSpace(cfg.DeviceID) == "" || strings.TrimSpace(cfg.DeviceToken) == "" {
 			return &commandError{Op: "cable-preflight", Code: errcode.UpgradeFlashFirmware, Err: errors.New("paired Cable VibeTV is required")}
 		}
-		cablePort, err = resolveCableFirmwarePortFn("", cfg.DeviceID)
+		cablePort, err = resolveCableFirmwarePortFn(ctx, "", cfg.DeviceID)
 		if err == nil {
-			hello, err = readCableFirmwareHelloFn(cablePort)
+			hello, err = readCableFirmwareHelloFn(ctx, cablePort)
 		}
 		if err == nil && !strings.EqualFold(strings.TrimSpace(hello.DeviceID), strings.TrimSpace(cfg.DeviceID)) {
 			err = fmt.Errorf("cable VibeTV identity changed from %s to %s", strings.TrimSpace(cfg.DeviceID), strings.TrimSpace(hello.DeviceID))
@@ -436,11 +436,17 @@ func runInstallUpdate(args []string) (retErr error) {
 		}
 		verifiedHello, helloErr = waitForCableFirmwareVersion(ctx, targetVersion, deviceID, rescuedPort, cableFirmwareVerifyTimeout)
 	} else {
-		verifiedBase, err = waitForHTTPFirmwareVersionWithDiscovery(ctx, home, base, targetVersion, deviceID, 120*time.Second)
+		verifiedBase, err = waitForHTTPFirmwareVersionWithDiscovery(ctx, home, base, targetVersion, deviceID, firmwareWiFiVerifyTimeout)
 		if err == nil {
 			verifiedHello, helloErr = fetchDeviceHelloHTTP(ctx, verifiedBase)
 		} else {
 			helloErr = err
+			// Issue #832: a firmware that boots in cable mode never answers over
+			// WiFi. One bounded cable check tells whether the update still worked;
+			// the cable target tells the parent to verify over the cable too.
+			if cableHello, cableErr := waitForCableFirmwareVersion(ctx, targetVersion, deviceID, "", cableCheckAfterWiFiTimeout); cableErr == nil {
+				verifiedBase, verifiedHello, helloErr = "cable://vibetv", cableHello, nil
+			}
 		}
 	}
 	if helloErr != nil {
@@ -493,7 +499,7 @@ func runInstallUpdate(args []string) (retErr error) {
 		UploadAccepted:    true,
 		HelloVerified:     true,
 	})
-	if !cableMode && verifiedBase != base {
+	if !cableMode && verifiedBase != base && verifiedBase != "cable://vibetv" {
 		base = verifiedBase
 		if _, err := ensureFirmwareUpdateDeviceToken(ctx, home, base, deviceID); err != nil {
 			fmt.Printf("warning: firmware updated, but saving the rediscovered VibeTV address failed: %v\n", err)
@@ -510,19 +516,17 @@ func waitForCableFirmwareVersion(
 	port string,
 	timeout time.Duration,
 ) (protocol.DeviceHello, error) {
-	deadline := time.Now().Add(timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	var lastErr error
-	for time.Now().Before(deadline) {
-		if err := ctx.Err(); err != nil {
-			return protocol.DeviceHello{}, err
-		}
+	for ctx.Err() == nil {
 		resolved, err := port, error(nil)
 		if resolved == "" {
-			resolved, err = resolveCableFirmwarePortFn("", deviceID)
+			resolved, err = resolveCableFirmwarePortFn(ctx, "", deviceID)
 		}
 		if err == nil {
 			var hello protocol.DeviceHello
-			hello, err = readCableFirmwareHelloFn(resolved)
+			hello, err = readCableFirmwareHelloFn(ctx, resolved)
 			if err == nil {
 				if strings.TrimSpace(hello.DeviceID) == "" {
 					err = errors.New("cable VibeTV has not reported its identity yet")
@@ -538,11 +542,10 @@ func waitForCableFirmwareVersion(
 		lastErr = err
 		select {
 		case <-ctx.Done():
-			return protocol.DeviceHello{}, ctx.Err()
 		case <-time.After(cableFirmwareVerifyPollInterval):
 		}
 	}
-	return protocol.DeviceHello{}, fmt.Errorf("cable VibeTV did not report firmware %s: %v", targetVersion, lastErr)
+	return protocol.DeviceHello{}, fmt.Errorf("cable VibeTV did not report firmware %s: %v: %w", targetVersion, lastErr, ctx.Err())
 }
 
 func ensureFirmwareUpdateDeviceToken(ctx context.Context, home, base, expectedDeviceID string) (string, error) {

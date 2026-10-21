@@ -13058,6 +13058,146 @@ func TestFirmwareUpdateCableRequiresVerifiedRender(t *testing.T) {
 	}
 }
 
+// Issue #832: a WiFi job whose updater found the VibeTV on the cable reports
+// the cable as its verified target. The parent verifies there; the WiFi address
+// does not answer on a VibeTV that boots in cable mode.
+func TestFirmwareUpdateWiFiJobVerifiesOverCableWhenUpdaterReportsCable(t *testing.T) {
+	testFirmwareUpdateWiFiJobCableResult(t, "cable")
+}
+
+func TestReview855WiFiModeHelloCannotPersistCable(t *testing.T) {
+	testFirmwareUpdateWiFiJobCableResult(t, "wifi")
+}
+
+func testFirmwareUpdateWiFiJobCableResult(t *testing.T, deviceMode string) {
+	t.Helper()
+	const deviceID = "wifi-job-cable-result"
+	var wifiHits atomic.Int32
+	wifi := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wifiHits.Add(1)
+		if r.URL.Path == "/hello" {
+			_, _ = fmt.Fprintf(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.46","deviceId":%q}`, deviceID)
+			return
+		}
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	}))
+	defer wifi.Close()
+	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "wifi", DeviceTarget: wifi.URL, DeviceID: deviceID, DeviceToken: "pair-token"})
+	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock-cable", nil }
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			Kind: "hello", DeviceID: deviceID, Board: "esp8266-smalltv-st7789", Firmware: "1.0.47",
+			Features:     []string{protocol.FeatureCableHealthV1},
+			Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{Active: "usb", Mode: deviceMode}},
+		}, nil
+	}
+	server.streamStatus = func(context.Context, string) displayStreamInfo { return displayStreamInfo{} }
+	server.readCableHealth = func(string, string) (deviceHealth, error) {
+		return deviceHealth{OK: true}, nil
+	}
+	server.refreshStream = func(context.Context, string) error {
+		cfg, err := server.config()
+		if err != nil {
+			return err
+		}
+		if cfg.ConnectionMode != "cable" {
+			return errors.New("stream worker still uses WiFi")
+		}
+		return nil
+	}
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		cfg, err := server.config()
+		if err != nil || cfg.ConnectionMode != "cable" {
+			return displayStreamInfo{}
+		}
+		return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
+	}
+	server.waitRender = func(_ context.Context, _ string, _ string, health deviceHealth) (deviceHealth, error) {
+		return health, nil
+	}
+
+	server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+		wifiHits.Store(0)
+		_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"verifying_health","phase":"installing","outcome":"updated","firmware":"1.0.47","observedFirmware":"1.0.47","target":"cable://vibetv","deviceId":"`+deviceID+`","artifactValidated":true,"uploadAccepted":true,"helloVerified":true}`+"\n")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`)))
+	var started firmwareUpdateJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	var job firmwareUpdateJob
+	for attempt := 0; attempt < 200; attempt++ {
+		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		if job.Phase != "installing" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if deviceMode == "wifi" {
+		if job.Phase != "error" || job.Error == nil {
+			t.Fatalf("WiFi-mode serial hello must be rejected before Cable selection: %+v", job)
+		}
+	} else if job.Phase != "complete" || job.Result == nil || !job.Result.HelloVerified || !job.Result.HealthVerified || !job.Result.StreamVerified || job.Result.Target != cableDeviceTarget {
+		t.Fatalf("a cable-verified WiFi job must not fail on the WiFi address: %+v", job)
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	known, ok := cfg.KnownDevice(deviceID)
+	if cfg.ConnectionMode != deviceMode || cfg.DeviceID != deviceID || cfg.DeviceToken != "pair-token" || cfg.DeviceTarget != wifi.URL || !ok || known.Target != wifi.URL || known.DeviceToken != "pair-token" {
+		t.Fatalf("Cable fallback lost the saved WiFi binding: %+v", cfg)
+	}
+	if hits := wifiHits.Load(); hits != 0 {
+		t.Fatalf("the WiFi address was asked %d times, the cable had the answer", hits)
+	}
+}
+
+// A verified Cable identity is still the selected connection when optional
+// health verification ends in attention (Codex review on #855).
+func TestFirmwareUpdateCableSelectionSurvivesHealthAttention(t *testing.T) {
+	previous := firmwareHealthVerifyTime
+	firmwareHealthVerifyTime = 0
+	t.Cleanup(func() { firmwareHealthVerifyTime = previous })
+	for _, hasHealth := range []bool{false, true} {
+		t.Run(fmt.Sprintf("health-supported=%v", hasHealth), func(t *testing.T) {
+			cfg := runtimeconfig.Config{ConnectionMode: "wifi", DeviceTarget: "http://192.0.2.1", DeviceID: "device-a", DeviceToken: "pair-token"}
+			server := newTestServer(t, cfg)
+			server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock-cable", nil }
+			server.readCableHello = func(string) (protocol.DeviceHello, error) {
+				hello := protocol.DeviceHello{
+					Kind: "hello", DeviceID: cfg.DeviceID, Firmware: "1.0.47",
+					Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable"}},
+				}
+				if hasHealth {
+					hello.Features = []string{protocol.FeatureCableHealthV1}
+				}
+				return hello, nil
+			}
+			server.readCableHealth = func(string, string) (deviceHealth, error) {
+				return deviceHealth{}, errors.New("health unavailable")
+			}
+			job := server.createFirmwareUpdateJob()
+			server.updateFirmwareVerification(job.ID, func(result *firmwareUpdateResult) {
+				result.DeviceID, result.Firmware, result.Target = cfg.DeviceID, "1.0.47", cableDeviceTarget
+			})
+			server.deviceMaintenanceMu.Lock()
+			_, attention, err := server.verifyCableFirmwareUpdateResult(context.Background(), job.ID, cfg)
+			server.deviceMaintenanceMu.Unlock()
+			if err != nil || attention == "" {
+				t.Fatalf("health must remain unverified: attention=%q err=%v", attention, err)
+			}
+			saved, err := server.config()
+			if err != nil || saved.ConnectionMode != "cable" || saved.DeviceTarget != cfg.DeviceTarget || saved.DeviceToken != cfg.DeviceToken {
+				t.Fatalf("health attention lost the verified Cable selection: cfg=%+v err=%v", saved, err)
+			}
+		})
+	}
+}
+
 // Issue #835, Beelink Windows over USB, 2026-10-20: after an update the only
 // frame inside the picture check carried the same values the screen already
 // showed. The firmware redraws only when a frame changes the screen, so the
