@@ -10183,6 +10183,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #864 as in its own entries; the Two Limits theme stays removed, nothing else changes.
 - Scope: the merge commits and this approval record. Pull request branch #864 only, not merged, not released.
 - What's new: none — merge marker, no customer-visible change of its own
+
 ## 2026-10-21 — Settings: Used / Remaining switch (writes CodexBar's own setting, Mac)
 
 - User approval: pending — Paul (21.10.): Settings gets a switch Used / Remaining (Mac; it is CodexBar's own setting, Usage and VibeTV follow it); not on Windows until Win-CodexBar has the setting (#874); Paul sees it in build 7203
@@ -10196,3 +10197,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: One existing generic Show preference row appears in Display mode before Limits on VibeTV in all three modes; it uses CodexBar's preference and preserves the calm Settings layout from claude/paultest-592a.
 - Scope: Integrate claude/used-remaining-switch (#877) and test all three modes, row placement, existing preference writes and unavailable/overridden choices.
 - What's new: none — existing preference surfaced in the combined test candidate.
+
+## 2026-10-21 — #864: queued display changes build on the latest selection
+
+- User approval: no visible change – UI approval not needed (bug fix: quick successive limit toggles are all saved)
+- Approved customer-visible result: Ticking or unticking several limits in quick succession keeps every change; each save starts from the selection the earlier save left behind. Pair order changes are logged under Recent activity like any other pair change.
+- Scope: the limits callback hands its change to the display write queue as a function of the selection there, the picker type accepts that form, and the Companion logs a pair's member or order change as a display mode change. Tests for the queue, the limits change, and the logged pair order.
+- What's new: none — bug fix, no separate announcement.

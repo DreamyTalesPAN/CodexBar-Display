@@ -117,3 +117,19 @@ func TestProviderDisplayDefaultShowsEveryLimit(t *testing.T) {
 		t.Fatalf("default=%s", recorder.Body.String())
 	}
 }
+
+func TestProviderDisplayPairOrderChangeIsLogged(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.providerPreferences.load = providerSettingsFixture
+
+	if recorder, _ := patchProviderDisplay(t, server, `{"mode":"pair","providerIds":["claude","codex"]}`); recorder.Code != http.StatusOK {
+		t.Fatalf("pair: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if recorder, _ := patchProviderDisplay(t, server, `{"mode":"pair","providerIds":["codex","claude"]}`); recorder.Code != http.StatusOK {
+		t.Fatalf("swapped pair: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	events := getSetupLog(t, server).Events
+	if len(events) == 0 || events[len(events)-1].Message != "Always show Codex and Claude together." {
+		t.Fatalf("swapped pair not logged: %+v", events)
+	}
+}

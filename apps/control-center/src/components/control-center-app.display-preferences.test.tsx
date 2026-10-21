@@ -100,6 +100,8 @@ function startWindow(themes: unknown[] = []) {
     },
     selection: { mode: "automatic", providerIds: [] as string[], configured: true, valid: true },
     providers: [] as (typeof claude)[],
+    // The limits CodexBar reports for each provider; empty until a test sets them.
+    usageWindows: [] as { id: string; label: string; usedPercent: number }[],
     refuseWrites: false as boolean | "once",
     refuseDisplayWrites: false,
     requests: [] as string[],
@@ -249,6 +251,7 @@ function startWindow(themes: unknown[] = []) {
           usageMode: "used",
           providers: companion.providers.map(({ providerId, label }) => ({
             id: providerId, label, session: 12, weekly: 34, resetSecs: 0, usageMode: "used",
+            windows: companion.usageWindows,
           })),
         });
       }
@@ -1295,4 +1298,34 @@ it("does not send a queued Brightness change to another VibeTV", async () => {
   store();
   await window.wait(10);
   expect(window.settingsWrites()).toEqual([{ brightnessPercent: 21 }]);
+});
+
+// Two limits unticked one after the other while the first save is still on its
+// way: the second save must keep the first, not write the limits as they were
+// drawn before the first click.
+it("keeps the first of two quick limit changes in the second save", async () => {
+  const window = startWindow();
+  window.companion.providers = [claude];
+  window.companion.usageWindows = [
+    { id: "session", label: "Session", usedPercent: 12 },
+    { id: "weekly", label: "Weekly", usedPercent: 34 },
+    { id: "fable", label: "Fable only", usedPercent: 0 },
+  ];
+  window.companion.selection = {
+    mode: "fixed",
+    providerIds: ["claude"],
+    configured: true,
+    valid: true,
+  } as never;
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+
+  const answerFirst = window.holdNextWrite();
+  fireEvent.click(document.getElementById("vibetv-limit-claude-session") as HTMLElement);
+  fireEvent.click(document.getElementById("vibetv-limit-claude-weekly") as HTMLElement);
+  answerFirst();
+  await window.wait(1);
+
+  expect((window.companion.selection as Record<string, unknown>).hiddenWindows).toEqual({ claude: ["session", "weekly"] });
 });
