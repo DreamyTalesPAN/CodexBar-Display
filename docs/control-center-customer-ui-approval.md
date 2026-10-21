@@ -9192,3 +9192,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the Overview follows the one-cycle sway from #780, approved in build 7202: after 2.5 seconds without a touch it sways once and settles; a drag starts one more cycle. Hidden windows pause that cycle, and reduced motion stays still. Text and layout remain unchanged.
 - Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx` and its animation regression tests; adapted from #780 commit 65352daf4412c41df5041baea327f079b92c1dff with visibility handling and event-driven rendering. Pull request #784 only, not merged, not released.
 - What's new: none — performance fix to the existing Overview preview
+
+## 2026-10-21 — #784: identify library and busy notices by data attributes
+
+- User approval: no visible change – UI approval not needed (#784 P3a replaces notice mount counters and title matching with stable dialog data attributes)
+- Approved customer-visible result: page notices still wait for other dialogs and take priority over the busy announcement; wording, layout and dismissal remain unchanged.
+- Scope: `theme-library-screen.tsx`, `system-busy-dialog.tsx`, the `SetupDialog` notice attribute, and library notice regression tests. Pull request #784 only, not merged, not released.
+- What's new: none — internal notice identification only
