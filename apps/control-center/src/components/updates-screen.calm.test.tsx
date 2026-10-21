@@ -339,30 +339,49 @@ describe("calm Updates screen", () => {
   });
 
   it("a firmware update that cannot start is no 'Update available' headline", () => {
-    // The firmware waits for a Mac App whose download is missing: no button
-    // works, so the headline says what the page says for a blocked update.
+    // The firmware waits for a Mac App whose download is missing or disabled: no
+    // button works, so the headline says what the page says for a blocked update.
+    for (const dmgDownloadStatus of ["missing_asset", "disabled"] as const) {
+      const { unmount } = render(
+        <UpdatesScreen
+          {...upToDate}
+          companionInfo={{ app: { version: "1.0.64", installedInApplications: false } }}
+          companionRelease={{
+            ...upToDate.companionRelease!,
+            status: "available",
+            updateAvailable: true,
+            dmgDownloadStatus,
+          }}
+          firmwareUpdate={{
+            ...upToDate.firmwareUpdate!,
+            latestFirmware: "1.0.49",
+            status: "update_available",
+            updateAvailable: true,
+          }}
+          requiresMacAppMigration
+        />,
+      );
+      expect(screen.getByText("Update Mac App first")).toBeTruthy();
+      expect(screen.queryByRole("heading", { level: 2, name: "Update available" })).toBeNull();
+      expect(screen.getByRole("heading", { level: 2, name: "No update available" })).toBeTruthy();
+      unmount();
+    }
+  });
+
+  it("a normal firmware offer keeps the 'Update available' headline", () => {
     render(
       <UpdatesScreen
         {...upToDate}
-        companionInfo={{ app: { version: "1.0.64", installedInApplications: false } }}
-        companionRelease={{
-          ...upToDate.companionRelease!,
-          status: "available",
-          updateAvailable: true,
-          dmgDownloadStatus: "missing_asset",
-        }}
         firmwareUpdate={{
           ...upToDate.firmwareUpdate!,
           latestFirmware: "1.0.49",
           status: "update_available",
           updateAvailable: true,
         }}
-        requiresMacAppMigration
       />,
     );
-    expect(screen.getByText("Update Mac App first")).toBeTruthy();
-    expect(screen.queryByRole("heading", { level: 2, name: "Update available" })).toBeNull();
-    expect(screen.getByRole("heading", { level: 2, name: "No update available" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: "Update available" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Update" })).toBeTruthy();
   });
 
   it("a failed check outranks an available update in the headline's dot", () => {

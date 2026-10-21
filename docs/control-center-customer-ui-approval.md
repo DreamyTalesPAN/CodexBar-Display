@@ -9314,3 +9314,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #798 as in its own entries plus the entries merged with 4371975c; nothing else changes.
 - Scope: the merge of 4371975c and this approval record. Pull request branch #798 only, not merged, not released.
 - What's new: none — merge of 4371975c, no customer-visible change of its own
+
+## 2026-10-21 — #798: Updates headline pinned for a firmware update that cannot start (#849)
+
+- User approval: no visible change – UI approval not needed (test only: pins #849, the Updates headline no longer says "Update available" for a firmware update whose Mac App download is missing or disabled; no code change)
+- Approved customer-visible result: #798 as in its own entries; nothing changes on screen.
+- Scope: updates-screen tests only. Pull request branch #798 only, not merged, not released.
+- What's new: none — test only, no customer-visible change
