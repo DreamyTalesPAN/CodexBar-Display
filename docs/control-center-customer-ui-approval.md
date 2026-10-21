@@ -9436,3 +9436,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Hidden limits stay unticked and can be selected explicitly again. A reading with no chosen limit left stays unavailable in the single-provider preview and on VibeTV; a readable pair member keeps its own reading and countdown.
 - Scope: daemon visible-window filtering and pair selection, shared display previews, and regression tests for source loss and checkbox editing.
 - What's new: none — correct hidden-limit behavior, pending review of the changed unavailable state.
+
+## 2026-10-21 — #864: approval marker after merging claude/usage-pace at 585afefc
+
+- User approval: no visible change – UI approval not needed (merge of claude/usage-pace (585afefc) into #864; the own entries of #864 keep their approvals)
+- Approved customer-visible result: #864 as in its own entries plus the entries merged with 585afefc; nothing else changes.
+- Scope: the merge of 585afefc and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — merge of 585afefc, no customer-visible change of its own
