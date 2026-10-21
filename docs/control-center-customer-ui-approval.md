@@ -11168,14 +11168,14 @@ issue scope, or release permission never implies UI permission.
 - What's new: none — #784 focus ring colour not announced
 ## 2026-10-20 — #780: one sentence for providers with their own app (setup log and popup)
 
-- User approval: pending — #780 wording as decided by the communicator on 20.10.2026 (text decision for Paul's 7198 review); Paul sees it in build 7198. Before → after: #780 "VibeTV reads <Provider> usage from <Provider>'s own app, so make sure it is installed and signed in on this computer." → #780 "VibeTV can't read <Provider> until the <Provider> app is installed and running." (the template sentence), the same in the setup log and in the popup.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #780: one sentence for providers with their own app (setup log and popup) — Before → after: #780 "VibeTV reads <Provider> usage from <Provider>'s own app, so make sure it is installed and signed in on this computer." → #780 "VibeTV can't read <Provider> until the <Provider> app is installed and running." (the template sentence), the same in the setup log and in the popup.
 - Approved customer-visible result: #780 one sentence for a provider that needs its own app, wherever setup shows it.
 - Scope: #780 the setup sentence in the Control Center (and, in #782, the Companion's setup log and the shared sentence file), their tests and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #780 wording not announced
 
 ## 2026-10-20 — #780: correction — Paul's 7198 approval does not cover this PR yet
 
-- User approval: pending — #780 correction (communicator, 20.10.2026): Paul's "rest passt" for build 7198 covered only what he saw in normal use (#781, #783, #784, #798, #803); the approval recorded for #780 a moment ago was premature and is reverted, its entries are pending again until he says yes to #780 itself.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #780: correction — Paul's 7198 approval does not cover this PR yet
 - Approved customer-visible result: #780 unchanged; this entry only corrects the record.
 - Scope: #780 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #780 record correction only
@@ -11222,79 +11222,93 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of e3503bda and this approval record. Pull request branch #780 only, not merged, not released.
 - What's new: none — merge of e3503bda, no customer-visible change of its own
 
+## 2026-10-21 — #780: Paul's approval of build 7200 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" — #780 approval record for build 7200; the #780 entries that were in build 7200 now carry it, merge markers are marked as no visible change, entries added after build 7200 stay pending.
+- Approved customer-visible result: #780 as described in its entries above, as seen in build 7200.
+- Scope: #780 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #780 approval record only
+
+## 2026-10-21 — #780: approval marker after merging main at 41bf10cf
+
+- User approval: no visible change – UI approval not needed (merge of main (41bf10cf) into #780; the own entries of #780 keep their approvals)
+- Approved customer-visible result: #780 as in its own entries plus the entries merged with 41bf10cf; nothing else changes.
+- Scope: the merge of 41bf10cf and this approval record. Pull request branch #780 only, not merged, not released.
+- What's new: none — merge of 41bf10cf, no customer-visible change of its own
+
 ## 2026-10-20 — Setup step 11: display mode tiles show the active theme with live values
 
-- User approval: Paul chose option (c) on 20.10.2026 via the communicator; the rendered result is pending his review. Option (c): the two tiles of the Display mode step (frame 22) show the picture of the theme VibeTV is showing, with the real live values; before → after: (1) Automatic shows one tile per provider that is switched on, each the theme picture with that provider's own current values (the one VibeTV is on 104 px and full strength, the others 84 px at 30 % strength, as drawn in frame 22) → before one plain tile of CLAUDE / SESSION / WEEKLY bars that changed provider every 2 seconds; (2) Manual shows one such tile for the chosen provider → before the same plain tile; (3) a provider that has no values yet shows a quiet grey placeholder tile where the picture would be → before the words "No usage yet" or "Usage unavailable"; no example numbers are drawn anywhere, and the app calculates nothing: it shows only what the usage service delivers; (4) while the theme is still being read the tiles show the same placeholders, and if it cannot be read the plain tiles stay as before. Settings keeps its plain tiles for now.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: Setup step 11: display mode tiles show the active theme with live values — before → after: (1) Automatic shows one tile per provider that is switched on, each the theme picture with that provider's own current values (the one VibeTV is on 104 px and full strength, the others 84 px at 30 % strength, as drawn in frame 22) → before one plain tile of CLAUDE / SESSION / WEEKLY bars that changed provider every 2 seconds; (2) Manual shows one such tile for the chosen provider → before the same plain tile; (3) a provider that has no values yet shows a quiet grey placeholder tile where the picture would be → before the words "No usage yet" or "Usage unavailable"; no example numbers are drawn anywhere, and the app calculates nothing: it shows only what the usage service delivers; (4) while the theme is still being read the tiles show the same placeholders, and if it cannot be read the plain tiles stay as before. Settings keeps its plain tiles for now.
 - Approved customer-visible result: none yet; waits for Paul's review of the rendered result. See the entries above.
 - Scope: `apps/control-center/src/components/setup/setup-display-mode-screen.tsx`, `apps/control-center/src/components/setup/setup-display-theme-tiles.tsx`, `apps/control-center/src/components/setup/setup-display-previews.ts`, `apps/control-center/src/components/setup/setup-wizard.tsx`, `apps/control-center/src/components/setup/setup-preview-gallery.tsx`, `apps/control-center/src/components/live-vibetv-preview.tsx` (type and helper exports only) and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
 ## 2026-10-20 — #821: setup step 11 tiles show known zero token totals as 0 (Codex review on #821)
 
-- User approval: pending — Paul reviews #821 (Codex review fix); before → after in the #821 setup tiles: a token-counter theme showed "--" for providers whose token history was read and is zero → it shows 0, as the VibeTV does. Nothing else in #821 changes.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #821: setup step 11 tiles show known zero token totals as 0 (Codex review on #821)
 - Approved customer-visible result: #821 setup step 11 tiles show the same token totals as the VibeTV.
 - Scope: `apps/control-center/src/components/setup/setup-display-previews.ts`, its test and this approval record for #821. Pull request branch only, not merged, not released.
 - What's new: none — #821 token-total fix, no new content
 
 ## 2026-10-20 — #821 carousel: Automatic tiles of setup step 11 rotate as a calm carousel
 
-- User approval: Paul decided on 20.10.2026 (via the communicator): Automatic tiles rotate as a calm carousel; rendered result pending his review. #821 carousel before → after in the Display mode step (frame 22): (1) in Automatic the big tile in front (104 px, full strength) changes provider every 2 seconds, the same rhythm the VibeTV uses in Automatic → before the big tile stayed on the first position and only the highlight moved between fixed places; (2) #821 carousel: the small tiles (84 px, 30 % strength, 10 px gap) move up behind it in turn, and the tile that was in front fades in at the back → before they did not move; (3) #821 carousel: the movement slides and fades in 500 ms, ease-out, no bounce, only position and opacity change; (4) #821 carousel: with reduced motion switched on in the system the tiles switch without any movement but still rotate → before they stayed still; (5) #821 carousel: Manual shows one tile and does not rotate, and a provider without values keeps its grey placeholder, as before. The app calculates nothing: only the order and the movement change.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #821 carousel: Automatic tiles of setup step 11 rotate as a calm carousel
 - Approved customer-visible result: #821 carousel: none yet; waits for Paul's review of the rendered result (stills and animation in `review-1016/ui/821-carousel/`).
 - Scope: #821 carousel: `apps/control-center/src/components/setup/setup-display-mode-screen.tsx`, `apps/control-center/src/components/setup/setup-display-theme-tiles.tsx`, `apps/control-center/src/app/globals.css` (one keyframe), the #821 carousel tests and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #821 carousel movement only, no new content
 
 ## 2026-10-20 — #821 carousel: at most three tiles visible
 
-- User approval: decided on 20.10.2026 for the #821 carousel (communicator, on Paul's behalf): at most three tiles show; rendered #821 result pending Paul's review.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #821 carousel: at most three tiles visible
 - Approved customer-visible result: the #821 carousel shows the front tile and two behind it, as in frame 22; further providers wait invisibly at the back and fade in as the strip turns; nothing is cut off or shrunk.
 - Scope: #821 carousel in `apps/control-center/src/components/setup/setup-display-theme-tiles.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #821 carousel limit, no new content
 
 ## 2026-10-20 — #821 single tile: Automatic shows one tile that changes provider
 
-- User approval: pending — Paul asked on 20.10.2026 for #821 (via the communicator): "lass einfach eine kachel anzeigen … auf der einen kachel wechseln halt die werte alle 2 sekunden"; rendered #821 single tile pending his look at the GIF.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #821 single tile: Automatic shows one tile that changes provider
 - Approved customer-visible result: #821 Automatic shows ONE theme tile, the same size as Manual, whose provider (name and values) changes every 2 s with a calm 500 ms crossfade; no small or grey tiles beside it; Manual shows one fixed tile; reduced motion changes without the fade.
 - Scope: #821 single tile in `apps/control-center/src/components/setup/setup-display-theme-tiles.tsx`, `apps/control-center/src/app/globals.css` (unused carousel keyframes removed), the tile tests and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #821 single tile, no new content
 
 ## 2026-10-20 — #821 tile data: provider rows and a moving clock in the setup tiles
 
-- User approval: pending — Paul reviews #821 tile data (Codex review fixes); before → after in the #821 tile data of setup step 11: (1) a theme that binds the cross-provider reset rows (for example night-clock, "NEXT RESETS") showed no such rows on the #821 tile data → it shows the same two provider rows the VibeTV shows, built only from what the usage service delivered; (2) the time and the reset countdowns on the #821 tile data stood still at the moment the tile first appeared → they keep counting every second, like the VibeTV; reduced motion only drops the fade between providers, not the clock. Nothing else in #821 changes.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #821 tile data: provider rows and a moving clock in the setup tiles
 - Approved customer-visible result: #821 tile data in setup step 11 shows the same provider reset rows, clock and countdowns as the VibeTV; pending Paul's review.
 - Scope: #821 tile data in `apps/control-center/src/components/setup/setup-display-previews.ts`, `apps/control-center/src/components/setup/setup-display-theme-tiles.tsx`, their tests and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #821 tile data fix, no new content
 
 ## 2026-10-20 — #821 frame fidelity: idle wording and provider rows match the device
 
-- User approval: pending — #821 frame fidelity (Codex review fixes); before → after in the setup step 11 tiles: (1) #821 frame fidelity: a provider that is fresh and idle (nothing used, no reset deadline) read "Reset unavailable" on the tile → it reads "No active session", as on the VibeTV; (2) #821 frame fidelity: a provider that delivers only the plain session and weekly figures without windows showed a reset row in themes with cross-provider rows → it shows none, as on the VibeTV. Nothing else changes.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #821 frame fidelity: idle wording and provider rows match the device
 - Approved customer-visible result: #821 frame fidelity: the tile frame carries the same freshness state the host stamps on a fresh frame and builds provider rows only from delivered windows; pending Paul's review.
 - Scope: #821 frame fidelity in `apps/control-center/src/components/setup/setup-display-previews.ts`, its test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #821 frame fidelity fix, no new content
 
 ## 2026-10-20 — #821 reset fidelity: expired countdowns and the later deadline match the device
 
-- User approval: pending — #821 reset fidelity (Codex review fixes); before → after in the setup step 11 tiles: (1) #821 reset fidelity: a provider whose only reset deadline ran out since it was read (for example a window with 0 % used and 30 s left, read a minute ago) read "No active session" on the tile → it reads "Reset unavailable", as on the VibeTV; (2) #821 reset fidelity: a provider whose first window has no deadline but a later window does showed "Reset unavailable" for a theme that binds the reset text → it counts down the later deadline, as on the VibeTV. Nothing else changes.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #821 reset fidelity: expired countdowns and the later deadline match the device
 - Approved customer-visible result: #821 reset fidelity: the tile treats an expired countdown as stale and takes the root reset from the first window that has a deadline, exactly as the host does; pending Paul's review.
 - Scope: #821 reset fidelity in `apps/control-center/src/components/setup/setup-display-previews.ts`, its test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #821 reset fidelity fix, no new content
 
 ## 2026-10-20 — #821: a setup tile with usage older than 5 hours shows "Reset unavailable" (Codex review)
 
-- User approval: pending — #821 Codex fix on the single setup tile; the rendered result is pending Paul's review. Before → after: #821 a tile whose usage reading was more than five hours old but still carried a later deadline kept counting down that old reset → #821 the tile shows "Reset unavailable", exactly as the VibeTV does for the same frame (ApplyResetTrust, trust horizon 5 h).
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #821: a setup tile with usage older than 5 hours shows "Reset unavailable" (Codex review) — Before → after: #821 a tile whose usage reading was more than five hours old but still carried a later deadline kept counting down that old reset → #821 the tile shows "Reset unavailable", exactly as the VibeTV does for the same frame (ApplyResetTrust, trust horizon 5 h).
 - Approved customer-visible result: #821 the setup tile draws the same reset text as the VibeTV would; nothing else changes.
 - Scope: #821 `apps/control-center/src/components/setup/setup-display-previews.ts`, its test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #821 Codex fix not announced
 
 ## 2026-10-20 — #821: setup tile activity, theme retry and live reset trust (Codex review)
 
-- User approval: pending — #821 Codex fixes on the single setup tile; the rendered result is pending Paul's review. Before → after: (1) #821 a theme that draws a different picture while coding (Clippy, Tiny Office) showed its idle picture on the tile while the VibeTV showed the coding one → #821 the tile takes the activity of the frame last sent to the VibeTV; (2) #821 if the Companion was still starting or its theme pack was not ready, the tile stayed on the plain preview until the screen was reopened → #821 it asks again every 5 s and draws the theme as soon as the pack is there; (3) #821 a tile left open past the last reset deadline or past the 5 h trust horizon kept counting down until the next usage update → #821 it shows "Reset unavailable" on the next second, exactly as the VibeTV does.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #821: setup tile activity, theme retry and live reset trust (Codex review) — Before → after: (1) #821 a theme that draws a different picture while coding (Clippy, Tiny Office) showed its idle picture on the tile while the VibeTV showed the coding one → #821 the tile takes the activity of the frame last sent to the VibeTV; (2) #821 if the Companion was still starting or its theme pack was not ready, the tile stayed on the plain preview until the screen was reopened → #821 it asks again every 5 s and draws the theme as soon as the pack is there; (3) #821 a tile left open past the last reset deadline or past the 5 h trust horizon kept counting down until the next usage update → #821 it shows "Reset unavailable" on the next second, exactly as the VibeTV does.
 - Approved customer-visible result: #821 the setup tile draws the same activity picture, theme and reset text as the VibeTV for the same frame; nothing else changes.
 - Scope: #821 `apps/control-center/src/components/setup/setup-display-previews.ts`, `setup-display-theme-tiles.tsx`, `setup-wizard.tsx`, their tests and this approval record; the unreferenced scratch scripts `apps/control-center/scripts/shots.mjs` and `shots-base.mjs` are removed. Pull request branch only, not merged, not released.
 - What's new: none — #821 Codex fixes not announced
 
 ## 2026-10-20 — #821: the setup tile lets a "coding" verdict run out like VibeTV (Codex review)
 
-- User approval: pending — #821 Codex fix on the single setup tile; the rendered result is pending Paul's review. Before → after: #821 the tile kept the coding sprite of activity-sensitive themes (Clippy, Tiny Office) for as long as setup stayed open → #821 past the sent frame's activity TTL the tile shows the idle sprite, as VibeTV does on its own (#369).
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #821: the setup tile lets a "coding" verdict run out like VibeTV (Codex review) — Before → after: #821 the tile kept the coding sprite of activity-sensitive themes (Clippy, Tiny Office) for as long as setup stayed open → #821 past the sent frame's activity TTL the tile shows the idle sprite, as VibeTV does on its own (#369).
 - Approved customer-visible result: #821 the setup tile draws the same sprite as the VibeTV at every moment.
 - Scope: #821 `apps/control-center/src/components/setup/setup-display-previews.ts`, `setup-display-theme-tiles.tsx`, `setup-display-mode-screen.tsx` (type), `apps/control-center/src/components/live-vibetv-preview.tsx` (frame type), the test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #821 Codex fix not announced
@@ -11778,7 +11792,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-20 — #821: approval marker after merging claude/group-setup-b again
 
-- User approval: merge of claude/group-setup-b into #821 (approval record kept from both sides); no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- User approval: no visible change – UI approval not needed (merge commit into #821; no visible change of its own; entry: #821: approval marker after merging claude/group-setup-b again)
 - Approved customer-visible result: #821 as in its own entries (pending, Paul reviews) plus the entries of the base branch.
 - Scope: the merge and this approval record. Pull request branch #821 only, not merged, not released.
 - What's new: none — merge of the base branch, no customer-visible change of its own
@@ -12361,3 +12375,30 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #784 as in its own entries plus the entries merged with 41bf10cf; nothing else changes.
 - Scope: the merge of 41bf10cf and this approval record. Pull request branch #784 only, not merged, not released.
 - What's new: none — merge of 41bf10cf, no customer-visible change of its own
+## 2026-10-21 — #821: Paul's approval of build 7200 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" — #821 approval record for build 7200; the #821 entries that were in build 7200 now carry it, merge markers are marked as no visible change, entries added after build 7200 stay pending.
+- Approved customer-visible result: #821 as described in its entries above, as seen in build 7200.
+- Scope: #821 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #821 approval record only
+
+## 2026-10-21 — #821: approval marker after merging claude/group-setup-b at ac0f1c1c
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-setup-b (ac0f1c1c) into #821; the own entries of #821 keep their approvals)
+- Approved customer-visible result: #821 as in its own entries plus the entries merged with ac0f1c1c; nothing else changes.
+- Scope: the merge of ac0f1c1c and this approval record. Pull request branch #821 only, not merged, not released.
+- What's new: none — merge of ac0f1c1c, no customer-visible change of its own
+
+## 2026-10-21 — #821: approval marker after merging claude/group-setup-b at 874a7565
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-setup-b (874a7565) into #821; the own entries of #821 keep their approvals)
+- Approved customer-visible result: #821 as in its own entries plus the entries merged with 874a7565; nothing else changes.
+- Scope: the merge of 874a7565 and this approval record. Pull request branch #821 only, not merged, not released.
+- What's new: none — merge of 874a7565, no customer-visible change of its own
+
+## 2026-10-21 — #821: Codex fixes for the setup display preview
+
+- User approval: no visible change – UI approval not needed (#821 Codex fixes: setup preview no longer invents usage windows and the Manual tile shows only the pinned provider, as the VibeTV does)
+- Approved customer-visible result: #821 as in its own entries; nothing new is visible, the setup preview only matches what VibeTV already shows.
+- Scope: setup display previews (setup-display-previews.ts, the Manual tile in setup-display-mode-screen.tsx) and their tests. Pull request branch #821 only, not merged, not released.
+- What's new: none — preview corrections that match the device
