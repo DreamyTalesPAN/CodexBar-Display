@@ -9206,3 +9206,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Overview keeps showing the current theme name, including the customer's saved names and live theme during standby; returning from Theme Studio and changes from another window refresh those names.
 - Scope: `overview-screen.tsx` and its theme-name regression tests. Pull request #784 only, not merged, not released.
 - What's new: none — avoid repeated localStorage JSON parsing
+
+## 2026-10-22 — #902: axe checks for the setup firmware, recovery and provider dialogs
+
+- User approval: no visible change – UI approval not needed (#902 adds accessibility tests for the setup firmware, recovery and provider dialogs; no component change)
+- Approved customer-visible result: the dialogs look and behave exactly as before.
+- Scope: `setup-dialogs.axe.test.tsx` only. Pull request #902 only, not merged, not released.
+- What's new: none — test-only accessibility baseline
