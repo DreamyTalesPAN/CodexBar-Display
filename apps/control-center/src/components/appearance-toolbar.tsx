@@ -1,7 +1,7 @@
 "use client";
 
 import { ListFilter, Search, X } from "lucide-react";
-import type { RefObject } from "react";
+import { useRef, type RefObject } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -45,7 +45,7 @@ export function AppearanceToolbar({
   usage,
 }: {
   counts: Record<ThemeLibraryUsage, number>;
-  filtersRef?: RefObject<HTMLButtonElement | null>;
+  filtersRef: RefObject<HTMLButtonElement | null>;
   groups: AppearanceToolbarGroup[];
   onClearFilters: () => void;
   onQueryChange: (query: string) => void;
@@ -57,6 +57,7 @@ export function AppearanceToolbar({
   selected: string[];
   usage: ThemeLibraryUsage;
 }) {
+  const chipRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const labels = new Map(
     groups.flatMap((group) =>
       group.options.map((option) => [option.id, option.label] as const),
@@ -173,7 +174,7 @@ export function AppearanceToolbar({
       </div>
       {selected.length > 0 ? (
         <div className="mt-3.5 flex flex-wrap items-center gap-2">
-          {selected.map((id) => (
+          {selected.map((id, index) => (
             <span
               className="inline-flex h-7 items-center gap-1.5 rounded-full bg-muted pr-2 pl-3 text-[13px]"
               key={id}
@@ -182,14 +183,27 @@ export function AppearanceToolbar({
               <button
                 aria-label={`Remove filter ${labels.get(id)}`}
                 className="inline-flex size-4 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={() => onToggleFilter(id)}
+                onClick={(event) => {
+                  if (document.activeElement === event.currentTarget) {
+                    (chipRefs.current[index + 1] ?? chipRefs.current[index - 1] ?? filtersRef.current)?.focus();
+                  }
+                  onToggleFilter(id);
+                }}
+                ref={(button) => { chipRefs.current[index] = button; }}
                 type="button"
               >
                 <X aria-hidden className="size-3.5" />
               </button>
             </span>
           ))}
-          <button className={`${TEXT_LINK} ml-1`} onClick={onClearFilters} type="button">
+          <button
+            className={`${TEXT_LINK} ml-1`}
+            onClick={(event) => {
+              if (document.activeElement === event.currentTarget) filtersRef.current?.focus();
+              onClearFilters();
+            }}
+            type="button"
+          >
             Clear all
           </button>
         </div>

@@ -386,6 +386,47 @@ it("shows the picked options as chips that remove one, and Clear all removes all
   expect(filtersButton().textContent).toBe("Filters");
 });
 
+it.each([
+  { picked: ["Animated", "Clock", "2 providers"], removed: "Clock", next: "2 providers" },
+  { picked: ["Animated", "Clock", "2 providers"], removed: "2 providers", next: "Clock" },
+  { picked: ["Clock"], removed: "Clock", next: null },
+])("keeps keyboard focus after removing $removed from $picked", async ({ picked, removed, next }) => {
+  render(<Page themes={withTags} />);
+  await openFilters();
+  for (const name of picked) fireEvent.click(screen.getByRole("checkbox", { name }));
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+  const chip = screen.getByRole("button", { name: `Remove filter ${removed}` });
+  chip.focus();
+  fireEvent.click(chip, { detail: 0 });
+  expect(screen.queryByRole("button", { name: `Remove filter ${removed}` })).toBeNull();
+  expect(document.activeElement).toBe(next
+    ? screen.getByRole("button", { name: `Remove filter ${next}` })
+    : filtersButton());
+});
+
+it("returns keyboard focus to Filters after the chip row Clear all disappears", async () => {
+  render(<Page themes={withTags} />);
+  await openFilters();
+  fireEvent.click(screen.getByRole("checkbox", { name: "Clock" }));
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+  const clear = screen.getByRole("button", { name: "Clear all" });
+  clear.focus();
+  fireEvent.click(clear, { detail: 0 });
+  expect(screen.queryByRole("button", { name: /^Remove filter/ })).toBeNull();
+  expect(document.activeElement).toBe(filtersButton());
+});
+
+it("leaves focus alone when removing an unfocused chip", async () => {
+  render(<Page themes={withTags} />);
+  await openFilters();
+  fireEvent.click(screen.getByRole("checkbox", { name: "Clock" }));
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+  const search = screen.getByRole("searchbox", { name: "Search" });
+  search.focus();
+  fireEvent.click(screen.getByRole("button", { name: "Remove filter Clock" }));
+  expect(document.activeElement).toBe(search);
+});
+
 it("keeps search, segment and filters working together", async () => {
   render(<Page themes={withTags} />);
   await openFilters();

@@ -9553,3 +9553,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: only the card being installed shows Installing; the selected card of the other type stays blocked without claiming another install.
 - Scope: reuse the existing per-row install status, remove selection-based install state and add both-direction regression tests. Pull request branch #802 only, not merged, not released.
 - What's new: none — remove the false second installation
+
+## 2026-10-21 — #802: retain keyboard focus when filter chips disappear
+
+- User approval: no visible change – UI approval not needed (bug fix: #802 chip removal transfers keyboard focus to the next chip, previous chip or Filters)
+- Approved customer-visible result: removing a focused filter keeps keyboard navigation in the toolbar; Clear all returns focus to Filters, with no new text or layout.
+- Scope: chip-row focus handoff and regression tests for next, previous, final chip, Clear all and focus elsewhere. Pull request branch #802 only, not merged, not released.
+- What's new: none — prevent keyboard focus from falling back to the page body
