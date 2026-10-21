@@ -647,6 +647,33 @@ test_historical_entries_cannot_be_rewritten_or_deleted() {
   done
 }
 
+test_historical_entry_order_is_preserved() {
+  local kind repo output
+  for kind in reorder prepend; do
+    repo="${TMP_ROOT}/historical-${kind}"
+    setup_repo "$repo"
+    commit_approval "$repo" "Second historical entry"
+    git -C "$repo" update-ref refs/remotes/origin/main HEAD
+    {
+      printf '# Control Center Customer UI Approvals\n'
+      if [[ "$kind" == reorder ]]; then
+        approval_entry "Second historical entry"
+        approval_entry "Initial UI"
+      else
+        approval_entry "Prepended new entry"
+        approval_entry "Initial UI"
+        approval_entry "Second historical entry"
+      fi
+    } > "$repo/docs/control-center-customer-ui-approval.md"
+    git -C "$repo" add docs/control-center-customer-ui-approval.md
+    git -C "$repo" commit -q -m "Change historical entry order"
+    commit_approval "$repo" "Later valid marker"
+    output="$(run_gate "$repo")" && die "expected historical $kind to fail"
+    assert_contains "$output" 'Initial UI: historical approval entries are append-only'
+  done
+}
+
+test_historical_entry_order_is_preserved
 test_historical_entries_cannot_be_rewritten_or_deleted
 test_large_approval_log_is_validated
 test_required_git_reads_fail_closed
