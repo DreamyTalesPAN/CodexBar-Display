@@ -443,9 +443,11 @@ enum Placement {
 
 fn choose_placement(remembered: Option<Remembered>, work_areas: &[WindowRect]) -> Placement {
     match remembered {
-        Some((Some(rect), maximized)) if centre_on_a_work_area(rect, work_areas) => {
-            Placement::Remembered { rect: Some(rect), maximized }
-        }
+        Some((Some(rect), maximized)) => match work_area_of_centre(rect, work_areas) {
+            // Pulled inside the work area, so a taskbar cannot hide its lower edge.
+            Some(area) => Placement::Remembered { rect: Some(fit_into(rect, area)), maximized },
+            None => Placement::Default,
+        },
         // Maximized, never restored: maximize again at the default size.
         Some((None, true)) => Placement::Remembered { rect: None, maximized: true },
         // Nothing remembered, or the window was on a monitor that is gone.
@@ -463,16 +465,25 @@ fn remembered_for(current: WindowRect, maximized: bool, previous: Option<Remembe
 }
 
 // The centre must lie on a monitor, so the window cannot open out of reach.
-fn centre_on_a_work_area(rect: WindowRect, work_areas: &[WindowRect]) -> bool {
+fn work_area_of_centre(rect: WindowRect, work_areas: &[WindowRect]) -> Option<WindowRect> {
     let cx = i64::from(rect.x) + i64::from(rect.width) / 2;
     let cy = i64::from(rect.y) + i64::from(rect.height) / 2;
-    work_areas.iter().any(|area| {
+    work_areas.iter().copied().find(|area| {
         let (left, top) = (i64::from(area.x), i64::from(area.y));
         cx >= left
             && cx < left + i64::from(area.width)
             && cy >= top
             && cy < top + i64::from(area.height)
     })
+}
+
+// Shrinks the rectangle if it is larger than the area, then moves it inside.
+fn fit_into(rect: WindowRect, area: WindowRect) -> WindowRect {
+    let width = rect.width.min(area.width);
+    let height = rect.height.min(area.height);
+    let x = rect.x.clamp(area.x, area.x + (area.width - width) as i32);
+    let y = rect.y.clamp(area.y, area.y + (area.height - height) as i32);
+    WindowRect { x, y, width, height }
 }
 
 // None while minimized, because its position says nothing about where it was
@@ -1627,8 +1638,9 @@ fn show_message(message: &str) {
 #[cfg(test)]
 mod tests {
     use super::{
-        centre_on_a_work_area, choose_placement, clear_loaded_theme, close_stands, label_for_generation,
-        theme_id_from_deep_link, Placement, WindowRect, remembered_after, remembered_for, store_if_newer,
+        choose_placement, clear_loaded_theme, close_stands, fit_into, label_for_generation,
+        theme_id_from_deep_link, work_area_of_centre, Placement, WindowRect, remembered_after,
+        remembered_for, store_if_newer,
     };
     use url::Url;
 
@@ -1730,7 +1742,7 @@ mod tests {
         );
         // Centre on the left monitor is still on a monitor.
         let left = rect(-900, 50, 1280, 900);
-        assert!(centre_on_a_work_area(left, &screens));
+        assert_eq!(work_area_of_centre(left, &screens), Some(screens[1]));
         // Nothing remembered: first start default.
         assert_eq!(choose_placement(None, &screens), Placement::Default);
         assert_eq!(choose_placement(Some((None, false)), &screens), Placement::Default);
@@ -1739,6 +1751,26 @@ mod tests {
         assert_eq!(choose_placement(Some((Some(unplugged), false)), &screens), Placement::Default);
         // No monitor known at all: default.
         assert_eq!(choose_placement(Some((Some(placed), false)), &[]), Placement::Default);
+    }
+
+    #[test]
+    fn a_remembered_window_is_pulled_inside_the_work_area() {
+        let rect = |x, y, width, height| WindowRect { x, y, width, height };
+        // 1080p with a 48 px taskbar at the bottom: work area ends at y=1032.
+        let work = rect(0, 0, 1920, 1032);
+        // Centre (940, 750) is on screen, but the bottom edge (1200) is behind the taskbar.
+        assert_eq!(
+            choose_placement(Some((Some(rect(300, 300, 1280, 900)), false)), &[work]),
+            Placement::Remembered { rect: Some(rect(300, 132, 1280, 900)), maximized: false }
+        );
+        // Larger than the screen: shrunk to fit, then moved to the corner.
+        assert_eq!(
+            choose_placement(Some((Some(rect(50, 50, 2560, 1440)), false)), &[work]),
+            Placement::Remembered { rect: Some(work), maximized: false }
+        );
+        // Off the left edge of a monitor that sits at negative x.
+        let left = rect(-1280, 0, 1280, 1000);
+        assert_eq!(fit_into(rect(-1400, 20, 1000, 800), left), rect(-1280, 20, 1000, 800));
     }
 
     #[test]
