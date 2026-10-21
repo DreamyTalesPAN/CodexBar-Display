@@ -8528,3 +8528,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: a setup preview tile whose frame is an error frame shows its existing "no usage yet" state instead of the theme drawn from zeros; normal frames are unchanged.
 - Scope: setup-display-theme-tiles.tsx and its test; the error field added to the DisplayFrame type. Pull request branch only, not merged, not released.
 - What's new: none — the tile uses the state it already shows for a provider with no values
+
+## 2026-10-21 — #858: plain preview tile shows unavailable for an error frame
+
+- User approval: no visible change – UI approval not needed (bug fix: the plain setup preview tile shows its no-usage state instead of stale values when the companion sends an error frame, as the theme tile already does)
+- Approved customer-visible result: the plain setup preview tile whose frame is an error frame shows unavailable values; normal frames are unchanged.
+- Scope: setup-display-previews.ts (displayPreviewFor) and its test. Pull request branch only, not merged, not released.
+- What's new: none — the tile uses the unavailable state it already shows for stale or unread frames

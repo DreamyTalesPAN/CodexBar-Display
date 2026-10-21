@@ -49,7 +49,7 @@ describe("displayPreviewFor", () => {
     expect(preview?.windows[1].percent).toBeNull();
   });
 
-  it.each([{ usageUnavailable: true }, { resetTrust: "stale" }])("keeps an unavailable frame unavailable: %j", (flags) => {
+  it.each([{ usageUnavailable: true }, { resetTrust: "stale" }, { error: "no usage yet" }])("keeps an unavailable frame unavailable: %j", (flags) => {
     const preview = displayPreviewFor({
       ...flags, resetSecs: 10800,
       usageWindows: [{ id: "weekly", label: "Weekly", percent: 42 }],

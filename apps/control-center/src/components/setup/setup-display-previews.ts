@@ -19,7 +19,8 @@ export function displayPreviewFor(
   if (!frame) {
     return null;
   }
-  const unavailable = frame.resetTrust === "stale" || frame.usageUnavailable === true;
+  // An error frame carries no reading: the same no-usage state as the theme tile.
+  const unavailable = frame.resetTrust === "stale" || frame.usageUnavailable === true || Boolean(frame.error);
   return {
     providerLabel: frame.label || frame.provider || "",
     frame,
