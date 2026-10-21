@@ -49,6 +49,8 @@ func flashCableRescueWithRetry(ctx context.Context, home string, marker firmware
 		if ports, listErr := listCablePortsFn(); listErr == nil {
 			marker.Ports = ports
 		}
+		// Saved before the chip is read (issue #842): recordChip clears it.
+		marker.ChipNotRead = true
 	}
 	// A resume on a port the VibeTV seems to have moved to keeps the marker on
 	// disk as it was until the ROM loader confirms the recorded chip there: the
@@ -64,7 +66,7 @@ func flashCableRescueWithRetry(ctx context.Context, home string, marker firmware
 	// The chip is saved into the marker before the erase. Every later attempt
 	// writes only that chip: a resumed rescue starts with the chip it recorded.
 	recordChip := func(chip string) error {
-		marker.ChipMAC = chip
+		marker.ChipMAC, marker.ChipNotRead = chip, false
 		return firmwareupdate.SaveRescueMarker(home, marker)
 	}
 	started := false
@@ -139,6 +141,18 @@ func rescueImageMatchesMarker(image []byte, marker firmwareupdate.RescueMarker) 
 func resumableRescueMarker(home string) (firmwareupdate.RescueMarker, bool) {
 	marker, ok := firmwareupdate.LoadRescueMarker(home, time.Now())
 	if !ok {
+		return firmwareupdate.RescueMarker{}, false
+	}
+	// Issue #842: a marker saved before the chip was read never sent FLASH_BEGIN,
+	// so its VibeTV is untouched and the marker only blocks the next rescue. A
+	// marker without that flag may be half-written (#819) and is kept below.
+	if marker.ChipNotRead && strings.TrimSpace(marker.ChipMAC) == "" {
+		fmt.Printf("Cable rescue: the marker for port %s was saved before its chip was read; its VibeTV is untouched, clearing it\n", marker.Port)
+		// runInstallUpdate holds the rescue lock, so no live attempt can own
+		// or replace this marker while it is inspected and cleared.
+		if clearErr := firmwareupdate.ClearRescueMarker(home); clearErr != nil {
+			fmt.Printf("warning: clearing the unused rescue marker failed: %v\n", clearErr)
+		}
 		return firmwareupdate.RescueMarker{}, false
 	}
 	ports, err := listCablePortsFn()
