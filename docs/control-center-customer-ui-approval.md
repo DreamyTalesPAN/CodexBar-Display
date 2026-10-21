@@ -15746,3 +15746,45 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve the refreshed feature together with the existing calm customer flows in the integration candidate.
 - Scope: Merge claude/calm-updates into claude/paultest-build9 and retain all source approval blocks.
 - What's new: none — integration of existing feature entries only.
+
+## 2026-10-21 — #802: approval marker after merging claude/group-calm-redesign at 035ced04
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (035ced04) into #802; the own entries of #802 keep their approvals)
+- Approved customer-visible result: #802 as in its own entries plus the entries merged with 035ced04; nothing else changes.
+- Scope: the merge of 035ced04 and this approval record. Pull request branch #802 only, not merged, not released.
+- What's new: none — merge of 035ced04, no customer-visible change of its own
+
+## 2026-10-21 — #802: verify the enabled screensaver before showing Active
+
+- User approval: no visible change – UI approval not needed (bug fix: #802 screensaver Active requires enabled settings and verified device slot)
+- Approved customer-visible result: an off or unverifiable screensaver no longer claims Active; live-theme status keeps its existing rule, with no new text or layout.
+- Scope: screensaver card status and regression tests for disabled, missing and unavailable device evidence. Pull request branch #802 only, not merged, not released.
+- What's new: none — correct an unsupported Active status
+
+## 2026-10-21 — #802: keep Installing on the card belonging to the job
+
+- User approval: no visible change – UI approval not needed (bug fix: #802 install spinner follows the job instead of both selected slots)
+- Approved customer-visible result: only the card being installed shows Installing; the selected card of the other type stays blocked without claiming another install.
+- Scope: reuse the existing per-row install status, remove selection-based install state and add both-direction regression tests. Pull request branch #802 only, not merged, not released.
+- What's new: none — remove the false second installation
+
+## 2026-10-21 — #802: retain keyboard focus when filter chips disappear
+
+- User approval: no visible change – UI approval not needed (bug fix: #802 chip removal transfers keyboard focus to the next chip, previous chip or Filters)
+- Approved customer-visible result: removing a focused filter keeps keyboard navigation in the toolbar; Clear all returns focus to Filters, with no new text or layout.
+- Scope: chip-row focus handoff and regression tests for next, previous, final chip, Clear all and focus elsewhere. Pull request branch #802 only, not merged, not released.
+- What's new: none — prevent keyboard focus from falling back to the page body
+
+## 2026-10-21 — #802: approval marker after merging claude/group-calm-redesign at 52397ff8
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (52397ff8) into #802; the own entries of #802 keep their approvals)
+- Approved customer-visible result: #802 as in its own entries plus the entries merged with 52397ff8; nothing else changes.
+- Scope: the merge of 52397ff8 and this approval record. Pull request branch #802 only, not merged, not released.
+- What's new: none — merge of 52397ff8, no customer-visible change of its own
+
+## 2026-10-21 — paultest-build9: refresh claude/appearance-one-page (#802)
+
+- User approval: pending — build9 integration of claude/appearance-one-page at 71034ea77823 for Paul’s Mac test build 7204.
+- Approved customer-visible result: Preserve the refreshed feature together with the existing calm customer flows in the integration candidate.
+- Scope: Merge claude/appearance-one-page into claude/paultest-build9 and retain all source approval blocks.
+- What's new: none — integration of existing feature entries only.

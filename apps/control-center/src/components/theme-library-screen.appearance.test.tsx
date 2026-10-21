@@ -179,6 +179,84 @@ it("shows the screensaver-off notice, with a link to Settings, only under Screen
   expect(onOpenScreensaverSettings).toHaveBeenCalledTimes(1);
 });
 
+it("marks only a verifiably enabled, device-installed screensaver Active", () => {
+  const night = product("night-clock", "Night Clock", "screensaver", {
+    themeSpecPath: "/themes/s/night.json",
+  });
+  const device = {
+    connected: true,
+    paired: true,
+    ready: true,
+    activeTheme: "clippy",
+    standby: { active: false, screensaverPath: night.themeSpecPath },
+  };
+  const standby = { brightnessPercent: 20, enabled: true, timeoutMinutes: 10 };
+  const page = (overrides: Partial<ThemeLibraryScreenProps> = {}) => (
+    <Page
+      device={device}
+      selectedThemeId="clippy"
+      selectedScreensaverId="night-clock"
+      standby={standby}
+      themes={[plain[1], night]}
+      {...overrides}
+    />
+  );
+  const { rerender } = render(page());
+  const nightCard = () => within(document.getElementById("catalog-theme-night-clock")!);
+  // Enabled is the setting, not whether the idle timeout has elapsed.
+  expect(nightCard().getByTestId("theme-status-pill").textContent).toBe("Active");
+  for (const overrides of [
+    { standby: { ...standby, enabled: false } },
+    { standby: null },
+    { companionStatus: "missing" as const },
+    { companionStatus: "unknown" as const },
+    { device: { ...device, connected: false, ready: false } },
+    { device: { ...device, ready: false, connectionState: "display_render_failed" } },
+  ]) {
+    rerender(page(overrides));
+    expect(nightCard().getByTestId("theme-status-pill").textContent).toBe("Installed");
+    // The agreed fix leaves the existing live-theme rule alone.
+    expect(within(document.getElementById("catalog-theme-clippy")!).getByText("Active")).toBeTruthy();
+  }
+  // A selection and a just-completed job cannot stand in for the device slot.
+  rerender(page({
+    device: { ...device, standby: { active: false } },
+    busyAction: "install",
+    installStatus: {
+      phase: "complete", themeId: night.themeId, title: night.title,
+      startedAt: "10:00:00", logs: [],
+    },
+  }));
+  expect(nightCard().getByTestId("theme-status-pill").textContent).toBe("Installed");
+});
+
+it.each(["clippy", "night-clock"])("shows Installing only for the %s job, with both slots selected", (themeId) => {
+  const job = plain.find((theme) => theme.themeId === themeId)!;
+  render(
+    <Page
+      busyAction="install"
+      device={{ connected: true, paired: true, ready: true }}
+      installStatus={{
+        phase: "installing", themeId, title: job.title,
+        startedAt: "10:00:00", logs: [],
+      }}
+      selectedThemeId="clippy"
+      selectedScreensaverId="night-clock"
+      standby={{ brightnessPercent: 20, enabled: true, timeoutMinutes: 10 }}
+      themeInstallEnabled
+    />,
+  );
+  expect(screen.getAllByRole("button", { name: "Installing" })).toHaveLength(1);
+  const installing = within(document.getElementById(`catalog-theme-${themeId}`)!)
+    .getByRole("button", { name: "Installing" });
+  expect(installing.querySelector('[data-slot="spinner"]')).not.toBeNull();
+  const otherId = themeId === "clippy" ? "night-clock" : "clippy";
+  const otherCard = within(document.getElementById(`catalog-theme-${otherId}`)!);
+  expect(otherCard.queryByRole("button", { name: "Installing" })).toBeNull();
+  expect(otherCard.getByText("Wait")).toBeTruthy();
+  expect(otherCard.queryByRole("button", { name: "Install" })).toBeNull();
+});
+
 it("searches by name only, ignoring case, and Esc clears the field", () => {
   render(<Page themes={withTags} />);
   const search = screen.getByRole("searchbox", { name: "Search" });
@@ -306,6 +384,47 @@ it("shows the picked options as chips that remove one, and Clear all removes all
   expect(names()).toHaveLength(5);
   expect(screen.queryByRole("button", { name: /^Remove filter/ })).toBeNull();
   expect(filtersButton().textContent).toBe("Filters");
+});
+
+it.each([
+  { picked: ["Animated", "Clock", "2 providers"], removed: "Clock", next: "2 providers" },
+  { picked: ["Animated", "Clock", "2 providers"], removed: "2 providers", next: "Clock" },
+  { picked: ["Clock"], removed: "Clock", next: null },
+])("keeps keyboard focus after removing $removed from $picked", async ({ picked, removed, next }) => {
+  render(<Page themes={withTags} />);
+  await openFilters();
+  for (const name of picked) fireEvent.click(screen.getByRole("checkbox", { name }));
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+  const chip = screen.getByRole("button", { name: `Remove filter ${removed}` });
+  chip.focus();
+  fireEvent.click(chip, { detail: 0 });
+  expect(screen.queryByRole("button", { name: `Remove filter ${removed}` })).toBeNull();
+  expect(document.activeElement).toBe(next
+    ? screen.getByRole("button", { name: `Remove filter ${next}` })
+    : filtersButton());
+});
+
+it("returns keyboard focus to Filters after the chip row Clear all disappears", async () => {
+  render(<Page themes={withTags} />);
+  await openFilters();
+  fireEvent.click(screen.getByRole("checkbox", { name: "Clock" }));
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+  const clear = screen.getByRole("button", { name: "Clear all" });
+  clear.focus();
+  fireEvent.click(clear, { detail: 0 });
+  expect(screen.queryByRole("button", { name: /^Remove filter/ })).toBeNull();
+  expect(document.activeElement).toBe(filtersButton());
+});
+
+it("leaves focus alone when removing an unfocused chip", async () => {
+  render(<Page themes={withTags} />);
+  await openFilters();
+  fireEvent.click(screen.getByRole("checkbox", { name: "Clock" }));
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+  const search = screen.getByRole("searchbox", { name: "Search" });
+  search.focus();
+  fireEvent.click(screen.getByRole("button", { name: "Remove filter Clock" }));
+  expect(document.activeElement).toBe(search);
 });
 
 it("keeps search, segment and filters working together", async () => {

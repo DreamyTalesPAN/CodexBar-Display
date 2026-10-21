@@ -971,16 +971,17 @@ export function ThemeLibraryScreen({
                       : ""
                   }
                   device={device}
-                  // The theme VibeTV shows, as its slot reports it; the
-                  // selection stands in only while the slot is not known yet.
+                  // A screensaver is Active only with a verified, enabled slot.
+                  // Live themes retain their existing selection fallback.
                   displayThemeId={
-                    (theme.usage === "screensaver"
-                      ? screensaverThemeId
-                      : liveThemeId) ??
-                    (theme.usage === "screensaver"
-                      ? screensaverDisplayTheme
-                      : liveDisplayTheme
-                    )?.themeId
+                    theme.usage === "screensaver"
+                      ? standby?.enabled === true &&
+                        companionStatus === "online" &&
+                        device?.connected === true &&
+                        device.ready === true
+                        ? screensaverThemeId
+                        : undefined
+                      : liveThemeId ?? liveDisplayTheme?.themeId
                   }
                   item={theme}
                   installStatus={hostInstallStatus}
@@ -995,11 +996,6 @@ export function ThemeLibraryScreen({
                   onPreviewTheme={setPreviewTheme}
                   filtersRef={filtersRef}
                   preparingInstallRow={preparingInstallRow}
-                  selectedThemeId={
-                    theme.usage === "screensaver"
-                      ? selectedScreensaverId
-                      : selectedThemeId
-                  }
                   state={rowStates.get(rowKey(theme))!}
                   themeInstallBlockedReason={readiness.buttonReason}
                   themeInstallEnabled={themeInstallEnabled}
@@ -1352,7 +1348,6 @@ function ThemeListItem({
   onPreviewTheme,
   preparingInstallRow,
   screensaverInstallBlockedReason,
-  selectedThemeId,
   state: { installed, sharesId, updateAvailable },
   themeInstallBlockedReason,
   themeInstallEnabled,
@@ -1373,7 +1368,6 @@ function ThemeListItem({
   onPreviewTheme: (theme: ThemeLibraryItem) => void;
   preparingInstallRow: string;
   screensaverInstallBlockedReason: string;
-  selectedThemeId: string;
   state: RowInstallState;
   themeInstallBlockedReason: string;
   themeInstallEnabled: boolean;
@@ -1441,7 +1435,7 @@ function ThemeListItem({
   const installLabel = labelForInstallButton({
     actionInFlight,
     blockedLabel: blocker ? blockedLabel : "",
-    installInFlight: installInFlight || preparingInstall,
+    installInFlight: (visibleInstallStatus && installInFlight) || preparingInstall,
     // The row's notice says "Installed" from here on; the button says
     // the same while the app still reads VibeTV's settings (#579).
     installFinished:
@@ -1449,7 +1443,6 @@ function ThemeListItem({
     // A failed install of a theme VibeTV already holds is retried from this
     // button: the card has no "Try again" row of its own any more.
     installed: installed && !retryingFailedInstall,
-    selected: item.themeId === selectedThemeId,
     disabled,
     updateAvailable,
   });
@@ -1464,10 +1457,7 @@ function ThemeListItem({
     installLabel === "Installed" || (installed && !retryingFailedInstall);
   // This row's install is running: its Install button turns into
   // "Installing" with a spinner; the card itself never changes its height.
-  const rowInstalling =
-    preparingInstall ||
-    installLabel === "Installing" ||
-    (visibleInstallStatus && installStatus?.phase === "installing");
+  const rowInstalling = installLabel === "Installing";
   // Active is the theme VibeTV shows, as its slot reports it. An update that is
   // offered for that theme keeps the pill, the other rows keep theirs.
   const isActiveTheme = item.themeId === displayThemeId;
@@ -1702,7 +1692,6 @@ function labelForInstallButton({
   installFinished,
   installInFlight,
   installed,
-  selected,
   updateAvailable,
 }: {
   actionInFlight: boolean;
@@ -1711,14 +1700,13 @@ function labelForInstallButton({
   installFinished: boolean;
   installInFlight: boolean;
   installed: boolean;
-  selected: boolean;
   updateAvailable: boolean;
 }) {
   const action = updateAvailable ? "Update" : "Install";
   if (installFinished && actionInFlight) {
     return "Installed";
   }
-  if (installInFlight && selected) {
+  if (installInFlight) {
     return "Installing";
   }
   if (actionInFlight) {
