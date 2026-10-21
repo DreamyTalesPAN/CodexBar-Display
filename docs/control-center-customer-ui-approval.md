@@ -18060,3 +18060,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: The Two at once card shows the Companion's frame for the chosen limits, as saving them would show it.
 - Scope: Setup display step asks the Companion for preview frames with the unsaved limits.
 - What's new: none — bug fix.
+
+## 2026-10-22 — #864: Theme Library shows the token-history hint also in Two at once
+
+- User approval: pending — Theme Library shows the existing token-history hint also in Two at once
+- Approved customer-visible result: in Two at once, a theme that draws token numbers gets the same "Shows -- while token history is unavailable. See Usage." line that one-provider mode already shows, because Two at once frames carry no token totals; nothing else changes.
+- Scope: Theme Library hint for Two at once (usage-screen.tsx helper, control-center-app.tsx call site, tests). Pull request branch #864 only, not merged, not released.
+- What's new: none — the hint text already exists; only the case in which it shows is extended to Two at once
