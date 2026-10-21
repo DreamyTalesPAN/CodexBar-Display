@@ -2371,7 +2371,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 ) {
                     // #836: same action as the "Restart service" button.
                     self.serviceRestartedAutomatically = true
-                    self.retryRuntimePreparation()
+                    self.restartRuntimeService()
                     return
                 }
                 self.presentInstallationFailure(failure)
