@@ -16,7 +16,9 @@ it("shows the olive thumb ring only for keyboard focus, grey on hover and drag",
   expect(thumb.classList).not.toContain("ring-ring");
   expect(thumb.classList).not.toContain("hover:ring-ring");
   expect(thumb.classList).not.toContain("active:ring-ring");
-  expect(thumb.classList).toContain("ring-foreground/10");
+  expect(thumb.classList).not.toContain("ring-foreground/10");
+  expect(thumb.classList).toContain("hover:ring-foreground/10");
+  expect(thumb.classList).toContain("active:ring-foreground/10");
   expect(thumb.classList).toContain("hover:ring-3");
   expect(thumb.classList).toContain("active:ring-3");
 });
