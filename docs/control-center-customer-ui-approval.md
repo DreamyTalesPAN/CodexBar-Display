@@ -9811,7 +9811,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-20 — #784: the Copilot popup heading says it needs a GitHub sign-in
 
-- User approval: pending — #784 Copilot heading as decided by the communicator on 20.10.2026 (text decision for Paul's 7198 review); Paul sees it in build 7198. Before → after: #784 the Copilot popup in setup said "GitHub Copilot needs its own app" above a text about a GitHub sign-in → #784 "GitHub Copilot needs a GitHub sign-in".
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #784: the Copilot popup heading says it needs a GitHub sign-in — Before → after: #784 the Copilot popup in setup said "GitHub Copilot needs its own app" above a text about a GitHub sign-in → #784 "GitHub Copilot needs a GitHub sign-in".
 - Approved customer-visible result: #784 the Copilot popup heading matches its sentence; every other provider keeps "<Provider> needs its own app" or its name.
 - Scope: #784 `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #784 Copilot heading not announced
@@ -9839,7 +9839,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-20 — #784: Copilot sign-in heading only on its sign-in dialog
 
-- User approval: pending — #784 Copilot heading scope: the decided heading "GitHub Copilot needs a GitHub sign-in" (20.10.2026) now shows only on the dialog that used to say "GitHub Copilot needs its own app"; a timed-out Copilot ("did not answer in time, and VibeTV tries again by itself") keeps the plain heading "GitHub Copilot" again.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #784: Copilot sign-in heading only on its sign-in dialog
 - Approved customer-visible result: #784 the Copilot sign-in dialog is headed "GitHub Copilot needs a GitHub sign-in"; the timed-out Copilot dialog is headed "GitHub Copilot", as before commit 9c129d1c.
 - Scope: #784 Setup Wizard provider dialog heading only. Pull request branch only, not merged, not released.
 - What's new: none — #784 dialog heading scope only
@@ -12327,3 +12327,37 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #802 unchanged; filter tags still come from the catalog first, as in its pending catalog-tags entry.
 - Scope: #802 themes.ts merge fix only. Pull request branch only, not merged, not released.
 - What's new: none — #802 merge fix only
+## 2026-10-21 — #784: Paul's approval of build 7200 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" — #784 approval record for build 7200; the #784 entries that were in build 7200 now carry it, merge markers are marked as no visible change, entries added after build 7200 stay pending.
+- Approved customer-visible result: #784 as described in its entries above, as seen in build 7200.
+- Scope: #784 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #784 approval record only
+
+## 2026-10-21 — #784: approval marker after merging main at e3503bda
+
+- User approval: no visible change – UI approval not needed (merge of main (e3503bda) into #784; the own entries of #784 keep their approvals)
+- Approved customer-visible result: #784 as in its own entries plus the entries merged with e3503bda; nothing else changes.
+- Scope: the merge of e3503bda and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — merge of e3503bda, no customer-visible change of its own
+
+## 2026-10-21 — #784: Theme Studio progress bar without a binding (Codex review)
+
+- User approval: pending — #784 Theme Studio: a progress bar without a reading no longer lists an empty "Current reading" entry under "Reading to show" (the panel crashed on it); the other entries and wording stay the same
+- Approved customer-visible result: "Reading to show" offers the same four readings as before. A progress bar that has no reading yet shows no extra "Current reading" entry any more, so the details panel no longer breaks for it. Nothing else changes.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` (new exported `progressReadingOptions`), its new test `progress-reading-options.test.ts`, and this approval record. Pull-request branch #784 only, not merged, not released.
+- What's new: none — crash fix of the Theme Studio details panel, no new text
+
+## 2026-10-21 — #784: Slider thumb ring grey on hover and drag, olive only for keyboard focus (Codex review)
+
+- User approval: pending — #784 slider thumb: mouse hover/drag shows a neutral grey ring, the olive ring only for keyboard focus (Paul decided 21.10. "Maus grau, Tastatur oliv"; not yet seen in a build)
+- Approved customer-visible result: the slider thumb shows a grey ring while the mouse hovers over it or drags it; the olive ring appears only when the thumb has keyboard focus. Nothing else changes.
+- Scope: `apps/control-center/src/components/ui/slider.tsx` (thumb ring classes), its new test `apps/control-center/src/components/ui/slider.focus-ring.test.tsx`, and this approval record. Pull-request branch #784 only, not merged, not released.
+- What's new: none — ring colour of the slider thumb, no new text
+
+## 2026-10-21 — #784: approval marker after merging main at 41bf10cf
+
+- User approval: no visible change – UI approval not needed (merge of main (41bf10cf) into #784; the own entries of #784 keep their approvals)
+- Approved customer-visible result: #784 as in its own entries plus the entries merged with 41bf10cf; nothing else changes.
+- Scope: the merge of 41bf10cf and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — merge of 41bf10cf, no customer-visible change of its own
