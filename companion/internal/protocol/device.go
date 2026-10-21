@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"slices"
 	"strings"
 )
 
@@ -205,17 +206,23 @@ func (h DeviceHello) Normalize() DeviceHello {
 	if h.PreferredProtocolVersion > 0 && !containsProtocolVersion(h.SupportedProtocolVersions, h.PreferredProtocolVersion) {
 		h.PreferredProtocolVersion = 0
 	}
+	// Copy the slices and the auth block before writing: they are shared with the caller's hello.
+	h.Features = slices.Clone(h.Features)
 	for i := range h.Features {
 		h.Features[i] = strings.TrimSpace(strings.ToLower(h.Features[i]))
 	}
+	h.Capabilities.Theme.BuiltinThemes = slices.Clone(h.Capabilities.Theme.BuiltinThemes)
 	for i := range h.Capabilities.Theme.BuiltinThemes {
 		h.Capabilities.Theme.BuiltinThemes[i] = strings.TrimSpace(strings.ToLower(h.Capabilities.Theme.BuiltinThemes[i]))
 	}
+	h.Capabilities.Theme.SupportedPrimitiveTypes = slices.Clone(h.Capabilities.Theme.SupportedPrimitiveTypes)
 	for i := range h.Capabilities.Theme.SupportedPrimitiveTypes {
 		h.Capabilities.Theme.SupportedPrimitiveTypes[i] = strings.TrimSpace(strings.ToLower(h.Capabilities.Theme.SupportedPrimitiveTypes[i]))
 	}
 	h.Capabilities.Theme.CachedThemeID = strings.TrimSpace(h.Capabilities.Theme.CachedThemeID)
 	if h.Capabilities.Auth != nil {
+		auth := *h.Capabilities.Auth
+		h.Capabilities.Auth = &auth
 		h.Capabilities.Auth.TokenHeader = strings.TrimSpace(h.Capabilities.Auth.TokenHeader)
 		if !h.Capabilities.Auth.PairingWindowOpen {
 			h.Capabilities.Auth.PairingWindowSeconds = 0
@@ -225,6 +232,7 @@ func (h DeviceHello) Normalize() DeviceHello {
 	h.Capabilities.Transport.Mode = strings.TrimSpace(strings.ToLower(h.Capabilities.Transport.Mode))
 	h.Capabilities.Transport.TransitionFrom = strings.TrimSpace(strings.ToLower(h.Capabilities.Transport.TransitionFrom))
 	h.Capabilities.Transport.TransitionTo = strings.TrimSpace(strings.ToLower(h.Capabilities.Transport.TransitionTo))
+	h.Capabilities.Transport.Supported = slices.Clone(h.Capabilities.Transport.Supported)
 	for i := range h.Capabilities.Transport.Supported {
 		h.Capabilities.Transport.Supported[i] = strings.TrimSpace(strings.ToLower(h.Capabilities.Transport.Supported[i]))
 	}
@@ -283,9 +291,6 @@ type DeviceCapabilities struct {
 	BuiltinThemes              []string
 	CachedThemeID              string
 	CachedThemeRev             int
-	DisplayWidthPx             int
-	DisplayHeightPx            int
-	DisplayColorDepthBits      int
 	SupportsBrightness         bool
 	MinBrightnessPercent       int
 	MaxBrightnessPercent       int
@@ -357,9 +362,6 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 		BuiltinThemes:              append([]string(nil), h.Capabilities.Theme.BuiltinThemes...),
 		CachedThemeID:              h.Capabilities.Theme.CachedThemeID,
 		CachedThemeRev:             h.Capabilities.Theme.CachedThemeRev,
-		DisplayWidthPx:             h.Capabilities.Display.WidthPx,
-		DisplayHeightPx:            h.Capabilities.Display.HeightPx,
-		DisplayColorDepthBits:      h.Capabilities.Display.ColorDepthBits,
 		SupportsBrightness:         h.Capabilities.Display.Brightness.Supported,
 		MinBrightnessPercent:       h.Capabilities.Display.Brightness.MinPercent,
 		MaxBrightnessPercent:       h.Capabilities.Display.Brightness.MaxPercent,
