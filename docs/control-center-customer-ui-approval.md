@@ -8688,3 +8688,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: after Back, setup waits on the existing connection or device choice even if only one path remains; the next explicit Connect or transport choice resumes setup. Initial single-device autoconnect remains unchanged.
 - Scope: `setup-wizard.tsx`, `setup-connection.ts`, and `setup-wizard.test.tsx` under `apps/control-center/src/components/setup`, plus this approval record. Pull request #780 only, not merged, not released.
 - What's new: none — bug fix, not announced to customers
+
+## 2026-10-21 — #780: failed 3D loading restores the existing preview
+
+- User approval: no visible change – UI approval not needed (bug fix: a real 3D renderer or model-load failure restores the existing photo or live 2D fallback instead of leaving setup artwork blank)
+- Approved customer-visible result: a failed 3D preview behaves like unsupported 3D; the device photo or live 2D preview is visible. Normal 3D loading still shows no flat-picture flash, and the live-screen handover waits until its preview is visible.
+- Scope: `vibetv-3d-preview.tsx` and its test, `setup/setup-device-card.tsx`, `setup/setup-live-screen.tsx`, and `setup/setup-3d-preview.test.tsx` under `apps/control-center/src/components`, plus this approval record. Pull request #780 only, not merged, not released.
+- What's new: none — bug fix, not announced to customers
