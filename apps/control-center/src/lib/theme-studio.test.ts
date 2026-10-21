@@ -670,6 +670,8 @@ describe("usage-pace-v1 in a Theme Studio pack", () => {
     { b: "usageSlot1PaceText" },
     { v: "{usageSlot1PaceShort}" },
     { b: "usageModeShort" },
+    { b: "usageModeStandalone" },
+    { v: "{usageModeStandalone}" },
     { v: "{usageSlot1Label} {usageModeShort}" },
   ])("declares usage-pace-v1 and firmware 1.0.50 for %j", (primitive) => {
     const built = pack(primitive);

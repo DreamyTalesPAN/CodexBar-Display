@@ -51,10 +51,10 @@ describe("Gauge 2.0 theme pack", () => {
     const validation = validateThemeSpec(importThemeSpec(JSON.parse(rawSpec)), {}, "live");
     expect(validation.errors).toEqual([]);
     expect(arc).toMatchObject({ ps: "arc", b: "usageSlot1Pace", sl: 1, as: 225, aw: 270, at: 18, rc: "#C9F26B", dc: "#E7A3AC" });
-    expect(manifest).toMatchObject({ usage: "live", assets: [], minFirmware: "1.0.50", version: "0.2.2" });
+    expect(manifest).toMatchObject({ usage: "live", assets: [], minFirmware: "1.0.50", version: "0.2.3" });
     expect(manifest.requiredCapabilities).toEqual(["usage-slots-v1", "color-stops-v1", "progress-arc-v1", "usage-pace-v1"]);
     // Two letters, so no theme a customer saves can share the file name.
-    expect(manifest.themeSpec.path).toMatch(/^\/themes\/u\/ga-12-[0-9a-f]{8}\.json$/);
+    expect(manifest.themeSpec.path).toMatch(/^\/themes\/u\/ga-13-[0-9a-f]{8}\.json$/);
     expect(manifest.themeSpec.bytes).toBe(Buffer.byteLength(rawSpec));
     expect(pack.specPath).toBe(manifest.themeSpec.path);
   });
@@ -71,11 +71,11 @@ describe("Gauge 2.0 theme pack", () => {
     const reserve = render(frame(91, {}, paceSession));
     expect(ring(reserve)).toEqual([[arc.bg, 270], ["#EDEDED", 229], ["#C9F26B", 16]]);
     expect(reserve).toContain("<line");
-    expect(shown(reserve)).toBe("Claude91%Session left6% reservelasts until reset- resets 2h 14mWeekly 87%35% reserve");
+    expect(shown(reserve)).toBe("Claude91%Session left6% reserveresets 2h 14mWeekly 87%35% reserve");
     // 14% deficit: the hatched piece runs from the use (38 %) to the plan (52 %).
     const deficit = render(frame(38, {}, { delta: 14, state: "deficit", lasts: false }));
     expect(ring(deficit)).toEqual([[arc.bg, 270], ["#EDEDED", 102], [expect.stringMatching(/^url\(#hatch-/), 38]]);
-    expect(shown(deficit).replaceAll(" ", "")).toContain("14%deficitrunsout-resets2h14m");
+    expect(shown(deficit).replaceAll(" ", "")).toContain("14%deficitresets2h14m");
     // On pace: the use itself and the tick, no piece.
     const onPace = render(frame(91, {}, { delta: 0, state: "on pace" }));
     expect(ring(onPace)).toEqual([[arc.bg, 270], ["#EDEDED", 245]]);
@@ -84,13 +84,13 @@ describe("Gauge 2.0 theme pack", () => {
   });
 
   it("says that the reset time is missing instead of showing a countdown", () => {
-    const reset = texts.find((p) => p.b === "usageSlot1PaceFooter")!;
+    const reset = texts.find((p) => p.v === "resets {usageSlot1Reset}")!;
     expect(renderTextPrimitive(reset, frame(42))).toBe("resets 2h 14m");
     expect(renderTextPrimitive(reset, frame(42, noReset))).toBe("Reset unavailable");
     const idle = { usageSlots: [{ id: "session", label: "Session", percent: 100, resetSecs: 0 }], resetTrust: "live", resetSource: "codexbar", resetTrustSecs: 600 };
     expect(renderTextPrimitive(reset, frame(100, idle))).toBe("No active session");
-    // With a pace the sentence leads into the countdown.
-    expect(renderTextPrimitive(reset, frame(42, {}, { delta: 5, state: "deficit", lasts: false }))).toBe("runs out - resets 2h 14m");
+    // Pace never adds an untimed runs-out claim to the reset line.
+    expect(renderTextPrimitive(reset, frame(42, {}, { delta: 5, state: "deficit", lasts: false }))).toBe("resets 2h 14m");
     // The usage itself is still drawn: the ring and the number do not depend on the reset time.
     const markup = render(frame(42, noReset));
     expect(shown(markup)).toBe("Claude42%Session leftReset unavailable");
@@ -101,20 +101,20 @@ describe("Gauge 2.0 theme pack", () => {
   it("shows only the provider line without a usage window and the second window only when there is one", () => {
     const none = frame(0, { usageSlots: [], session: 0 });
     expect(primitives.filter((p) => primitiveUsageSlotVisible(p, none))).toEqual(
-      expect.arrayContaining([texts.find((p) => p.b === "usageProviderName")]),
+      expect.arrayContaining([texts.find((p) => p.b === "l")]),
     );
     expect(render(none)).not.toContain("<circle");
-    // A notice during startup or a provider error still shows, under the (absent) ring.
-    expect(shown(render({ ...none, updateNotice: "Update available" }))).toBe("ClaudeUpdate available");
+    // A notice during startup or a provider error still shows in the title.
+    expect(shown(render({ ...none, updateNotice: "Update available" }))).toBe("Update available");
     const one = frame(64, { usageSlots: [{ id: "session", label: "Session", percent: 64, resetSecs: 8078 }] });
     expect(shown(render(one))).toBe("Claude64%Session leftresets 2h 14m");
     expect(shown(render(frame(64)))).toContain("Weekly 87%");
   });
 
   it("keeps every line inside its lane on the device", () => {
-    // The name does not show the notice; the footer does.
-    expect(texts.filter((p) => p.b === "usageProviderName")).toHaveLength(1);
-    expect(texts.filter((p) => p.b === "usageSlot1PaceFooter")).toHaveLength(1);
+    // The title shows notices; the footer stays a plain reset.
+    expect(texts.filter((p) => p.b === "l")).toHaveLength(1);
+    expect(texts.filter((p) => p.v === "resets {usageSlot1Reset}")).toHaveLength(1);
     const frames = [
       frame(91), frame(91, {}, paceSession), frame(38, {}, { delta: 14, state: "deficit", lasts: false }),
       frame(50, { updateNotice: "Update available" }), frame(50, { updateNotice: "Open VibeTV Mac App" }), frame(50, { label: "Open VibeTV Mac App" }),
@@ -135,7 +135,7 @@ describe("Gauge 2.0 theme pack", () => {
         expect(width, `${value} in ${p.v ?? p.b}`).toBeLessThanOrEqual(p.w!);
       }
     }
-    for (const value of ["Claude", "Open VibeTV Mac App", "Session left", "Session used", "6% reserve", "14% deficit", "lasts until reset - resets 2h 14m", "Reset unavailable"]) {
+    for (const value of ["Claude", "Open VibeTV Mac App", "Session left", "Session used", "6% reserve", "14% deficit", "resets 2h 14m", "Reset unavailable"]) {
       expect(seen).toContain(value);
     }
   });
@@ -143,7 +143,7 @@ describe("Gauge 2.0 theme pack", () => {
   it("keeps the header above the larger ring and both limit labels clear of it", () => {
     expect(arc.w).toBe(190);
     expect(arc.h).toBe(190);
-    const header = texts.find((p) => p.b === "usageProviderName")!;
+    const header = texts.find((p) => p.b === "l")!;
     expect(header.y! + 16).toBeLessThan(arc.y!);
     const { cx, cy, radius, thickness } = themeProgressArc(arc, 0)!;
     const inner = radius - thickness / 2;
@@ -158,12 +158,12 @@ describe("Gauge 2.0 theme pack", () => {
     for (const y of [limit.y!, limit.y! + 16]) {
       expect(Math.hypot(width / 2, y - cy)).toBeLessThan(inner);
     }
-    const footer = texts.find((p) => p.b === "usageSlot1PaceFooter")!;
+    const footer = texts.find((p) => p.v === "resets {usageSlot1Reset}")!;
     // The 270-degree ring ends at 45 degrees either side of its open bottom.
     expect(footer.w!).toBeLessThan(2 * (footer.y! - cy));
     for (const updateNotice of ["Update available", "Open VibeTV Mac App"]) {
-      expect(renderTextPrimitive(footer, { ...paired, updateNotice })).toBe(updateNotice);
-      expect(shown(render({ ...paired, updateNotice }))).not.toContain("resets");
+      expect(renderTextPrimitive(header, { ...paired, updateNotice })).toBe(updateNotice);
+      expect(renderTextPrimitive(footer, { ...paired, updateNotice })).toBe("resets 3d 1h");
     }
   });
 

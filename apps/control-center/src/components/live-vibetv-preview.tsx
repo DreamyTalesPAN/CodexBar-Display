@@ -2109,10 +2109,10 @@ export function boundValue(key: string, frame: FrameData): string {
     }
     return String(window.percent);
   }
-  if (key === "usageModeShort") {
+  if (key === "usageModeShort" || key === "usageModeStandalone") {
     if (frame.provider.includes("+")) return "";
     // Mirrors the firmware: "left" for what remains, else the mode itself.
-    return frame.usageMode === "remaining" ? "left" : frame.usageMode;
+    return key === "usageModeShort" && frame.usageMode === "remaining" ? "left" : frame.usageMode;
   }
   switch (key) {
     case "label":

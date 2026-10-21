@@ -972,12 +972,12 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
     std::snprintf(out, outSize, "%s", SafeText(frame.usageMode));
     return;
   }
-  if (std::strcmp(key, "usageModeShort") == 0) {
+  if (std::strcmp(key, "usageModeShort") == 0 || std::strcmp(key, "usageModeStandalone") == 0) {
     // In Two at once the basis already occupies the provider header.
     if (std::strchr(SafeText(frame.provider), '+') != nullptr) return;
     // "left" for what remains, else the mode itself ("used"): "Session left".
     std::snprintf(out, outSize, "%s",
-                  std::strcmp(SafeText(frame.usageMode), "remaining") == 0 ? "left" : SafeText(frame.usageMode));
+                  std::strcmp(key, "usageModeShort") == 0 && std::strcmp(SafeText(frame.usageMode), "remaining") == 0 ? "left" : SafeText(frame.usageMode));
     return;
   }
   if (std::strcmp(key, "activity") == 0 || std::strcmp(key, "act") == 0) {
@@ -1221,7 +1221,7 @@ inline uint32_t BindingFieldMask(const char* binding) {
            // The footer is the notice while one shows, so it is a label field too.
            (std::strcmp(UsageWindowField(binding), "PaceFooter") == 0 ? kThemeSpecFieldLabel : 0);
   }
-  if (StringEqualsAny(binding, "usageMode", "u", "usageModeShort")) {
+  if (StringEqualsAny(binding, "usageMode", "u", "usageModeShort") || std::strcmp(SafeText(binding), "usageModeStandalone") == 0) {
     return kThemeSpecFieldUsageMode | kThemeSpecFieldProvider;
   }
   if (StringEqualsAny(binding, "activity", "act")) {

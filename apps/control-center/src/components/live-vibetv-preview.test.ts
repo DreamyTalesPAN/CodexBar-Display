@@ -1368,6 +1368,12 @@ describe("usage pace", () => {
 
 
 describe("bounded text and unavailable slot layout", () => {
+  it("spells the standalone basis out in single mode and leaves it to the pair title", () => {
+    const frame = { ...THEME_CATALOG_PREVIEW_FRAME, provider: "claude", usageMode: "remaining" };
+    expect(boundValue("usageModeStandalone", frame)).toBe("remaining");
+    expect(boundValue("usageModeStandalone", { ...frame, provider: "claude+codex" })).toBe("");
+  });
+
   it("measures font 4 with the pinned TFT table, including the percentage glyph", () => {
     expect(themeFirmwareTextMetrics("96%", 4, 1)?.width).toBe(49);
     expect(themeFirmwareTextMetrics("100%", 4, 1)?.width).toBe(63);

@@ -4855,6 +4855,15 @@ void testProviderNameAndPaceFooterAroundTheNotice() {
 
 // A label change repaints the provider name, a notice toggle does not.
 void testTextFitUsesSmallestFontAndTwoLinesWithinExistingHeight() {
+  FrameData frame;
+  frame.provider = "claude"; frame.usageMode = "remaining";
+  char basis[24] = {0};
+  codexbar_display::themespec::BoundValue("usageModeStandalone", frame, basis, sizeof(basis));
+  TEST_ASSERT_EQUAL_STRING("remaining", basis);
+  frame.provider = "claude+codex";
+  codexbar_display::themespec::BoundValue("usageModeStandalone", frame, basis, sizeof(basis));
+  TEST_ASSERT_EQUAL_STRING("", basis);
+
   TextCommand cmd;
   cmd.text = "Claude Weekly (Sonnet)";
   cmd.font = 2; cmd.size = 1; cmd.maxWidth = 110; cmd.height = 32; cmd.fitShrink = true;

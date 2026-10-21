@@ -151,13 +151,24 @@ describe.each(themes)("%s legibility and fit (issue #258)", (themeId) => {
     }
   });
 
+  it("keeps the standalone remaining text clear of the mascot", () => {
+    if (themeId !== "mini-classic") return;
+    const mascot = pack(themeId).spec!.p!.find(p => p.t === "g")!;
+    const data = frame(64, { usageMode: "remaining" });
+    for (const p of textPrimitives(themeId).filter(p => p.v === "{usageModeStandalone}")) {
+      expect(renderTextPrimitive(p, data)).toBe("remaining");
+      expect((p.y ?? 0) + 16).toBeLessThanOrEqual(mascot.y!);
+      expect(renderedWidth(p, "remaining")).toBeLessThanOrEqual(laneWidth(p));
+    }
+  });
+
   it("ships the layout fix as a new immutable revision", () => {
     const manifest = JSON.parse(
       readFileSync(path.join(root, "theme-packs", themeId, "manifest.json"), "utf8"),
     );
     const raw = readFileSync(path.join(root, "theme-packs", themeId, "theme.json"), "utf8");
-    expect(JSON.parse(raw).rev).toBe(11);
-    expect(manifest.themeSpec.path).toContain("-11-");
+    expect(JSON.parse(raw).rev).toBe(themeId === "mini-classic" ? 12 : 11);
+    expect(manifest.themeSpec.path).toContain(`-${JSON.parse(raw).rev}-`);
     expect(manifest.themeSpec.bytes).toBe(Buffer.byteLength(raw));
     // The published render pack has to match the tracked source revision.
     expect(pack(themeId).specPath).toBe(manifest.themeSpec.path);
