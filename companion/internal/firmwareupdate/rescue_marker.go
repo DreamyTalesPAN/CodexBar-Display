@@ -133,6 +133,18 @@ func ClearRescueMarker(home string) error {
 	return nil
 }
 
+// ClearRescueMarkerIfUnchanged clears the flagged chipless marker inspected
+// earlier, but only while it is still that marker. An overlapping rescue may
+// have saved a newer marker with the chip since (issue #842); that one stays.
+func ClearRescueMarkerIfUnchanged(home string, inspected RescueMarker) error {
+	current, ok := LoadRescueMarker(home, time.Now())
+	if !ok || current.Port != inspected.Port || !current.WriteStartedAt.Equal(inspected.WriteStartedAt) ||
+		current.ChipMAC != "" || !current.ChipNotRead {
+		return nil
+	}
+	return ClearRescueMarker(home)
+}
+
 // MovedRescuePort finds the port a half-written VibeTV moved to after it was
 // plugged into another USB socket. It is the one listed port that was not there
 // when the write started, is not the marked port, and does not answer a hello.

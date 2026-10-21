@@ -36,6 +36,43 @@ func TestRescueMarkerRoundTripsAndClears(t *testing.T) {
 	}
 }
 
+// Issue #842: an overlapping rescue may replace the flagged marker it inspected
+// with a chip-bearing one; clearing the inspected marker must keep that one.
+func TestClearRescueMarkerIfUnchangedKeepsAMarkerReplacedAfterInspection(t *testing.T) {
+	home := t.TempDir()
+	testenv.Home(t, home)
+	now := time.Now()
+	flagged := RescueMarker{Port: "COM4", TargetFirmware: "1.0.9", ImagePath: "/x", ChipNotRead: true, WriteStartedAt: now}
+	if err := SaveRescueMarker(home, flagged); err != nil {
+		t.Fatal(err)
+	}
+	inspected, ok := LoadRescueMarker(home, now)
+	if !ok {
+		t.Fatal("flagged marker not loaded")
+	}
+	replaced := inspected
+	replaced.ChipNotRead, replaced.ChipMAC, replaced.WriteStartedAt = false, "0000aabb11223344", now.Add(time.Second)
+	if err := SaveRescueMarker(home, replaced); err != nil {
+		t.Fatal(err)
+	}
+	if err := ClearRescueMarkerIfUnchanged(home, inspected); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := LoadRescueMarker(home, now.Add(time.Minute))
+	if !ok || got.ChipMAC != replaced.ChipMAC {
+		t.Fatalf("the chip marker written after inspection was removed: %+v ok=%v", got, ok)
+	}
+	if err := SaveRescueMarker(home, flagged); err != nil {
+		t.Fatal(err)
+	}
+	if err := ClearRescueMarkerIfUnchanged(home, flagged); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := LoadRescueMarker(home, now.Add(time.Minute)); ok {
+		t.Fatal("an unchanged flagged marker must be cleared")
+	}
+}
+
 func TestRescueMarkerIgnoresStaleAndBrokenFiles(t *testing.T) {
 	home := t.TempDir()
 	testenv.Home(t, home)
