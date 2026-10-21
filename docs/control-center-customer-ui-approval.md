@@ -8990,3 +8990,31 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: previews keep the companion's values, error and Busy states; only the initial usage read or theme-pack load holds Continue, and unavailable token totals stay --.
 - Scope: merge #821 into #858, resolve setup preview helpers and tests, preserve every approval block and the macOS-compatible render-pack timeout.
 - What's new: none — preserve existing preview behavior and the three #821 fixes together
+
+## 2026-10-21 — #821: enlarge setup display-mode previews
+
+- User approval: pending — Paul (21.10. 7203): "hier sind die previews viel zu klein": the device previews in the setup Display mode cards are larger (240px, same in every card); Paul sees it in the next build.
+- Approved customer-visible result: Automatic and Manual share a native-size 240 × 240 pixelated theme preview, including the loading placeholder; the setup grid stacks cards when two 256px cards do not fit, with a 120px half-scale preview only in exceptionally narrow cards; Automatic crossfades for 180ms of each two-second rotation and shows exactly one provider at rest.
+- Scope: setup-display-mode-screen.tsx (calm setup grid only), setup-display-theme-tiles.tsx (shared preview size and fade duration), setup-display-theme-carousel.test.tsx and this approval record; unit and type checks only, with the real Mac/Windows screen left to the coordinator's next build.
+- What's new: none — refine the pending setup preview layout; no persistent stacking found in the component or regression checks.
+
+## 2026-10-21 — #821: keep unavailable providers inside the theme preview
+
+- User approval: no visible change – UI approval not needed (bug fix: #821 unavailable Automatic providers retain the existing grey theme placeholder and preview size instead of switching to a smaller text fallback; coordinator-authorized review follow-up)
+- Approved customer-visible result: an unavailable provider keeps the same preview area and shows no invented readings; a missing theme still uses the existing plain fallback.
+- Scope: setup-display-mode-screen.tsx (one guard), setup-display-theme-carousel.test.tsx, setup-display-mode-screen.test.tsx and this approval record; regression reproduced before the fix, no hardware or running-app check.
+- What's new: none — restore the existing unavailable placeholder during rotation.
+
+## 2026-10-21 — #821: limit setup theme windows to the device capability
+
+- User approval: no visible change – UI approval not needed (bug fix: #821 an overflow usage window no longer supplies a root theme countdown that the VibeTV cannot display; coordinator-authorized review follow-up)
+- Approved customer-visible result: setup theme frames retain only the usage windows allowed by the device's advertised maxUsageWindows before deriving their root reset; unknown capabilities keep the host's existing uncapped behavior, and the usage snapshot remains unchanged.
+- Scope: control-center-app.tsx passes the existing device capability through setup-display-previews.ts; regressions in setup-display-previews.test.ts cover caps of one and three, retained deadlines, unknown caps and snapshot preservation; no provider-specific rules or hardware changes.
+- What's new: none — correct preview parity with the existing device wire limit.
+
+## 2026-10-21 — #858: merge native-size previews and device window cap from #821
+
+- User approval: pending — #858 integration of #821 at f066095a preserves its pending 240px setup preview layout and 180ms fade; the coordinator explicitly authorized this PR-branch merge and conflict resolution.
+- Approved customer-visible result: Automatic and Manual retain the larger theme preview and grey unavailable placeholder, while companion frames remain authoritative for values, errors, Busy state, wire limits and root countdowns; initial loading gates and bounded theme requests stay intact.
+- Scope: merge #821 into #858, keep the companion-frame helpers and all approval blocks, retain the setup grid and placeholder changes, and cover device window caps before root countdown projection in the Go preview tests; no hardware or running-app check.
+- What's new: none — combine the existing pending setup layout and preview parity fixes without another feature.

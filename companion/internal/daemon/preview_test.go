@@ -353,6 +353,44 @@ func previewTestCaps(maxBytes int) protocol.DeviceCapabilities {
 	return protocol.DeviceCapabilities{NegotiatedProtocolVersion: 2, SupportsProviderSlotsV1: true, MaxFrameBytes: maxBytes}
 }
 
+func TestPreviewFramesCapWindowsBeforeProjectingRootCountdown(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		limit      int
+		firstReset int64
+		wantCount  int
+		wantReset  int64
+	}{
+		{name: "one window", limit: 1, wantCount: 1},
+		{name: "three windows", limit: 3, wantCount: 3},
+		{name: "retained deadline", limit: 1, firstReset: 3600, wantCount: 1, wantReset: 3600},
+		{name: "unknown cap", wantCount: 4, wantReset: 7200},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isolatePreviewHome(t)
+			now := time.Date(2026, 10, 21, 8, 0, 0, 0, time.UTC)
+			snapshot := previewSnapshot("codex", now,
+				protocol.UsageWindow{ID: "session", Label: "Session", Percent: 20, ResetSec: tc.firstReset},
+				protocol.UsageWindow{ID: "weekly", Label: "Weekly", Percent: 20},
+				protocol.UsageWindow{ID: "third", Label: "Third", Percent: 20},
+				protocol.UsageWindow{ID: "overflow", Label: "Overflow", Percent: 20, ResetSec: 7200},
+			)
+			original := append([]protocol.UsageWindow(nil), snapshot.Frame.UsageWindows...)
+			caps := previewTestCaps(2048)
+			caps.MaxUsageWindows = tc.limit
+			preview := PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{snapshot}}, true, false, caps, now, nil)[0]
+			for mode, frame := range map[string]*protocol.Frame{"automatic": preview.Automatic, "pinned": &preview.Pinned} {
+				if frame == nil || len(frame.UsageWindows) != tc.wantCount || frame.ResetSec != tc.wantReset {
+					t.Errorf("%s: want %d windows and root reset %d, got %+v", mode, tc.wantCount, tc.wantReset, frame)
+				}
+			}
+			if !reflect.DeepEqual(snapshot.Frame.UsageWindows, original) {
+				t.Fatalf("preview changed the collector snapshot: %+v", snapshot.Frame.UsageWindows)
+			}
+		})
+	}
+}
+
 func TestPreviewFramesV1RemainingMatchesSentFrame(t *testing.T) {
 	isolatePreviewHome(t)
 	now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
