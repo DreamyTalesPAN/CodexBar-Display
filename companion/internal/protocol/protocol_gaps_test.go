@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -190,5 +191,30 @@ func TestBugResetSourceKeyOverflowKeepsWindowIdentity(t *testing.T) {
 	secondary := ResetSourceKey(provider, "secondary")
 	if primary == "" || secondary == "" || primary == secondary || primary == ResetSourceKey(provider, "") {
 		t.Fatalf("windows of one provider need distinct identities: %q %q", primary, secondary)
+	}
+}
+
+func TestFrameJSONKeepsEmptyPairLabelWithoutChangingSingleProviderLabels(t *testing.T) {
+	for _, tc := range []struct {
+		provider string
+		label    string
+		want     string
+	}{
+		{"codex+claude", "", `""`},
+		{"codex+claude", "System busy", `"System busy"`},
+		{"codex", "", ""},
+		{"codex", "Codex", `"Codex"`},
+	} {
+		raw, err := json.Marshal(Frame{V: 2, Provider: tc.provider, Label: tc.label})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var wire map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &wire); err != nil {
+			t.Fatal(err)
+		}
+		if string(wire["label"]) != tc.want {
+			t.Errorf("%s label=%s want %s", tc.provider, wire["label"], tc.want)
+		}
 	}
 }
