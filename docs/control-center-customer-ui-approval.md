@@ -9219,3 +9219,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: The existing chart-header Refresh icon stays on Usage when the chart is hidden for unavailable history, with the same action and busy state and no new text.
 - Scope: UsageScreen shared Refresh button and regression tests; coordinator decision for pre-review finding 3, pull request branch only.
 - What's new: none — restores access to the existing Refresh action
+
+## 2026-10-21 — #783: approval marker after merging main at 3dc0a15b
+
+- User approval: no visible change – UI approval not needed (merge of main (3dc0a15b) into #783; the own entries of #783 keep their approvals)
+- Approved customer-visible result: #783 as in its own entries plus the entries merged with 3dc0a15b; nothing else changes.
+- Scope: the merge of 3dc0a15b and this approval record. Pull request branch #783 only, not merged, not released.
+- What's new: none — merge of 3dc0a15b, no customer-visible change of its own
