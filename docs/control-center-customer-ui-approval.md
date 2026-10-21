@@ -9360,3 +9360,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the existing not-found notice is no longer suppressed for another VibeTV or after a successfully recovered selection.
 - Scope: two dismissal resets and regression tests in Control Center; no wording or layout changes.
 - What's new: none — fixes incorrect suppression of the existing notice
+
+## 2026-10-21 — #816: append-only full-path scope record
+
+- User approval: no visible change – UI approval not needed (scope record: lists the full paths changed by #816)
+- Approved customer-visible result: none from this documentation correction. All existing approval states remain unchanged.
+- Scope: docs/control-center-customer-ui-approval.md only; the existing #816 records cover `apps/control-center/src/components/control-center-app.not-found-dismissal.test.tsx`, `apps/control-center/src/components/control-center-app.tsx` at 3917e7cf3f464631b2f609d116a4534ef9cbe31b. These full paths supplement the existing scope; all original entries are preserved.
+- What's new: none — documentation-only scope correction; no product change or announcement.
