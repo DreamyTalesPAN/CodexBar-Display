@@ -8876,3 +8876,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #783 as in its entries above; a dismissed sign-in or access overlay stays closed while its provider is stale, timeout, rate-limited or checking, and opens again only after a healthy or switched-off read. No new text or layout.
 - Scope: #783 Codex fix in the provider overlay dismissal (provider-action-dialog, setup-providers-screen helper, control-center-app caller). Pull request branch only, not merged, not released.
 - What's new: none — the dismissal holds through transient reads, no new text or layout
+
+## 2026-10-21 — #783: approval marker after merging main at f314106c
+
+- User approval: no visible change – UI approval not needed (merge of main (f314106c) into #783; the own entries of #783 keep their approvals)
+- Approved customer-visible result: #783 as in its own entries plus the entries merged with f314106c; nothing else changes.
+- Scope: the merge of f314106c and this approval record. Pull request branch #783 only, not merged, not released.
+- What's new: none — merge of f314106c, no customer-visible change of its own
