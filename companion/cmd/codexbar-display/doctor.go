@@ -134,7 +134,8 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 		if err != nil {
 			return doctorRuntimeConfig{}, err
 		}
-		return doctorTaskRuntimeConfig(home, label, task.Arguments)
+		config, err := doctorTaskRuntimeConfig(home, label, task.Arguments)
+		return config, err
 	}
 
 	for _, label := range bundledRuntimeLabels {

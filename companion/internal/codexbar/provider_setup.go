@@ -881,9 +881,12 @@ func browserSignInPage(id, detail string) string {
 }
 
 // ProviderErrorKind names a CodexBar provider failure by its readiness status
-// (timeout, auth_required, ...) without repeating the raw message.
-// CodexBar's browser-session marker wins over the surrounding English summary:
-// the tool is logged in, so asking the customer to sign in again would loop.
+// (timeout, auth_required, ...) without repeating the raw message. CodexBar's
+// browser-session marker maps to ProviderBrowserSignInRequired. The marker is
+// CodexBar's own diagnosis, so it wins over whatever the English summary
+// around it happens to mention (a timed-out source, a permission word). The
+// tool itself is logged in in that case; telling the customer to "sign in
+// again" would send them in a circle.
 func ProviderErrorKind(id, detail string) string {
 	if browserSignInPage(id, detail) != "" {
 		return ProviderBrowserSignInRequired
