@@ -9275,3 +9275,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: nothing is approved yet. A customer who updates is told once, with the other new themes, "New theme: Two Limits" and the draft sentence "New: Two Limits shows two sources at once on your VibeTV – two providers or two accounts."; the entry links to the theme in Themes.
 - Scope: one What's-new entry (`theme-two-limits`) in apps/control-center/src/lib/whats-new.ts, its test fixture and expectations in control-center-app.whats-new.test.tsx (the notice now shows the newest three themes, Gauge is no longer among them), and this approval record. Pull request branch #864 only, not merged, not released.
 - What's new: `theme-two-limits`
+
+## 2026-10-21 — #864: approval marker after merging claude/usage-pace at 8d16d879
+
+- User approval: no visible change – UI approval not needed (merge of claude/usage-pace (8d16d879) into #864; the own entries of #864 keep their approvals)
+- Approved customer-visible result: #864 as in its own entries plus the entries merged with 8d16d879; nothing else changes.
+- Scope: the merge of 8d16d879 and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — merge of 8d16d879, no customer-visible change of its own
