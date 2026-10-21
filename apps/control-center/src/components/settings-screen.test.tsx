@@ -304,16 +304,17 @@ describe("SettingsScreen standby controls", () => {
     const html = render(standbyDevice);
     const headings = html.match(/<h2[^>]*>([^<]+)<\/h2>/g) || [];
 
-    expect(headings).toHaveLength(7);
+    expect(headings).toHaveLength(8);
     expect(html).toContain(">Brightness</h2>");
     expect(html).toContain(">Display mode</h2>");
+    expect(html).toContain(">Limits on VibeTV</h2>");
     expect(html).toContain(">AI providers</h2>");
     expect(html).toContain(">Screensaver</h2>");
     expect(html).toContain(">Connection</h2>");
     expect(html).toContain(">Setup</h2>");
     expect(html).toContain(">Theme Studio AI</h2>");
     expect(html).toContain("Connect this Mac to another VibeTV.");
-    expect(html.match(/<section /g)).toHaveLength(7);
+    expect(html.match(/<section /g)).toHaveLength(8);
   });
 
   // The provider list is the longest thing on the page, so it closes it rather
@@ -326,6 +327,7 @@ describe("SettingsScreen standby controls", () => {
 
     expect(order).toEqual([
       "Display mode",
+      "Limits on VibeTV",
       "Brightness",
       "Screensaver",
       "Connection",
@@ -399,7 +401,7 @@ describe("SettingsScreen standby controls", () => {
   it("leaves the display mode radios usable when no write is in flight", () => {
     const html = render(standbyDevice);
     const cards =
-      html.match(/<button aria-label="(?:Automatic|Manual)" aria-pressed="(?:true|false)"[^>]*>/g) || [];
+      html.match(/<button aria-label="(?:Automatic|One provider|Two at once)" aria-pressed="(?:true|false)"[^>]*>/g) || [];
 
     expect(cards.length).toBeGreaterThanOrEqual(2);
     expect(cards.some((card) => card.includes('disabled=""'))).toBe(false);
@@ -569,8 +571,8 @@ describe("SettingsScreen standby controls", () => {
       );
     };
     const byActivity =
-      "VibeTV switches between your providers based on recent activity and usage.";
-    const onATimer = "VibeTV switches between your providers on a timer.";
+      "VibeTV switches between your sources based on recent activity and usage.";
+    const onATimer = "VibeTV switches between your sources on a timer.";
 
     const automatic = displayMode("automatic", [rotation]);
     expect(automatic).toMatch(
@@ -588,18 +590,44 @@ describe("SettingsScreen standby controls", () => {
     expect(displayMode("automatic", [])).not.toContain("Switch providers");
   });
 
-  // Calm master: Display mode is a plain radio list. Only the chosen radio is
-  // pressed; "Show this provider" is a select that belongs to Manual only.
-  it("shows Display mode as a radio list with the provider select under Manual", () => {
-    const section = (mode: "automatic" | "fixed") => {
-      const html = render(standbyDevice, savedStandby, {
+  // Variante A (#592): under Automatic, the provider VibeTV last received, and
+  // only while the stream is healthy.
+  it("names the provider VibeTV last received under Automatic", () => {
+    const section = (mode: "automatic" | "fixed", device: DeviceInfo) => {
+      const html = render(device, savedStandby, {
         ...providerPicker,
         display: { mode, providerIds: ["claude"], configured: true, valid: true },
         items: [provider("claude", "Claude", true), provider("codex", "Codex", true)],
       });
       return html.slice(
         html.indexOf(">Display mode</h2>"),
-        html.indexOf(">Screensaver</h2>"),
+        html.indexOf(">Limits on VibeTV</h2>"),
+      );
+    };
+    const streaming = (lastProviderId?: string): DeviceInfo => ({
+      ...standbyDevice,
+      stream: { healthy: true, running: true, lastProviderId },
+    });
+
+    expect(section("automatic", streaming("claude"))).toContain("Showing now: Claude");
+    expect(section("automatic", streaming("gemini"))).not.toContain("Showing now:");
+    expect(section("automatic", streaming())).not.toContain("Showing now:");
+    expect(section("automatic", standbyDevice)).not.toContain("Showing now:");
+    expect(section("automatic", { ...streaming("claude"), ready: false })).not.toContain("Showing now:");
+    expect(section("fixed", streaming("claude"))).not.toContain("Showing now:");
+  });
+
+  // Variante A (#592): three radios; the chosen one carries its source rows.
+  it("shows Display mode as three radios with the source rows under the chosen one", () => {
+    const section = (mode: "automatic" | "fixed" | "pair", providerIds = ["claude"]) => {
+      const html = render(standbyDevice, savedStandby, {
+        ...providerPicker,
+        display: { mode, providerIds, configured: true, valid: true },
+        items: [provider("claude", "Claude", true), provider("codex", "Codex", true)],
+      });
+      return html.slice(
+        html.indexOf(">Display mode</h2>"),
+        html.indexOf(">Limits on VibeTV</h2>"),
       );
     };
     const pressed = (html: string) =>
@@ -608,15 +636,39 @@ describe("SettingsScreen standby controls", () => {
         (match) => match[1],
       );
 
-    const manual = section("fixed");
-    expect(pressed(manual)).toEqual(["Manual"]);
-    expect(manual).toContain("Show this provider");
-    // No preview cards in Settings any more.
-    expect(manual).not.toContain('data-slot="display-mode-preview"');
-
     const automatic = section("automatic");
     expect(pressed(automatic)).toEqual(["Automatic"]);
-    expect(automatic).not.toContain("Show this provider");
+    expect(automatic).toContain("VibeTV always shows the one source you pick.");
+    expect(automatic).toContain("VibeTV shows two sources, one above the other.");
+    for (const label of ["Source", "Top", "Bottom"]) {
+      expect(automatic).not.toContain(`>${label}</label>`);
+    }
+
+    const one = section("fixed");
+    expect(pressed(one)).toEqual(["One provider"]);
+    expect(one).toContain(">Source</label>");
+    expect(one).not.toContain(">Top</label>");
+    // No preview cards in Settings.
+    expect(one).not.toContain('data-slot="display-mode-preview"');
+
+    const two = section("pair", ["claude", "codex"]);
+    expect(pressed(two)).toEqual(["Two at once"]);
+    expect(two).toContain(">Top</label>");
+    expect(two).toContain(">Bottom</label>");
+    expect(two).not.toContain(">Source</label>");
+    expect(two).not.toContain("First");
+    expect(two).not.toContain("Second");
+  });
+
+  it("puts Limits on VibeTV right below Display mode, without a description", () => {
+    const html = render(standbyDevice);
+    const limits = html.slice(
+      html.indexOf(">Limits on VibeTV</h2>"),
+      html.indexOf(">Brightness</h2>"),
+    );
+
+    expect(html.indexOf(">Display mode</h2>")).toBeLessThan(html.indexOf(">Limits on VibeTV</h2>"));
+    expect(limits).not.toContain("VibeTV shows the ticked limits");
   });
 
   // Issue #424: the app's global shortcut for the next provider is named
@@ -646,7 +698,7 @@ describe("SettingsScreen standby controls", () => {
     };
 
     expect(displayMode("available")).toContain(
-      "Press ⌃⌥⌘P in any app to show the next provider. This switches to Manual.",
+      "Press ⌃⌥⌘P in any app to show the next provider. This switches to One provider.",
     );
     expect(displayMode("unavailable")).toContain(
       "The shortcut ⌃⌥⌘P for the next provider is not available: another app may already be using these keys.",
@@ -655,7 +707,7 @@ describe("SettingsScreen standby controls", () => {
 
     const windows = displayMode("available", true);
     expect(windows).toContain(
-      "Press Ctrl+Alt+Shift+P in any app to show the next provider. This switches to Manual.",
+      "Press Ctrl+Alt+Shift+P in any app to show the next provider. This switches to One provider.",
     );
     expect(windows).not.toContain("⌘");
     expect(displayMode("unavailable", true)).toContain(
@@ -663,17 +715,17 @@ describe("SettingsScreen standby controls", () => {
     );
 
     // Issue #558: the line follows what a press would do. With Manual chosen
-    // nothing switches to Manual, and with one provider that has usage a
+    // nothing switches to One provider, and with one provider that has usage a
     // press changes nothing, also when a second one is on without usage.
     const manual = displayMode("available", false, "fixed");
     expect(manual).toContain("Press ⌃⌥⌘P in any app to show the next provider.");
-    expect(manual).not.toContain("This switches to Manual.");
+    expect(manual).not.toContain("This switches to One provider.");
     for (const mode of ["automatic", "fixed"] as const) {
       const one = displayMode("available", true, mode, [provider("claude", "Claude", true), signedOut]);
       expect(one).toContain(
         "Press Ctrl+Alt+Shift+P in any app to show the next provider. This needs two providers with usage.",
       );
-      expect(one).not.toContain("This switches to Manual.");
+      expect(one).not.toContain("This switches to One provider.");
     }
 
     // Until usage has been read, nobody knows how many providers have usage,
@@ -689,7 +741,7 @@ describe("SettingsScreen standby controls", () => {
 
     // Calm rule: the shortcut line is 13 px like the other small text.
     expect(displayMode("available")).toMatch(
-      /<p class="[^"]*text-\[13px\][^"]*">Press ⌃⌥⌘P in any app to show the next provider\. This switches to Manual\.<\/p>/,
+      /<p class="[^"]*text-\[13px\][^"]*">Press ⌃⌥⌘P in any app to show the next provider\. This switches to One provider\.<\/p>/,
     );
 
     // A browser has no global shortcut, so Settings names none.

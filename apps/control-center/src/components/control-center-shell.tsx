@@ -172,6 +172,7 @@ export function ControlCenterShell({
           <div
             className={cn(
               "control-center-shell__content px-5 sm:px-7 lg:px-12",
+              growingMargin && "md:px-[clamp(48px,4cqw,96px)] lg:px-[clamp(48px,4cqw,96px)]",
               themeStudioOpen ? "pt-9" : "py-0",
               growingMargin && !themeStudioOpen && "md:px-[clamp(48px,4cqw,96px)] lg:px-[clamp(48px,4cqw,96px)]",
               // Overview fills the window's height: its numbers sit at the bottom (#784 point 1).

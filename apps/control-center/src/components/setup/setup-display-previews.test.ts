@@ -3,6 +3,7 @@ import type { UsageProviderInfo, UsageSnapshot } from "../control-center-types";
 import { buildFrameData, renderTextPrimitive } from "../live-vibetv-preview";
 import {
   displayPreviewFor,
+  pairDisplayPreview,
   displayPreviewsFor,
   pinnedPreview,
   providerSlotsFor,
@@ -524,5 +525,48 @@ describe("withActivityExpiry", () => {
     expect(
       withActivityExpiry({ activity: "coding", activityTtlSecs: 90 }, undefined, at(9999)).activity,
     ).toBe("coding");
+  });
+});
+
+describe("pairDisplayPreview", () => {
+  const preview = (providerLabel: string, resetLabel: string | null) => ({
+    providerLabel,
+    resetLabel,
+    windows: [{ label: "Weekly", percent: 40 }],
+  });
+
+  it("counts down with the first of the two that has a reset time", () => {
+    expect(
+      pairDisplayPreview(preview("Claude", "Reset unknown"), preview("Codex", "Reset in 2h 0m"))?.resetLabel,
+    ).toBe("Reset in 2h 0m");
+    expect(
+      pairDisplayPreview(preview("Claude", "Reset in 4d 4h"), preview("Codex", "Reset in 2h 0m"))?.resetLabel,
+    ).toBe("Reset in 4d 4h");
+    expect(
+      pairDisplayPreview(preview("Claude", "Reset unknown"), preview("Codex", null))?.resetLabel,
+    ).toBe("Reset unknown");
+  });
+});
+
+// Build 7 integration: both the plain and live-theme tiles obey the same limits.
+describe("hidden limits in live theme previews", () => {
+  it("filters the frame and provider rows while preserving the no-blank fallback", () => {
+    const reading = provider({
+      id: "codex", label: "Codex", collectedAt: "2026-10-20T08:00:00Z",
+      windows: [
+        { id: "session", label: "Session", usedPercent: 80, resetSecs: 600 },
+        { id: "weekly", label: "Weekly", usedPercent: 20, resetSecs: 3600 },
+      ],
+    });
+    const usage = { providers: [reading] } as UsageSnapshot;
+    const enabled = [{ id: "codex", label: "Codex" }];
+    const [hidden] = displayPreviewsFor(usage, enabled, { codex: ["session"] });
+    expect(hidden.windows).toEqual([{ label: "Weekly", percent: 20 }]);
+    expect(hidden.frame?.usageWindows?.map((window) => window.id)).toEqual(["weekly"]);
+    expect(hidden.frame?.providerSlots).toEqual([
+      { id: "codex", label: "Codex", percent: 20, resetSecs: 3600 },
+    ]);
+    const [allHidden] = displayPreviewsFor(usage, enabled, { codex: ["session", "weekly"] });
+    expect(allHidden.frame?.usageWindows?.map((window) => window.id)).toEqual(["session", "weekly"]);
   });
 });

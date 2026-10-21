@@ -33,6 +33,11 @@ import { paceSetting, PaceSetting } from "./settings-pace";
 import { ThemeStudioKeyRow } from "./theme-studio/openai-key-form";
 import { isProviderItem, type ProviderPickerProps } from "./provider-picker";
 import {
+  defaultPairIds,
+} from "./setup/setup-display-mode-screen";
+import { DisplayLimitsSettings } from "./display-limits-settings";
+import { useActiveThemeLimits } from "./live-vibetv-preview";
+import {
   ProviderList,
   setupProviderCanDisplay,
 } from "./setup/setup-providers-screen";
@@ -200,30 +205,60 @@ export function SettingsScreen({
     ? currentProviderId
     : displayable[0]?.providerId;
   const displayMode = providerPicker.display?.mode ?? "automatic";
+  // The provider VibeTV last received, named only while the stream is healthy.
+  const showingNow =
+    deviceIsReady(device) && device?.stream?.healthy === true
+      ? providers.find((item) => item.providerId === device.stream?.lastProviderId)?.label
+      : undefined;
+  const displayChoices = displayable.map((item) => ({
+    id: item.providerId,
+    label: item.label,
+  }));
+  const pairIds = defaultPairIds(
+    providerPicker.display?.mode === "pair"
+      ? providerPicker.display.providerIds
+      : [],
+    manualProviderId,
+    displayChoices,
+  );
+  const activeTheme = useActiveThemeLimits(device);
   const providerError =
     providerPicker.preferencesError || providerPicker.displayError;
   const rotation = displayPreferences.find(
     (item) => item.id === "vibetv.display.rotateSeconds",
   );
-  const selectMode = (mode: "automatic" | "fixed") =>
-    void providerPicker.onDisplayChange(
-      {
-        mode,
-        providerIds:
-          mode === "automatic"
-            ? enabledProviderIds
-            : manualProviderId
-              ? [manualProviderId]
-              : [],
-      },
-      manualProviderId ?? enabledProviderIds[0] ?? "",
-    );
   const pace = paceSetting(
     displayPreferences,
     providerPicker.usage,
     activeLiveThemeId(themes, device),
     themes,
   );
+  const selectMode = (mode: "automatic" | "fixed" | "pair") =>
+    void providerPicker.onDisplayChange(
+      {
+        mode,
+        providerIds:
+          mode === "automatic"
+            ? enabledProviderIds
+            : mode === "pair"
+              ? pairIds
+              : manualProviderId
+                ? [manualProviderId]
+                : [],
+      },
+      (mode === "pair" ? pairIds[0] : manualProviderId) ??
+        enabledProviderIds[0] ??
+        "",
+    );
+  // Settings saves on every pick, so only a full pair is written.
+  const selectPair = (providerIds: string[]) => {
+    if (providerIds[0] && providerIds[1]) {
+      void providerPicker.onDisplayChange(
+        { mode: "pair", providerIds },
+        providerIds[0],
+      );
+    }
+  };
 
   return (
     <div className="mx-auto w-full max-w-[1040px] pt-6 pb-10">
@@ -245,13 +280,16 @@ export function SettingsScreen({
           <RadioRow
             description={
               rotation && rotation.value !== "0"
-                ? "VibeTV switches between your providers on a timer."
-                : "VibeTV switches between your providers based on recent activity and usage."
+                ? "VibeTV switches between your sources on a timer."
+                : "VibeTV switches between your sources based on recent activity and usage."
             }
             label="Automatic"
             onSelect={() => selectMode("automatic")}
             selected={displayMode === "automatic"}
           />
+          {displayMode === "automatic" && showingNow ? (
+            <p className="text-[13px] text-muted-foreground">{`Showing now: ${showingNow}`}</p>
+          ) : null}
           {displayMode === "automatic" && rotation ? (
             <div className="mt-2">
               <PreferenceRow
@@ -262,39 +300,49 @@ export function SettingsScreen({
             </div>
           ) : null}
           <RadioRow
-            description="VibeTV always shows the one provider you pick — nothing else."
-            label="Manual"
+            description="VibeTV always shows the one source you pick."
+            label="One provider"
             onSelect={() => selectMode("fixed")}
             selected={displayMode === "fixed"}
           />
           {displayMode === "fixed" ? (
             <div className="mt-2">
-            <SettingRow htmlFor="vibetv-manual-provider" label="Show this provider">
-              <Select
-                onValueChange={(providerId) =>
+              <SourceSelect
+                id="vibetv-manual-provider"
+                label="Source"
+                onChange={(providerId) =>
                   void providerPicker.onDisplayChange(
                     { mode: "fixed", providerIds: [providerId] },
                     providerId,
                   )
                 }
+                providers={displayChoices}
                 value={currentProviderId ?? ""}
-              >
-                <SelectTrigger
-                  aria-label="Show this provider"
-                  className="w-full data-[size=default]:h-9"
-                  id="vibetv-manual-provider"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {displayable.map((item) => (
-                    <SelectItem key={item.providerId} value={item.providerId}>
-                      {item.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </SettingRow>
+              />
+            </div>
+          ) : null}
+          <RadioRow
+            description="VibeTV shows two sources, one above the other."
+            label="Two at once"
+            onSelect={() => selectMode("pair")}
+            selected={displayMode === "pair"}
+          />
+          {displayMode === "pair" ? (
+            <div className="mt-2 flex flex-col gap-3">
+              <SourceSelect
+                id="vibetv-pair-top"
+                label="Top"
+                onChange={(providerId) => selectPair([providerId, pairIds[1]])}
+                providers={displayChoices}
+                value={pairIds[0] ?? ""}
+              />
+              <SourceSelect
+                id="vibetv-pair-bottom"
+                label="Bottom"
+                onChange={(providerId) => selectPair([pairIds[0], providerId])}
+                providers={displayChoices}
+                value={pairIds[1] ?? ""}
+              />
             </div>
           ) : null}
         </div>
@@ -315,12 +363,49 @@ export function SettingsScreen({
                       ? " This needs two providers with usage."
                       : displayMode === "fixed"
                         ? ""
-                        : " This switches to Manual."
+                        : " This switches to One provider."
                 }`
               : `The shortcut ${shortcutKeys} for the next provider is not available: another app may already be using these keys.`}
           </p>
         ) : null}
       </SettingsSection>
+
+      <ItemSeparator className="my-0" />
+
+      <SettingsSection title="Limits on VibeTV">
+        <DisplayLimitsSettings
+          display={providerPicker.display}
+          onChange={(change) => {
+            const display = providerPicker.display;
+            if (!display) {
+              return;
+            }
+            const providerIds =
+              display.mode === "automatic" ? enabledProviderIds : display.providerIds;
+            void providerPicker.onDisplayChange(
+              { mode: display.mode, providerIds, ...change },
+              providerIds[0] ?? "",
+            );
+          }}
+          providers={displayChoices}
+          theme={activeTheme}
+          usage={providerPicker.usage}
+        />
+      </SettingsSection>
+
+      {pace ? (
+        <>
+          <ItemSeparator className="my-0" />
+          <SettingsSection id="settings-pace" title="Pace">
+            <PaceSetting
+              descriptor={pace.descriptor}
+              disabled={localActionBusy}
+              note={pace.note}
+              onChange={onDisplayPreferenceChange}
+            />
+          </SettingsSection>
+        </>
+      ) : null}
 
       <ItemSeparator className="my-0" />
 
@@ -349,19 +434,6 @@ export function SettingsScreen({
           }
         />
       </SettingsSection>
-      {pace ? (
-        <>
-          <ItemSeparator className="my-0" />
-          <SettingsSection id="settings-pace" title="Pace">
-            <PaceSetting
-              descriptor={pace.descriptor}
-              disabled={localActionBusy}
-              note={pace.note}
-              onChange={onDisplayPreferenceChange}
-            />
-          </SettingsSection>
-        </>
-      ) : null}
 
       {standbySupport ? (
         <>
@@ -750,6 +822,42 @@ function RadioRow({
         <span className="text-[13px] text-muted-foreground">{description}</span>
       </span>
     </button>
+  );
+}
+
+/** A provider Select with its name in the SettingRow column. */
+function SourceSelect({
+  id,
+  label,
+  onChange,
+  providers,
+  value,
+}: {
+  id: string;
+  label: string;
+  onChange: (providerId: string) => void;
+  providers: { id: string; label: string }[];
+  value: string;
+}) {
+  return (
+    <SettingRow htmlFor={id} label={label}>
+      <Select onValueChange={onChange} value={value}>
+        <SelectTrigger
+          aria-label={label}
+          className="w-full data-[size=default]:h-9"
+          id={id}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {providers.map((item) => (
+            <SelectItem key={item.id} value={item.id}>
+              {item.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </SettingRow>
   );
 }
 

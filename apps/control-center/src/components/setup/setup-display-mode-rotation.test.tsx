@@ -95,6 +95,6 @@ describe("Automatic preview rotation (#631)", () => {
     act(() => { vi.advanceTimersByTime(ROTATION_HOLD_MS); });
     expect(automaticTile()).toContain("Claude");
     // Manual stays on its own provider while Automatic moves.
-    expect(screen.getByRole("button", { name: /Manual/ }).textContent).toContain("Codex");
+    expect(screen.getByRole("button", { name: /One provider/ }).textContent).toContain("Codex");
   });
 });

@@ -14233,3 +14233,115 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve the incoming feature together with the existing Build 6 customer flows in the local integration candidate.
 - Scope: Merge claude/usage-pace into claude/paultest-build7; retain all source approval entries.
 - What's new: none — integration of existing feature entries only.
+
+## 2026-10-21 — #856: approval marker after merging main at 61f79061
+
+- User approval: no visible change – UI approval not needed (merge of main (61f79061) into #856; the own entries of #856 keep their approvals)
+- Approved customer-visible result: #856 as in its own entries plus the entries merged with 61f79061; nothing else changes.
+- Scope: the merge of 61f79061 and this approval record. Pull request branch #856 only, not merged, not released.
+- What's new: none — merge of 61f79061, no customer-visible change of its own
+
+<<<<<<<<< Temporary merge branch 1
+
+## 2026-10-20 — #784: approval marker after merging main
+
+- User approval: no visible change – UI approval not needed (merge commit into #784; no visible change of its own; entry: #784: approval marker after merging main)
+=========
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #663: Same device-switch reset as #645 for display brightness (no visible change)
+- User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #674: approval marker after merging #645 and main (no visible change))
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible chang
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #674: Codex review fix of #645, a late settings answer for another VibeTV no longer choose
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #663: Same device-switch reset as #645 for display brightness (no visible change)
+- User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #674: approval marker after merging #645 and main (no visible change); occurrence 2)
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible chang
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #674: Codex review fix of #645, a late settings answer for another VibeTV no longer choose
+
+## 2026-10-19 — #783: approval marker after merging main (v1.0.65 release round + #638)
+
+- User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #783: approval marker after merging main (v1.0.65 release round + #638))
+>>>>>>>>> Temporary merge branch 2
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+<<<<<<<<< Temporary merge branch 1
+
+## 2026-10-21 — #784: approval marker after merging main at 467fd7fb
+
+- User approval: no visible change – UI approval not needed (merge of main (467fd7fb) into #784; the own entries of #784 keep their approvals)
+- Approved customer-visible result: #784 as in its own entries plus the entries merged with 467fd7fb; nothing else changes.
+- Scope: the merge of 467fd7fb and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — merge of 467fd7fb, no customer-visible change of its own
+=========
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at f3cb1c10
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (f3cb1c10) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with f3cb1c10; nothing else changes.
+- Scope: the merge of f3cb1c10 and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of f3cb1c10, no customer-visible change of its own
+>>>>>>>>> Temporary merge branch 2
+
+## 2026-10-21 — #592 on #800: Two at once, Limits on VibeTV
+
+- User approval: pending — #592 two providers at once (Two at once mode, Limits on VibeTV, Two Limits theme); visible parts go to a Claude Design round before Paul sees them
+- Approved customer-visible result: nothing is approved yet. Display mode gains "Two at once" (with a First and Second provider choice) in setup and Settings, and Settings gains "Limits on VibeTV"; these screens are the carried #592 versions and are redesigned in a Claude Design round first.
+- Scope: Control Center only: display mode panel, provider pair choice, Limits on VibeTV section, the pair preview and the "One provider" name of the former Manual mode. Pace is not part of this entry; it comes from #800 unchanged.
+- What's new: none — the visible parts go to a Claude Design round first
+
+## 2026-10-21 — #592 on #800: Two Limits theme
+
+- User approval: pending — #592 two providers at once (Two Limits theme with the #800 pace bar and sentences); visible parts go to a Claude Design round before Paul sees them
+- Approved customer-visible result: nothing is approved yet. The theme "Two Limits" shows two limits (or two providers at once) with the pace bar, the reserve or deficit piece and the sentences of the #800 Pace themes; layout and colours are open for the Claude Design round.
+- Scope: theme pack two-limits (theme, manifest, render pack, catalog entry), its documentation and its test. Its preview image in docs/assets still shows the #592 look.
+- What's new: none — the visible parts go to a Claude Design round first
+
+## 2026-10-21 — #864: What's new entry for the Two Limits theme
+
+- User approval: pending — #864 What's new entry for the Two Limits theme (draft text, Paul sees it with the Two-at-once design round)
+- Approved customer-visible result: nothing is approved yet. A customer who updates is told once, with the other new themes, "New theme: Two Limits" and the draft sentence "New: Two Limits shows two sources at once on your VibeTV – two providers or two accounts."; the entry links to the theme in Themes.
+- Scope: one What's-new entry (`theme-two-limits`) in apps/control-center/src/lib/whats-new.ts, its test fixture and expectations in control-center-app.whats-new.test.tsx (the notice now shows the newest three themes, Gauge is no longer among them), and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: `theme-two-limits`
+
+## 2026-10-21 — #864: approval marker after merging claude/usage-pace at 8d16d879
+
+- User approval: no visible change – UI approval not needed (merge of claude/usage-pace (8d16d879) into #864; the own entries of #864 keep their approvals)
+- Approved customer-visible result: #864 as in its own entries plus the entries merged with 8d16d879; nothing else changes.
+- Scope: the merge of 8d16d879 and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — merge of 8d16d879, no customer-visible change of its own
+
+## 2026-10-21 — #864: approval marker after merging claude/group-calm-redesign at 4371975c
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (4371975c) at the merge commit b6393775 into the local integration branch claude/paultest-592a; the own entries of both branches keep their approvals)
+- Approved customer-visible result: #864 and #784 as in their own entries; nothing else changes.
+- Scope: the merge of 4371975c and this approval record. Local integration branch claude/paultest-592a only, not a pull request, not merged, not released.
+- What's new: none — merge of 4371975c, no customer-visible change of its own
+
+## 2026-10-21 — #864: Settings Display mode Variante A (three modes) + Limits on VibeTV
+
+- User approval: pending — Settings Display mode as Paul's pick "Variante A – empfohlen" (Claude Design page "Usage-Skeleton und Two Limits - Runde 21.10"): radios Automatic / One provider / Two at once, Source picker, Top/Bottom pickers, Limits on VibeTV right below without description; Paul sees it in the next build
+- Approved customer-visible result: nothing is approved yet. Settings › Display mode lists Automatic, One provider and Two at once as calm radios; One provider shows a "Source" select, Two at once shows "Top" and "Bottom" selects; "Limits on VibeTV" follows directly without a description; the dialogs lose their header icon.
+- Scope: apps/control-center/src/components/settings-screen.tsx and its tests; provider-action-dialog.tsx and usage-screen.tsx without the dialog icon. Local integration branch claude/paultest-592a only.
+- What's new: none — no What's-new entry for this variant yet
+
+## 2026-10-21 — #864: Two Limits theme as Variante B (reduced)
+
+- User approval: pending — theme Two Limits on VibeTV as Paul's pick "Two Limits · Variante B – reduziert: nur Balken, Sätze klein" (Claude Design page "Usage-Skeleton und Two Limits - Runde 21.10"): name + window kind, big percent, thin pace bar, small pace sentence, no reset line; Paul sees it on the device in the next build
+- Approved customer-visible result: the reduced Two Limits layout uses a dark background, large percentages without a mode suffix, thin pace bars and small state-coloured pace sentences. The existing combined provider/window label and mode sit on the left; a small grey provider/system-notice line remains at the bottom. Missing slots stay hidden because the existing theme format has no unavailable-dash binding; the second panel starts below the divider to avoid an overlap. Device review remains pending.
+- Scope: theme-packs/two-limits/theme.json and manifest.json, regenerated dist/theme-packs outputs, apps/control-center/src/theme-packs/two-limits-theme.test.ts and this approval record. No firmware, Companion or app UI change.
+- What's new: none — layout refinement of the existing Two Limits theme; its existing announcement remains unchanged.
+
+## 2026-10-21 — paultest-592a: Showing now line under Automatic
+
+- User approval: pending — Settings › Display mode › Automatic shows "Showing now: <provider>" for the provider VibeTV last received (Paul's pick Variante A); Paul sees it in the next build
+- Approved customer-visible result: nothing is approved yet. Under Automatic, a muted line "Showing now: <provider label>" names the provider of the last frame the Companion sent to this VibeTV. It shows only while the stream is healthy and the provider is in the list; otherwise nothing is shown.
+- Scope: `apps/control-center/src/components/settings-screen.tsx`, `apps/control-center/src/components/control-center-types.ts` (stream type), `apps/control-center/src/components/settings-screen.test.tsx` and this approval record. Local integration branch claude/paultest-592a only; the Companion field is on PR #864.
+- What's new: none — a status line under an existing radio
+
+## 2026-10-21 — #864: Build 7 integration of claude/paultest-592a
+
+- User approval: pending — build7 integration of claude/paultest-592a at e4d16fa48864 for the requested Pace + Two at once Mac test.
+- Approved customer-visible result: Preserve the incoming feature together with the existing Build 6 customer flows in the local integration candidate.
+- Scope: Merge claude/paultest-592a into claude/paultest-build7; retain all source approval entries.
+- What's new: none — integration of existing feature entries only.

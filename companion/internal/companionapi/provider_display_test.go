@@ -832,6 +832,30 @@ func TestNextProviderShortcutPinsTheNextProviderAndWrapsAround(t *testing.T) {
 	}
 }
 
+// Codex review on #864: a press of the shortcut moves the pinned provider and
+// nothing else. The limits the customer hid stay as they were stored.
+func TestNextProviderShortcutKeepsTheHiddenLimits(t *testing.T) {
+	server, _ := nextProviderServer(t,
+		&runtimeconfig.ProviderDisplayConfig{
+			Mode:          providerDisplayModeAutomatic,
+			ProviderIDs:   []string{"codex", "claude"},
+			HiddenWindows: map[string][]string{"claude": {"session"}},
+		},
+		[]codexbar.ProviderSetting{
+			{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+			{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+		},
+		"codex", "codex", "claude")
+
+	_, stored := pressNextProvider(t, server)
+	if stored == nil || len(stored.ProviderIDs) != 1 || stored.ProviderIDs[0] != "claude" {
+		t.Fatalf("stored %+v, want Manual on claude", stored)
+	}
+	if len(stored.HiddenWindows["claude"]) != 1 || stored.HiddenWindows["claude"][0] != "session" {
+		t.Fatalf("press dropped the hidden limits: %+v", stored.HiddenWindows)
+	}
+}
+
 // Codex review on #600: two quick presses of the shortcut arrive at the same
 // time. Each has to move one provider on, so nine presses at once show every
 // one of the three providers three times and none is lost.

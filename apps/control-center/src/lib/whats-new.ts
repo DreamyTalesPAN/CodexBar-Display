@@ -53,6 +53,13 @@ export const WHATS_NEW: WhatsNewEntry[] = [
     theme: "pace-meter",
   },
   {
+    id: "theme-two-limits",
+    icon: PanelsTopLeft,
+    title: "New theme: Two Limits",
+    body: "New: Two Limits shows two sources at once on your VibeTV – two providers or two accounts.",
+    theme: "two-limits",
+  },
+  {
     id: "provider-shortcut",
     icon: Keyboard,
     title: "Switch providers with a shortcut",

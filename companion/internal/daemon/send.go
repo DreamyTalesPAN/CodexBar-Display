@@ -49,6 +49,9 @@ func configuredTheme(cliTheme string) string {
 
 func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
 	publicPort := publicDeviceTarget(port)
+	if result.usedLastGood {
+		result.frame = limitLastGood(result.frame, deps)
+	}
 	authoritativeFrame := result.frame
 	frame := applyUsageBarsPreference(authoritativeFrame.Normalize(), deps.usageBarsShowUsed())
 	if !result.usageFresh && result.failureErr == nil {
@@ -66,7 +69,7 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 		// just moved to this provider) the retained reading itself goes out,
 		// marked as not live below and never stored as last good.
 		if state != nil && state.hasLastGood && (!frame.UsageUnavailable || !expiredLastGood) {
-			authoritativeFrame = state.lastGood
+			authoritativeFrame = limitLastGood(state.lastGood, deps)
 			authoritativeFrame.Activity, authoritativeFrame.Update = result.frame.Activity, result.frame.Update
 			if !lastGoodLasts && !isLastGoodFreshAt(state.lastGoodAt, deps.now(), lastGoodMaxAge()) {
 				authoritativeFrame.UsageUnavailable = true

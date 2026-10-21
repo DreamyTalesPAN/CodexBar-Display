@@ -310,9 +310,15 @@ export function displayPreviewFor(
 export function displayPreviewsFor(
   usage: UsageSnapshot | null,
   providers: { id: string; label: string }[],
+  hiddenWindows?: Record<string, string[]>,
 ): SetupDisplayModePreview[] {
   const reported = new Map(
-    (usage?.providers || []).map((provider) => [provider.id, provider]),
+    (usage?.providers || []).map((provider) => [
+      provider.id,
+      provider.windows
+        ? { ...provider, windows: visibleUsageWindows(provider.windows, hiddenWindows?.[provider.id]) }
+        : provider,
+    ]),
   );
   // The complete set the host builds its provider rows from: the providers
   // switched on, in that order, as far as the usage service has read them.
@@ -397,4 +403,47 @@ export function withActivityExpiry(
     return frame;
   }
   return secondsSince(activityAt, now) >= ttl ? { ...frame, activity: "idle" } : frame;
+}
+
+/**
+ * The usage windows VibeTV shows for a provider: the ones the customer did not
+ * hide. With every one hidden all of them stay, as the companion does, so the
+ * panel never goes blank.
+ */
+export function visibleUsageWindows<T extends { id: string }>(
+  windows: T[],
+  hiddenWindowIds: string[] | undefined,
+): T[] {
+  const visible = windows.filter(
+    (window) => !hiddenWindowIds?.includes(window.id),
+  );
+  return visible.length ? visible : windows;
+}
+
+/**
+ * Two at once on the panel: each provider's first shown limit, named after its
+ * provider, the way the companion sends the pair to VibeTV. Like the
+ * companion it counts down with the first of the two that has a reset time.
+ */
+export function pairDisplayPreview(
+  first: SetupDisplayModePreview | undefined,
+  second: SetupDisplayModePreview | undefined,
+): SetupDisplayModePreview | null {
+  if (!first || !second) {
+    return null;
+  }
+  const unknownReset = formatReset(0);
+  const counting = [first, second].find(
+    (preview) => preview.resetLabel && preview.resetLabel !== unknownReset,
+  );
+  return {
+    providerLabel: `${first.providerLabel} + ${second.providerLabel}`,
+    resetLabel: (counting ?? first).resetLabel,
+    windows: [first, second].map((preview) => ({
+      label: preview.windows[0]
+        ? `${preview.providerLabel} ${preview.windows[0].label}`
+        : preview.providerLabel,
+      percent: preview.windows[0]?.percent ?? null,
+    })),
+  };
 }

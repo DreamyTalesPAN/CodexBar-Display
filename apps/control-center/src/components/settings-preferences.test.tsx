@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildThemePack, createBlankThemeSpec } from "@/lib/theme-studio";
 import { writeUserThemes } from "@/lib/theme-studio-storage";
 import type { PreferenceDescriptor } from "./control-center-types";
+import type { ProviderItem } from "./provider-picker";
 import { SettingsScreen, type SettingsScreenProps } from "./settings-screen";
 
 beforeEach(() => {
@@ -166,5 +167,76 @@ describe("SettingsScreen installed screensaver", () => {
 
     expect(document.body.textContent).toContain("My Screensaver is installed.");
     expect(screen.getByRole("link", { name: "Choose screensaver" })).toBeTruthy();
+  });
+});
+
+// Variante A (#592): the Source, Top and Bottom selects under their radios.
+describe("SettingsScreen display sources", () => {
+  const item = (providerId: string, label: string): ProviderItem => ({
+    allowsDefault: false,
+    availability: { state: "available" },
+    effectiveValue: true,
+    health: { message: "Ready.", service: "operational", state: "healthy" },
+    id: `codexbar.providers.${providerId}.enabled`,
+    label,
+    owner: "codexbar",
+    providerId,
+    section: "providers",
+    type: "boolean",
+    value: true,
+    writable: true,
+    writeStrategy: "codexbar_command",
+  });
+  const sources = (mode: "fixed" | "pair", providerIds: string[]) => {
+    const onDisplayChange = vi.fn();
+    const base = props();
+    render(
+      <SettingsScreen
+        {...base}
+        providerPicker={{
+          ...base.providerPicker,
+          usage: { providers: ["claude", "codex", "cursor"].map((id) => ({
+            id, label: id, session: 0, weekly: 0, resetSecs: 0, usageMode: "used",
+          })) },
+          display: { mode, providerIds, configured: true, valid: true },
+          items: [item("claude", "Claude"), item("codex", "Codex"), item("cursor", "Cursor")],
+          onDisplayChange,
+        }}
+      />,
+    );
+    return onDisplayChange;
+  };
+
+  it("saves the pair from Top and Bottom", () => {
+    const onDisplayChange = sources("pair", ["claude", "codex"]);
+
+    expect(screen.getByRole("combobox", { name: "Top" }).textContent).toBe("Claude");
+    expect(screen.getByRole("combobox", { name: "Bottom" }).textContent).toBe("Codex");
+    openSelect("Top");
+    choose("Cursor");
+    expect(onDisplayChange).toHaveBeenLastCalledWith(
+      { mode: "pair", providerIds: ["cursor", "codex"] },
+      "cursor",
+    );
+    cleanup();
+    const second = sources("pair", ["claude", "codex"]);
+    openSelect("Bottom");
+    choose("Cursor");
+    expect(second).toHaveBeenLastCalledWith(
+      { mode: "pair", providerIds: ["claude", "cursor"] },
+      "claude",
+    );
+  });
+
+  it("saves the one source from Source", () => {
+    const onDisplayChange = sources("fixed", ["claude"]);
+
+    expect(screen.queryByRole("combobox", { name: "Top" })).toBeNull();
+    openSelect("Source");
+    choose("Codex");
+    expect(onDisplayChange).toHaveBeenLastCalledWith(
+      { mode: "fixed", providerIds: ["codex"] },
+      "codex",
+    );
   });
 });

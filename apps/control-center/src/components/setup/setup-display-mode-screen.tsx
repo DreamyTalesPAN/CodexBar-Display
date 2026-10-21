@@ -2,6 +2,14 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { Field, FieldLabel } from "@/components/ui/field";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type {
   ProviderDisplaySelection,
@@ -82,6 +90,15 @@ type SetupDisplayModeScreenProps = {
   automaticPreviews?: SetupDisplayModePreview[];
   /** Live usage of the provider Manual is pinned to right now. */
   manualPreview: SetupDisplayModePreview | null;
+  /** Live usage of the two providers Two at once shows together. */
+  pairPreview?: SetupDisplayModePreview | null;
+  /** The first and the second provider of Two at once. */
+  pairProviderIds?: string[];
+  /**
+   * Picks the two providers of Two at once. Without it, or with fewer than
+   * two providers to choose from, the mode is not offered.
+   */
+  onSelectPair?: (providerIds: string[]) => void;
   mode: ProviderDisplaySelection["mode"];
   /**
    * The theme VibeTV is showing. With it, the tiles draw that theme with each
@@ -115,7 +132,10 @@ export function SetupDisplayModeScreen({
   onCreateSupportReport,
   windowsHost,
   onSelectMode,
+  onSelectPair,
   onSelectProvider,
+  pairPreview,
+  pairProviderIds = [],
   providers,
   saving = false,
   selectedProviderId,
@@ -150,7 +170,10 @@ export function SetupDisplayModeScreen({
         manualPreview={manualPreview}
         mode={mode}
         onSelectMode={onSelectMode}
+        onSelectPair={onSelectPair}
         onSelectProvider={onSelectProvider}
+        pairPreview={pairPreview}
+        pairProviderIds={pairProviderIds}
         providers={providers}
         saving={saving}
         selectedProviderId={selectedProviderId}
@@ -173,7 +196,8 @@ export function SetupDisplayModeScreen({
           saving ||
           awaitingUsage ||
           (mode === "fixed" &&
-            !providers.some((provider) => provider.id === selectedProviderId))
+            !providers.some((provider) => provider.id === selectedProviderId)) ||
+          (mode === "pair" && !pairIsChosen(pairProviderIds, providers))
         }
         className={cn(CALM_BUTTON_CLASS, mode === "fixed" ? "mt-6" : "mt-8")}
         onClick={onContinue}
@@ -192,7 +216,10 @@ type DisplayModeChoiceProps = Pick<
   | "manualPreview"
   | "mode"
   | "onSelectMode"
+  | "onSelectPair"
   | "onSelectProvider"
+  | "pairPreview"
+  | "pairProviderIds"
   | "providers"
   | "saving"
   | "selectedProviderId"
@@ -211,8 +238,9 @@ type DisplayModeChoiceProps = Pick<
 const NO_THEME_PACK: ThemePackLoad = { pack: null, status: "error" };
 
 /**
- * The display-mode choice itself: two cards showing what each mode would put
- * on the device, and — for Manual — the provider it would be pinned to.
+ * The display-mode choice itself: cards showing what each mode would put on
+ * the device, the provider One provider is pinned to, and the two providers
+ * Two at once shows together.
  *
  * Lives outside the wizard screen because Settings offers the same choice. One
  * component rather than two keeps the two places from drifting, which is how
@@ -228,7 +256,10 @@ export function DisplayModeChoice({
   manualPreview,
   mode,
   onSelectMode,
+  onSelectPair,
   onSelectProvider,
+  pairPreview = null,
+  pairProviderIds = [],
   providers,
   saving = false,
   selectedProviderId,
@@ -240,6 +271,7 @@ export function DisplayModeChoice({
     providers,
   );
   const { index, reducedMotion } = useProviderRotation(rotation.length);
+  const offersPair = Boolean(onSelectPair) && providers.length >= 2;
   const manualFrames = manualPreview ? [pinnedPreview(manualPreview)] : [];
   const tiles = (frames: SetupDisplayModePreview[], at: number) => {
     // The theme's own picture whenever it can be had; the plain tile is what
@@ -262,7 +294,7 @@ export function DisplayModeChoice({
 
   return (
     <div className={cn("flex w-full flex-col", calm ? "gap-6" : "gap-4", className)}>
-      <div className="grid w-full grid-cols-2 items-stretch gap-4">
+      <div className={cn("grid w-full items-stretch gap-4", offersPair ? "grid-cols-3" : "grid-cols-2")}>
         <ModeCard
           calm={calm}
           description={automaticDescription}
@@ -276,16 +308,57 @@ export function DisplayModeChoice({
         </ModeCard>
         <ModeCard
           calm={calm}
-          description="VibeTV always shows the one provider you pick — nothing else."
+          description="VibeTV always shows the one provider you pick."
           disabled={saving}
           ink={ink}
           onSelect={() => onSelectMode("fixed")}
           selected={mode === "fixed"}
-          title="Manual"
+          title="One provider"
         >
           {tiles(manualFrames, 0)}
         </ModeCard>
+        {offersPair ? (
+          <ModeCard
+            calm={calm}
+            ink={ink}
+            description="VibeTV shows two providers together, one limit each."
+            disabled={saving}
+            onSelect={() => onSelectMode("pair")}
+            selected={mode === "pair"}
+            title="Two at once"
+          >
+            <PreviewTile frames={pairPreview ? [pairPreview] : []} index={0} />
+          </ModeCard>
+        ) : null}
       </div>
+
+      {mode === "pair" && offersPair && onSelectPair ? (
+        <div className={cn("grid w-full grid-cols-2 gap-4 text-left", SETUP_REVEAL)}>
+          {(["First", "Second"] as const).map((name, position) => (
+            <Field key={name}>
+              <FieldLabel htmlFor={`vibetv-pair-${position}`}>{name}</FieldLabel>
+              <Select
+                disabled={saving}
+                onValueChange={(providerId) =>
+                  onSelectPair(withPairProvider(pairProviderIds, position, providerId))
+                }
+                value={pairProviderIds[position] ?? ""}
+              >
+                <SelectTrigger aria-label={`${name} provider`} id={`vibetv-pair-${position}`}>
+                  <SelectValue placeholder="Choose a provider" />
+                </SelectTrigger>
+                <SelectContent>
+                  {providers.map((provider) => (
+                    <SelectItem key={provider.id} value={provider.id}>
+                      {provider.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          ))}
+        </div>
+      ) : null}
 
       {mode === "fixed" ? (
         <div className={cn("flex w-full flex-col gap-2 text-left", SETUP_REVEAL)}>
@@ -337,6 +410,55 @@ export function DisplayModeChoice({
       ) : null}
     </div>
   );
+}
+
+/** Two different providers, both still on offer. */
+export function pairIsChosen(
+  providerIds: string[],
+  providers: SetupDisplayModeProvider[],
+): boolean {
+  return (
+    providerIds.length === 2 &&
+    providerIds[0] !== providerIds[1] &&
+    providerIds.every((id) => providers.some((provider) => provider.id === id))
+  );
+}
+
+/**
+ * The pair with one position changed. Picking the provider the other position
+ * holds swaps the two, so the pair never names one provider twice.
+ */
+function withPairProvider(
+  providerIds: string[],
+  position: number,
+  providerId: string,
+): string[] {
+  const next = [providerIds[0] ?? "", providerIds[1] ?? ""];
+  const other = position === 0 ? 1 : 0;
+  if (next[other] === providerId) {
+    next[other] = next[position];
+  }
+  next[position] = providerId;
+  return next;
+}
+
+/**
+ * The pair Two at once starts from: the stored one while it is still valid,
+ * otherwise the given provider first and the next one on offer second.
+ */
+export function defaultPairIds(
+  storedIds: string[],
+  firstId: string | null | undefined,
+  providers: SetupDisplayModeProvider[],
+): string[] {
+  if (pairIsChosen(storedIds, providers)) {
+    return storedIds;
+  }
+  const first =
+    providers.find((provider) => provider.id === firstId)?.id ??
+    providers[0]?.id;
+  const second = providers.find((provider) => provider.id !== first)?.id;
+  return first && second ? [first, second] : [];
 }
 
 /**

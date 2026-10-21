@@ -138,6 +138,17 @@ slot-2 equivalents. Compact binding keys are supported for shipped specs, but
 the meaning must remain the same; a compact key is not permission to invent a
 provider-specific fallback.
 
+Slots 1 and 2 are the first and second limit the customer chose to show, not
+fixed windows. In `Limits on VibeTV` the customer can untick limits per
+provider; the Companion then leaves those windows out and the next ones move
+up, so `{usageSlot1Label}` may read `Weekly` on one VibeTV and `Session` on
+another. In the display mode `Two at once` slot 1 is the first shown limit of
+the first provider and slot 2 that of the second, labelled `<Provider>
+<Window>` (`Claude Weekly`, `Codex Weekly`), and `{label}` names both
+(`Claude + Codex`). Bind the slot label next to each slot's numbers instead
+of writing `Session` or `Weekly` into the theme. A theme shows as many limits
+as it binds slots; Control Center tells the customer that number.
+
 CodexBar's pace for usage windows 1 and 2 has its own bindings, ready to show:
 `{usageSlot1PaceText}` renders `6% in reserve`, `On pace` or `14% in deficit`,
 `{usageSlot1PaceShort}` the short form `6% reserve`, `on pace`, `14% deficit`,
