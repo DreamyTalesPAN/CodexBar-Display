@@ -11668,4 +11668,16 @@ issue scope, or release permission never implies UI permission.
 - User approval: no visible change – UI approval not needed (merge of main (12504ca6) into #813; the own entries of #813 keep their approvals)
 - Approved customer-visible result: #813 as in its own entries plus the entries merged with 12504ca6; nothing else changes.
 - Scope: the merge of 12504ca6 and this approval record. Pull request branch #813 only, not merged, not released.
+## 2026-10-20 — #782: approval marker after merging main at 5f09bf54
+
+- User approval: no visible change – UI approval not needed (merge of main (5f09bf54) into #782; the own entries of #782 keep their approvals)
+- Approved customer-visible result: #782 as in its own entries plus the entries merged with 5f09bf54; nothing else changes.
+- Scope: the merge of 5f09bf54 and this approval record. Pull request branch #782 only, not merged, not released.
+- What's new: none — merge of 5f09bf54, no customer-visible change of its own
+
+## 2026-10-21 — #782: approval marker after merging main at 12504ca6
+
+- User approval: no visible change – UI approval not needed (merge of main (12504ca6) into #782; the own entries of #782 keep their approvals)
+- Approved customer-visible result: #782 as in its own entries plus the entries merged with 12504ca6; nothing else changes.
+- Scope: the merge of 12504ca6 and this approval record. Pull request branch #782 only, not merged, not released.
 - What's new: none — merge of 12504ca6, no customer-visible change of its own
