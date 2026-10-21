@@ -8885,6 +8885,13 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of f314106c and this approval record. Pull request branch #784 only, not merged, not released.
 - What's new: none — merge of f314106c, no customer-visible change of its own
 
+## 2026-10-21 — #784: slider keyboard focus ring 2 px olive
+
+- User approval: no visible change – UI approval not needed (#784 slider keyboard focus ring 3px → the shared 2px olive ring decided earlier; token-only)
+- Approved customer-visible result: the slider thumb looks as before for hover and drag; the keyboard focus ring is the shared 2 px olive ring (border plus 1 px ring) like buttons and inputs. Nothing else changes.
+- Scope: `apps/control-center/src/components/ui/slider.tsx` (thumb focus classes), its test `apps/control-center/src/components/ui/slider.focus-ring.test.tsx`, and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — focus ring classes of the slider thumb, no new text
+
 ## 2026-10-20 — #816: "Not now" on "VibeTV not found" holds through a short status change in the same outage (#787)
 
 - User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #816: "Not now" on "VibeTV not found" holds through a short status change in the same outa — before → after: after "Not now" on the Overview's "VibeTV not found" dialog, a short in-between status (reconnecting, inconclusive check) during the same outage cleared the choice and the dialog came back when VibeTV was still missing → "Not now" holds until VibeTV is connected again; after a real reconnect and a new loss the dialog shows again as before. No new or changed text, layout or look.
