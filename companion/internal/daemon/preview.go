@@ -28,7 +28,11 @@ type ProviderPreview struct {
 // runtime bootstraps, so what it returns is what the stream sends: the
 // provider's rows, the restated last-good frame, or the error frame. The
 // device fields and wire-budget trimming use the same steps as sending.
-func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, caps protocol.DeviceCapabilities, now time.Time) []ProviderPreview {
+func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, caps protocol.DeviceCapabilities, now time.Time, updates *FirmwareUpdateCache) []ProviderPreview {
+	var update *protocol.UpdateState
+	if cached := updates.snapshot(caps); cached != nil {
+		update = &cached.update
+	}
 	providers := make([]codexbar.ParsedFrame, 0, len(usage.Providers))
 	for _, snapshot := range usage.Providers {
 		providers = append(providers, codexbar.ParsedFrame{
@@ -53,7 +57,7 @@ func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, caps protoco
 	for _, shown := range providers {
 		preview := ProviderPreview{
 			Provider: shown.Provider,
-			Pinned:   previewPinnedFrame(shown, deps, systemBusy, caps, now),
+			Pinned:   previewPinnedFrame(shown, deps, systemBusy, caps, now, update),
 		}
 		// A fresh stream per rotation position: the timer sits on this
 		// provider, the rest is the runtime's own start.
@@ -61,6 +65,7 @@ func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, caps protoco
 		bootstrapStateFromPersistedLastGood(state, now, deps)
 		// The slice is copied: selection and restating work on it in place.
 		result := selectCycleFrameFromProviders(state, slices.Clone(providers), now, deps, nil, "select-provider", "", "", "")
+		result.frame.Update = update
 		result.systemBusy = systemBusy
 		_, frame, result := restateLastGoodWhenNotFresh(state, deps, result)
 		if frame.Error != "" || normalizeProviderKey(frame.Provider) == normalizeProviderKey(shown.Frame.Provider) {
@@ -72,13 +77,14 @@ func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, caps protoco
 	return previews
 }
 
-func previewPinnedFrame(shown codexbar.ParsedFrame, deps runtimeDeps, systemBusy bool, caps protocol.DeviceCapabilities, now time.Time) protocol.Frame {
+func previewPinnedFrame(shown codexbar.ParsedFrame, deps runtimeDeps, systemBusy bool, caps protocol.DeviceCapabilities, now time.Time, update *protocol.UpdateState) protocol.Frame {
 	deps.loadConfig = func(string) (runtimeconfig.Config, error) {
 		return runtimeconfig.Config{ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{Mode: "fixed", ProviderIDs: []string{shown.Provider}}}, nil
 	}
 	state := &runtimeState{selector: codexbar.NewProviderSelector()}
 	bootstrapStateFromPersistedLastGood(state, now, deps)
 	result := selectCycleFrameFromProviders(state, []codexbar.ParsedFrame{shown}, now, deps, nil, "select-provider", "", "", "")
+	result.frame.Update = update
 	result.systemBusy = systemBusy
 	_, frame, result := restateLastGoodWhenNotFresh(state, deps, result)
 	return previewFrameWithinLimit(frame, result, caps, now)

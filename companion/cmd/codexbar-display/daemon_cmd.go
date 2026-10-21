@@ -301,6 +301,7 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 
 	var workerRunning atomic.Bool
 	var systemBusy atomic.Pointer[daemon.SystemBusy]
+	firmwareUpdates := &daemon.FirmwareUpdateCache{}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var dashboard codexbar.DashboardServe
@@ -319,6 +320,7 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 		AIThemeSecrets:       companionapi.NewDurableAIThemeSecrets(""),
 		DisplayStreamRunning: workerRunning.Load,
 		SystemBusy:           systemBusy.Load,
+		FirmwareUpdates:      firmwareUpdates,
 		Addr:                 actualAddr,
 		AllowedOrigins:       []string{opts.APIDevOrigin},
 		RefreshDisplayStream: func(context.Context, string) error {
@@ -365,6 +367,7 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 	daemonOpts.Dashboard = dashboard
 	daemonOpts.ReportSystemBusy = systemBusy.Store
 	daemonOpts.CurrentSystemBusy = systemBusy.Load
+	daemonOpts.FirmwareUpdates = firmwareUpdates
 
 	errc := make(chan error, 1)
 	go func() {

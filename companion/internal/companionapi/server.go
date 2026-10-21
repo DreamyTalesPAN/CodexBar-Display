@@ -117,7 +117,8 @@ type Options struct {
 	Logf func(string, ...any)
 	// SystemBusy is the display worker's latest busy-computer verdict
 	// (#606). Nil outside the runtime.
-	SystemBusy func() *daemon.SystemBusy
+	SystemBusy      func() *daemon.SystemBusy
+	FirmwareUpdates *daemon.FirmwareUpdateCache
 	// Where Theme Studio keeps the customer's verified OpenAI key across
 	// restarts. Nil (tests, tools) keeps it in memory only.
 	AIThemeSecrets SecretStore
@@ -186,6 +187,7 @@ type Server struct {
 	providerFollowupHeldHook func()
 	displayStreamRunning     func() bool
 	systemBusy               func() *daemon.SystemBusy
+	firmwareUpdates          *daemon.FirmwareUpdateCache
 	firmwareUpdateActive     atomic.Bool
 	firmwareUpdateStartMu    sync.Mutex
 	// One shortcut press at a time: each reads the provider on screen and
@@ -384,6 +386,7 @@ func New(opts Options) (*Server, error) {
 		usageServiceInfo:     opts.UsageServiceInfo,
 		displayStreamRunning: opts.DisplayStreamRunning,
 		systemBusy:           opts.SystemBusy,
+		firmwareUpdates:      opts.FirmwareUpdates,
 		pairAttempts:         defaultPairAttempts,
 		pairAttemptTimeout:   defaultPairAttemptTimeout,
 		pairRetryGap:         defaultPairRetryGap,

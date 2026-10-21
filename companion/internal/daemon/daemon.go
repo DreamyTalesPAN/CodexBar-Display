@@ -17,6 +17,8 @@ import (
 )
 
 type Options struct {
+	// FirmwareUpdates shares the stream cache with API previews.
+	FirmwareUpdates        *FirmwareUpdateCache
 	Port                   string
 	Transport              string
 	Target                 string
@@ -225,8 +227,9 @@ func signalWake(output chan<- struct{}) {
 
 func initializeRuntimeState(now time.Time, opts Options, deps runtimeDeps) *runtimeState {
 	state := &runtimeState{
-		selector: deps.newSelector(),
-		cliTheme: opts.Theme,
+		selector:        deps.newSelector(),
+		cliTheme:        opts.Theme,
+		firmwareUpdates: opts.FirmwareUpdates,
 	}
 	bootstrapStateFromPersistedLastGood(state, now, deps)
 	return state

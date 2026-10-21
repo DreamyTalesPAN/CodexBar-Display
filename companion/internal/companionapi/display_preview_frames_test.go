@@ -48,7 +48,7 @@ func TestUsagePreviewFramesComeFromTheSameSnapshotAsUsage(t *testing.T) {
 		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
 			Provider: "codex", CollectedAt: now,
 			Frame: protocol.Frame{
-				Provider: "codex", Label: "Codex", UsageMode: "used",
+				V: 2, Provider: "codex", Label: "Codex", UsageMode: "used",
 				UsageWindows: []protocol.UsageWindow{{ID: "weekly", Label: "Weekly", Percent: loads, ResetSec: 3600}},
 			},
 		}}}, true
@@ -78,7 +78,7 @@ func TestDisplayPreviewFramesAreTheDaemonsFrames(t *testing.T) {
 			Provider:    "codex",
 			CollectedAt: now.Add(-time.Minute),
 			Frame: protocol.Frame{
-				Provider: "codex", Label: "Codex", UsageMode: "used",
+				V: 2, Provider: "codex", Label: "Codex", UsageMode: "used",
 				UsageWindows: []protocol.UsageWindow{{ID: "weekly", Label: "Weekly", Percent: 12, ResetSec: 3600}},
 			},
 		},
@@ -86,7 +86,7 @@ func TestDisplayPreviewFramesAreTheDaemonsFrames(t *testing.T) {
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return usage, true }
 
 	got := getPreviewFrames(t, server)
-	want := daemon.PreviewFrames(usage, true, false, server.previewDeviceCapabilities(), now)
+	want := daemon.PreviewFrames(usage, true, false, server.previewDeviceCapabilities(), now, nil)
 	if len(got.Providers) != 1 || got.Providers[0].ID != "codex" {
 		t.Fatalf("providers: %+v", got.Providers)
 	}
@@ -115,7 +115,7 @@ func TestUsagePreviewFramesReuseCapturedUsageMode(t *testing.T) {
 			server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
 				return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
 					Provider: "codex", CollectedAt: now,
-					Frame: protocol.Frame{Provider: "codex", Label: "Codex", UsageMode: "used",
+					Frame: protocol.Frame{V: 2, Provider: "codex", Label: "Codex", UsageMode: "used",
 						UsageWindows: []protocol.UsageWindow{{ID: "weekly", Label: "Weekly", Percent: 12, ResetSec: 3600}},
 					},
 				}}}, true
@@ -161,11 +161,11 @@ func TestDisplayPreviewFramesCoverEveryEnabledProvider(t *testing.T) {
 			{
 				Provider: "codex", CollectedAt: now,
 				Frame: protocol.Frame{
-					Provider: "codex", Label: "Codex", UsageMode: "used",
+					V: 2, Provider: "codex", Label: "Codex", UsageMode: "used",
 					UsageWindows: []protocol.UsageWindow{{ID: "weekly", Label: "Weekly", Percent: 12, ResetSec: 3600}},
 				},
 			},
-			{Provider: "cursor", CollectedAt: now, Frame: protocol.Frame{Provider: "cursor", Label: "Cursor", Session: 5}},
+			{Provider: "cursor", CollectedAt: now, Frame: protocol.Frame{V: 2, Provider: "cursor", Label: "Cursor", Session: 5}},
 		}}, true
 	}
 
@@ -189,6 +189,9 @@ func TestDisplayPreviewFramesCoverEveryEnabledProvider(t *testing.T) {
 // directory; a test must not see the developer's.
 func isolatePreviewHome(t *testing.T) {
 	t.Helper()
+	previous := time.Local
+	time.Local = time.UTC
+	t.Cleanup(func() { time.Local = previous })
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
@@ -202,7 +205,7 @@ func TestUsagePreviewFramesUseCurrentSystemBusyVerdict(t *testing.T) {
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
 		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
 			Provider: "codex", CollectedAt: now,
-			Frame: protocol.Frame{Provider: "codex", Label: "Codex", Session: 12},
+			Frame: protocol.Frame{V: 2, Provider: "codex", Label: "Codex", Session: 12},
 		}}}, true
 	}
 	server.systemBusy = func() *daemon.SystemBusy { return &daemon.SystemBusy{} }
@@ -228,7 +231,7 @@ func TestUsagePreviewFramesRespectDeviceWireBudget(t *testing.T) {
 			server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
 				return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
 					Provider: "codex", CollectedAt: now,
-					Frame: protocol.Frame{Provider: "codex", Label: "Codex", UsageMode: "used",
+					Frame: protocol.Frame{V: 2, Provider: "codex", Label: "Codex", UsageMode: "used",
 						SessionTokens: 123456789012, WeekTokens: 234567890123, TotalTokens: 345678901234, TokenTotalsKnown: true,
 						UsageWindows: []protocol.UsageWindow{
 							{ID: "session", Label: "Session window usage", Percent: 12, ResetSec: 3600},
@@ -291,5 +294,30 @@ func TestPreviewDeviceCapabilitiesNeverProbeWiFi(t *testing.T) {
 				t.Fatalf("got budget %d, want %d", caps.MaxFrameBytes, want)
 			}
 		})
+	}
+}
+
+func TestUsagePreviewFramesUseTheLocalStreamClock(t *testing.T) {
+	isolatePreviewHome(t)
+	location, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := time.Local
+	time.Local = location
+	t.Cleanup(func() { time.Local = previous })
+	now := time.Date(2026, 10, 21, 12, 0, 0, 0, location)
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.now = func() time.Time { return now }
+	usage := daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{Provider: "codex", CollectedAt: now, Frame: protocol.Frame{V: 2, Provider: "codex", Label: "Codex", Session: 12}}}}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return usage, true }
+	preview := getPreviewFrames(t, server).Providers[0]
+	want := daemon.PreviewFrames(usage, true, false, server.previewDeviceCapabilities(), now, nil)[0]
+	for mode, frame := range map[string]*protocol.Frame{"automatic": preview.Automatic, "pinned": &preview.Pinned} {
+		gotJSON, _ := json.Marshal(frame.NextClockTransition)
+		wantJSON, _ := json.Marshal(want.Pinned.NextClockTransition)
+		if frame.Time != want.Pinned.Time || string(gotJSON) != string(wantJSON) {
+			t.Errorf("%s clock %s / %s; stream %s / %s", mode, frame.Time, gotJSON, want.Pinned.Time, wantJSON)
+		}
 	}
 }

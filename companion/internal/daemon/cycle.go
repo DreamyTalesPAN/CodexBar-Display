@@ -22,11 +22,7 @@ type runtimeState struct {
 	lastPersistedAt        time.Time
 	hasPersistedGood       bool
 	cliTheme               string
-	firmwareUpdate         protocol.UpdateState
-	hasFirmwareUpdate      bool
-	updateCheckedAt        time.Time
-	updateCheckedBoard     string
-	updateCheckedFirmware  string
+	firmwareUpdates        *FirmwareUpdateCache
 	lastActivityAt         time.Time
 	lastActivityObservedAt time.Time
 	lastIdleEvidenceAt     time.Time
