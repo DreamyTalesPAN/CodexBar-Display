@@ -133,9 +133,6 @@ func TestSubnetFanOutDiscoveryStopsOnSecondMatch(t *testing.T) {
 }
 
 func TestSubnetFanOutProbesTimeOutAfterSubnetProbeTime(t *testing.T) {
-	old := subnetProbeTime
-	subnetProbeTime = 50 * time.Millisecond
-	t.Cleanup(func() { subnetProbeTime = old })
 	cfg := runtimeconfig.Config{DeviceID: "x", CableAutoBindDisabled: true}
 	for name, run := range map[string]func(*Server){
 		"discovery": func(s *Server) { _, _, _ = s.discoverSubnet(context.Background(), cfg) },
@@ -152,7 +149,7 @@ func TestSubnetFanOutProbesTimeOutAfterSubnetProbeTime(t *testing.T) {
 			})
 			started := time.Now()
 			run(server)
-			if elapsed := time.Since(started); elapsed < 40*time.Millisecond || elapsed > 2*time.Second {
+			if elapsed := time.Since(started); elapsed < subnetProbeTime || elapsed > 2*subnetProbeTime {
 				t.Fatalf("hanging probe returned after %s, want about %s", elapsed, subnetProbeTime)
 			}
 		})
