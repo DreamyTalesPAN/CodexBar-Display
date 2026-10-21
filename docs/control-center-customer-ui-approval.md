@@ -9125,3 +9125,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #798 as in its own entries plus the entries merged with 0a599c37; nothing else changes.
 - Scope: the merge of 0a599c37 and this approval record. Pull request branch #798 only, not merged, not released.
 - What's new: none — merge of 0a599c37, no customer-visible change of its own
+
+## 2026-10-21 — #798: Updates title row stays below the page title until lg
+
+- User approval: pending — #798 Updates title row: stays below the page title until the window is wide enough (lg), so it no longer overlaps the title in narrow windows; wide windows unchanged
+- Approved customer-visible result: #798 Updates screen as in its own entries; in narrow windows (below lg) the checked timestamp and Check button sit below the page title instead of overlapping it; wide windows unchanged.
+- Scope: the Updates title row in apps/control-center/src/components/updates-screen.tsx and its class test. Pull request branch #798 only, not merged, not released.
+- What's new: none — layout fix of the Updates title row, no new feature

@@ -359,7 +359,7 @@ export function UpdatesScreen({
         The shell draws the page title on its own line and leaves the right of
         it free; this row sits on that line, as in the design.
       */}
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3.5 sm:relative sm:-mt-10 sm:h-10 sm:flex-nowrap sm:justify-end">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3.5 lg:relative lg:-mt-10 lg:h-10 lg:flex-nowrap lg:justify-end">
         {checkedText ? (
           <span className="text-[14px] whitespace-nowrap text-muted-foreground">
             {checkedText}

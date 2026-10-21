@@ -58,6 +58,16 @@ describe("calm Updates screen", () => {
     expect(check).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the title row stacked below the page title until the window is wide (lg)", () => {
+    render(<UpdatesScreen {...upToDate} />);
+    const row = screen.getByRole("button", { name: "Check for updates" }).parentElement!;
+    const classes = row.className.split(/\s+/);
+    expect(classes).toEqual(
+      expect.arrayContaining(["lg:relative", "lg:-mt-10", "lg:h-10", "lg:flex-nowrap", "lg:justify-end"]),
+    );
+    expect(classes.filter((name) => name.startsWith("sm:"))).toEqual([]);
+  });
+
   it("titles the Windows row 'Control Center' too and never says Mac", () => {
     const { container } = render(<UpdatesScreen {...upToDate} windowsHost />);
     expect(screen.getAllByRole("heading", { level: 3 }).map((row) => row.textContent)).toEqual([
