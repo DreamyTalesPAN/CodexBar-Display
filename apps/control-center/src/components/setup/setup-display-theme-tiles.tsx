@@ -218,7 +218,8 @@ function ThemeTile({
 }) {
   const data = useMemo(
     () =>
-      frame.frame
+      // An error frame has no theme data: the tile shows its no-usage state.
+      frame.frame && !frame.frame.error
         ? buildFrameData(
             frame.frameAt,
             // A coding verdict past its TTL shows idle (#369).

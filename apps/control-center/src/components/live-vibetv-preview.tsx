@@ -104,6 +104,8 @@ export type DisplayFrame = {
   weekTokens?: number;
   totalTokens?: number;
   tokenTotalsKnown?: boolean;
+  /** An error frame: the device draws its error surface instead of the theme. */
+  error?: string;
 };
 
 type LocalDisplayFrameRequestInit = RequestInit & {

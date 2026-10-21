@@ -8521,3 +8521,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the plain Automatic and Manual previews show the companion's reset seconds, bounded window labels and percentages; unavailable values stay unavailable.
 - Scope: setup-display-previews.ts, its callers and tests; remove usage-derived preview calculations and keep provider eligibility unchanged. Pull request branch only, not merged, not released.
 - What's new: none — the fallback tiles use the same companion frames as the theme tiles
+
+## 2026-10-21 — #858: error preview frame shows as unavailable
+
+- User approval: no visible change – UI approval not needed (bug fix: a setup preview tile shows unavailable instead of an empty theme when the companion sends an error frame)
+- Approved customer-visible result: a setup preview tile whose frame is an error frame shows its existing "no usage yet" state instead of the theme drawn from zeros; normal frames are unchanged.
+- Scope: setup-display-theme-tiles.tsx and its test; the error field added to the DisplayFrame type. Pull request branch only, not merged, not released.
+- What's new: none — the tile uses the state it already shows for a provider with no values

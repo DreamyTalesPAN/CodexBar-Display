@@ -191,6 +191,18 @@ describe("Display mode tiles with the active theme", () => {
     expect(tiles(1)[0].getAttribute("data-state")).toBe("skeleton");
   });
 
+  it("shows the skeleton, not the theme drawn from zeros, for an error frame", async () => {
+    // The companion sends an error frame when every provider is unavailable
+    // and no last-good frame exists (#858).
+    show([{ ...noValues("Claude"), frame: { v: 1, error: "no usage yet" } }]);
+    await settle();
+
+    const [claude] = tiles(0);
+    expect(claude.getAttribute("data-state")).toBe("skeleton");
+    expect(claude.textContent).not.toMatch(/\d/);
+    expect(screen.getAllByRole("img", { name: "Claude: no usage yet", hidden: true })).not.toHaveLength(0);
+  });
+
   it("keeps a skeleton tile while the theme is still loading", () => {
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
     show([live("Claude", 64), live("Codex", 28)]);
