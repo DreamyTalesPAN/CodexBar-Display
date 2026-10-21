@@ -10281,3 +10281,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No product change; the regression uses the integration Settings interface, which has no preview cards.
 - Scope: settings-preferences.test.tsx typecheck correction after integration.
 - What's new: none — test fixture only.
+
+## 2026-10-21 — #864: apply queued pair picker changes to the latest selection
+
+- User approval: no visible change – UI approval not needed (bug fix: preserve both rapid pair picker edits and their swap rule while a display PATCH is pending)
+- Approved customer-visible result: Each pair picker changes only its own slot against the selection left by the preceding save, so both rapid edits remain saved, including a swap.
+- Scope: pair picker callback passes position and provider, Settings derives the pair in the existing display write queue, setup applies the shared swap helper to its current draft, and regression tests hold a display PATCH while both pickers change.
+- What's new: none — correct existing pair saves, no separate announcement.
+
+## 2026-10-21 — #864 integration: preserve queued pair edits in calm Settings
+
+- User approval: no visible change – UI approval not needed (bug fix: apply calm Settings pair slot edits inside the existing display write queue when integrating d7bdd0c3)
+- Approved customer-visible result: Both rapid pair edits remain saved, including swaps, while the existing calm Settings layout and selectors stay unchanged.
+- Scope: merge d7bdd0c3, preserve every approval block, adapt calm Settings callbacks to partial slot changes, and run the held-PATCH regressions on the integration.
+- What's new: none — integrate the pair save bug fix.

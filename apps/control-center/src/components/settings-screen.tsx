@@ -259,14 +259,17 @@ export function SettingsScreen({
         enabledProviderIds[0] ??
         "",
     );
-  // Settings saves on every pick, so only a full pair is written.
-  const selectPair = (providerIds: string[]) => {
-    if (providerIds[0] && providerIds[1]) {
-      void providerPicker.onDisplayChange(
-        { mode: "pair", providerIds },
-        providerIds[0],
+  const selectPair = (position: number, providerId: string) => {
+    void providerPicker.onDisplayChange((current) => {
+      const providerIds = withPairProvider(
+        current?.mode === "pair" ? current.providerIds : pairIds,
+        position,
+        providerId,
       );
-    }
+      return providerIds[0] && providerIds[1]
+        ? { mode: "pair", providerIds }
+        : null;
+    }, providerId);
   };
 
   return (
@@ -341,14 +344,14 @@ export function SettingsScreen({
               <SourceSelect
                 id="vibetv-pair-top"
                 label="Provider 1"
-                onChange={(providerId) => selectPair(withPairProvider(pairIds, 0, providerId))}
+                onChange={(providerId) => selectPair(0, providerId)}
                 providers={pairChoices}
                 value={pairIds[0] ?? ""}
               />
               <SourceSelect
                 id="vibetv-pair-bottom"
                 label="Provider 2"
-                onChange={(providerId) => selectPair(withPairProvider(pairIds, 1, providerId))}
+                onChange={(providerId) => selectPair(1, providerId)}
                 providers={pairChoices}
                 value={pairIds[1] ?? ""}
               />

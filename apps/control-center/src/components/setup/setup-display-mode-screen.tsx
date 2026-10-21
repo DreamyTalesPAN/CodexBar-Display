@@ -70,10 +70,10 @@ type SetupDisplayModeScreenProps = {
   /** The first and the second provider of Two at once. */
   pairProviderIds?: string[];
   /**
-   * Picks the two providers of Two at once. Without it, or with fewer than
-   * two providers to choose from, the mode is not offered.
+   * Changes one slot; the caller applies it to its latest pair when saving.
+   * Without it, or with fewer than two providers, the mode is not offered.
    */
-  onSelectPair?: (providerIds: string[]) => void;
+  onSelectPair?: (position: number, providerId: string) => void;
   mode: ProviderDisplaySelection["mode"];
   aiFixPrompt?: () => string;
   onBack?: () => void;
@@ -276,7 +276,7 @@ export function DisplayModeChoice({
               <Select
                 disabled={saving}
                 onValueChange={(providerId) =>
-                  onSelectPair(withPairProvider(pairProviderIds, position, providerId))
+                  onSelectPair(position, providerId)
                 }
                 value={pairProviderIds[position] ?? ""}
               >

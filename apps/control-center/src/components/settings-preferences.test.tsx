@@ -251,7 +251,12 @@ describe("SettingsScreen display sources", () => {
           })) },
           display: { mode, providerIds, configured: true, valid: true },
           items: [item("claude", "Claude"), item("codex", "Codex"), item("cursor", "Cursor")],
-          onDisplayChange,
+          onDisplayChange: (change, pendingId) => onDisplayChange(
+            typeof change === "function"
+              ? change({ mode, providerIds, configured: true, valid: true })
+              : change,
+            pendingId,
+          ),
         }}
       />,
     );
@@ -303,7 +308,7 @@ describe("SettingsScreen display sources", () => {
     choose("Cursor");
     expect(second).toHaveBeenLastCalledWith(
       { mode: "pair", providerIds: ["claude", "cursor"] },
-      "claude",
+      "cursor",
     );
   });
 
@@ -319,7 +324,7 @@ describe("SettingsScreen display sources", () => {
 
     expect(onDisplayChange).toHaveBeenCalledExactlyOnceWith(
       { mode: "pair", providerIds: ["codex", "claude"] },
-      "codex",
+      source.toLowerCase(),
     );
     expect(screen.queryByRole("dialog")).toBeNull();
   });
