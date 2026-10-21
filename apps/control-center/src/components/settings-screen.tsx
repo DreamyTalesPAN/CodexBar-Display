@@ -217,12 +217,17 @@ export function SettingsScreen({
     id: item.providerId,
     label: item.label,
   }));
+  const pairChoices = displayMode === "pair"
+    ? providers
+        .filter((item) => item.value)
+        .map((item) => ({ id: item.providerId, label: item.label }))
+    : displayChoices;
   const pairIds = defaultPairIds(
     providerPicker.display?.mode === "pair"
       ? providerPicker.display.providerIds
       : [],
     manualProviderId,
-    displayChoices,
+    pairChoices,
   );
   const activeTheme = useActiveThemeLimits(device);
   const providerError =
@@ -257,14 +262,17 @@ export function SettingsScreen({
         enabledProviderIds[0] ??
         "",
     );
-  // Settings saves on every pick, so only a full pair is written.
-  const selectPair = (providerIds: string[]) => {
-    if (providerIds[0] && providerIds[1]) {
-      void providerPicker.onDisplayChange(
-        { mode: "pair", providerIds },
-        providerIds[0],
+  const selectPair = (position: number, providerId: string) => {
+    void providerPicker.onDisplayChange((current) => {
+      const providerIds = withPairProvider(
+        current?.mode === "pair" ? current.providerIds : pairIds,
+        position,
+        providerId,
       );
-    }
+      return providerIds[0] && providerIds[1]
+        ? { mode: "pair", providerIds }
+        : null;
+    }, providerId);
   };
 
   return (
@@ -332,6 +340,7 @@ export function SettingsScreen({
           ) : null}
           <RadioRow
             description="VibeTV shows two sources, one above the other."
+            disabled={displayMode !== "pair" && pairChoices.length < 2}
             label="Two at once"
             onSelect={() => selectMode("pair")}
             selected={displayMode === "pair"}
@@ -341,15 +350,15 @@ export function SettingsScreen({
               <SourceSelect
                 id="vibetv-pair-top"
                 label="Provider 1"
-                onChange={(providerId) => selectPair(withPairProvider(pairIds, 0, providerId))}
-                providers={displayChoices}
+                onChange={(providerId) => selectPair(0, providerId)}
+                providers={pairChoices}
                 value={pairIds[0] ?? ""}
               />
               <SourceSelect
                 id="vibetv-pair-bottom"
                 label="Provider 2"
-                onChange={(providerId) => selectPair(withPairProvider(pairIds, 1, providerId))}
-                providers={displayChoices}
+                onChange={(providerId) => selectPair(1, providerId)}
+                providers={pairChoices}
                 value={pairIds[1] ?? ""}
               />
             </div>
@@ -391,18 +400,22 @@ export function SettingsScreen({
       <SettingsSection title="Limits on VibeTV">
         <DisplayLimitsSettings
           display={providerPicker.display}
-          onChange={(change) => {
-            const display = providerPicker.display;
-            if (!display) {
-              return;
-            }
-            const providerIds =
-              display.mode === "automatic" ? enabledProviderIds : display.providerIds;
-            void providerPicker.onDisplayChange(
-              { mode: display.mode, providerIds, ...change },
-              providerIds[0] ?? "",
-            );
-          }}
+          onChange={(change) =>
+            void providerPicker.onDisplayChange((current) => {
+              // Applied to the selection as the write finds it, so a second
+              // toggle keeps the first one while its save is still pending.
+              if (!current) {
+                return null;
+              }
+              const providerIds =
+                current.mode === "automatic" ? enabledProviderIds : current.providerIds;
+              return {
+                mode: current.mode,
+                providerIds,
+                hiddenWindows: change(current.hiddenWindows ?? {}),
+              };
+            }, providerPicker.display?.providerIds[0] ?? "")
+          }
           providers={displayChoices}
           theme={activeTheme}
           usage={providerPicker.usage}

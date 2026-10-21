@@ -90,34 +90,23 @@ func (s *Server) handleProviderDisplayPatch(w http.ResponseWriter, r *http.Reque
 	if !decodeJSON(w, r, &request) {
 		return
 	}
-	cfg, err := s.config()
-	if err != nil {
-		writeInternalError(w, err)
-		return
-	}
 	selection := providerDisplaySelection{
 		Mode:        strings.TrimSpace(strings.ToLower(request.Mode)),
 		ProviderIDs: normalizeProviderIDs(request.ProviderIDs),
 		Configured:  true,
-	}
-	if cfg.ProviderDisplay != nil {
-		selection.HiddenWindows = cfg.ProviderDisplay.HiddenWindows
-	}
-	if request.HiddenWindows != nil {
-		selection.HiddenWindows = runtimeconfig.NormalizeHiddenWindows(*request.HiddenWindows)
 	}
 	settings, err := s.cachedProviderSettings(r.Context(), false)
 	if err != nil {
 		writePreferencesReadError(w, err)
 		return
 	}
-	s.saveProviderDisplay(w, selection, settings)
+	s.saveProviderDisplay(w, selection, settings, request.HiddenWindows)
 }
 
 // saveProviderDisplay checks a display choice, stores it and puts it on
 // VibeTV. The Settings page and the keyboard shortcut both end here, so a
 // choice made either way is the same choice.
-func (s *Server) saveProviderDisplay(w http.ResponseWriter, selection providerDisplaySelection, settings []codexbar.ProviderSetting) {
+func (s *Server) saveProviderDisplay(w http.ResponseWriter, selection providerDisplaySelection, settings []codexbar.ProviderSetting, hiddenWindows *map[string][]string) {
 	if !automaticProviderDisplayIncludesAllEnabled(selection, settings) {
 		s.recordSetupEvent(setupEvent{Stage: "display_mode", Status: "failed", Message: "Every enabled provider must be included for display.", Code: "provider_display_incomplete", NextAction: "Refresh providers and save Automatic again."})
 		writeError(w, http.StatusConflict, "provider_display_incomplete", "Every enabled provider must be included for display.", "Refresh providers and save Automatic again.")
@@ -130,13 +119,20 @@ func (s *Server) saveProviderDisplay(w http.ResponseWriter, selection providerDi
 	}
 	selection.Valid = true
 	// A provider switch saves the selection again. Only another mode or
-	// another pinned provider is a change for the setup log (#579); the
+	// another pinned provider or pair (members or order) is a change for the setup log (#579); the
 	// providers Automatic switches between are logged as provider choices.
 	changed := false
 	_, err := s.updateConfig(func(cfg *runtimeconfig.Config) {
 		stored := cfg.ProviderDisplay
+		// A mode-only write owns no limits: keep the latest saved map under
+		// the config lock, not one captured before another request saved it.
+		if hiddenWindows != nil {
+			selection.HiddenWindows = runtimeconfig.NormalizeHiddenWindows(*hiddenWindows)
+		} else if stored != nil {
+			selection.HiddenWindows = stored.HiddenWindows
+		}
 		changed = stored == nil || stored.Mode != selection.Mode ||
-			selection.Mode == providerDisplayModeFixed && !slices.Equal(stored.ProviderIDs, selection.ProviderIDs)
+			(selection.Mode == providerDisplayModeFixed || selection.Mode == providerDisplayModePair) && !slices.Equal(stored.ProviderIDs, selection.ProviderIDs)
 		cfg.ProviderDisplay = &runtimeconfig.ProviderDisplayConfig{
 			Mode:          selection.Mode,
 			ProviderIDs:   append([]string(nil), selection.ProviderIDs...),
@@ -221,11 +217,10 @@ func (s *Server) handleProviderDisplayNext(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	s.saveProviderDisplay(w, providerDisplaySelection{
-		Mode:          providerDisplayModeFixed,
-		ProviderIDs:   []string{eligible[next%len(eligible)]},
-		HiddenWindows: selection.HiddenWindows,
-		Configured:    true,
-	}, settings)
+		Mode:        providerDisplayModeFixed,
+		ProviderIDs: []string{eligible[next%len(eligible)]},
+		Configured:  true,
+	}, settings, nil)
 }
 
 // providerDisplayMessage names the saved display choice in the customer's words.

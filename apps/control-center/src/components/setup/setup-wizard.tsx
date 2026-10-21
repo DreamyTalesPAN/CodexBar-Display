@@ -33,6 +33,7 @@ import { SetupDeviceScreen } from "./setup-device-screen";
 import { SetupStepFailedDialog } from "./setup-provider-dialogs";
 import {
   defaultPairIds,
+  withPairProvider,
   SetupDisplayModeScreen,
   type SetupDisplayModePreview,
   type SetupDisplayModeProvider,
@@ -1083,18 +1084,23 @@ export function SetupWizard(props: SetupWizardProps) {
       props.automaticPreviews,
       livePreviewDisplayFrame(props.device, props.displayFrame),
     );
+    const pairProviders = displayMode === "pair"
+      ? props.providers
+          .filter((provider) => provider.value)
+          .map((provider) => ({ id: provider.providerId, label: provider.label }))
+      : props.displayProviders;
     const pairIds =
       displayDraft?.pairIds ??
       defaultPairIds(
         props.displayProviderIds ?? [],
         displayProviderId,
-        props.displayProviders,
+        pairProviders,
       );
     const previewOf = (providerId: string | null | undefined) =>
       displayPreviews.find(
         (preview) =>
           preview.providerLabel ===
-          props.displayProviders.find((provider) => provider.id === providerId)
+          pairProviders.find((provider) => provider.id === providerId)
             ?.label,
       );
     return (
@@ -1136,12 +1142,12 @@ export function SetupWizard(props: SetupWizardProps) {
           onSelectMode={(mode) =>
             setDisplayDraft({ mode, providerId: displayProviderId, pairIds })
           }
-          onSelectPair={(ids) =>
-            setDisplayDraft({
+          onSelectPair={(position, providerId) =>
+            setDisplayDraft((current) => ({
               mode: displayMode,
               providerId: displayProviderId,
-              pairIds: ids,
-            })
+              pairIds: withPairProvider(current?.pairIds ?? pairIds, position, providerId),
+            }))
           }
           onSelectProvider={(providerId) =>
             setDisplayDraft({ mode: displayMode, providerId, pairIds })
@@ -1151,6 +1157,7 @@ export function SetupWizard(props: SetupWizardProps) {
             previewOf(pairIds[1]),
           )}
           pairProviderIds={pairIds}
+          pairProviders={pairProviders}
           providers={props.displayProviders}
           saving={props.displaySavePending}
           selectedProviderId={displayProviderId}

@@ -144,8 +144,9 @@ provider; the Companion then leaves those windows out and the next ones move
 up, so `{usageSlot1Label}` may read `Weekly` on one VibeTV and `Session` on
 another. In the display mode `Two at once` slot 1 is the first shown limit of
 the first provider and slot 2 that of the second, labelled `<Provider>
-<Window>` (`Claude Weekly`, `Codex Weekly`), and `{label}` names both
-(`Claude + Codex`). Bind the slot label next to each slot's numbers instead
+<Window>` (`Claude Weekly`, `Codex Weekly`). The frame field `{label}` is deliberately empty
+in this mode (`pairDisplayFrame`); use `{usageSlot1Label}` and
+`{usageSlot2Label}` for the provider names next to each slot's numbers instead
 of writing `Session` or `Weekly` into the theme. A theme shows as many limits
 as it binds slots; Control Center tells the customer that number.
 

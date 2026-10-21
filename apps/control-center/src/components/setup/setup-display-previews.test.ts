@@ -78,6 +78,23 @@ describe("displayPreviewFor", () => {
     }))?.windows).toEqual([{ label: "Weekly", percent: 28 }, { label: "Codex Spark 5-hour", percent: 0 }]);
   });
 
+  it("does not resurrect hidden windows or legacy percentages after source loss", () => {
+    const reading = provider({ windows: [
+      { id: "session", label: "Session", usedPercent: 42 },
+      { id: "weekly", label: "Weekly", usedPercent: 26 },
+    ] });
+    expect(displayPreviewFor(reading, undefined, undefined, 0, ["weekly"])?.windows).toEqual([
+      { label: "Session", percent: 42 },
+    ]);
+    reading.windows = reading.windows?.slice(1);
+    const unavailable = displayPreviewFor(reading, undefined, undefined, 0, ["weekly"]);
+    expect(unavailable).toEqual({ providerLabel: "Codex", resetLabel: null, windows: [] });
+    const other = displayPreviewFor(provider({ id: "claude", label: "Claude" }));
+    expect(pairDisplayPreview(unavailable!, other!)).toEqual(other);
+    expect(pairDisplayPreview(other!, unavailable!)).toEqual(other);
+    expect(pairDisplayPreview(unavailable!, unavailable!)?.windows).toEqual([]);
+  });
+
   it("has nothing to draw without a provider", () => {
     expect(displayPreviewFor(undefined)).toBeNull();
   });

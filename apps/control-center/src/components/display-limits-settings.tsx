@@ -10,10 +10,10 @@ import type {
 import type { ActiveThemeLimits } from "./live-vibetv-preview";
 import { visibleUsageWindows } from "./setup/setup-display-previews";
 
-export type DisplayLimitsChange = Pick<
-  ProviderDisplaySelection,
-  "hiddenWindows"
->;
+/** Turns the hidden limits the customer has into the next ones. */
+export type DisplayLimitsChange = (
+  hidden: Record<string, string[]>,
+) => Record<string, string[]>;
 
 type DisplayLimitsSettingsProps = {
   display: ProviderDisplaySelection | null;
@@ -78,15 +78,15 @@ export function DisplayLimitsSettings({
                     disabled={disabled || (ticked && visible.length === 1)}
                     id={id}
                     onCheckedChange={(checked) =>
-                      onChange({
-                        hiddenWindows: withWindowShown(
-                          hidden,
+                      onChange((current) =>
+                        withWindowShown(
+                          current,
                           provider.id,
                           provider.windows,
                           window,
                           checked === true,
                         ),
-                      })
+                      )
                     }
                   />
                   <FieldLabel className="font-normal" htmlFor={id}>
@@ -152,6 +152,9 @@ function withWindowShown(
   shown: boolean,
 ): Record<string, string[]> {
   const visible = visibleUsageWindows(windows, hidden[providerId]);
+  if (!shown && visible.includes(window) && visible.length === 1) {
+    return hidden;
+  }
   const known = windows.map((candidate) => candidate.id);
   const ids = [
     ...(hidden[providerId] ?? []).filter((id) => !known.includes(id)),

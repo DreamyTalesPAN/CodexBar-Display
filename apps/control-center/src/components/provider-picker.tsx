@@ -30,8 +30,11 @@ export type ProviderPickerProps = {
   onOpenSignIn?: (item: PreferenceDescriptor) => void | Promise<void>;
   /** Opens the customer setup guide in the default browser. */
   onOpenSetupGuide?: () => void | Promise<void>;
+  /** A function is applied to the selection as it is when the write runs. */
   onDisplayChange: (
-    selection: ProviderDisplayChange,
+    selection:
+      | ProviderDisplayChange
+      | ((current: ProviderDisplaySelection | null) => ProviderDisplayChange | null),
     providerId: string,
   ) => void | Promise<boolean | void>;
   onPreferenceChange: (

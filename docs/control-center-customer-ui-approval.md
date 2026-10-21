@@ -15935,3 +15935,87 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve the refreshed feature together with the existing calm customer flows in the integration candidate.
 - Scope: Merge claude/used-remaining-switch into claude/paultest-build9 and retain all source approval blocks.
 - What's new: none — integration of existing feature entries only.
+
+## 2026-10-21 — #864: queued display changes build on the latest selection
+
+- User approval: no visible change – UI approval not needed (bug fix: quick successive limit toggles are all saved)
+- Approved customer-visible result: Ticking or unticking several limits in quick succession keeps every change; each save starts from the selection the earlier save left behind. Pair order changes are logged under Recent activity like any other pair change.
+- Scope: the limits callback hands its change to the display write queue as a function of the selection there, the picker type accepts that form, and the Companion logs a pair's member or order change as a display mode change. Tests for the queue, the limits change, and the logged pair order.
+- What's new: none — bug fix, no separate announcement.
+
+## 2026-10-21 — #864: approval marker after merging claude/usage-pace at 5f6798fd
+
+- User approval: no visible change – UI approval not needed (merge of claude/usage-pace (5f6798fd) into #864; the own entries of #864 keep their approvals)
+- Approved customer-visible result: #864 as in its own entries plus the entries merged with 5f6798fd; nothing else changes.
+- Scope: the merge of 5f6798fd and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — merge of 5f6798fd, no customer-visible change of its own
+
+## 2026-10-21 — #864: preserve the saved pair during a temporary missing reading
+
+- User approval: no visible change – UI approval not needed (bug fix: keep the saved Two at once card and both provider pickers visible while a member awaits fresh usage)
+- Approved customer-visible result: Setup and Settings keep the saved pair selected when either enabled member has stale, unavailable, or missing usage; its preview stays unavailable and the saved provider order stays intact. One provider keeps its existing reading requirement.
+- Scope: shared pair picker inputs, setup and Settings pair choices and previews, regression tests, and the theme guide correction for the deliberately empty pair frame label.
+- What's new: none — restore the existing saved choice, no separate announcement.
+
+## 2026-10-21 — #864 integration: retain unavailable pair members in calm Settings
+
+- User approval: no visible change – UI approval not needed (bug fix: preserve saved pair members in the calm Settings selectors when integrating 89951f75 into paultest-592a)
+- Approved customer-visible result: The integration keeps its existing calm Settings rows without preview cards; both pair selectors keep their saved enabled members through a temporary missing reading.
+- Scope: Merge claude/592-two-at-once-on-800, preserve both branches' approval records, resolve Settings with its existing layout and pair choices, and adapt the regression test to that layout.
+- What's new: none — integration of the pair bug fix, no new layout or announcement.
+
+## 2026-10-21 — #864 integration: align pair regression fixtures with calm Settings props
+
+- User approval: no visible change – UI approval not needed (bug fix: remove unused preview props from the calm Settings pair regression fixture)
+- Approved customer-visible result: No product change; the regression uses the integration Settings interface, which has no preview cards.
+- Scope: settings-preferences.test.tsx typecheck correction after integration.
+- What's new: none — test fixture only.
+
+## 2026-10-21 — #864: apply queued pair picker changes to the latest selection
+
+- User approval: no visible change – UI approval not needed (bug fix: preserve both rapid pair picker edits and their swap rule while a display PATCH is pending)
+- Approved customer-visible result: Each pair picker changes only its own slot against the selection left by the preceding save, so both rapid edits remain saved, including a swap.
+- Scope: pair picker callback passes position and provider, Settings derives the pair in the existing display write queue, setup applies the shared swap helper to its current draft, and regression tests hold a display PATCH while both pickers change.
+- What's new: none — correct existing pair saves, no separate announcement.
+
+## 2026-10-21 — #864 integration: preserve queued pair edits in calm Settings
+
+- User approval: no visible change – UI approval not needed (bug fix: apply calm Settings pair slot edits inside the existing display write queue when integrating d7bdd0c3)
+- Approved customer-visible result: Both rapid pair edits remain saved, including swaps, while the existing calm Settings layout and selectors stay unchanged.
+- Scope: merge d7bdd0c3, preserve every approval block, adapt calm Settings callbacks to partial slot changes, and run the held-PATCH regressions on the integration.
+- What's new: none — integrate the pair save bug fix.
+
+## 2026-10-21 — #864: F1 keep the last visible limit inside queued edits
+
+- User approval: no visible change – UI approval not needed (bug fix: queued unticks cannot hide the last visible limit)
+- Approved customer-visible result: Rapid unticks keep the first choice and leave the final visible limit selected, even while an earlier display save is pending.
+- Scope: display-limits-settings updater and its queued two-untick regression.
+- What's new: none — restore the existing last-visible-limit editing rule.
+
+## 2026-10-21 — #864: F2 keep hidden limits hidden after source loss
+
+- User approval: pending — when the chosen limit disappears, One provider shows unavailable instead of resurrecting a hidden limit; Two at once shows the other readable member alone
+- Approved customer-visible result: Hidden limits stay unticked and can be selected explicitly again. A reading with no chosen limit left stays unavailable in the single-provider preview and on VibeTV; a readable pair member keeps its own reading and countdown.
+- Scope: daemon visible-window filtering and pair selection, shared display previews, and regression tests for source loss and checkbox editing.
+- What's new: none — correct hidden-limit behavior, pending review of the changed unavailable state.
+
+## 2026-10-21 — #864 integration: carry F1–F3 into calm Settings
+
+- User approval: no visible change – UI approval not needed (bug fix: integrate cc8903fd while preserving calm Settings and the separate pending F2 approval)
+- Approved customer-visible result: The integration carries the queued-edit and concurrent-save fixes plus the source-loss behavior documented in F2; F2 still requires its pending approval.
+- Scope: merge cc8903fd into claude/paultest-592a, retain every approval block from both parents, and leave the calm Settings layout intact.
+- What's new: none — integration only; F2 approval remains pending.
+
+## 2026-10-21 — #592 integration: F4 guard entry into Two at once
+
+- User approval: no visible change – UI approval not needed (bug fix: disable unsupported Two at once entry until two providers are eligible, while retaining a saved pair)
+- Approved customer-visible result: Calm Settings cannot submit an invalid new pair when only one provider has readable usage; an already-saved pair and both source selectors remain visible and selectable through transient gaps.
+- Scope: one availability guard on the existing Two at once radio, regression cases for disabled, missing, stale and unavailable second providers, and saved-pair preservation. The inherited F2 unavailable-state approval remains pending.
+- What's new: none — prevent an invalid existing action without changing the calm Settings layout.
+
+## 2026-10-21 — paultest-build9: refresh claude/paultest-592a (#864)
+
+- User approval: pending — build9 integration of claude/paultest-592a at 91c23eb9ee18 for Paul’s Mac test build 7204.
+- Approved customer-visible result: Preserve the refreshed feature together with the existing calm customer flows in the integration candidate.
+- Scope: Merge claude/paultest-592a into claude/paultest-build9 and retain all source approval blocks.
+- What's new: none — integration of existing feature entries only.

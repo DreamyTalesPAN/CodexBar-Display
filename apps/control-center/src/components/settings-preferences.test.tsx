@@ -251,12 +251,45 @@ describe("SettingsScreen display sources", () => {
           })) },
           display: { mode, providerIds, configured: true, valid: true },
           items: [item("claude", "Claude"), item("codex", "Codex"), item("cursor", "Cursor")],
-          onDisplayChange,
+          onDisplayChange: (change, pendingId) => onDisplayChange(
+            typeof change === "function"
+              ? change({ mode, providerIds, configured: true, valid: true })
+              : change,
+            pendingId,
+          ),
         }}
       />,
     );
     return onDisplayChange;
   };
+
+  it.each(["stale", "usageUnavailable", "missing"])(
+    "keeps the saved pair when one member is %s",
+    (unavailable) => {
+      const base = props();
+      render(<SettingsScreen {...base}
+        providerPicker={{
+          ...base.providerPicker,
+          items: [item("codex", "Codex"), item("claude", "Claude")],
+          display: { mode: "pair", providerIds: ["claude", "codex"], configured: true, valid: true },
+          usage: { providers: [
+            { id: "codex", label: "Codex", session: 37, weekly: 0, resetSecs: 0, usageMode: "used" },
+            ...(unavailable === "missing" ? [] : [{
+              id: "claude", label: "Claude", session: 82, weekly: 0, resetSecs: 0,
+              usageMode: "used", [unavailable]: true,
+            }]),
+          ] },
+        }}
+      />);
+
+      const pair = screen.getByRole("button", { name: /Two at once/ });
+      expect(pair.getAttribute("aria-pressed")).toBe("true");
+      expect(document.querySelector('[data-slot="display-mode-preview"]')).toBeNull();
+      expect(screen.getByRole("combobox", { name: "Provider 1" }).textContent).toBe("Claude");
+      expect(screen.getByRole("combobox", { name: "Provider 2" }).textContent).toBe("Codex");
+      expect(base.providerPicker.onDisplayChange).not.toHaveBeenCalled();
+    },
+  );
 
   it("saves the pair from Provider 1 and Provider 2", () => {
     const onDisplayChange = sources("pair", ["claude", "codex"]);
@@ -275,7 +308,7 @@ describe("SettingsScreen display sources", () => {
     choose("Cursor");
     expect(second).toHaveBeenLastCalledWith(
       { mode: "pair", providerIds: ["claude", "cursor"] },
-      "claude",
+      "cursor",
     );
   });
 
@@ -291,7 +324,7 @@ describe("SettingsScreen display sources", () => {
 
     expect(onDisplayChange).toHaveBeenCalledExactlyOnceWith(
       { mode: "pair", providerIds: ["codex", "claude"] },
-      "codex",
+      source.toLowerCase(),
     );
     expect(screen.queryByRole("dialog")).toBeNull();
   });

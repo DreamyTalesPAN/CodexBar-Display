@@ -272,11 +272,17 @@ export function displayPreviewFor(
   now = new Date(),
   allProviders?: UsageProviderInfo[],
   maxUsageWindows = 0,
+  hiddenWindowIds?: string[],
 ): SetupDisplayModePreview | null {
   if (!provider) {
     return null;
   }
   const unavailable = provider.stale === true || provider.usageUnavailable === true;
+  const windows = visibleUsageWindows(provider.windows ?? [], hiddenWindowIds);
+  if (provider.windows?.length && windows.length === 0) {
+    return { providerLabel: provider.label, resetLabel: null, windows: [] };
+  }
+  provider = { ...provider, windows };
   const frame = displayFrameFor(provider, allProviders, now, maxUsageWindows);
   return {
     providerLabel: provider.label,
@@ -318,18 +324,19 @@ export function displayPreviewsFor(
   hiddenWindows?: Record<string, string[]>,
 ): SetupDisplayModePreview[] {
   const reported = new Map(
-    (usage?.providers || []).map((provider) => [
-      provider.id,
-      provider.windows
-        ? { ...provider, windows: visibleUsageWindows(provider.windows, hiddenWindows?.[provider.id]) }
-        : provider,
-    ]),
+    (usage?.providers || []).map((provider) => [provider.id, provider]),
   );
   // The complete set the host builds its provider rows from: the providers
   // switched on, in that order, as far as the usage service has read them.
   const complete = providers
     .map((provider) => reported.get(provider.id))
-    .filter((reading): reading is UsageProviderInfo => reading !== undefined);
+    .filter((reading): reading is UsageProviderInfo => reading !== undefined)
+    .map((reading) => ({
+      ...reading,
+      windows: reading.windows
+        ? visibleUsageWindows(reading.windows, hiddenWindows?.[reading.id])
+        : undefined,
+    }));
   return providers.map(
     (provider) =>
       displayPreviewFor(
@@ -337,6 +344,7 @@ export function displayPreviewsFor(
         new Date(),
         complete,
         maxUsageWindows,
+        hiddenWindows?.[provider.id],
       ) ?? {
         providerLabel: provider.label,
         resetLabel: null,
@@ -412,17 +420,15 @@ export function withActivityExpiry(
 
 /**
  * The usage windows VibeTV shows for a provider: the ones the customer did not
- * hide. With every one hidden all of them stay, as the companion does, so the
- * panel never goes blank.
+ * hide. Source loss must not bring a hidden window back.
  */
 export function visibleUsageWindows<T extends { id: string }>(
   windows: T[],
   hiddenWindowIds: string[] | undefined,
 ): T[] {
-  const visible = windows.filter(
+  return windows.filter(
     (window) => !hiddenWindowIds?.includes(window.id),
   );
-  return visible.length ? visible : windows;
 }
 
 /**
@@ -436,6 +442,9 @@ export function pairDisplayPreview(
 ): SetupDisplayModePreview | null {
   if (!first || !second) {
     return null;
+  }
+  if (!first.windows.length || !second.windows.length) {
+    return first.windows.length ? first : second;
   }
   const unknownReset = formatReset(0);
   const counting = [first, second].find(

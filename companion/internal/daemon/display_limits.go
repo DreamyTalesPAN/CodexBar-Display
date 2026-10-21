@@ -115,16 +115,13 @@ func pairWindowHidden(windowID string, display *runtimeconfig.ProviderDisplayCon
 }
 
 // visibleUsageWindows drops the windows the customer hid for this provider.
-// Hiding every window would leave VibeTV blank, so then all of them stay.
+// A later reading with no chosen window stays unavailable until one returns.
 func visibleUsageWindows(provider string, windows []protocol.UsageWindow, display *runtimeconfig.ProviderDisplayConfig) []protocol.UsageWindow {
 	visible := make([]protocol.UsageWindow, 0, len(windows))
 	for _, window := range windows {
 		if !display.WindowHidden(provider, window.ID) {
 			visible = append(visible, window)
 		}
-	}
-	if len(visible) == 0 {
-		return windows
 	}
 	return visible
 }
@@ -133,6 +130,9 @@ func withVisibleUsageWindows(frame protocol.Frame, display *runtimeconfig.Provid
 	visible := visibleUsageWindows(frame.Provider, frame.UsageWindows, display)
 	if len(visible) == len(frame.UsageWindows) {
 		return frame
+	}
+	if len(visible) == 0 {
+		return frameWithoutUsage(frame)
 	}
 	frame.UsageWindows = visible
 	frame.UsageSlots = nil

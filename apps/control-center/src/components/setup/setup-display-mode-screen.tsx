@@ -92,13 +92,15 @@ type SetupDisplayModeScreenProps = {
   manualPreview: SetupDisplayModePreview | null;
   /** Live usage of the two providers Two at once shows together. */
   pairPreview?: SetupDisplayModePreview | null;
+  /** Enabled providers for the pair, including those awaiting fresh usage. */
+  pairProviders?: SetupDisplayModeProvider[];
   /** The first and the second provider of Two at once. */
   pairProviderIds?: string[];
   /**
-   * Picks the two providers of Two at once. Without it, or with fewer than
-   * two providers to choose from, the mode is not offered.
+   * Changes one slot; the caller applies it to its latest pair when saving.
+   * Without it, or with fewer than two providers, the mode is not offered.
    */
-  onSelectPair?: (providerIds: string[]) => void;
+  onSelectPair?: (position: number, providerId: string) => void;
   mode: ProviderDisplaySelection["mode"];
   /**
    * The theme VibeTV is showing. With it, the tiles draw that theme with each
@@ -139,6 +141,7 @@ export function SetupDisplayModeScreen({
   pairPreview,
   pairProviderIds = [],
   providers,
+  pairProviders = providers,
   saving = false,
   usageLoading = false,
   selectedProviderId,
@@ -174,6 +177,7 @@ export function SetupDisplayModeScreen({
         onSelectProvider={onSelectProvider}
         pairPreview={pairPreview}
         pairProviderIds={pairProviderIds}
+        pairProviders={pairProviders}
         providers={providers}
         saving={saving}
         selectedProviderId={selectedProviderId}
@@ -198,7 +202,7 @@ export function SetupDisplayModeScreen({
           awaitingUsage ||
           (mode === "fixed" &&
             !providers.some((provider) => provider.id === selectedProviderId)) ||
-          (mode === "pair" && !pairIsChosen(pairProviderIds, providers))
+          (mode === "pair" && !pairIsChosen(pairProviderIds, pairProviders))
         }
         className={cn(CALM_BUTTON_CLASS, mode === "fixed" ? "mt-6" : "mt-8")}
         onClick={onContinue}
@@ -221,6 +225,7 @@ type DisplayModeChoiceProps = Pick<
   | "onSelectProvider"
   | "pairPreview"
   | "pairProviderIds"
+  | "pairProviders"
   | "providers"
   | "saving"
   | "usageLoading"
@@ -263,6 +268,7 @@ export function DisplayModeChoice({
   pairPreview = null,
   pairProviderIds = [],
   providers,
+  pairProviders = providers,
   saving = false,
   usageLoading = false,
   selectedProviderId,
@@ -274,7 +280,7 @@ export function DisplayModeChoice({
     providers,
   );
   const { index, reducedMotion } = useProviderRotation(rotation.length);
-  const offersPair = Boolean(onSelectPair) && providers.length >= 2;
+  const offersPair = Boolean(onSelectPair) && pairProviders.length >= 2;
   const manualFrames = manualPreview ? [pinnedPreview(manualPreview)] : [];
   const tiles = (frames: SetupDisplayModePreview[], at: number) => {
     // The theme's own picture whenever it can be had; the plain tile is what
@@ -346,7 +352,7 @@ export function DisplayModeChoice({
               <Select
                 disabled={saving}
                 onValueChange={(providerId) =>
-                  onSelectPair(withPairProvider(pairProviderIds, position, providerId))
+                  onSelectPair(position, providerId)
                 }
                 value={pairProviderIds[position] ?? ""}
               >
@@ -354,7 +360,7 @@ export function DisplayModeChoice({
                   <SelectValue placeholder="Choose a provider" />
                 </SelectTrigger>
                 <SelectContent>
-                  {providers.map((provider) => (
+                  {pairProviders.map((provider) => (
                     <SelectItem key={provider.id} value={provider.id}>
                       {provider.label}
                     </SelectItem>
