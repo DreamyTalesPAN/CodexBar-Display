@@ -9401,3 +9401,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Each pair picker changes only its own slot against the selection left by the preceding save, so both rapid edits remain saved, including a swap.
 - Scope: pair picker callback passes position and provider, Settings derives the pair in the existing display write queue, setup applies the shared swap helper to its current draft, and regression tests hold a display PATCH while both pickers change.
 - What's new: none — correct existing pair saves, no separate announcement.
+
+## 2026-10-21 — #864: F1 keep the last visible limit inside queued edits
+
+- User approval: no visible change – UI approval not needed (bug fix: queued unticks cannot hide the last visible limit)
+- Approved customer-visible result: Rapid unticks keep the first choice and leave the final visible limit selected, even while an earlier display save is pending.
+- Scope: display-limits-settings updater and its queued two-untick regression.
+- What's new: none — restore the existing last-visible-limit editing rule.

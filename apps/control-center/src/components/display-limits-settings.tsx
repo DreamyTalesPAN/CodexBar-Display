@@ -152,6 +152,9 @@ function withWindowShown(
   shown: boolean,
 ): Record<string, string[]> {
   const visible = visibleUsageWindows(windows, hidden[providerId]);
+  if (!shown && visible.includes(window) && visible.length === 1) {
+    return hidden;
+  }
   const known = windows.map((candidate) => candidate.id);
   const ids = [
     ...(hidden[providerId] ?? []).filter((id) => !known.includes(id)),

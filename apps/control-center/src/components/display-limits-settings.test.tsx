@@ -74,6 +74,20 @@ describe("DisplayLimitsSettings", () => {
     expect(row("Claude", "session")).toHaveProperty("disabled", false);
   });
 
+  it("keeps the last visible limit when two unticks drain from the save queue", () => {
+    const hidden = { claude: ["claude-weekly-scoped-fable"] };
+    const onChange = show({ hiddenWindows: hidden });
+
+    // Both clicks see the same render while an earlier save is pending.
+    fireEvent.click(row("Claude", "session"));
+    fireEvent.click(row("Claude", "weekly"));
+
+    const afterFirst = onChange.mock.calls[0][0](hidden);
+    const afterSecond = onChange.mock.calls[1][0](afterFirst);
+    expect(afterFirst).toEqual({ claude: ["session", "claude-weekly-scoped-fable"] });
+    expect(afterSecond).toEqual(afterFirst);
+  });
+
   it("says which ticked limits the theme has room for", () => {
     show({});
     const claude = screen.getByRole("group", { name: "Claude limits" }).textContent;
