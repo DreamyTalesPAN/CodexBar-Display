@@ -11666,21 +11666,21 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-20 — #781: build 2b QA, the Theme Studio's preview, composer and File menu sit where the template draws them (frames 7-9)
 
-- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the preview card started 49 px too low (top at 211 px, template 162 px in an 800 px window) because the editor ran down to the window bottom → the editor is 520 px high at that window size, the card sits in the middle of it and the composer ends on its bottom edge; the composer was 98 px high with 44 px buttons and a 12 px gap under it → it is 83 px high with 32 px buttons (Cancel / Add, Attach, Send) and no gap under it; the round Send button was drawn as a rounded square → it is a circle; the File menu entries were 38 px apart and the menu opened 3 px too high → entries are 36 px high with no gap between them and the menu opens 6 px under "File".
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #781: build 2b QA, the Theme Studio's preview, composer and File menu sit where the templa — before → after: the preview card started 49 px too low (top at 211 px, template 162 px in an 800 px window) because the editor ran down to the window bottom → the editor is 520 px high at that window size, the card sits in the middle of it and the composer ends on its bottom edge; the composer was 98 px high with 44 px buttons and a 12 px gap under it → it is 83 px high with 32 px buttons (Cancel / Add, Attach, Send) and no gap under it; the round Send button was drawn as a rounded square → it is a circle; the File menu entries were 38 px apart and the menu opened 3 px too high → entries are 36 px high with no gap between them and the menu opens 6 px under "File".
 - Approved customer-visible result: the Theme Studio looks like frames 7-9 of "Calm Redesign - alle Screens" (preview card, composer and File menu at the template's positions and sizes).
 - Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
 ## 2026-10-20 — #781: build 2b QA, the Settings button "Add key" / "Change key" has the template's width (frame 3)
 
-- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the button next to "Theme Studio AI" in Settings was 4 px narrower than drawn (12 px of side space) → it has 14 px of side space like the other outline buttons. Nothing else changes.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #781: build 2b QA, the Settings button "Add key" / "Change key" has the template's width ( — before → after: the button next to "Theme Studio AI" in Settings was 4 px narrower than drawn (12 px of side space) → it has 14 px of side space like the other outline buttons. Nothing else changes.
 - Approved customer-visible result: the button looks like frame 3 of "Calm Redesign - alle Screens".
 - Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
 ## 2026-10-20 — #781: approval marker after merging main
 
-- User approval: Merge of main into this branch; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- User approval: no visible change – UI approval not needed (merge commit into #781; no visible change of its own; entry: #781: approval marker after merging main)
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
@@ -12312,7 +12312,7 @@ issue scope, or release permission never implies UI permission.
 - What's new: none — merge of fb30d196, no customer-visible change of its own
 ## 2026-10-20 — #781 Studio fixes: composer on the bottom edge, Details down to the window bottom, key dialog without a jump (review of build 7195)
 
-- User approval: pending — Paul asked on 20.10.2026 (review of build 7195, via the communicator) for the #781 Studio fixes; before → after: (1) the Theme Studio's prompt box floated 98 px above the bottom edge with empty space under it → #781 Studio fixes: it sits on the bottom edge of the chat column with the normal page margin at every window height (800, 1000, 1200 px), the chat above it fills the rest; (2) the opened "Details" showed one row at 800 px, because it ended 98 px above the window bottom → #781 Studio fixes: it takes all the space below the preview, down to the window bottom, and scrolls inside; the preview does not move; (3) the "Add OpenAI key" / "Replace OpenAI key" dialog opened 265 px high with an "AI is unavailable" notice and a disabled field, then shrank to 229 px and jumped by 18 px when the helper answered → #781 Studio fixes: it opens at its final size (229 px) with the key field focused and no notice unless the helper really answers that AI is unavailable.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #781 Studio fixes: composer on the bottom edge, Details down to the window bottom, key dia — before → after: (1) the Theme Studio's prompt box floated 98 px above the bottom edge with empty space under it → #781 Studio fixes: it sits on the bottom edge of the chat column with the normal page margin at every window height (800, 1000, 1200 px), the chat above it fills the rest; (2) the opened "Details" showed one row at 800 px, because it ended 98 px above the window bottom → #781 Studio fixes: it takes all the space below the preview, down to the window bottom, and scrolls inside; the preview does not move; (3) the "Add OpenAI key" / "Replace OpenAI key" dialog opened 265 px high with an "AI is unavailable" notice and a disabled field, then shrank to 229 px and jumped by 18 px when the helper answered → #781 Studio fixes: it opens at its final size (229 px) with the key field focused and no notice unless the helper really answers that AI is unavailable.
 - Approved customer-visible result: #781 Studio fixes: the Theme Studio composer and Details end at the window's bottom edge, and the key dialog appears in one step like the other dialogs (same position, size and fade as the "Factory reset" dialog, no jump).
 - Scope: #781 Studio fixes in `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, `editable-theme-preview.tsx`, `openai-key-form.tsx`, their tests and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
@@ -12543,3 +12543,24 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #802 as in its own entries plus the entries merged with 0a599c37; nothing else changes.
 - Scope: the merge of 0a599c37 and this approval record. Pull request branch #802 only, not merged, not released.
 - What's new: none — merge of 0a599c37, no customer-visible change of its own
+
+## 2026-10-21 — #781: Paul's approval of build 7200 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" — #781 approval record for build 7200; the #781 entries that were in build 7200 now carry it, merge markers are marked as no visible change, entries added after build 7200 stay pending.
+- Approved customer-visible result: #781 as described in its entries above, as seen in build 7200.
+- Scope: #781 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #781 approval record only
+
+## 2026-10-21 — #781: approval marker after merging main at e3503bda
+
+- User approval: no visible change – UI approval not needed (merge of main (e3503bda) into #781; the own entries of #781 keep their approvals)
+- Approved customer-visible result: #781 as in its own entries plus the entries merged with e3503bda; nothing else changes.
+- Scope: the merge of e3503bda and this approval record. Pull request branch #781 only, not merged, not released.
+- What's new: none — merge of e3503bda, no customer-visible change of its own
+
+## 2026-10-21 — #781: approval marker after merging main at 41bf10cf
+
+- User approval: no visible change – UI approval not needed (merge of main (41bf10cf) into #781; the own entries of #781 keep their approvals)
+- Approved customer-visible result: #781 as in its own entries plus the entries merged with 41bf10cf; nothing else changes.
+- Scope: the merge of 41bf10cf and this approval record. Pull request branch #781 only, not merged, not released.
+- What's new: none — merge of 41bf10cf, no customer-visible change of its own
