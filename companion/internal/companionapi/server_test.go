@@ -251,6 +251,7 @@ func TestStatusAsksNewSerialPortsOnceForLegacyWiFiVibeTV(t *testing.T) {
 		t.Helper()
 		rec := httptest.NewRecorder()
 		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		settleProviderSetupRefresh(t, server)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 		}
@@ -345,6 +346,7 @@ func TestStatusKeepsAskingLegacyWiFiVibeTVAfterBusySerialPort(t *testing.T) {
 		t.Helper()
 		rec := httptest.NewRecorder()
 		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		settleProviderSetupRefresh(t, server)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 		}
@@ -5933,6 +5935,7 @@ func TestCableHealthProvesConnectionBeforeFirstFrame(t *testing.T) {
 			}
 			rec := httptest.NewRecorder()
 			server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+			settleProviderSetupRefresh(t, server)
 			var got statusResponse
 			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 				t.Fatal(err)
@@ -5947,6 +5950,7 @@ func TestCableHealthProvesConnectionBeforeFirstFrame(t *testing.T) {
 			server.now = func() time.Time { return time.Now().Add(deviceConnectedGraceWindow + time.Second) }
 			rec = httptest.NewRecorder()
 			server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+			settleProviderSetupRefresh(t, server)
 			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 				t.Fatal(err)
 			}
@@ -6032,6 +6036,7 @@ func TestStatusDoesNotNameThemeProblemFromOneHealthReading(t *testing.T) {
 	for poll := 1; poll <= 3; poll++ {
 		rec := httptest.NewRecorder()
 		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		settleProviderSetupRefresh(t, server)
 		var got statusResponse
 		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 			t.Fatalf("decode status: %v body=%s", err, rec.Body.String())
@@ -6076,6 +6081,7 @@ func TestStatusNamesRenderFailureInsteadOfProviderSetup(t *testing.T) {
 		t.Helper()
 		rec := httptest.NewRecorder()
 		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		settleProviderSetupRefresh(t, server)
 		var got statusResponse
 		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 			t.Fatalf("decode status: %v body=%s", err, rec.Body.String())
@@ -6283,6 +6289,7 @@ func TestStatusKeepsRecentlySeenDeviceConnectedThroughTransientProbeMiss(t *test
 	readStatus := func() statusResponse {
 		rec := httptest.NewRecorder()
 		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		settleProviderSetupRefresh(t, server)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 		}
@@ -6375,6 +6382,7 @@ func TestStatusConnectedStateStaysStableThroughMinutesOfIntermittentProbes(t *te
 	readConnected := func() bool {
 		rec := httptest.NewRecorder()
 		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		settleProviderSetupRefresh(t, server)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 		}
@@ -7219,6 +7227,7 @@ func TestStatusNamesAWeakWiFiSignalOnTheSecondReading(t *testing.T) {
 		t.Helper()
 		rec := httptest.NewRecorder()
 		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, endpoint, nil))
+		settleProviderSetupRefresh(t, server)
 		var got struct {
 			Device deviceInfo `json:"device"`
 		}
@@ -7320,6 +7329,7 @@ func TestStatusNeverNamesAWeakWiFiSignalOnTheCable(t *testing.T) {
 	for range 3 {
 		rec := httptest.NewRecorder()
 		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		settleProviderSetupRefresh(t, server)
 		var got statusResponse
 		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 			t.Fatal(err)
@@ -13924,6 +13934,20 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 		return health, nil
 	}
 	return server
+}
+
+// settleProviderSetupRefresh waits until the background provider check that a
+// status poll may start has finished. That check reads server.now, so a test
+// must not move its clock (or swap another hook) while the check can still
+// run. The check clears providerSetupRefresh after its last read, so reading
+// false here also orders that read before the test's next write.
+func settleProviderSetupRefresh(t *testing.T, s *Server) {
+	t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); s.providerSetupRefresh.Load(); time.Sleep(time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("background provider check did not finish")
+		}
+	}
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

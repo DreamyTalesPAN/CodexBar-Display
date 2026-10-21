@@ -8829,6 +8829,27 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of e3503bda and this approval record. Pull request branch #784 only, not merged, not released.
 - What's new: none — merge of e3503bda, no customer-visible change of its own
 
+## 2026-10-21 — #784: Theme Studio progress bar without a binding (Codex review)
+
+- User approval: pending — #784 Theme Studio: a progress bar without a reading no longer lists an empty "Current reading" entry under "Reading to show" (the panel crashed on it); the other entries and wording stay the same
+- Approved customer-visible result: "Reading to show" offers the same four readings as before. A progress bar that has no reading yet shows no extra "Current reading" entry any more, so the details panel no longer breaks for it. Nothing else changes.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` (new exported `progressReadingOptions`), its new test `progress-reading-options.test.ts`, and this approval record. Pull-request branch #784 only, not merged, not released.
+- What's new: none — crash fix of the Theme Studio details panel, no new text
+
+## 2026-10-21 — #784: Slider thumb ring grey on hover and drag, olive only for keyboard focus (Codex review)
+
+- User approval: pending — #784 slider thumb: mouse hover/drag shows a neutral grey ring, the olive ring only for keyboard focus (Paul decided 21.10. "Maus grau, Tastatur oliv"; not yet seen in a build)
+- Approved customer-visible result: the slider thumb shows a grey ring while the mouse hovers over it or drags it; the olive ring appears only when the thumb has keyboard focus. Nothing else changes.
+- Scope: `apps/control-center/src/components/ui/slider.tsx` (thumb ring classes), its new test `apps/control-center/src/components/ui/slider.focus-ring.test.tsx`, and this approval record. Pull-request branch #784 only, not merged, not released.
+- What's new: none — ring colour of the slider thumb, no new text
+
+## 2026-10-21 — #784: approval marker after merging main at 41bf10cf
+
+- User approval: no visible change – UI approval not needed (merge of main (41bf10cf) into #784; the own entries of #784 keep their approvals)
+- Approved customer-visible result: #784 as in its own entries plus the entries merged with 41bf10cf; nothing else changes.
+- Scope: the merge of 41bf10cf and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — merge of 41bf10cf, no customer-visible change of its own
+
 ## 2026-10-20 — #816: "Not now" on "VibeTV not found" holds through a short status change in the same outage (#787)
 
 - User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #816: "Not now" on "VibeTV not found" holds through a short status change in the same outa — before → after: after "Not now" on the Overview's "VibeTV not found" dialog, a short in-between status (reconnecting, inconclusive check) during the same outage cleared the choice and the dialog came back when VibeTV was still missing → "Not now" holds until VibeTV is connected again; after a real reconnect and a new loss the dialog shows again as before. No new or changed text, layout or look.
