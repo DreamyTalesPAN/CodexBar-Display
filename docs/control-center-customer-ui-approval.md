@@ -8339,3 +8339,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: unchanged requests, timing, error texts and job completion behavior; no screen changes.
 - Scope: shared Companion fetch transport and job polling in apps/control-center/src/lib, existing adapters in lib and components/update-jobs.ts, behavior tests and the #614 inventory.
 - What's new: none — internal refactor with unchanged customer behavior.
+
+## 2026-10-21 — #873: approval marker after merging main at 3dc0a15b
+
+- User approval: no visible change – UI approval not needed (merge of main (3dc0a15b) into #873; the own entries of #873 keep their approvals)
+- Approved customer-visible result: #873 as in its own entries plus the entries merged with 3dc0a15b; nothing else changes.
+- Scope: the merge of 3dc0a15b and this approval record. Pull request branch #873 only, not merged, not released.
+- What's new: none — merge of 3dc0a15b, no customer-visible change of its own
