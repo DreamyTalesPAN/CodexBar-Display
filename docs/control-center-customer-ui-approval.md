@@ -8395,3 +8395,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the existing notice and wording stay unchanged; reconnecting and unconfirmed signal samples no longer reopen it incorrectly.
 - Scope: Companion Wi-Fi recovery classification, shared Control Center types, weak-Wi-Fi predicate and dismissal regression tests. Pull request branch only, not merge or release.
 - What's new: none — bug fixes to the existing notice, no new entry
+
+## 2026-10-21 — #861: weak WiFi notice says updates may be delayed
+
+- User approval: pending — second sentence changed after review: the Companion flags a weak signal from its strength alone, while VibeTV can still get updates, so the notice no longer claims they stopped; Paul sees it in test build 7204
+- Approved customer-visible result: the dialog "VibeTV's Wi-Fi is weak" reads "Updates may be delayed. Move VibeTV closer to your router or check your Wi-Fi." with one "OK" button, instead of "VibeTV stopped getting updates. Move it closer to your router or check your Wi-Fi."; when it opens and closes is unchanged.
+- Scope: the text in `apps/control-center/src/components/weak-wifi-dialog.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — wording of the existing notice

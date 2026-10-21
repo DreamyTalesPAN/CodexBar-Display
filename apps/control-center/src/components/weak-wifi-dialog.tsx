@@ -10,7 +10,7 @@ import { useOtherDialogOpen } from "./system-busy-dialog";
 export const weakWiFiCopy = {
   title: "VibeTV's Wi-Fi is weak",
   description:
-    "VibeTV stopped getting updates. Move it closer to your router or check your Wi-Fi.",
+    "Updates may be delayed. Move VibeTV closer to your router or check your Wi-Fi.",
   action: "OK",
 };
 
