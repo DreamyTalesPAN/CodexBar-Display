@@ -130,13 +130,13 @@ func (s *Server) saveProviderDisplay(w http.ResponseWriter, selection providerDi
 	}
 	selection.Valid = true
 	// A provider switch saves the selection again. Only another mode or
-	// another pinned provider is a change for the setup log (#579); the
+	// another pinned provider or pair (members or order) is a change for the setup log (#579); the
 	// providers Automatic switches between are logged as provider choices.
 	changed := false
 	_, err := s.updateConfig(func(cfg *runtimeconfig.Config) {
 		stored := cfg.ProviderDisplay
 		changed = stored == nil || stored.Mode != selection.Mode ||
-			selection.Mode == providerDisplayModeFixed && !slices.Equal(stored.ProviderIDs, selection.ProviderIDs)
+			(selection.Mode == providerDisplayModeFixed || selection.Mode == providerDisplayModePair) && !slices.Equal(stored.ProviderIDs, selection.ProviderIDs)
 		cfg.ProviderDisplay = &runtimeconfig.ProviderDisplayConfig{
 			Mode:          selection.Mode,
 			ProviderIDs:   append([]string(nil), selection.ProviderIDs...),
