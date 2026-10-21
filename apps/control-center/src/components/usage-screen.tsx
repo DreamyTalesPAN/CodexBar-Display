@@ -1045,7 +1045,12 @@ export function usageTokenHistoryNotice(
 
 // Themes asks for a theme that draws token numbers. VibeTV draws those of one
 // provider, so only that one counts; without one, all shown must have none.
-export function usageTokenHistoryUnavailableOnVibeTV(usage: UsageSnapshot | null): boolean {
+// Two at once: the companion clears the token totals of every pair frame.
+export function usageTokenHistoryUnavailableOnVibeTV(
+  usage: UsageSnapshot | null,
+  twoAtOnce = false,
+): boolean {
+  if (twoAtOnce) return usage !== null;
   if (!usage || !usageTokenHistoryUnavailable(usage)) return false;
   const providers = filterVisibleProviders(usage.providers || [], usage.currentProvider);
   const current = providers.find((provider) => provider.id === usage.currentProvider);
