@@ -8626,3 +8626,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none new; Continue stays inactive exactly while a Display mode card draws its skeleton (theme pack loading, or no provider frames yet), as the pending 7201 entry describes.
 - Scope: setup-display-mode-screen.tsx (Continue gate shares one helper with the tiles; the pack is loaded by the step), its tests, and the two theme tile tests that now pass the pack in. Pull request branch #821 only, not merged, not released.
 - What's new: none — the Continue gate now matches the skeleton rule; no customer-visible change of its own
+
+## 2026-10-21 — #821: approval marker after merging claude/group-setup-b at e55eaf93
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-setup-b (e55eaf93) into #821; the own entries of #821 keep their approvals)
+- Approved customer-visible result: #821 as in its own entries plus the entries merged with e55eaf93; nothing else changes.
+- Scope: the merge of e55eaf93 and this approval record. Pull request branch #821 only, not merged, not released.
+- What's new: none — merge of e55eaf93, no customer-visible change of its own
