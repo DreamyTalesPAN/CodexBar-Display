@@ -638,10 +638,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, []);
   const finishConnectionChange = useCallback(() => setSettingsWiFiSetup(null), []);
   const finishSetup = useCallback(() => {
+    if (setupFinishedThisSession || !setupCompletedFor(device?.deviceId)) {
+      setActiveTab("overview");
+    }
     rememberCompletedSetup(device?.deviceId);
     setSetupFinishedThisSession(true);
     setHasEnteredControlCenter(true);
-  }, [device?.deviceId]);
+  }, [device?.deviceId, setupFinishedThisSession]);
   // The completion response clears providerSelectionRequired before the first
   // renderable frame necessarily exists. Keep this setup's confirmed device
   // usable so the next screen is Display Mode, never a flash of Connect.

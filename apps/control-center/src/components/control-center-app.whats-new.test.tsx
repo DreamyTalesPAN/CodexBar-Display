@@ -8,6 +8,7 @@ import { createElement } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { rememberCompletedSetup } from "@/lib/completed-setup-devices";
 import { WHATS_NEW } from "@/lib/whats-new";
 import { expectNoAxeViolations } from "@/test/axe";
 import { ControlCenterApp } from "./control-center-app";
@@ -76,12 +77,15 @@ function startWindow({
   appVersion = "1.0.63",
   newVibeTV = false,
   weakWifi = false,
+  initialThemeId = "",
 } = {}) {
   // `usageBroken`: the usage service cannot start, which the app says in a
   // dialog of its own.
   // `appUpdate`: a newer app is on offer.
   // `systemBusy`: the computer is too starved for the usage engine (#606).
   const companion = {
+    firmwarePhase: undefined as "installing" | "complete" | undefined,
+    failedCheck: false,
     setUp,
     displayConfigured: setUp,
     usageBroken: false,
@@ -131,6 +135,9 @@ function startWindow({
               : undefined,
           },
           setup,
+          firmwareUpdate: companion.firmwarePhase
+            ? { id: "setup-firmware-update", phase: companion.firmwarePhase }
+            : undefined,
           providerSetup: companion.usageBroken
             ? { status: "setup_required", engine: { status: "not_configured" } }
             : undefined,
@@ -214,7 +221,7 @@ function startWindow({
       if (url.includes("/api/companion/latest") || url.includes("/api/firmware/latest")) {
         return jsonResponse({
           checkedAt: "2026-10-07T12:00:00Z",
-          status: url.includes("/api/firmware/latest") ? "current" : "available",
+          status: companion.failedCheck ? "check_failed" : url.includes("/api/firmware/latest") ? "current" : "available",
           installedFirmware: "9999.0.524",
           latestFirmware: "9999.0.524",
           updateAvailable: false,
@@ -228,7 +235,7 @@ function startWindow({
     createElement(
       TooltipProvider,
       null,
-      createElement(ControlCenterApp, { catalog: { themes: [tokenCounter] } as never }),
+      createElement(ControlCenterApp, { catalog: { themes: [tokenCounter] } as never, initialThemeId }),
     ),
   );
   return {
@@ -776,4 +783,35 @@ it("tells a weak WiFi signal first and What's new after it, never both at once",
   await app.wait(1);
   expect(wifiDialog()).toBeNull();
   expect(notice()).not.toBeNull();
+});
+
+it("finishing setup stays on Overview after a firmware job was seen during setup", async () => {
+  const app = startWindow({ setUp: false });
+  app.companion.firmwarePhase = "installing";
+  app.companion.failedCheck = true;
+  await app.wait(10);
+  app.companion.firmwarePhase = "complete";
+  await app.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await app.wait(15);
+  expect(screen.queryByRole("heading", { name: "Overview" })).not.toBeNull();
+  expect(screen.queryByRole("dialog", { name: "Could not check for updates" })).toBeNull();
+});
+
+it("a failed check alone never leaves Overview", async () => {
+  window.localStorage.setItem(SEEN_KEY, JSON.stringify(allIds));
+  const app = startWindow();
+  app.companion.failedCheck = true;
+  await app.wait(15);
+  expect(screen.queryByRole("heading", { name: "Overview" })).not.toBeNull();
+  expect(screen.queryByRole("dialog", { name: "Could not check for updates" })).toBeNull();
+});
+
+it("preserves a theme install link when remembered setup skips the wizard", async () => {
+  rememberCompletedSetup("16199235");
+  window.localStorage.setItem(SEEN_KEY, JSON.stringify(allIds));
+  const app = startWindow({ initialThemeId: "gauge" });
+  await app.wait(15);
+  expect(screen.queryByRole("heading", { name: "Themes" })).not.toBeNull();
+  expect(screen.queryByRole("heading", { name: "Overview" })).toBeNull();
 });
