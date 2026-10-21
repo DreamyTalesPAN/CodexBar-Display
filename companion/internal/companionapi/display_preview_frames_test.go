@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -14,6 +16,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/testenv"
 )
 
@@ -88,7 +91,7 @@ func TestDisplayPreviewFramesAreTheDaemonsFrames(t *testing.T) {
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return usage, true }
 
 	got := getPreviewFrames(t, server)
-	want := daemon.PreviewFrames(usage, true, false, server.previewDeviceCapabilities(), now, nil, "")
+	want := daemon.PreviewFrames(usage, true, false, server.previewDeviceCapabilities(), now, nil, "", nil)
 	if len(got.Providers) != 1 || got.Providers[0].ID != "codex" {
 		t.Fatalf("providers: %+v", got.Providers)
 	}
@@ -312,7 +315,7 @@ func TestUsagePreviewFramesUseTheLocalStreamClock(t *testing.T) {
 	usage := daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{Provider: "codex", CollectedAt: now, Frame: protocol.Frame{V: 2, Provider: "codex", Label: "Codex", Session: 12}}}}
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return usage, true }
 	preview := getPreviewFrames(t, server).Providers[0]
-	want := daemon.PreviewFrames(usage, true, false, server.previewDeviceCapabilities(), now, nil, "")[0]
+	want := daemon.PreviewFrames(usage, true, false, server.previewDeviceCapabilities(), now, nil, "", nil)[0]
 	for mode, frame := range map[string]*protocol.Frame{"automatic": preview.Automatic, "pinned": &preview.Pinned} {
 		gotJSON, _ := json.Marshal(frame.NextClockTransition)
 		wantJSON, _ := json.Marshal(want.Pinned.NextClockTransition)
@@ -398,5 +401,57 @@ func TestUsagePreviewFramesHonorRuntimeThemeOverride(t *testing.T) {
 		if frame == nil || frame.Theme != "crt" {
 			t.Errorf("%s did not apply the runtime override before encoding: %+v", mode, frame)
 		}
+	}
+}
+
+func TestUsagePreviewFramesDiscardDisabledLastGoodWithoutChangingPersistence(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		t.Run(fmt.Sprint(enabled), func(t *testing.T) {
+			isolatePreviewHome(t)
+			now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+			home, err := os.UserHomeDir()
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := runtimepaths.Path(home, "last-good-frame.json")
+			raw := []byte(`{"savedAt":"2026-10-21T11:59:00Z","frame":{"v":2,"provider":"codex","label":"Codex","session":61}}`)
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, raw, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			server := newPreviewTestServer(t)
+			server.now = func() time.Time { return now }
+			server.providerPreferences.loadInventory = func(context.Context) ([]codexbar.ProviderSetting, error) {
+				return []codexbar.ProviderSetting{{ID: "codex", Label: "Codex", Enabled: enabled}, {ID: "claude", Label: "Claude", Enabled: true}}, nil
+			}
+			server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+				return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{Provider: "claude", NoReading: true, CollectedAt: now,
+					Frame: protocol.Frame{Provider: "claude", UsageUnavailable: true}}}}, true
+			}
+			previews := getPreviewFrames(t, server)
+			count := 0
+			for _, preview := range previews.Providers {
+				if preview.Automatic == nil {
+					continue
+				}
+				count++
+				if enabled {
+					if preview.Automatic.Provider != "codex" || preview.Automatic.Session != 61 {
+						t.Fatalf("enabled last-good lost: %+v", preview.Automatic)
+					}
+				} else if preview.Automatic.Error == "" || preview.Automatic.Provider != "" {
+					t.Fatalf("disabled last-good must become the stream error: %+v", preview.Automatic)
+				}
+			}
+			if count != 1 {
+				t.Fatalf("got %d Automatic frames, want the single stream frame", count)
+			}
+			after, err := os.ReadFile(path)
+			if err != nil || string(after) != string(raw) {
+				t.Fatalf("preview changed runtime persistence: %s, %v", after, err)
+			}
+		})
 	}
 }

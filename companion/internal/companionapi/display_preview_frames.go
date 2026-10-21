@@ -32,7 +32,7 @@ type previewFramesForItem struct {
 func previewFramesFor(usage daemon.PersistedUsage, inventory []codexbar.ProviderSetting, showUsed, systemBusy bool, caps protocol.DeviceCapabilities, now time.Time, updates *daemon.FirmwareUpdateCache, cliTheme string) *previewFramesResponse {
 	resp := &previewFramesResponse{GeneratedAt: now.UTC().Format(time.RFC3339Nano), Providers: []previewFramesForItem{}}
 	usage = usageInInventoryOrder(usage, inventory)
-	for _, preview := range daemon.PreviewFrames(usage, showUsed, systemBusy, caps, now.In(time.Local), updates, cliTheme) {
+	for _, preview := range daemon.PreviewFrames(usage, showUsed, systemBusy, caps, now.In(time.Local), updates, cliTheme, inventory) {
 		resp.Providers = append(resp.Providers, previewFramesForItem{ID: preview.Provider, Automatic: preview.Automatic, Pinned: preview.Pinned})
 	}
 	return resp
