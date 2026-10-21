@@ -8892,3 +8892,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: existing plain tiles replace an unresponsive theme preview and Continue becomes available while the existing five-second retry path recovers the theme.
 - Scope: shared fetchThemeRenderPackRevision timeout, theme-loader cleanup handling and fake-timer setup regression tests; PR #821 only.
 - What's new: none — remove an unbounded loading state without new controls or copy.
+
+## 2026-10-21 — #821: keep theme timeouts compatible with macOS 14.0
+
+- User approval: no visible change – UI approval not needed (bug fix: #821 forward request cancellation without requiring Safari 17.4 AbortSignal.any)
+- Approved customer-visible result: the same bounded theme loading and retry behavior works on the app's supported macOS 14.0 WebKit.
+- Scope: shared render-pack request signal forwarding and one missing-AbortSignal.any regression test; coordinator-approved follow-up commit for PR #821.
+- What's new: none — preserve the existing minimum macOS support.

@@ -262,6 +262,18 @@ describe("Display mode tiles retry a theme pack that is not ready yet", () => {
     vi.useRealTimers();
   });
 
+  it("loads on supported WebKit versions without AbortSignal.any", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(AbortSignal, "any")!;
+    Object.defineProperty(AbortSignal, "any", { configurable: true, value: undefined });
+    try {
+      show([live("Claude", 64)]);
+      await settle();
+      expect(tiles(0)[0]?.getAttribute("data-state")).toBe("live");
+    } finally {
+      Object.defineProperty(AbortSignal, "any", descriptor);
+    }
+  });
+
   it.each(["response", "body"])("releases Continue when the pack %s hangs, then retries", async (phase) => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout", "Date"] });
     let ready = false;

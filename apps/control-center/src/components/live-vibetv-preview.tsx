@@ -1539,13 +1539,14 @@ export async function fetchThemeRenderPackRevision(
     // Timeout is a retryable load failure; AbortError is reserved for cleanup.
     controller.abort(new DOMException("Theme pack took too long to answer", "TimeoutError"));
   }, THEME_PACK_TIMEOUT_MS);
-  const requestSignal = signal
-    ? AbortSignal.any([signal, controller.signal])
-    : controller.signal;
+  // macOS 14.0's WebKit predates AbortSignal.any.
+  const abort = () => controller.abort(signal?.reason);
+  signal?.addEventListener("abort", abort, { once: true });
+  if (signal?.aborted) abort();
   try {
     const exactResponse = await fetcher(
       themeRenderPackUrl(themeId, themeSpecPath, themeSpecHash),
-      { signal: requestSignal },
+      { signal: controller.signal },
     );
     if (exactResponse.ok) {
       return await exactResponse.json() as ThemeRenderPack;
@@ -1556,7 +1557,7 @@ export async function fetchThemeRenderPackRevision(
 
     // Old Companions only expose the latest cache by theme ID. Their payload
     // still includes specPath, which lets the caller reject a wrong revision.
-    const legacyResponse = await fetcher(themeRenderPackUrl(themeId), { signal: requestSignal });
+    const legacyResponse = await fetcher(themeRenderPackUrl(themeId), { signal: controller.signal });
     if (!legacyResponse.ok) {
       // Unknown only when both reads say so; a transient exact failure stays one.
       throw packUnavailable(
@@ -1566,6 +1567,7 @@ export async function fetchThemeRenderPackRevision(
     return await legacyResponse.json() as ThemeRenderPack;
   } finally {
     clearTimeout(timeout);
+    signal?.removeEventListener("abort", abort);
   }
 }
 
