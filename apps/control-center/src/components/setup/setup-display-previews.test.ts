@@ -85,6 +85,40 @@ describe("displayPreviewFor", () => {
 describe("displayPreviewFor: the frame the theme draws", () => {
   const stamped = "2026-10-20T08:00:00Z";
 
+  it.each([1, 3])("caps device windows at %i before choosing the root countdown", (maxUsageWindows) => {
+    const reading = provider({
+      collectedAt: stamped,
+      windows: Array.from({ length: maxUsageWindows + 1 }, (_, index) => ({
+        id: `window-${index}`,
+        label: `Window ${index}`,
+        usedPercent: 20,
+        resetSecs: index === maxUsageWindows ? 7200 : 0,
+      })),
+    });
+    const usage = { providers: [reading] } as UsageSnapshot;
+    const [preview] = displayPreviewsFor(usage, [reading], maxUsageWindows);
+
+    expect(preview.frame?.usageWindows).toHaveLength(maxUsageWindows);
+    expect(preview.frame?.resetSecs).toBe(0);
+    // The cap belongs to the device frame, never to the collector's snapshot.
+    expect(reading.windows).toHaveLength(maxUsageWindows + 1);
+  });
+
+  it("keeps the first retained deadline and does not invent a cap when capabilities are unknown", () => {
+    const reading = provider({
+      collectedAt: stamped,
+      windows: [
+        { id: "session", label: "Session", usedPercent: 10, resetSecs: 3600 },
+        { id: "weekly", label: "Weekly", usedPercent: 20, resetSecs: 7200 },
+      ],
+    });
+    const usage = { providers: [reading] } as UsageSnapshot;
+    expect(displayPreviewsFor(usage, [reading], 1)[0].frame?.resetSecs).toBe(3600);
+    for (const limit of [undefined, 0]) {
+      expect(displayPreviewsFor(usage, [reading], limit)[0].frame?.usageWindows).toHaveLength(2);
+    }
+  });
+
   it("passes the usage service's values through unchanged", () => {
     const preview = displayPreviewFor(
       provider({

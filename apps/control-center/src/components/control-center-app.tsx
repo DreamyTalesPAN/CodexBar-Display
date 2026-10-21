@@ -5371,6 +5371,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       id: item.providerId,
       label: item.label,
     })),
+    device?.capabilities?.theme?.maxUsageWindows,
   );
   // Step 05 keeps offering every live theme: hiding one would make the
   // device's limitation invisible. The Install is gated by the same rules the

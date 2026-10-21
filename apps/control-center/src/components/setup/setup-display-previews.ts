@@ -219,12 +219,16 @@ export function displayFrameFor(
   provider: UsageProviderInfo,
   allProviders: UsageProviderInfo[] = [provider],
   now = new Date(),
+  maxUsageWindows = 0,
 ): DisplayFrame | null {
   if (provider.stale === true || provider.usageUnavailable === true) {
     return null;
   }
   const slots = windowSlotsOf(provider);
-  const readable = slots.filter((slot) => Number.isFinite(slot.percent));
+  // The same advertised capability used by applyDeviceUsageWindowLimit,
+  // before the root reset is projected from the retained windows.
+  const readable = slots.filter((slot) => Number.isFinite(slot.percent))
+    .slice(0, maxUsageWindows > 0 ? maxUsageWindows : undefined);
   if (!readable.length) {
     return null;
   }
@@ -267,12 +271,13 @@ export function displayPreviewFor(
   provider: UsageProviderInfo | undefined,
   now = new Date(),
   allProviders?: UsageProviderInfo[],
+  maxUsageWindows = 0,
 ): SetupDisplayModePreview | null {
   if (!provider) {
     return null;
   }
   const unavailable = provider.stale === true || provider.usageUnavailable === true;
-  const frame = displayFrameFor(provider, allProviders, now);
+  const frame = displayFrameFor(provider, allProviders, now, maxUsageWindows);
   return {
     providerLabel: provider.label,
     ...(frame ? { frame, frameAt: provider.collectedAt } : {}),
@@ -309,6 +314,7 @@ export function displayPreviewFor(
 export function displayPreviewsFor(
   usage: UsageSnapshot | null,
   providers: { id: string; label: string }[],
+  maxUsageWindows = 0,
 ): SetupDisplayModePreview[] {
   const reported = new Map(
     (usage?.providers || []).map((provider) => [provider.id, provider]),
@@ -324,6 +330,7 @@ export function displayPreviewsFor(
         reported.get(provider.id),
         new Date(),
         complete,
+        maxUsageWindows,
       ) ?? {
         providerLabel: provider.label,
         resetLabel: null,

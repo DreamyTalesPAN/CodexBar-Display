@@ -8913,3 +8913,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: an unavailable provider keeps the same preview area and shows no invented readings; a missing theme still uses the existing plain fallback.
 - Scope: setup-display-mode-screen.tsx (one guard), setup-display-theme-carousel.test.tsx, setup-display-mode-screen.test.tsx and this approval record; regression reproduced before the fix, no hardware or running-app check.
 - What's new: none — restore the existing unavailable placeholder during rotation.
+
+## 2026-10-21 — #821: limit setup theme windows to the device capability
+
+- User approval: no visible change – UI approval not needed (bug fix: #821 an overflow usage window no longer supplies a root theme countdown that the VibeTV cannot display; coordinator-authorized review follow-up)
+- Approved customer-visible result: setup theme frames retain only the usage windows allowed by the device's advertised maxUsageWindows before deriving their root reset; unknown capabilities keep the host's existing uncapped behavior, and the usage snapshot remains unchanged.
+- Scope: control-center-app.tsx passes the existing device capability through setup-display-previews.ts; regressions in setup-display-previews.test.ts cover caps of one and three, retained deadlines, unknown caps and snapshot preservation; no provider-specific rules or hardware changes.
+- What's new: none — correct preview parity with the existing device wire limit.
