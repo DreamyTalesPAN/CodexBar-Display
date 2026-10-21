@@ -327,7 +327,7 @@ export function DisplayModeChoice({
             selected={mode === "pair"}
             title="Two at once"
           >
-            <PreviewTile frames={pairPreview ? [pairPreview] : []} index={0} />
+            <PreviewTile calm={calm} frames={pairPreview ? [pairPreview] : []} index={0} />
           </ModeCard>
         ) : null}
       </div>

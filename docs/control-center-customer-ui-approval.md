@@ -14352,3 +14352,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Automatic, One provider and Two at once retain their source choices; Limits on VibeTV follows Display mode and Pace follows the limits, with the current live-theme setup previews and fixes preserved.
 - Scope: Local integration branch claude/paultest-build7 only, combining the specified source heads and their existing approval records; no release or hardware validation is claimed.
 - What's new: none — existing source features combined for the requested test build.
+
+## 2026-10-21 — #864: Build 7 pair tile uses the surrounding calm setup style
+
+- User approval: pending — build7 merge consistency for the Two at once preview tile within the existing calm Setup choice.
+- Approved customer-visible result: The Two at once fallback preview uses the same muted background and minimum height as the Automatic and One provider fallback previews.
+- Scope: Pass the existing calm prop to the new pair PreviewTile; retain both source behaviors without a separate style rule.
+- What's new: none — consistent styling of the integrated source features.
