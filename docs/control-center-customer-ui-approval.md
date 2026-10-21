@@ -9227,3 +9227,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none from this documentation correction. The entry “2026-10-21 — #887: stop marking an unchecked replacement OpenAI key invalid” remains pending; this addendum does not approve its visible result.
 - Scope: docs/control-center-customer-ui-approval.md only; the existing #888 records cover `apps/control-center/src/components/setup/setup-device-dialogs.test.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.tsx`, `apps/control-center/src/components/theme-studio/openai-key-form.test.tsx`, `apps/control-center/src/components/theme-studio/openai-key-form.tsx` at 5b4747bf70f86a066acc9a3b6f96638b7277082e. These full paths supplement the existing scope; all original entries are preserved.
 - What's new: none — documentation-only scope correction; no product change or announcement.
+
+## 2026-10-21 — #887: explain an invalid Theme Studio color
+
+- User approval: pending — new error text for an invalid Theme Studio color; Paul has not seen it
+- Approved customer-visible result: none yet. Proposed text under an invalid color field (Theme Studio editor, ColorField): "Use a 6-digit hex color, like #FFAA00." The field is linked to this text via aria-describedby; the text disappears when the draft is valid or the field is reverted on blur.
+- Scope: `editor-fields.tsx` and its new regression test `editor-fields.test.tsx`; issue #887 item 3 only, not merged, not released.
+- What's new: none — the error text is not approved yet, so it is not announced
