@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"regexp"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -94,15 +93,12 @@ func (v looseVersion) Compare(other looseVersion) int {
 
 var looseVersionPattern = regexp.MustCompile(`\bv?([0-9]+)\.([0-9]+)(?:\.([0-9]+))?\b`)
 
-// reuseEngineAnswers is true on Windows. There every poll started a new CLI
-// process only to hear the CLI's version and the provider inventory again
-// (#555). Neither answer can change unless a file does, so each is kept for
-// as long as engineStamp of its files stays the same. The Mac is left as it
-// is: its app-managed CLI is not run for its version at all
-// (installedVersion), and which files its inventory is built from has only
-// been checked for Win-CodexBar (readProviderInventory). A variable so the
-// Windows path is testable on the Mac.
-var reuseEngineAnswers = runtime.GOOS == "windows"
+// reuseEngineAnswers keeps the CLI's version and the provider inventory for as
+// long as engineStamp of their files stays the same. Every poll used to start a
+// new CLI process only to hear them again (#555), on Windows and on the Mac
+// alike. Neither answer can change unless a file does. A variable so tests can
+// switch the reuse off.
+var reuseEngineAnswers = true
 
 // engineStampSettle is how long a file must have been left alone before an
 // answer read from it is kept. A second write inside one step of the file
@@ -120,7 +116,14 @@ func engineStamp(paths ...string) string {
 	}
 	var stamp strings.Builder
 	for _, path := range paths {
-		info, err := os.Stat(path)
+		// Opening the file, not only stat-ing it, also proves it is readable:
+		// chmod 000 changes neither size nor modification time.
+		file, err := os.Open(path)
+		if err != nil {
+			return ""
+		}
+		info, err := file.Stat()
+		file.Close()
 		if err != nil || time.Since(info.ModTime()) < engineStampSettle {
 			return ""
 		}
@@ -136,6 +139,9 @@ type engineAnswer[T any] struct {
 	stamp string
 	at    time.Time
 	value T
+	// forgotten counts the forgets, so a read that began before one can tell
+	// its answer is out of date.
+	forgotten uint64
 }
 
 // load returns the answer kept for stamp unless it is older than maxAge.
@@ -150,7 +156,27 @@ func (a *engineAnswer[T]) load(stamp string, maxAge time.Duration) (T, bool) {
 func (a *engineAnswer[T]) store(stamp string, value T) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if stamp == "" {
+		a.forgotten++
+	}
 	a.stamp, a.at, a.value = stamp, time.Now(), value
+}
+
+// forgets is the number of forgets so far. Take it before a read starts.
+func (a *engineAnswer[T]) forgets() uint64 {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.forgotten
+}
+
+// storeUnlessForgotten keeps value for stamp only if nothing was forgotten
+// since forgets returned before.
+func (a *engineAnswer[T]) storeUnlessForgotten(before uint64, stamp string, value T) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.forgotten == before {
+		a.stamp, a.at, a.value = stamp, time.Now(), value
+	}
 }
 
 var engineVersion engineAnswer[looseVersion]
