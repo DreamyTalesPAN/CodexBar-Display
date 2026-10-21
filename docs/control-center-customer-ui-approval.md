@@ -8850,6 +8850,13 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of 41bf10cf and this approval record. Pull request branch #784 only, not merged, not released.
 - What's new: none — merge of 41bf10cf, no customer-visible change of its own
 
+## 2026-10-21 — #784: slider neutral ring scoped to hover and drag
+
+- User approval: no visible change – UI approval not needed (#784 Codex fix: slider neutral ring scoped to hover/drag so the shared focus-ring check passes; same look as the pending slider entry)
+- Approved customer-visible result: the slider thumb looks as in the pending #784 slider entry: grey ring on hover and drag, olive ring only for keyboard focus. Nothing else changes.
+- Scope: `apps/control-center/src/components/ui/slider.tsx` (thumb ring classes), its test `apps/control-center/src/components/ui/slider.focus-ring.test.tsx`, and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — ring colour classes of the slider thumb, no new text
+
 ## 2026-10-19 — Support: "n of 6 passed" and a Fix link for the usage engine (#795)
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Support: "n of 6 passed" and a Fix link for the usage engine (#795)
