@@ -101,9 +101,6 @@ func TestRunWithDepsInstallsCodexbarAndCompletesSetup(t *testing.T) {
 			return home, nil
 		},
 		uid: func() int { return 501 },
-		listPorts: func() ([]string, error) {
-			return []string{"/dev/cu.usbmodem101", "/dev/cu.usbserial42"}, nil
-		},
 		resolvePort: func(port string) (string, error) {
 			return "/dev/cu.usbserial42", nil
 		},
@@ -1119,10 +1116,7 @@ func TestRunWithDepsReportsFlashFailureWithConcreteHint(t *testing.T) {
 		homeDir: func() (string, error) {
 			return home, nil
 		},
-		uid: func() int { return 501 },
-		listPorts: func() ([]string, error) {
-			return []string{"/dev/cu.usbmodem101"}, nil
-		},
+		uid:             func() int { return 501 },
 		readDeviceHello: setupUSBHello,
 		resolvePort:     func(string) (string, error) { return "/dev/cu.usbmodem101", nil },
 		probePort:       func(string) error { return nil },
@@ -1189,9 +1183,6 @@ func TestRunWithDepsWaitsForLaunchAgentToBecomeRunning(t *testing.T) {
 		resolvePort:     func(string) (string, error) { return "/dev/cu.usbmodem101", nil },
 		probePort:       func(string) error { return nil },
 		readDeviceHello: setupCableHello,
-		listPorts: func() ([]string, error) {
-			return []string{"/dev/cu.usbmodem101"}, nil
-		},
 		findCodexbar: func() (string, error) {
 			return "/opt/homebrew/bin/codexbar", nil
 		},
@@ -1692,10 +1683,7 @@ func TestRunWithDepsValidateOnlyPerformsChecksWithoutApplyingChanges(t *testing.
 		homeDir: func() (string, error) {
 			return home, nil
 		},
-		uid: func() int { return 501 },
-		listPorts: func() ([]string, error) {
-			return []string{"/dev/cu.usbserial42"}, nil
-		},
+		uid:             func() int { return 501 },
 		readDeviceHello: setupCableHello,
 		resolvePort:     func(string) (string, error) { return "/dev/cu.usbserial42", nil },
 		probePort:       func(string) error { return nil },
@@ -1761,10 +1749,7 @@ func TestRunWithDepsDryRunSkipsApplyingChanges(t *testing.T) {
 		homeDir: func() (string, error) {
 			return home, nil
 		},
-		uid: func() int { return 501 },
-		listPorts: func() ([]string, error) {
-			return []string{"/dev/cu.usbserial42"}, nil
-		},
+		uid:             func() int { return 501 },
 		readDeviceHello: setupCableHello,
 		resolvePort:     func(p string) (string, error) { return p, nil },
 		probePort:       func(string) error { return nil },
