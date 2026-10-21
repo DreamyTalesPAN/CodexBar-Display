@@ -20,6 +20,7 @@ import {
   ThemeTileStrip,
   useThemeRenderPack,
   type SetupDisplayModeTheme,
+  type ThemePackLoad,
 } from "./setup-display-theme-tiles";
 import { SETUP_REVEAL } from "./setup-reveal";
 import { pinnedPreview, rotatingPreviews } from "./setup-display-previews";
@@ -121,6 +122,18 @@ export function SetupDisplayModeScreen({
   saving = false,
   selectedProviderId,
 }: SetupDisplayModeScreenProps) {
+  const themePack = useThemeRenderPack(theme);
+  // Continue waits exactly while a card draws the skeleton, the same rule the
+  // tiles use. Unavailable usage is not a skeleton, so it never holds Continue.
+  const rotation = rotationFrames(automaticPreview, automaticPreviews, providers);
+  const manualFrames = manualPreview ? [pinnedPreview(manualPreview)] : [];
+  const awaitingUsage =
+    tileIsSkeleton(themePack, rotation.length) ||
+    tileIsSkeleton(themePack, manualFrames.length) ||
+    // Provider placeholders exist before the companion has returned frames.
+    // An error frame is present and final, so it never keeps Continue waiting.
+    (Boolean(themePack.pack) && [...rotation, ...manualFrames].some((preview) => !preview.frame));
+
   return (
     <SetupWizardScreen
       contentWidth="wide"
@@ -147,7 +160,7 @@ export function SetupDisplayModeScreen({
         providers={providers}
         saving={saving}
         selectedProviderId={selectedProviderId}
-        theme={theme}
+        themePack={themePack}
       />
 
       <Button
@@ -164,6 +177,7 @@ export function SetupDisplayModeScreen({
         // the same refused provider.
         disabled={
           saving ||
+          awaitingUsage ||
           (mode === "fixed" &&
             !providers.some((provider) => provider.id === selectedProviderId))
         }
@@ -188,14 +202,17 @@ type DisplayModeChoiceProps = Pick<
   | "providers"
   | "saving"
   | "selectedProviderId"
-  | "theme"
 > & {
   /** Settings says so when Automatic follows a timer instead of activity. */
   automaticDescription?: string;
   /** The Setup Wizard's calm look (variant B); Settings keeps its own. */
   calm?: boolean;
   className?: string;
+  /** The theme's render pack as loaded by the step; absent means no theme. */
+  themePack?: ThemePackLoad;
 };
+
+const NO_THEME_PACK: ThemePackLoad = { pack: null, status: "error" };
 
 /**
  * The display-mode choice itself: two cards showing what each mode would put
@@ -218,7 +235,7 @@ export function DisplayModeChoice({
   providers,
   saving = false,
   selectedProviderId,
-  theme,
+  themePack = NO_THEME_PACK,
 }: DisplayModeChoiceProps) {
   const rotation = rotationFrames(
     automaticPreview,
@@ -226,24 +243,21 @@ export function DisplayModeChoice({
     providers,
   );
   const { index, reducedMotion } = useProviderRotation(rotation.length);
-  const themePack = useThemeRenderPack(theme);
   const manualFrames = manualPreview ? [pinnedPreview(manualPreview)] : [];
   const tiles = (frames: SetupDisplayModePreview[], at: number) => {
     // The theme's own picture whenever it can be had; the plain tile is what
     // stays if the theme could not be read, so the step never loses its preview.
-    if (theme && themePack.status === "loading") {
+    if (tileIsSkeleton(themePack, frames.length)) {
       return <ThemeTileSkeleton count={frames.length} />;
     }
-    if (theme && themePack.pack) {
-      return frames.length ? (
+    if (themePack.pack) {
+      return (
         <ThemeTileStrip
           frames={frames}
           index={at}
           pack={themePack.pack}
           reducedMotion={reducedMotion}
         />
-      ) : (
-        <ThemeTileSkeleton count={1} />
       );
     }
     return <PreviewTile calm={calm} frames={frames} index={at} />;
@@ -324,6 +338,16 @@ export function DisplayModeChoice({
       ) : null}
     </div>
   );
+}
+
+/**
+ * Whether a card draws the skeleton rather than readings: the theme pack is
+ * still loading, or it is in and the card has no provider frames yet. The
+ * Continue gate and the tiles both ask this, so they cannot disagree.
+ */
+function tileIsSkeleton(themePack: ThemePackLoad, frameCount: number): boolean {
+  if (themePack.status === "loading") return true;
+  return Boolean(themePack.pack) && frameCount === 0;
 }
 
 /**

@@ -239,7 +239,7 @@ function ThemeTile({
       )}
       data-provider={frame.providerLabel}
       data-slot="display-mode-tile"
-      data-state={data ? "live" : "skeleton"}
+      data-state={data ? "live" : frame.frame?.error ? "unavailable" : "skeleton"}
       data-visible={active ? "true" : "false"}
     >
       {data ? (

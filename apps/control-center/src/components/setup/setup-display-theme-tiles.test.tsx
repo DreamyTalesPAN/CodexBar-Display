@@ -1,12 +1,21 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, render, screen } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { displayPreviewsFor, pinnedPreview, type PreviewFrames } from "./setup-display-previews";
 import {
   DisplayModeChoice,
   type SetupDisplayModePreview,
 } from "./setup-display-mode-screen";
+import { useThemeRenderPack } from "./setup-display-theme-tiles";
+
+/** The step loads the theme pack and hands it to the choice, as the wizard does. */
+function Choice(
+  props: Omit<ComponentProps<typeof DisplayModeChoice>, "themePack">,
+) {
+  return <DisplayModeChoice {...props} themePack={useThemeRenderPack(THEME)} />;
+}
 
 const THEME = { id: "claude-creature", specPath: "/themes/u/claude--9-5c74ca.json" };
 
@@ -48,7 +57,7 @@ function show(
   manual: SetupDisplayModePreview | null = previews[0] ?? null,
 ) {
   render(
-    <DisplayModeChoice
+    <Choice
       automaticPreview={previews[0] ?? null}
       automaticPreviews={previews}
       manualPreview={manual}
@@ -60,7 +69,6 @@ function show(
         label: preview.providerLabel,
       }))}
       selectedProviderId={previews[0]?.providerLabel.toLowerCase() ?? null}
-      theme={THEME}
     />,
   );
 }
@@ -191,14 +199,14 @@ describe("Display mode tiles with the active theme", () => {
     expect(tiles(1)[0].getAttribute("data-state")).toBe("skeleton");
   });
 
-  it("shows the skeleton, not the theme drawn from zeros, for an error frame", async () => {
+  it("shows final unavailable state, not a loading skeleton, for an error frame", async () => {
     // The companion sends an error frame when every provider is unavailable
     // and no last-good frame exists (#858).
     show([{ ...noValues("Claude"), frame: { v: 1, error: "no usage yet" } }]);
     await settle();
 
     const [claude] = tiles(0);
-    expect(claude.getAttribute("data-state")).toBe("skeleton");
+    expect(claude.getAttribute("data-state")).toBe("unavailable");
     expect(claude.textContent).not.toMatch(/\d/);
     expect(screen.getAllByRole("img", { name: "Claude: no usage yet", hidden: true })).not.toHaveLength(0);
   });
