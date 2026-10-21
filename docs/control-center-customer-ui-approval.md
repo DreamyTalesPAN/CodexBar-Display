@@ -9282,3 +9282,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #800 as described in those entries, as seen in build 7202.
 - Scope: #800 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #800 approval record only
+
+## 2026-10-21 — #800: retain the Pace setting and reject unavailable pace values
+
+- User approval: no visible change – UI approval not needed (bug fix: keep Pace settings during stale collections and suppress missing or out-of-range deltas)
+- Approved customer-visible result: the existing Pace setting stays available during a collection outage; invalid pace data no longer appears as a valid reading, with no new copy or layout.
+- Scope: Settings Pace visibility, Usage pace validation, and regression tests for #800; theme-pack notice validation accepts the firmware's existing footer spellings.
+- What's new: none — corrections to the existing pace behavior only

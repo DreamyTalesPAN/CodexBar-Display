@@ -33,6 +33,7 @@ const usage = (stage?: string): UsageSnapshot => ({
   providers: [{
     id: "claude", label: "Claude", session: 40, weekly: 10, resetSecs: 100, usageMode: "used",
     windows: [lane(stage)],
+    pace: stage ? [{ window: "primary", stage }] : [],
   }],
 });
 const theme = (id: string, title: string, capabilities: string[]): ThemeProduct => ({
@@ -124,6 +125,19 @@ describe("the Settings section Pace", () => {
     const html = render([showPace(true)], usage(), "token-counter");
     expect(html).not.toContain("Show reserve or deficit");
     expect(html).not.toContain(">Pace<");
+  });
+
+  it.each([false, true])("keeps the setting when lane pace is cleared (stale=%s)", (stale) => {
+    const snapshot = usage("farAhead");
+    snapshot.providers[0] = {
+      ...snapshot.providers[0], stale, windowsRetained: stale,
+      // The API clears lane pace when stale or after the reset has passed.
+      windows: [lane()],
+    };
+    const html = render([showPace(true)], snapshot, "token-counter");
+    expect(html).toContain(">Pace<");
+    expect(html).toContain(">Show reserve or deficit</label>");
+    expect(html).toContain("Token Counter has no place for it. Pace Meter shows it.");
   });
 
   it("has no accessibility violations", async () => {
