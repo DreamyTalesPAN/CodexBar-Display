@@ -8192,3 +8192,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #785 as in its own entries plus the entries merged with 12504ca6; nothing else changes.
 - Scope: the merge of 12504ca6 and this approval record. Pull request branch #785 only, not merged, not released.
 - What's new: none — merge of 12504ca6, no customer-visible change of its own
+
+## 2026-10-21 — #785: approval marker after merging main at e3503bda
+
+- User approval: no visible change – UI approval not needed (merge of main (e3503bda) into #785; the own entries of #785 keep their approvals)
+- Approved customer-visible result: #785 as in its own entries plus the entries merged with e3503bda; nothing else changes.
+- Scope: the merge of e3503bda and this approval record. Pull request branch #785 only, not merged, not released.
+- What's new: none — merge of e3503bda, no customer-visible change of its own
