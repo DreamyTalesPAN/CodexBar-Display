@@ -9220,3 +9220,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: a connection or disconnect failure keeps its existing message in the existing position, but no longer marks the cleared or replacement key input invalid. No new text or layout is introduced.
 - Scope: `openai-key-form.tsx` and its regression tests; remove the operation-error-to-field-invalid mapping because no current field validation result is available and connection attempts clear the input. Issue #887 item 1 only; item 3 remains untouched, not merged, not released.
 - What's new: none — correct a misleading invalid-field indicator
+
+## 2026-10-21 — #888: append-only full-path scope record
+
+- User approval: no visible change – UI approval not needed (scope record: lists the full paths changed by #888)
+- Approved customer-visible result: none from this documentation correction. The entry “2026-10-21 — #887: stop marking an unchecked replacement OpenAI key invalid” remains pending; this addendum does not approve its visible result.
+- Scope: docs/control-center-customer-ui-approval.md only; the existing #888 records cover `apps/control-center/src/components/setup/setup-device-dialogs.test.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.tsx`, `apps/control-center/src/components/theme-studio/openai-key-form.test.tsx`, `apps/control-center/src/components/theme-studio/openai-key-form.tsx` at 5b4747bf70f86a066acc9a3b6f96638b7277082e. These full paths supplement the existing scope; all original entries are preserved.
+- What's new: none — documentation-only scope correction; no product change or announcement.
