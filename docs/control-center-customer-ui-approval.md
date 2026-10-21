@@ -16316,3 +16316,33 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: All three display choices retain the same size and use current preview behavior.
 - Scope: Merge #858 preserving calm Settings, usage race guards, pair invalidation and pace filtering.
 - What's new: none — integration only.
+
+## 2026-10-21 — #803: restrict Fix to repairable engine failures
+
+- User approval: pending — remove the misleading diagnostic Fix link for config_error and other errors outside the existing engineUnusable rule; keep the existing help text.
+- Approved customer-visible result: pending — Fix is offered only for engine_error or engine_incompatible; the existing incompatible-engine block still has one Repair control and diagnostic help text is unchanged.
+- Scope: diagnostic repair eligibility and regression tests only. Pull request branch #803 only, not merged, not released.
+- What's new: none — removes a misleading repair action, nothing new to use.
+
+
+## 2026-10-21 — #803: append-only What's new addendum for the #784 outage-dialog merge
+
+- User approval: no visible change – UI approval not needed (documentation-only addendum supplying the omitted What's new field for the 2026-10-19 #803 outage-dialog merge record)
+- Approved customer-visible result: none; this addendum completes the record “2026-10-19 — #803: merge of the #784 outage-dialog fix, no change of its own”, whose stated result was no visible change. The original entry is preserved.
+- Scope: docs/control-center-customer-ui-approval.md only; the What's new field below supplements that specific historical merge entry without changing its approval or any product code.
+- What's new: none — the #784 outage-dialog merge had no customer-visible change of its own and added no What's new content.
+
+
+## 2026-10-21 — #803: append-only exact-path addendum for diagnostic repair eligibility
+
+- User approval: no visible change – UI approval not needed (documentation-only scope correction for the #803 diagnostic repair eligibility record; no UI or approval status changes)
+- Approved customer-visible result: none from this documentation correction. The entry “2026-10-21 — #803: restrict Fix to repairable engine failures” still awaits the user's explicit approval; this addendum does not approve its visible result.
+- Scope: docs/control-center-customer-ui-approval.md; the earlier diagnostic repair eligibility entry covers apps/control-center/src/components/diagnostics-panel.tsx and apps/control-center/src/components/diagnostics-panel.test.tsx changed in b318d3510693c1e572bb9b1fdf9877795e204f73. These full paths supplement its existing scope; the original entry is preserved.
+- What's new: none — this addendum only names the existing change's exact paths; no product change or announcement is added.
+
+## 2026-10-21 — build9: refresh #803 for 7204
+
+- User approval: pending — integrate claude/support-fix-link at e04c0f93b65f into build 7204.
+- Approved customer-visible result: Preserve the source feature with existing build9 behavior.
+- Scope: Integration merge retaining both approval histories.
+- What's new: none — integration only.
