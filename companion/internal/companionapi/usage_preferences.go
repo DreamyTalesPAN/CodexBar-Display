@@ -13,9 +13,10 @@ const usageBarsPreferenceID = "codexbar.usageBarsShowUsed"
 // CodexBar owns this setting. The registry transports it without storing a
 // VibeTV copy; Win-CodexBar has no equivalent setting yet (#874).
 type usagePreferenceAdapter struct {
-	goos  string
-	read  func() (bool, error)
-	write func(context.Context, bool) error
+	server *Server
+	goos   string
+	read   func() (bool, error)
+	write  func(context.Context, bool) error
 }
 
 func (usagePreferenceAdapter) Section() string { return "display" }
@@ -39,6 +40,9 @@ func (a usagePreferenceAdapter) Write(ctx context.Context, _ string, value any) 
 	descriptor := a.descriptor()
 	if descriptor.Availability.State != "available" || descriptor.Value != value {
 		return preferenceDescriptor{}, errors.New("CodexBar usage preference could not be confirmed")
+	}
+	if a.server != nil && a.server.renderDisplayStream != nil {
+		a.server.renderDisplayStream()
 	}
 	return descriptor, nil
 }

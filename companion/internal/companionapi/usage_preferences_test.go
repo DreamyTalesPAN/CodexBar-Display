@@ -139,3 +139,35 @@ func TestUsagePreferenceUnknownAndUnconfirmedReadback(t *testing.T) {
 		t.Fatal("mismatched read-back must not confirm a write")
 	}
 }
+
+func TestUsagePreferenceWriteRendersDisplay(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	t.Setenv("CODEXBAR_DISPLAY_USAGE_MODE", "")
+	renders := 0
+	server.renderDisplayStream = func() { renders++ }
+	// Start from the real registration so a missing render hook is caught.
+	var adapter usagePreferenceAdapter
+	for _, candidate := range server.preferenceRegistry() {
+		if candidate.Owns(usageBarsPreferenceID) {
+			adapter = candidate.(usagePreferenceAdapter)
+		}
+	}
+	stored := true
+	adapter.goos = "darwin"
+	adapter.read = func() (bool, error) { return stored, nil }
+	adapter.write = func(_ context.Context, value bool) error { stored = value; return nil }
+	server.preferenceAdapters = []preferenceAdapter{adapter}
+	request := func() *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPatch, "/v1/preferences/"+usageBarsPreferenceID, strings.NewReader(`{"value":"false"}`)))
+		return rec
+	}
+	if rec := request(); rec.Code != http.StatusOK || renders != 1 {
+		t.Fatalf("successful write must wake display once: status=%d renders=%d body=%s", rec.Code, renders, rec.Body.String())
+	}
+	adapter.write = func(context.Context, bool) error { return errors.New("write failed") }
+	server.preferenceAdapters = []preferenceAdapter{adapter}
+	if rec := request(); rec.Code != http.StatusBadGateway || renders != 1 {
+		t.Fatalf("failed write must not wake display: status=%d renders=%d", rec.Code, renders)
+	}
+}
