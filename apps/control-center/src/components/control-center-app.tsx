@@ -68,6 +68,7 @@ import {
   providerSetupIsChecking,
   providerSetupNeedsEngineRecovery,
   providerSetupRequiresRecovery,
+  streamCameBackSince,
   type ActiveTab,
   type ApiError,
   type CompanionInfo,
@@ -268,6 +269,8 @@ type Props = {
 type FirmwareCheckOptions = {
   board?: string;
   firmware?: string;
+  /** The Cable rescue of the selected VibeTV: a half-written one resumes its cached image. */
+  rescue?: boolean;
   signal?: AbortSignal;
 };
 
@@ -655,6 +658,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [whatsNewSeen, setWhatsNewSeen] = useState(seenWhatsNew);
   const [whatsNewReopened, setWhatsNewReopened] = useState(false);
   const lastFirmwareErrorRef = useRef<ApiError | null>(null);
+  // End of the last firmware update whose stream was not seen in time (#829).
+  const streamAttentionSinceRef = useRef<number>(0);
   const [supportDiagnostics, setSupportDiagnostics] =
     useState<SupportDiagnostics | null>(null);
   // The report the Support report card created. Only its Create report actions
@@ -2993,6 +2998,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         board,
         firmware,
       });
+      if (options.rescue) {
+        params.set("rescue", "1");
+      }
 
       try {
         if (isLocalCompanionOrigin()) {
@@ -3213,8 +3221,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             "The firmware is current, but the connection or picture still needs repair.",
           tone: "attention",
         });
+        streamAttentionSinceRef.current =
+          Date.parse(finishedJob.finishedAt ?? "") || Date.now();
         lastFirmwareErrorRef.current = {
-          code: "firmware_update_attention",
+          // A stream that was only not seen yet recovers by itself (#826).
+          code:
+            finishedJob.outcome === "firmware_current_stream_attention"
+              ? "firmware_update_stream_attention"
+              : "firmware_update_attention",
           message:
             finishedJob.message ||
             "Firmware is current, but VibeTV still needs attention.",
@@ -5571,6 +5585,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       const update = await refreshFirmwareUpdate({
         board: connected.board,
         firmware: connected.firmware,
+        rescue: connected.rescue,
       });
       // A check that could not be made is not a check that found nothing. Both
       // resolve rather than reject, and treating them as "up to date" told the
@@ -5623,6 +5638,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       // Selection already returned the verified handshake. A second probe can
       // race the transport worker's restart and discard that fresh identity.
       return { board: connected.board, firmware: connected.firmware };
+    },
+    streamRecovered: async () => {
+      const refreshed = await refreshDevice({ quiet: true });
+      return streamCameBackSince(refreshed, streamAttentionSinceRef.current);
     },
     installFirmware: async (connected) => {
       lastFirmwareErrorRef.current = null;

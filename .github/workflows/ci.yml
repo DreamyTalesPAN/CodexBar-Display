@@ -455,6 +455,12 @@ jobs:
       - name: Test flash leftovers check
         run: ./scripts/test-vibetv-flash-leftovers.sh
 
+      - name: Check ESP8266 flash layout stays eagle.flash.4m2m.ld (#310)
+        run: ./scripts/check-esp8266-flash-layout.sh
+
+      - name: Test ESP8266 flash layout check
+        run: ./scripts/test-check-esp8266-flash-layout.sh
+
       - name: Test firmware size budget checker
         run: ./scripts/test-firmware-size-budget.sh
 

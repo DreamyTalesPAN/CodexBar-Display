@@ -358,13 +358,14 @@ export function ProviderList({
         <SetupDialog
           open
           title={
-            // Copilot has no app of its own: CodexBar reads it with a GitHub
-            // sign-in (decided 20.10.2026, matches its #782 sentence).
-            issue.provider.providerId.trim().toLowerCase() === "copilot"
-              ? "GitHub Copilot needs a GitHub sign-in"
-              : setupProviderNeedsOwnApp(issue.provider)
-                ? `${issue.provider.label} needs its own app`
-                : issue.provider.label
+            setupProviderNeedsOwnApp(issue.provider)
+              // Copilot has no app of its own: CodexBar reads it with a GitHub
+              // sign-in (decided 20.10.2026, matches its #782 sentence). Only
+              // this dialog changes; a timed-out Copilot keeps its plain name.
+              ? issue.provider.providerId.trim().toLowerCase() === "copilot"
+                ? "GitHub Copilot needs a GitHub sign-in"
+                : `${issue.provider.label} needs its own app`
+              : issue.provider.label
           }
           description={issue.message}
           onOpenChange={(open) => { if (!open) dismissIssue(); }}
