@@ -217,15 +217,18 @@ export function withResetTrust(
  */
 export function displayFrameFor(
   provider: UsageProviderInfo,
-  tokenUsageReady = false,
   allProviders: UsageProviderInfo[] = [provider],
   now = new Date(),
+  maxUsageWindows = 0,
 ): DisplayFrame | null {
   if (provider.stale === true || provider.usageUnavailable === true) {
     return null;
   }
   const slots = windowSlotsOf(provider);
-  const readable = slots.filter((slot) => Number.isFinite(slot.percent));
+  // The same advertised capability used by applyDeviceUsageWindowLimit,
+  // before the root reset is projected from the retained windows.
+  const readable = slots.filter((slot) => Number.isFinite(slot.percent))
+    .slice(0, maxUsageWindows > 0 ? maxUsageWindows : undefined);
   if (!readable.length) {
     return null;
   }
@@ -250,9 +253,10 @@ export function displayFrameFor(
     sessionTokens: provider.sessionTokens,
     weekTokens: provider.weekTokens,
     totalTokens: provider.totalTokens,
-    // /v1/usage leaves zero token totals out once the token history is read;
-    // the snapshot's readiness says those zeros are known (Codex on #821).
-    ...(tokenUsageReady ? { tokenTotalsKnown: true } : {}),
+    // Completed token history can still be unavailable. Only reported counts
+    // establish known totals; global tokenUsageReady is not a measurement.
+    tokenTotalsKnown: [provider.sessionTokens, provider.weekTokens, provider.totalTokens]
+      .some((count) => count !== undefined),
   }, provider.collectedAt, now);
 }
 
@@ -266,14 +270,14 @@ export function displayFrameFor(
 export function displayPreviewFor(
   provider: UsageProviderInfo | undefined,
   now = new Date(),
-  tokenUsageReady = false,
   allProviders?: UsageProviderInfo[],
+  maxUsageWindows = 0,
 ): SetupDisplayModePreview | null {
   if (!provider) {
     return null;
   }
   const unavailable = provider.stale === true || provider.usageUnavailable === true;
-  const frame = displayFrameFor(provider, tokenUsageReady, allProviders, now);
+  const frame = displayFrameFor(provider, allProviders, now, maxUsageWindows);
   return {
     providerLabel: provider.label,
     ...(frame ? { frame, frameAt: provider.collectedAt } : {}),
@@ -310,6 +314,7 @@ export function displayPreviewFor(
 export function displayPreviewsFor(
   usage: UsageSnapshot | null,
   providers: { id: string; label: string }[],
+  maxUsageWindows = 0,
   hiddenWindows?: Record<string, string[]>,
 ): SetupDisplayModePreview[] {
   const reported = new Map(
@@ -330,8 +335,8 @@ export function displayPreviewsFor(
       displayPreviewFor(
         reported.get(provider.id),
         new Date(),
-        usage?.tokenUsageReady === true,
         complete,
+        maxUsageWindows,
       ) ?? {
         providerLabel: provider.label,
         resetLabel: null,

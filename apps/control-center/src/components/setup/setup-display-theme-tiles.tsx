@@ -85,8 +85,8 @@ export function useThemeRenderPack(
           scheduleRetry();
         }
       })
-      .catch((error) => {
-        if (error instanceof DOMException && error.name === "AbortError") {
+      .catch(() => {
+        if (controller.signal.aborted) {
           return;
         }
         setState({ key, pack: null, status: "error" });
@@ -152,8 +152,11 @@ export function useClockNow(): Date {
   return now;
 }
 
-/** The one tile's size, as in template frame 22. */
-const FRONT_SIZE = 104;
+// Native 240px in the setup's 256px-or-wider cards; half scale only when the
+// window is too narrow. Loading and live frames share the same image area.
+const PREVIEW_CLASS =
+  "@container flex w-full shrink-0 items-center justify-center overflow-hidden bg-muted px-1 py-2";
+const TILE_SIZE_CLASS = "size-[120px] shrink-0 @min-[240px]:size-[240px]";
 
 /**
  * What a mode card shows: ONE tile with the active theme (Paul, 20.10.2026).
@@ -181,12 +184,11 @@ export function ThemeTileStrip({
   const now = useClockNow();
   return (
     <span
-      className="flex h-[136px] w-full items-center overflow-hidden bg-muted px-1"
+      className={PREVIEW_CLASS}
       data-slot="display-mode-preview"
     >
       <span
-        className="relative mx-auto block shrink-0"
-        style={{ height: FRONT_SIZE, width: FRONT_SIZE }}
+        className={cn("relative mx-auto block", TILE_SIZE_CLASS)}
       >
         {frames.map((frame, position) => (
           <ThemeTile
@@ -240,11 +242,11 @@ function ThemeTile({
       className={cn(
         "absolute inset-0 block overflow-hidden rounded-[6px] bg-black",
         active ? "opacity-100" : "opacity-0",
-        !reducedMotion && "transition-opacity duration-500 ease-out",
+        !reducedMotion && "transition-opacity duration-[180ms] ease-out",
       )}
       data-provider={frame.providerLabel}
       data-slot="display-mode-tile"
-      data-state={data ? "live" : "skeleton"}
+      data-state={data ? "live" : "unavailable"}
       data-visible={active ? "true" : "false"}
     >
       {data ? (
@@ -258,7 +260,7 @@ function ThemeTile({
       ) : (
         <span
           aria-label={`${frame.providerLabel}: no usage yet`}
-          className="block size-full animate-pulse bg-foreground/15"
+          className="block size-full bg-foreground/15"
           role="img"
         />
       )}
@@ -270,12 +272,12 @@ function ThemeTile({
 export function ThemeTileSkeleton({ count: _count }: { count: number }) {
   return (
     <span
-      className="flex h-[136px] w-full items-center justify-center bg-muted px-1"
+      className={PREVIEW_CLASS}
       data-slot="display-mode-preview"
     >
       <span
         aria-hidden
-        className="block aspect-square w-[104px] animate-pulse rounded-[6px] bg-foreground/15"
+        className={cn("block animate-pulse rounded-[6px] bg-foreground/15", TILE_SIZE_CLASS)}
         data-slot="display-mode-tile"
         data-state="skeleton"
       />

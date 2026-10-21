@@ -1099,6 +1099,7 @@ export function SetupWizard(props: SetupWizardProps) {
           {...help}
           automaticPreview={displayPreviews[0] ?? null}
           automaticPreviews={displayPreviews}
+          usageLoading={props.usage === null}
           manualPreview={previewOf(displayProviderId) ?? null}
           mode={displayMode}
           theme={displayTheme}

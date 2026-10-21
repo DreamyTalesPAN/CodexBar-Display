@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { UsageProviderInfo, UsageSnapshot } from "../control-center-types";
-import { buildFrameData, renderTextPrimitive } from "../live-vibetv-preview";
+import { boundValue, buildFrameData, renderTextPrimitive } from "../live-vibetv-preview";
 import {
   displayPreviewFor,
   pairDisplayPreview,
@@ -86,6 +86,40 @@ describe("displayPreviewFor", () => {
 describe("displayPreviewFor: the frame the theme draws", () => {
   const stamped = "2026-10-20T08:00:00Z";
 
+  it.each([1, 3])("caps device windows at %i before choosing the root countdown", (maxUsageWindows) => {
+    const reading = provider({
+      collectedAt: stamped,
+      windows: Array.from({ length: maxUsageWindows + 1 }, (_, index) => ({
+        id: `window-${index}`,
+        label: `Window ${index}`,
+        usedPercent: 20,
+        resetSecs: index === maxUsageWindows ? 7200 : 0,
+      })),
+    });
+    const usage = { providers: [reading] } as UsageSnapshot;
+    const [preview] = displayPreviewsFor(usage, [reading], maxUsageWindows);
+
+    expect(preview.frame?.usageWindows).toHaveLength(maxUsageWindows);
+    expect(preview.frame?.resetSecs).toBe(0);
+    // The cap belongs to the device frame, never to the collector's snapshot.
+    expect(reading.windows).toHaveLength(maxUsageWindows + 1);
+  });
+
+  it("keeps the first retained deadline and does not invent a cap when capabilities are unknown", () => {
+    const reading = provider({
+      collectedAt: stamped,
+      windows: [
+        { id: "session", label: "Session", usedPercent: 10, resetSecs: 3600 },
+        { id: "weekly", label: "Weekly", usedPercent: 20, resetSecs: 7200 },
+      ],
+    });
+    const usage = { providers: [reading] } as UsageSnapshot;
+    expect(displayPreviewsFor(usage, [reading], 1)[0].frame?.resetSecs).toBe(3600);
+    for (const limit of [undefined, 0]) {
+      expect(displayPreviewsFor(usage, [reading], limit)[0].frame?.usageWindows).toHaveLength(2);
+    }
+  });
+
   it("passes the usage service's values through unchanged", () => {
     const preview = displayPreviewFor(
       provider({
@@ -163,12 +197,19 @@ describe("displayPreviewFor: the frame the theme draws", () => {
 });
 
 describe("displayPreviewsFor: token totals the usage service already read", () => {
-  it("marks zero token totals as known once the snapshot's token history is ready", () => {
-    // /v1/usage leaves all-zero totals out but sets tokenUsageReady (Codex on #821).
-    const ready = { tokenUsageReady: true, providers: [provider({ id: "codex", label: "Codex" })] } as UsageSnapshot;
-    const notReady = { providers: [provider({ id: "codex", label: "Codex" })] } as UsageSnapshot;
-    expect(displayPreviewsFor(ready, [{ id: "codex", label: "Codex" }])[0]?.frame?.tokenTotalsKnown).toBe(true);
-    expect(displayPreviewsFor(notReady, [{ id: "codex", label: "Codex" }])[0]?.frame?.tokenTotalsKnown).toBeUndefined();
+  it.each([false, true])("keeps omitted token totals unavailable when tokenUsageReady is %s", (tokenUsageReady) => {
+    // Completed Unavailable history has a timestamp, but no known token totals.
+    const usage = { tokenUsageReady, providers: [provider({})] } as UsageSnapshot;
+    const frame = displayPreviewsFor(usage, [{ id: "codex", label: "Codex" }])[0].frame!;
+
+    expect(frame.tokenTotalsKnown).toBe(false);
+    const data = buildFrameData(undefined, frame);
+    expect(["st", "wt", "tt"].map((key) => boundValue(key, data))).toEqual(["--", "--", "--"]);
+  });
+
+  it.each([0, 123])("preserves an explicitly reported token total of %s", (totalTokens) => {
+    const frame = displayPreviewFor(provider({ totalTokens }))!.frame!;
+    expect(boundValue("tt", buildFrameData(undefined, frame))).toBe(String(totalTokens));
   });
 });
 
@@ -312,7 +353,7 @@ describe("provider slots in the synthesized frames", () => {
     expect(legacy.windows).toBeUndefined();
     expect(providerSlotsFor([legacy], undefined)).toEqual([]);
     expect(
-      displayPreviewFor(legacy, new Date(), false, [legacy])?.frame?.providerSlots,
+      displayPreviewFor(legacy, new Date(), [legacy])?.frame?.providerSlots,
     ).toEqual([]);
   });
 
@@ -595,13 +636,13 @@ describe("hidden limits in live theme previews", () => {
     });
     const usage = { providers: [reading] } as UsageSnapshot;
     const enabled = [{ id: "codex", label: "Codex" }];
-    const [hidden] = displayPreviewsFor(usage, enabled, { codex: ["session"] });
+    const [hidden] = displayPreviewsFor(usage, enabled, 0, { codex: ["session"] });
     expect(hidden.windows).toEqual([{ label: "Weekly", percent: 20 }]);
     expect(hidden.frame?.usageWindows?.map((window) => window.id)).toEqual(["weekly"]);
     expect(hidden.frame?.providerSlots).toEqual([
       { id: "codex", label: "Codex", percent: 20, resetSecs: 3600 },
     ]);
-    const [allHidden] = displayPreviewsFor(usage, enabled, { codex: ["session", "weekly"] });
+    const [allHidden] = displayPreviewsFor(usage, enabled, 0, { codex: ["session", "weekly"] });
     expect(allHidden.frame?.usageWindows?.map((window) => window.id)).toEqual(["session", "weekly"]);
   });
 });
