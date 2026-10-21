@@ -787,7 +787,8 @@ function ThemePrimitiveNode({
   }
 
   if (type === "text" || type === "tx") {
-    const text = renderTextPrimitive(primitive, frame, primitives);
+    const footer = displayedResetFooter(primitive, frame, primitives);
+    const text = footer ?? renderTextPrimitive(primitive, frame);
     const maxWidth =
       primitive.maxWidth || primitive.mw || primitive.width || primitive.w || 0;
     const font = primitive.font || primitive.f || 1;
@@ -797,7 +798,7 @@ function ThemePrimitiveNode({
       font,
       maxSize,
       maxWidth,
-      (primitive.fit || primitive.ft) === "shrink",
+      footer === null && (primitive.fit || primitive.ft) === "shrink",
     );
     const fontSize = themeFontSize(font, size);
     return (
@@ -1620,7 +1621,15 @@ function displayedResetFooter(
     sawAvailable = true;
     allIdle = allIdle && window.idle;
     if (window.resetSecs > 0) {
-      return `${window.label} resets in ${formatReset(window.resetSecs, false)}`;
+      const duration = formatReset(window.resetSecs, false);
+      const variants = [`${window.label} resets in ${duration}`, `${window.label} ${duration}`];
+      if (slots.size === 1) variants.push(`Resets ${duration}`);
+      const maxWidth = primitive.maxWidth || primitive.mw || primitive.width || primitive.w || 0;
+      const font = primitive.font || primitive.f || 1;
+      const size = Math.max(1, primitive.fontSize || primitive.s || 1);
+      return variants.find(text => maxWidth <= 0 ||
+        (themeFirmwareTextMetrics(text, font, size)?.width ??
+          themeTextWidth(text, themeFontSize(font, size))) <= maxWidth) ?? variants.at(-1)!;
     }
   }
   return sawAvailable && allIdle ? RESET_IDLE : RESET_UNAVAILABLE;

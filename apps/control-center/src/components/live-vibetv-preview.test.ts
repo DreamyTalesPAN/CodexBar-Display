@@ -1183,9 +1183,23 @@ describe("displayed-limit reset footer", () => {
     const mini = JSON.parse(readFileSync(new URL("../../../../theme-packs/mini-classic/theme.json", import.meta.url), "utf8"));
     const cozy = JSON.parse(readFileSync(new URL("../../../../dist/theme-packs/render/cozy-meadow/cm-4-5e14e6.json", import.meta.url), "utf8")).spec;
     const miniFooter = mini.p.at(-1);
-    expect(renderTextPrimitive(miniFooter, frame, mini.p)).toBe("Weekly resets in 3d 1h");
+    expect(renderTextPrimitive(miniFooter, frame, mini.p)).toBe("Weekly 3d 1h");
+    const markup = renderToStaticMarkup(createElement(ThemeSpecPreview, {
+      pack: { themeId: "mini-classic", spec: mini, assets: {} },
+      status: "ready", themeId: "mini-classic", frame,
+    }));
+    expect([...markup.matchAll(/<text[^>]*font-size="(\d+)"/g)].at(-1)?.[1]).toBe("32");
+    expect(markup.replace(/<[^>]+>/g, "")).toContain("Weekly 3d 1h");
     // Cozy Meadow really has only one displayed limit, so Weekly stays hidden.
     expect(renderTextPrimitive(cozy.p.at(-1), frame, cozy.p)).toBe("No active session");
+  });
+  it("keeps the name with multiple limits and permits Resets only for one", () => {
+    const narrow = { ...footer, f: 1, s: 2, w: 120, ft: "shrink" };
+    expect(renderTextPrimitive(narrow, frame, [lane1, lane2, narrow])).toBe("Weekly 3d 1h");
+    const single = { ...frame, usageWindows: frame.usageWindows.map(w => ({ ...w, label: "Long weekly limit" })) };
+    expect(renderTextPrimitive({ ...narrow, w: 144 }, single, [lane2])).toBe("Resets 3d 1h");
+    const wide = { ...narrow, w: 300 };
+    expect(renderTextPrimitive(wide, frame, [lane1, lane2, wide])).toBe("Weekly resets in 3d 1h");
   });
   it("names the first displayed limit with a real reset", () => {
     const markup = renderToStaticMarkup(createElement(ThemeSpecPreview, {

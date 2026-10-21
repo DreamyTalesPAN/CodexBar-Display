@@ -99,6 +99,21 @@ struct RecordedCommand {
 
 class RecordingSink final : public Sink {
  public:
+  int MeasureText(const char* text, int font, int size) override {
+    // TFT_eSPI 2.5.43 Font16.c widths, matching the preview's pinned metrics.
+    static const uint8_t widths[] = {
+      6,3,4,9,8,9,9,3,7,7,8,6,3,6,5,7,8,8,8,8,8,8,8,8,8,8,
+      3,3,6,6,6,8,9,8,8,8,8,8,8,8,8,4,8,8,7,10,8,8,8,8,8,8,8,
+      8,8,8,10,8,8,8,4,7,4,7,9,5,7,7,7,7,7,6,7,7,4,5,6,4,8,
+      7,8,7,8,6,6,5,7,8,8,6,7,7,5,3,5,8,6
+    };
+    int width = 0;
+    for (const unsigned char* c = reinterpret_cast<const unsigned char*>(text); *c; ++c) {
+      width += font == 2 && *c >= 32 && *c <= 127 ? widths[*c - 32] : 6;
+    }
+    return width * size;
+  }
+
   void BeginClip(int x, int y, int width, int height) override {
     RecordedCommand cmd;
     cmd.type = CommandType::BeginClip;
@@ -602,6 +617,41 @@ void testFooterUsesFirstDisplayedReset() {
   sink.commands.clear();
   TEST_ASSERT_TRUE(renderSpec(cozy, frame, sink));
   TEST_ASSERT_EQUAL_STRING("No active session", sink.commands.back().text.c_str());
+}
+
+void testFooterKeepsOriginalFontSize() {
+  FrameData frame;
+  frame.usageSlot1Label = "Session";
+  frame.usageSlot1ResetSecs = kResetSecsIdle;
+  frame.usageSlot1Available = true;
+  frame.usageSlot2Label = "Weekly";
+  frame.usageSlot2ResetSecs = 3 * 86400 + 3600;
+  frame.usageSlot2Available = true;
+  const char* spec = R"JSON({"v":1,"id":"footer","rev":1,"p":[
+    {"t":"tx","y":30,"sl":1,"v":"{usageSlot1Label}"},
+    {"t":"tx","y":30,"sl":2,"v":"{usageSlot2Label}"},
+    {"t":"tx","y":204,"w":232,"f":2,"s":2,"ft":"shrink","sl":1,"v":"Reset in {usageSlot1Reset}"}
+  ]})JSON";
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  TEST_ASSERT_EQUAL_STRING("Weekly 3d 1h", sink.commands.back().text.c_str());
+  TEST_ASSERT_EQUAL_INT(2, sink.commands.back().size);
+  TEST_ASSERT_FALSE(sink.commands.back().fitShrink);
+  // A single long label may be dropped; a multi-limit footer must keep it.
+  frame.usageSlot2Label = "Long weekly limit";
+  const char* single = R"JSON({"v":1,"id":"footer","rev":1,"p":[
+    {"t":"tx","y":30,"sl":2,"v":"{usageSlot2Label}"},
+    {"t":"tx","y":204,"w":144,"s":2,"ft":"shrink","v":"Reset in {usageSlot1Reset}"}
+  ]})JSON";
+  sink.commands.clear();
+  TEST_ASSERT_TRUE(renderSpec(single, frame, sink));
+  TEST_ASSERT_EQUAL_STRING("Resets 3d 1h", sink.commands.back().text.c_str());
+  TEST_ASSERT_EQUAL_INT(2, sink.commands.back().size);
+  TEST_ASSERT_FALSE(sink.commands.back().fitShrink);
+  sink.commands.clear();
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  TEST_ASSERT_EQUAL_STRING("Long weekly limit 3d 1h", sink.commands.back().text.c_str());
+  TEST_ASSERT_FALSE(sink.commands.back().fitShrink);
 }
 
 // A customer received a VibeTV showing "Resets in Reset unavailable" on the
@@ -4498,6 +4548,7 @@ int main() {
   RUN_TEST(testTokenAvailabilityFlipRepaintsTokenBindings);
   RUN_TEST(testUsageUnavailableKeepsThemeAndProgress);
   RUN_TEST(testFooterUsesFirstDisplayedReset);
+  RUN_TEST(testFooterKeepsOriginalFontSize);
   RUN_TEST(testIdleSlotCountdownCollapsesInsteadOfDoublingThePrefix);
   RUN_TEST(testIdleCountdownCollapsesForCompactResetAliases);
   RUN_TEST(testStaleCountdownKeepsTheUnavailableWordingWhileIdleDoesNot);

@@ -8338,3 +8338,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Mini Classic with idle Session and Weekly reset in 3d 1h shows “Weekly resets in 3d 1h”; Cozy Meadow displays only Session and keeps “No active session”, never borrowing the hidden Weekly reset; unavailable deadlines remain unavailable.
 - Scope: Central firmware and Control Center preview footer rendering, with matching regression tests; no provider semantics or theme-specific rules.
 - What's new: none — correction of the existing reset footer.
+
+## 2026-10-21 — #894: Keep the reset footer at its theme font size
+- User approval: pending — #894 fixed-size footer wording refinement requested after the smaller Mini Classic screenshot; exact final wording awaits visual approval.
+- Approved customer-visible result: At the original footer font size, use “Weekly resets in 3d 1h” when it fits, otherwise “Weekly 3d 1h”; “Resets 3d 1h” is allowed only with one displayed limit. Mini Classic shows “Weekly 3d 1h” at font 2 size 2 in used and remaining mode. Cozy Meadow with idle Session still shows “No active session” at its original font size; Gauge shows “Session 2h 14m”. If no permitted wording fits, retain the font and existing clipping rather than shrink or hide a multi-limit name.
+- Scope: Central firmware and preview footer rendering, font measurement and focused regression tests; no theme-specific cases, provider or hardware changes.
+- What's new: none — preserve the existing footer font size while shortening reset wording.

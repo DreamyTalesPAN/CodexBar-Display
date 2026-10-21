@@ -318,6 +318,7 @@ class Sink {
   virtual void EndClip() {}
   virtual void FillScreen(uint16_t color) = 0;
   virtual void FillRect(const RectCommand& cmd) = 0;
+  virtual int MeasureText(const char* text, int font, int size) = 0;
   virtual void DrawText(const TextCommand& cmd) = 0;
   virtual void DrawProgress(const ProgressCommand& cmd) = 0;
   virtual void DrawGif(const GifCommand& cmd) = 0;
@@ -1911,7 +1912,8 @@ inline bool CompiledPrimitiveIsAnimated(
 // Mirrors displayedResetFooter in the preview. Only a standalone first-limit
 // countdown below the displayed usage rows is a shared footer.
 inline bool RenderDisplayedResetFooter(const CompiledThemeSpec& scene,
-    const CompiledPrimitive& primitive, const FrameData& frame, char* out, size_t outSize) {
+    const CompiledPrimitive& primitive, const FrameData& frame, char* out, size_t outSize,
+    Sink* sink = nullptr) {
   const char* raw = SafeText(primitive.text);
   const char* token = nullptr;
   if (std::strncmp(raw, "Reset in ", 9) == 0) token = raw + 9;
@@ -1930,6 +1932,8 @@ inline bool RenderDisplayedResetFooter(const CompiledThemeSpec& scene,
     if (row.y >= primitive.y) return false;
     displayed[row.usageSlot - 1] = true;
   }
+  size_t displayedCount = 0;
+  for (bool slot : displayed) if (slot) ++displayedCount;
   bool sawDisplayed = false;
   bool sawAvailable = false;
   bool allIdle = true;
@@ -1945,6 +1949,14 @@ inline bool RenderDisplayedResetFooter(const CompiledThemeSpec& scene,
     char duration[32] = {};
     FormatDuration(window.resetSecs, duration, sizeof(duration));
     std::snprintf(out, outSize, "%s resets in %s", SafeText(window.label), duration);
+    if (sink != nullptr && primitive.maxWidth > 0 &&
+        sink->MeasureText(out, primitive.font, primitive.size) > primitive.maxWidth) {
+      std::snprintf(out, outSize, "%s %s", SafeText(window.label), duration);
+      if (displayedCount == 1 &&
+          sink->MeasureText(out, primitive.font, primitive.size) > primitive.maxWidth) {
+        std::snprintf(out, outSize, "Resets %s", duration);
+      }
+    }
     return true;
   }
   if (!sawDisplayed) return false;
@@ -1952,11 +1964,13 @@ inline bool RenderDisplayedResetFooter(const CompiledThemeSpec& scene,
   return true;
 }
 
-inline void RenderCompiledText(const CompiledThemeSpec& scene,
-    const CompiledPrimitive& primitive, const FrameData& frame, char* out, size_t outSize) {
-  if (RenderDisplayedResetFooter(scene, primitive, frame, out, outSize)) return;
+inline bool RenderCompiledText(const CompiledThemeSpec& scene,
+    const CompiledPrimitive& primitive, const FrameData& frame, char* out, size_t outSize,
+    Sink* sink = nullptr) {
+  if (RenderDisplayedResetFooter(scene, primitive, frame, out, outSize, sink)) return true;
   if (primitive.binding != nullptr) BoundValue(primitive.binding, frame, out, outSize);
   else RenderTextTemplate(primitive.text, frame, out, outSize);
+  return false;
 }
 
 inline bool CompiledPrimitiveBounds(
@@ -2061,7 +2075,9 @@ inline bool DrawCompiledPrimitive(
       return false;
     }
     char text[128] = {0};
-    RenderCompiledText(scene, primitive, frame, text, sizeof(text));
+    if (RenderCompiledText(scene, primitive, frame, text, sizeof(text), &sink)) {
+      cmd.fitShrink = false;
+    }
     cmd.text = text;
     cmd.fg = primitive.color;
     cmd.bg = primitive.bg;
