@@ -1919,6 +1919,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         pendingPairingCandidate.current = null;
         setDeviceSearchState("idle");
         setLastError(null);
+        // A selection is a new start: a "Not now" of the previous outage must
+        // not hide the next one, even if the reconnect is still "reconnecting".
+        setVibetvNotFoundDismissed(false);
         addEvent({
           label: "VibeTV selected",
           detail:

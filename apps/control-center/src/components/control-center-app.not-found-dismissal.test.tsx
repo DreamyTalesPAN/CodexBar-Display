@@ -63,7 +63,12 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 function startWindow() {
-  const companion = { device: connected as Record<string, unknown> };
+  // selectable: the Companion finds and reconnects the VibeTV on request.
+  const companion = {
+    device: connected as Record<string, unknown>,
+    requests: [] as string[],
+    selectable: false,
+  };
   markWhatsNewSeen();
   vi.useFakeTimers();
   vi.stubGlobal("matchMedia", () => ({
@@ -81,8 +86,9 @@ function startWindow() {
   );
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (input: RequestInfo | URL) => {
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      companion.requests.push(`${init?.method || "GET"} ${url}`);
       if (url.endsWith("/v1/status")) {
         return jsonResponse({
           ok: true,
@@ -101,6 +107,15 @@ function startWindow() {
             usageSlots: [{ id: "weekly", label: "Weekly", percent: 29 }],
           },
         });
+      }
+      if (companion.selectable && url.endsWith("/v1/device/search")) {
+        return jsonResponse({
+          ok: true,
+          devices: [{ ...connected, known: true, networkMode: "station", transport: "wifi" }],
+        });
+      }
+      if (companion.selectable && url.endsWith("/v1/device/select")) {
+        return jsonResponse({ ok: true, device: graceConnected });
       }
       if (url.includes("/api/theme-pack/")) {
         return jsonResponse({
@@ -195,6 +210,28 @@ it("shows the not-found dialog again once VibeTV was connected and is lost again
 
   app.companion.device = connected;
   await app.wait(10);
+  expect(notFoundDialog()).toBeNull();
+
+  app.companion.device = notFound;
+  await app.wait(30);
+  expect(notFoundDialog()).not.toBeNull();
+});
+
+it("shows the not-found dialog again after a successful select reconnects VibeTV", async () => {
+  const app = startWindow();
+  app.companion.selectable = true;
+  await app.wait(10);
+  app.companion.device = notFound;
+  await app.wait(30);
+  expect(notFoundDialog()).not.toBeNull();
+
+  fireEvent.click(within(notFoundDialog()!).getByRole("button", { name: "Not now" }));
+  await app.wait(1);
+  expect(notFoundDialog()).toBeNull();
+
+  app.companion.device = graceConnected;
+  await app.wait(5);
+  expect(app.companion.requests).toContain("POST /api/local-companion/v1/device/select");
   expect(notFoundDialog()).toBeNull();
 
   app.companion.device = notFound;

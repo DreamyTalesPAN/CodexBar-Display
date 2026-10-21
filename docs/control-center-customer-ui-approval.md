@@ -13194,3 +13194,91 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve the incoming feature together with the existing Build 6 customer flows in the local integration candidate.
 - Scope: Merge claude/setup11-live-theme-tiles into claude/paultest-build7; retain all source approval entries.
 - What's new: none — integration of existing feature entries only.
+
+## 2026-10-21 — #784: slider keyboard focus ring 2 px olive
+
+- User approval: no visible change – UI approval not needed (#784 slider keyboard focus ring 3px → the shared 2px olive ring decided earlier; token-only)
+- Approved customer-visible result: the slider thumb looks as before for hover and drag; the keyboard focus ring is the shared 2 px olive ring (border plus 1 px ring) like buttons and inputs. Nothing else changes.
+- Scope: `apps/control-center/src/components/ui/slider.tsx` (thumb focus classes), its test `apps/control-center/src/components/ui/slider.focus-ring.test.tsx`, and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — focus ring classes of the slider thumb, no new text
+
+<<<<<<<<< Temporary merge branch 1
+
+## 2026-10-20 — #816: approval marker after merging claude/group-calm-redesign
+
+- User approval: no visible change – UI approval not needed (#816: approval marker after merging claude/group-calm-redesign: Merge of claude/group-calm-redesign into this branch; no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-21 — #816: approval marker after merging claude/group-calm-redesign at fb30d196
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (fb30d196) into #816; the own entries of #816 keep their approvals)
+- Approved customer-visible result: #816 as in its own entries plus the entries merged with fb30d196; nothing else changes.
+- Scope: the merge of fb30d196 and this approval record. Pull request branch #816 only, not merged, not released.
+- What's new: none — merge of fb30d196, no customer-visible change of its own
+
+## 2026-10-21 — #816: approval marker after merging claude/group-calm-redesign at 0a599c37
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (0a599c37) into #816; the own entries of #816 keep their approvals)
+- Approved customer-visible result: #816 as in its own entries plus the entries merged with 0a599c37; nothing else changes.
+- Scope: the merge of 0a599c37 and this approval record. Pull request branch #816 only, not merged, not released.
+- What's new: none — merge of 0a599c37, no customer-visible change of its own
+
+## 2026-10-21 — #816: approval marker after merging claude/group-calm-redesign at 2d217aa5
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (2d217aa5) into #816; the own entries of #816 keep their approvals)
+- Approved customer-visible result: #816 as in its own entries plus the entries merged with 2d217aa5; nothing else changes.
+- Scope: the merge of 2d217aa5 and this approval record. Pull request branch #816 only, not merged, not released.
+- What's new: none — merge of 2d217aa5, no customer-visible change of its own
+
+## 2026-10-21 — #816: approval marker after merging claude/group-calm-redesign at ff601365
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (ff601365) into #816; the own entries of #816 keep their approvals)
+- Approved customer-visible result: #816 as in its own entries plus the entries merged with ff601365; nothing else changes.
+- Scope: the merge of ff601365 and this approval record. Pull request branch #816 only, not merged, not released.
+- What's new: none — merge of ff601365, no customer-visible change of its own
+=========
+
+## 2026-10-21 — #784: approval marker after merging main at 467fd7fb
+
+- User approval: no visible change – UI approval not needed (merge of main (467fd7fb) into #784; the own entries of #784 keep their approvals)
+- Approved customer-visible result: #784 as in its own entries plus the entries merged with 467fd7fb; nothing else changes.
+- Scope: the merge of 467fd7fb and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — merge of 467fd7fb, no customer-visible change of its own
+>>>>>>>>> Temporary merge branch 2
+
+## 2026-10-21 — #816: approval marker after merging claude/group-calm-redesign at ff601365
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (ff601365) into #816; the own entries of #816 keep their approvals)
+- Approved customer-visible result: #816 as in its own entries plus the entries merged with ff601365; nothing else changes.
+- Scope: the merge of ff601365 and this approval record. Pull request branch #816 only, not merged, not released.
+- What's new: none — merge of ff601365, no customer-visible change of its own
+
+## 2026-10-21 — #816: a successful VibeTV selection resets the "Not now" of the previous outage (#850)
+
+- User approval: no visible change – UI approval not needed (#816 / #850: a successful VibeTV selection resets the "Not now" of the previous outage)
+- Approved customer-visible result: #816 as in its own entries; a later VibeTV not-found dialog after a successful selection shows again instead of staying hidden.
+- Scope: the dismissal latch is cleared on a successful device selection; status snapshots keep the anti-flap rule. Pull request branch #816 only, not merged, not released.
+- What's new: none — bug fix that removes a wrong suppression, no new customer-visible text or layout
+
+## 2026-10-21 — #816: approval marker after merging claude/group-calm-redesign at 3caaf211
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (3caaf211) into #816; the own entries of #816 keep their approvals)
+- Approved customer-visible result: #816 as in its own entries plus the entries merged with 3caaf211; nothing else changes.
+- Scope: the merge of 3caaf211 and this approval record. Pull request branch #816 only, not merged, not released.
+- What's new: none — merge of 3caaf211, no customer-visible change of its own
+
+## 2026-10-21 — #816: approval marker after merging claude/group-calm-redesign at 4371975c
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (4371975c) into #816; the own entries of #816 keep their approvals)
+- Approved customer-visible result: #816 as in its own entries plus the entries merged with 4371975c; nothing else changes.
+- Scope: the merge of 4371975c and this approval record. Pull request branch #816 only, not merged, not released.
+- What's new: none — merge of 4371975c, no customer-visible change of its own
+
+## 2026-10-21 — #816: Build 7 integration of claude/787-not-found-dismissal
+
+- User approval: pending — build7 integration of claude/787-not-found-dismissal at 8efbdfe43a7d for the requested Pace + Two at once Mac test.
+- Approved customer-visible result: Preserve the incoming feature together with the existing Build 6 customer flows in the local integration candidate.
+- Scope: Merge claude/787-not-found-dismissal into claude/paultest-build7; retain all source approval entries.
+- What's new: none — integration of existing feature entries only.
