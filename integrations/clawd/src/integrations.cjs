@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const {readJsonFile, writeJsonAtomic, removeMatchingCommandHooks, decodeWindowsEncodedCommand, formatNodeHookCommand} = require('../upstream/hooks/json-utils');
+const {readJsonFile, writeJsonAtomic, removeMatchingCommandHooks, decodeWindowsEncodedCommand, quotePowerShellSingleArg, windowsPowerShellBin} = require('../upstream/hooks/json-utils');
 const claude = require('../upstream/hooks/install');
 const copilot = require('../upstream/hooks/copilot-install');
 
@@ -77,10 +77,15 @@ function entryFor(agentId, event, {runtimeDir, directory, platform = process.pla
   const node = path.join(directory, platform === 'win32' ? 'node.exe' : 'node');
   const script = path.join(directory, 'src', marker);
   const args = [runtimeDir, agentId, event];
-  const bash = [node, script, ...args].map(value => posix(platform === 'win32' ? value.replaceAll('\\', '/') : value)).join(' ');
-  // Reuse upstream's encoded PowerShell quoting for spaces, quotes and $ in
-  // installed paths. Git Bash clients require POSIX quoting, not PATH's node.
-  const powershell = formatNodeHookCommand(node, script, {platform: 'win32', windowsWrapper: 'encoded', args});
+  // Uninstalling or replacing the app removes node and the observer. The hook
+  // must then exit 0 silently instead of failing every agent event (#851).
+  const words = [node, script, ...args].map(value => posix(platform === 'win32' ? value.replaceAll('\\', '/') : value));
+  const bash = `[ -x ${words[0]} ] && [ -f ${words[1]} ] || exit 0; ${words.join(' ')}`;
+  // Encoded PowerShell keeps spaces, quotes and $ in installed paths intact.
+  // Git Bash clients require POSIX quoting, not PATH's node.
+  const ps = [node, script, ...args].map(quotePowerShellSingleArg);
+  const psCommand = `if ((Test-Path -LiteralPath ${ps[0]} -PathType Leaf) -and (Test-Path -LiteralPath ${ps[1]} -PathType Leaf)) { & ${ps.join(' ')} }`;
+  const powershell = `${windowsPowerShellBin()} -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ${Buffer.from(psCommand, 'utf16le').toString('base64')}`;
   if (profile.flat) return {type: 'command', bash, powershell, timeoutSec: 5};
   const hook = {type: 'command', command: platform === 'win32' && !profile.bash ? powershell : bash, timeout: 5};
   if (agentId === 'claude-code' && platform === 'win32') hook.shell = 'powershell';
