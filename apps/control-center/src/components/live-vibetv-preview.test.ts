@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import {
@@ -1383,5 +1384,78 @@ describe("usage pace", () => {
     expect(theme(paced(38, { delta: 14, state: "deficit" }))).toContain('fill="#E7A3AC"');
     // Without a pace the text keeps its solid colour.
     expect(theme(paced(91, undefined))).toContain('fill="#111111"');
+  });
+});
+
+describe("displayed-limit reset footer", () => {
+  const now = new Date("2026-10-21T20:20:00Z");
+  const footer = { t: "tx", y: 204, sl: 1, v: "Reset in {usageSlot1Reset}" };
+  const primitives = [lane1, lane2, footer];
+  const frame = buildFrameData(now.toISOString(), {
+    v: 1, provider: "claude", usageMode: "remaining",
+    usageWindows: [
+      { id: "session", label: "Session", percent: 100, resetSecs: 0 },
+      { id: "weekly", label: "Weekly", percent: 4, resetSecs: 3 * 86400 + 3600 },
+    ],
+  }, now);
+  it("does not use a hidden weekly or third limit", () => {
+    expect(renderTextPrimitive(footer, frame, [lane1, footer])).toBe("No active session");
+    const expired = { ...frame, usageWindows: [
+      ...frame.usageWindows.map(w => ({ ...w, resetSecs: 0 })),
+      { label: "Hidden third", percent: 10, resetSecs: 7200, available: true, idle: false },
+    ] };
+    expect(renderTextPrimitive(footer, expired, primitives)).toBe("Reset unavailable");
+    expect(renderTextPrimitive(footer, { ...frame, resetBasisTrusted: false }, primitives)).toBe("Reset unavailable");
+  });
+  it("keeps per-limit lines and handles the generic footer alias", () => {
+    const rowReset = { ...footer, y: 10 };
+    expect(renderTextPrimitive(rowReset, frame, [lane1, rowReset, { ...lane2, y: 20 }])).toBe("No active session");
+    const generic = { t: "tx", y: 204, ui: 0, b: "usage.0.reset" };
+    expect(renderTextPrimitive(generic, frame, [{ ...lane1, ui: 0 }, { ...lane2, ui: 1 }, generic])).toBe("Weekly resets in 3d 1h");
+  });
+  it("prefers the first reset, never the earliest deadline", () => {
+    const both = { ...frame, usageWindows: frame.usageWindows.map((w, i) => i === 0 ? { ...w, resetSecs: 360000, idle: false } : w) };
+    expect(renderTextPrimitive(footer, both, primitives)).toBe("Session resets in 4d 4h");
+  });
+  it("checks the shipped Mini Classic and preserved Cozy Meadow specs", () => {
+    const mini = JSON.parse(readFileSync(new URL("../../../../theme-packs/mini-classic/theme.json", import.meta.url), "utf8"));
+    const cozy = JSON.parse(readFileSync(new URL("../../../../dist/theme-packs/render/cozy-meadow/cm-4-5e14e6.json", import.meta.url), "utf8")).spec;
+    const miniFooter = mini.p.at(-1);
+    expect(renderTextPrimitive(miniFooter, frame, mini.p)).toBe("Weekly 3d 1h");
+    const markup = renderToStaticMarkup(createElement(ThemeSpecPreview, {
+      pack: { themeId: "mini-classic", spec: mini, assets: {} },
+      status: "ready", themeId: "mini-classic", frame,
+    }));
+    expect([...markup.matchAll(/<text[^>]*font-size="(\d+)"/g)].at(-1)?.[1]).toBe("32");
+    expect(markup.replace(/<[^>]+>/g, "")).toContain("Weekly 3d 1h");
+    // Cozy Meadow really has only one displayed limit, so Weekly stays hidden.
+    expect(renderTextPrimitive(cozy.p.at(-1), frame, cozy.p)).toBe("No active session");
+  });
+  it("keeps the name with multiple limits and permits Resets only for one", () => {
+    const narrow = { ...footer, f: 1, s: 2, w: 120, ft: "shrink" };
+    expect(renderTextPrimitive(narrow, frame, [lane1, lane2, narrow])).toBe("Weekly 3d 1h");
+    const single = { ...frame, usageWindows: frame.usageWindows.map(w => ({ ...w, label: "Long weekly limit" })) };
+    expect(renderTextPrimitive({ ...narrow, w: 144 }, single, [lane2])).toBe("Resets 3d 1h");
+    const wide = { ...narrow, w: 300 };
+    expect(renderTextPrimitive(wide, frame, [lane1, lane2, wide])).toBe("Weekly resets in 3d 1h");
+  });
+  it("names the first displayed limit with a real reset", () => {
+    const markup = renderToStaticMarkup(createElement(ThemeSpecPreview, {
+      pack: { themeId: "mini-classic", spec: { p: primitives }, assets: {} },
+      status: "ready", themeId: "mini-classic", frame,
+    }));
+    expect(markup.replace(/<[^>]+>/g, "")).toContain("Weekly resets in 3d 1h");
+  });
+  it("shrinks an idle footer without a countdown to fit its width", () => {
+    const fontSize = (spec: ThemePrimitive[]) => {
+      const markup = renderToStaticMarkup(createElement(ThemeSpecPreview, {
+        pack: { themeId: "mini-classic", spec: { p: spec }, assets: {} },
+        status: "ready", themeId: "mini-classic", frame,
+      }));
+      expect(markup.replace(/<[^>]+>/g, "")).toContain("No active session");
+      return Number([...markup.matchAll(/<text[^>]*font-size="([\d.]+)"/g)].at(-1)?.[1]);
+    };
+    const idle = { ...footer, w: 60, s: 2 };
+    expect(fontSize([lane1, { ...idle, ft: "shrink" }])).toBeLessThan(fontSize([lane1, idle]));
   });
 });

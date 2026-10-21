@@ -1104,6 +1104,13 @@ class ThemeSpecSink final : public themespec::Sink {
     PrimitiveLayer().FillRect(rect);
   }
 
+  int MeasureText(const char* text, int font, int size) override {
+    TFT_eSPI& tft = Tft();
+    tft.setTextFont(font);
+    tft.setTextSize(size);
+    return tft.textWidth(text);
+  }
+
   void DrawText(const themespec::TextCommand& cmd) override {
     primitive::TextCommand text;
     text.text = cmd.text;

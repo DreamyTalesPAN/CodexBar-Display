@@ -16506,3 +16506,28 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve this feature together with the existing build9 Settings and three equal display cards.
 - Scope: Integration merge preserving both approval histories.
 - What's new: none — integration only.
+## 2026-10-21 — footer-first-reset: Use the first displayed reset in the shared footer
+- User approval: pending — Paul asked ~22:20 „hier unten steht keine reset time, das tritt auch bei anderen themes auf, bspw. cozy coder“; footer-first-reset implementation awaits visual review.
+- Approved customer-visible result: Mini Classic with idle Session and Weekly reset in 3d 1h shows “Weekly resets in 3d 1h”; Cozy Meadow displays only Session and keeps “No active session”, never borrowing the hidden Weekly reset; unavailable deadlines remain unavailable.
+- Scope: Central firmware and Control Center preview footer rendering, with matching regression tests; no provider semantics or theme-specific rules.
+- What's new: none — correction of the existing reset footer.
+
+## 2026-10-21 — #894: Keep the reset footer at its theme font size
+- User approval: pending — #894 fixed-size footer wording refinement requested after the smaller Mini Classic screenshot; exact final wording awaits visual approval.
+- Approved customer-visible result: At the original footer font size, use “Weekly resets in 3d 1h” when it fits, otherwise “Weekly 3d 1h”; “Resets 3d 1h” is allowed only with one displayed limit. Mini Classic shows “Weekly 3d 1h” at font 2 size 2 in used and remaining mode. Cozy Meadow with idle Session still shows “No active session” at its original font size; Gauge shows “Session 2h 14m”. If no permitted wording fits, retain the font and existing clipping rather than shrink or hide a multi-limit name.
+- Scope: Central firmware and preview footer rendering, font measurement and focused regression tests; no theme-specific cases, provider or hardware changes.
+- What's new: none — preserve the existing footer font size while shortening reset wording.
+
+## 2026-10-21 — #894: Shrink idle reset footers again
+- User approval: no visible change – UI approval not needed (bug fix: idle footer shrinks again as before #894)
+- Approved customer-visible result: Idle "No active session" and "Reset unavailable" footers fit their theme width again by shrinking, as before #894; countdown footers keep their fixed size and wording.
+- Scope: Firmware and Control Center preview footer shrink opt-out limited to countdown wording; focused regression tests in both.
+- What's new: none — restores the pre-#894 shrink for idle and unavailable footers.
+
+
+## 2026-10-21 — build9: refresh #894 for 7205
+
+- User approval: pending — integrate claude/footer-first-reset at d08a334c10d2 into build 7205.
+- Approved customer-visible result: Preserve this feature together with the existing build9 Settings and three equal display cards.
+- Scope: Integration merge preserving both approval histories.
+- What's new: none — integration only.
