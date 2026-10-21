@@ -8157,3 +8157,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the approved notice of the blocks above, unchanged; no new text or layout.
 - Scope: `weak-wifi-dialog.tsx` and its test (recovery from a reading without `weak`). Pull request branch only, not merge or release.
 - What's new: none — bug fix, no new entry; the notice keeps its approved wording
+
+## 2026-10-21 — #265: weak WiFi notice, Codex fix for dismissal per device
+
+- User approval: no visible change – UI approval not needed (#861 Codex fix: weak-WiFi dismissal follows the VibeTV, not its IP address)
+- Approved customer-visible result: the approved notice of the blocks above, unchanged; no new text or layout.
+- Scope: `weak-wifi-dialog.tsx` and its test (dismissal keyed to the device id, target as fallback). Pull request branch only, not merge or release.
+- What's new: none — bug fix, no new entry; the notice keeps its approved wording

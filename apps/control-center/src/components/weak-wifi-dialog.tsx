@@ -27,12 +27,13 @@ export function weakWiFiSignal(device: DeviceInfo | null | undefined): boolean {
  * Whether the customer closed the notice for the device under way. Closed stays
  * closed through a short disconnect, which keeps the Companion's weak snapshot,
  * and while that device stays weak. It opens again once the Companion reports the
- * signal recovered, or for another device.
+ * signal recovered, or for another device. The VibeTV is keyed by its id, not its
+ * address, so a reconnect on a new DHCP address keeps the notice closed.
  */
 export function useWeakWiFiDismissal(
   device: DeviceInfo | null | undefined,
 ): [boolean, () => void] {
-  const target = device?.target ?? null;
+  const key = device?.deviceId ?? device?.target ?? null;
   const [dismissedFor, setDismissedFor] = useState<string | null>(null);
   // The Companion omits `weak` when the signal is fine, so a WiFi reading without it is a recovery.
   const recovered =
@@ -46,7 +47,7 @@ export function useWeakWiFiDismissal(
     const timer = window.setTimeout(() => setDismissedFor(null), 0);
     return () => window.clearTimeout(timer);
   }, [recovered]);
-  return [dismissedFor !== null && dismissedFor === target, () => setDismissedFor(target)];
+  return [dismissedFor !== null && dismissedFor === key, () => setDismissedFor(key)];
 }
 
 /** An announcement over the page, like the busy computer notice (#606). */

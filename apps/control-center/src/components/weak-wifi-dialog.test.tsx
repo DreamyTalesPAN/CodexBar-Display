@@ -135,12 +135,24 @@ it("opens again when the Companion sends a WiFi reading without the weak flag", 
   expect(result.current[0]).toBe(false);
 });
 
+it("stays closed when the same VibeTV comes back on a new address", () => {
+  // A reconnect can bring a new DHCP address; the device, not its IP, is the one closed.
+  const { result, rerender } = renderHook(
+    ({ device }) => useWeakWiFiDismissal(device),
+    { initialProps: { device: { ...wifiDevice(true), deviceId: "vibetv-a" } as DeviceInfo } },
+  );
+  act(() => result.current[1]());
+
+  rerender({ device: { ...wifiDevice(true), deviceId: "vibetv-a", target: "192.168.1.21" } as DeviceInfo });
+  expect(result.current[0]).toBe(true);
+});
+
 it("opens again for another device", () => {
   const { result, rerender } = renderHook(
     ({ device }) => useWeakWiFiDismissal(device),
-    { initialProps: { device: wifiDevice(true) } },
+    { initialProps: { device: { ...wifiDevice(true), deviceId: "vibetv-a" } as DeviceInfo } },
   );
   act(() => result.current[1]());
-  rerender({ device: { ...wifiDevice(true), target: "192.168.1.30" } });
+  rerender({ device: { ...wifiDevice(true), deviceId: "vibetv-b" } as DeviceInfo });
   expect(result.current[0]).toBe(false);
 });
