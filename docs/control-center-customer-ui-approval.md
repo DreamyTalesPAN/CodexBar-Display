@@ -8150,3 +8150,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #856 as in its own entries plus the entries merged with 61f79061; nothing else changes.
 - Scope: the merge of 61f79061 and this approval record. Pull request branch #856 only, not merged, not released.
 - What's new: none — merge of 61f79061, no customer-visible change of its own
+
+## 2026-10-21 — #860: API-key providers get the generic provider line instead of "install the app"
+
+- User approval: pending — for a provider CodexBar reports as not set up without a sign-in to start (e.g. OpenAI API without a key), the popup shows the existing generic setup line ("Finish setup for this provider.") instead of telling the customer to install the provider's app; Paul sees it in the next build
+- Approved customer-visible result: For a provider in "setup needed" with no sign-in VibeTV can start, the popup says "Finish setup for this provider." and offers OK only, without "Open setup guide". Sign-in providers and providers signed out of their own app keep their sentences and buttons. The Setup log is unchanged.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx` and its test `setup-providers-screen.test.tsx`, plus this approval record.
+- What's new: none — wording fix for API-key providers (#860), not announced to customers

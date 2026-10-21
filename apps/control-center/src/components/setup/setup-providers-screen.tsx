@@ -120,14 +120,15 @@ export function setupProviderOffersSignIn(
 /**
  * The prerequisite notice for a signed-out provider the app cannot sign in
  * itself: CodexBar reads its usage from the provider's own app, so that app
- * has to be installed and signed in on this computer.
+ * has to be installed and signed in on this computer. Not for "setup_required"
+ * (#860): an API-key provider has no app to install, only a key to finish.
  */
 function setupProviderNeedsOwnApp(
   provider: Pick<ProviderItem, "health" | "providerId">,
 ): boolean {
   const state = providerRowHealthState(provider.health);
   return (
-    (state === "auth_required" || state === "setup_required") &&
+    state === "auth_required" &&
     !SIGN_IN_PROVIDER_IDS.includes(provider.providerId.trim().toLowerCase())
   );
 }
@@ -146,9 +147,15 @@ export function setupProviderDialogSentence(
   const variant = setupProviderRowVariant(state);
   if (variant === "toggle" || variant === "checking") return null;
   if (variant === "sign_in") {
-    return setupProviderNeedsOwnApp(provider)
-      ? `VibeTV reads ${label} usage from ${label}'s own app, so make sure it is installed and signed in on this computer.`
-      : `Sign in to ${label} so VibeTV can read its usage.`;
+    if (setupProviderNeedsOwnApp(provider)) {
+      return `VibeTV reads ${label} usage from ${label}'s own app, so make sure it is installed and signed in on this computer.`;
+    }
+    // #860: "setup_required" without a sign-in the app can start (API key
+    // missing) gets the generic setup line, never the app install.
+    if (state === "setup_required" && !SIGN_IN_PROVIDER_IDS.includes(provider.providerId.trim().toLowerCase())) {
+      return "Finish setup for this provider.";
+    }
+    return `Sign in to ${label} so VibeTV can read its usage.`;
   }
   if (variant === "browser_sign_in") {
     return `Sign in to ${label} in your browser, then close the browser.`;

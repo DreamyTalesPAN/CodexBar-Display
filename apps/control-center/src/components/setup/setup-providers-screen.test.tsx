@@ -321,7 +321,7 @@ describe("SetupProvidersScreen", () => {
     const engine = "No available fetch strategy for openai.";
     const cases: [PreferenceHealthState, string][] = [
       ["auth_required", "VibeTV reads OpenAI usage from OpenAI's own app, so make sure it is installed and signed in on this computer."],
-      ["setup_required", "VibeTV reads OpenAI usage from OpenAI's own app, so make sure it is installed and signed in on this computer."],
+      ["setup_required", "Finish setup for this provider."],
       ["browser_sign_in_required", "Sign in to OpenAI in your browser, then close the browser."],
       ["permission_required", "Allow access on this computer so VibeTV can read OpenAI usage."],
       ["unsupported", "OpenAI no longer works with this account, so switch it off and use another provider."],
@@ -398,6 +398,30 @@ describe("SetupProvidersScreen", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Show provider message for GitHub Copilot" }));
     expect(within(screen.getByRole("dialog")).getByText("GitHub Copilot")).toBeTruthy();
+  });
+
+  // #860: an API-key provider CodexBar reports as not set up ("API key is not
+  // configured", "No available fetch strategy") has no app to install. It
+  // gets the generic setup line and no setup guide, while a provider whose
+  // sign-in the app starts keeps its sign-in sentence.
+  it("gives an API-key provider without a sign-in the generic setup line, not the app install", () => {
+    const onOpenSetupGuide = vi.fn();
+    for (const reported of ["API key is not configured for openai.", "No available fetch strategy for openai."]) {
+      const openai = provider({ providerId: "openai", label: "OpenAI", health: "setup_required", message: reported });
+      const failed = { ...openai, health: { ...openai.health, reported } };
+      const { unmount } = renderDom(<SetupProvidersScreen usage={usage} providers={[failed]}
+        onOpenSetupGuide={onOpenSetupGuide} onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
+        pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
+      const dialog = within(screen.getByRole("dialog"));
+      expect(dialog.getByText("Finish setup for this provider.")).toBeTruthy();
+      expect(dialog.queryByText(/own app/)).toBeNull();
+      expect(dialog.getAllByRole("button").map((button) => button.textContent))
+        .toEqual(["OK", "Close"]);
+      unmount();
+    }
+    const claude = provider({ providerId: "claude", label: "Claude", health: "setup_required" });
+    expect(setupProviderDialogSentence(claude)).toBe("Sign in to Claude so VibeTV can read its usage.");
+    expect(onOpenSetupGuide).not.toHaveBeenCalled();
   });
 
   // The Companion can start the sign-in of these four only; every other
