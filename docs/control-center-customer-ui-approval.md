@@ -8457,3 +8457,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: on "Your VibeTV is live" and in the first row of the chooser the flat VibeTV picture is gone; the area stays empty (same size) until the 3D model is on screen. Without hardware WebGL the flat picture stays as before; rows 2+ of the chooser keep their photo.
 - Scope: `apps/control-center/src/components/setup/setup-3d-preview.tsx`, `setup-device-card.tsx`, `setup-device-screen.tsx`, `setup-live-screen.tsx`, their tests, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — bug fix, not announced to customers
+
+## 2026-10-21 — #780: approval marker after merging main at 467fd7fb
+
+- User approval: no visible change – UI approval not needed (merge of main (467fd7fb) into #780; the own entries of #780 keep their approvals)
+- Approved customer-visible result: #780 as in its own entries plus the entries merged with 467fd7fb; nothing else changes.
+- Scope: the merge of 467fd7fb and this approval record. Pull request branch #780 only, not merged, not released.
+- What's new: none — merge of 467fd7fb, no customer-visible change of its own
