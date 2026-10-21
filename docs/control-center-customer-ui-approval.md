@@ -16026,3 +16026,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Automatic, One provider and Two at once retain the same native-size preview, with the same narrow-window scaling.
 - Scope: Assert the shared rendered size classes and responsive grid in the existing three-card integration test.
 - What's new: none — integration regression coverage only.
+
+## 2026-10-21 — paultest-build9: align merged regression tests
+
+- User approval: no visible change – UI approval not needed (build9 tests follow the current source-head contracts and share one consistent timer fixture).
+- Approved customer-visible result: Keep calm Settings’ Run setup button, spinner-only theme installation and intentionally hidden limits; retain the 3D failure fallback.
+- Scope: Correct the Settings action lookup, remove a superseded progress-bar assertion, expect all hidden limits to remain hidden, and keep the 3D failure test on its existing animation-frame clock.
+- What's new: none — test integration only.

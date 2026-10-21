@@ -2,7 +2,7 @@
 //
 // #854: after 2.5 s without a touch the 3D VibeTV sways one full cycle and then
 // stands still; it asks for no more animation frames from then on.
-import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Scene } from "three";
 import { VibeTV3DPreview } from "./vibetv-3d-preview";
@@ -264,8 +264,7 @@ describe("3D VibeTV sway", () => {
 });
 
 describe("3D preview failure", () => {
-  it.each(["renderer", "model"])("reports a %s failure so the caller can reveal its fallback", async (failure) => {
-    vi.useRealTimers();
+  it.each(["renderer", "model"])("reports a %s failure so the caller can reveal its fallback", (failure) => {
     state.rendererFails = failure === "renderer";
     state.modelFails = failure === "model";
     const onFailed = vi.fn();
@@ -273,7 +272,8 @@ describe("3D preview failure", () => {
     const { container } = render(
       <VibeTV3DPreview device={null} displayFrame={null} usage={null} onFailed={onFailed} onReady={onReady} />,
     );
-    await waitFor(() => expect(onFailed).toHaveBeenCalledTimes(1));
+    act(() => vi.advanceTimersByTime(0));
+    expect(onFailed).toHaveBeenCalledTimes(1);
     expect(container.childElementCount).toBe(0);
     expect(onReady).not.toHaveBeenCalled();
   });

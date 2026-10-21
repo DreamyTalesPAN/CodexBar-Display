@@ -128,14 +128,3 @@ it("shows the row as installed as soon as its install is complete", () => {
     expect(screen.queryByRole("button", { name: "Installing" })).toBeNull();
   }
 });
-
-// Issue #579 (Windows and Mac): the finished install kept its progress bar as
-// a dark line above "Installed". While the install runs the bar stays.
-it("shows the progress bar while a theme installs and none once it is Installed", () => {
-  const view = render(list(install));
-  expect(screen.getByRole("progressbar", { name: "Installing" })).toBeTruthy();
-
-  view.rerender(list({ ...install, phase: "complete" }));
-  expect(screen.getByRole("status").textContent).toContain("Installed");
-  expect(screen.queryByRole("progressbar")).toBeNull();
-});

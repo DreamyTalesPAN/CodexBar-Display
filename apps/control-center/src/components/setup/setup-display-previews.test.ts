@@ -643,7 +643,7 @@ describe("pairDisplayPreview", () => {
 
 // Build 7 integration: both the plain and live-theme tiles obey the same limits.
 describe("hidden limits in live theme previews", () => {
-  it("filters the frame and provider rows while preserving the no-blank fallback", () => {
+  it("filters the frame and provider rows without resurrecting hidden limits", () => {
     const reading = provider({
       id: "codex", label: "Codex", collectedAt: "2026-10-20T08:00:00Z",
       windows: [
@@ -660,6 +660,6 @@ describe("hidden limits in live theme previews", () => {
       { id: "codex", label: "Codex", percent: 20, resetSecs: 3600 },
     ]);
     const [allHidden] = displayPreviewsFor(usage, enabled, 0, { codex: ["session", "weekly"] });
-    expect(allHidden.frame?.usageWindows?.map((window) => window.id)).toEqual(["session", "weekly"]);
+    expect(allHidden).toEqual({ providerLabel: "Codex", resetLabel: null, windows: [] });
   });
 });
