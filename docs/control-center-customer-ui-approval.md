@@ -8374,3 +8374,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Recent activity keeps the existing "Show saved – Show is set to …" entry when Used / Remaining is changed; nothing else changes.
 - Scope: this approval record only; the code change of 11b7f9bf was reverted in 108ad227. Pull request branch #877 only, not merged, not released.
 - What's new: none — revert, no customer-visible change
+
+## 2026-10-22 — #877: lint fix for the Used / Remaining re-read (#895)
+
+- User approval: no visible change – UI approval not needed (typecheck-level fix: the re-read that #895 added runs in a timer instead of synchronously in the effect body, to satisfy react-hooks/set-state-in-effect; same reads, same timing for the customer)
+- Approved customer-visible result: none; Settings shows the same Used / Remaining state as before.
+- Scope: control-center-app.tsx effect for the unavailable usage mode; pull request branch #877 only.
+- What's new: none — lint fix, no customer-visible change

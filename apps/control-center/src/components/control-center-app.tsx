@@ -5136,7 +5136,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
   useEffect(() => {
     if (activeShellTab === "settings" && usage && usageModeUnavailable) {
-      void refreshDisplayPreferences();
+      const timer = window.setTimeout(() => void refreshDisplayPreferences(), 0);
+      return () => window.clearTimeout(timer);
     }
   }, [activeShellTab, refreshDisplayPreferences, usage, usageModeUnavailable]);
 
