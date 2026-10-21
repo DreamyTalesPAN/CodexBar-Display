@@ -8350,3 +8350,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Idle "No active session" and "Reset unavailable" footers fit their theme width again by shrinking, as before #894; countdown footers keep their fixed size and wording.
 - Scope: Firmware and Control Center preview footer shrink opt-out limited to countdown wording; focused regression tests in both.
 - What's new: none — restores the pre-#894 shrink for idle and unavailable footers.
+
+## 2026-10-21 — #894: Footer wording table tests
+- User approval: no visible change – UI approval not needed (test-only: footer wording table in firmware and preview)
+- Approved customer-visible result: none; the rendered footer wording is unchanged.
+- Scope: Table-driven footer wording tests (countdown, idle, unavailable; used and remaining; one and two displayed limits; hidden limits) in the native firmware suite and the Control Center preview suite.
+- What's new: none — tests only.
