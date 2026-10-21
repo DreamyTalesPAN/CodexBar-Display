@@ -8346,6 +8346,20 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of f314106c and this approval record. Pull request branch #780 only, not merged, not released.
 - What's new: none — merge of f314106c, no customer-visible change of its own
 
+## 2026-10-21 — #780: 3D VibeTV sways once, then stands still (#854)
+
+- User approval: pending — #854 the 3D VibeTV in setup sways once and then stays still (Paul decided 21.10. "Nach einer Runde stehen"; not yet seen in a build)
+- Approved customer-visible result: #780 3D VibeTV on the setup screens sways one full cycle after 2.5 s without a touch and then stays still; a drag starts one more cycle. Reduced motion stays still; texts and layout unchanged.
+- Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx` (sway loop) and its test `apps/control-center/src/components/vibetv-3d-preview.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #854 not announced to customers
+
+## 2026-10-21 — #780: Back during a firmware write is not overtaken by a late stream recovery (#846)
+
+- User approval: no visible change – UI approval not needed (#780 / #846: Back during a firmware write is no longer overtaken by a late stream recovery)
+- Approved customer-visible result: #780 unchanged; a customer who presses Back during a firmware write stays on the connection choice even if the stream recovers afterwards.
+- Scope: `apps/control-center/src/components/setup/setup-connect.ts` (the Back path ends the run), its test in `apps/control-center/src/components/setup/setup-wizard.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — bug fix that removes a wrong move, not announced to customers
+
 ## 2026-10-20 — Setup step 11: display mode tiles show the active theme with live values
 
 - User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: Setup step 11: display mode tiles show the active theme with live values — before → after: (1) Automatic shows one tile per provider that is switched on, each the theme picture with that provider's own current values (the one VibeTV is on 104 px and full strength, the others 84 px at 30 % strength, as drawn in frame 22) → before one plain tile of CLAUDE / SESSION / WEEKLY bars that changed provider every 2 seconds; (2) Manual shows one such tile for the chosen provider → before the same plain tile; (3) a provider that has no values yet shows a quiet grey placeholder tile where the picture would be → before the words "No usage yet" or "Usage unavailable"; no example numbers are drawn anywhere, and the app calculates nothing: it shows only what the usage service delivers; (4) while the theme is still being read the tiles show the same placeholders, and if it cannot be read the plain tiles stay as before. Settings keeps its plain tiles for now.
