@@ -9227,3 +9227,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none beyond #893 itself; a failed theme install picked up during setup is shown in its dialog on Appearance, as before.
 - Scope: finishSetup in control-center-app.tsx and its tests; pull request branch #893 only.
 - What's new: none — no visible change beyond #893
+
+## 2026-10-22 — #893: a Settings connection change returns to Settings, not Overview
+
+- User approval: no visible change – UI approval not needed (fixes #893 itself: only the first entry into the Control Center ends setup on Overview; the Settings WiFi switch keeps returning to its Settings card as on the base branch)
+- Approved customer-visible result: none beyond #893 itself; confirming WiFi from Settings shows the selected WiFi card again.
+- Scope: finishSetup in control-center-app.tsx; pull request branch #893 only.
+- What's new: none — no visible change beyond #893

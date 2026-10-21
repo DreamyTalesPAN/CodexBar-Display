@@ -591,13 +591,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const finishSetup = useCallback(() => {
     // A theme install that is running or has failed keeps Appearance, where its dialog lives.
     const themeInstallOpen = themeInstallStatus?.phase === "installing" || themeInstallStatus?.phase === "error";
-    if ((setupFinishedThisSession || !setupCompletedFor(device?.deviceId)) && !themeInstallOpen) {
+    // Only the first entry returns to Overview; a Settings connection change returns to Settings.
+    const firstRun = setupFinishedThisSession || !setupCompletedFor(device?.deviceId);
+    if (!hasEnteredControlCenter && firstRun && !themeInstallOpen) {
       setActiveTab("overview");
     }
     rememberCompletedSetup(device?.deviceId);
     setSetupFinishedThisSession(true);
     setHasEnteredControlCenter(true);
-  }, [device?.deviceId, setupFinishedThisSession, themeInstallStatus?.phase]);
+  }, [device?.deviceId, hasEnteredControlCenter, setupFinishedThisSession, themeInstallStatus?.phase]);
   // The completion response clears providerSelectionRequired before the first
   // renderable frame necessarily exists. Keep this setup's confirmed device
   // usable so the next screen is Display Mode, never a flash of Connect.
