@@ -78,7 +78,9 @@ describe("Theme Studio AI row in Settings", () => {
 
   it("ignores a late mount-time answer once Disconnect has started, so a deleted key does not come back", async () => {
     let answer!: (value: ReturnType<typeof capabilities>) => void;
-    vi.mocked(fetchAIThemeCapabilities).mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+    vi.mocked(fetchAIThemeCapabilities)
+      .mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }))
+      .mockResolvedValue(capabilities(false)); // the read after the delete
     vi.mocked(deleteAIThemeCredential).mockResolvedValue(undefined as never);
     const onConfiguredChange = vi.fn();
     render(
@@ -137,6 +139,57 @@ describe("Theme Studio AI row in Settings", () => {
     fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: "Connect and continue" }));
     await waitFor(() => expect(onConfiguredChange).toHaveBeenLastCalledWith("pending"));
+  });
+
+  it("keeps the pending state when the check fails and the follow-up read fails too (#847)", async () => {
+    vi.mocked(fetchAIThemeCapabilities)
+      .mockResolvedValueOnce(capabilities(false))
+      .mockRejectedValue(new Error("Helper offline."));
+    vi.mocked(saveAIThemeCredential).mockResolvedValue(undefined as never);
+    vi.mocked(verifyAIThemeCredential).mockRejectedValue(new Error("Check failed."));
+    const onConfiguredChange = vi.fn();
+    render(<OpenAIKeyForm inSetup onConfiguredChange={onConfiguredChange} onConnectingChange={() => {}} onConnected={() => {}} onDisconnected={() => {}} onDismiss={() => {}} />);
+    fireEvent.change(await screen.findByLabelText("OpenAI key", { selector: "input" }), { target: { value: "sk-test-key" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Connect and continue" }));
+    await screen.findByRole("button", { name: "Retry connection check" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(onConfiguredChange).toHaveBeenLastCalledWith("pending");
+    expect(screen.getByRole("button", { name: "Retry connection check" })).toBeTruthy();
+  });
+
+  it("does not let the Settings row's first read overwrite a key that was saved meanwhile (#847)", async () => {
+    let answerFirst!: (value: ReturnType<typeof capabilities>) => void;
+    vi.mocked(fetchAIThemeCapabilities)
+      .mockReturnValueOnce(new Promise((resolve) => { answerFirst = resolve; })) // the row's mount read, still pending
+      .mockResolvedValueOnce(capabilities(false)) // the form's mount read
+      .mockResolvedValue({ enabled: true, providers: [{ id: "openai", configured: true, verificationRequired: true }] } as unknown as ReturnType<typeof capabilities>);
+    vi.mocked(saveAIThemeCredential).mockResolvedValue(undefined as never);
+    vi.mocked(verifyAIThemeCredential).mockRejectedValue(new Error("Check failed."));
+    render(<ThemeStudioKeyRow />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add key" }));
+    fireEvent.change(await screen.findByLabelText("OpenAI key", { selector: "input" }), { target: { value: "sk-test-key" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Save key" }));
+    await screen.findByRole("button", { name: "Retry connection check" });
+    answerFirst(capabilities(false));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.getByRole("button", { name: "Change key", hidden: true })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Add key", hidden: true })).toBeNull();
+  });
+
+  it("enables Save key after Disconnect when the mount-time read was still pending (#847)", async () => {
+    vi.mocked(fetchAIThemeCapabilities)
+      .mockReturnValueOnce(new Promise(() => {})) // the mount read never answers in time
+      .mockResolvedValue(capabilities(false)); // the read after the delete
+    vi.mocked(deleteAIThemeCredential).mockResolvedValue(undefined as never);
+    const onDisconnected = vi.fn();
+    render(<OpenAIKeyForm inSetup={false} initialConfigured={true} onConnectingChange={() => {}} onConnected={() => {}} onDisconnected={onDisconnected} onDismiss={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect OpenAI" }));
+    await waitFor(() => expect(onDisconnected).toHaveBeenCalled());
+    fireEvent.change(await screen.findByLabelText("OpenAI key", { selector: "input" }), { target: { value: "sk-new-key" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    await waitFor(() => expect((screen.getByRole("button", { name: "Save key" }) as HTMLButtonElement).disabled).toBe(false));
   });
 
   it("has no close X in the key dialog", async () => {

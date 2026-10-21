@@ -64,31 +64,30 @@ export function OpenAIKeyForm({
   const [connecting, setConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState("");
 
-  // Bumped when a credential mutation (save, check, disconnect) begins: the mount-time read is then stale and must not write back.
-  const mutationGeneration = useRef(0);
-  const initialReadController = useRef<AbortController | null>(null);
-  function invalidateInitialRead() {
-    mutationGeneration.current += 1;
-    initialReadController.current?.abort();
+  // Bumped by every read and every configured-state change: a read that a later change has overtaken is stale and must not write back.
+  const generation = useRef(0);
+  function changeConfigured(value: boolean | "pending") {
+    generation.current += 1;
+    setConfigured(value);
   }
-
-  useEffect(() => onConfiguredChange?.(configured), [configured]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    const controller = new AbortController();
-    initialReadController.current = controller;
-    const generation = mutationGeneration.current;
-    void fetchAIThemeCapabilities(controller.signal)
-      .then((capabilities) => {
-        if (controller.signal.aborted || generation !== mutationGeneration.current) return;
+  /** The one capability read. A failed read keeps the last known state; only the mount-time read reports the helper as unavailable. */
+  function readState(onFail?: () => void) {
+    const current = ++generation.current;
+    void fetchAIThemeCapabilities().then(
+      (capabilities) => {
+        if (current !== generation.current) return;
         const state = openAIState(capabilities);
         setEnabled(state.enabled);
         setConfigured(state.configured);
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setEnabled(false);
-      });
-    return () => controller.abort();
-  }, []);
+      },
+      () => {
+        if (current === generation.current) onFail?.();
+      },
+    );
+  }
+
+  useEffect(() => onConfiguredChange?.(configured), [configured]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => readState(() => setEnabled(false)), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function setBusy(value: boolean) {
     setConnecting(value);
@@ -107,43 +106,40 @@ export function OpenAIKeyForm({
     const key = password.trim();
     if ((!key && configured !== "pending") || connecting || !consent) return;
     setPassword("");
-    invalidateInitialRead();
     setBusy(true);
     setConnectionError("");
     try {
       if (key) {
         await saveAIThemeCredential("openai", key);
-        setConfigured("pending");
+        changeConfigured("pending");
       }
       const kept = await verifyAIThemeCredential("openai");
-      setConfigured(true);
+      changeConfigured(true);
       onConnected(kept);
     } catch (e) {
       setConnectionError(e instanceof Error ? e.message : "Connection failed.");
       // A failed model check is not proof of a bad key. Keep it in helper
       // memory for a deliberate retry, without treating it as verified.
-      const capabilities = await fetchAIThemeCapabilities().catch(() => null);
-      if (capabilities) {
-        const state = openAIState(capabilities);
-        setEnabled(state.enabled);
-        setConfigured(state.configured);
-      } else setConfigured(false);
+      readState();
     } finally {
       setBusy(false);
     }
   }
   function disconnect() {
-    invalidateInitialRead();
+    generation.current += 1; // the mount-time read is stale from here on
     setBusy(true);
     void deleteAIThemeCredential("openai")
       .then(() => {
-        setConfigured(false);
+        changeConfigured(false);
         updateConsent(false);
         setPassword("");
         onDisconnected();
       })
       .catch(() => setConnectionError("Could not disconnect. Try again."))
-      .finally(() => setBusy(false));
+      .finally(() => {
+        setBusy(false);
+        readState();
+      });
   }
 
   return (
@@ -232,19 +228,18 @@ export function OpenAIKeyForm({
 export function ThemeStudioKeyRow() {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [version, setVersion] = useState(0);
   const [configured, setConfigured] = useState<boolean | "pending">(false);
-  useEffect(() => {
-    let current = true;
+  // Same rule as the dialog: every change starts a fresh read, and a read that a later change overtakes is ignored.
+  const generation = useRef(0);
+  function readConfigured() {
+    const current = ++generation.current;
     void fetchAIThemeCapabilities()
       .then((capabilities) => {
-        if (current) setConfigured(openAIState(capabilities).configured);
+        if (current === generation.current) setConfigured(openAIState(capabilities).configured);
       })
       .catch(() => {});
-    return () => {
-      current = false;
-    };
-  }, [version]);
+  }
+  useEffect(() => readConfigured(), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="flex items-center gap-4 text-[13px]">
@@ -269,13 +264,13 @@ export function ThemeStudioKeyRow() {
         <OpenAIKeyForm
           inSetup={false}
           initialConfigured={configured}
-          onConfiguredChange={setConfigured}
-          onConnectingChange={setBusy}
-          onConnected={() => {
-            setOpen(false);
-            setVersion((v) => v + 1);
+          onConfiguredChange={(value) => {
+            generation.current += 1;
+            setConfigured(value);
           }}
-          onDisconnected={() => setVersion((v) => v + 1)}
+          onConnectingChange={setBusy}
+          onConnected={() => setOpen(false)}
+          onDisconnected={readConfigured}
           onDismiss={() => setOpen(false)}
         />
       </SetupDialog>

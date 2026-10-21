@@ -8501,3 +8501,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #781 Theme Studio header at 960 px and wider stays one row as before; between 768 px and 959 px with the navigation open the header wraps into two rows, so File, undo/redo, the notice and Save / Send to VibeTV stay on screen instead of being pushed out of the window.
 - Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` (header row: the one-line layout moves from `md:` to `min-[960px]:`), its test in `ai-theme-studio-screen.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — layout fix of a review finding, no new text or control
+
+## 2026-10-21 — #781: the OpenAI key form keeps the right state when requests finish out of order (#847)
+
+- User approval: no visible change – UI approval not needed (#781 / #847: the OpenAI key form keeps the right state when requests finish out of order)
+- Approved customer-visible result: no visible change; the key dialog and the Settings AI row show the same text, layout and buttons as before. Only the order of answers is handled differently: a late earlier answer no longer overwrites a newer state, and a failed follow-up check keeps the saved key as pending.
+- Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx` (one generation-guarded capability read), its tests in `openai-key-form.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — fixes three ordering races found in review, no new text, control or layout
