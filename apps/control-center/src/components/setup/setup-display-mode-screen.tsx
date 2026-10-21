@@ -259,7 +259,7 @@ export function DisplayModeChoice({
 
       {mode === "pair" && offersPair && onSelectPair ? (
         <div className={cn("grid w-full grid-cols-2 gap-4 text-left", SETUP_REVEAL)}>
-          {(["First", "Second"] as const).map((name, position) => (
+          {(["Provider 1", "Provider 2"] as const).map((name, position) => (
             <Field key={name}>
               <FieldLabel htmlFor={`vibetv-pair-${position}`}>{name}</FieldLabel>
               <Select
@@ -269,7 +269,7 @@ export function DisplayModeChoice({
                 }
                 value={pairProviderIds[position] ?? ""}
               >
-                <SelectTrigger aria-label={`${name} provider`} id={`vibetv-pair-${position}`}>
+                <SelectTrigger aria-label={name} id={`vibetv-pair-${position}`}>
                   <SelectValue placeholder="Choose a provider" />
                 </SelectTrigger>
                 <SelectContent>
