@@ -717,7 +717,7 @@ func providerReadinessFromOutput(raw []byte, commandErr, contextErr error) []Pro
 		reported := ""
 		if providerPayloadHasError(payload) {
 			reported = providerHealthErrorText(payload["error"])
-			status = classifyProviderErrorFor(id, reported)
+			status = ProviderErrorKind(id, reported)
 			// CodexBar types its failures. One it attributes to the provider
 			// ("kind":"provider") is not the usage service failing to read its
 			// settings, whatever words the sentence contains ("... is
@@ -908,18 +908,13 @@ func browserSignInPage(id, detail string) string {
 	return ""
 }
 
-// classifyProviderErrorFor maps CodexBar's browser-session marker to
-// ProviderBrowserSignInRequired. The marker is CodexBar's own diagnosis, so
-// it wins over whatever the English summary around it happens to mention
-// (a timed-out source, a permission word). The tool itself is logged in in
-// that case; telling the customer to "sign in again" would send them in a
-// circle.
-func classifyProviderErrorFor(id, detail string) string {
-	return ProviderErrorKind(id, detail)
-}
-
 // ProviderErrorKind names a CodexBar provider failure by its readiness status
-// (timeout, auth_required, ...) without repeating the raw message.
+// (timeout, auth_required, ...) without repeating the raw message. CodexBar's
+// browser-session marker maps to ProviderBrowserSignInRequired. The marker is
+// CodexBar's own diagnosis, so it wins over whatever the English summary
+// around it happens to mention (a timed-out source, a permission word). The
+// tool itself is logged in in that case; telling the customer to "sign in
+// again" would send them in a circle.
 func ProviderErrorKind(id, detail string) string {
 	if browserSignInPage(id, detail) != "" {
 		return ProviderBrowserSignInRequired

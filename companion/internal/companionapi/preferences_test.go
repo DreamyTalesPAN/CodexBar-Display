@@ -1853,3 +1853,41 @@ func TestProviderPermissionCopyNamesTheHostSystem(t *testing.T) {
 		}
 	}
 }
+
+// The Control Center sends fresh=1 once when a provider list opens, and the
+// companion re-reads the inventory then. Plain polls keep the lifetime cache.
+func TestOpenProviderListReadsTheInventoryOnceAndPollsDoNot(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	inventory := []codexbar.ProviderSetting{{ID: "future-provider", Label: "Future Provider", Enabled: true}}
+	reads := 0
+	server.providerPreferences.loadInventory = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		reads++
+		return inventory, nil
+	}
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{{ID: "future-provider", Label: "Future Provider", Enabled: true, Health: codexbar.ProviderHealthHealthy}}, nil
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
+	get := func(path string) {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("GET %s: status=%d body=%s", path, recorder.Code, recorder.Body.String())
+		}
+	}
+
+	get("/v1/preferences?section=providers")
+	get("/v1/preferences?section=providers")
+	if reads != 1 {
+		t.Fatalf("plain polls inside the lifetime cache read the inventory %d times, want 1", reads)
+	}
+	get("/v1/preferences?section=providers&fresh=1")
+	if reads != 2 {
+		t.Fatalf("the open-list request must re-read once: reads=%d, want 2", reads)
+	}
+	get("/v1/preferences?section=providers")
+	if reads != 2 {
+		t.Fatalf("a plain poll after the open-list read must not re-read: reads=%d, want 2", reads)
+	}
+}
