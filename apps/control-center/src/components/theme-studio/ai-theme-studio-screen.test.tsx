@@ -148,10 +148,13 @@ describe("Theme Studio notices", () => {
     // The buttons keep their width, so a long notice wraps instead of pushing them out of the window.
     expect(screen.getByRole("button", { name: "Save" }).parentElement?.className).toContain("shrink-0");
     // The notice keeps a reserved width (two lines at most) and the design name is what gives way:
-    // the header never wraps into a second row from the medium width up, so it does not grow taller.
+    // the header stays one row from 960 px up, so it does not grow taller.
     expect(notice.parentElement?.className).toContain("min-w-40");
     expect(notice.parentElement?.className).not.toContain("min-w-0");
-    expect(header.className).toContain("md:flex-nowrap");
+    // Below 960 px the header wraps into two rows instead of pushing the buttons out of the window.
+    expect(header.className.split(" ")).toContain("flex-wrap");
+    expect(header.className.split(" ")).not.toContain("flex-nowrap");
+    expect(header.className.split(" ")).toContain("min-[960px]:flex-nowrap");
   });
 
   it("cuts a long design name with an ellipsis and shows it in full on hover", () => {

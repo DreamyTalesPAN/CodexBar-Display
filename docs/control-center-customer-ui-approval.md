@@ -13672,3 +13672,53 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve the incoming feature together with the existing Build 6 customer flows in the local integration candidate.
 - Scope: Merge claude/appearance-one-page into claude/paultest-build7; retain all source approval entries.
 - What's new: none — integration of existing feature entries only.
+
+## 2026-10-21 — #781: approval marker after merging main at 12504ca6
+
+- User approval: no visible change – UI approval not needed (merge of main (12504ca6) into #781; the own entries of #781 keep their approvals)
+- Approved customer-visible result: #781 as in its own entries plus the entries merged with 12504ca6; nothing else changes.
+- Scope: the merge of 12504ca6 and this approval record. Pull request branch #781 only, not merged, not released.
+- What's new: none — merge of 12504ca6, no customer-visible change of its own
+
+## 2026-10-21 — #781: approval marker after merging main at 41bf10cf
+
+- User approval: no visible change – UI approval not needed (merge of main (41bf10cf) into #781; the own entries of #781 keep their approvals)
+- Approved customer-visible result: #781 as in its own entries plus the entries merged with 41bf10cf; nothing else changes.
+- Scope: the merge of 41bf10cf and this approval record. Pull request branch #781 only, not merged, not released.
+- What's new: none — merge of 41bf10cf, no customer-visible change of its own
+
+## 2026-10-21 — #781: approval marker after merging main at f314106c
+
+- User approval: no visible change – UI approval not needed (merge of main (f314106c) into #781; the own entries of #781 keep their approvals)
+- Approved customer-visible result: #781 as in its own entries plus the entries merged with f314106c; nothing else changes.
+- Scope: the merge of f314106c and this approval record. Pull request branch #781 only, not merged, not released.
+- What's new: none — merge of f314106c, no customer-visible change of its own
+=========
+
+## 2026-10-21 — #781: Theme Studio header wraps below 960 px (Codex fix, P2)
+
+- User approval: pending — #781 Theme Studio header: below about 960 px it wraps into two rows again instead of pushing buttons off-screen; wide windows unchanged
+- Approved customer-visible result: #781 Theme Studio header at 960 px and wider stays one row as before; between 768 px and 959 px with the navigation open the header wraps into two rows, so File, undo/redo, the notice and Save / Send to VibeTV stay on screen instead of being pushed out of the window.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` (header row: the one-line layout moves from `md:` to `min-[960px]:`), its test in `ai-theme-studio-screen.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — layout fix of a review finding, no new text or control
+
+## 2026-10-21 — #781: the OpenAI key form keeps the right state when requests finish out of order (#847)
+
+- User approval: no visible change – UI approval not needed (#781 / #847: the OpenAI key form keeps the right state when requests finish out of order)
+- Approved customer-visible result: no visible change; the key dialog and the Settings AI row show the same text, layout and buttons as before. Only the order of answers is handled differently: a late earlier answer no longer overwrites a newer state, and a failed follow-up check keeps the saved key as pending.
+- Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx` (one generation-guarded capability read), its tests in `openai-key-form.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — fixes three ordering races found in review, no new text, control or layout
+
+## 2026-10-21 — #781: approval marker after merging main at 467fd7fb
+
+- User approval: no visible change – UI approval not needed (merge of main (467fd7fb) into #781; the own entries of #781 keep their approvals)
+- Approved customer-visible result: #781 as in its own entries plus the entries merged with 467fd7fb; nothing else changes.
+- Scope: the merge of 467fd7fb and this approval record. Pull request branch #781 only, not merged, not released.
+- What's new: none — merge of 467fd7fb, no customer-visible change of its own
+
+## 2026-10-21 — #781: Build 7 integration of claude/group-theme-studio
+
+- User approval: pending — build7 integration of claude/group-theme-studio at db071e51ee57 for the requested Pace + Two at once Mac test.
+- Approved customer-visible result: Preserve the incoming feature together with the existing Build 6 customer flows in the local integration candidate.
+- Scope: Merge claude/group-theme-studio into claude/paultest-build7; retain all source approval entries.
+- What's new: none — integration of existing feature entries only.
