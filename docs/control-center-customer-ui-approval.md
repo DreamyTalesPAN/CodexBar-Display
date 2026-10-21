@@ -7901,6 +7901,158 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of 12205356 and this approval record. Pull request branch #727 only, not merged, not released.
 - What's new: none — merge of 12205356, no customer-visible change of its own
 
+## 2026-10-19 — Theme tags in the catalog (data only, #793)
+- User approval: no visible change – UI approval not needed (#801 Theme tags in the catalog (data only, #793): data only, no visible change; not seen by Paul; the Features and Providers filter groups come in the later Appearance filter PR and need his yes there)
+- Approved customer-visible result: none. The theme catalog gets an optional `tags` field and the readers keep it; no screen, copy, control or layout changes.
+- Scope: `apps/control-center/src/lib/themes.ts`, the new `apps/control-center/src/lib/theme-tags.ts` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — data only, no customer-visible change
+
+## 2026-10-19 — Theme tag vocabulary: provider count instead of provider names (data only, #793)
+- User approval: no visible change – UI approval not needed (#801 Theme tag vocabulary: provider count instead of provider names (data only, #793): data only, no visible change; not seen by Paul; the provider groups "1 provider", "2 providers" and "3 or more" come in the later Appearance filter PR and need his yes there)
+- Approved customer-visible result: none. The provider tags become `providers-1`, `providers-2` and `providers-3plus` (how many providers a theme shows at once); no screen, copy or layout changes.
+- Scope: `apps/control-center/src/lib/theme-tags.ts`, its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — data only, no customer-visible change
+
+## 2026-10-19 — #801: approval marker after merging main (v1.0.65 release round + #638)
+
+- User approval: no visible change – UI approval not needed (#801: approval marker after merging main (v1.0.65 release round + #638): Merge of main into this branch; no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #801: approval marker after merging main
+
+- User approval: no visible change – UI approval not needed (#801: approval marker after merging main: Merge of main into this branch; no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #801: approval marker after merging main at e7e8319d
+
+- User approval: no visible change – UI approval not needed (merge of main (e7e8319d) into #801; the own entries of #801 keep their approvals)
+- Approved customer-visible result: #801 as in its own entries plus the entries merged with e7e8319d; nothing else changes.
+- Scope: the merge of e7e8319d and this approval record. Pull request branch #801 only, not merged, not released.
+- What's new: none — merge of e7e8319d, no customer-visible change of its own
+
+## 2026-10-20 — #801: approval lines rewritten to the two accepted forms
+
+- User approval: no visible change – UI approval not needed (#801 record rewrite for the gate in #823; no customer-visible change)
+- Approved customer-visible result: #801 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
+- Scope: #801 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #801 approval record only
+
+## 2026-10-20 — #801: approval marker after merging main at 12205356
+
+- User approval: no visible change – UI approval not needed (merge of main (12205356) into #801; the own entries of #801 keep their approvals)
+- Approved customer-visible result: #801 as in its own entries plus the entries merged with 12205356; nothing else changes.
+- Scope: the merge of 12205356 and this approval record. Pull request branch #801 only, not merged, not released.
+- What's new: none — merge of 12205356, no customer-visible change of its own
+
+## 2026-10-20 — #801: approval marker after merging main at 1f6d099d
+
+- User approval: no visible change – UI approval not needed (merge of main (1f6d099d) into #801; the own entries of #801 keep their approvals)
+- Approved customer-visible result: #801 as in its own entries plus the entries merged with 1f6d099d; nothing else changes.
+- Scope: the merge of 1f6d099d and this approval record. Pull request branch #801 only, not merged, not released.
+- What's new: none — merge of 1f6d099d, no customer-visible change of its own
+
+## 2026-10-20 — #819: the cached rescue version is shown only for the rescue itself (Codex review)
+
+- User approval: pending — #819 Codex fix, no new wording; not seen by Paul. Before → after: #819 any VibeTV with the same board and firmware as a half-written one was shown the cached rescue version → #819 only the Cable rescue of the marked VibeTV (port connected) shows it; every other VibeTV shows the version from the release, as it is updated from there.
+- Approved customer-visible result: #819 the firmware version named in setup is the one that will really be written; texts and layout unchanged.
+- Scope: #819 `apps/control-center/src/components/control-center-app.tsx` (rescue flag on the firmware check), `companion/internal/companionapi/firmware_update.go`, `companion/internal/companionapi/device_cable.go`, the server test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #819 Codex fix not announced
+
+## 2026-10-20 — #819: approval marker after merging main at e7e8319d
+
+- User approval: no visible change – UI approval not needed (merge of main (e7e8319d) into #819; the own entries of #819 keep their approvals)
+- Approved customer-visible result: #819 as in its own entries plus the entries merged with e7e8319d; nothing else changes.
+- Scope: the merge of e7e8319d and this approval record. Pull request branch #819 only, not merged, not released.
+- What's new: none — merge of e7e8319d, no customer-visible change of its own
+
+## 2026-10-20 — #819: approval marker after merging main at 12205356
+
+- User approval: no visible change – UI approval not needed (merge of main (12205356) into #819; the own entries of #819 keep their approvals)
+- Approved customer-visible result: #819 as in its own entries plus the entries merged with 12205356; nothing else changes.
+- Scope: the merge of 12205356 and this approval record. Pull request branch #819 only, not merged, not released.
+- What's new: none — merge of 12205356, no customer-visible change of its own
+
+## 2026-10-20 — #819: approval marker after merging main at 1f6d099d
+
+- User approval: no visible change – UI approval not needed (merge of main (1f6d099d) into #819; the own entries of #819 keep their approvals)
+- Approved customer-visible result: #819 as in its own entries plus the entries merged with 1f6d099d; nothing else changes.
+- Scope: the merge of 1f6d099d and this approval record. Pull request branch #819 only, not merged, not released.
+- What's new: none — merge of 1f6d099d, no customer-visible change of its own
+
+## 2026-10-20 — #819: approval marker after merging main at 4b0831d7
+
+- User approval: no visible change – UI approval not needed (merge of main (4b0831d7) into #819; the own entries of #819 keep their approvals)
+- Approved customer-visible result: #819 as in its own entries plus the entries merged with 4b0831d7; nothing else changes.
+- Scope: the merge of 4b0831d7 and this approval record. Pull request branch #819 only, not merged, not released.
+- What's new: none — merge of 4b0831d7, no customer-visible change of its own
+
+## 2026-10-20 — #826: setup carries on by itself when the display stream shows up after a firmware update
+
+- User approval: pending — #826 no new wording; not seen by Paul. Behavior only: the existing "Firmware current — attention needed" dialog in setup closes by itself and setup continues, when the Companion reported only a not-yet-seen display stream and the stream then proves healthy.
+- Approved customer-visible result: #826 unchanged texts, dialogs and layout. After a firmware update whose only open point was the display stream, setup no longer stays on the dialog if frames arrive within about two minutes; all other attention results keep the dialog as before.
+- Scope: #826 `apps/control-center/src/components/setup/setup-connect.ts`, `apps/control-center/src/components/control-center-app.tsx` and the test `apps/control-center/src/components/setup/setup-wizard.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — #826 not announced to customers
+
+## 2026-10-20 — #829: a stream that only waits for an AI provider also counts as recovered (Codex review)
+
+- User approval: pending — #829 Codex fix, no new wording; not seen by Paul. Before → after: #829 a VibeTV whose stream runs but reports "no AI provider set up yet" (the normal state before the provider step) kept setup on the attention dialog → #829 setup treats it as a recovered stream, as the Companion's own firmware check already does.
+- Approved customer-visible result: #829 unchanged texts, dialogs and layout; setup continues after the firmware update also before a provider is chosen.
+- Scope: #829 `apps/control-center/src/components/control-center-types.ts` (+ test), `apps/control-center/src/components/control-center-app.tsx`, a lint fix in `apps/control-center/src/components/setup/setup-connect.ts`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #829 Codex fix not announced
+
+## 2026-10-20 — #829: approval marker after merging main at e7e8319d
+
+- User approval: no visible change – UI approval not needed (merge of main (e7e8319d) into #829; the own entries of #829 keep their approvals)
+- Approved customer-visible result: #829 as in its own entries plus the entries merged with e7e8319d; nothing else changes.
+- Scope: the merge of e7e8319d and this approval record. Pull request branch #829 only, not merged, not released.
+- What's new: none — merge of e7e8319d, no customer-visible change of its own
+
+## 2026-10-20 — #829: approval marker after merging main at 12205356
+
+- User approval: no visible change – UI approval not needed (merge of main (12205356) into #829; the own entries of #829 keep their approvals)
+- Approved customer-visible result: #829 as in its own entries plus the entries merged with 12205356; nothing else changes.
+- Scope: the merge of 12205356 and this approval record. Pull request branch #829 only, not merged, not released.
+- What's new: none — merge of 12205356, no customer-visible change of its own
+
+## 2026-10-20 — #829: approval marker after merging main at 1f6d099d
+
+- User approval: no visible change – UI approval not needed (merge of main (1f6d099d) into #829; the own entries of #829 keep their approvals)
+- Approved customer-visible result: #829 as in its own entries plus the entries merged with 1f6d099d; nothing else changes.
+- Scope: the merge of 1f6d099d and this approval record. Pull request branch #829 only, not merged, not released.
+- What's new: none — merge of 1f6d099d, no customer-visible change of its own
+
+## 2026-10-20 — #829: approval marker after merging main at 4b0831d7
+
+- User approval: no visible change – UI approval not needed (merge of main (4b0831d7) into #829; the own entries of #829 keep their approvals)
+- Approved customer-visible result: #829 as in its own entries plus the entries merged with 4b0831d7; nothing else changes.
+- Scope: the merge of 4b0831d7 and this approval record. Pull request branch #829 only, not merged, not released.
+- What's new: none — merge of 4b0831d7, no customer-visible change of its own
+
+## 2026-10-20 — #829: stream recovery only on a reading from after the update
+
+- User approval: no visible change – UI approval not needed (#829 changes no screen and no text: the existing stream-attention hint after a firmware update now only closes by itself on a frame or provider-setup report from after the update, never on one from before it; Codex review on #829, confirmed by Marcus)
+- Approved customer-visible result: #829 unchanged screens and texts; in the rare case of a stale pre-update reading the hint stays open until a fresh reading arrives.
+- Scope: #829 setup/Updates stream-attention recovery check and the Companion's stream status field `errorAt`. Pull request branch only, not merged, not released.
+- What's new: none — #829 recovery check only
+
+## 2026-10-20 — #829: approval marker after merging main at 5f09bf54
+
+- User approval: no visible change – UI approval not needed (merge of main (5f09bf54) into #829; the own entries of #829 keep their approvals)
+- Approved customer-visible result: #829 as in its own entries plus the entries merged with 5f09bf54; nothing else changes.
+- Scope: the merge of 5f09bf54 and this approval record. Pull request branch #829 only, not merged, not released.
+- What's new: none — merge of 5f09bf54, no customer-visible change of its own
+
+## 2026-10-20 — #838: approval marker after merging main at 392e4e18
+
+- User approval: no visible change – UI approval not needed (merge of main (392e4e18) into #838; the own entries of #838 keep their approvals)
+- Approved customer-visible result: #838 as in its own entries plus the entries merged with 392e4e18; nothing else changes.
+- Scope: the merge of 392e4e18 and this approval record. Pull request branch #838 only, not merged, not released.
+- What's new: none — merge of 392e4e18, no customer-visible change of its own
+
 ## 2026-10-17 — Process steps look like the Setup Wizard log
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Process steps look like the Setup Wizard log

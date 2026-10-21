@@ -302,6 +302,8 @@ export type DeviceInfo = {
     lastTarget?: string;
     detail?: string;
     errorCode?: string;
+    /** When the stream last reported errorCode (Companion clock, RFC 3339). */
+    errorAt?: string;
   };
   health?: {
     ok?: boolean;
@@ -712,6 +714,47 @@ export function legacyWiFiDeviceAnsweredCable(
 // A reachable VibeTV whose display stream is running for this exact device but
 // has no AI usage to draw. Mirrors providerSetupStreamForTarget on the
 // Companion side without letting an old stream error prove connectivity.
+/**
+ * The stream runs and reaches this VibeTV, but no AI provider is set up yet.
+ * The Companion's firmware verifier accepts this as proof that the stream came
+ * back (`providerSetupStreamForTarget` in display_render.go); the page must
+ * agree, or setup waits on a stream that is fine.
+ */
+export function streamAwaitsProviderSetup(
+  device: DeviceInfo | null | undefined,
+) {
+  const deviceTarget = comparableDeviceTarget(device?.target);
+  const streamTarget = comparableDeviceTarget(device?.stream?.target);
+  return (
+    device?.stream?.running === true &&
+    device.stream.errorCode === "provider_setup_required" &&
+    streamTarget !== "" &&
+    deviceTarget === streamTarget
+  );
+}
+
+/**
+ * After a firmware update whose stream was not seen in time, only a frame or a
+ * provider-setup report from after the update proves the stream came back. A
+ * reading from before the update can stay inside the Companion's two-minute
+ * readiness window and must not close the attention (Codex on #829).
+ * `since` is the update's end in epoch ms; both stamps come from the Companion.
+ */
+export function streamCameBackSince(
+  device: DeviceInfo | null | undefined,
+  since: number,
+) {
+  const boundary = Math.floor(since / 1000) * 1000;
+  const after = (stamp: string | undefined) => {
+    const at = Date.parse(stamp ?? "");
+    return Number.isFinite(at) && at >= boundary;
+  };
+  return (
+    (device?.stream?.healthy === true && after(device.stream.lastSentAt)) ||
+    (streamAwaitsProviderSetup(device) && after(device?.stream?.errorAt))
+  );
+}
+
 export function deviceAwaitsProviderSetup(
   device: DeviceInfo | null | undefined,
 ) {

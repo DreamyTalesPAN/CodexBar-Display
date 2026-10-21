@@ -291,3 +291,67 @@ func TestFlashESP8266AppImageOpensTheROMLoaderAtItsFasterBaudRate(t *testing.T) 
 		t.Fatalf("opened with %+v, want baud %d", opened, romBaudRate)
 	}
 }
+
+func TestFlashESP8266AppImageWithOptionsOpensTheROMLoaderAtTheRequestedBaudRate(t *testing.T) {
+	var opened *serial.Mode
+	restore := serialOpen
+	serialOpen = func(_ string, mode *serial.Mode) (serial.Port, error) {
+		opened = mode
+		return nil, errors.New("no port in this test")
+	}
+	t.Cleanup(func() { serialOpen = restore })
+
+	opts := ROMFlashOptions{BaudRate: ROMFallbackBaudRate}
+	if err := FlashESP8266AppImageWithOptions(context.Background(), "/dev/null-vibetv", testAppImage(romFlashBlockSize), opts); err == nil {
+		t.Fatal("flash without a port succeeded")
+	}
+	if opened == nil || opened.BaudRate != ROMFallbackBaudRate {
+		t.Fatalf("opened with %+v, want baud %d", opened, ROMFallbackBaudRate)
+	}
+}
+
+func TestFlashESP8266AppImageWithOptionsRefusesANonImageWithAKnownError(t *testing.T) {
+	err := FlashESP8266AppImageWithOptions(context.Background(), "/dev/null-vibetv", []byte{0x1f, 0x8b}, ROMFlashOptions{})
+	if !errors.Is(err, ErrNotESP8266AppImage) {
+		t.Fatalf("got %v, want ErrNotESP8266AppImage", err)
+	}
+}
+
+// Issue #818: the caller must learn that the old firmware is gone, but only
+// once the loader accepted the erase, never for a loader that did not answer.
+func TestROMLoaderReportsWhenTheWriteStarted(t *testing.T) {
+	rom := newFakeROM()
+	started := 0
+	loader := &romLoader{port: rom, sleep: func(time.Duration) {}, onWriteStarted: func() { started++ }}
+	if err := loader.flashAndBoot(context.Background(), testAppImage(2*romFlashBlockSize)); err != nil {
+		t.Fatalf("flash: %v", err)
+	}
+	if started != 1 {
+		t.Fatalf("write started reported %d times, want 1", started)
+	}
+
+	rom = newFakeROM()
+	rom.ignoredSyncs = romConnectAttempts * romSyncAttempts
+	started = 0
+	loader = &romLoader{port: rom, sleep: func(time.Duration) {}, onWriteStarted: func() { started++ }}
+	silent, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	if err := loader.flashAndBoot(silent, testAppImage(2*romFlashBlockSize)); err == nil {
+		t.Fatal("flash succeeded without a loader")
+	}
+	if started != 0 {
+		t.Fatalf("write started reported %d times for a loader that never answered", started)
+	}
+
+	// A write that began and then failed still reports it, once per attempt.
+	rom = newFakeROM()
+	rom.rejectBlock, rom.rejections = 0, 1000
+	started = 0
+	loader = &romLoader{port: rom, sleep: func(time.Duration) {}, onWriteStarted: func() { started++ }}
+	if err := loader.flashAndBoot(context.Background(), testAppImage(2*romFlashBlockSize)); err == nil {
+		t.Fatal("flash succeeded with every block rejected")
+	}
+	if started != romFlashAttempts {
+		t.Fatalf("write started reported %d times, want %d", started, romFlashAttempts)
+	}
+}
