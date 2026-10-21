@@ -219,7 +219,8 @@ describe("SetupWizard: firmware stream attention recovers by itself (#826)", () 
   it("carries on when the frames arrive after the failed check", async () => {
     vi.useFakeTimers();
     const streamRecovered = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
-    const props = streamAttentionProps(streamRecovered);
+    const onConnectionComplete = vi.fn();
+    const props = { ...streamAttentionProps(streamRecovered), onConnectionComplete };
     render(<SetupWizard {...props} />);
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Connect" })); });
     expect(screen.getByText("Firmware current — attention needed")).toBeTruthy();
@@ -231,6 +232,7 @@ describe("SetupWizard: firmware stream attention recovers by itself (#826)", () 
     await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
     expect(streamRecovered).toHaveBeenCalledTimes(2);
     expect(screen.queryByText("Firmware current — attention needed")).toBeNull();
+    expect(onConnectionComplete).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the dialog and stops looking when the stream never comes back", async () => {
@@ -242,6 +244,33 @@ describe("SetupWizard: firmware stream attention recovers by itself (#826)", () 
     await act(async () => { await vi.advanceTimersByTimeAsync(10 * 60 * 1000); });
     expect(streamRecovered).toHaveBeenCalledTimes(40);
     expect(screen.getByText("Firmware current — attention needed")).toBeTruthy();
+  });
+
+  // Back pressed exactly while the write runs: the customer is on the
+  // connection choice when the write ends, so a recovered stream must not move
+  // them on from it (#846).
+  it("does not carry on after Back during the write, even when the stream recovers", async () => {
+    vi.useFakeTimers();
+    let failWrite: (error: unknown) => void = () => {};
+    const streamRecovered = vi.fn().mockResolvedValue(true);
+    const onConnectionComplete = vi.fn();
+    const props = { ...streamAttentionProps(streamRecovered), onConnectionComplete };
+    props.connectSteps.installFirmware = vi.fn(() => new Promise<void>((_resolve, reject) => {
+      failWrite = reject;
+    }));
+    render(<SetupWizard {...props} />);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Connect" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Back" })); });
+    await act(async () => {
+      failWrite({
+        code: "firmware_update_stream_attention",
+        message: "Firmware is current, but the display stream still needs attention.",
+      });
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(60 * 1000); });
+    expect(streamRecovered).not.toHaveBeenCalled();
+    expect(onConnectionComplete).not.toHaveBeenCalled();
+    expect(screen.queryByText("Firmware current — attention needed")).toBeNull();
   });
 
   it("does not look for a stream after other firmware attention", async () => {

@@ -8352,3 +8352,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #780 3D VibeTV on the setup screens sways one full cycle after 2.5 s without a touch and then stays still; a drag starts one more cycle. Reduced motion stays still; texts and layout unchanged.
 - Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx` (sway loop) and its test `apps/control-center/src/components/vibetv-3d-preview.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #854 not announced to customers
+
+## 2026-10-21 — #780: Back during a firmware write is not overtaken by a late stream recovery (#846)
+
+- User approval: no visible change – UI approval not needed (#780 / #846: Back during a firmware write is no longer overtaken by a late stream recovery)
+- Approved customer-visible result: #780 unchanged; a customer who presses Back during a firmware write stays on the connection choice even if the stream recovers afterwards.
+- Scope: `apps/control-center/src/components/setup/setup-connect.ts` (the Back path ends the run), its test in `apps/control-center/src/components/setup/setup-wizard.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — bug fix that removes a wrong move, not announced to customers

@@ -105,6 +105,8 @@ export function useSetupConnect(
     }
     leaveRef.current = null;
     candidateRef.current = null;
+    // Ends this run for good, so a stream watch started by its failure exits.
+    runIdRef.current += 1;
     setLeaving(false);
     setFailure(null);
     setState(IDLE);
