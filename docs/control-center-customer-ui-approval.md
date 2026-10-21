@@ -9324,3 +9324,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #864 as in its own entries; the Two Limits theme stays removed, nothing else changes.
 - Scope: the merge commits and this approval record. Pull request branch #864 only, not merged, not released.
 - What's new: none — merge marker, no customer-visible change of its own
+
+## 2026-10-21 — #864: queued display changes build on the latest selection
+
+- User approval: no visible change – UI approval not needed (bug fix: quick successive limit toggles are all saved)
+- Approved customer-visible result: Ticking or unticking several limits in quick succession keeps every change; each save starts from the selection the earlier save left behind. Pair order changes are logged under Recent activity like any other pair change.
+- Scope: the limits callback hands its change to the display write queue as a function of the selection there, the picker type accepts that form, and the Companion logs a pair's member or order change as a display mode change. Tests for the queue, the limits change, and the logged pair order.
+- What's new: none — bug fix, no separate announcement.

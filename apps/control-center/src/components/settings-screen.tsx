@@ -461,18 +461,22 @@ export function SettingsScreen({
         </p>
         <DisplayLimitsSettings
           display={providerPicker.display}
-          onChange={(change) => {
-            const display = providerPicker.display;
-            if (!display) {
-              return;
-            }
-            const providerIds =
-              display.mode === "automatic" ? enabledProviderIds : display.providerIds;
-            void providerPicker.onDisplayChange(
-              { mode: display.mode, providerIds, ...change },
-              providerIds[0] ?? "",
-            );
-          }}
+          onChange={(change) =>
+            void providerPicker.onDisplayChange((current) => {
+              // Applied to the selection as the write finds it, so a second
+              // toggle keeps the first one while its save is still pending.
+              if (!current) {
+                return null;
+              }
+              const providerIds =
+                current.mode === "automatic" ? enabledProviderIds : current.providerIds;
+              return {
+                mode: current.mode,
+                providerIds,
+                hiddenWindows: change(current.hiddenWindows ?? {}),
+              };
+            }, providerPicker.display?.providerIds[0] ?? "")
+          }
           providers={displayChoices}
           theme={activeTheme}
           usage={providerPicker.usage}

@@ -61,7 +61,9 @@ describe("DisplayLimitsSettings", () => {
 
     fireEvent.click(row("Claude", "session"));
 
-    expect(onChange).toHaveBeenCalledWith({ hiddenWindows: { claude: ["session"] } });
+    const change = onChange.mock.calls[0][0];
+    expect(change({})).toEqual({ claude: ["session"] });
+    expect(change({ codex: ["weekly"] })).toEqual({ claude: ["session"], codex: ["weekly"] });
   });
 
   it("keeps the last ticked limit of a provider", () => {
