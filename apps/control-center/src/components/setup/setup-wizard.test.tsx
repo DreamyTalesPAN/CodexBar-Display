@@ -2733,7 +2733,7 @@ it.each(["Escape", "Scan again"])("reports the setup update dismissal to its own
   else fireEvent.click(within(dialog).getByRole("button", { name: action }));
   expect(onDismiss).toHaveBeenCalledTimes(1);
 });
-it.each(["pair", "automatic", "fixed"] as const)("chooses a reported pair limit, previews it and keeps the shared choice when saving %s", async (mode) => {
+it.each(["pair", "automatic", "fixed"] as const)("chooses a reported pair limit, waits for a saved host preview and keeps the shared choice when saving %s", async (mode) => {
   Element.prototype.hasPointerCapture = () => false;
   Element.prototype.scrollIntoView = () => {};
   const props = baseProps({ step: "display", displayMode: "pair",
@@ -2754,7 +2754,9 @@ it.each(["pair", "automatic", "fixed"] as const)("chooses a reported pair limit,
   fireEvent.keyDown(screen.getByRole("combobox", { name: "Limit for Provider 1" }), { key: "Enter" });
   fireEvent.click(screen.getByRole("option", { name: "Weekly" }));
   expect(props.onDisplayContinue).not.toHaveBeenCalled();
-  expect(screen.getByText("Codex Weekly")).toBeTruthy();
+  expect(screen.queryByText("Codex Weekly")).toBeNull();
+  expect(within(screen.getByRole("button", { name: /Two at once/ })).getByText("No usage yet")).toBeTruthy();
+  expect(screen.getByRole("combobox", { name: "Limit for Provider 1" }).textContent).toContain("Weekly");
   if (mode !== "pair") {
     fireEvent.click(screen.getByRole("button", { name: mode === "automatic" ? /Automatic/ : /One provider/ }));
   }

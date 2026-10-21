@@ -17976,3 +17976,11 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve this feature together with the existing build9 Settings and three equal display cards.
 - Scope: Integration merge preserving both approval histories.
 - What's new: none — integration only.
+
+
+## 2026-10-21 — build9: validate combined 7205 behavior
+
+- User approval: pending — review the refreshed build 7205 integration, including the unavailable pair preview while a setup limit choice remains in the wizard draft.
+- Approved customer-visible result: Settings retains Used/Remaining and per-provider limit pickers; three setup mode cards stay in one equally sized row; reset footers and bounded text coexist with pace rendering.
+- Scope: Reconcile merged regression expectations for Appearance, host-owned preview frames, dynamic card size and wrapped footer text; preserve every source approval block.
+- What's new: none — local integration build only.

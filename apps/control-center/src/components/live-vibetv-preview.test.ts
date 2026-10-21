@@ -1462,7 +1462,7 @@ describe("displayed-limit reset footer", () => {
         pack: { themeId: "mini-classic", spec: { p: spec }, assets: {} },
         status: "ready", themeId: "mini-classic", frame,
       }));
-      expect(markup.replace(/<[^>]+>/g, "")).toContain("No active session");
+      expect(markup.replace(/<[^>]+>/g, "").replace(/\s/g, "")).toContain("Noactivesession");
       return Number([...markup.matchAll(/<text[^>]*font-size="([\d.]+)"/g)].at(-1)?.[1]);
     };
     const idle = { ...footer, w: 60, s: 2 };

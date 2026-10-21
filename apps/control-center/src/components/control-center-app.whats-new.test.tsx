@@ -810,8 +810,8 @@ it("a failed check alone never leaves Overview", async () => {
 it("preserves a theme install link when remembered setup skips the wizard", async () => {
   rememberCompletedSetup("16199235");
   window.localStorage.setItem(SEEN_KEY, JSON.stringify(allIds));
-  const app = startWindow({ initialThemeId: "gauge" });
+  const app = startWindow({ initialThemeId: "token-counter" });
   await app.wait(15);
-  expect(screen.queryByRole("heading", { name: "Themes" })).not.toBeNull();
+  expect(screen.queryByRole("heading", { name: "Appearance" })).not.toBeNull();
   expect(screen.queryByRole("heading", { name: "Overview" })).toBeNull();
 });
