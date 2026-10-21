@@ -46,7 +46,6 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { SetupDialog } from "@/components/setup/setup-dialog";
-import { systemBusyCopy } from "./system-busy-dialog";
 import { Spinner } from "@/components/ui/spinner";
 import {
   Popover,
@@ -228,14 +227,12 @@ export type ThemeLibraryScreenProps = {
 // announcement, which already waits for every other dialog (so the two never
 // wait on each other and loop).
 const OPEN_DIALOGS = '[role="dialog"], [role="alertdialog"]';
-let pageNoticesShown = 0;
 
 function otherDialogOpen(): boolean {
   if (typeof document === "undefined") return false;
-  const others = Array.from(document.querySelectorAll(OPEN_DIALOGS)).filter(
-    (dialog) => !dialog.textContent?.includes(systemBusyCopy.title),
+  return Array.from(document.querySelectorAll(OPEN_DIALOGS)).some(
+    (dialog) => !dialog.matches('[data-notice-kind="system-busy"], [data-notice-kind="theme-library"]'),
   );
-  return others.length > pageNoticesShown;
 }
 
 /** Whether another dialog is open right now, kept current while mounted. */
@@ -251,15 +248,9 @@ function useOtherDialogOpen(): boolean {
   return open;
 }
 
-/** A page notice: an overlay over the page, counted by useOtherDialogOpen. */
+/** A page notice: identified in the DOM without mount-count bookkeeping. */
 function PageNotice(props: ComponentProps<typeof SetupDialog>) {
-  useLayoutEffect(() => {
-    pageNoticesShown += 1;
-    return () => {
-      pageNoticesShown -= 1;
-    };
-  }, []);
-  return <SetupDialog {...props} />;
+  return <SetupDialog {...props} noticeKind="theme-library" />;
 }
 
 export function ThemeLibraryScreen({

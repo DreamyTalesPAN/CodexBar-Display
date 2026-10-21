@@ -9186,6 +9186,27 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of 3dc0a15b and this approval record. Pull request branch #784 only, not merged, not released.
 - What's new: none — merge of 3dc0a15b, no customer-visible change of its own
 
+## 2026-10-21 — #784: Overview 3D sway stops and pauses while hidden
+
+- User approval: pending — the Overview 3D VibeTV sways once and then stands still (as approved for setup in 7202), paused while the window is hidden
+- Approved customer-visible result: the Overview follows the one-cycle sway from #780, approved in build 7202: after 2.5 seconds without a touch it sways once and settles; a drag starts one more cycle. Hidden windows pause that cycle, and reduced motion stays still. Text and layout remain unchanged.
+- Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx` and its animation regression tests; adapted from #780 commit 65352daf4412c41df5041baea327f079b92c1dff with visibility handling and event-driven rendering. Pull request #784 only, not merged, not released.
+- What's new: none — performance fix to the existing Overview preview
+
+## 2026-10-21 — #784: identify library and busy notices by data attributes
+
+- User approval: no visible change – UI approval not needed (#784 P3a replaces notice mount counters and title matching with stable dialog data attributes)
+- Approved customer-visible result: page notices still wait for other dialogs and take priority over the busy announcement; wording, layout and dismissal remain unchanged.
+- Scope: `theme-library-screen.tsx`, `system-busy-dialog.tsx`, the `SetupDialog` notice attribute, and library notice regression tests. Pull request #784 only, not merged, not released.
+- What's new: none — internal notice identification only
+
+## 2026-10-21 — #784: cache saved theme names between Overview polls
+
+- User approval: no visible change – UI approval not needed (#784 P3b reads the saved theme library once per Overview visit or storage change instead of every status poll)
+- Approved customer-visible result: Overview keeps showing the current theme name, including the customer's saved names and live theme during standby; returning from Theme Studio and changes from another window refresh those names.
+- Scope: `overview-screen.tsx` and its theme-name regression tests. Pull request #784 only, not merged, not released.
+- What's new: none — avoid repeated localStorage JSON parsing
+
 ## 2026-10-19 — Appearance: one page with type switch, search, filters and one Create button (#790, #791, #792, #794)
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; his only #802 point was the install state, approved separately) — entry: Appearance: one page with type switch, search, filters and one Create button (#790, #791,  — before → after: (1) the sidebar entry "Appearance" with its two sub-entries "Themes" and "Screensavers" becomes one entry "Appearance" without sub-entries, and the page title is always "Appearance" (before: "Themes" or "Screensavers"); (2) the two lists become one page that opens on "All" with a switch "All n · Themes n · Screensavers n" under the title, and the choice is kept while the app is open (Settings › "Choose screensaver" opens "Screensavers", a theme link opens "Themes"); (3) new: a "Search" field (name only, not case-sensitive, Esc clears; empty result reads "Nothing matches your search or filters.") and a "Filters" button whose popover (300 px, no X, Esc closes) groups the options with a count each for the open list — "Status" (Installed, Update available) always, "Features" (Agent states, Animated, Clock, Usage stats, Pixel art) and "Providers shown" (1 provider, 2 providers, 3 or more) only when the theme catalog carries tags — with "Clear all" and "n results" at the bottom and the picked options as removable chips with "Clear all" under the bar (several options of one group match any, groups match all); (4) the buttons "Create Theme" and "Create Screensaver" become one lime "Create"; in "Themes" and "Screensavers" it starts that type, on "All" it opens a small menu "Theme / Screensaver"; (5) the grey box "Screensaver is off." with the link "Turn on in Settings" on the Screensavers page becomes one muted line "Screensaver is off. Turn it on in Settings." with "Settings" as the link (shown only under "Screensavers"; the switch stays in Settings only), and Install is greyed instead of reading "Turn on first"; (6) each card gets the type word "Theme" or "Screensaver" at the right of its name, a 6 px preview corner, "Edit" underlined at the left and the status at the right ("✓ Installed", lime "Install" or "Update", "Update needed" as plain text) in a 28 px row, with 24 px between the columns and 28 px between the rows. A theme the customer made keeps its "Custom" mark next to the name and its "Delete" link next to "Edit" (not drawn in the master). Codex review fixes on top: the toolbar wraps in a narrow window, the screensaver setting is read again when Screensavers is opened from All, "Show me in Themes" opens the Themes segment, the Settings link has the full focus ring, and the grey fill of the chosen card stays as before (the master draws no chosen card). Merged with the base of 19.10. (2f8c5ec8): the screensaver-off line stays the template's one muted line.
