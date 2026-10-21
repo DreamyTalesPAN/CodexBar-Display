@@ -8585,3 +8585,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: no visible change; the key dialog and the Settings AI row show the same text, layout and buttons as before. Only the order of answers is handled differently: a late earlier answer no longer overwrites a newer state, and a failed follow-up check keeps the saved key as pending.
 - Scope: `apps/control-center/src/components/theme-studio/openai-key-form.tsx` (one generation-guarded capability read), its tests in `openai-key-form.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — fixes three ordering races found in review, no new text, control or layout
+
+## 2026-10-21 — #781: approval marker after merging main at 467fd7fb
+
+- User approval: no visible change – UI approval not needed (merge of main (467fd7fb) into #781; the own entries of #781 keep their approvals)
+- Approved customer-visible result: #781 as in its own entries plus the entries merged with 467fd7fb; nothing else changes.
+- Scope: the merge of 467fd7fb and this approval record. Pull request branch #781 only, not merged, not released.
+- What's new: none — merge of 467fd7fb, no customer-visible change of its own
