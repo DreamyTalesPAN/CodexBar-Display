@@ -627,6 +627,27 @@ test_push_validates_all_entries_since_previous_tip() {
   assert_contains "$output" 'Pushed missing scope: missing Scope:'
 }
 
+# Approval history is append-only: a valid replacement or later marker cannot
+# legitimize rewriting or deleting a historical block alongside a UI change.
+test_historical_entries_cannot_be_rewritten_or_deleted() {
+  local kind repo output
+  for kind in rewrite delete; do
+    repo="${TMP_ROOT}/historical-${kind}"
+    setup_repo "$repo"
+    printf '# Control Center Customer UI Approvals\n' > "$repo/docs/control-center-customer-ui-approval.md"
+    if [[ "$kind" == rewrite ]]; then
+      approval_entry "Rewritten historical entry" >> "$repo/docs/control-center-customer-ui-approval.md"
+    fi
+    printf '\nexport const newLabel = "Changed";\n' >> "$repo/apps/control-center/src/components/overview-screen.tsx"
+    git -C "$repo" add apps/control-center/src/components/overview-screen.tsx docs/control-center-customer-ui-approval.md
+    git -C "$repo" commit -q -m "Change historical entry and UI"
+    commit_approval "$repo" "Later valid marker"
+    output="$(run_gate "$repo")" && die "expected historical $kind to fail"
+    assert_contains "$output" 'Initial UI: historical approval entries are append-only'
+  done
+}
+
+test_historical_entries_cannot_be_rewritten_or_deleted
 test_large_approval_log_is_validated
 test_required_git_reads_fail_closed
 test_missing_comparison_base_fails_closed

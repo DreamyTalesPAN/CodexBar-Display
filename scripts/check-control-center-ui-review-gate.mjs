@@ -38,9 +38,10 @@ const approvalText = workingTreeApprovalChanged
   ? (existsSync(APPROVAL_FILE) ? readFileSync(APPROVAL_FILE, "utf8") : "")
   : git(["show", `${analysisRef}:${APPROVAL_FILE}`]);
 const baseApprovalText = approvalBaseText();
-const addedApprovalEntries = introducedApprovalEntries();
+const { added: addedApprovalEntries, removed: removedApprovalEntries } = approvalEntryChanges();
 const invalidApprovalEntries = [
   { title: 'Approval evidence outside any "## " entry (add it under its own heading)', errors: approvalLinesOutsideEntries() },
+  ...removedApprovalEntries.map((entry) => ({ title: entry.split("\n")[0].slice(3), errors: ["historical approval entries are append-only; restore this entry and append a new one"] })),
   ...addedApprovalEntries.map((entry) => ({ title: entry.split("\n")[0].slice(3), errors: approvalErrors(entry) })),
 ].filter(({ errors }) => errors.length > 0);
 const workingTreeApprovalValid = workingTreeApprovalChanged
@@ -218,14 +219,15 @@ function approvalEntries(text) {
 // Compare against the merge base, not the latest marker: a later valid entry
 // cannot hide an earlier broken or pending one. Consume matches so copying an
 // existing entry still counts as an addition and fails the uniqueness check.
-function introducedApprovalEntries() {
+function approvalEntryChanges() {
   const existing = approvalEntries(baseApprovalText);
-  return approvalEntries(approvalText).filter((entry) => {
+  const added = approvalEntries(approvalText).filter((entry) => {
     const index = existing.indexOf(entry);
     if (index < 0) return true;
     existing.splice(index, 1);
     return false;
   });
+  return { added, removed: existing };
 }
 
 function approvalBaseText() {
