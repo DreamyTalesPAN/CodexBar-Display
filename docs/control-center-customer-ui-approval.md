@@ -13567,3 +13567,108 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve the incoming feature together with the existing Build 6 customer flows in the local integration candidate.
 - Scope: Merge claude/group-usage into claude/paultest-build7; retain all source approval entries.
 - What's new: none — integration of existing feature entries only.
+
+## 2026-10-19 — #802: approval marker after merging the calm redesign base (one-page Appearance)
+
+- User approval: no visible change – UI approval not needed (merge commit into #802; no visible change of its own; entry: #802: approval marker after merging the calm redesign base (one-page Appearance))
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — #802: merge of the #784 outage-dialog fix, no change of its own
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; his only #802 point was the install state, approved separately) — entry: #802: merge of the #784 outage-dialog fix, no change of its own
+- Approved customer-visible result: none; no visible change.
+- Scope: merge of `origin/claude/group-calm-redesign` (`apps/control-center/src/components/setup/setup-recovery-dialogs.tsx`, its test, the flow comment) and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #802: customer flow follows the template's preview dialog and card size
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; his only #802 point was the install state, approved separately) — entry: #802: customer flow follows the template's preview dialog and card size
+- Approved customer-visible result: none; the test and its goldens only.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs`, `apps/control-center/test-fixtures/theme-preview-vector-goldens.json` and this approval record. Pull request branch only, not merged, not released.
+
+## 2026-10-20 — #802: build 2b QA, the Appearance cards have the template's inner space (frame 4)
+
+- User approval: pending — Paul reviews (matched to the approved template, build 2b QA); before → after: the picture on each Appearance card was 2 px smaller on every side than drawn, because the card's 1 px border came on top of the 10 px inner space → the card's inner space is 10 px including the border, so the picture is as wide as in the template (255 px instead of 253 px in an 800 px window) and the name and the Edit / Install row sit 1 px further out. Nothing else changes.
+- Approved customer-visible result: the cards of Appearance look like frame 4 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #802: approval marker after merging claude/group-calm-redesign
+
+- User approval: Merge of claude/group-calm-redesign into this branch; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #802: approval marker for the merge of claude/group-calm-redesign at 315b6e57 (gate fix)
+
+- User approval: merge of claude/group-calm-redesign 315b6e57 into #802; no visible change of its own; not seen by Paul. This entry repeats the marker above with unique lines, so the gate reads it.
+- Approved customer-visible result: #802 as in its own entries (pending, Paul reviews) plus the entries merged with 315b6e57; nothing else changes.
+- Scope: this approval record for the merge of 315b6e57. Pull request branch #802 only, not merged, not released.
+- What's new: none — merge of 315b6e57, no customer-visible change of its own
+
+## 2026-10-20 — #802: approval marker after merging claude/group-calm-redesign at ece7b388
+
+- User approval: merge of claude/group-calm-redesign (ece7b388) into #802; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- Approved customer-visible result: #802 as in its own entries (pending, Paul reviews) plus the entries merged with ece7b388; nothing else changes.
+- Scope: the merge of ece7b388 and this approval record. Pull request branch #802 only, not merged, not released.
+- What's new: none — merge of ece7b388, no customer-visible change of its own
+
+## 2026-10-20 — #802: tests follow the all-cards-alike Appearance design (Codex review)
+
+- User approval: no visible change – UI approval not needed (#802: unit test and card-size goldens only; the active card now expects the same outline variant as the others plus the Active pill, and the 240 px card goldens follow the 200 px cards)
+- Approved customer-visible result: #802 unchanged; this entry only records test updates.
+- Scope: `apps/control-center/src/components/control-center-app.display-preferences.test.tsx`, `apps/control-center/test-fixtures/theme-preview-vector-goldens.json` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — test-only change, no customer-visible change
+
+## 2026-10-20 — #802: Appearance install on the button, bigger lime Active pill (7198 review, Paul's pictures)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:30: "passt so" (pictures of the install button and the pills, vibetv-testbench/review-1016/ui/802-install-button/) — entry: #802 install state and pills. Before → after: while installing, the card grew by a progress bar and a box with step lines, and afterwards kept a box "Installed – Theme is active on VibeTV." → the card never changes its height: its own lime Install button turns into a disabled "Installing" with a spinner, nothing else is added, and after the install only the pill on the picture remains; the "Active" pill is bigger (14 px text, 24 px high) in lime #CCFF00 with black text, the "Installed" pill is as big and light so Active stands out; no extra "Try again" row, a failed install is the usual dialog and the card's Install button retries.
+- Approved customer-visible result: pictures for Paul in `vibetv-testbench/review-1016/ui/802-install-button/` (card while installing, card after, close-up of the pills), 1200 px, "App heute (7198)" next to "neu".
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx`, its unit tests, the customer-flow script `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #802 install state and pills: no new content, the same install with another look
+
+## 2026-10-20 — #802: approval marker after merging claude/group-calm-redesign at ea818ad4
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (ea818ad4) into #802; the own entries of #802 keep their approvals)
+- Approved customer-visible result: #802 as in its own entries plus the entries merged with ea818ad4; nothing else changes.
+- Scope: the merge of ea818ad4 and this approval record. Pull request branch #802 only, not merged, not released.
+- What's new: none — merge of ea818ad4, no customer-visible change of its own
+
+## 2026-10-21 — #802: approval marker after merging claude/group-calm-redesign at ff601365
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (ff601365) into #802; the own entries of #802 keep their approvals)
+- Approved customer-visible result: #802 as in its own entries plus the entries merged with ff601365; nothing else changes.
+- Scope: the merge of ff601365 and this approval record. Pull request branch #802 only, not merged, not released.
+- What's new: none — merge of ff601365, no customer-visible change of its own
+=========
+
+## 2026-10-21 — #802: keyboard focus stays when an updated theme card leaves "Update available" (#857)
+
+- User approval: no visible change – UI approval not needed (#802 / #857: keyboard focus moves to the filter when an updated card leaves the "Update available" list)
+- Approved customer-visible result: #802 as in its own entries; the focus of a keyboard user goes to the Filters button instead of the page body, nothing looks different.
+- Scope: a card that leaves the filtered list while it holds the focus hands the focus to the Filters button. Pull request branch #802 only, not merged, not released.
+- What's new: none — focus fix, no visual change
+
+## 2026-10-21 — #802: approval marker after merging claude/group-calm-redesign at 3caaf211
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (3caaf211) into #802; the own entries of #802 keep their approvals)
+- Approved customer-visible result: #802 as in its own entries plus the entries merged with 3caaf211; nothing else changes.
+- Scope: the merge of 3caaf211 and this approval record. Pull request branch #802 only, not merged, not released.
+- What's new: none — merge of 3caaf211, no customer-visible change of its own
+
+## 2026-10-21 — #802: approval marker after merging claude/group-calm-redesign at 4371975c
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (4371975c) into #802; the own entries of #802 keep their approvals)
+- Approved customer-visible result: #802 as in its own entries plus the entries merged with 4371975c; nothing else changes.
+- Scope: the merge of 4371975c and this approval record. Pull request branch #802 only, not merged, not released.
+- What's new: none — merge of 4371975c, no customer-visible change of its own
+
+## 2026-10-21 — #802: Build 7 integration of claude/appearance-one-page
+
+- User approval: pending — build7 integration of claude/appearance-one-page at e20cf938d606 for the requested Pace + Two at once Mac test.
+- Approved customer-visible result: Preserve the incoming feature together with the existing Build 6 customer flows in the local integration candidate.
+- Scope: Merge claude/appearance-one-page into claude/paultest-build7; retain all source approval entries.
+- What's new: none — integration of existing feature entries only.

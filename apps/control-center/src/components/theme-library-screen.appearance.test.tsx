@@ -224,6 +224,41 @@ it("filters by status from what VibeTV holds", async () => {
   expect(names()).toEqual(["Preview Clippy"]);
 });
 
+// #857: the keyboard user who pressed Update on a card keeps the place when the
+// update completes and the card leaves the Update available list.
+it("moves the focus to the Filters button when an updated card leaves the Update available list", async () => {
+  const earlier = "/themes/u/mt-3-123456.json";
+  const current = "/themes/u/mt-4-abcdef.json";
+  const updatable = product("clippy", "Clippy", "live", {
+    earlierThemeSpecPaths: [earlier],
+    themeSpecPath: current,
+  });
+  const page = (path: string) => (
+    <Page
+      device={{
+        connected: true,
+        paired: true,
+        ready: true,
+        activeTheme: "clippy",
+        display: { themeSpec: { path } },
+      }}
+      themeInstallEnabled
+      themes={[updatable, ...plain.filter((theme) => theme.themeId !== "clippy")]}
+    />
+  );
+  const { rerender } = render(page(earlier));
+  const status = await openFilters();
+  fireEvent.click(within(status).getByRole("checkbox", { name: "Update available" }));
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+  expect(names()).toEqual(["Preview Clippy"]);
+  const update = screen.getByRole("button", { name: "Update" });
+  update.focus();
+  fireEvent.click(update);
+  rerender(page(current));
+  expect(names()).toEqual([]);
+  expect(document.activeElement).toBe(filtersButton());
+});
+
 it("groups the tags, counts for the current segment, ORs within a group and ANDs across", async () => {
   render(<Page themes={withTags} />);
   fireEvent.click(screen.getByRole("radio", { name: "Themes 3" }));
