@@ -439,19 +439,17 @@ async function enrichThemesWithGitHubCatalog(
   }
 }
 
-export type TaggedThemeProduct = ThemeProduct & { tags?: readonly string[] };
-
 export function mergeThemeProductWithCatalog(
   product: ThemeProduct,
   catalogTheme: ThemeProduct,
-): TaggedThemeProduct {
+): ThemeProduct {
   const technicalTheme = hasCompleteThemePackMetadata(catalogTheme)
     ? catalogTheme
     : product;
   // The filter tags are the catalog's, whether or not its install metadata is
   // complete; the product's own tags only stand in while the catalog has none.
-  const catalogTags = (catalogTheme as TaggedThemeProduct).tags;
-  const productOwnTags = (product as TaggedThemeProduct).tags;
+  const catalogTags = catalogTheme.tags;
+  const productOwnTags = product.tags;
   return {
     ...product,
     compatibleBoards:
@@ -462,7 +460,6 @@ export function mergeThemeProductWithCatalog(
       technicalTheme.requiresFirmware || product.requiresFirmware,
     requiredCapabilities:
       technicalTheme.requiredCapabilities || product.requiredCapabilities,
-    tags: technicalTheme.tags || product.tags,
     themeVersion: technicalTheme.themeVersion || product.themeVersion,
     themeRev: technicalTheme.themeRev || product.themeRev,
     themeSpecPath: technicalTheme.themeSpecPath || product.themeSpecPath,

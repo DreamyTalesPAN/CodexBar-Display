@@ -271,14 +271,14 @@ describe("mergeThemeProductWithCatalog", () => {
       packUrl: "https://github.example/synthwave-v1.1.0.zip",
       priceLabel: "Kostenlos",
       source: "github-catalog",
-      tags: ["retro", "dark"],
+      tags: ["clock", "pixel-art"],
       themeId: "synthwave",
       title: "Synthwave",
-    } satisfies ThemeProduct & { tags: string[] };
+    } satisfies ThemeProduct;
 
     const merged = mergeThemeProductWithCatalog(product, incompleteCatalogTheme);
 
-    expect(merged.tags).toEqual(["retro", "dark"]);
+    expect(merged.tags).toEqual(["clock", "pixel-art"]);
     expect(merged.packUrl).toBe(product.packUrl);
     expect(merged.packSha256).toBe(shopifySHA);
   });
