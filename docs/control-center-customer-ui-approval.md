@@ -9317,3 +9317,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Two at once leaves the shared provider line blank because each usage slot already names its provider. Device notices still appear on that line; the app's own provider names and Showing now text stay unchanged. Paul's review on build 7203 remains pending.
 - Scope: pair-frame label construction and serialization, firmware preservation of explicitly empty labels, live VibeTV preview label preservation, focused tests and protocol documentation. No theme layout changes.
 - What's new: none — removal of the redundant pair header, no separate announcement.
+
+## 2026-10-21 — #864: approval marker after the Two Limits removal merge
+
+- User approval: no visible change – UI approval not needed (merge of the remote #864 branch with the Two Limits removal; the remote's own change is Go-only: the Two at once shortcut in the Companion API)
+- Approved customer-visible result: #864 as in its own entries; the Two Limits theme stays removed, nothing else changes.
+- Scope: the merge commits and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — merge marker, no customer-visible change of its own
