@@ -15211,3 +15211,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve the incoming feature together with the existing calm customer flows in the integration candidate.
 - Scope: Merge claude/paultest-592a into claude/paultest-build8; retain all source approval entries.
 - What's new: none — integration of existing feature entries only.
+
+## 2026-10-21 — paultest-build8: setup Two at once card in the same design as Automatic and One provider (Paul 7202)
+
+- User approval: pending — Paul (21.10.): "two at once muss hier natürlich dem gleichen design folgen wie automatic und one provider": the Two at once card in the setup Display mode step uses the same live VibeTV tile as the other two; Paul sees it in build 7203
+- Approved customer-visible result: The Two at once card renders the active theme through the same live tile, height and card structure as Automatic and One provider, using Provider 1 above Provider 2; the Continue rules and existing wording stay unchanged.
+- Scope: Reuse the existing setup tile renderer and extend pairDisplayPreview with its two existing live source frames, preserving their countdown basis and leaving unavailable frames unavailable; regression tests cover rendered tiles and pair data.
+- What's new: none — consistent setup preview design for Paul's next Mac test build.

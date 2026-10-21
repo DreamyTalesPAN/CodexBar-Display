@@ -179,7 +179,7 @@ export function withResetTrust(
     return frame;
   }
   const basisKnown = Boolean(collectedAt) && !Number.isNaN(new Date(collectedAt!).getTime());
-  const source = resetSourceKey(frame.provider ?? "");
+  const source = resetSourceKey(frame.resetSource ?? frame.provider ?? "");
   // ApplyResetTrust: a countdown that was positive when read and has run out by
   // the time the frame leaves turns the frame stale -- "Reset unavailable" on
   // the device -- instead of a measured idle account (`hadCountdown`).
@@ -436,8 +436,42 @@ export function pairDisplayPreview(
   const counting = [first, second].find(
     (preview) => preview.resetLabel && preview.resetLabel !== unknownReset,
   );
+  // Reuse the two live frames already built for the other cards. Each keeps
+  // its first visible window; both countdowns use the first frame's basis.
+  const frameAt = first.frameAt;
+  const usageWindows = [first, second].flatMap((preview) => {
+    const window = preview.frame?.usageWindows?.[0];
+    if (!window || !preview.frame?.provider) return [];
+    const shift = frameAt && preview.frameAt
+      ? (new Date(frameAt).getTime() - new Date(preview.frameAt).getTime()) / 1000
+      : 0;
+    return [{
+      ...window,
+      id: `${preview.frame.provider}:${window.id}`,
+      label: `${preview.providerLabel} ${window.label}`,
+      resetSecs: (window.resetSecs ?? 0) > 0
+        ? Math.max(0, (window.resetSecs ?? 0) - shift)
+        : 0,
+    }];
+  });
+  const frame: DisplayFrame | undefined = usageWindows.length === 2 ? {
+    v: 1,
+    provider: `${first.frame!.provider}+${second.frame!.provider}`,
+    label: "",
+    session: usageWindows[0].percent,
+    weekly: usageWindows[1].percent,
+    usageWindows,
+    usageMode: first.frame!.usageMode,
+    providerSlots: first.frame!.providerSlots,
+    resetSecs: rootResetSecs(usageWindows),
+    resetSource: first.frame!.resetSource ?? first.frame!.provider,
+    resetTrust: [first, second].some((preview) => preview.frame?.resetTrust === "stale")
+      ? "stale"
+      : first.frame!.resetTrust,
+  } : undefined;
   return {
     providerLabel: `${first.providerLabel} + ${second.providerLabel}`,
+    ...(frame ? { frame, frameAt } : {}),
     resetLabel: (counting ?? first).resetLabel,
     windows: [first, second].map((preview) => ({
       label: preview.windows[0]

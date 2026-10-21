@@ -535,6 +535,41 @@ describe("pairDisplayPreview", () => {
     windows: [{ label: "Weekly", percent: 40 }],
   });
 
+  it("feeds the live theme with Provider 1 then Provider 2 on the same clock", () => {
+    const first = displayPreviewFor(provider({
+      collectedAt: "2026-10-20T08:00:00Z",
+      windows: [{ id: "session", label: "Session", usedPercent: 42, resetSecs: 7200 }],
+      sessionTokens: 100,
+    }))!;
+    const second = displayPreviewFor(provider({
+      id: "claude", label: "Claude", collectedAt: "2026-10-20T08:10:00Z",
+      windows: [{ id: "weekly", label: "Weekly", usedPercent: 26, resetSecs: 3600 }],
+    }))!;
+    const pair = pairDisplayPreview(first, second)!;
+    expect(pair.frameAt).toBe(first.frameAt);
+    expect(pair.frame).toMatchObject({
+      provider: "codex+claude", label: "", session: 42, weekly: 26,
+      usageWindows: [
+        { id: "codex:session", label: "Codex Session", percent: 42, resetSecs: 7200 },
+        { id: "claude:weekly", label: "Claude Weekly", percent: 26, resetSecs: 4200 },
+      ],
+    });
+    const drawn = buildFrameData(pair.frameAt, withResetTrust(pair.frame!, pair.frameAt, new Date()));
+    expect(drawn.usageWindows.map((window) => window.resetSecs)).toEqual([5400, 2400]);
+    expect(drawn.usageSlot1Available).toBe(true);
+    expect(drawn.usageSlot2Available).toBe(true);
+    expect(drawn.hasTokenTotals).toBe(false);
+  });
+
+  it("does not invent a pair frame when one provider has no live window", () => {
+    const first = displayPreviewFor(provider({
+      collectedAt: "2026-10-20T08:00:00Z",
+      windows: [{ id: "session", label: "Session", usedPercent: 42, resetSecs: 7200 }],
+    }))!;
+    expect(pairDisplayPreview(first, preview("Claude", null))?.frame).toBeUndefined();
+    expect(pairDisplayPreview(first, undefined)).toBeNull();
+  });
+
   it("counts down with the first of the two that has a reset time", () => {
     expect(
       pairDisplayPreview(preview("Claude", "Reset unknown"), preview("Codex", "Reset in 2h 0m"))?.resetLabel,

@@ -8,6 +8,7 @@ import {
   type SetupDisplayModePreview,
 } from "./setup-display-mode-screen";
 import { useThemeRenderPack } from "./setup-display-theme-tiles";
+import { pairDisplayPreview } from "./setup-display-previews";
 
 /** The step loads the theme pack and hands it to the choice, as the wizard does. */
 function Choice(
@@ -54,6 +55,7 @@ const noValues = (label: string): SetupDisplayModePreview => ({
 function show(
   previews: SetupDisplayModePreview[],
   manual: SetupDisplayModePreview | null = previews[0] ?? null,
+  pair = false,
 ) {
   render(
     <Choice
@@ -68,6 +70,11 @@ function show(
         label: preview.providerLabel,
       }))}
       selectedProviderId={previews[0]?.providerLabel.toLowerCase() ?? null}
+      {...(pair ? {
+        calm: true,
+        onSelectPair: vi.fn(),
+        pairPreview: pairDisplayPreview(previews[0], previews[1]),
+      } : {})}
     />,
   );
 }
@@ -103,6 +110,42 @@ afterEach(() => {
 });
 
 describe("Display mode tiles with the active theme", () => {
+  it("draws Two at once with the same live theme tile and card structure", async () => {
+    const pairPack = {
+      ...PACK,
+      spec: { p: [
+        { t: "tx", x: 0, y: 0, w: 240, h: 40, s: 20, c: "#fff", v: "{usage.0.label} {usage.0.percent}%" },
+        { t: "tx", x: 0, y: 40, w: 240, h: 40, s: 20, c: "#fff", v: "{usage.1.label} {usage.1.percent}%" },
+      ] },
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true, status: 200, json: async () => pairPack,
+    }) as Response));
+    show([live("Claude", 64), live("Codex", 28)], undefined, true);
+    await settle();
+
+    const cards = ["Automatic", "One provider", "Two at once"].map((name) =>
+      screen.getByRole("button", { name: new RegExp(name) }),
+    );
+    const previews = cards.map((card) => card.querySelector('[data-slot="display-mode-preview"]')!);
+    expect(previews.map((preview) => preview.className)).toEqual([
+      previews[0].className, previews[0].className, previews[0].className,
+    ]);
+    const pair = tiles(2);
+    expect(pair).toHaveLength(1);
+    expect(pair[0].className).toBe(tiles(1)[0].className);
+    expect(pair[0].getAttribute("data-state")).toBe("live");
+    expect(pair[0].querySelector("svg")).not.toBeNull();
+    expect(pair[0].textContent).toContain("Claude Session 64%");
+    expect(pair[0].textContent).toContain("Codex Session 28%");
+    expect(pair[0].textContent!.indexOf("Claude")).toBeLessThan(pair[0].textContent!.indexOf("Codex"));
+    expect(cards[2].className).toBe(cards[1].className);
+    for (const card of cards) {
+      expect(card.firstElementChild?.getAttribute("data-slot")).toBe("display-mode-preview");
+      expect(card.className).toContain("flex-col items-stretch overflow-hidden p-0");
+    }
+  });
+
   it("draws one theme tile per provider in Automatic", async () => {
     show([live("Claude", 64), live("Codex", 28), live("Cursor", 12)]);
     await settle();
