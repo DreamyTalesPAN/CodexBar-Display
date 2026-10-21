@@ -6,9 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/firmwareupdate"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
@@ -138,4 +141,48 @@ func (s *Server) cableDeviceInfo(ctx context.Context, cfg runtimeconfig.Config, 
 		Paired:       strings.TrimSpace(cfg.DeviceToken) != "" || hello.Capabilities.Auth == nil,
 		Capabilities: &hello.Capabilities,
 	}, stream), true, false, false)
+}
+
+// rescueMarkerPortPresent reports whether the port of a pending rescue marker is
+// connected right now; without it no rescue write can resume.
+func (s *Server) rescueMarkerPortPresent(marker firmwareupdate.RescueMarker) bool {
+	if s.listCablePorts == nil {
+		return false
+	}
+	ports, err := s.listCablePorts()
+	return err == nil && slices.ContainsFunc(ports, func(port string) bool {
+		return strings.EqualFold(strings.TrimSpace(port), strings.TrimSpace(marker.Port))
+	})
+}
+
+// halfWrittenRescueEntry is the VibeTV a failed Cable rescue left without
+// bootable firmware, while its marked port is still connected. Only the rescue
+// update reaches it, through the ROM loader on that port.
+func (s *Server) halfWrittenRescueEntry(responding []usb.CableDevice) (deviceSearchEntry, bool) {
+	marker, ok := firmwareupdate.LoadRescueMarker(s.home, time.Now())
+	if !ok {
+		return deviceSearchEntry{}, false
+	}
+	if !s.rescueMarkerPortPresent(marker) {
+		return deviceSearchEntry{}, false
+	}
+	// A VibeTV that answers on the marked port is not half-written any more;
+	// one that answers on another port is another VibeTV.
+	if slices.ContainsFunc(responding, func(device usb.CableDevice) bool {
+		return strings.EqualFold(strings.TrimSpace(device.Port), strings.TrimSpace(marker.Port))
+	}) {
+		return deviceSearchEntry{}, false
+	}
+	// An entry the rescue cannot start (image deleted or changed) would only
+	// lead the customer in a circle.
+	if !firmwareupdate.RescueImageIntact(marker) {
+		return deviceSearchEntry{}, false
+	}
+	return deviceSearchEntry{
+		Target:    cableDeviceTarget,
+		Transport: "cable",
+		Board:     marker.Board,
+		Firmware:  marker.Firmware,
+		Rescue:    true,
+	}, true
 }
