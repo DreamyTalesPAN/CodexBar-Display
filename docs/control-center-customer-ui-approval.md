@@ -9430,3 +9430,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #803 as in its own entries plus the entries merged with 52397ff8; nothing else changes.
 - Scope: the merge of 52397ff8 and this approval record. Pull request branch #803 only, not merged, not released.
 - What's new: none — merge of 52397ff8, no customer-visible change of its own
+
+## 2026-10-21 — #803: restrict Fix to repairable engine failures
+
+- User approval: pending — remove the misleading diagnostic Fix link for config_error and other errors outside the existing engineUnusable rule; keep the existing help text.
+- Approved customer-visible result: pending — Fix is offered only for engine_error or engine_incompatible; the existing incompatible-engine block still has one Repair control and diagnostic help text is unchanged.
+- Scope: diagnostic repair eligibility and regression tests only. Pull request branch #803 only, not merged, not released.
+- What's new: none — removes a misleading repair action, nothing new to use.

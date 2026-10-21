@@ -35,7 +35,7 @@ type Props = {
   diagnostics?: SupportDiagnostics | null;
   running?: boolean;
   onRun?: () => void;
-  /** The app's usage engine repair; offered for an engine that is too old. */
+  /** The app's usage engine repair; offered for an unusable engine. */
   onRepairUsageEngine?: () => void;
   repairing?: boolean;
   /** The app runs on Windows, where "Mac App" reads "App". */
@@ -103,13 +103,16 @@ export function DiagnosticsPanel({
           {checks.length ? (
             <ul aria-label="Diagnostic checks" className={SUPPORT_FRAME}>
               {checks.map((check, index) => (
-                // Only the usage engine has a repair the app can start today;
-                // the engine block already offers it when shown.
+                // Match the Companion's engineUnusable rule; restarting cannot
+                // repair config errors. The engine block already offers repair.
                 <CheckRow
                   check={check}
                   key={check.name + "-" + index}
                   onRepair={
-                    check.name === "usage_engine" && !engineBlock
+                    check.name === "usage_engine" &&
+                    !engineBlock &&
+                    (check.errorCode === "engine_error" ||
+                      check.errorCode === "engine_incompatible")
                       ? onRepairUsageEngine
                       : undefined
                   }

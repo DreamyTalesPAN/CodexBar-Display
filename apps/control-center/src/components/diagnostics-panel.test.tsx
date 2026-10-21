@@ -112,13 +112,13 @@ describe("DiagnosticsPanel", () => {
     expect(repair).toHaveBeenCalledTimes(1);
   });
 
-  it("counts the passed checks and offers Fix only where the app can repair", () => {
+  it.each(["engine_error", "engine_incompatible"])("counts the passed checks and offers Fix for %s", (errorCode) => {
     const repair = vi.fn();
     show(
       {
         checks: [
           { name: "companion_api", status: "pass", detail: "Companion API is running." },
-          { name: "usage_engine", status: "fail", detail: "Usage engine 0.17.0 is too old.", nextAction: "Repair the usage engine, then check again." },
+          { name: "usage_engine", status: "fail", errorCode, nextAction: "Repair the usage engine, then check again." },
           { name: "device_hello", status: "attention", detail: "VibeTV target did not answer.", nextAction: "Check that VibeTV is on." },
         ],
       },
@@ -133,12 +133,33 @@ describe("DiagnosticsPanel", () => {
     expect(repair).toHaveBeenCalledTimes(1);
   });
 
+  it.each(["config_error", "engine_missing", "unknown_error", undefined])(
+    "keeps the existing help without Fix for %s",
+    (errorCode) => {
+      const text = show(
+        {
+          providerSetup: { engine: { status: "config_error" } },
+          usageEngine: { status: "config_error" },
+          checks: [{
+            name: "usage_engine", status: "fail", errorCode,
+            detail: "The usage engine could not read or save its settings.",
+            nextAction: "Repair the usage engine, then check again.",
+          }],
+        },
+        { windowsHost: true, onRepairUsageEngine: vi.fn() },
+      );
+      expect(screen.queryByRole("button", { name: "Fix" })).toBeNull();
+      expect(text).toContain("The usage engine could not read or save its settings.");
+      expect(text).toContain("Repair the usage engine, then check again.");
+    },
+  );
+
   it("shows one repair control for an incompatible engine, not the block and a row Fix", () => {
     const repair = vi.fn();
     show(
       {
         checks: [
-          { name: "usage_engine", status: "fail", detail: "Usage engine 0.17.0 is too old.", nextAction: "Repair the usage engine, then check again." },
+          { name: "usage_engine", status: "fail", errorCode: "engine_incompatible", detail: "Usage engine 0.17.0 is too old.", nextAction: "Repair the usage engine, then check again." },
         ],
         providerSetup: {
           status: "setup_required",
