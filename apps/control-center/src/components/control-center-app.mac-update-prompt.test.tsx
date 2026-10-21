@@ -93,6 +93,8 @@ async function openApp({
     latestVersion: "9.9.10",
     releaseCheckFailed,
     upToDate: false,
+    version: "9.9.9" as string,
+    appVersion: "9.9.9" as string | undefined,
     hostedReleaseChecks: 0,
     firmwareUpdate: firmwareUpdate as typeof installing | undefined,
   };
@@ -128,9 +130,9 @@ async function openApp({
         return jsonResponse({
           ok: true,
           companion: {
-            version: "9.9.9",
+            version: companion.version,
             installationMode: "dmg",
-            app: { version: "9.9.9", installedInApplications: true },
+            app: { version: companion.appVersion, installedInApplications: true },
             runtime: windows ? { os: "windows" } : undefined,
             update: {
               checkedAt: "2026-10-13T08:00:00Z",
@@ -370,7 +372,9 @@ it("offers a late launch update that was reported before the page mounted (#892)
   }
 });
 
-it("drops a late launch update once the Companion reports up to date (#892)", async () => {
+it("keeps a late launch update while the Companion reports up to date (#892)", async () => {
+  // The Mac App's own check found 9.9.10; the hosted release metadata lags.
+  // Only the running Mac App reaching that version ends the offer.
   const app = await openApp({ userAgent: nativeUserAgent, setupFinished: false });
   app.companion.releaseCheckFailed = true;
   await app.wait(10);
@@ -384,7 +388,22 @@ it("drops a late launch update once the Companion reports up to date (#892)", as
   app.companion.releaseCheckFailed = false;
   app.companion.upToDate = true;
   await app.wait(10);
-  expect(runtime.wizardProps?.macAppUpdate).toBeUndefined();
+  expect(runtime.wizardProps?.macAppUpdate).toBeDefined();
+});
+
+it("never reads the Companion version as the running Mac App version (#892)", async () => {
+  // Without app.version the Companion's 9.9.10 must not clear a pending 9.9.10.
+  const app = await openApp({ userAgent: nativeUserAgent, setupFinished: false });
+  app.companion.releaseCheckFailed = true;
+  app.companion.appVersion = undefined;
+  app.companion.version = "9.9.10";
+  await app.wait(10);
+  await act(async () => {
+    window.dispatchEvent(
+      new CustomEvent("vibetv:mac-app-update-found", { detail: { version: "9.9.10" } }),
+    );
+  });
+  expect(runtime.wizardProps?.macAppUpdate).toBeDefined();
 });
 
 it("drops a late launch update once the running Mac App has that version (#892)", async () => {

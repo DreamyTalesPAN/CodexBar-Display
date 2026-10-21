@@ -9395,3 +9395,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none; the existing "Update Mac App" offer appears as before and no longer lingers after the update is installed or up to date.
 - Scope: control-center-runtime.ts listener reads the last late version, control-center-app.tsx derives the offer from companionInfo.update and the running version, and the Mac shell keeps and re-sends the version.
 - What's new: none — bug fix only, the offer shows as before
+
+## 2026-10-22 — #892: a late launch update stays offered while the Companion lags the appcast
+
+- User approval: no visible change – UI approval not needed (bug fix: the Companion's hosted "up to date" no longer hides the late offer that the Mac App's own launch check found; the running-version fallback is removed)
+- Approved customer-visible result: none new; the existing "Update Mac App" offer stays while the running Mac App is older than the offered version.
+- Scope: control-center-app.tsx late-offer derivation with its regression tests.
+- What's new: none — the existing update offer learns a late update

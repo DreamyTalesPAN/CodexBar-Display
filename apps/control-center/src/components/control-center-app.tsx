@@ -4593,14 +4593,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         : hostedCompanionRelease || runtimeRelease || null;
   // The Mac App's launch check can find the update after the start went on
   // (#892). The page offers that version too, when the release check failed.
-  // The offer ends once the Companion's own check says up to date, or the
-  // running Mac App has reached that version.
+  // The offer ends once the running Mac App has reached that version. The
+  // Companion's hosted "up to date" does not end it: it can lag the appcast.
   const [lateMacAppUpdate, setLateMacAppUpdate] = useState("");
   useEffect(() => onNativeMacAppUpdateFound(setLateMacAppUpdate), []);
-  const runningMacAppVersion = companionInfo?.app?.version || companionInfo?.version || "";
+  const runningMacAppVersion = companionInfo?.app?.version || "";
   const lateMacAppUpdateVersion =
-    (companionInfo?.update?.status === "available" &&
-      !companionInfo.update.updateAvailable) ||
     (compareSemVerStrings(runningMacAppVersion, lateMacAppUpdate) ?? -1) >= 0
       ? ""
       : lateMacAppUpdate;
