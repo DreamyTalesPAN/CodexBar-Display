@@ -9128,3 +9128,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #800 as in its own entries plus the entries merged with a5b256b4; nothing else changes.
 - Scope: the merge of a5b256b4 and this approval record. Pull request branch #800 only, not merged, not released.
 - What's new: none — merge of a5b256b4, no customer-visible change of its own
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at e927aefb
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (e927aefb) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with e927aefb; nothing else changes.
+- Scope: the merge of e927aefb and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of e927aefb, no customer-visible change of its own
