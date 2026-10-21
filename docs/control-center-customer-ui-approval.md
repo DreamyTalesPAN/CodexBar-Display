@@ -8425,7 +8425,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-21 — #780: 3D VibeTV sways once, then stands still (#854)
 
-- User approval: pending — #854 the 3D VibeTV in setup sways once and then stays still (Paul decided 21.10. "Nach einer Runde stehen"; not yet seen in a build)
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: #854 the 3D VibeTV in setup sways once and then stays still (Paul decided 21.10. "Nach einer Runde stehen"; not yet seen in a build)
 - Approved customer-visible result: #780 3D VibeTV on the setup screens sways one full cycle after 2.5 s without a touch and then stays still; a drag starts one more cycle. Reduced motion stays still; texts and layout unchanged.
 - Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx` (sway loop) and its test `apps/control-center/src/components/vibetv-3d-preview.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #854 not announced to customers
@@ -8453,7 +8453,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-21 — #780: The flat VibeTV picture no longer flashes before the 3D model
 
-- User approval: pending — #780 setup: the old flat VibeTV picture no longer flashes before the 3D model on "Your VibeTV is live" and in the chooser (Paul 21.10. 7201 feedback: "das komplett löschen einfach")
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: #780 setup: the old flat VibeTV picture no longer flashes before the 3D model on "Your VibeTV is live" and in the chooser (Paul 21.10. 7201 feedback: "das komplett löschen einfach")
 - Approved customer-visible result: on "Your VibeTV is live" and in the first row of the chooser the flat VibeTV picture is gone; the area stays empty (same size) until the 3D model is on screen. Without hardware WebGL the flat picture stays as before; rows 2+ of the chooser keep their photo.
 - Scope: `apps/control-center/src/components/setup/setup-3d-preview.tsx`, `setup-device-card.tsx`, `setup-device-screen.tsx`, `setup-live-screen.tsx`, their tests, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — bug fix, not announced to customers
@@ -8478,3 +8478,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #780 as in its own entries plus the entries merged with 35152cc8; nothing else changes.
 - Scope: the merge of 35152cc8 and this approval record. Pull request branch #780 only, not merged, not released.
 - What's new: none — merge of 35152cc8, no customer-visible change of its own
+
+## 2026-10-21 — #780: Paul's approval of build 7202 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — #780 approval record for build 7202; only the 2 listed 7202 entries of #780 now carry it, everything else stays as it was.
+- Approved customer-visible result: #780 as described in those entries, as seen in build 7202.
+- Scope: #780 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #780 approval record only
