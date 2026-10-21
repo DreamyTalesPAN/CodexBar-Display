@@ -8885,6 +8885,13 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of f314106c and this approval record. Pull request branch #784 only, not merged, not released.
 - What's new: none — merge of f314106c, no customer-visible change of its own
 
+## 2026-10-21 — #784: slider keyboard focus ring 2 px olive
+
+- User approval: no visible change – UI approval not needed (#784 slider keyboard focus ring 3px → the shared 2px olive ring decided earlier; token-only)
+- Approved customer-visible result: the slider thumb looks as before for hover and drag; the keyboard focus ring is the shared 2 px olive ring (border plus 1 px ring) like buttons and inputs. Nothing else changes.
+- Scope: `apps/control-center/src/components/ui/slider.tsx` (thumb focus classes), its test `apps/control-center/src/components/ui/slider.focus-ring.test.tsx`, and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — focus ring classes of the slider thumb, no new text
+
 ## 2026-10-20 — #561 update offer: the Mac App update is offered in its own calm dialog when no VibeTV is found
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 08:55: "Ja" (to "Soll das so rein?" about the picture ui/561-update-hint/01-no-vibetv-found-newer-app.png, in the new dialog style) — entry: #561 update offer: the Mac App update is offered in its own calm dialog when no VibeTV is  — Before → after: #561 update offer: when no VibeTV was found, setup showed only the usual not-found help, even if the Mac App was older than the newest release and an old app can be the reason → #561 update offer: on a Mac, when the Mac App is older than the newest release and no VibeTV is found, the dialog "Update the Mac App first" appears first.
