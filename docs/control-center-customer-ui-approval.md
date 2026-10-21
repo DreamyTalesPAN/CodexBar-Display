@@ -14345,3 +14345,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve the incoming feature together with the existing Build 6 customer flows in the local integration candidate.
 - Scope: Merge claude/paultest-592a into claude/paultest-build7; retain all source approval entries.
 - What's new: none — integration of existing feature entries only.
+
+## 2026-10-21 — #864: Build 7 Pace and Two at once integration checkpoint
+
+- User approval: pending — build7 combined candidate at e4d16fa48864 for Paul's next Mac test, including the requested calm Settings and Showing now.
+- Approved customer-visible result: Automatic, One provider and Two at once retain their source choices; Limits on VibeTV follows Display mode and Pace follows the limits, with the current live-theme setup previews and fixes preserved.
+- Scope: Local integration branch claude/paultest-build7 only, combining the specified source heads and their existing approval records; no release or hardware validation is claimed.
+- What's new: none — existing source features combined for the requested test build.
