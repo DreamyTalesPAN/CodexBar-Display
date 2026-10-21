@@ -8055,7 +8055,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-19 — Step lists: "Still … – hang tight." lines and no cursor block
 
-- User approval: pending — #813 Step lists: "Still … – hang tight." lines and no cursor block: Paul chose variant A on 19.10.2026 via the communicator, but the entry holds no verbatim quote of his words, so no accepted form 1; Paul has to say yes to #813 itself. Earlier wording: Paul, 19.10.2026 via the communicator: variant A, at most 5 "Still … – hang tight." lines every 8 s, calm look without cursor block.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: Step lists: "Still … – hang tight." lines and no cursor block
 - Approved customer-visible result: while a setup step runs longer than 8 s, one more line "> Still <step in lower-case continuous form> – hang tight." is added under it every 8 s, up to 5 lines per step; a step that ends in a past tense gets "> Still working on it – hang tight."; the last sentence of a multi-sentence step text is used ("Upload interrupted. Retrying." → "> Still retrying – hang tight."); the running step no longer shows a blinking black cursor block at the end of the log, on every step list (theme install, device connection, welcome, provider loading). The providers screen keeps its own "still checking, hang tight" line every 20 s and gets no "Still" line.
   Before → after, example: theme install, "> Refreshing display stream." with a blinking black block after it → "> Refreshing display stream." then after 8 s "> Still refreshing display stream – hang tight.", after 16 s a second identical line, no block.
 - Scope: `apps/control-center/src/components/setup/setup-log.tsx`, `apps/control-center/src/components/setup/setup-log.test.tsx`, `apps/control-center/src/components/setup/setup-log-still.test.tsx` (new), `apps/control-center/src/components/setup/setup-providers-screen.tsx` (opt-out only), `apps/control-center/src/components/control-center-app.tsx` (comment only), `apps/control-center/src/app/globals.css` (unused caret keyframe removed). Pull request branch only, not merge or release.
@@ -8063,14 +8063,14 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-19 — Step lists: Codex review fix for the Still lines (no new approval)
 
-- User approval: pending — #813 Step lists: Codex review fix for the Still lines (no new approval): a Codex review fix that changes visible details of the Still lines (percent text, retry restart); Paul has not seen it, and the entry it narrows has no quote yet. Earlier wording: none for this fix itself. It narrows the approved result of the entry "Step lists: "Still … – hang tight." lines and no cursor block" above; Paul has not seen it separately.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: Step lists: Codex review fix for the Still lines (no new approval)
 - Approved customer-visible result: as in the entry above, plus two details: a progress text with a colon ("Updating VibeTV: 40%.") gives "> Still updating VibeTV – hang tight." without the percentage, and a step that is retried starts its Still lines from zero.
 - Scope: `apps/control-center/src/components/setup/setup-log.tsx`, `apps/control-center/src/components/setup/setup-log-still.test.tsx`. Pull request branch only, not merge or release.
 - What's new: none — review fix inside the approved step-line change.
 
 ## 2026-10-19 — Step lists: second Codex review fix for the Still lines (no new approval)
 
-- User approval: pending — #813 Step lists: second Codex review fix for the Still lines (no new approval): a second Codex review fix that changes how the Still lines are counted (visible in the log); Paul has not seen it, and the entry it narrows has no quote yet. Earlier wording: none for this fix itself. It narrows the approved result of the entry "Step lists: "Still … – hang tight." lines and no cursor block" above; Paul has not seen it separately.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: Step lists: second Codex review fix for the Still lines (no new approval)
 - Approved customer-visible result: as in the entry above. Only the counting changes: a restored log that reuses a line's position for a new step starts its Still lines from zero; a past-tense word inside a running step ("Checking installed firmware.") no longer gets the generic line.
 - Scope: `apps/control-center/src/components/setup/setup-log.tsx`, `apps/control-center/src/components/setup/setup-log-still.test.tsx`. Pull request branch only, not merge or release.
 - What's new: none — review fix inside the approved step-line change.
@@ -8084,7 +8084,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-20 — #813: correction — Paul's 7198 approval does not cover this PR yet
 
-- User approval: pending — #813 correction (communicator, 20.10.2026): Paul's "rest passt" for build 7198 covered only what he saw in normal use (#781, #783, #784, #798, #803); the approval recorded for #813 a moment ago was premature and is reverted, its entries are pending again until he says yes to #813 itself.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #813: correction — Paul's 7198 approval does not cover this PR yet
 - Approved customer-visible result: #813 unchanged; this entry only corrects the record.
 - Scope: #813 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #813 record correction only
@@ -8116,3 +8116,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #813 as in its own entries plus the entries merged with 12504ca6; nothing else changes.
 - Scope: the merge of 12504ca6 and this approval record. Pull request branch #813 only, not merged, not released.
 - What's new: none — merge of 12504ca6, no customer-visible change of its own
+
+## 2026-10-21 — #813: Paul's approval of build 7200 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" — #813 approval record for build 7200; the #813 entries that were in build 7200 now carry it, merge markers are marked as no visible change, entries added after build 7200 stay pending.
+- Approved customer-visible result: #813 as described in its entries above, as seen in build 7200.
+- Scope: #813 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #813 approval record only
