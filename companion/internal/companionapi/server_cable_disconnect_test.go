@@ -73,6 +73,7 @@ func TestCableCurrentResolverErrorOverridesStaleAbsence(t *testing.T) {
 				t.Helper()
 				rec := httptest.NewRecorder()
 				server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+				settleProviderSetupRefresh(t, server)
 				var got statusResponse
 				if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 					t.Fatal(err)
@@ -277,6 +278,7 @@ func TestStatusDisconnectsCableWhenPortDisappearsAndReconnects(t *testing.T) {
 		t.Helper()
 		rec := httptest.NewRecorder()
 		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		settleProviderSetupRefresh(t, server)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 		}
