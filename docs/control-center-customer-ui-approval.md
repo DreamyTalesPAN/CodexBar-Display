@@ -8828,3 +8828,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #784 as in its own entries plus the entries merged with e3503bda; nothing else changes.
 - Scope: the merge of e3503bda and this approval record. Pull request branch #784 only, not merged, not released.
 - What's new: none — merge of e3503bda, no customer-visible change of its own
+
+## 2026-10-21 — #784: Theme Studio progress bar without a binding (Codex review)
+
+- User approval: pending — #784 Theme Studio: a progress bar without a reading no longer lists an empty "Current reading" entry under "Reading to show" (the panel crashed on it); the other entries and wording stay the same
+- Approved customer-visible result: "Reading to show" offers the same four readings as before. A progress bar that has no reading yet shows no extra "Current reading" entry any more, so the details panel no longer breaks for it. Nothing else changes.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` (new exported `progressReadingOptions`), its new test `progress-reading-options.test.ts`, and this approval record. Pull-request branch #784 only, not merged, not released.
+- What's new: none — crash fix of the Theme Studio details panel, no new text
