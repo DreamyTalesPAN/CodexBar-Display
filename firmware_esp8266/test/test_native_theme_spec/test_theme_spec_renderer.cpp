@@ -4504,10 +4504,10 @@ void testUsagePaceTextsRenderCodexBarPace() {
   frame.usageWindows[0].pace = {-6, 1, codexbar_display::usage_window_contract::kPaceLastsToReset};
   frame.usageWindows[1].pace = {14, 3, codexbar_display::usage_window_contract::kPaceRunsOut};
   std::vector<std::string> both = renderedTexts(spec, frame);
-  TEST_ASSERT_EQUAL_STRING("6% in reserve", both[0].c_str());
+  TEST_ASSERT_EQUAL_STRING("6% reserve", both[0].c_str());
   TEST_ASSERT_EQUAL_STRING("6% reserve", both[1].c_str());
   TEST_ASSERT_EQUAL_STRING("lasts until reset", both[2].c_str());
-  TEST_ASSERT_EQUAL_STRING("14% in deficit | 14% deficit", both[3].c_str());
+  TEST_ASSERT_EQUAL_STRING("14% deficit | 14% deficit", both[3].c_str());
   TEST_ASSERT_EQUAL_STRING("runs out", both[4].c_str());
   TEST_ASSERT_EQUAL_STRING("runs out", both[5].c_str());
   TEST_ASSERT_EQUAL_STRING("", both[6].c_str());
@@ -4586,7 +4586,7 @@ void testUsagePaceColoursAndBarMarks() {
   TEST_ASSERT_EQUAL_HEX16(grey, none[1].fg);
   TEST_ASSERT_EQUAL_HEX16(green, none[2].color);
 
-  // 34% used with 11% in reserve: 45% was planned by now. The bar fills to the
+  // 34% used with 11% reserve: 45% was planned by now. The bar fills to the
   // use, the green piece runs to the plan, the tick stands on the plan.
   frame.usageWindows[0].pace = {-11, 1, codexbar_display::usage_window_contract::kPaceLastsToReset};
   const std::vector<RecordedCommand> reserve = paceCommands(spec, frame);
@@ -4627,6 +4627,25 @@ void testUsagePaceColoursAndBarMarks() {
   TEST_ASSERT_EQUAL_INT(62, usedDeficit[0].percent);
   TEST_ASSERT_EQUAL_INT(70, usedDeficit[0].pieceTo);
   TEST_ASSERT_EQUAL_INT(62, usedDeficit[0].planAt);
+
+  // Paul's exact example: 96% used, 40% deficit, solid 0..56, hatched 56..96.
+  frame.usageSlot1Percent = frame.usageWindows[0].percent = 96;
+  frame.usageWindows[0].pace = {40, 3, codexbar_display::usage_window_contract::kPaceRunsOut};
+  const auto fortyDeficit = paceCommands(spec, frame);
+  TEST_ASSERT_EQUAL_INT(56, fortyDeficit[0].percent);
+  TEST_ASSERT_EQUAL_INT(96, fortyDeficit[0].pieceTo);
+  TEST_ASSERT_EQUAL_INT(56, fortyDeficit[0].planAt);
+  TEST_ASSERT_TRUE(fortyDeficit[0].hatched);
+  TEST_ASSERT_EQUAL_STRING("40% deficit", fortyDeficit[1].text.c_str());
+  // Six percent reserve occupies exactly six percent of the same scale.
+  frame.usageSlot1Percent = frame.usageWindows[0].percent = 50;
+  frame.usageWindows[0].pace = {-6, 1, codexbar_display::usage_window_contract::kPaceLastsToReset};
+  const auto sixReserve = paceCommands(spec, frame);
+  TEST_ASSERT_EQUAL_INT(50, sixReserve[0].percent);
+  TEST_ASSERT_EQUAL_INT(56, sixReserve[0].pieceTo);
+  TEST_ASSERT_FALSE(sixReserve[0].hatched);
+  TEST_ASSERT_EQUAL_STRING("6% reserve", sixReserve[1].text.c_str());
+  frame.usageSlot1Percent = frame.usageWindows[0].percent = 70;
 
   // Once the countdown is gone, so is the pace: a plain bar again.
   frame.usageSlot1ResetSecs = frame.usageWindows[0].resetSecs = 0;

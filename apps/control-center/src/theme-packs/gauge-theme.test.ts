@@ -67,15 +67,15 @@ describe("Gauge 2.0 theme pack", () => {
     expect(ring(plain)).toEqual([[arc.bg, 270], ["#EDEDED", 245]]);
     expect(plain).not.toContain("<line");
     expect(shown(plain)).toBe("Claude91%Session leftresets 2h 14mWeekly 87%");
-    // 6% in reserve: the ring fills to the plan (85 %) and the green piece runs to the use.
+    // 6% reserve: the ring fills to the plan (85 %) and the green piece runs to the use.
     const reserve = render(frame(91, {}, paceSession));
     expect(ring(reserve)).toEqual([[arc.bg, 270], ["#EDEDED", 229], ["#C9F26B", 16]]);
     expect(reserve).toContain("<line");
-    expect(shown(reserve)).toBe("Claude91%Session left6% in reservelasts until reset - resets 2h 14mWeekly 87%35% in reserve");
-    // 14% in deficit: the hatched piece runs from the use (38 %) to the plan (52 %).
+    expect(shown(reserve)).toBe("Claude91%Session left6% reservelasts until reset - resets 2h 14mWeekly 87%35% reserve");
+    // 14% deficit: the hatched piece runs from the use (38 %) to the plan (52 %).
     const deficit = render(frame(38, {}, { delta: 14, state: "deficit", lasts: false }));
     expect(ring(deficit)).toEqual([[arc.bg, 270], ["#EDEDED", 102], [expect.stringMatching(/^url\(#hatch-/), 38]]);
-    expect(shown(deficit)).toContain("14% in deficitruns out - resets 2h 14m");
+    expect(shown(deficit)).toContain("14% deficitruns out - resets 2h 14m");
     // On pace: the use itself and the tick, no piece.
     const onPace = render(frame(91, {}, { delta: 0, state: "on pace" }));
     expect(ring(onPace)).toEqual([[arc.bg, 270], ["#EDEDED", 245]]);
@@ -135,7 +135,7 @@ describe("Gauge 2.0 theme pack", () => {
         expect(width, `${value} in ${p.v ?? p.b}`).toBeLessThanOrEqual(p.w!);
       }
     }
-    for (const value of ["Claude", "Open VibeTV Mac App", "Session left", "Session used", "6% in reserve", "14% in deficit", "lasts until reset - resets 2h 14m", "Reset unavailable"]) {
+    for (const value of ["Claude", "Open VibeTV Mac App", "Session left", "Session used", "6% reserve", "14% deficit", "lasts until reset - resets 2h 14m", "Reset unavailable"]) {
       expect(seen).toContain(value);
     }
   });
@@ -174,7 +174,7 @@ describe("Gauge 2.0 theme pack", () => {
       // The reset line is hidden while it shows, and the pace line above stays.
       const shownText = shown(render({ ...data, updateNotice }));
       expect(shownText).not.toContain("resets");
-      expect(shownText).toContain(`6% in reserve${updateNotice}`);
+      expect(shownText).toContain(`6% reserve${updateNotice}`);
     }
   });
 

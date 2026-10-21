@@ -9541,3 +9541,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #800 as in its own entries plus the entries merged with 1b03f96d; nothing else changes.
 - Scope: the merge of 1b03f96d and this approval record. Pull request branch #800 only, not merged, not released.
 - What's new: none — merge of 1b03f96d, no customer-visible change of its own
+
+## 2026-10-21 — #800: exact Pace segments and shorter reserve/deficit labels
+
+- User approval: pending — Paul asked on 2026-10-21 22:40: hatched part as long as the deficit, '40% deficit' / '6% reserve' without 'in', all themes; result not yet seen by him
+- Approved customer-visible result: 96% used with 40% deficit fills normally to 56% and hatches 56–96%; reserve spans its stated percentage, including partial segments; labels read “40% deficit” and “6% reserve”, with “On pace” unchanged.
+- Scope: shared firmware and Control Center/Theme Studio preview rendering for Pace Meter, Gauge, Clippy, Pixel Battery, Synthwave and Tiny Office; shared text bindings also cover Claude Creature and Mini Classic; Usage page labels and regression tests. No Two-at-once header or overlap changes; no hardware rehearsal in this worker.
+- What's new: none — correction to existing Pace rendering and wording.
