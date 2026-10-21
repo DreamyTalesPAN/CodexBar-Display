@@ -9667,3 +9667,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #864 as in its own entries plus the entries merged with 8d0fe117; nothing else changes.
 - Scope: the merge of 8d0fe117 and this approval record. Pull request branch #864 only, not merged, not released.
 - What's new: none — merge of 8d0fe117, no customer-visible change of its own
+
+## 2026-10-22 — #864: Theme Library shows the token-history hint also in Two at once
+
+- User approval: pending — Theme Library shows the existing token-history hint also in Two at once
+- Approved customer-visible result: in Two at once, a theme that draws token numbers gets the same "Shows -- while token history is unavailable. See Usage." line that one-provider mode already shows, because Two at once frames carry no token totals; nothing else changes.
+- Scope: Theme Library hint for Two at once (usage-screen.tsx helper, control-center-app.tsx call site, tests). Pull request branch #864 only, not merged, not released.
+- What's new: none — the hint text already exists; only the case in which it shows is extended to Two at once

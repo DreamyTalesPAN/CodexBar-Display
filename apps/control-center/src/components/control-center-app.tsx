@@ -5973,7 +5973,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             storefrontConfigured={catalog.storefrontConfigured}
             themeInstallEnabled={themeInstallEnabled}
             themes={catalog.themes}
-            tokenHistoryUnavailable={usageTokenHistoryUnavailableOnVibeTV(usage)}
+            tokenHistoryUnavailable={usageTokenHistoryUnavailableOnVibeTV(
+              usage,
+              providerDisplay?.mode === "pair",
+            )}
             usage={
               appearanceSection === "screensavers" ? "screensaver" : "live"
             }
