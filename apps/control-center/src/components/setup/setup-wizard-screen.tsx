@@ -10,7 +10,7 @@ import { SetupHelpMenu } from "./setup-help-menu";
 
 type SetupWizardScreenProps = {
   children: ReactNode;
-  /** Widened for the two-card display-mode step. */
+  /** Display-mode cards use all available content width. */
   contentWidth?: "default" | "wide";
   label: string;
   aiFixPrompt?: () => string;
@@ -51,7 +51,7 @@ export function SetupWizardScreen({
       <div
         className={cn(
           "my-auto flex w-full flex-col items-center text-center",
-          contentWidth === "wide" ? "max-w-[640px]" : "max-w-[460px]",
+          contentWidth === "wide" ? "max-w-none" : "max-w-[460px]",
         )}
       >
         {children}

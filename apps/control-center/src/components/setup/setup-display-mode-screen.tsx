@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type {
@@ -22,6 +22,7 @@ import {
   type SetupDisplayModeTheme,
   type ThemePackLoad,
 } from "./setup-display-theme-tiles";
+import { displayPreviewSize } from "./setup-display-size";
 import { SETUP_REVEAL } from "./setup-reveal";
 import { pinnedPreview, rotatingPreviews } from "./setup-display-previews";
 import {
@@ -236,6 +237,40 @@ export function DisplayModeChoice({
   selectedProviderId,
   themePack = NO_THEME_PACK,
 }: DisplayModeChoiceProps) {
+  const choiceRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!calm) return;
+    const choice = choiceRef.current;
+    const main = choice?.closest("main");
+    const content = main?.firstElementChild;
+    const row = choice?.firstElementChild;
+    if (!choice || !main || !content || !row) return;
+    const resize = () => {
+      const preview = row.querySelector<HTMLElement>('[data-slot="display-mode-preview"]');
+      if (!preview || !row.clientWidth) return;
+      const mainStyle = getComputedStyle(main);
+      const previewStyle = getComputedStyle(preview);
+      const currentSize = preview.getBoundingClientRect().height
+        - parseFloat(previewStyle.paddingTop) - parseFloat(previewStyle.paddingBottom);
+      // Measure the real text, provider picker and Continue instead of guessing
+      // a fixed height budget; subtract the old picture to avoid resize feedback.
+      const otherHeight = content.getBoundingClientRect().height - currentSize;
+      const availableHeight = window.innerHeight - parseFloat(mainStyle.paddingTop)
+        - parseFloat(mainStyle.paddingBottom) - otherHeight;
+      const availableWidth = preview.clientWidth - parseFloat(previewStyle.paddingLeft)
+        - parseFloat(previewStyle.paddingRight);
+      choice.style.setProperty("--display-preview-size", `${displayPreviewSize(availableWidth, availableHeight)}px`);
+    };
+    resize();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(resize);
+    observer?.observe(content);
+    observer?.observe(row);
+    window.addEventListener("resize", resize);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", resize);
+    };
+  }, [calm, mode, providers.length, themePack.status, usageLoading]);
   const rotation = rotationFrames(
     automaticPreview,
     automaticPreviews,
@@ -263,10 +298,10 @@ export function DisplayModeChoice({
   };
 
   return (
-    <div className={cn("flex w-full flex-col", calm ? "gap-6" : "gap-4", className)}>
+    <div ref={choiceRef} className={cn("flex w-full flex-col", calm ? "gap-6" : "gap-4", className)}>
       <div className={cn(
         "grid w-full items-stretch gap-4",
-        calm ? "grid-cols-[repeat(auto-fit,minmax(min(100%,256px),1fr))]" : "grid-cols-2",
+        calm ? "grid-flow-col auto-cols-fr" : "grid-cols-2",
       )}>
         <ModeCard
           calm={calm}
@@ -442,7 +477,7 @@ function ModeCard({
         // must not move its preview down.
         className={cn(
           calmCardClass(selected),
-          "flex flex-col items-stretch overflow-hidden p-0",
+          "flex min-w-0 flex-col items-stretch overflow-hidden p-0",
         )}
         disabled={disabled}
         onClick={onSelect}
@@ -508,7 +543,7 @@ function PreviewTile({
   index: number;
 }) {
   const tileClass = calm
-    ? "min-h-[136px] bg-muted"
+    ? "h-[calc(var(--display-preview-size,104px)+32px)] shrink-0 overflow-hidden bg-muted"
     : "min-h-[140px] bg-muted/50";
   const frame = frames[index];
 

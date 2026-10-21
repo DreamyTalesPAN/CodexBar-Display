@@ -152,11 +152,11 @@ export function useClockNow(): Date {
   return now;
 }
 
-// Native 240px in the setup's 256px-or-wider cards; half scale only when the
-// window is too narrow. Loading and live frames share the same image area.
+// Setup supplies one size from the available width AND height for every card.
+// Outside setup, retain the existing container-sized preview.
 const PREVIEW_CLASS =
   "@container flex w-full shrink-0 items-center justify-center overflow-hidden bg-muted px-1 py-2";
-const TILE_SIZE_CLASS = "size-[120px] shrink-0 @min-[240px]:size-[240px]";
+const TILE_SIZE_CLASS = "size-[var(--display-preview-size,120px)] shrink-0 @min-[240px]:size-[var(--display-preview-size,240px)]";
 
 /**
  * What a mode card shows: ONE tile with the active theme (Paul, 20.10.2026).
