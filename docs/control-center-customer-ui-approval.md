@@ -8629,7 +8629,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-21 — #821: Display mode Continue waits for real usage
 
-- User approval: pending — #821 setup step Display mode: Continue becomes active only when the tiles show real usage, not during the loading skeletons (Paul 21.10. 7201 feedback)
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: #821 setup step Display mode: Continue becomes active only when the tiles show real usage, not during the loading skeletons (Paul 21.10. 7201 feedback)
 - Approved customer-visible result: on the Display mode step Continue stays inactive while a tile still shows its skeleton, and becomes active once the tiles show usage or an unavailable reading.
 - Scope: setup-display-mode-screen.tsx (Continue gate) and its test. Pull request branch #821 only, not merged, not released.
 - What's new: none — the Continue fix on the Display mode step is pending Paul's approval; not in a release
@@ -8654,3 +8654,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #821 as in its own entries plus the entries merged with b821b9ed; nothing else changes.
 - Scope: the merge of b821b9ed and this approval record. Pull request branch #821 only, not merged, not released.
 - What's new: none — merge of b821b9ed, no customer-visible change of its own
+
+## 2026-10-21 — #821: Paul's approval of build 7202 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — #821 approval record for build 7202; only the 1 listed 7202 entries of #821 now carry it, everything else stays as it was.
+- Approved customer-visible result: #821 as described in those entries, as seen in build 7202.
+- Scope: #821 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #821 approval record only
