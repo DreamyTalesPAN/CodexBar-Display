@@ -286,3 +286,39 @@ describe("preview frames follow the usage they were read with", () => {
     expect(pinnedPreview(previews[1]).frame).toEqual(frames.providers[1].pinned);
   });
 });
+
+describe("Companion selection and device limits", () => {
+  it("holds one Automatic error while keeping every Manual provider", () => {
+    const ids = ["codex", "claude", "gemini"];
+    const error = { v: 2, error: "no providers" };
+    const previews = displayPreviewsFor(
+      { providers: ids.map((id) => provider({ id })) } as UsageSnapshot,
+      ids.map((id) => ({ id, label: id })),
+      { providers: ids.map((id, index) => ({ id, pinned: error, ...(index === 0 ? { automatic: error } : {}) })) },
+    );
+    expect(rotatingPreviews(previews)).toHaveLength(1);
+    expect(previews.map((preview) => pinnedPreview(preview).frame)).toEqual([error, error, error]);
+    expect(rotatingPreviews(previews)[0].windows.every((window) => window.percent === null)).toBe(true);
+  });
+
+  it("keeps the Companion's capped windows and pre-cap pinned row in the plain fallback", () => {
+    const frame: DisplayFrame = {
+      provider: "gemini", session: 20, weeklyUnavailable: true,
+      usageWindows: [{ id: "session", label: "Session", percent: 20 }],
+      providerSlots: [{ id: "gemini", label: "Gemini", percent: 80, resetSecs: 600 }],
+    };
+    const previews = displayPreviewsFor(
+      { providers: [provider({ id: "gemini", windows: [
+        { id: "session", label: "Session", usedPercent: 20 },
+        { id: "weekly", label: "Weekly", usedPercent: 80, resetSecs: 600 },
+      ] })] } as UsageSnapshot,
+      [{ id: "gemini", label: "Gemini" }],
+      { providers: [{ id: "gemini", automatic: frame, pinned: frame }] },
+    );
+    for (const preview of [previews[0], pinnedPreview(previews[0])]) {
+      expect(preview.windows).toEqual([{ label: "Session", percent: 20 }]);
+      expect(preview.frame?.providerSlots).toEqual(frame.providerSlots);
+      expect(preview.frame?.weeklyUnavailable).toBe(true);
+    }
+  });
+});

@@ -29,10 +29,10 @@ type previewFramesForItem struct {
 // previewFramesFor lists providers in CodexBar's order; one without a reading
 // yet gets the host's unavailable frame, and has no Automatic frame while
 // another provider has a current reading.
-func previewFramesFor(usage daemon.PersistedUsage, inventory []codexbar.ProviderSetting, showUsed, systemBusy bool, caps protocol.DeviceCapabilities, now time.Time, updates *daemon.FirmwareUpdateCache) *previewFramesResponse {
+func previewFramesFor(usage daemon.PersistedUsage, inventory []codexbar.ProviderSetting, showUsed, systemBusy bool, caps protocol.DeviceCapabilities, now time.Time, updates *daemon.FirmwareUpdateCache, cliTheme string) *previewFramesResponse {
 	resp := &previewFramesResponse{GeneratedAt: now.UTC().Format(time.RFC3339Nano), Providers: []previewFramesForItem{}}
 	usage = usageInInventoryOrder(usage, inventory)
-	for _, preview := range daemon.PreviewFrames(usage, showUsed, systemBusy, caps, now.In(time.Local), updates) {
+	for _, preview := range daemon.PreviewFrames(usage, showUsed, systemBusy, caps, now.In(time.Local), updates, cliTheme) {
 		resp.Providers = append(resp.Providers, previewFramesForItem{ID: preview.Provider, Automatic: preview.Automatic, Pinned: preview.Pinned})
 	}
 	return resp
@@ -70,7 +70,8 @@ func usageInInventoryOrder(usage daemon.PersistedUsage, settings []codexbar.Prov
 // Reuse the existing hello source for the selected device; no preview-owned
 // capabilities cache. An unknown limit uses the sender's protocol default.
 func (s *Server) previewDeviceCapabilities() protocol.DeviceCapabilities {
-	fallback := protocol.DeviceCapabilities{NegotiatedProtocolVersion: 2, SupportsProviderSlotsV1: true, MaxFrameBytes: protocol.DefaultMaxFrameBytes}
+	fallback := protocol.UnknownDeviceCapabilities()
+	fallback.MaxFrameBytes = protocol.DefaultMaxFrameBytes
 	cfg, err := s.config()
 	if err != nil {
 		return fallback

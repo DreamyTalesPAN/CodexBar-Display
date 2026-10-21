@@ -28,7 +28,8 @@ type ProviderPreview struct {
 // runtime bootstraps, so what it returns is what the stream sends: the
 // provider's rows, the restated last-good frame, or the error frame. The
 // device fields and wire-budget trimming use the same steps as sending.
-func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, caps protocol.DeviceCapabilities, now time.Time, updates *FirmwareUpdateCache) []ProviderPreview {
+func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, caps protocol.DeviceCapabilities, now time.Time, updates *FirmwareUpdateCache, cliTheme string) []ProviderPreview {
+	theme := configuredTheme(cliTheme)
 	var update *protocol.UpdateState
 	if cached := updates.snapshot(caps); cached != nil {
 		update = &cached.update
@@ -57,7 +58,7 @@ func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, caps protoco
 	for _, shown := range providers {
 		preview := ProviderPreview{
 			Provider: shown.Provider,
-			Pinned:   previewPinnedFrame(shown, deps, systemBusy, caps, now, update),
+			Pinned:   previewPinnedFrame(shown, deps, systemBusy, caps, now, update, theme),
 		}
 		// A fresh stream per rotation position: the timer sits on this
 		// provider, the rest is the runtime's own start.
@@ -68,8 +69,9 @@ func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, caps protoco
 		result.frame.Update = update
 		result.systemBusy = systemBusy
 		_, frame, result := restateLastGoodWhenNotFresh(state, deps, result)
-		if frame.Error != "" || normalizeProviderKey(frame.Provider) == normalizeProviderKey(shown.Frame.Provider) {
-			frame = previewFrameWithinLimit(frame, result, caps, now)
+		// A provider-less stream error is one stationary surface, not a rotation.
+		if (frame.Error != "" && len(previews) == 0) || (frame.Error == "" && normalizeProviderKey(frame.Provider) == normalizeProviderKey(shown.Frame.Provider)) {
+			frame = previewFrameWithinLimit(frame, result, caps, now, theme)
 			preview.Automatic = &frame
 		}
 		previews = append(previews, preview)
@@ -77,7 +79,7 @@ func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, caps protoco
 	return previews
 }
 
-func previewPinnedFrame(shown codexbar.ParsedFrame, deps runtimeDeps, systemBusy bool, caps protocol.DeviceCapabilities, now time.Time, update *protocol.UpdateState) protocol.Frame {
+func previewPinnedFrame(shown codexbar.ParsedFrame, deps runtimeDeps, systemBusy bool, caps protocol.DeviceCapabilities, now time.Time, update *protocol.UpdateState, theme string) protocol.Frame {
 	deps.loadConfig = func(string) (runtimeconfig.Config, error) {
 		return runtimeconfig.Config{ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{Mode: "fixed", ProviderIDs: []string{shown.Provider}}}, nil
 	}
@@ -87,12 +89,12 @@ func previewPinnedFrame(shown codexbar.ParsedFrame, deps runtimeDeps, systemBusy
 	result.frame.Update = update
 	result.systemBusy = systemBusy
 	_, frame, result := restateLastGoodWhenNotFresh(state, deps, result)
-	return previewFrameWithinLimit(frame, result, caps, now)
+	return previewFrameWithinLimit(frame, result, caps, now, theme)
 }
 
 // A frame that cannot be encoded stays visibly unavailable in the preview.
-func previewFrameWithinLimit(frame protocol.Frame, result cycleResult, caps protocol.DeviceCapabilities, now time.Time) protocol.Frame {
-	frame, _ = prepareDeviceFrame(frame, result, caps, now, configuredTheme(""), activityTTL(0, caps.ConnectionMode))
+func previewFrameWithinLimit(frame protocol.Frame, result cycleResult, caps protocol.DeviceCapabilities, now time.Time, theme string) protocol.Frame {
+	frame, _ = prepareDeviceFrame(frame, result, caps, now, theme, activityTTL(0, caps.ConnectionMode))
 	_, frame, err := marshalFrameWithinLimit(frame, maxFrameBytesForCaps(caps))
 	if err != nil {
 		return protocol.ErrorFrame(runtimeErrorFrameCode(runtimeErrorFrameTooLarge))

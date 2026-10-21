@@ -119,6 +119,8 @@ type Options struct {
 	// (#606). Nil outside the runtime.
 	SystemBusy      func() *daemon.SystemBusy
 	FirmwareUpdates *daemon.FirmwareUpdateCache
+	// RuntimeTheme is the daemon CLI override; empty uses the shared theme resolver.
+	RuntimeTheme string
 	// Where Theme Studio keeps the customer's verified OpenAI key across
 	// restarts. Nil (tests, tools) keeps it in memory only.
 	AIThemeSecrets SecretStore
@@ -188,6 +190,7 @@ type Server struct {
 	displayStreamRunning     func() bool
 	systemBusy               func() *daemon.SystemBusy
 	firmwareUpdates          *daemon.FirmwareUpdateCache
+	runtimeTheme             string
 	firmwareUpdateActive     atomic.Bool
 	firmwareUpdateStartMu    sync.Mutex
 	// One shortcut press at a time: each reads the provider on screen and
@@ -387,6 +390,7 @@ func New(opts Options) (*Server, error) {
 		displayStreamRunning: opts.DisplayStreamRunning,
 		systemBusy:           opts.SystemBusy,
 		firmwareUpdates:      opts.FirmwareUpdates,
+		runtimeTheme:         opts.RuntimeTheme,
 		pairAttempts:         defaultPairAttempts,
 		pairAttemptTimeout:   defaultPairAttemptTimeout,
 		pairRetryGap:         defaultPairRetryGap,

@@ -9067,3 +9067,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: preview values, pinned rows and window limits continue to follow the existing device send path; no copy or layout changes.
 - Scope: merge claude/setup11-live-theme-tiles, preserve the Companion-backed preview helpers and tests, retain all approval blocks; device cap and pinned selection remain owned by the Companion.
 - What's new: none — preserve the existing single frame construction path.
+
+## 2026-10-21 — #858: verify Companion error selection and capped frame rendering
+
+- User approval: no visible change – UI approval not needed (#858 review regressions: one Automatic stream error, sender-owned unknown capabilities and runtime theme, with Companion-capped fallback test coverage)
+- Approved customer-visible result: existing previews match the device frame for unavailable providers, unknown capabilities, runtime theme overrides and window limits; no new customer text or layout.
+- Scope: Companion preview selection, capability fallback and runtime theme plumbing with regression tests; setup-display-previews tests retain one error and already-capped frames from the Companion.
+- What's new: none — correct existing preview parity with the real send path.

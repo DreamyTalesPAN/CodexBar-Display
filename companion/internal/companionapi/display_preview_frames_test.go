@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 	"time"
 
@@ -40,7 +41,7 @@ func getPreviewFrames(t *testing.T, server *Server) previewFramesResponse {
 // collector cycle between two requests cannot make them disagree.
 func TestUsagePreviewFramesComeFromTheSameSnapshotAsUsage(t *testing.T) {
 	isolatePreviewHome(t)
-	server := newTestServer(t, runtimeconfig.Config{})
+	server := newPreviewTestServer(t)
 	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
 	server.now = func() time.Time { return now }
 	loads := 0
@@ -71,7 +72,7 @@ func TestUsagePreviewFramesComeFromTheSameSnapshotAsUsage(t *testing.T) {
 
 func TestDisplayPreviewFramesAreTheDaemonsFrames(t *testing.T) {
 	isolatePreviewHome(t)
-	server := newTestServer(t, runtimeconfig.Config{})
+	server := newPreviewTestServer(t)
 	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
 	server.now = func() time.Time { return now }
 	usage := daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{
@@ -87,7 +88,7 @@ func TestDisplayPreviewFramesAreTheDaemonsFrames(t *testing.T) {
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return usage, true }
 
 	got := getPreviewFrames(t, server)
-	want := daemon.PreviewFrames(usage, true, false, server.previewDeviceCapabilities(), now, nil)
+	want := daemon.PreviewFrames(usage, true, false, server.previewDeviceCapabilities(), now, nil, "")
 	if len(got.Providers) != 1 || got.Providers[0].ID != "codex" {
 		t.Fatalf("providers: %+v", got.Providers)
 	}
@@ -105,7 +106,7 @@ func TestUsagePreviewFramesReuseCapturedUsageMode(t *testing.T) {
 	for _, mode := range []string{"used", "remaining"} {
 		t.Run(mode, func(t *testing.T) {
 			isolatePreviewHome(t)
-			server := newTestServer(t, runtimeconfig.Config{})
+			server := newPreviewTestServer(t)
 			now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
 			server.now = func() time.Time { return now }
 			reads := 0
@@ -147,7 +148,7 @@ func TestUsagePreviewFramesReuseCapturedUsageMode(t *testing.T) {
 // frame while another provider is current, as the stream drops it there.
 func TestDisplayPreviewFramesCoverEveryEnabledProvider(t *testing.T) {
 	isolatePreviewHome(t)
-	server := newTestServer(t, runtimeconfig.Config{})
+	server := newPreviewTestServer(t)
 	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
 	server.now = func() time.Time { return now }
 	server.providerPreferences.loadInventory = func(context.Context) ([]codexbar.ProviderSetting, error) {
@@ -198,7 +199,7 @@ func isolatePreviewHome(t *testing.T) {
 
 func TestUsagePreviewFramesUseCurrentSystemBusyVerdict(t *testing.T) {
 	isolatePreviewHome(t)
-	server := newTestServer(t, runtimeconfig.Config{})
+	server := newPreviewTestServer(t)
 	now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
 	server.now = func() time.Time { return now }
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
@@ -306,12 +307,12 @@ func TestUsagePreviewFramesUseTheLocalStreamClock(t *testing.T) {
 	time.Local = location
 	t.Cleanup(func() { time.Local = previous })
 	now := time.Date(2026, 10, 21, 12, 0, 0, 0, location)
-	server := newTestServer(t, runtimeconfig.Config{})
+	server := newPreviewTestServer(t)
 	server.now = func() time.Time { return now }
 	usage := daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{Provider: "codex", CollectedAt: now, Frame: protocol.Frame{V: 2, Provider: "codex", Label: "Codex", Session: 12}}}}
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return usage, true }
 	preview := getPreviewFrames(t, server).Providers[0]
-	want := daemon.PreviewFrames(usage, true, false, server.previewDeviceCapabilities(), now, nil)[0]
+	want := daemon.PreviewFrames(usage, true, false, server.previewDeviceCapabilities(), now, nil, "")[0]
 	for mode, frame := range map[string]*protocol.Frame{"automatic": preview.Automatic, "pinned": &preview.Pinned} {
 		gotJSON, _ := json.Marshal(frame.NextClockTransition)
 		wantJSON, _ := json.Marshal(want.Pinned.NextClockTransition)
@@ -323,7 +324,7 @@ func TestUsagePreviewFramesUseTheLocalStreamClock(t *testing.T) {
 
 func TestUsagePreviewFramesKeepCompletedUnavailableTokensUnknown(t *testing.T) {
 	isolatePreviewHome(t)
-	server := newTestServer(t, runtimeconfig.Config{})
+	server := newPreviewTestServer(t)
 	now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
 	server.now = func() time.Time { return now }
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
@@ -344,6 +345,58 @@ func TestUsagePreviewFramesKeepCompletedUnavailableTokensUnknown(t *testing.T) {
 	for _, frame := range []*protocol.Frame{preview.Automatic, &preview.Pinned} {
 		if frame == nil || frame.TokenTotalsKnown || frame.SessionTokens != 0 || frame.WeekTokens != 0 || frame.TotalTokens != 0 {
 			t.Fatalf("completed unavailable history must not invent known totals: %+v", frame)
+		}
+	}
+}
+
+func TestPreviewDeviceCapabilitiesUseSenderFallbackWithoutMatchingHello(t *testing.T) {
+	for _, mode := range []string{"cable", "wifi"} {
+		for _, cachedID := range []string{"", "other-device"} {
+			t.Run(mode+"/"+cachedID, func(t *testing.T) {
+				server := newTestServer(t, runtimeconfig.Config{ConnectionMode: mode, DeviceID: "preview-device", DeviceTarget: "http://127.0.0.1:1"})
+				hello := protocol.DeviceHello{DeviceID: cachedID, ProtocolVersion: 2, Features: []string{protocol.FeatureProviderSlotsV1}}
+				server.currentCableHello = func() (protocol.DeviceHello, bool) { return hello, cachedID != "" }
+				if cachedID != "" {
+					server.helloProbeCache = map[string]helloProbeSnapshot{deviceProbeKey("http://127.0.0.1:1", ""): {hello: hello}}
+				}
+				want := protocol.UnknownDeviceCapabilities()
+				want.MaxFrameBytes = protocol.DefaultMaxFrameBytes
+				if got := server.previewDeviceCapabilities(); !reflect.DeepEqual(got, want) {
+					t.Fatalf("preview invented capabilities: got %+v, sender fallback %+v", got, want)
+				}
+			})
+		}
+	}
+}
+
+// Tests asserting V2 provider rows need a device hello that advertises them.
+func newPreviewTestServer(t *testing.T) *Server {
+	t.Helper()
+	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "preview-device"})
+	server.currentCableHello = func() (protocol.DeviceHello, bool) {
+		return protocol.DeviceHello{DeviceID: "preview-device", ProtocolVersion: 2,
+			MaxFrameBytes: protocol.DefaultMaxFrameBytes,
+			Features:      []string{protocol.FeatureProviderSlotsV1, protocol.FeatureTheme},
+			Capabilities:  protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable"}}}, true
+	}
+	return server
+}
+
+func TestUsagePreviewFramesHonorRuntimeThemeOverride(t *testing.T) {
+	isolatePreviewHome(t)
+	t.Setenv("CODEXBAR_DISPLAY_THEME", "mini")
+	server := newPreviewTestServer(t)
+	server.runtimeTheme = "crt"
+	now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{Provider: "codex", CollectedAt: now,
+			Frame: protocol.Frame{V: 2, Provider: "codex", Label: "Codex", Session: 12}}}}, true
+	}
+	preview := getPreviewFrames(t, server).Providers[0]
+	for mode, frame := range map[string]*protocol.Frame{"automatic": preview.Automatic, "pinned": &preview.Pinned} {
+		if frame == nil || frame.Theme != "crt" {
+			t.Errorf("%s did not apply the runtime override before encoding: %+v", mode, frame)
 		}
 	}
 }

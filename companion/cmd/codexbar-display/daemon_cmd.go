@@ -321,6 +321,7 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 		DisplayStreamRunning: workerRunning.Load,
 		SystemBusy:           systemBusy.Load,
 		FirmwareUpdates:      firmwareUpdates,
+		RuntimeTheme:         opts.Daemon.Theme,
 		Addr:                 actualAddr,
 		AllowedOrigins:       []string{opts.APIDevOrigin},
 		RefreshDisplayStream: func(context.Context, string) error {
