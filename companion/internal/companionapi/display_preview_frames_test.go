@@ -455,3 +455,39 @@ func TestUsagePreviewFramesDiscardDisabledLastGoodWithoutChangingPersistence(t *
 		})
 	}
 }
+
+func TestUsagePreviewFramesKeepKnownZeroTokensWhenUsageOmitsCounts(t *testing.T) {
+	isolatePreviewHome(t)
+	server := newPreviewTestServer(t)
+	now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
+			Provider: "codex", CollectedAt: now, TokenStatsCollectedAt: now,
+			Frame: protocol.Frame{V: 2, Provider: "codex", Label: "Codex", Session: 12, TokenTotalsKnown: true},
+		}}}, true
+	}
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/usage?previewFrames=1", nil))
+	var response struct {
+		Providers     []map[string]json.RawMessage `json:"providers"`
+		PreviewFrames previewFramesResponse        `json:"previewFrames"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil || recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s err=%v", recorder.Code, recorder.Body.String(), err)
+	}
+	if len(response.Providers) != 1 || len(response.PreviewFrames.Providers) != 1 {
+		t.Fatalf("missing provider: %+v", response)
+	}
+	for _, key := range []string{"sessionTokens", "weekTokens", "totalTokens"} {
+		if _, present := response.Providers[0][key]; present {
+			t.Fatalf("fixture must reproduce omitted %s", key)
+		}
+	}
+	preview := response.PreviewFrames.Providers[0]
+	for _, frame := range []*protocol.Frame{preview.Automatic, &preview.Pinned} {
+		if frame == nil || !frame.TokenTotalsKnown || frame.SessionTokens != 0 || frame.WeekTokens != 0 || frame.TotalTokens != 0 {
+			t.Fatalf("known zero token totals lost in preview: %+v", frame)
+		}
+	}
+}
