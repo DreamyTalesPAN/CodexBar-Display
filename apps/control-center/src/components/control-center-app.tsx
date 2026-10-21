@@ -589,6 +589,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, []);
   const finishConnectionChange = useCallback(() => setSettingsWiFiSetup(null), []);
   const finishSetup = useCallback(() => {
+    setActiveTab("overview");
     rememberCompletedSetup(device?.deviceId);
     setSetupFinishedThisSession(true);
     setHasEnteredControlCenter(true);

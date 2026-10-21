@@ -9206,3 +9206,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Overview keeps showing the current theme name, including the customer's saved names and live theme during standby; returning from Theme Studio and changes from another window refresh those names.
 - Scope: `overview-screen.tsx` and its theme-name regression tests. Pull request #784 only, not merged, not released.
 - What's new: none — avoid repeated localStorage JSON parsing
+
+## 2026-10-21 — setup completion: always return to Overview
+
+- User approval: no visible change – UI approval not needed (bug fix: setup ends on Overview)
+- Approved customer-visible result: finishing setup returns to the existing Overview even if a firmware update selected Updates during setup.
+- Scope: `control-center-app.tsx` setup completion and regression tests; update navigation outside setup is unchanged.
+- What's new: none — restore the intended setup destination
