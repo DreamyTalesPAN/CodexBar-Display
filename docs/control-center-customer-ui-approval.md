@@ -8989,3 +8989,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #784 as before; the Mac App line says "Up to date" only when its installed version was compared, otherwise it stays as it was without a check.
 - Scope: Overview Mac App line in control-center-app.tsx and its test. Pull request branch #784 only, not merged, not released.
 - What's new: none — bug fix, no new text
+
+## 2026-10-21 — #784: approval marker after merging main at 35152cc8
+
+- User approval: no visible change – UI approval not needed (merge of main (35152cc8) into #784; the own entries of #784 keep their approvals)
+- Approved customer-visible result: #784 as in its own entries plus the entries merged with 35152cc8; nothing else changes.
+- Scope: the merge of 35152cc8 and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — merge of 35152cc8, no customer-visible change of its own
