@@ -15837,3 +15837,24 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve the refreshed feature together with the existing calm customer flows in the integration candidate.
 - Scope: Merge claude/787-not-found-dismissal into claude/paultest-build9 and retain all source approval blocks.
 - What's new: none — integration of existing feature entries only.
+
+## 2026-10-21 — #817: approval marker after merging claude/group-calm-redesign at 035ced04
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (035ced04) into #817; the own entries of #817 keep their approvals)
+- Approved customer-visible result: #817 as in its own entries plus the entries merged with 035ced04; nothing else changes.
+- Scope: the merge of 035ced04 and this approval record. Pull request branch #817 only, not merged, not released.
+- What's new: none — merge of 035ced04, no customer-visible change of its own
+
+## 2026-10-21 — #817: approval marker after merging claude/group-calm-redesign at 52397ff8
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (52397ff8) into #817; the own entries of #817 keep their approvals)
+- Approved customer-visible result: #817 as in its own entries plus the entries merged with 52397ff8; nothing else changes.
+- Scope: the merge of 52397ff8 and this approval record. Pull request branch #817 only, not merged, not released.
+- What's new: none — merge of 52397ff8, no customer-visible change of its own
+
+## 2026-10-21 — paultest-build9: refresh claude/778-invalid-focus-ring (#817)
+
+- User approval: pending — build9 integration of claude/778-invalid-focus-ring at 9b4b40d09bf7 for Paul’s Mac test build 7204.
+- Approved customer-visible result: Preserve the refreshed feature together with the existing calm customer flows in the integration candidate.
+- Scope: Merge claude/778-invalid-focus-ring into claude/paultest-build9 and retain all source approval blocks.
+- What's new: none — integration of existing feature entries only.
