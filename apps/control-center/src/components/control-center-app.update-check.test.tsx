@@ -5,7 +5,7 @@
 // app's own release is read with the status, which repeats its answer for six
 // hours; only a read that says the customer asked gets a new one. The calm
 // Updates screen shows the newest of the two checks ("Checked Oct 7, 12:34").
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -300,4 +300,16 @@ it("keeps a locally handled firmware failure closed when its server job arrives"
   await window.wait(2);
   expect(window.companion.installCalls).toBe(2);
   expect(screen.getByRole("dialog", { name: "Update failed" })).toBeTruthy();
+});
+
+
+it("shows a clock time for firmware activity instead of the attempt key", async () => {
+  const window = await openUpdates(undefined, true);
+  fireEvent.click(screen.getByRole("button", { name: "Update" }));
+  await window.wait(2);
+  fireEvent.keyDown(document, { key: "Escape" });
+  fireEvent.click(screen.getByRole("button", { name: "Support" }));
+  const activity = screen.getByText("VibeTV update started").closest("li")!;
+  expect(within(activity).getByText(/^\d{2}:\d{2}:\d{2}$/)).toBeTruthy();
+  expect(activity.textContent).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
 });

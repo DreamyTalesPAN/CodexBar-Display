@@ -9576,3 +9576,11 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the existing failure notice stays closed for the same update attempt; a new failed attempt still opens it.
 - Scope: ControlCenterApp firmware job handling using firmwareUpdateStatusFromJob, the end-to-end component regression and this approval record.
 - What's new: none — bug fix, not announced to customers
+
+
+## 2026-10-21 — #798: Restore compact update activity times
+
+- User approval: no visible change – UI approval not needed (bug fix: firmware and theme-only update activity uses the existing clock format instead of exposing the internal attempt key)
+- Approved customer-visible result: Recent activity keeps its HH:mm:ss timestamps; update attempt identity remains full precision internally.
+- Scope: remove the two update-start event timestamp overrides, exercise the rendered Support activity row, and append this approval record.
+- What's new: none — bug fix, not announced to customers

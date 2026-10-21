@@ -3062,7 +3062,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       addEvent({
         label: "VibeTV update started",
         detail: "VibeTV is being updated.",
-        at: startedAt,
         tone: "unknown",
       });
       if (!(await installTheme(activeThemeUpgrade.theme))) {
@@ -3115,7 +3114,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     addEvent({
       label: "VibeTV update started",
       detail: "VibeTV is being updated.",
-      at: startedAt,
       tone: "unknown",
     });
     try {
