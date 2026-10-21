@@ -9170,7 +9170,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-21 — #798: Updates title row stays below the page title until lg
 
-- User approval: pending — #798 Updates title row: stays below the page title until the window is wide enough (lg), so it no longer overlaps the title in narrow windows; wide windows unchanged
+- User approval: approved by Paul in the communicator chat, 2026-10-21 12:28: "rest passt so" (build 7201 review) — entry: #798 Updates title row: stays below the page title until the window is wide enough (lg), so it no longer overlaps the title in narrow windows; wide windows unchanged
 - Approved customer-visible result: #798 Updates screen as in its own entries; in narrow windows (below lg) the checked timestamp and Check button sit below the page title instead of overlapping it; wide windows unchanged.
 - Scope: the Updates title row in apps/control-center/src/components/updates-screen.tsx and its class test. Pull request branch #798 only, not merged, not released.
 - What's new: none — layout fix of the Updates title row, no new feature
@@ -9202,3 +9202,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the headline reads "No update available" instead of "Update available" when the only update cannot start; "Checked" also shows the time of a disabled Mac App answer.
 - Scope: apps/control-center/src/components/updates-screen.tsx and its two test files. Pull request branch #798 only, not merged, not released.
 - What's new: none — the headline and the Checked time are corrections of existing wording and times; no new notice
+
+## 2026-10-21 — #798: Paul's approval of build 7201 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 12:28: "rest passt so" (build 7201 review) — #798 approval record for build 7201; only the 7201 point of #798 now carries it, everything else stays as it was.
+- Approved customer-visible result: #798 as described in that entry, as seen in build 7201.
+- Scope: #798 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #798 approval record only
