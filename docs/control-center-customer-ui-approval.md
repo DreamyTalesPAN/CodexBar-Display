@@ -13722,3 +13722,87 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve the incoming feature together with the existing Build 6 customer flows in the local integration candidate.
 - Scope: Merge claude/group-theme-studio into claude/paultest-build7; retain all source approval entries.
 - What's new: none — integration of existing feature entries only.
+
+## 2026-10-19 — Support: Fix only for a failing usage engine check (#795, Codex fix)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Support: Fix only for a failing usage engine check (#795, Codex fix)
+- Approved customer-visible result: none yet; waits for Paul's yes.
+- Scope: `apps/control-center/src/components/diagnostics-panel.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+## 2026-10-19 — #803: approval marker after merging the calm redesign base (Support Fix link)
+
+- User approval: no visible change – UI approval not needed (merge commit into #803; no visible change of its own; entry: #803: approval marker after merging the calm redesign base (Support Fix link))
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — #803: Codex fix, Diagnostics header wraps on a narrow window
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #803: Codex fix, Diagnostics header wraps on a narrow window — before → after: on a narrow window (below about 345 px of content width) the count "n of m passed" and the Run diagnostics button wrap onto a second line under the Diagnostics heading → before they stay on one line and the button can be clipped; at normal widths nothing changes.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/diagnostics-panel.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #803: approval marker after merging the newest calm redesign base (Theme Studio header)
+
+- User approval: no visible change – UI approval not needed (merge commit into #803; no visible change of its own; entry: #803: approval marker after merging the newest calm redesign base (Theme Studio header))
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: merge of origin/claude/group-calm-redesign (#784, 9c18d75f) into this branch, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #803: merge of the #784 outage-dialog fix, no change of its own
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #803: merge of the #784 outage-dialog fix, no change of its own
+- Approved customer-visible result: none; no visible change.
+- Scope: merge of `origin/claude/group-calm-redesign` (`apps/control-center/src/components/setup/setup-recovery-dialogs.tsx`, its test, the flow comment) and this approval record. Pull request branch only, not merged, not released.
+
+## 2026-10-20 — #803: approval marker after merging claude/group-calm-redesign
+
+- User approval: no visible change – UI approval not needed (merge commit into #803; no visible change of its own; entry: #803: approval marker after merging claude/group-calm-redesign)
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #803: Support without width limit, panel icon in the header, growing page margin (7197 template point 11)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #803: Support without width limit, panel icon in the header, growing page margin (7197 tem — Before → after: #803 point 11: the Support page was at most 760 px wide, drew no panel icon beside its title on a window wider than 768 px, and had the fixed side margin of the other tabs → #803 point 11: no width limit, the header shows the panel icon like the other tabs, and the page margin is as on Usage: 48 px, growing with the window (4 % of the page width) up to 96 px.
+- Approved customer-visible result: #803 point 11: Support as in frame `#support` of "Calm Redesign - alle Screens" (pictures 11 and 11b, right side), in a large and a small window.
+- Scope: #803 point 11: `apps/control-center/src/components/logs-screen.tsx`, `apps/control-center/src/components/control-center-shell.tsx` (the same margin and panel-icon change that #798 point 10 makes for Updates, so the two merge cleanly), its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #803 point 11: no new content, the same page with a wider layout
+
+## 2026-10-21 — #803: one repair control for an incompatible engine
+
+- User approval: no visible change – UI approval not needed (#803 Codex fix: an incompatible engine shows one Repair control instead of two; no new wording)
+- Approved customer-visible result: an incompatible usage engine shows the existing Repair control once; no new text.
+- Scope: the diagnostics panel's usage-engine check row and its test. Pull request branch #803 only.
+- What's new: none — the duplicate Fix control on the usage_engine row is removed when the engine block already shows Repair
+
+## 2026-10-21 — #803: approval marker after merging claude/group-calm-redesign at ff601365
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (ff601365) into #803; the own entries of #803 keep their approvals)
+- Approved customer-visible result: #803 as in its own entries plus the entries merged with ff601365; nothing else changes.
+- Scope: the merge of ff601365 and this approval record. Pull request branch #803 only, not merged, not released.
+- What's new: none — merge of ff601365, no customer-visible change of its own
+=========
+
+## 2026-10-21 — #803: approval marker after merging claude/group-calm-redesign at ff601365
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (ff601365) into #803; the own entries of #803 keep their approvals)
+- Approved customer-visible result: #803 as in its own entries plus the entries merged with ff601365; nothing else changes.
+- Scope: the merge of ff601365 and this approval record. Pull request branch #803 only, not merged, not released.
+- What's new: none — merge of ff601365, no customer-visible change of its own
+
+## 2026-10-21 — #803: approval marker after merging claude/group-calm-redesign at 3caaf211
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (3caaf211) into #803; the own entries of #803 keep their approvals)
+- Approved customer-visible result: #803 as in its own entries plus the entries merged with 3caaf211; nothing else changes.
+- Scope: the merge of 3caaf211 and this approval record. Pull request branch #803 only, not merged, not released.
+- What's new: none — merge of 3caaf211, no customer-visible change of its own
+
+## 2026-10-21 — #803: approval marker after merging claude/group-calm-redesign at 4371975c
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (4371975c) into #803; the own entries of #803 keep their approvals)
+- Approved customer-visible result: #803 as in its own entries plus the entries merged with 4371975c; nothing else changes.
+- Scope: the merge of 4371975c and this approval record. Pull request branch #803 only, not merged, not released.
+- What's new: none — merge of 4371975c, no customer-visible change of its own
