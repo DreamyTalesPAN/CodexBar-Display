@@ -1194,12 +1194,16 @@ export function buildProviderTokenChart(
     }
   });
 
-  // The token history lists only days with tokens. A day it leaves out is a
-  // day without tokens, not a hole in the data: drawn as a hole it broke a
-  // provider's line into pieces and squeezed the time axis (#579).
+  // Only a settled history establishes that a missing day had no tokens
+  // (#579). While counting, leave those days unknown, including internal gaps.
+  const settledZeros = Object.fromEntries(
+    providerHistories.flatMap(({ provider }, index) =>
+      provider.costSettled === true ? [[series[index].dataKey, 0]] : [],
+    ),
+  );
   const days = [...rowsByDay.keys()].sort();
   const chartData = (calendarDays(days[0], days[days.length - 1]) ?? days).map((day) => ({
-    ...Object.fromEntries(series.map((item) => [item.dataKey, 0])),
+    ...settledZeros,
     ...(rowsByDay.get(day) || { day }),
   }));
   const chartConfig: ChartConfig = Object.fromEntries(

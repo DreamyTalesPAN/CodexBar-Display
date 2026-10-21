@@ -1415,7 +1415,48 @@ describe("UsageScreen", () => {
 });
 
 describe("token chart days (#579)", () => {
-  const provider = (id: string) => ({ id, label: id });
+  const provider = (id: string) => ({ id, label: id, costSettled: true });
+  it("leaves uncounted days empty while another provider has settled", () => {
+    const snapshot: UsageSnapshot = {
+      ...usage,
+      tokenUsageUpdating: true,
+      providers: [
+        { ...usage.providers[0], ...provider("claude"), costSettled: false,
+          cost: { daily: [{ day: "2026-10-20", totalTokens: 100 }] } },
+        { ...usage.providers[0], ...provider("codex"),
+          cost: { daily: [
+            { day: "2026-10-19", totalTokens: 50 },
+            { day: "2026-10-20", totalTokens: 70 },
+          ] } },
+      ],
+    };
+    expect(buildProviderTokenChart(snapshot.providers.map((provider) => ({
+      provider, days: provider.cost!.daily!,
+    }))).chartData).toEqual([
+      { day: "2026-10-19", provider2: 50 },
+      { day: "2026-10-20", provider1: 100, provider2: 70 },
+    ]);
+  });
+
+  it.each([false, undefined])("keeps internal gaps unknown until costSettled is true (%s)", (costSettled) => {
+    const history = {
+      provider: { ...usage.providers[0], costSettled },
+      days: [
+        { day: "2026-10-18", totalTokens: 5 },
+        { day: "2026-10-20", totalTokens: 0 },
+      ],
+    };
+    expect(buildProviderTokenChart([history]).chartData).toEqual([
+      { day: "2026-10-18", provider1: 5 },
+      { day: "2026-10-19" },
+      { day: "2026-10-20", provider1: 0 },
+    ]);
+    history.provider.costSettled = true;
+    expect(buildProviderTokenChart([history]).chartData[1]).toEqual({
+      day: "2026-10-19", provider1: 0,
+    });
+  });
+
   it("draws a day the history leaves out as a day without tokens", () => {
     const { chartData } = buildProviderTokenChart([
       { provider: provider("codex"), days: [

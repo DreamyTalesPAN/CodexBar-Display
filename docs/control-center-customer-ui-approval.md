@@ -9016,3 +9016,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none; the customer sees the same Usage screen as before.
 - Scope: apps/control-center/scripts/test-customer-flows.mjs only (port of 2815e311 from #864).
 - What's new: none — test-only change, no customer-visible change
+
+## 2026-10-21 — #783: Leave uncounted provider days empty
+
+- User approval: pending — while the token count is still running, days a provider has not counted yet show no value instead of 0 in the Usage chart; settled days unchanged
+- Approved customer-visible result: Missing days stay empty until that provider's token history settles; reported values and settled zero-filling remain unchanged.
+- Scope: buildProviderTokenChart and its regression tests; pull request branch only.
+- What's new: none — correction of provisional chart values, no new feature
