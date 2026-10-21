@@ -1292,6 +1292,25 @@ describe("UsageScreen", () => {
     expect(html).not.toContain("Token history is unavailable");
   });
 
+  it("leaves a hidden provider out of the token total and legend", () => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="online"
+        hiddenProviderIds={["codex"]}
+        usage={{
+          ...usage,
+          providers: [
+            usage.providers[0],
+            { ...usage.providers[0], id: "claude", label: "Claude", cost: { daily: [{ day: "2026-07-22", totalTokens: 9 }] } },
+          ],
+        }}
+      />,
+    );
+    expect(html).toContain("<span>9</span>");
+    expect(html).not.toContain("1,243");
+    expect(html.match(/data-testid="usage-legend".*?<\/div>/)?.[0]).not.toContain("Codex");
+  });
+
   it("shows no still-loading notice beside an action tile", () => {
     const html = renderToStaticMarkup(
       <UsageScreen
