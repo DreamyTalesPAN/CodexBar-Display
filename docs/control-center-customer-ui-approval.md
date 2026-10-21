@@ -10610,3 +10610,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: requested, pending review — Gauge's footer says only “resets 3d 1h” at the normal 16-pixel size, without “lasts until reset” or an untimed “runs out”; update notices now use its title, as in the other usage themes. Mini Classic's single-mode text and Tiny Office's badge spell out “remaining”; paired screens still show the basis only in the title. Clippy's title is also bounded vertically inside its 24-pixel bar.
 - Scope: Gauge, Mini Classic, Tiny Office and Clippy pack revisions; one provider-neutral standalone-mode text binding, matching firmware/preview and Theme Studio capability detection, and regression tests. Clippy and Pixel Battery already use the same 16-pixel name font in single and pair mode. Tiny Office keeps 32-pixel short single names: normal paired names need about 200 pixels at that size but have a 150-pixel lane beside the percentage, so they remain 16 pixels; the single view is not silently reduced. Existing provider fallback, pace math and data collection are unchanged.
 - What's new: none — final readability/copy corrections following the requested screenshot review; no hardware operation.
+
+## 2026-10-21 — #592 integration: Synthwave pace spacing
+
+- User approval: pending — Paul's review of build 7204: Synthwave/Creature/Cozy Meadow spacing and font size; result not yet seen by him.
+- Approved customer-visible result: pending — Synthwave's pace bars move up 4 pixels and their percentage numbers with them, so “40% deficit” and “6% reserve” have clear space beneath the bars instead of touching them. Claude Creature and Cozy Meadow are unchanged in this commit; their font-size request is open.
+- Scope: Synthwave theme pack revision only (theme JSON geometry, rebuilt immutable pack, catalog). The shared firmware renderer and preview fitting are not changed. The “used” header above “USAGE” in Two at once is also unchanged, because a theme cannot hide the static “USAGE” per mode.
+- What's new: none — spacing correction to an existing layout.
