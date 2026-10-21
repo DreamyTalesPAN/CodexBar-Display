@@ -8373,3 +8373,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none; the test now expects one live 3D model for the two-VibeTV chooser, matching the app since 2565d584.
 - Scope: `apps/control-center/src/components/setup/setup-3d-preview.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — test-only update
+
+## 2026-10-21 — #780: The flat VibeTV picture no longer flashes before the 3D model
+
+- User approval: pending — #780 setup: the old flat VibeTV picture no longer flashes before the 3D model on "Your VibeTV is live" and in the chooser (Paul 21.10. 7201 feedback: "das komplett löschen einfach")
+- Approved customer-visible result: on "Your VibeTV is live" and in the first row of the chooser the flat VibeTV picture is gone; the area stays empty (same size) until the 3D model is on screen. Without hardware WebGL the flat picture stays as before; rows 2+ of the chooser keep their photo.
+- Scope: `apps/control-center/src/components/setup/setup-3d-preview.tsx`, `setup-device-card.tsx`, `setup-device-screen.tsx`, `setup-live-screen.tsx`, their tests, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — bug fix, not announced to customers

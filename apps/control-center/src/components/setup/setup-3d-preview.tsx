@@ -15,12 +15,12 @@ export const SetupVibeTV3DPreview = dynamic(
 );
 
 /**
- * True once the browser is known to have a hardware WebGL context. Read after
- * the first paint, like the Overview does; until then, and on a software
- * renderer, the screen keeps its flat picture.
+ * Whether the browser has a hardware WebGL context. Read after the first
+ * paint, like the Overview does. `null` until then: the screens show no
+ * picture yet, so the flat one never flashes before the 3D model.
  */
-export function useHardware3D(): boolean {
-  const [available, setAvailable] = useState(false);
+export function useHardware3D(): boolean | null {
+  const [available, setAvailable] = useState<boolean | null>(null);
   useEffect(() => {
     const timer = window.setTimeout(
       () => setAvailable(hardwareWebGLAvailable()),

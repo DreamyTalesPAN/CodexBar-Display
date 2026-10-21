@@ -84,12 +84,12 @@ function deviceScreen() {
 }
 
 describe("3D VibeTV in the device list", () => {
-  it("keeps the photo until the model is on screen, then drops it", async () => {
+  it("shows no picture on the first row before its model is on screen", async () => {
     const { container } = render(deviceScreen());
     await settle();
     // Only the first row renders the live model; the second row keeps its photo.
     expect(fake3D.instances).toHaveLength(1);
-    expect(container.querySelectorAll("img")).toHaveLength(2);
+    expect(container.querySelectorAll("img")).toHaveLength(1);
     act(() => fake3D.instances.forEach((instance) => instance.onReady?.()));
     expect(container.querySelectorAll("img")).toHaveLength(1);
   });
@@ -123,16 +123,19 @@ describe("3D VibeTV on Your VibeTV is live", () => {
   }
 
   it("draws the 3D in the background and reveals it once its model is on screen", async () => {
-    render(live());
+    const { container } = render(live());
     await settle();
     const stage = screen.getByRole("group", { hidden: true });
     expect(stage.parentElement?.getAttribute("aria-hidden")).toBe("true");
-    expect(screen.getByTestId("vibetv-case")).toBeTruthy();
+    // No flat picture, only the screen the 3D model draws.
+    expect(container.querySelectorAll("img")).toHaveLength(0);
+    expect(screen.queryByTestId("vibetv-case")).toBeNull();
 
     act(() => fake3D.instances.at(-1)?.onReady?.());
     expect(screen.getByRole("group").parentElement?.getAttribute("aria-hidden")).toBeNull();
-    // The flat preview stays mounted (it tells the wizard when to leave).
-    expect(screen.getByTestId("vibetv-case").closest(".hidden")).toBeTruthy();
+    // The flat screen stays mounted (it tells the wizard when to leave), hidden.
+    expect(container.querySelector(".hidden")).toBeTruthy();
+    expect(container.querySelectorAll("img")).toHaveLength(0);
   });
 
   it("shows only the flat VibeTV without hardware WebGL", async () => {

@@ -20,10 +20,10 @@ type SetupDeviceCardProps = {
   onSelect: () => void;
   selected: boolean;
   /**
-   * The 3D VibeTV is available (hardware WebGL). The photo stays until its
-   * model is on screen, and for good without WebGL.
+   * Hardware WebGL: true draws the 3D VibeTV, empty until its model is on
+   * screen; false (or no WebGL) shows the photo; null is still checking, empty.
    */
-  preview3D?: boolean;
+  preview3D?: boolean | null;
   /** What this VibeTV shows; only the VibeTV the app is connected to has a live screen. */
   previewDevice?: DeviceInfo | null;
   previewFrame?: DisplayFrameSnapshot | null;
@@ -57,7 +57,7 @@ export function SetupDeviceCard({
       type="button"
     >
       <span aria-hidden className="pointer-events-none relative h-16 w-18 shrink-0">
-        {threeReady ? null : (
+        {preview3D === false ? (
           <Image
             alt=""
             className="size-full object-contain"
@@ -65,7 +65,7 @@ export function SetupDeviceCard({
             src="/images/vibetv-device-overview-cutout.png"
             width={72}
           />
-        )}
+        ) : null}
         {preview3D ? (
           // A small render of the same 3D VibeTV as the Overview. Its stage is
           // a little wider than the thumbnail (the device fills about 60 % of
