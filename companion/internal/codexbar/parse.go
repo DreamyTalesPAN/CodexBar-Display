@@ -119,11 +119,6 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 		resetSource = protocol.ResetSourceKey(provider, resetWindow)
 	}
 
-	accountEmail := firstStringAtPaths(payload,
-		"usage.accountEmail",
-		"usage.identity.accountEmail",
-		"accountEmail",
-	)
 	activityObservedAt := firstRFC3339AtPaths(payload,
 		"usage.updatedAt",
 		"openaiDashboard.updatedAt",
@@ -164,7 +159,6 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 		Frame:              frame,
 		Provider:           provider,
 		Source:             source,
-		AccountEmail:       accountEmail,
 		Meta:               meta,
 		ActivityObservedAt: activityObservedAt,
 	}, nil
