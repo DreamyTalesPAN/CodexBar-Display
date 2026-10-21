@@ -64,6 +64,7 @@ var (
 	listCablePortsFn                                   = usb.ListPorts
 	cableRescueRetryPause                              = 3 * time.Second
 	cableFirmwareVerifyTimeout                         = 120 * time.Second
+	cableCheckAfterWiFiTimeout                         = 15 * time.Second // one short cable look after a WiFi timeout; the VibeTV already had firmwareWiFiVerifyTimeout to boot
 	cableFirmwareVerifyPollInterval                    = time.Second
 	firmwareWiFiVerifyTimeout                          = 120 * time.Second
 	firmwareRawDialContextFn                           = dialFirmwareRawConnection

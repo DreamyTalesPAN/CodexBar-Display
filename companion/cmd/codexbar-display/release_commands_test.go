@@ -3574,7 +3574,7 @@ func prepareWiFiUpdateStuckOnOldFirmware(t *testing.T) (string, string) {
 	previousPoll := firmwareHTTPVerifyPollInterval
 	previousRediscoveryAfter := firmwareUpdateRediscoveryAfter
 	previousRediscoveryInterval := firmwareUpdateRediscoveryInterval
-	previousCableTimeout := cableFirmwareVerifyTimeout
+	previousCableCheck := cableCheckAfterWiFiTimeout
 	previousCablePoll := cableFirmwareVerifyPollInterval
 	previousResolve := resolveCableFirmwarePortFn
 	previousRead := readCableFirmwareHelloFn
@@ -3585,7 +3585,7 @@ func prepareWiFiUpdateStuckOnOldFirmware(t *testing.T) (string, string) {
 		firmwareHTTPVerifyPollInterval = previousPoll
 		firmwareUpdateRediscoveryAfter = previousRediscoveryAfter
 		firmwareUpdateRediscoveryInterval = previousRediscoveryInterval
-		cableFirmwareVerifyTimeout = previousCableTimeout
+		cableCheckAfterWiFiTimeout = previousCableCheck
 		cableFirmwareVerifyPollInterval = previousCablePoll
 		resolveCableFirmwarePortFn = previousResolve
 		readCableFirmwareHelloFn = previousRead
@@ -3617,7 +3617,7 @@ func prepareWiFiUpdateStuckOnOldFirmware(t *testing.T) (string, string) {
 	firmwareHTTPVerifyPollInterval = time.Millisecond
 	firmwareUpdateRediscoveryAfter = time.Millisecond
 	firmwareUpdateRediscoveryInterval = time.Millisecond
-	cableFirmwareVerifyTimeout = 20 * time.Millisecond
+	cableCheckAfterWiFiTimeout = 20 * time.Millisecond
 	cableFirmwareVerifyPollInterval = time.Millisecond
 	return server.URL, server.URL + "/manifest.json"
 }

@@ -443,7 +443,7 @@ func runInstallUpdate(args []string) (retErr error) {
 			helloErr = err
 			// Issue #832: a firmware that boots in cable mode never answers over
 			// WiFi. One bounded cable check tells whether the update still worked.
-			if cableHello, cableErr := waitForCableFirmwareVersion(ctx, targetVersion, deviceID, "", cableFirmwareVerifyTimeout); cableErr == nil {
+			if cableHello, cableErr := waitForCableFirmwareVersion(ctx, targetVersion, deviceID, "", cableCheckAfterWiFiTimeout); cableErr == nil {
 				verifiedBase, verifiedHello, helloErr = base, cableHello, nil
 			}
 		}
