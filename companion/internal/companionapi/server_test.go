@@ -12665,6 +12665,48 @@ func TestFirmwareUpdateWiFiJobVerifiesOverCableWhenUpdaterReportsCable(t *testin
 	}
 }
 
+// A verified Cable identity is still the selected connection when optional
+// health verification ends in attention (Codex review on #855).
+func TestFirmwareUpdateCableSelectionSurvivesHealthAttention(t *testing.T) {
+	previous := firmwareHealthVerifyTime
+	firmwareHealthVerifyTime = 0
+	t.Cleanup(func() { firmwareHealthVerifyTime = previous })
+	for _, hasHealth := range []bool{false, true} {
+		t.Run(fmt.Sprintf("health-supported=%v", hasHealth), func(t *testing.T) {
+			cfg := runtimeconfig.Config{ConnectionMode: "wifi", DeviceTarget: "http://192.0.2.1", DeviceID: "device-a", DeviceToken: "pair-token"}
+			server := newTestServer(t, cfg)
+			server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock-cable", nil }
+			server.readCableHello = func(string) (protocol.DeviceHello, error) {
+				hello := protocol.DeviceHello{
+					Kind: "hello", DeviceID: cfg.DeviceID, Firmware: "1.0.47",
+					Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable"}},
+				}
+				if hasHealth {
+					hello.Features = []string{protocol.FeatureCableHealthV1}
+				}
+				return hello, nil
+			}
+			server.readCableHealth = func(string, string) (deviceHealth, error) {
+				return deviceHealth{}, errors.New("health unavailable")
+			}
+			job := server.createFirmwareUpdateJob()
+			server.updateFirmwareVerification(job.ID, func(result *firmwareUpdateResult) {
+				result.DeviceID, result.Firmware, result.Target = cfg.DeviceID, "1.0.47", cableDeviceTarget
+			})
+			server.deviceMaintenanceMu.Lock()
+			_, attention, err := server.verifyCableFirmwareUpdateResult(context.Background(), job.ID, cfg)
+			server.deviceMaintenanceMu.Unlock()
+			if err != nil || attention == "" {
+				t.Fatalf("health must remain unverified: attention=%q err=%v", attention, err)
+			}
+			saved, err := server.config()
+			if err != nil || saved.ConnectionMode != "cable" || saved.DeviceTarget != cfg.DeviceTarget || saved.DeviceToken != cfg.DeviceToken {
+				t.Fatalf("health attention lost the verified Cable selection: cfg=%+v err=%v", saved, err)
+			}
+		})
+	}
+}
+
 // Issue #835, Beelink Windows over USB, 2026-10-20: after an update the only
 // frame inside the picture check carried the same values the screen already
 // showed. The firmware redraws only when a frame changes the screen, so the

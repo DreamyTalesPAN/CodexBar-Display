@@ -638,6 +638,14 @@ func (s *Server) verifyCableFirmwareUpdateResult(ctx context.Context, jobID stri
 		result.Firmware = strings.TrimSpace(hello.Firmware)
 		result.ObservedFirmware = strings.TrimSpace(hello.Firmware)
 	})
+	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) != "cable" {
+		// The updater can find the same VibeTV on Cable after WiFi times out.
+		// The daemon chooses its transport from config, not the restart target.
+		cfg, err = s.saveCableSelection(hello, cfg.DeviceToken)
+		if err != nil {
+			return "", "", fmt.Errorf("save verified Cable connection: %w", err)
+		}
+	}
 	if !hello.HasFeature(protocol.FeatureCableHealthV1) {
 		return firmwareAttentionOutcome("render"), "Firmware is current, but this VibeTV cannot verify the picture over Cable yet.", nil
 	}
@@ -662,15 +670,6 @@ func (s *Server) verifyCableFirmwareUpdateResult(ctx context.Context, jobID stri
 	s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
 		result.HealthVerified = true
 	})
-
-	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) != "cable" {
-		// The updater can find the same VibeTV on Cable after WiFi times out.
-		// The daemon chooses its transport from config, not the restart target.
-		cfg, err = s.saveCableSelection(hello, cfg.DeviceToken)
-		if err != nil {
-			return "", "", fmt.Errorf("save verified Cable connection: %w", err)
-		}
-	}
 
 	s.setFirmwareUpdateStage(jobID, "restarting_stream")
 	streamStartedAt := time.Now().UTC()
