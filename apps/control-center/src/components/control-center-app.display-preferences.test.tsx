@@ -1134,12 +1134,17 @@ it("enters a changed display mode, provider switching and provider under Recent 
     screen.getByText("Recent activity").closest('[data-slot="card"]') as HTMLElement,
   )
     .getAllByRole("listitem")
-    .map((entry) => entry.textContent?.replace(/\d\d:\d\d:\d\d$/, ""));
+    .map((entry) => {
+      // The time comes last and is formatted for the computer's locale, so the
+      // expectation leaves it out instead of pinning one format.
+      const time = entry.lastElementChild?.textContent ?? "";
+      return entry.textContent?.slice(0, entry.textContent.length - time.length);
+    });
   expect(entries).toEqual([
     "AI provider savedClaude turned off.",
     "Display mode savedAlways show Claude.",
     "Switch providers savedSwitch providers is set to Every 30 seconds.",
-    "Control Center openedThis session started.Session",
+    "Control Center openedThis session started.",
   ]);
 });
 

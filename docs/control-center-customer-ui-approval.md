@@ -8143,3 +8143,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Recent activity times use the computer's own time format instead of the German one; the day labels of the usage chart follow the computer's own language and format as well.
 - Scope: `formatTime` in event-log.ts (Recent activity and update/job times) and `formatDayLabel` in usage-screen.tsx. The live VibeTV preview is not changed, because it shows what the device draws.
 - What's new: none — a formatting switch only; no "What's new" entry is added before the approval.
+
+## 2026-10-21 — #859: Recent activity expectations follow the computer's time format
+
+- User approval: no visible change – UI approval not needed (#859 test fix: Recent activity expectations no longer pin the German time format)
+- Approved customer-visible result: none — the customer sees the same Recent activity as before #859.
+- Scope: control-center-app.display-preferences.test.tsx only; no product code changes.
+- What's new: none — test-only change.
