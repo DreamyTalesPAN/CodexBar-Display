@@ -3682,25 +3682,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             ),
           );
           const saved = payload.item.value;
-          const savedName =
-            saved === null
-              ? "Default"
-              : item.options?.find((option) => option.value === saved)?.label ??
-                saved;
-          // Worded like "Display mode saved" in the Setup log's sentences.
-          addEvent(
-            item.id === "codexbar.usageBarsShowUsed"
-              ? {
-                  label: "Usage display saved",
-                  detail: `${savedName}.`,
-                  tone: "ready",
-                }
-              : {
-                  label: `${item.label} saved`,
-                  detail: `${item.label} is set to ${savedName}.`,
-                  tone: "ready",
-                },
-          );
+          addEvent({
+            label: `${item.label} saved`,
+            detail: `${item.label} is set to ${
+              saved === null
+                ? "Default"
+                : item.options?.find((option) => option.value === saved)
+                    ?.label ?? saved
+            }.`,
+            tone: "ready",
+          });
           // A usage read started before this save still carries the old
           // display mode. Retire it and ask once with the stored preference.
           usageReadRevisionRef.current += 1;
