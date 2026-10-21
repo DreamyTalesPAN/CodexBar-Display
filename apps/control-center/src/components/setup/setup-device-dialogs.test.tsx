@@ -176,6 +176,27 @@ describe("SetupAddressDialog", () => {
     );
     expect(onConnect).toHaveBeenCalledWith("http://192.168.178.9");
     expect(address().value).toBe("192.168.178.9");
+    expect(document.getElementById(address().getAttribute("aria-describedby")!)).toBe(screen.getByRole("alert"));
+  });
+
+  it("describes an empty address with its error and clears the association on editing", () => {
+    const onConnect = vi.fn();
+    render(<SetupAddressDialog onConnect={onConnect} onOpenChange={vi.fn()} open />);
+    expect(address().hasAttribute("aria-describedby")).toBe(false);
+    connect();
+    const error = screen.getByRole("alert");
+    expect(error.textContent).toBe("Enter the IP address shown on the VibeTV screen.");
+    expect(address().getAttribute("aria-invalid")).toBe("true");
+    expect(error.id).not.toBe("");
+    expect(address().getAttribute("aria-describedby")).toBe(error.id);
+    typeAddress("vibetv.local");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(address().hasAttribute("aria-describedby")).toBe(false);
+    expect(address().getAttribute("aria-invalid")).not.toBe("true");
+    connect();
+    expect(screen.getByRole("alert").id).toBe(error.id);
+    expect(address().getAttribute("aria-describedby")).toBe(error.id);
+    expect(onConnect).not.toHaveBeenCalled();
   });
 
   it("rejects an address the customer can still fix before asking the network", () => {

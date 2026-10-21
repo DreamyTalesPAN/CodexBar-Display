@@ -16368,3 +16368,33 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve the source feature with existing build9 behavior.
 - Scope: Integration merge retaining both approval histories.
 - What's new: none — integration only.
+
+## 2026-10-21 — #887: link the setup IP address to its existing error
+
+- User approval: no visible change – UI approval not needed (#887 item 2 associates the setup IP address with its existing FieldError for assistive technology)
+- Approved customer-visible result: the existing IP address error is also the input's accessible description while present; typing clears the error and its association. Text, layout and styling stay unchanged.
+- Scope: `setup-device-dialogs.tsx` and its regression tests; issue #887 item 2 only, not merged, not released.
+- What's new: none — accessibility association for an existing error
+
+
+## 2026-10-21 — #887: stop marking an unchecked replacement OpenAI key invalid
+
+- User approval: pending — #887 item 1 removes the wrong red invalid ring from the replacement OpenAI key input after a failed connection or disconnect, including while typing a new unchecked key
+- Approved customer-visible result: a connection or disconnect failure keeps its existing message in the existing position, but no longer marks the cleared or replacement key input invalid. No new text or layout is introduced.
+- Scope: `openai-key-form.tsx` and its regression tests; remove the operation-error-to-field-invalid mapping because no current field validation result is available and connection attempts clear the input. Issue #887 item 1 only; item 3 remains untouched, not merged, not released.
+- What's new: none — correct a misleading invalid-field indicator
+
+
+## 2026-10-21 — #888: append-only full-path scope record
+
+- User approval: no visible change – UI approval not needed (scope record: lists the full paths changed by #888)
+- Approved customer-visible result: none from this documentation correction. The entry “2026-10-21 — #887: stop marking an unchecked replacement OpenAI key invalid” remains pending; this addendum does not approve its visible result.
+- Scope: docs/control-center-customer-ui-approval.md only; the existing #888 records cover `apps/control-center/src/components/setup/setup-device-dialogs.test.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.tsx`, `apps/control-center/src/components/theme-studio/openai-key-form.test.tsx`, `apps/control-center/src/components/theme-studio/openai-key-form.tsx` at 5b4747bf70f86a066acc9a3b6f96638b7277082e. These full paths supplement the existing scope; all original entries are preserved.
+- What's new: none — documentation-only scope correction; no product change or announcement.
+
+## 2026-10-21 — build9: refresh #888 for 7204
+
+- User approval: pending — integrate claude/887-invalid-field-gaps at 22d3f4bfba1b into build 7204.
+- Approved customer-visible result: Preserve the source feature with existing build9 behavior.
+- Scope: Integration merge retaining both approval histories.
+- What's new: none — integration only.

@@ -19,10 +19,11 @@ function capabilities(configured: boolean) {
 }
 
 describe("Theme Studio AI row in Settings", () => {
+  afterEach(cleanup);
+
   beforeEach(() => {
-    vi.mocked(fetchAIThemeCapabilities).mockReset();
-    // Consent is remembered in the browser; each test starts without it.
-    localStorage.removeItem("vibetv.aiTheme.consent");
+    vi.resetAllMocks();
+    localStorage.clear();
   });
   // A dialog left open by one test would otherwise show up in the next one.
   afterEach(() => cleanup());
@@ -322,5 +323,39 @@ describe("Theme Studio AI row in Settings", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Add key" }));
     const checkbox = await screen.findByRole("checkbox");
     expect(checkbox.className).toContain("accent-primary");
+  it.each([false, true])("does not mark the replacement key invalid after a failed disconnect (edited: %s)", async (edited) => {
+    vi.mocked(fetchAIThemeCapabilities).mockResolvedValue(capabilities(true));
+    vi.mocked(deleteAIThemeCredential).mockRejectedValue(new Error("Helper unavailable"));
+    render(<ThemeStudioKeyRow />);
+    fireEvent.click(await screen.findByRole("button", { name: "Change key" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Disconnect OpenAI" }));
+    const error = await screen.findByRole("alert");
+    expect(error.textContent).toBe("Could not disconnect. Try again.");
+    const input = screen.getByLabelText("Replace OpenAI key");
+    if (edited) fireEvent.change(input, { target: { value: "unchecked-replacement" } });
+    expect(input.getAttribute("aria-invalid")).not.toBe("true");
+    expect(document.getElementById(input.getAttribute("aria-describedby")!)).toBe(error);
+    expect(error.textContent).toBe("Could not disconnect. Try again.");
+  });
+
+  it.each(["save", "verify"])("keeps a %s connection failure visible without invalidating the cleared or newly typed key", async (stage) => {
+    vi.mocked(fetchAIThemeCapabilities).mockResolvedValue(capabilities(true));
+    vi.mocked(saveAIThemeCredential).mockResolvedValue(undefined);
+    vi.mocked(verifyAIThemeCredential).mockResolvedValue(true);
+    vi.mocked(stage === "save" ? saveAIThemeCredential : verifyAIThemeCredential)
+      .mockRejectedValue(new Error("Connection unavailable"));
+    localStorage.setItem("vibetv.aiTheme.consent", "1");
+    render(<ThemeStudioKeyRow />);
+    fireEvent.click(await screen.findByRole("button", { name: "Change key" }));
+    const input = await screen.findByLabelText("Replace OpenAI key") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "unchecked-key" } });
+    fireEvent.click(screen.getByRole("button", { name: "Update key" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("Connection unavailable");
+    await waitFor(() => expect(input.disabled).toBe(false));
+    expect(input.value).toBe("");
+    expect(input.getAttribute("aria-invalid")).not.toBe("true");
+    fireEvent.change(input, { target: { value: "another-unchecked-key" } });
+    expect(input.getAttribute("aria-invalid")).not.toBe("true");
+    expect(screen.getByRole("alert").textContent).toBe("Connection unavailable");
   });
 });
