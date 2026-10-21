@@ -16471,3 +16471,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve this feature together with the existing build9 Settings and three equal display cards.
 - Scope: Integration merge preserving both approval histories.
 - What's new: none — integration only.
+## 2026-10-21 — #781: prove pending-key retry updates the Settings row
+
+- User approval: no visible change – UI approval not needed (test-only evidence: #781 already reports verified key state before closing its Settings dialog)
+- Approved customer-visible result: unchanged; the existing pending-key retry leaves the Settings row connected after the dialog closes.
+- Scope: openai-key-form.test.tsx regression coverage only; no product code changes.
+- What's new: none — test-only review evidence
+
+
+## 2026-10-21 — build9: refresh #781 for 7205
+
+- User approval: pending — integrate claude/group-theme-studio at 742629feaffd into build 7205.
+- Approved customer-visible result: Preserve this feature together with the existing build9 Settings and three equal display cards.
+- Scope: Integration merge preserving both approval histories.
+- What's new: none — integration only.
