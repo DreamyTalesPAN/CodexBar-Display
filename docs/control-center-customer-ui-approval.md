@@ -8333,3 +8333,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #782 unchanged; no customer-visible change. Only a test prop that no longer exists is removed from theme-library-screen.windows-copy.test.tsx.
 - Scope: #782 `apps/control-center/src/components/theme-library-screen.windows-copy.test.tsx` (one prop removed) and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — test-only change
+
+## 2026-10-21 — #782: Paul decisions on support diagnostics and manual refresh (Codex review)
+
+- User approval: pending — #782 Paul decisions 21.10.: manual refresh ends only with values collected after the click; Run diagnostics writes no Recent activity entry; diagnostics and report collection never run at the same time; no new wording
+- Approved customer-visible result: #782 Run diagnostics writes no Recent activity entry; while Run diagnostics or Create report collects, the other button is disabled; no new text. Manual refresh ends only with values collected after the click.
+- Scope: #782 `apps/control-center/src/components/control-center-app.tsx`, `support-report-actions.tsx`, `diagnostics-panel.tsx`, `logs-screen.tsx` and their tests, `companion/internal/companionapi/usage.go` and `server_test.go`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new wording

@@ -462,6 +462,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // Run diagnostics has its own busy flag, so it never shows the report card busy.
   const [supportDiagnosticsRunning, setSupportDiagnosticsRunning] =
     useState(false);
+  // Both actions send /v1/diagnostics; only one collection runs at a time.
+  const supportCollectingRef = useRef(false);
   const [lastError, setLastError] = useState<ApiError | null>(null);
   // One error object is one occurrence. Once a surface has closed it, no
   // surface shows it again (Support and Settings alike).
@@ -4213,8 +4215,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   // Resolves with the collected report, or null when nothing could be read.
   // The Help menu saves what it gets and says which of the two happened.
+  // Only "report" writes Recent activity; "diagnostics" leaves it alone.
   const loadSupportDiagnostics =
-    useCallback(async (): Promise<SupportDiagnostics | null> => {
+    useCallback(async (operation: "report" | "diagnostics"): Promise<SupportDiagnostics | null> => {
       const setupGeneration = setupGenerationRef.current;
       try {
         const payload = await collectSupportReport(
@@ -4260,18 +4263,20 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             Boolean(payload.companion?.features?.themeInstallEnabled),
           );
         }
-        addEvent({
-          label: partial
-            ? "Support report ready with gaps"
-            : "Support report ready",
-          detail: partial
-            ? "Browser and setup details were saved even though the Mac App did not answer."
-            : `The report has ${payload.checks?.length || 0} checks.`,
-          tone:
-            partial || payload.checks?.some((check) => check.status === "fail")
-              ? "attention"
-              : "ready",
-        });
+        if (operation === "report") {
+          addEvent({
+            label: partial
+              ? "Support report ready with gaps"
+              : "Support report ready",
+            detail: partial
+              ? "Browser and setup details were saved even though the Mac App did not answer."
+              : `The report has ${payload.checks?.length || 0} checks.`,
+            tone:
+              partial || payload.checks?.some((check) => check.status === "fail")
+                ? "attention"
+                : "ready",
+          });
+        }
         return payload;
       } catch (error) {
         if (setupGeneration !== setupGenerationRef.current) {
@@ -4288,11 +4293,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         }
         setSupportDiagnostics(null);
         setLastError(normalized);
-        addEvent({
-          label: "Support report failed",
-          detail: normalized.nextAction,
-          tone: "attention",
-        });
+        if (operation === "report") {
+          addEvent({
+            label: "Support report failed",
+            detail: normalized.nextAction,
+            tone: "attention",
+          });
+        }
         return null;
       }
     }, [
@@ -4322,22 +4329,32 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   // Create report: the card, Updates and the setup screens. Shows the report on the card.
   const createSupportReport = useCallback(async () => {
+    if (supportCollectingRef.current) {
+      return null;
+    }
+    supportCollectingRef.current = true;
     setSupportReportBusy(true);
     try {
-      const payload = await loadSupportDiagnostics();
+      const payload = await loadSupportDiagnostics("report");
       setSupportReport(payload);
       return payload;
     } finally {
+      supportCollectingRef.current = false;
       setSupportReportBusy(false);
     }
   }, [loadSupportDiagnostics]);
 
   // Run diagnostics: the same snapshot, but the Support report card stays as it is.
   const runSupportDiagnostics = useCallback(async () => {
+    if (supportCollectingRef.current) {
+      return;
+    }
+    supportCollectingRef.current = true;
     setSupportDiagnosticsRunning(true);
     try {
-      await loadSupportDiagnostics();
+      await loadSupportDiagnostics("diagnostics");
     } finally {
+      supportCollectingRef.current = false;
       setSupportDiagnosticsRunning(false);
     }
   }, [loadSupportDiagnostics]);

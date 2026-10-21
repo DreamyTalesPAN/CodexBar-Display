@@ -52,6 +52,8 @@ type Props = {
   repairing?: boolean;
   /** The app runs on Windows, where "Mac App" reads "App". */
   windowsHost?: boolean;
+  /** A support report is being created; diagnostics waits for it. */
+  busyElsewhere?: boolean;
 };
 
 export function DiagnosticsPanel({
@@ -61,6 +63,7 @@ export function DiagnosticsPanel({
   onRepairUsageEngine,
   repairing = false,
   windowsHost = false,
+  busyElsewhere = false,
 }: Props) {
   const engine = diagnosticsEngine(diagnostics);
   const checks = diagnostics?.checks ?? [];
@@ -73,7 +76,7 @@ export function DiagnosticsPanel({
       <div>
         <Button
           className="w-full sm:w-auto"
-          disabled={running || !onRun}
+          disabled={running || busyElsewhere || !onRun}
           onClick={onRun}
           type="button"
           variant="outline"

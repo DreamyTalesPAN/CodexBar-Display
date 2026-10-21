@@ -22,6 +22,8 @@ type Props = {
   onCreate?: () => void;
   /** The app runs on Windows, which saves a download without asking where. */
   windowsHost?: boolean;
+  /** Run diagnostics is collecting; the report waits for it. */
+  busyElsewhere?: boolean;
 };
 
 export function SupportReportActions({
@@ -32,6 +34,7 @@ export function SupportReportActions({
   emphasis = "primary",
   onCreate,
   windowsHost = false,
+  busyElsewhere = false,
 }: Props) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
     "idle",
@@ -140,7 +143,7 @@ export function SupportReportActions({
             {onCreate ? (
               <Button
                 className="w-full sm:w-auto"
-                disabled={creating}
+                disabled={creating || busyElsewhere}
                 onClick={createDiagnostics}
                 type="button"
                 variant={createButtonVariant}
@@ -153,7 +156,7 @@ export function SupportReportActions({
         ) : onCreate ? (
           <Button
             className="w-full sm:w-auto"
-            disabled={creating}
+            disabled={creating || busyElsewhere}
             onClick={createDiagnostics}
             type="button"
             variant={createButtonVariant}

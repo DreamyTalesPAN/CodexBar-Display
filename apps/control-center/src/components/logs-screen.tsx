@@ -209,6 +209,7 @@ export function LogsScreen({
           </CardHeader>
           <CardContent>
             <SupportReportActions
+              busyElsewhere={diagnosticsRunning}
               creating={supportReportBusy}
               diagnostics={supportReport}
               onCreate={onCreateSupportReport}
@@ -224,6 +225,7 @@ export function LogsScreen({
         </CardHeader>
         <CardContent>
           <DiagnosticsPanel
+            busyElsewhere={supportReportBusy}
             diagnostics={diagnostics}
             onRepairUsageEngine={onRepairUsageEngine}
             onRun={onLoadDiagnostics}

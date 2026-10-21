@@ -42,11 +42,6 @@ type usageRefreshInfo struct {
 // a manual request cannot still describe a normal in-flight collection.
 const usageRefreshRequestMaxAge = 15 * time.Minute
 
-// A reading this recent ends a manual refresh even when it was collected before
-// the click: CodexBar keeps its own schedule, so waiting for a newer reading
-// can take about 100 seconds (#579).
-const usageRefreshFreshWithin = 60 * time.Second
-
 type displayFrameResponse struct {
 	DeviceID string         `json:"deviceId,omitempty"`
 	OK       bool           `json:"ok"`
@@ -291,7 +286,7 @@ func (s *Server) usageRefreshInfo(now time.Time, usage daemon.PersistedUsage) us
 	s.usageRefreshMu.Lock()
 	requestedAt := s.usageRefresh.RequestedAt
 	if !requestedAt.IsZero() {
-		if usageHasFreshSnapshotAfter(usage, requestedAt, now) {
+		if usageHasFreshSnapshotAfter(usage, requestedAt) {
 			s.usageRefresh.RequestedAt = time.Time{}
 			s.usageRefreshMu.Unlock()
 			return usageRefreshInfo{State: "fresh", Message: usageRefreshMessage("fresh")}
@@ -332,7 +327,7 @@ func clearUsageProviderTokenHistory(provider *usageProviderInfo) {
 	provider.TokenStatsCollectedAt = time.Time{}
 }
 
-func usageHasFreshSnapshotAfter(usage daemon.PersistedUsage, requestedAt, now time.Time) bool {
+func usageHasFreshSnapshotAfter(usage daemon.PersistedUsage, requestedAt time.Time) bool {
 	if requestedAt.IsZero() {
 		return usageHasFreshSnapshot(usage)
 	}
@@ -343,8 +338,7 @@ func usageHasFreshSnapshotAfter(usage daemon.PersistedUsage, requestedAt, now ti
 		if provider.Stale || provider.CollectedAt.IsZero() {
 			return false
 		}
-		// A NoReading snapshot is a failed attempt, not usage: it cannot end the refresh by age.
-		if provider.CollectedAt.Before(requestedAt) && (provider.NoReading || now.Sub(provider.CollectedAt) > usageRefreshFreshWithin) {
+		if provider.CollectedAt.Before(requestedAt) {
 			return false
 		}
 	}

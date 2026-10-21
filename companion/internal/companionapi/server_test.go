@@ -3263,7 +3263,9 @@ func TestUsageManualRefreshExpiresWithoutNewCollectorSnapshot(t *testing.T) {
 	}
 }
 
-func TestUsageManualRefreshCompletesForRecentCachedDashboardSnapshot(t *testing.T) {
+// A snapshot collected before the click, however recent, does not end a manual
+// refresh: only values collected after the click do.
+func TestUsageManualRefreshKeepsRefreshingForSnapshotCollectedBeforeClick(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
 	snapshotProducedAt := now.Add(-15 * time.Second)
@@ -3289,17 +3291,16 @@ func TestUsageManualRefreshCompletesForRecentCachedDashboardSnapshot(t *testing.
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if rec.Code != http.StatusOK || got.Refresh.State != "fresh" || got.Providers[0].Weekly != 42 {
-		t.Fatalf("recent cached dashboard reading must complete manual refresh, status=%d got %+v", rec.Code, got)
+	if rec.Code != http.StatusOK || got.Refresh.State != "refreshing" || got.Providers[0].Weekly != 42 {
+		t.Fatalf("snapshot collected before the click must keep manual refresh running, status=%d got %+v", rec.Code, got)
 	}
 }
 
-// A reading up to 60 s old ends a manual refresh even when it predates the
-// click; an older one keeps the refresh running (#579).
-func TestUsageManualRefreshKeepsRefreshingForReadingOlderThan60Seconds(t *testing.T) {
+// Only a reading collected at or after the click ends a manual refresh.
+func TestUsageManualRefreshEndsOnlyWithReadingCollectedAfterClick(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
-	collectedAt := now.Add(-61 * time.Second)
+	collectedAt := now.Add(-time.Second)
 	server.now = func() time.Time { return now }
 	server.wakeDisplayStream = func() {}
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
@@ -3326,11 +3327,11 @@ func TestUsageManualRefreshKeepsRefreshingForReadingOlderThan60Seconds(t *testin
 	}
 
 	if got := read("/v1/usage?refresh=1"); got.Refresh.State != "refreshing" || got.Providers[0].Weekly != 36 {
-		t.Fatalf("reading 61 s old must keep manual refresh running, got %+v", got.Refresh)
+		t.Fatalf("reading collected before the click must keep manual refresh running, got %+v", got.Refresh)
 	}
-	collectedAt = now.Add(-60 * time.Second)
+	collectedAt = now
 	if got := read("/v1/usage"); got.Refresh.State != "fresh" {
-		t.Fatalf("reading 60 s old must end manual refresh, got %+v", got.Refresh)
+		t.Fatalf("reading collected at the click must end manual refresh, got %+v", got.Refresh)
 	}
 }
 
@@ -3363,8 +3364,8 @@ func TestUsageManualRefreshReportsFreshForNewCollectorSnapshot(t *testing.T) {
 	}
 }
 
-// A failed attempt recorded shortly before the click is not a reading, so it
-// must not end the refresh by age (#579).
+// A failed attempt recorded before the click is not a reading, so it must not
+// end the refresh (#579).
 func TestUsageManualRefreshKeepsRefreshingForRecentNoReadingSnapshot(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
@@ -3442,7 +3443,7 @@ func TestUsageManualRefreshSecondClickKeepsTheFirstRequest(t *testing.T) {
 	}
 
 	// With no request pending, the next click starts a new one. The reading
-	// from the first click is older than 60 s by then, so it cannot end this one.
+	// from before the first click cannot end this one.
 	now = firstClick.Add(80 * time.Second)
 	if got := read("/v1/usage?refresh=1"); got.State != "refreshing" || got.RequestedAt != now.Format(time.RFC3339) {
 		t.Fatalf("a click after a finished refresh must start a new one, got %+v", got)
