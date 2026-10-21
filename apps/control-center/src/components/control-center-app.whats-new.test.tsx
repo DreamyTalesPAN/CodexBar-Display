@@ -30,8 +30,8 @@ const claude = {
   writable: true,
 };
 
-// The catalog theme the first "Show me in Themes" link announces: the oldest of
-// the newest three "New theme" entries.
+// The catalog theme the second "Show me in Themes" link announces: the middle of
+// the newest three "New theme" entries (Gauge is the first).
 const tokenCounter = {
   id: "token-counter",
   themeId: "token-counter",
@@ -258,12 +258,12 @@ it("tells a set-up customer what is new once, on Overview, until they close it",
   const text = notice()?.textContent ?? "";
   expect(text).toContain("Version 1.0.63");
   for (const sentence of [
+    "New theme: Gauge",
+    "A half ring that fills as you use your limit.",
     "New theme: Token Counter",
     "The tokens of your session as one large number.",
     "New theme: Pace Meter",
     "New: Pace shows whether your session and weekly limits will last – in reserve, on pace or in deficit.",
-    "New theme: Two Limits",
-    "New: Two Limits shows two sources at once on your VibeTV – two providers or two accounts.",
     "Switch providers with a shortcut",
     "Press ⌃⌥⌘P in any app to show the next provider on VibeTV.",
     "Choose how often VibeTV switches",
@@ -278,9 +278,9 @@ it("tells a set-up customer what is new once, on Overview, until they close it",
   expect(
     within(notice()!).getAllByRole("heading", { level: 3 }).map((title) => title.textContent),
   ).toEqual([
+    "New theme: Gauge",
     "New theme: Token Counter",
     "New theme: Pace Meter",
-    "New theme: Two Limits",
     "Switch providers with a shortcut",
     "Choose how often VibeTV switches",
   ]);
@@ -485,7 +485,7 @@ it("opens Themes from a new theme at that theme and counts the notice as read", 
   const window = startWindow();
   await window.wait(10);
   fireEvent.click(
-    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[0],
+    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[1],
   );
   await window.wait(1);
 
@@ -507,7 +507,7 @@ it("brings the new theme into view again when the list above it grows, until the
   const window = startWindow();
   await window.wait(10);
   fireEvent.click(
-    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[0],
+    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[1],
   );
   await window.wait(1);
   const row = screen.getByRole("button", { name: "Preview Token Counter" }).closest("[role=listitem]");
@@ -530,7 +530,7 @@ it("stops bringing the new theme into view two seconds after the link was clicke
   const window = startWindow();
   await window.wait(10);
   fireEvent.click(
-    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[0],
+    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[1],
   );
   await window.wait(1);
   pageGrew();
@@ -548,7 +548,7 @@ it("ends at the customer's input even when a control keeps the event to itself",
   const window = startWindow();
   await window.wait(10);
   fireEvent.click(
-    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[0],
+    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[1],
   );
   await vi.advanceTimersByTimeAsync(0);
   shown.length = 0;
@@ -567,7 +567,7 @@ it("brings the place into view once in an app that cannot watch the page's heigh
   await window.wait(10);
   vi.stubGlobal("ResizeObserver", undefined);
   fireEvent.click(
-    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[0],
+    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[1],
   );
   await window.wait(1);
 
@@ -582,7 +582,7 @@ it("leaves a page alone that grows after the customer went on from Themes", asyn
   const window = startWindow();
   await window.wait(10);
   fireEvent.click(
-    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[0],
+    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[1],
   );
   await window.wait(1);
   shown.length = 0;
