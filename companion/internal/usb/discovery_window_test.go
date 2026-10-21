@@ -114,6 +114,25 @@ func TestDeviceHelloKeepsControlWindow(t *testing.T) {
 	}
 }
 
+func TestDeviceHelloExpiredDeadlineBeforeCancellation(t *testing.T) {
+	opener := &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": newMockSerialPort()}}
+	sender := NewSenderWithConfig(SenderConfig{Opener: opener})
+	defer sender.Close()
+	ctx := pendingDeadlineContext{Context: context.Background(), deadline: time.Now().Add(-time.Second)}
+	_, err := sender.DeviceHelloContext(ctx, "/dev/mock")
+	if !errors.Is(err, context.DeadlineExceeded) || opener.openCount("/dev/mock") != 0 {
+		t.Fatalf("expired deadline opened a port before cancellation arrived: err=%v", err)
+	}
+}
+
+// Model a deadline whose asynchronous cancellation has not been delivered yet.
+type pendingDeadlineContext struct {
+	context.Context
+	deadline time.Time
+}
+
+func (c pendingDeadlineContext) Deadline() (time.Time, bool) { return c.deadline, true }
+
 func TestFirmwareCableProbesHonorSharedDeadline(t *testing.T) {
 	for _, resolve := range []bool{false, true} {
 		t.Run(map[bool]string{false: "hello", true: "all candidates"}[resolve], func(t *testing.T) {

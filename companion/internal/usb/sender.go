@@ -181,6 +181,9 @@ func (s *Sender) deviceHelloLocked(ctx context.Context, path string, window time
 	if err := ctx.Err(); err != nil {
 		return protocol.DeviceHello{}, err
 	}
+	if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
+		return protocol.DeviceHello{}, context.DeadlineExceeded
+	}
 	// Firmware from before the Cable identity contract says hello only while
 	// it boots and never answers a request. Waiting for one held this sender
 	// for the whole window and starved a concurrent search, so its boot hello
