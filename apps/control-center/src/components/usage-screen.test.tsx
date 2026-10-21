@@ -227,7 +227,7 @@ describe("UsageScreen", () => {
     await expectNoAxeViolations(html);
   });
 
-  it("stops the skeleton pulse under reduced motion", () => {
+  it("draws every loading block with the shared skeleton shimmer", () => {
     const html = renderUsage(null, {
       ...usage,
       tokenUsageReady: false,
@@ -237,7 +237,8 @@ describe("UsageScreen", () => {
     const blocks = html.match(/<div[^>]*data-slot="skeleton"[^>]*>/g) ?? [];
     expect(blocks).toHaveLength(5);
     for (const block of blocks) {
-      expect(block).toContain("motion-reduce:animate-none");
+      expect(block).toContain("vibetv-skeleton");
+      expect(block).not.toContain("animate-pulse");
     }
   });
 

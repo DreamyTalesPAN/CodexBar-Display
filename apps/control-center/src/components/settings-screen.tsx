@@ -215,12 +215,17 @@ export function SettingsScreen({
     id: item.providerId,
     label: item.label,
   }));
+  const pairChoices = displayMode === "pair"
+    ? providers
+        .filter((item) => item.value)
+        .map((item) => ({ id: item.providerId, label: item.label }))
+    : displayChoices;
   const pairIds = defaultPairIds(
     providerPicker.display?.mode === "pair"
       ? providerPicker.display.providerIds
       : [],
     manualProviderId,
-    displayChoices,
+    pairChoices,
   );
   const activeTheme = useActiveThemeLimits(device);
   const providerError =
@@ -337,14 +342,14 @@ export function SettingsScreen({
                 id="vibetv-pair-top"
                 label="Provider 1"
                 onChange={(providerId) => selectPair(withPairProvider(pairIds, 0, providerId))}
-                providers={displayChoices}
+                providers={pairChoices}
                 value={pairIds[0] ?? ""}
               />
               <SourceSelect
                 id="vibetv-pair-bottom"
                 label="Provider 2"
                 onChange={(providerId) => selectPair(withPairProvider(pairIds, 1, providerId))}
-                providers={displayChoices}
+                providers={pairChoices}
                 value={pairIds[1] ?? ""}
               />
             </div>

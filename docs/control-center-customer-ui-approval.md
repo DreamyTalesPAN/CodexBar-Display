@@ -8989,16 +8989,37 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of 467fd7fb and this approval record. Pull request branch #783 only, not merged, not released.
 - What's new: none — merge of 467fd7fb, no customer-visible change of its own
 
+## 2026-10-21 — #783: loading skeletons shimmer softly (#598 Variante B)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: loading skeletons (Usage head, chart and provider cards; also other skeletons in the app) shimmer softly right to left instead of pulsing; flat grey with reduced motion. Paul picked Claude Design page "Usage-Skeleton und Two Limits - Runde 21.10", frame "#598 Usage-Skeleton · Variante B – sanftes Schimmern"; Paul sees it in the next build
+- Approved customer-visible result: #783 as in its own entries; loading skeletons get a soft glint moving right to left instead of an opacity pulse, and flat grey under reduced motion. Same sizes, layout and text.
+- Scope: the shared Skeleton primitive and its keyframes in globals.css; the usage-screen skeleton loses its redundant reduced-motion classes. Pull request branch only, not merged, not released.
+- What's new: none — a restyle of the loading blocks, no feature to announce; no new entry in whats-new.ts
+
+## 2026-10-21 — #783: approval marker after merging main at 35152cc8
+
+- User approval: no visible change – UI approval not needed (merge of main (35152cc8) into #783; the own entries of #783 keep their approvals)
+- Approved customer-visible result: #783 as in its own entries plus the entries merged with 35152cc8; nothing else changes.
+- Scope: the merge of 35152cc8 and this approval record. Pull request branch #783 only, not merged, not released.
+- What's new: none — merge of 35152cc8, no customer-visible change of its own
+
+## 2026-10-21 — #783: Paul's approval of build 7202 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — #783 approval record for build 7202; only the 1 listed 7202 entries of #783 now carry it, everything else stays as it was.
+- Approved customer-visible result: #783 as described in those entries, as seen in build 7202.
+- Scope: #783 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #783 approval record only
+
 ## 2026-10-19 — Pace on Usage (#789, stacked on #783)
 
-- User approval: pending — Paul reviews (pace on Usage per the approved master + 19.10. decisions)
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Paul reviews (pace on Usage per the approved master + 19.10. decisions)
 - Approved customer-visible result: none yet, pending Paul's review. New: in the lane bars of Claude and Codex (session and weekly), a thin tick marks where CodexBar expects the use to be; the gap between the bar and the tick is a green piece for a reserve and a red hatched piece for a deficit; one 13 px line under the bar says "6% in reserve", "12% in deficit", or "On pace", with CodexBar's run-out time after it when CodexBar gives one ("12% in deficit · runs out in 2d 15h"; before: a red "Runs out in 2d 15h" line on its own). The words follow CodexBar: "ahead of plan" is a deficit, "behind plan" is a reserve; "ahead" and "behind" are never printed. A lane CodexBar sends no pace for (for example "Fable only", and every lane where the engine sends none, such as today's Windows engine) shows no tick, no piece and no line.
 - Scope: `usage-pace.tsx` and `usage-pace.test.tsx` (new), `usage-screen.tsx`, `usage-screen.test.tsx` (the bar sits in a wrapper; the run-out line is now bold), `control-center-types.ts`, `globals.css` (two pace colours), the Companion usage window fields (`usage.go`, `usage_pace_test.go`), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — pace in the bars is the feature itself, no new notice
 
 ## 2026-10-19 — Pace on Usage: Codex review fix (#789)
 
-- User approval: pending — Paul reviews (pace on Usage per the approved master + 19.10. decisions); this entry restates the entry above after a Codex review fix.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Paul reviews (pace on Usage per the approved master + 19.10. decisions); this entry restates the entry above after a Codex review fix.
 - Approved customer-visible result: none yet, pending Paul's review. Visible result unchanged from the entry above, except one edge: when CodexBar sends a stage but not its gap or expected-use number, the lane shows no tick, no piece and no line (before this fix the tick would sit at 0%). Not seen by Paul.
 - Scope: `usage-pace.tsx` and `usage-pace.test.tsx`, plus Companion files (`parse.go`, `types.go`, `usage.go` and their tests) that are not screens, and this approval record.
 - What's new: none — edge case of the pace feature, no new notice
@@ -9026,21 +9047,21 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-19 — Pace on the VibeTV, step 1: capability handling (#800)
 
-- User approval: pending — Paul reviews (scope decided by Paul and the communicator, 19.10.: one Pace PR; pace themes per the approved page "Pace – alle Themes"). Not seen by Paul as running UI.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Paul reviews (scope decided by Paul and the communicator, 19.10.: one Pace PR; pace themes per the approved page "Pace – alle Themes"). Not seen by Paul as running UI.
 - Approved customer-visible result: none yet, pending Paul's review. New: a theme that needs the new firmware capability `usage-pace-v1` is offered like every other theme that needs a firmware capability: on a VibeTV whose firmware lacks it, the theme library shows the existing "firmware update needed" state for it and the active-theme upgrade asks for the firmware update; no other theme is flagged. No new text and no new screen; no pace theme exists in this step. Also on Usage, no pace is shown for a stale reading or for a window whose reset has passed since CodexBar collected it (before: the Usage page drew it).
 - Scope: `control-center-types.ts` (capability field), `theme-library-screen.tsx` (capability blocker), `theme-studio-capabilities.ts` (type field only), `active-theme-upgrade.ts` and its test, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — capability handling for the Pace themes that follow, no customer-visible notice of its own
 
 ## 2026-10-19 — Pace themes, 1: new theme Pace Meter (#800)
 
-- User approval: pending — Pace themes, 1: new theme Pace Meter (#800): Paul approved his own edited page "Pace - alle Themes" on 2026-10-19 (communicator), but this entry holds no verbatim quote of his words, so it has no accepted form 1. The What's new sentence of this entry is not on that page and is not seen by Paul. Earlier wording: Paul, 19.10.2026: approved page "Pace - alle Themes" in Claude Design (his own edit) via the communicator. The What's new sentence below is not on that page and is not yet seen by Paul.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Pace themes, 1: new theme Pace Meter (#800): Paul approved his own edited page "Pace - alle Themes" on 2026-10-19 (communicator), but this entry holds no verbatim quote of his words, so it has no accepted form 1. The What's new sentence of this entry is not on that page and is not seen by Paul. Earlier wording: Paul, 19.10.2026: approved page "Pace - alle Themes" in Claude Design (his own edit) via the communicator. The What's new sentence below is not on that page and is not yet seen by Paul.
 - Approved customer-visible result: Before: no such theme. After: the Themes list offers a live theme `Pace Meter` for one provider, drawn as on the approved page. Two lanes, session above weekly. Top left the provider name in grey; per lane the percentage large on the left, `Session left` / `Weekly left` (`used` when the app shows use) and `resets 3h 34m` on the right, a full-width bar, and under it the pace line. In reserve: the bar fills to the plan, a green piece runs to the use, a 2 px white tick stands on the plan, the line reads `6% in reserve` in green. In deficit: the bar fills to the use, a red hatched piece runs to the plan, the tick stands on the plan, the line reads `14% in deficit` in red, and `runs out` stands at the right when CodexBar says the quota runs out. On pace: the tick and the line `On pace`, no piece. Without pace (Windows today, or a lane CodexBar sends none for): percentage, label, countdown and a plain bar, no tick, no piece, no pace line. The second provider variant of the page is not built (#811). Differences from the page: the tick of the on-pace picture stands on the plan, which the app draws at the use (the page draws it at the reserve value of the other state); the font is the device font; `Session left` follows the usage mode. The theme needs the new firmware (1.0.50); an older VibeTV shows the existing "Firmware update needed" state for it. The What's new notice gets one entry: title `New theme: Pace Meter`, text `Session and weekly use against your plan: a tick marks where you should be, in reserve or in deficit.`
 - Scope: new `theme-packs/pace-meter/`, its built ZIP, render packs and catalog entry in `dist/theme-packs/`, `lib/whats-new.ts` and its tests (`whats-new.test.ts`, `control-center-app.whats-new.test.tsx`), `theme-packs/pace-themes.test.ts`, and this approval record. Pull request branch only, not merged, not released; checked with unit tests and the Control Center preview, not on a device.
 - What's new: `theme-pace-meter`
 
 ## 2026-10-19 — Pace themes, 2: Gauge becomes Gauge 2.0 (#800)
 
-- User approval: pending — Pace themes, 2: Gauge becomes Gauge 2.0 (#800): Paul approved his own edited page "Pace - alle Themes" on 2026-10-19 (communicator), but this entry holds no verbatim quote of his words, so it has no accepted form 1. Earlier wording: Paul, 19.10.2026: approved page "Pace - alle Themes" in Claude Design (his own edit) via the communicator.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Pace themes, 2: Gauge becomes Gauge 2.0 (#800): Paul approved his own edited page "Pace - alle Themes" on 2026-10-19 (communicator), but this entry holds no verbatim quote of his words, so it has no accepted form 1. Earlier wording: Paul, 19.10.2026: approved page "Pace - alle Themes" in Claude Design (his own edit) via the communicator.
 - Approved customer-visible result: Before: a half ring from 9 to 3 o'clock in traffic-light colours, the provider name on top, the percentage in the opening, `Session remaining`, a small `Weekly 87%` and `Reset in 3h 34m` at the bottom. After: a ring open at the bottom (270 degrees, a little smaller), light fill on a dark track, the provider name large inside the ring above the number, `Session left` under the number, nothing on top. Under the ring the pace line (`6% in reserve` green, `14% in deficit` red, `On pace`) and `lasts until reset - resets 3h 34m` / `runs out - resets 1h 12m`, then a divider and `Weekly 87%` with its pace line on the right. In reserve the ring fills to the plan with a green piece to the use; in deficit a red hatched piece runs from the use to the plan; a 2 px white tick crosses the ring at the plan. Without pace: ring with the percentage inside, `Session left`, `resets 3h 34m` and `Weekly 87%`; no tick, piece or pace line. Differences from the page: the separator in the reset line is ` - ` (the device font has no middle dot); the number is the device's large font; the notice texts of the provider line (`Update available`) may run over the ring for a moment.
 - Scope: `theme-packs/gauge/` (new version 0.2.0, revision 3), its built ZIP, render packs and catalog entry, `theme-packs/gauge-theme.test.ts`, and this approval record. Pull request branch only; needs firmware 1.0.50; unit tests and preview only.
 - What's new: none — an existing theme changes its look, no new notice
@@ -9054,28 +9075,28 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-19 — Pace themes, 4: Clippy, Pixel Battery, Synthwave and Tiny Office show reserve and deficit on their bars (#800)
 
-- User approval: pending — Pace themes, 4: Clippy, Pixel Battery, Synthwave and Tiny Office show reserve and deficit on their bars (#800): Paul approved his own edited page "Pace - alle Themes" on 2026-10-19 (communicator), but this entry holds no verbatim quote of his words, so it has no accepted form 1. Earlier wording: Paul, 19.10.2026: approved page "Pace - alle Themes" in Claude Design (his own edit) via the communicator.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Pace themes, 4: Clippy, Pixel Battery, Synthwave and Tiny Office show reserve and deficit on their bars (#800): Paul approved his own edited page "Pace - alle Themes" on 2026-10-19 (communicator), but this entry holds no verbatim quote of his words, so it has no accepted form 1. Earlier wording: Paul, 19.10.2026: approved page "Pace - alle Themes" in Claude Design (his own edit) via the communicator.
 - Approved customer-visible result: Before: bars without any mark of the plan. After: each bar has a 2 px white tick on the plan; in reserve a green piece runs from the plan to the use, in deficit a red hatched piece from the use to the plan, on pace the tick only. Clippy: the blocks fill dark blue (before green); the label row reads `Session` / `Weekly` (before `Session remaining`) with the pace sentence on the right (`6% in reserve`, `14% in deficit`, `On pace`). Pixel Battery: the segments keep their traffic-light colours by what is left; the label row reads `Session` / `Weekly` with the sentence on the right. Synthwave: the neon bars are 16 px high (before 20), the sentence stands under each bar in neon green, neon red or the bar's colour. Tiny Office: the thin segment bars are 7 px high (before 5), with tick and piece, and no sentence. Without pace each theme shows its bars and numbers as before, in the new label wording and bar height, with no tick, piece or sentence. Differences from the page: the tick stands on the plan in the on-pace state (the page draws it at the reserve value); the font is the device font; a hatched piece in Pixel Battery and Tiny Office is shown in whole segments.
 - Scope: `theme-packs/{clippy,pixel-battery,synthwave,tiny-office}/` (1.2.0, 1.17.0, 1.2.0, 0.7.0) with ZIPs, render packs, catalog entries and `theme-packs/tiny-office-theme.test.ts`, and this approval record. Needs firmware 1.0.50.
 - What's new: none — existing themes change their look, no new notice
 
 ## 2026-10-19 — Pace themes, 5: the previews and Theme Studio draw pace like VibeTV (#800)
 
-- User approval: pending — Pace themes, 5: the previews and Theme Studio draw pace like VibeTV (#800): Paul approved his own edited page "Pace - alle Themes" on 2026-10-19 (communicator), but this entry holds no verbatim quote of his words, so it has no accepted form 1. Earlier wording: Paul, 19.10.2026: approved page "Pace - alle Themes" in Claude Design (his own edit) via the communicator. No screen of its own: this is what the previews of the themes above show.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Pace themes, 5: the previews and Theme Studio draw pace like VibeTV (#800): Paul approved his own edited page "Pace - alle Themes" on 2026-10-19 (communicator), but this entry holds no verbatim quote of his words, so it has no accepted form 1. Earlier wording: Paul, 19.10.2026: approved page "Pace - alle Themes" in Claude Design (his own edit) via the communicator. No screen of its own: this is what the previews of the themes above show.
 - Approved customer-visible result: Before: a pace theme could not be previewed. After: on Overview, in the Themes list and in Theme Studio the preview of a pace theme draws the tick, the piece, the hatch and the pace sentences exactly as VibeTV does; the Themes list previews show a reserve on the session and a deficit on the weekly window of the example data. Theme Studio keeps `reserveColor` / `deficitColor` of a pace bar when it opens and saves a pack, accepts colour stops on text bound to a pace key, and asks for `usage-pace-v1` and firmware 1.0.50 for a pack that uses pace. No new control.
 - Scope: `components/live-vibetv-preview.tsx` and its test, `lib/theme-studio.ts`, `lib/theme-studio-capabilities.ts`, `components/theme-library-screen.test.tsx` (an app that does not know a capability blocks only that pack), and this approval record.
 - What's new: none — previews of the themes above, no new notice
 
 ## 2026-10-19 — Settings: the section Pace under Display mode (#800)
 
-- User approval: pending — Settings: the section Pace under Display mode (#800): Paul approved his own edited page "Pace - alle Themes" on 2026-10-19 (communicator), but this entry holds no verbatim quote of his words, so it has no accepted form 1. Earlier wording: Paul, 19.10.2026: approved page "Pace - alle Themes" in Claude Design (his own edit) via the communicator (the Settings frame of that page).
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Settings: the section Pace under Display mode (#800): Paul approved his own edited page "Pace - alle Themes" on 2026-10-19 (communicator), but this entry holds no verbatim quote of his words, so it has no accepted form 1. Earlier wording: Paul, 19.10.2026: approved page "Pace - alle Themes" in Claude Design (his own edit) via the communicator (the Settings frame of that page).
 - Approved customer-visible result: Before: no such section. After: directly under `Display mode` a section `Pace` (label on the left, a divider like the other sections) with one row, `Show reserve or deficit` and a switch, on by default. While the switch is on and the active catalog theme has no place for pace, one muted line under it: `<Theme name> has no place for it. Pace Meter shows it.` (for example `Token Counter has no place for it. Pace Meter shows it.`). Off: VibeTV is sent no pace, so no pace theme shows tick, piece or sentence; Usage keeps its pace. The section is not shown when the usage engine sends no pace (today's Windows engine). The page's example line names Mini Classic, which now has a place for pace after this PR; the line follows the active theme.
 - Scope: `components/settings-pace.tsx` (new), one block in `components/settings-screen.tsx`, `components/settings-pace.test.tsx`, the Companion preference `vibetv.display.showPace` (`runtimeconfig` `hidePace`, `display_preferences.go`, `daemon/send.go`) with tests, and this approval record.
 - What's new: none — a setting for the Pace themes, no new notice
 
 ## 2026-10-19 — Pace themes: Codex review fix, the preview reads every spelling of a pace binding (#800)
 
-- User approval: pending — Pace themes: Codex review fix, the preview reads every spelling of a pace binding (#800): Codex review fix that changes what the preview of a custom theme shows (pace instead of empty text); Paul has not seen it. Earlier wording: Codex review fix, no visible change of the approved Pace themes; not seen by Paul. The look of the entries above stands as approved on the page "Pace - alle Themes".
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Pace themes: Codex review fix, the preview reads every spelling of a pace binding (#800): Codex review fix that changes what the preview of a custom theme shows (pace instead of empty text); Paul has not seen it. Earlier wording: Codex review fix, no visible change of the approved Pace themes; not seen by Paul. The look of the entries above stands as approved on the page "Pace - alle Themes".
 - Approved customer-visible result: Unchanged for the shipped themes. A custom theme that binds pace as `us1PaceText`, `us1Pace` or `usage.0.PaceText` is previewed with its pace, as VibeTV draws it (before: the preview showed empty text and a plain bar for those spellings).
 - Scope: `components/live-vibetv-preview.tsx` and its test, the firmware repaint rules (not screens), and this approval record.
 - What's new: none — a preview correction, no new notice
@@ -9096,14 +9117,14 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-19 — Usage pace: Codex review fix, a lane's pace goes when its reset countdown has run out (#800)
 
-- User approval: pending — Usage pace: Codex review fix, a lane's pace goes when its reset countdown has run out (#800): Codex review fix that makes a lane's tick, piece and pace line disappear when its reset has passed; the entry does not state no visible change and Paul has not seen it. Earlier wording: Codex review fix to the Usage pace of the entries above; not seen by Paul.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Usage pace: Codex review fix, a lane's pace goes when its reset countdown has run out (#800): Codex review fix that makes a lane's tick, piece and pace line disappear when its reset has passed; the entry does not state no visible change and Paul has not seen it. Earlier wording: Codex review fix to the Usage pace of the entries above; not seen by Paul.
 - Approved customer-visible result: Unchanged while the lane's reset is ahead. When the reset time of a lane has passed since the reading (the countdown of the page reaches zero before the next poll), its tick, piece and pace line go with it instead of staying until the next reading.
 - Scope: `components/usage-screen.tsx`, `components/usage-pace.test.tsx`, and this approval record.
 - What's new: none — a stale-data correction, no new notice
 
 ## 2026-10-19 — Settings Pace: Codex review fix, the note names the live theme during standby (#800)
 
-- User approval: pending — Settings Pace: Codex review fix, the note names the live theme during standby (#800): Codex review fix that changes the muted note under the Pace switch during standby; Paul has not seen it. Earlier wording: Codex review fix to the Settings section Pace above; not seen by Paul.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Settings Pace: Codex review fix, the note names the live theme during standby (#800): Codex review fix that changes the muted note under the Pace switch during standby; Paul has not seen it. Earlier wording: Codex review fix to the Settings section Pace above; not seen by Paul.
 - Approved customer-visible result: Unchanged. While VibeTV shows its screensaver, the muted line under the switch is worked out from the customer's live theme, not from the screensaver (before: a screensaver could be named as "has no place for it").
 - Scope: `components/settings-screen.tsx`, `components/settings-pace.test.tsx`, and this approval record.
 - What's new: none — a correction, no new notice
@@ -9117,35 +9138,35 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-19 — Gauge 2.0: more room for the update notice, revision 5 (#800)
 
-- User approval: pending — Gauge 2.0: more room for the update notice, revision 5 (#800): Gauge 2.0 layout correction decided by the communicator; Paul has not seen it as running UI. Earlier wording: communicator decision on the Gauge notice (see the entry above); not seen by Paul.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Gauge 2.0: more room for the update notice, revision 5 (#800): Gauge 2.0 layout correction decided by the communicator; Paul has not seen it as running UI. Earlier wording: communicator decision on the Gauge notice (see the entry above); not seen by Paul.
 - Approved customer-visible result: As in the entry above, with the provider name and the notice 4 px lower and the percentage and `Session left` 4 and 3 px lower, so that `Open VibeTV Mac App` keeps about 3 px clear of the ring on both sides (before: under 1 px). Pictures: `review-1016/ui/pace-vs-vorlage/gauge.png`.
 - Scope: `theme-packs/gauge/` (revision 5), its ZIP, render packs and catalog entry, `theme-packs/gauge-theme.test.ts`, and this approval record.
 - What's new: none — layout correction of an unpublished theme
 
 ## 2026-10-19 — Gauge 2.0: percentage and provider name back at the approved size and place; the notice is cut inside the ring (#800)
 
-- User approval: pending — Gauge 2.0: percentage and provider name back at the approved size and place; the notice is cut inside the ring (#800): Gauge 2.0 layout correction decided by the communicator; Paul has not seen it as running UI. Earlier wording: communicator correction (the approved look of the percentage must not change); not seen by Paul as running UI.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Gauge 2.0: percentage and provider name back at the approved size and place; the notice is cut inside the ring (#800): Gauge 2.0 layout correction decided by the communicator; Paul has not seen it as running UI. Earlier wording: communicator correction (the approved look of the percentage must not change); not seen by Paul as running UI.
 - Approved customer-visible result: Gauge 2.0 (replaces the two Gauge entries above). The percentage is back in the large device font (digits about 33 px high, 29 px on the page) at the place of the page, the provider name stands above it in the device font 2, and `Session left` below as on the page; the layout of the first Gauge entry, with the name 2 px higher so that it clears the number. The update notice (`Update available`, `Open VibeTV Mac App`) replaces the provider name, as it does in every theme. VibeTV cannot show it outside the ring while the name stays in the ring: the firmware has no text that names the provider without the notice, and a second label-bound text would show the provider twice. So the name box lies inside the opening of the ring (90 px wide) and VibeTV clips a longer text at the box: the notice appears cut (`Update availab`, `Open VibeTV M`) and never touches the ring. A binding for the plain provider name would allow the notice at the bottom edge; that needs new firmware.
 - Scope: `theme-packs/gauge/` (revision 8, version 0.2.0 unchanged, unpublished), its ZIP, render packs and catalog entry, `theme-packs/gauge-theme.test.ts` (the ring-fit test now checks the clip box), and this approval record. Firmware and the firmware requirement (1.0.50) are unchanged.
 - What's new: none — layout correction of an unpublished theme
 
 ## 2026-10-19 — Gauge 2.0: provider name in the ring as on the page, the update notice under the ring (#800)
 
-- User approval: pending — Gauge 2.0: provider name in the ring as on the page, the update notice under the ring (#800): Gauge 2.0 layout correction decided by the communicator; Paul has not seen it as running UI. Earlier wording: communicator decision (Paul would reject a clipped notice; the approved look of the number and the name stands); not seen by Paul as running UI.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Gauge 2.0: provider name in the ring as on the page, the update notice under the ring (#800): Gauge 2.0 layout correction decided by the communicator; Paul has not seen it as running UI. Earlier wording: communicator decision (Paul would reject a clipped notice; the approved look of the number and the name stands); not seen by Paul as running UI.
 - Approved customer-visible result: Gauge 2.0, replacing the Gauge entries above. The percentage and the provider name stand in the ring exactly as in the entry of the approved page (name in the device font above the large number, `Session left` below). New firmware text `usageProviderName` (the provider's name without the notice) keeps the name in the ring while a notice shows. While VibeTV shows a notice (`Update available`, `Open VibeTV Mac App`) it stands whole, centred, in place of the reset line under the ring and outside it; the reset line is not drawn while the notice shows and comes back with it gone. Nothing is cut and nothing touches the ring. Without a notice the screen is as in the approved pictures. The preview draws the same when it knows a notice.
 - Scope: `theme-packs/gauge/` (revision 9, version 0.2.0 unchanged, unpublished) with ZIP, render packs and catalog entry, `theme-packs/gauge-theme.test.ts`, `components/live-vibetv-preview.tsx` and its test (the new bindings), `lib/theme-studio.ts` (usage-pace-v1 for `usageProviderName`), the firmware bindings `usageProviderName` and `usageSlotNPaceFooter` and the repaint fix after a sleep (not screens), `scripts/build-theme-packs.mjs` (the footer binding counts as showing the notice), and this approval record.
 - What's new: none — layout correction of an unpublished theme
 
 ## 2026-10-19 — Gauge 2.0: the notice also shows when there is no usage window (#800)
 
-- User approval: pending — Gauge 2.0: the notice also shows when there is no usage window (#800): Codex review fix to Gauge 2.0: the notice now shows in the footer when no usage window exists; Paul has not seen it. Earlier wording: Codex review fix to the Gauge entry above; no visible change in the normal states; not seen by Paul.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Gauge 2.0: the notice also shows when there is no usage window (#800): Codex review fix to Gauge 2.0: the notice now shows in the footer when no usage window exists; Paul has not seen it. Earlier wording: Codex review fix to the Gauge entry above; no visible change in the normal states; not seen by Paul.
 - Approved customer-visible result: As in the entry above. New: while no usage window exists (startup, provider error) and VibeTV shows a notice, the notice stands in the footer line under the ring (before: it would not have been visible at all). `usageProviderName` no longer counts as a text that shows the notice, so VibeTV draws the notice on the footer, not over the name.
 - Scope: `theme-packs/gauge/` (revision 10), its ZIP, render packs and catalog entry, `theme-packs/gauge-theme.test.ts`, the firmware field for the provider name (not a screen), and this approval record.
 - What's new: none — correction of an unpublished theme
 
 ## 2026-10-19 — Pace bars: Codex review fix, the piece follows the rounded bar in VibeTV and in the preview (#800)
 
-- User approval: pending — Pace bars: Codex review fix, the piece follows the rounded bar in VibeTV and in the preview (#800): Codex review fix that changes how the pace piece is drawn at rounded bar ends; Paul has not seen it. Earlier wording: Codex review fix to the Pace themes above; not seen by Paul.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Pace bars: Codex review fix, the piece follows the rounded bar in VibeTV and in the preview (#800): Codex review fix that changes how the pace piece is drawn at rounded bar ends; Paul has not seen it. Earlier wording: Codex review fix to the Pace themes above; not seen by Paul.
 - Approved customer-visible result: A reserve or deficit piece that reaches an end of a bar with rounded corners (Pace Meter at the very end of the track) is cut to the rounded interior, on VibeTV and in the previews, instead of ending square over the corner. Segmented pace bars keep the rounding of every segment, also the paced ones. No other change.
 - Scope: `components/live-vibetv-preview.tsx` and its test, the firmware bar drawing (not a screen), and this approval record.
 - What's new: none — a drawing correction, no new notice
@@ -9254,6 +9275,34 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #800 as in its own entries plus the entries merged with f3cb1c10; nothing else changes.
 - Scope: the merge of f3cb1c10 and this approval record. Pull request branch #800 only, not merged, not released.
 - What's new: none — merge of f3cb1c10, no customer-visible change of its own
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at 4715951a
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (4715951a) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with 4715951a; nothing else changes.
+- Scope: the merge of 4715951a and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of 4715951a, no customer-visible change of its own
+
+## 2026-10-21 — #800: Paul's approval of build 7202 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — #800 approval record for build 7202; only the 16 listed 7202 entries of #800 now carry it, everything else stays as it was.
+- Approved customer-visible result: #800 as described in those entries, as seen in build 7202.
+- Scope: #800 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #800 approval record only
+
+## 2026-10-21 — #800: retain the Pace setting and reject unavailable pace values
+
+- User approval: no visible change – UI approval not needed (bug fix: keep Pace settings during stale collections and suppress missing or out-of-range deltas)
+- Approved customer-visible result: the existing Pace setting stays available during a collection outage; invalid pace data no longer appears as a valid reading, with no new copy or layout.
+- Scope: Settings Pace visibility, Usage pace validation, and regression tests for #800; theme-pack notice validation accepts the firmware's existing footer spellings.
+- What's new: none — corrections to the existing pace behavior only
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at 3af4b175
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (3af4b175) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with 3af4b175; nothing else changes.
+- Scope: the merge of 3af4b175 and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of 3af4b175, no customer-visible change of its own
 
 ## 2026-10-21 — #592 on #800: Two at once, Limits on VibeTV
 
@@ -10204,3 +10253,24 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Ticking or unticking several limits in quick succession keeps every change; each save starts from the selection the earlier save left behind. Pair order changes are logged under Recent activity like any other pair change.
 - Scope: the limits callback hands its change to the display write queue as a function of the selection there, the picker type accepts that form, and the Companion logs a pair's member or order change as a display mode change. Tests for the queue, the limits change, and the logged pair order.
 - What's new: none — bug fix, no separate announcement.
+
+## 2026-10-21 — #864: approval marker after merging claude/usage-pace at 5f6798fd
+
+- User approval: no visible change – UI approval not needed (merge of claude/usage-pace (5f6798fd) into #864; the own entries of #864 keep their approvals)
+- Approved customer-visible result: #864 as in its own entries plus the entries merged with 5f6798fd; nothing else changes.
+- Scope: the merge of 5f6798fd and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — merge of 5f6798fd, no customer-visible change of its own
+
+## 2026-10-21 — #864: preserve the saved pair during a temporary missing reading
+
+- User approval: no visible change – UI approval not needed (bug fix: keep the saved Two at once card and both provider pickers visible while a member awaits fresh usage)
+- Approved customer-visible result: Setup and Settings keep the saved pair selected when either enabled member has stale, unavailable, or missing usage; its preview stays unavailable and the saved provider order stays intact. One provider keeps its existing reading requirement.
+- Scope: shared pair picker inputs, setup and Settings pair choices and previews, regression tests, and the theme guide correction for the deliberately empty pair frame label.
+- What's new: none — restore the existing saved choice, no separate announcement.
+
+## 2026-10-21 — #864 integration: retain unavailable pair members in calm Settings
+
+- User approval: no visible change – UI approval not needed (bug fix: preserve saved pair members in the calm Settings selectors when integrating 89951f75 into paultest-592a)
+- Approved customer-visible result: The integration keeps its existing calm Settings rows without preview cards; both pair selectors keep their saved enabled members through a temporary missing reading.
+- Scope: Merge claude/592-two-at-once-on-800, preserve both branches' approval records, resolve Settings with its existing layout and pair choices, and adapt the regression test to that layout.
+- What's new: none — integration of the pair bug fix, no new layout or announcement.

@@ -990,18 +990,23 @@ export function SetupWizard(props: SetupWizardProps) {
     )
       ? savedProviderId
       : (props.displayProviders[0]?.id ?? null);
+    const pairProviders = displayMode === "pair"
+      ? props.providers
+          .filter((provider) => provider.value)
+          .map((provider) => ({ id: provider.providerId, label: provider.label }))
+      : props.displayProviders;
     const pairIds =
       displayDraft?.pairIds ??
       defaultPairIds(
         props.displayProviderIds ?? [],
         displayProviderId,
-        props.displayProviders,
+        pairProviders,
       );
     const previewOf = (providerId: string | null | undefined) =>
       props.automaticPreviews.find(
         (preview) =>
           preview.providerLabel ===
-          props.displayProviders.find((provider) => provider.id === providerId)
+          pairProviders.find((provider) => provider.id === providerId)
             ?.label,
       );
     return (
@@ -1056,6 +1061,7 @@ export function SetupWizard(props: SetupWizardProps) {
             previewOf(pairIds[1]),
           )}
           pairProviderIds={pairIds}
+          pairProviders={pairProviders}
           providers={props.displayProviders}
           saving={props.displaySavePending}
           selectedProviderId={displayProviderId}
