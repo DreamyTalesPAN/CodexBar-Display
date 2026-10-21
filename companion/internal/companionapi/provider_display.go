@@ -195,10 +195,16 @@ func (s *Server) handleProviderDisplayNext(w http.ResponseWriter, r *http.Reques
 	// retained or expired one, which the snapshot calls stale, and with usage
 	// in its frame. Pinning another one would change Settings and not the
 	// screen.
+	// A provider whose every reported window is hidden has nothing to show either.
+	hidden := &runtimeconfig.ProviderDisplayConfig{HiddenWindows: selection.HiddenWindows}
 	readable := make(map[string]bool, len(usage.Providers))
 	for _, snapshot := range usage.Providers {
 		if info, ok := usageProviderFromSnapshot(snapshot); ok {
-			readable[info.ID] = !info.UsageUnavailable && !snapshot.Frame.UsageUnavailable
+			visible := len(snapshot.Frame.UsageWindows) == 0
+			for _, window := range snapshot.Frame.UsageWindows {
+				visible = visible || !hidden.WindowHidden(info.ID, window.ID)
+			}
+			readable[info.ID] = !info.UsageUnavailable && !snapshot.Frame.UsageUnavailable && visible
 		}
 	}
 	var eligible []string
