@@ -12584,6 +12584,15 @@ func TestFirmwareUpdateCableRequiresVerifiedRender(t *testing.T) {
 // the cable as its verified target. The parent verifies there; the WiFi address
 // does not answer on a VibeTV that boots in cable mode.
 func TestFirmwareUpdateWiFiJobVerifiesOverCableWhenUpdaterReportsCable(t *testing.T) {
+	testFirmwareUpdateWiFiJobCableResult(t, "cable")
+}
+
+func TestReview855WiFiModeHelloCannotPersistCable(t *testing.T) {
+	testFirmwareUpdateWiFiJobCableResult(t, "wifi")
+}
+
+func testFirmwareUpdateWiFiJobCableResult(t *testing.T, deviceMode string) {
+	t.Helper()
 	const deviceID = "wifi-job-cable-result"
 	var wifiHits atomic.Int32
 	wifi := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -12601,7 +12610,7 @@ func TestFirmwareUpdateWiFiJobVerifiesOverCableWhenUpdaterReportsCable(t *testin
 		return protocol.DeviceHello{
 			Kind: "hello", DeviceID: deviceID, Board: "esp8266-smalltv-st7789", Firmware: "1.0.47",
 			Features:     []string{protocol.FeatureCableHealthV1},
-			Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable"}},
+			Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{Active: "usb", Mode: deviceMode}},
 		}, nil
 	}
 	server.streamStatus = func(context.Context, string) displayStreamInfo { return displayStreamInfo{} }
@@ -12649,7 +12658,11 @@ func TestFirmwareUpdateWiFiJobVerifiesOverCableWhenUpdaterReportsCable(t *testin
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if job.Phase != "complete" || job.Result == nil || !job.Result.HelloVerified || !job.Result.HealthVerified || !job.Result.StreamVerified || job.Result.Target != cableDeviceTarget {
+	if deviceMode == "wifi" {
+		if job.Phase != "error" || job.Error == nil {
+			t.Fatalf("WiFi-mode serial hello must be rejected before Cable selection: %+v", job)
+		}
+	} else if job.Phase != "complete" || job.Result == nil || !job.Result.HelloVerified || !job.Result.HealthVerified || !job.Result.StreamVerified || job.Result.Target != cableDeviceTarget {
 		t.Fatalf("a cable-verified WiFi job must not fail on the WiFi address: %+v", job)
 	}
 	cfg, err := server.config()
@@ -12657,7 +12670,7 @@ func TestFirmwareUpdateWiFiJobVerifiesOverCableWhenUpdaterReportsCable(t *testin
 		t.Fatal(err)
 	}
 	known, ok := cfg.KnownDevice(deviceID)
-	if cfg.ConnectionMode != "cable" || cfg.DeviceID != deviceID || cfg.DeviceToken != "pair-token" || cfg.DeviceTarget != wifi.URL || !ok || known.Target != wifi.URL || known.DeviceToken != "pair-token" {
+	if cfg.ConnectionMode != deviceMode || cfg.DeviceID != deviceID || cfg.DeviceToken != "pair-token" || cfg.DeviceTarget != wifi.URL || !ok || known.Target != wifi.URL || known.DeviceToken != "pair-token" {
 		t.Fatalf("Cable fallback lost the saved WiFi binding: %+v", cfg)
 	}
 	if hits := wifiHits.Load(); hits != 0 {
