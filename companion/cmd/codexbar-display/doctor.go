@@ -143,7 +143,7 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 			if err != nil {
 				return doctorRuntimeConfig{}, err
 			}
-			transportName := doctorTransportForRuntimeConfig(cfg)
+			transportName := runtimeconfig.ActiveTransport(cfg)
 			target := ""
 			probeTarget := ""
 			if transportName == "wifi" {
@@ -196,10 +196,6 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 		probeTarget: probeTarget,
 		authReady:   transportName != "wifi" || deviceTokenFromCommandTarget(probeTarget) != "",
 	}, nil
-}
-
-func doctorTransportForRuntimeConfig(cfg runtimeconfig.Config) string {
-	return runtimeconfig.ActiveTransport(cfg)
 }
 
 func doctorTaskRuntimeConfig(home, label string, args []string) (doctorRuntimeConfig, error) {
