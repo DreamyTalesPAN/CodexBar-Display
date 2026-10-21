@@ -42,8 +42,29 @@ func flashCableRescueWithRetry(ctx context.Context, home string, marker firmware
 		return fmt.Errorf("the VibeTV on %s is left half-written; connect it by Cable and update it first", pending.Port)
 	}
 	marker.WriteStartedAt = time.Now()
-	if saveErr := firmwareupdate.SaveRescueMarker(home, marker); saveErr != nil {
-		return fmt.Errorf("save the rescue marker before writing: %w", saveErr)
+	if !resumed {
+		// The ports listed before the first write tell a VibeTV that was
+		// replugged into another socket apart from the ports already there.
+		if ports, listErr := listCablePortsFn(); listErr == nil {
+			marker.Ports = ports
+		}
+	}
+	// A resume on a port the VibeTV seems to have moved to keeps the marker on
+	// disk as it was until the ROM loader confirms the recorded chip there: the
+	// new port may be an unrelated silent adapter, and rebinding the marker to
+	// it would hide the real VibeTV's return to its first socket (Codex on #840).
+	saved, onDisk := firmwareupdate.LoadRescueMarker(home, time.Now())
+	moved := resumed && onDisk && !strings.EqualFold(strings.TrimSpace(saved.Port), strings.TrimSpace(marker.Port))
+	if !moved {
+		if saveErr := firmwareupdate.SaveRescueMarker(home, marker); saveErr != nil {
+			return fmt.Errorf("save the rescue marker before writing: %w", saveErr)
+		}
+	}
+	// The chip is saved into the marker before the erase. Every later attempt
+	// writes only that chip: a resumed rescue starts with the chip it recorded.
+	recordChip := func(chip string) error {
+		marker.ChipMAC = chip
+		return firmwareupdate.SaveRescueMarker(home, marker)
 	}
 	started := false
 	// Only a failure known to come before any flash command proves the old
@@ -59,18 +80,21 @@ func flashCableRescueWithRetry(ctx context.Context, home string, marker firmware
 			},
 			// The marker saved above stays as it is: rewriting it after the
 			// erase could only damage the one thing that leads back here.
-			OnWriteStarted: func() { started = true },
+			OnWriteStarted:   func() { started = true },
+			ExpectChip:       marker.ChipMAC,
+			OnChipIdentified: recordChip,
 		})
 		if err == nil {
 			return nil
 		}
 		fmt.Printf("Cable rescue write %d/%d failed: %v\n", i+1, len(attempts), err)
-		// Only a port that would not open and a refused image prove that no
-		// flash command went out. A loader that "never synced" may hide an
+		// Only a port that would not open, a refused image, and a chip check
+		// that stopped before the erase prove that no flash command went out.
+		// A loader that "never synced" may hide an
 		// earlier inner attempt whose FLASH_BEGIN reply was lost (Codex on
 		// #819), so that marker stays; a VibeTV that still answers clears it
 		// on the next attempt (stale-marker check).
-		if !errors.Is(err, usb.ErrNotESP8266AppImage) && errcode.Of(err) != errcode.TransportSerialOpen {
+		if !errors.Is(err, usb.ErrNotESP8266AppImage) && !errors.Is(err, usb.ErrBeforeErase) && errcode.Of(err) != errcode.TransportSerialOpen {
 			untouched = false
 		}
 		if ctx.Err() != nil || errors.Is(err, usb.ErrNotESP8266AppImage) || i == len(attempts)-1 {
@@ -78,11 +102,18 @@ func flashCableRescueWithRetry(ctx context.Context, home string, marker firmware
 		}
 		select {
 		case <-ctx.Done():
-			return err
 		case <-time.After(cableRescueRetryPause):
 		}
+		// A cancel during the pause ends the retries like a cancelled write: the
+		// cleanup below still runs, so a chipless marker does not block every
+		// later rescue (Codex on #840).
+		if ctx.Err() != nil {
+			break
+		}
 	}
-	if err != nil && !started && untouched && !resumed {
+	// Without a recorded chip identity the write never reached the chip check,
+	// so no FLASH_BEGIN went out and nothing was erased (Codex on #840).
+	if err != nil && !started && (untouched || marker.ChipMAC == "") && !resumed {
 		// Nothing reached the flash and the VibeTV was not half-written
 		// before: its old firmware still answers its own hello, so no marker
 		// may authorize a write without one. A resumed rescue keeps its marker:
@@ -110,9 +141,23 @@ func resumableRescueMarker(home string) (firmwareupdate.RescueMarker, bool) {
 		return firmwareupdate.RescueMarker{}, false
 	}
 	ports, err := listCablePortsFn()
-	if err != nil || !portListed(ports, marker.Port) {
+	if err != nil {
 		fmt.Printf("Cable rescue: marked port %s is not present, nothing to resume\n", marker.Port)
 		return firmwareupdate.RescueMarker{}, false
+	}
+	if !portListed(ports, marker.Port) {
+		// Replugged into another USB socket: only one new port, silent and
+		// not the marked one, may be resumed. Anything else stays unwritten.
+		moved, found := firmwareupdate.MovedRescuePort(marker, usb.WithoutTTYAliases(ports), readCableFirmwareHelloFn)
+		if !found {
+			fmt.Printf("Cable rescue: marked port %s is not present, nothing to resume\n", marker.Port)
+			return firmwareupdate.RescueMarker{}, false
+		}
+		fmt.Printf("Cable rescue: the VibeTV left half-written moved from %s to %s; resuming there\n", marker.Port, moved)
+		marker.Port = moved
+		// The ports listed now are the new baseline. The port it left is gone
+		// from this list, so a later return to that socket counts as a replug.
+		marker.Ports = ports
 	}
 	// A write that succeeded but was not verified leaves a marker although the
 	// VibeTV may boot and answer normally later. Only an answer that matches the
@@ -125,7 +170,16 @@ func resumableRescueMarker(home string) (firmwareupdate.RescueMarker, bool) {
 		(strings.TrimSpace(hello.DeviceID) != "" || strings.TrimSpace(hello.Firmware) != "") {
 		fw := strings.TrimSpace(hello.Firmware)
 		sameBoard := strings.EqualFold(strings.TrimSpace(hello.Board), strings.TrimSpace(marker.Board))
-		if sameBoard && (fw == strings.TrimSpace(marker.TargetFirmware) || fw == strings.TrimSpace(marker.Firmware)) {
+		// Board and firmware alone also fit another VibeTV that got the marked
+		// port name. A hello with a deviceId must come from the marked chip
+		// (Codex on #840); pre-Cable firmware sends none, so it keeps the old rule.
+		sameChip := true
+		if id := strings.TrimSpace(hello.DeviceID); id != "" {
+			if want, ok := firmwareupdate.ChipDeviceID(marker.ChipMAC); ok {
+				sameChip = id == want
+			}
+		}
+		if sameBoard && sameChip && (fw == strings.TrimSpace(marker.TargetFirmware) || fw == strings.TrimSpace(marker.Firmware)) {
 			fmt.Printf("Cable rescue: the VibeTV on %s answers again (firmware %s); its marker is stale\n", marker.Port, fw)
 			if clearErr := firmwareupdate.ClearRescueMarker(home); clearErr != nil {
 				fmt.Printf("warning: clearing the stale rescue marker failed: %v\n", clearErr)
@@ -137,6 +191,12 @@ func resumableRescueMarker(home string) (firmwareupdate.RescueMarker, bool) {
 	}
 	if _, statErr := os.Stat(marker.ImagePath); statErr != nil {
 		fmt.Printf("Cable rescue: marked image is gone, nothing to resume: %v\n", statErr)
+		return firmwareupdate.RescueMarker{}, false
+	}
+	if marker.ChipMAC == "" {
+		// Without the recorded chip a resume could erase a different VibeTV on
+		// a reused port, so such a marker is not resumed.
+		fmt.Printf("Cable rescue: port %s holds a half-written VibeTV, but its marker records no chip; nothing to resume\n", marker.Port)
 		return firmwareupdate.RescueMarker{}, false
 	}
 	if sum, sumErr := sha256File(marker.ImagePath); sumErr != nil || !strings.EqualFold(sum, marker.ImageSHA256) {
