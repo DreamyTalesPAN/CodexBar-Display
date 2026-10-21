@@ -18032,3 +18032,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Automatic and Two at once skip providers whose reported windows are all hidden when another provider has visible usage.
 - Scope: Preserve both merged approval histories and validate the refreshed central provider selection.
 - What's new: none — integration of the source fix only.
+## 2026-10-21 — #592 integration: merge of #864 at 6908c43
+
+- User approval: no visible change – UI approval not needed (merge of claude/592-two-at-once-on-800 (6908c43) into claude/paultest-592a; the companion skips a provider whose every window is hidden, no UI text or layout changes)
+- Approved customer-visible result: paultest-592a as in its own entries plus the entries merged with 6908c43; nothing else changes.
+- Scope: the merge of 6908c43 and this approval record. Test branch claude/paultest-592a only, not merged, not released.
+- What's new: none — merge of 6908c43, no customer-visible change of its own
+
+
+## 2026-10-21 — build9: refresh #864 for 7205
+
+- User approval: pending — integrate claude/paultest-592a at 659520679309 into build 7205.
+- Approved customer-visible result: Preserve this feature together with the existing build9 Settings and three equal display cards.
+- Scope: Integration merge preserving both approval histories.
+- What's new: none — integration only.
