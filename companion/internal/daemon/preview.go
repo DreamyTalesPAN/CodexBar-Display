@@ -27,13 +27,12 @@ type ProviderPreview struct {
 // with the rotation on that provider and the persisted last-good frame the
 // runtime bootstraps, so what it returns is what the stream sends: the
 // provider's rows, the restated last-good frame, or the error frame. The
-// device-specific steps (protocol version, clock, theme, wire budget) are left
-// out.
-func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, now time.Time) []ProviderPreview {
+// device fields and wire-budget trimming use the same steps as sending.
+func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, caps protocol.DeviceCapabilities, now time.Time) []ProviderPreview {
 	providers := make([]codexbar.ParsedFrame, 0, len(usage.Providers))
 	for _, snapshot := range usage.Providers {
 		// The stream normalizes for the negotiated protocol, which carries the rows.
-		snapshot.Frame.V = protocol.ProtocolVersionV2
+		snapshot.Frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
 		providers = append(providers, codexbar.ParsedFrame{
 			Frame:       snapshot.Frame,
 			Provider:    snapshot.Provider,
@@ -56,7 +55,7 @@ func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, now time.Tim
 	for _, shown := range providers {
 		preview := ProviderPreview{
 			Provider: shown.Provider,
-			Pinned:   applySystemBusyLabel(previewFrame(shown, []codexbar.ParsedFrame{shown}, showUsed, now), systemBusy),
+			Pinned:   previewPinnedFrame(shown, deps, systemBusy, caps, now),
 		}
 		// A fresh stream per rotation position: the timer sits on this
 		// provider, the rest is the runtime's own start.
@@ -67,8 +66,7 @@ func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, now time.Tim
 		result.systemBusy = systemBusy
 		_, frame, result := restateLastGoodWhenNotFresh(state, deps, result)
 		if frame.Error != "" || normalizeProviderKey(frame.Provider) == normalizeProviderKey(shown.Frame.Provider) {
-			frame.V = protocol.ProtocolVersionV2
-			frame = frame.ApplyResetTrust(result.resetBasisAt, now, result.usageFresh)
+			frame = previewFrameWithinLimit(frame, result, caps, now)
 			preview.Automatic = &frame
 		}
 		previews = append(previews, preview)
@@ -76,17 +74,24 @@ func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, now time.Tim
 	return previews
 }
 
-func previewFrame(shown codexbar.ParsedFrame, rowProviders []codexbar.ParsedFrame, showUsed bool, now time.Time) protocol.Frame {
-	collectedAt := shown.CollectedAt
-	if collectedAt.IsZero() {
-		collectedAt = now
+func previewPinnedFrame(shown codexbar.ParsedFrame, deps runtimeDeps, systemBusy bool, caps protocol.DeviceCapabilities, now time.Time) protocol.Frame {
+	deps.loadConfig = func(string) (runtimeconfig.Config, error) {
+		return runtimeconfig.Config{ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{Mode: "fixed", ProviderIDs: []string{shown.Provider}}}, nil
 	}
-	frame := shown.Frame
-	if shown.Frame.UsageUnavailable {
-		frame = snapshotWithUsageCleared(providerSnapshot{Frame: frame}).Frame
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	bootstrapStateFromPersistedLastGood(state, now, deps)
+	result := selectCycleFrameFromProviders(state, []codexbar.ParsedFrame{shown}, now, deps, nil, "select-provider", "", "", "")
+	result.systemBusy = systemBusy
+	_, frame, result := restateLastGoodWhenNotFresh(state, deps, result)
+	return previewFrameWithinLimit(frame, result, caps, now)
+}
+
+// A frame that cannot be encoded stays visibly unavailable in the preview.
+func previewFrameWithinLimit(frame protocol.Frame, result cycleResult, caps protocol.DeviceCapabilities, now time.Time) protocol.Frame {
+	frame, _ = prepareDeviceFrame(frame, result, caps, now, configuredTheme(""), activityTTL(0, caps.ConnectionMode))
+	_, frame, err := marshalFrameWithinLimit(frame, maxFrameBytesForCaps(caps))
+	if err != nil {
+		return protocol.ErrorFrame(runtimeErrorFrameCode(runtimeErrorFrameTooLarge))
 	}
-	frame.V = protocol.ProtocolVersionV2
-	frame.ProviderSlots = providerResetSlots(rowProviders, collectedAt)
-	frame = applyUsageBarsPreference(frame.Normalize(), showUsed).ApplyResetTrust(collectedAt, now, !shown.Stale && !shown.Frame.UsageUnavailable)
 	return frame
 }

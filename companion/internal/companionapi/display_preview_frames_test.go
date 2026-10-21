@@ -3,6 +3,7 @@ package companionapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -85,7 +86,7 @@ func TestDisplayPreviewFramesAreTheDaemonsFrames(t *testing.T) {
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return usage, true }
 
 	got := getPreviewFrames(t, server)
-	want := daemon.PreviewFrames(usage, true, false, now)
+	want := daemon.PreviewFrames(usage, true, false, server.previewDeviceCapabilities(context.Background()), now)
 	if len(got.Providers) != 1 || got.Providers[0].ID != "codex" {
 		t.Fatalf("providers: %+v", got.Providers)
 	}
@@ -176,7 +177,7 @@ func TestDisplayPreviewFramesCoverEveryEnabledProvider(t *testing.T) {
 		t.Fatalf("the stream never rotates to a provider without a reading: %+v", got.Providers[0].Automatic)
 	}
 	gemini := got.Providers[0].Pinned
-	if gemini.Label != "Gemini" || !gemini.UsageUnavailable || gemini.ResetSec != 0 {
+	if gemini.Error == "" || gemini.ResetSec != 0 || gemini.Session != 0 {
 		t.Fatalf("a provider without a reading must be the unavailable frame: %+v", gemini)
 	}
 	if rows := got.Providers[1].Automatic.ProviderSlots; len(rows) != 1 || rows[0].ID != "codex" {
@@ -208,5 +209,74 @@ func TestUsagePreviewFramesUseCurrentSystemBusyVerdict(t *testing.T) {
 	preview := getPreviewFrames(t, server).Providers[0]
 	if preview.Automatic == nil || preview.Automatic.Label != daemon.SystemBusyLabel || preview.Pinned.Label != daemon.SystemBusyLabel {
 		t.Fatalf("preview must use the runtime's busy verdict: %+v", preview)
+	}
+}
+
+func TestUsagePreviewFramesRespectDeviceWireBudget(t *testing.T) {
+	for _, budget := range []int{512, 2048} {
+		t.Run(fmt.Sprint(budget), func(t *testing.T) {
+			isolatePreviewHome(t)
+			server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "preview-device"})
+			now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+			server.now = func() time.Time { return now }
+			server.currentCableHello = func() (protocol.DeviceHello, bool) {
+				return protocol.DeviceHello{DeviceID: "preview-device", ProtocolVersion: 2, MaxFrameBytes: budget,
+					Features:     []string{protocol.FeatureProviderSlotsV1},
+					Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable"}},
+				}, true
+			}
+			server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+				return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
+					Provider: "codex", CollectedAt: now,
+					Frame: protocol.Frame{Provider: "codex", Label: "Codex", UsageMode: "used",
+						SessionTokens: 123456789012, WeekTokens: 234567890123, TotalTokens: 345678901234, TokenTotalsKnown: true,
+						UsageWindows: []protocol.UsageWindow{
+							{ID: "session", Label: "Session window usage", Percent: 12, ResetSec: 3600},
+							{ID: "weekly", Label: "Weekly window usage", Percent: 23, ResetSec: 7200},
+							{ID: "monthly", Label: "Monthly window usage", Percent: 34, ResetSec: 9000},
+						},
+					},
+				}}}, true
+			}
+			preview := getPreviewFrames(t, server).Providers[0]
+			for _, frame := range []*protocol.Frame{preview.Automatic, &preview.Pinned} {
+				if frame == nil {
+					t.Fatal("missing preview frame")
+				}
+				line, err := frame.MarshalNormalizedLine()
+				if err != nil || len(line) > budget {
+					t.Fatalf("preview exceeds %d-byte device budget: bytes=%d err=%v", budget, len(line), err)
+				}
+				if frame.TokenTotalsKnown != (budget == 2048) {
+					t.Fatalf("preview token visibility differs from wire budget %d: %+v", budget, frame)
+				}
+			}
+		})
+	}
+}
+
+func TestPreviewDeviceCapabilitiesReuseWiFiHelloProbe(t *testing.T) {
+	requests := 0
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/hello" {
+			t.Errorf("unexpected request: %s", r.URL.Path)
+		}
+		requests++
+		_ = json.NewEncoder(w).Encode(protocol.DeviceHello{DeviceID: "preview-device", ProtocolVersion: 2, MaxFrameBytes: 2048,
+			Features:     []string{protocol.FeatureProviderSlotsV1},
+			Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{Active: "wifi", Mode: "wifi"}},
+		})
+	}))
+	defer device.Close()
+	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "wifi", DeviceID: "preview-device", DeviceTarget: device.URL})
+	server.probeCacheTime = time.Minute
+	for range 2 {
+		caps := server.previewDeviceCapabilities(context.Background())
+		if caps.MaxFrameBytes != 2048 || caps.NegotiatedProtocolVersion != 2 || !caps.SupportsProviderSlotsV1 {
+			t.Fatalf("preview must use the selected WiFi device's hello: %+v", caps)
+		}
+	}
+	if requests != 1 {
+		t.Fatalf("preview must reuse the shared hello cache, got %d requests", requests)
 	}
 }

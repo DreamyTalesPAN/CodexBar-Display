@@ -79,44 +79,43 @@ func restateLastGoodWhenNotFresh(state *runtimeState, deps runtimeDeps, result c
 			frame = applyUsageBarsPreference(authoritativeFrame.Normalize(), deps.usageBarsShowUsed())
 		}
 	}
-	return authoritativeFrame, applySystemBusyLabel(frame, result.systemBusy), result
-}
-
-func applySystemBusyLabel(frame protocol.Frame, systemBusy bool) protocol.Frame {
-	if systemBusy {
+	if result.systemBusy {
 		// The values are old because the computer is starved (#606).
 		frame.Label = SystemBusyLabel
 	}
-	return frame
+	return authoritativeFrame, frame, result
+}
+
+// prepareDeviceFrame is shared by previews and sending: all wire fields must
+// be present before enforcing the byte budget, or token visibility can differ.
+func prepareDeviceFrame(frame protocol.Frame, result cycleResult, caps protocol.DeviceCapabilities, now time.Time, theme string, ttl time.Duration) (protocol.Frame, bool) {
+	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
+	frame = applyDeviceUsageWindowLimit(frame, caps)
+	if !caps.SupportsProviderSlotsV1 {
+		frame.ProviderSlots = nil
+	}
+	frame = attachClockFields(frame, now)
+	frame = frame.ApplyResetTrust(result.resetBasisAt, now, result.usageFresh)
+	applied := false
+	if theme != "" {
+		frame, applied = applyThemeToFrame(frame, theme, caps)
+	}
+	// Firmware consumes only these four update fields.
+	frame.Update = compactFrameUpdate(frame.Update)
+	frame.ActivityTTLSec = int64(ttl / time.Second)
+	return frame, applied
 }
 
 func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
 	publicPort := publicDeviceTarget(port)
 	authoritativeFrame, frame, result := restateLastGoodWhenNotFresh(state, deps, result)
 
-	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
-	frame = applyDeviceUsageWindowLimit(frame, caps)
-	if !caps.SupportsProviderSlotsV1 {
-		// Firmware without provider-slots-v1 would carry these rows as dead
-		// wire bytes against its frame budget.
-		frame.ProviderSlots = nil
-	}
 	now := deps.now()
-	frame = attachClockFields(frame, now)
-	frame = frame.ApplyResetTrust(result.resetBasisAt, now, result.usageFresh)
-
-	if selectedTheme := configuredTheme(state.cliTheme); selectedTheme != "" {
-		var applied bool
-		frame, applied = applyThemeToFrame(frame, selectedTheme, caps)
-		if !applied {
-			deps.logf("runtime event=theme-skipped port=%s board=%s requested=%s reason=unsupported\n", publicPort, caps.Board, selectedTheme)
-		}
+	selectedTheme := configuredTheme(state.cliTheme)
+	frame, themeApplied := prepareDeviceFrame(frame, result, caps, now, selectedTheme, activityTTL(deps.interval, deps.transportName))
+	if selectedTheme != "" && !themeApplied {
+		deps.logf("runtime event=theme-skipped port=%s board=%s requested=%s reason=unsupported\n", publicPort, caps.Board, selectedTheme)
 	}
-	// ESP8266 firmware only reads these four update fields. Dropping release
-	// metadata before every send keeps the JSON document small enough for
-	// devices that have just left WiFi setup with a fragmented heap.
-	frame.Update = compactFrameUpdate(frame.Update)
-	frame.ActivityTTLSec = int64(activityTTL(deps.interval, deps.transportName) / time.Second)
 
 	line, marshaledFrame, err := marshalFrameWithinLimit(frame, maxFrameBytes)
 	if err != nil {

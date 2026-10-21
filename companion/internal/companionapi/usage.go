@@ -201,7 +201,7 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 			resp := usageResponseFromPersisted(now, enabledUsage)
 			if len(resp.Providers) > 0 {
 				if usagePreviewFramesRequested(r) {
-					resp.PreviewFrames = previewFramesFor(usage, inventory, showUsed, s.currentSystemBusy() != nil, now)
+					resp.PreviewFrames = previewFramesFor(usage, inventory, showUsed, s.currentSystemBusy() != nil, s.previewDeviceCapabilities(r.Context()), now)
 				}
 				writeUsage(resp, enabledUsage)
 				return

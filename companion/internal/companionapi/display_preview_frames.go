@@ -1,11 +1,14 @@
 package companionapi
 
 import (
+	"context"
+	"strings"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 )
 
 // previewFramesResponse carries the frames the stream would send, built by the
@@ -27,10 +30,10 @@ type previewFramesForItem struct {
 // previewFramesFor lists providers in CodexBar's order; one without a reading
 // yet gets the host's unavailable frame, and has no Automatic frame while
 // another provider has a current reading.
-func previewFramesFor(usage daemon.PersistedUsage, inventory []codexbar.ProviderSetting, showUsed, systemBusy bool, now time.Time) *previewFramesResponse {
+func previewFramesFor(usage daemon.PersistedUsage, inventory []codexbar.ProviderSetting, showUsed, systemBusy bool, caps protocol.DeviceCapabilities, now time.Time) *previewFramesResponse {
 	resp := &previewFramesResponse{GeneratedAt: now.UTC().Format(time.RFC3339Nano), Providers: []previewFramesForItem{}}
 	usage = usageInInventoryOrder(usage, inventory)
-	for _, preview := range daemon.PreviewFrames(usage, showUsed, systemBusy, now) {
+	for _, preview := range daemon.PreviewFrames(usage, showUsed, systemBusy, caps, now) {
 		resp.Providers = append(resp.Providers, previewFramesForItem{ID: preview.Provider, Automatic: preview.Automatic, Pinned: preview.Pinned})
 	}
 	return resp
@@ -63,4 +66,27 @@ func usageInInventoryOrder(usage daemon.PersistedUsage, settings []codexbar.Prov
 		usage.Providers = append(usage.Providers, snapshot)
 	}
 	return usage
+}
+
+// Reuse the existing hello source for the selected device; no preview-owned
+// capabilities cache. An unknown limit uses the sender's protocol default.
+func (s *Server) previewDeviceCapabilities(ctx context.Context) protocol.DeviceCapabilities {
+	fallback := protocol.DeviceCapabilities{NegotiatedProtocolVersion: 2, SupportsProviderSlotsV1: true, MaxFrameBytes: protocol.DefaultMaxFrameBytes}
+	cfg, err := s.config()
+	if err != nil {
+		return fallback
+	}
+	var hello protocol.DeviceHello
+	var ok bool
+	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" {
+		hello, ok = s.currentCableHello()
+		ok = ok && cableHelloMatchesConfig(hello, cfg.DeviceID)
+	} else if strings.TrimSpace(cfg.DeviceTarget) != "" {
+		hello, err = s.getHelloProbe(ctx, cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime)
+		ok = err == nil && (cfg.DeviceID == "" || hello.DeviceID == cfg.DeviceID)
+	}
+	if ok {
+		return protocol.CapabilitiesFromHello(hello)
+	}
+	return fallback
 }
