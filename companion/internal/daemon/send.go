@@ -49,6 +49,11 @@ func configuredTheme(cliTheme string) string {
 
 func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
 	publicPort := publicDeviceTarget(port)
+	if result.usedLastGood {
+		if cfg, ok := loadRuntimeConfig(deps); ok {
+			result.frame = limitCachedFrame(result.frame, cfg.ProviderDisplay)
+		}
+	}
 	authoritativeFrame := result.frame
 	frame := applyUsageBarsPreference(authoritativeFrame.Normalize(), deps.usageBarsShowUsed())
 	if !result.usageFresh && result.failureErr == nil {

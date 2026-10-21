@@ -7,6 +7,7 @@ import (
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 )
 
 // providerOffFunc reports whether authoritative inventory lists a provider as
@@ -71,7 +72,12 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	}
 	result.collectedAt = collectedAt
 	result.resetBasisAt = collectedAt
-	result.frame.ProviderSlots = providerResetSlots(allProviders, collectedAt)
+	var display *runtimeconfig.ProviderDisplayConfig
+	if cfg, ok := loadRuntimeConfig(deps); ok {
+		display = cfg.ProviderDisplay
+	}
+	result.frame.ProviderSlots = providerResetSlots(allProviders, collectedAt, display)
+	result.frame = applyDisplayLimits(result.frame, allProviders, display, collectedAt)
 	result.frame, result.activityDetail = applySelectionActivity(result.frame, activity, state, now)
 	return result
 }
@@ -173,7 +179,7 @@ func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.Par
 		state.providerDisplayFallback = ""
 	}
 	if state != nil && state.hasLastGood {
-		if _, permitted := allowed[normalizeProviderKey(state.lastGood.Provider)]; !permitted {
+		if !providerDisplayShowsProvider(cfg.ProviderDisplay, state.lastGood.Provider) {
 			state.lastGood = protocol.Frame{}
 			state.lastGoodAt = time.Time{}
 			state.hasLastGood = false
@@ -184,6 +190,11 @@ func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.Par
 				state.selector.SetCurrentProvider("")
 			}
 		}
+	}
+	if cfg.ProviderDisplay.Mode == providerDisplayModePair {
+		// Two at once shows the current member alone while the other has no
+		// current reading, so the selection must not settle on that other one.
+		return preferAvailableProviders(filtered)
 	}
 	return filtered
 }
@@ -233,8 +244,8 @@ func preferAvailableProviders(providers []codexbar.ParsedFrame) []codexbar.Parse
 // of resetBasisAt — the selected frame's basis — because ApplyResetTrust later
 // re-anchors the whole frame from exactly that instant. Stale or unavailable
 // providers stay out: a countdown the collector cannot vouch for must not tick
-// on the customer's screen.
-func providerResetSlots(allProviders []codexbar.ParsedFrame, resetBasisAt time.Time) []protocol.UsageSlot {
+// on the customer's screen. Windows the customer took off VibeTV stay out too.
+func providerResetSlots(allProviders []codexbar.ParsedFrame, resetBasisAt time.Time, display *runtimeconfig.ProviderDisplayConfig) []protocol.UsageSlot {
 	var slots []protocol.UsageSlot
 	for _, provider := range allProviders {
 		if provider.Stale || provider.Frame.UsageUnavailable {
@@ -242,7 +253,7 @@ func providerResetSlots(allProviders []codexbar.ParsedFrame, resetBasisAt time.T
 		}
 		var soonest int64
 		var percent int
-		for _, window := range provider.Frame.UsageWindows {
+		for _, window := range visibleUsageWindows(provider.Frame.Provider, provider.Frame.UsageWindows, display) {
 			reset := window.ResetSec
 			if reset > 0 && !provider.CollectedAt.IsZero() && !resetBasisAt.IsZero() {
 				reset -= int64(resetBasisAt.Sub(provider.CollectedAt) / time.Second)

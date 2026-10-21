@@ -14,14 +14,18 @@ import (
 const (
 	providerDisplayModeAutomatic = "automatic"
 	providerDisplayModeFixed     = "fixed"
-	providerReadinessFreshness   = 5 * time.Minute
+	// providerDisplayModePair shows two providers at once, each with its
+	// first usage window that is not hidden.
+	providerDisplayModePair    = "pair"
+	providerReadinessFreshness = 5 * time.Minute
 )
 
 type providerDisplaySelection struct {
-	Mode        string   `json:"mode"`
-	ProviderIDs []string `json:"providerIds"`
-	Configured  bool     `json:"configured"`
-	Valid       bool     `json:"valid"`
+	Mode          string              `json:"mode"`
+	ProviderIDs   []string            `json:"providerIds"`
+	HiddenWindows map[string][]string `json:"hiddenWindows"`
+	Configured    bool                `json:"configured"`
+	Valid         bool                `json:"valid"`
 }
 
 type providerDisplayResponse struct {
@@ -79,14 +83,28 @@ func (s *Server) handleProviderDisplayPatch(w http.ResponseWriter, r *http.Reque
 	var request struct {
 		Mode        string   `json:"mode"`
 		ProviderIDs []string `json:"providerIds"`
+		// Left out, the stored value stays: a change of mode does not
+		// have to repeat the limits the customer chose.
+		HiddenWindows *map[string][]string `json:"hiddenWindows"`
 	}
 	if !decodeJSON(w, r, &request) {
+		return
+	}
+	cfg, err := s.config()
+	if err != nil {
+		writeInternalError(w, err)
 		return
 	}
 	selection := providerDisplaySelection{
 		Mode:        strings.TrimSpace(strings.ToLower(request.Mode)),
 		ProviderIDs: normalizeProviderIDs(request.ProviderIDs),
 		Configured:  true,
+	}
+	if cfg.ProviderDisplay != nil {
+		selection.HiddenWindows = cfg.ProviderDisplay.HiddenWindows
+	}
+	if request.HiddenWindows != nil {
+		selection.HiddenWindows = runtimeconfig.NormalizeHiddenWindows(*request.HiddenWindows)
 	}
 	settings, err := s.cachedProviderSettings(r.Context(), false)
 	if err != nil {
@@ -120,8 +138,9 @@ func (s *Server) saveProviderDisplay(w http.ResponseWriter, selection providerDi
 		changed = stored == nil || stored.Mode != selection.Mode ||
 			selection.Mode == providerDisplayModeFixed && !slices.Equal(stored.ProviderIDs, selection.ProviderIDs)
 		cfg.ProviderDisplay = &runtimeconfig.ProviderDisplayConfig{
-			Mode:        selection.Mode,
-			ProviderIDs: append([]string(nil), selection.ProviderIDs...),
+			Mode:          selection.Mode,
+			ProviderIDs:   append([]string(nil), selection.ProviderIDs...),
+			HiddenWindows: selection.HiddenWindows,
 		}
 	})
 	if err != nil {
@@ -134,6 +153,9 @@ func (s *Server) saveProviderDisplay(w http.ResponseWriter, selection providerDi
 	// After a failed save the log must not end on "failed".
 	if last, ok := s.timeline.Latest("display_mode"); changed || ok && last.State == "failed" {
 		s.recordSetupEvent(setupEvent{Stage: "display_mode", Status: "succeeded", Message: providerDisplayMessage(selection, settings)})
+	}
+	if selection.HiddenWindows == nil {
+		selection.HiddenWindows = map[string][]string{}
 	}
 	writeJSON(w, http.StatusOK, providerDisplayResponse{OK: true, Selection: selection})
 }
@@ -210,13 +232,23 @@ func providerDisplayMessage(selection providerDisplaySelection, settings []codex
 	if selection.Mode == providerDisplayModeAutomatic {
 		return "Automatic: VibeTV switches between your providers."
 	}
-	name := "the chosen provider"
-	for _, setting := range settings {
-		if len(selection.ProviderIDs) == 1 && setting.ID == selection.ProviderIDs[0] && setting.Label != "" {
-			name = setting.Label
+	names := make([]string, 0, len(selection.ProviderIDs))
+	for _, providerID := range selection.ProviderIDs {
+		name := "the chosen provider"
+		for _, setting := range settings {
+			if setting.ID == providerID && setting.Label != "" {
+				name = setting.Label
+			}
 		}
+		names = append(names, name)
 	}
-	return "Always show " + name + "."
+	if selection.Mode == providerDisplayModePair && len(names) == 2 {
+		return "Always show " + names[0] + " and " + names[1] + " together."
+	}
+	if len(names) != 1 {
+		names = []string{"the chosen provider"}
+	}
+	return "Always show " + names[0] + "."
 }
 
 func (s *Server) handleProviderSetupComplete(w http.ResponseWriter, r *http.Request) {
@@ -324,7 +356,10 @@ func providerCanDisplay(descriptor preferenceDescriptor) bool {
 }
 
 func effectiveProviderDisplay(cfg runtimeconfig.Config, settings []codexbar.ProviderSetting) providerDisplaySelection {
-	selection := providerDisplaySelection{Mode: providerDisplayModeAutomatic}
+	selection := providerDisplaySelection{
+		Mode:          providerDisplayModeAutomatic,
+		HiddenWindows: map[string][]string{},
+	}
 	if cfg.ProviderDisplay == nil {
 		for _, setting := range settings {
 			if setting.Enabled {
@@ -340,6 +375,9 @@ func effectiveProviderDisplay(cfg runtimeconfig.Config, settings []codexbar.Prov
 		selection.Configured = true
 		selection.Mode = cfg.ProviderDisplay.Mode
 		selection.ProviderIDs = append([]string(nil), cfg.ProviderDisplay.ProviderIDs...)
+		if len(cfg.ProviderDisplay.HiddenWindows) > 0 {
+			selection.HiddenWindows = cfg.ProviderDisplay.HiddenWindows
+		}
 	}
 	if selection.Mode == providerDisplayModeAutomatic {
 		selection.ProviderIDs = selection.ProviderIDs[:0]
@@ -365,8 +403,12 @@ func validateProviderDisplay(selection providerDisplaySelection, settings []code
 		if len(selection.ProviderIDs) != 1 {
 			return "provider_display_fixed_invalid", "Always show needs one provider.", "Choose exactly one provider to show."
 		}
+	case providerDisplayModePair:
+		if len(selection.ProviderIDs) != 2 {
+			return "provider_display_pair_invalid", "Two at once needs two different providers.", "Choose a first and a second provider."
+		}
 	default:
-		return "provider_display_mode_invalid", "This display mode is not available.", "Choose Always show or Automatic."
+		return "provider_display_mode_invalid", "This display mode is not available.", "Choose Automatic, One provider or Two at once."
 	}
 	available := make(map[string]bool, len(settings))
 	for _, setting := range settings {
