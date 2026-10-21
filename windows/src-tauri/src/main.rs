@@ -7,9 +7,9 @@
 // shell needs to know it asks the Companion.
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Mutex;
+use std::sync::{Condvar, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
@@ -17,7 +17,7 @@ use serde::Deserialize;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
 use tauri::webview::PageLoadEvent;
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_updater::UpdaterExt;
 use url::Url;
@@ -41,6 +41,13 @@ const LAUNCH_UPDATE_CHECK_LIMIT: Duration = Duration::from_secs(5);
 const LAUNCH_UPDATE_DOWNLOAD_LIMIT: Duration = Duration::from_secs(180);
 const LAUNCH_UPDATE_STALL_LIMIT: Duration = Duration::from_secs(20);
 const LAUNCH_UPDATE_MARKER: &str = "launch-update-attempt.txt";
+// While the app runs it looks for its update this often, like the Companion's
+// own release check, and installs it only with the window closed.
+const IDLE_UPDATE_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
+// An update installed with the window closed relaunches the app with this
+// argument and this note, and the app comes back in the tray only.
+const AFTER_IDLE_UPDATE_ARG: &str = "--after-idle-update";
+const IDLE_UPDATE_RELAUNCH_MARKER: &str = "idle-update-relaunch.txt";
 
 const MENU_OPEN: &str = "open";
 const MENU_RELOAD: &str = "reload";
@@ -64,7 +71,130 @@ struct Shell {
     // One updater at a time: the check at launch, the tray item and
     // vibetv://check-for-updates must not launch two NSIS installers over
     // the same files.
-    updating: AtomicBool,
+    updater: Mutex<Updater>,
+    // Whether Windows gave us Ctrl+Alt+Shift+P; a window created again after
+    // a close needs it for its user agent.
+    provider_shortcut: AtomicBool,
+    // The presentation count + 1 at which hide_after_flush released the
+    // window; 0 when no release is under way.
+    released_at: AtomicU64,
+    window_creation: Mutex<()>,
+    // Set once setup stored the shortcut registration result. ensure_window
+    // waits for it: a second launch can reach ensure_window before setup.
+    shortcut_registered: Mutex<bool>,
+    // Counts the windows built; the Destroyed handler tells a replacement
+    // that a present already built from the window that is going away.
+    windows_created: AtomicU64,
+    // Raised when a window the runtime reported as built turns out to be
+    // missing (ensure_live_window). Tauri keeps such a label for the whole
+    // run, so the next window is built under a new one.
+    window_generation: AtomicU64,
+    // Where the window was when a close released it; the next window goes
+    // there. Process lifetime only.
+    // Stored with the number of the event that took it; see store_if_newer.
+    window_geometry: Mutex<Option<(u64, Remembered)>>,
+    // Numbers the geometry snapshots in event order.
+    geometry_seq: AtomicU64,
+    // Closes requested and not cancelled by a present. The startup load
+    // compares it to tell that the customer closed the window while the
+    // update check ran.
+    closes: AtomicU64,
+    shortcut_registered_changed: Condvar,
+}
+
+// Who holds the updater, in one lock so a click or an opened window can
+// never fall between two pieces of it.
+#[derive(Clone, Copy, PartialEq)]
+enum Updater {
+    Free,
+    // At launch, or the customer's own run.
+    Busy,
+    // The check with the window closed. A click on Update or the tray item
+    // meanwhile is noted in `asked`, an opened window in `presented`.
+    Idle { asked: bool, presented: bool },
+    // That check has decided to install with the window closed; the
+    // installer starts now and the app is to come back in the tray. A click
+    // meanwhile is kept in `asked` in case the installer fails.
+    IdleInstalling { asked: bool },
+}
+
+// Takes the updater for `run`; false while it is held. A click while the
+// check with the window closed holds it is noted for that check.
+fn take_updater(app: &AppHandle, run: UpdateRun) -> bool {
+    let shell = app.state::<Shell>();
+    let mut updater = shell.updater.lock().unwrap();
+    match *updater {
+        Updater::Free => {
+            *updater = if run == UpdateRun::Idle {
+                Updater::Idle { asked: false, presented: false }
+            } else {
+                Updater::Busy
+            };
+            true
+        }
+        Updater::Idle { presented, .. } if run == UpdateRun::Asked => {
+            *updater = Updater::Idle { asked: true, presented };
+            log("update requested during the check with the window closed; it takes the request over");
+            false
+        }
+        Updater::IdleInstalling { .. } if run == UpdateRun::Asked => {
+            *updater = Updater::IdleInstalling { asked: true };
+            // The customer asked for the update: if the installer succeeds,
+            // the app must come back with its window, as after a present.
+            if let Ok(folder) = app.path().app_local_data_dir() {
+                launch_update::release(&folder.join(IDLE_UPDATE_RELAUNCH_MARKER));
+            }
+            log("update requested while the installer starts; the app comes back with its window");
+            false
+        }
+        _ => false,
+    }
+}
+
+// Frees the updater; true when a click came during the check with the window
+// closed and was not used by an install.
+fn free_updater(app: &AppHandle) -> bool {
+    let shell = app.state::<Shell>();
+    let mut updater = shell.updater.lock().unwrap();
+    let asked = matches!(*updater, Updater::Idle { asked: true, .. });
+    *updater = Updater::Free;
+    asked
+}
+
+enum IdleDecision {
+    // A click came meanwhile: the customer's install, the window comes back.
+    Asked,
+    // The window was opened: nothing is installed.
+    InUse,
+    // Install with the window closed; the relaunch note is on file.
+    Hidden,
+}
+
+// The last word of the check with the window closed, under the same lock as
+// `present_window`: a window opened before it stops the install, one opened
+// after it removes the relaunch note so the app comes back with its window.
+// Visibility is read before the lock: Tauri asks the main thread, where a
+// tray click may be waiting for this lock in `present_window`. A window opened
+// after that read is caught by `presented`.
+fn decide_idle_install(app: &AppHandle, note: Option<&Path>) -> IdleDecision {
+    let visible = window_in_use(app);
+    let shell = app.state::<Shell>();
+    let mut updater = shell.updater.lock().unwrap();
+    match *updater {
+        Updater::Idle { asked: true, .. } => {
+            *updater = Updater::Busy;
+            IdleDecision::Asked
+        }
+        Updater::Idle { presented: true, .. } => IdleDecision::InUse,
+        _ if visible => IdleDecision::InUse,
+        _ => {
+            if let Some(note) = note {
+                launch_update::note_relaunch(note, unix_now());
+            }
+            *updater = Updater::IdleInstalling { asked: false };
+            IdleDecision::Hidden
+        }
+    }
 }
 
 fn main() {
@@ -96,7 +226,17 @@ fn main() {
             // The update at launch owns the start until it has ended.
             preparing: Mutex::new(true),
             presentations: AtomicU64::new(0),
-            updating: AtomicBool::new(false),
+            updater: Mutex::new(Updater::Free),
+            provider_shortcut: AtomicBool::new(false),
+            released_at: AtomicU64::new(0),
+            window_creation: Mutex::new(()),
+            shortcut_registered: Mutex::new(false),
+            windows_created: AtomicU64::new(0),
+            window_generation: AtomicU64::new(0),
+            window_geometry: Mutex::new(None),
+            geometry_seq: AtomicU64::new(0),
+            closes: AtomicU64::new(0),
+            shortcut_registered_changed: Condvar::new(),
         })
         .setup(|app| {
             let handle = app.handle().clone();
@@ -104,7 +244,27 @@ fn main() {
             if let Err(error) = handle.autolaunch().enable() {
                 log(&format!("could not enable autostart: {error}"));
             }
-            create_window(&handle, register_provider_shortcut(handle.clone()))?;
+            let visible = !relaunched_after_idle_update(&handle);
+            {
+                // A second launch during startup recreates the window through
+                // ensure_window, which waits for this result instead of
+                // building the window with "ProviderShortcut/unavailable".
+                let shell = handle.state::<Shell>();
+                let provider_shortcut = register_provider_shortcut(handle.clone());
+                shell.provider_shortcut.store(provider_shortcut, Ordering::SeqCst);
+                *shell.shortcut_registered.lock().unwrap() = true;
+                shell.shortcut_registered_changed.notify_all();
+            }
+            // Back from an update installed with the window closed: stay in
+            // the tray without a WebView2; opening the app creates the window.
+            // Through ensure_window: a second launch that arrives during
+            // startup goes the same check-and-create way, so only one window
+            // is built.
+            // Sampled before the window exists, so no close can be missed.
+            let closes_before = handle.state::<Shell>().closes.load(Ordering::SeqCst);
+            if visible {
+                ensure_window(&handle);
+            }
             let args: Vec<_> = std::env::args_os().collect();
             if args.len() == 2 {
                 queue_install_link(&handle, args[1].to_str());
@@ -112,7 +272,15 @@ fn main() {
             std::thread::spawn(move || {
                 launch_update_check(&handle);
                 *handle.state::<Shell>().preparing.lock().unwrap() = false;
-                prepare_and_load(handle);
+                // Closed while the update check ran: it stays closed until the
+                // tray opens it, as after any close.
+                let closed_meanwhile =
+                    handle.state::<Shell>().closes.load(Ordering::SeqCst) != closes_before;
+                load(handle.clone(), visible && !closed_meanwhile);
+                loop {
+                    std::thread::sleep(IDLE_UPDATE_INTERVAL);
+                    idle_update_check(&handle);
+                }
             });
             Ok(())
         })
@@ -203,13 +371,12 @@ fn configure_tray(app: &AppHandle) -> tauri::Result<()> {
             // The bootstrap page lives on Tauri's own origin
             // (http://tauri.localhost), the runtime UI on the Companion's.
             let runtime_origin = app.state::<Shell>().runtime_origin.lock().unwrap().clone();
-            let runtime_loaded = app
-                .get_webview_window(WINDOW_LABEL)
+            let runtime_loaded = main_window(app)
                 .and_then(|window| window.url().ok())
                 .map(|url| url.origin() == runtime_origin.origin())
                 .unwrap_or(false);
             if runtime_loaded {
-                if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
+                if let Some(window) = main_window(app) {
                     let _ = window.reload();
                 }
                 present_window(app);
@@ -235,10 +402,162 @@ fn configure_tray(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-fn create_window(app: &AppHandle, provider_shortcut: bool) -> tauri::Result<()> {
+// The first window is "main"; after a failed build the next ones get a new
+// label, because Tauri keeps the label of a window that never existed.
+fn label_for_generation(generation: u64) -> String {
+    if generation == 0 {
+        WINDOW_LABEL.to_string()
+    } else {
+        format!("{WINDOW_LABEL}-{generation}")
+    }
+}
+
+fn main_label(app: &AppHandle) -> String {
+    label_for_generation(app.state::<Shell>().window_generation.load(Ordering::SeqCst))
+}
+
+fn main_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
+    app.get_webview_window(&main_label(app))
+}
+
+// Physical pixels, as Tauri reports them.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct WindowRect {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
+// Where the window was when a close released it, and whether it was maximized.
+// While maximized, the rectangle is the last normal one (Tauri only reports
+// the maximized bounds); None when the window was never restored.
+type Remembered = (Option<WindowRect>, bool);
+
+#[derive(Debug, PartialEq)]
+enum Placement {
+    // First start: 1280x900, centred.
+    Default,
+    Remembered { rect: Option<WindowRect>, maximized: bool },
+}
+
+fn choose_placement(remembered: Option<Remembered>, work_areas: &[WindowRect]) -> Placement {
+    match remembered {
+        Some((Some(rect), maximized)) if centre_on_a_work_area(rect, work_areas) => {
+            Placement::Remembered { rect: Some(rect), maximized }
+        }
+        // Maximized, never restored: maximize again at the default size.
+        Some((None, true)) => Placement::Remembered { rect: None, maximized: true },
+        // Nothing remembered, or the window was on a monitor that is gone.
+        _ => Placement::Default,
+    }
+}
+
+// The rectangle and maximized state to keep for a window being released.
+fn remembered_for(current: WindowRect, maximized: bool, previous: Option<Remembered>) -> Remembered {
+    if maximized {
+        (previous.and_then(|(rect, _)| rect), true)
+    } else {
+        (Some(current), false)
+    }
+}
+
+// The centre must lie on a monitor, so the window cannot open out of reach.
+fn centre_on_a_work_area(rect: WindowRect, work_areas: &[WindowRect]) -> bool {
+    let cx = i64::from(rect.x) + i64::from(rect.width) / 2;
+    let cy = i64::from(rect.y) + i64::from(rect.height) / 2;
+    work_areas.iter().any(|area| {
+        let (left, top) = (i64::from(area.x), i64::from(area.y));
+        cx >= left
+            && cx < left + i64::from(area.width)
+            && cy >= top
+            && cy < top + i64::from(area.height)
+    })
+}
+
+// None while minimized, because its position says nothing about where it was
+// used; None means "keep the previous one".
+fn remembered_after(
+    current: WindowRect,
+    minimized: bool,
+    maximized: bool,
+    previous: Option<Remembered>,
+) -> Option<Remembered> {
+    if minimized {
+        return None;
+    }
+    Some(remembered_for(current, maximized, previous))
+}
+
+// Worker threads only: the getters wait for the event loop.
+fn window_geometry(window: &tauri::WebviewWindow, previous: Option<Remembered>) -> Option<Remembered> {
+    let minimized = window.is_minimized().ok()?;
+    let position = window.outer_position().ok()?;
+    let size = window.inner_size().ok()?;
+    let maximized = window.is_maximized().ok()?;
+    let current = WindowRect {
+        x: position.x,
+        y: position.y,
+        width: size.width,
+        height: size.height,
+    };
+    remembered_after(current, minimized, maximized, previous)
+}
+
+// The workers run unordered, so a snapshot of an older event must not replace
+// a newer one.
+fn store_if_newer(slot: &mut Option<(u64, Remembered)>, seq: u64, geometry: Remembered) {
+    if slot.is_some_and(|(stored, _)| seq < stored) {
+        return;
+    }
+    *slot = Some((seq, geometry));
+}
+
+// Worker threads only. Called on every move and resize, so a close while the
+// window is maximized still has the last normal place (Tauri reports only the
+// maximized bounds then).
+fn remember_window_geometry(app: &AppHandle, window: &tauri::WebviewWindow, seq: u64) {
+    let shell = app.state::<Shell>();
+    let previous = shell.window_geometry.lock().unwrap().map(|(_, geometry)| geometry);
+    if let Some(geometry) = window_geometry(window, previous) {
+        store_if_newer(&mut shell.window_geometry.lock().unwrap(), seq, geometry);
+    }
+}
+
+// Worker threads only (it asks for the monitors). The monitors are asked
+// only after a release, so the first start never waits for the event loop.
+fn placement_for(app: &AppHandle) -> Placement {
+    let Some((_, remembered)) = *app.state::<Shell>().window_geometry.lock().unwrap() else {
+        return Placement::Default;
+    };
+    let work_areas: Vec<WindowRect> = app
+        .available_monitors()
+        .unwrap_or_default()
+        .iter()
+        .map(|monitor| {
+            let area = monitor.work_area();
+            WindowRect {
+                x: area.position.x,
+                y: area.position.y,
+                width: area.size.width,
+                height: area.size.height,
+            }
+        })
+        .collect();
+    choose_placement(Some(remembered), &work_areas)
+}
+
+fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tauri::Result<()> {
     let actions = app.clone();
-    let window = WebviewWindowBuilder::new(app, WINDOW_LABEL, WebviewUrl::App("index.html".into()))
+    let remembered = match placement_for(app) {
+        Placement::Remembered { rect, maximized } => Some((rect, maximized)),
+        Placement::Default => None,
+    };
+    let window = WebviewWindowBuilder::new(app, main_label(app), WebviewUrl::App("index.html".into()))
         .title("VibeTV Control Center")
+        // A remembered place is set while the window is still hidden, so it
+        // does not jump from the default place.
+        .visible(visible && remembered.is_none())
         .inner_size(1280.0, 900.0)
         .min_inner_size(960.0, 640.0)
         // Issue #548: 1280x900 plus the title bar is taller than the space
@@ -267,25 +586,169 @@ fn create_window(app: &AppHandle, provider_shortcut: bool) -> tauri::Result<()> 
             }
         })
         .build()?;
+    if let Some((rect, maximized)) = remembered {
+        if let Some(rect) = rect {
+            let _ = window.set_size(PhysicalSize::new(rect.width, rect.height));
+            let _ = window.set_position(PhysicalPosition::new(rect.x, rect.y));
+        }
+        if maximized {
+            let _ = window.maximize();
+        }
+        if visible {
+            let _ = window.show();
+        }
+    }
+    app.state::<Shell>().windows_created.fetch_add(1, Ordering::SeqCst);
     let handle = app.clone();
-    window.on_window_event(move |event| {
-        if let WindowEvent::CloseRequested { api, .. } = event {
+    let tracked = window.clone();
+    window.on_window_event(move |event| match event {
+        WindowEvent::CloseRequested { api, .. } => {
             api.prevent_close();
             hide_after_flush(&handle);
         }
+        WindowEvent::Moved(_) | WindowEvent::Resized(_) => {
+            let handle = handle.clone();
+            let window = tracked.clone();
+            // Numbered here, in event order, before the worker starts.
+            let seq = handle.state::<Shell>().geometry_seq.fetch_add(1, Ordering::SeqCst) + 1;
+            std::thread::spawn(move || remember_window_geometry(&handle, &window, seq));
+        }
+        // A present that came between hide_after_flush's check and the
+        // destroy showed the old window just before it went away: create it
+        // again. Only our own release sets `released_at`; quitting does not.
+        WindowEvent::Destroyed => {
+            let shell = handle.state::<Shell>();
+            let released_at = shell.released_at.swap(0, Ordering::SeqCst);
+            if released_at != 0 {
+                let created_before = shell.windows_created.load(Ordering::SeqCst);
+                let handle = handle.clone();
+                std::thread::spawn(move || {
+                    // Tauri drops the label only after the Destroyed
+                    // listeners ran; until then ensure_window would find the
+                    // dying window and create nothing, and a present would
+                    // show it. Compare only once the label is gone: a present
+                    // after that creates its own window.
+                    for _ in 0..40 {
+                        if main_window(&handle).is_none() {
+                            break;
+                        }
+                        std::thread::sleep(Duration::from_millis(25));
+                    }
+                    let shell = handle.state::<Shell>();
+                    let presented = shell.presentations.load(Ordering::SeqCst);
+                    // A present that already built a replacement loads it
+                    // itself; loading again could leave a theme page.
+                    let replaced = shell.windows_created.load(Ordering::SeqCst) != created_before;
+                    if presented + 1 != released_at && !replaced {
+                        prepare_and_load(handle);
+                    }
+                });
+            }
+        }
+        _ => {}
     });
     Ok(())
 }
 
 fn present_window(app: &AppHandle) {
-    app.state::<Shell>()
-        .presentations
-        .fetch_add(1, Ordering::SeqCst);
-    if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
-        let _ = window.show();
-        let _ = window.unminimize();
-        let _ = window.set_focus();
+    let shell = app.state::<Shell>();
+    shell.presentations.fetch_add(1, Ordering::SeqCst);
+    {
+        // The update check with the window closed must hear of it.
+        let mut updater = shell.updater.lock().unwrap();
+        match *updater {
+            Updater::Idle { asked, .. } => *updater = Updater::Idle { asked, presented: true },
+            Updater::IdleInstalling { .. } => {
+                // Too late to stop the installer: the app comes back with
+                // its window instead.
+                if let Ok(folder) = app.path().app_local_data_dir() {
+                    launch_update::release(&folder.join(IDLE_UPDATE_RELAUNCH_MARKER));
+                }
+            }
+            _ => {}
+        }
     }
+    match main_window(app) {
+        Some(window) => {
+            let _ = window.show();
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+        }
+        // Closed earlier and released (hide_after_flush). Building a WebView2
+        // window from an event handler can deadlock, so a thread builds it and
+        // loads the Control Center as a start does.
+        None => {
+            let handle = app.clone();
+            std::thread::spawn(move || {
+                prepare_and_load(handle);
+            });
+        }
+    }
+}
+
+// Creates the window again when a close released it. Never call this on the
+// event-loop thread (see present_window).
+fn ensure_window(app: &AppHandle) -> bool {
+    // One check-and-create at a time: two presents (a theme link reaches a
+    // tray-only app as a second launch and as a queued link) would otherwise
+    // both see no window and build two "main" windows.
+    let shell = app.state::<Shell>();
+    {
+        // The window's user agent says whether the shortcut works; build it
+        // only once setup knows. Bounded: a registration that never reports
+        // must not keep the window away.
+        let registered = shell.shortcut_registered.lock().unwrap();
+        let _ = shell
+            .shortcut_registered_changed
+            .wait_timeout_while(registered, Duration::from_secs(5), |done| !*done)
+            .unwrap();
+    }
+    let _creating = shell.window_creation.lock().unwrap();
+    if main_window(app).is_some() {
+        return true;
+    }
+    let provider_shortcut = app.state::<Shell>().provider_shortcut.load(Ordering::SeqCst);
+    match create_window(app, provider_shortcut, true) {
+        Ok(()) => true,
+        Err(error) => {
+            log(&format!("could not create the window again: {error}"));
+            false
+        }
+    }
+}
+
+// Worker threads only: is_visible waits for the event loop. create_window
+// reports success once Tauri has queued the build; a build that then fails on
+// the event loop leaves no window, so the check is whether one answers.
+// After a miss the next attempt uses a new label (see label_for_generation).
+fn ensure_live_window(app: &AppHandle) -> bool {
+    for _ in 0..2 {
+        if !ensure_window(app) {
+            return false;
+        }
+        // Check and switch under the creation lock: a build in flight either
+        // finished (and is found here) or has not started (it takes the new
+        // label). The event loop never takes this lock.
+        let shell = app.state::<Shell>();
+        let _creating = shell.window_creation.lock().unwrap();
+        let generation = shell.window_generation.load(Ordering::SeqCst);
+        let live = app
+            .get_webview_window(&label_for_generation(generation))
+            .is_some_and(|window| window.is_visible().is_ok());
+        if live {
+            return true;
+        }
+        // Only the generation that was checked moves on. A concurrent worker
+        // that checked the same failed window has moved it already.
+        if shell
+            .window_generation
+            .compare_exchange(generation, generation + 1, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            log("the main window was not built; the next attempt uses a new window");
+        }
+    }
+    false
 }
 
 fn theme_id_from_deep_link(raw: &str) -> Option<&str> {
@@ -325,7 +788,7 @@ fn navigate_to_pending_theme(app: &AppHandle, link_just_opened: bool) -> bool {
     if !runtime_ready(app, &origin) {
         return false;
     }
-    let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
+    let Some(window) = main_window(app) else {
         return false;
     };
     if !window
@@ -381,21 +844,43 @@ fn acknowledge_loaded_theme(app: AppHandle, loaded: Url) {
     clear_loaded_theme(&mut pending, &loaded, &origin, true);
 }
 
-// Theme Studio saves unsaved work on this event; give it a moment, then hide.
+// Theme Studio saves unsaved work on this event; give it a moment, then
+// release the window. Like the Mac App, a closed Control Center keeps no
+// WebView2 (its processes hold 100+ MB and the page would keep polling);
+// opening it from the tray creates the window again.
 fn hide_after_flush(app: &AppHandle) {
-    let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
+    let Some(window) = main_window(app) else {
         return;
     };
-    let _ = window.eval("window.dispatchEvent(new Event('vibetv:native-window-will-close'))");
     let handle = app.clone();
+    // Counted at the request, not at the release: a startup load that ends
+    // during the flush delay must already see the window as closed. The
+    // count goes back when a present cancels the close below.
+    handle.state::<Shell>().closes.fetch_add(1, Ordering::SeqCst);
+    let _ = window.eval("window.dispatchEvent(new Event('vibetv:native-window-will-close'))");
     let presented = handle.state::<Shell>().presentations.load(Ordering::SeqCst);
     std::thread::spawn(move || {
         std::thread::sleep(WINDOW_CLOSE_FLUSH_DELAY);
-        // Reopened from the tray or a second launch meanwhile: keep it open.
-        if handle.state::<Shell>().presentations.load(Ordering::SeqCst) == presented {
-            let _ = window.hide();
+        let shell = handle.state::<Shell>();
+        let presented_now = shell.presentations.load(Ordering::SeqCst);
+        if close_stands(presented, presented_now) {
+            // Kept for the window built next; a minimized one keeps the last.
+            let seq = shell.geometry_seq.fetch_add(1, Ordering::SeqCst) + 1;
+            remember_window_geometry(&handle, &window, seq);
+            // Stored as count + 1, so a release before the first present
+            // (count 0) is still told apart from "no release".
+            shell.released_at.store(presented + 1, Ordering::SeqCst);
+            let _ = window.destroy();
+        } else {
+            // Reopened from the tray or a second launch meanwhile: keep it open.
+            shell.closes.fetch_sub(1, Ordering::SeqCst);
         }
     });
+}
+
+// A close stands only when nothing presented the window since it was requested.
+fn close_stands(presented_at_request: u64, presented_after_flush: u64) -> bool {
+    presented_at_request == presented_after_flush
 }
 
 // Issue #424: Ctrl+Alt+Shift+P shows the next provider on VibeTV from any app.
@@ -459,7 +944,7 @@ fn show_next_provider(app: &AppHandle) {
     {
         Ok(response) if response.status() == 200 => {
             // An open Settings page shows the display choice; it reads it again.
-            if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
+            if let Some(window) = main_window(app) {
                 let _ = window.eval("window.dispatchEvent(new Event('vibetv:provider-display-changed'))");
             }
         }
@@ -619,7 +1104,7 @@ fn runtime_http() -> ureq::Agent {
 }
 
 fn dispatch_result(app: &AppHandle, event: &str, success: bool) {
-    if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
+    if let Some(window) = main_window(app) {
         let _ = window.eval(format!(
             "window.dispatchEvent(new CustomEvent('{event}', {{ detail: {{ success: {success} }} }}))"
         ));
@@ -636,7 +1121,7 @@ fn show_updating(app: &AppHandle, version: &str) {
 }
 
 fn dispatch_status(app: &AppHandle, detail: serde_json::Value) {
-    if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
+    if let Some(window) = main_window(app) {
         let _ = window.eval(format!(
             "window.dispatchEvent(new CustomEvent('vibetv:shell-status', {{ detail: {detail} }}))"
         ));
@@ -647,6 +1132,18 @@ fn dispatch_status(app: &AppHandle, detail: serde_json::Value) {
 // wait until the runtime that answers is the one just registered, then load
 // the Control Center. Returns false when the runtime never became healthy.
 fn prepare_and_load(app: AppHandle) -> bool {
+    load(app, true)
+}
+
+// `present` is false only after an update installed with the window closed:
+// the app then loads in the tray, where the customer left it.
+fn load(app: AppHandle, present: bool) -> bool {
+    // Before the preparing check: present_window below must find a window,
+    // or it would hand the load to yet another thread. Without one (WebView2
+    // failed to start) this attempt ends here; the next click tries again.
+    if present && !ensure_live_window(&app) {
+        return false;
+    }
     let shell = app.state::<Shell>();
     {
         let mut preparing = shell.preparing.lock().unwrap();
@@ -660,19 +1157,18 @@ fn prepare_and_load(app: AppHandle) -> bool {
         *preparing = true;
     }
     show_status(&app, None);
-    present_window(&app);
+    if present {
+        present_window(&app);
+    }
     let result = prepare_runtime(&app);
+    // Which window the navigation below went to: one built later (the old
+    // window was closed and released meanwhile) still shows the start page.
+    let mut navigated = 0;
     match &result {
         Ok(origin) => {
             *shell.runtime_origin.lock().unwrap() = origin.clone();
-            if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
-                let pending = shell.pending_theme.lock().unwrap();
-                let path = pending
-                    .as_ref()
-                    .map(|theme_id| format!("/control-center/install/{theme_id}"))
-                    .unwrap_or_else(|| "/control-center".to_string());
-                let _ = window.navigate(origin.join(&path).expect("validated local path"));
-            }
+            navigated = shell.windows_created.load(Ordering::SeqCst);
+            navigate_to_control_center(&app, origin);
         }
         Err(error) => {
             log(error);
@@ -680,11 +1176,29 @@ fn prepare_and_load(app: AppHandle) -> bool {
         }
     }
     *shell.preparing.lock().unwrap() = false;
-    if result.is_ok() {
+    if let Ok(origin) = &result {
+        // A replacement built while this load ran skipped its own load
+        // (preparing was set); point it at the Control Center now.
+        if shell.windows_created.load(Ordering::SeqCst) != navigated {
+            navigate_to_control_center(&app, origin);
+        }
         // A second link may have arrived while the first navigation held the queue.
         navigate_to_pending_theme(&app, false);
     }
     result.is_ok()
+}
+
+fn navigate_to_control_center(app: &AppHandle, origin: &Url) {
+    let Some(window) = main_window(app) else {
+        return;
+    };
+    let shell = app.state::<Shell>();
+    let pending = shell.pending_theme.lock().unwrap();
+    let path = pending
+        .as_ref()
+        .map(|theme_id| format!("/control-center/install/{theme_id}"))
+        .unwrap_or_else(|| "/control-center".to_string());
+    let _ = window.navigate(origin.join(&path).expect("validated local path"));
 }
 
 fn prepare_runtime(app: &AppHandle) -> Result<Url, String> {
@@ -835,21 +1349,22 @@ fn runtime_origin_candidates() -> Vec<Url> {
 // has no console, so every outcome the customer waits for is shown in a
 // native message box; stderr alone would leave the click unanswered.
 fn check_for_updates(app: AppHandle) {
-    if app
-        .state::<Shell>()
-        .updating
-        .swap(true, Ordering::SeqCst)
-    {
-        log("update check already running; ignoring repeated request");
+    // During the check with the window closed the click is noted: that
+    // check installs right away, or hands over to a new request when it ends
+    // without installing.
+    if !take_updater(&app, UpdateRun::Asked) {
+        log("update check already running; this request is not started");
         return;
     }
     tauri::async_runtime::spawn(async move {
-        let result = run_update(&app, false).await;
+        let result = run_update(&app, UpdateRun::Asked).await;
         // The installer relaunches this process on success; every other
         // outcome frees the guard for the next request.
-        app.state::<Shell>().updating.store(false, Ordering::SeqCst);
+        free_updater(&app);
         match result {
-            Ok(UpdateOutcome::Installed) | Ok(UpdateOutcome::AlreadyTried) => {}
+            Ok(UpdateOutcome::Installed)
+            | Ok(UpdateOutcome::AlreadyTried)
+            | Ok(UpdateOutcome::InUse) => {}
             Ok(UpdateOutcome::UpToDate) => show_message("VibeTV Control Center is up to date."),
             Ok(UpdateOutcome::Busy) => {
                 log("update deferred: a firmware update or theme install owns the runtime");
@@ -873,36 +1388,112 @@ fn check_for_updates(app: AppHandle) {
 // within the limit, a running VibeTV update, or a download that fails, stalls
 // or takes too long all let the start go on without a message.
 fn launch_update_check(app: &AppHandle) {
-    if app
-        .state::<Shell>()
-        .updating
-        .swap(true, Ordering::SeqCst)
-    {
+    if !take_updater(app, UpdateRun::Launch) {
         return;
     }
-    let result = tauri::async_runtime::block_on(run_update(app, true));
-    app.state::<Shell>().updating.store(false, Ordering::SeqCst);
+    let result = tauri::async_runtime::block_on(run_update(app, UpdateRun::Launch));
+    free_updater(app);
     match result {
         Ok(UpdateOutcome::Installed) => {}
         Ok(UpdateOutcome::UpToDate) => log("launch update check: no newer version"),
         Ok(UpdateOutcome::AlreadyTried) => {
-            log("launch update skipped: this version was tried at a start in the last 24 hours, or the attempt could not be noted")
+            log("launch update skipped: this version was tried in the last 24 hours, or the attempt could not be noted")
         }
         Ok(UpdateOutcome::Busy) => {
             log("launch update skipped: a firmware update or theme install owns the runtime")
         }
+        Ok(UpdateOutcome::InUse) => {}
         Err(error) => log(&format!("launch update skipped: {error}")),
     }
 }
 
+// The app runs for weeks in the tray, so an update published meanwhile would
+// wait for the next start. It is installed while the customer is not using
+// the app: only with the window closed, never during a VibeTV update or theme
+// install, and without a message whatever the outcome. The same note as at
+// launch keeps it to one attempt per version in 24 hours. Installing restarts
+// the app and the background service; VibeTV gets no new numbers for those
+// seconds. The window comes back closed (`AFTER_IDLE_UPDATE_ARG`).
+fn idle_update_check(app: &AppHandle) {
+    if window_in_use(app) {
+        log("update check skipped: the window is open");
+        return;
+    }
+    if *app.state::<Shell>().preparing.lock().unwrap() {
+        return;
+    }
+    if !take_updater(app, UpdateRun::Idle) {
+        return;
+    }
+    let result = tauri::async_runtime::block_on(run_update(app, UpdateRun::Idle));
+    // A click that came during the check and was not used by an install:
+    // it gets its own run, with its messages.
+    if free_updater(app) {
+        check_for_updates(app.clone());
+    }
+    match result {
+        Ok(UpdateOutcome::Installed) => {}
+        Ok(UpdateOutcome::UpToDate) => log("update check: no newer version"),
+        Ok(UpdateOutcome::AlreadyTried) => {
+            log("update skipped: this version was tried in the last 24 hours, or the attempt could not be noted")
+        }
+        Ok(UpdateOutcome::Busy) => {
+            log("update skipped: a firmware update or theme install owns the runtime")
+        }
+        Ok(UpdateOutcome::InUse) => log("update skipped: the window was opened before the install"),
+        Err(error) => log(&format!("update skipped: {error}")),
+    }
+}
+
+// Shown, also minimized to the taskbar (a minimized window stays visible):
+// the customer may be in the middle of something there. Only the hidden
+// window in the tray is free; a window closed while minimized is hidden and
+// still minimized, so the minimized state alone says nothing.
+fn window_in_use(app: &AppHandle) -> bool {
+    main_window(app)
+        .map(|window| window.is_visible().unwrap_or(true))
+        .unwrap_or(false)
+}
+
+// True once, for the start the installer of an update with the window closed
+// relaunched. The argument alone is not enough: a process keeps its arguments,
+// and the installer of a later update the customer asked for hands them on.
+fn relaunched_after_idle_update(app: &AppHandle) -> bool {
+    if !std::env::args().any(|arg| arg == AFTER_IDLE_UPDATE_ARG) {
+        return false;
+    }
+    let Ok(folder) = app.path().app_local_data_dir() else {
+        return false;
+    };
+    launch_update::take_relaunch_note(&folder.join(IDLE_UPDATE_RELAUNCH_MARKER), unix_now())
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_secs())
+        .unwrap_or(0)
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum UpdateRun {
+    // The tray item or the Updates tab: the customer asked.
+    Asked,
+    // At launch, before the app looks for a VibeTV (#565).
+    Launch,
+    // While the app runs with its window closed.
+    Idle,
+}
+
 // Check, download and install. On Windows a successful install ends this
 // process inside `update.install`.
-async fn run_update(app: &AppHandle, at_launch: bool) -> Result<UpdateOutcome, String> {
+async fn run_update(app: &AppHandle, run: UpdateRun) -> Result<UpdateOutcome, String> {
     let mut builder = app.updater_builder();
-    // The marker keeps the check at launch to one attempt per version in
-    // 24 hours.
+    // The marker keeps the updates nobody asked for to one attempt per
+    // version in 24 hours.
     let mut marker: Option<PathBuf> = None;
-    if at_launch {
+    let mut relaunch_note: Option<PathBuf> = None;
+    if run != UpdateRun::Asked {
         // This limit covers the check only: the plugin hands the update
         // back without one, so the download gets its own below.
         builder = builder
@@ -913,6 +1504,12 @@ async fn run_update(app: &AppHandle, at_launch: bool) -> Result<UpdateOutcome, S
             .app_local_data_dir()
             .map_err(|error| format!("no folder for the launch update marker: {error}"))?;
         marker = Some(folder.join(LAUNCH_UPDATE_MARKER));
+        if run == UpdateRun::Idle {
+            // NSIS hands everything after /ARGS to the relaunched app, and
+            // the plugin puts these arguments last.
+            builder = builder.installer_arg(AFTER_IDLE_UPDATE_ARG);
+            relaunch_note = Some(folder.join(IDLE_UPDATE_RELAUNCH_MARKER));
+        }
     }
     let updater = builder.build().map_err(|error| format!("updater unavailable: {error}"))?;
     let update = updater.check().await.map_err(|error| format!("update check failed: {error}"))?;
@@ -920,15 +1517,14 @@ async fn run_update(app: &AppHandle, at_launch: bool) -> Result<UpdateOutcome, S
         return Ok(UpdateOutcome::UpToDate);
     };
     if let Some(marker) = &marker {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|since| since.as_secs())
-            .unwrap_or(0);
+        let now = unix_now();
         if !launch_update::claim(marker, &update.version, now) {
             return Ok(UpdateOutcome::AlreadyTried);
         }
         update.timeout = Some(LAUNCH_UPDATE_DOWNLOAD_LIMIT);
-        show_updating(app, &update.version);
+        if run == UpdateRun::Launch {
+            show_updating(app, &update.version);
+        }
     }
     log(&format!("downloading update {}", update.version));
     let bytes = update
@@ -950,8 +1546,42 @@ async fn run_update(app: &AppHandle, at_launch: bool) -> Result<UpdateOutcome, S
         }
         return Ok(UpdateOutcome::Busy);
     }
+    // Decided only now: the window may have been opened during the download
+    // or while the hold was claimed, which can take a few runtime requests. A
+    // click on Update meanwhile makes this the customer's install: it goes
+    // on, and the app comes back with its window.
+    let mut asked = false;
+    if run == UpdateRun::Idle {
+        match decide_idle_install(app, relaunch_note.as_deref()) {
+            IdleDecision::Asked => {
+                asked = true;
+                relaunch_note = None;
+            }
+            IdleDecision::InUse => {
+                let _ = tauri::async_runtime::spawn_blocking(release_update_hold).await;
+                // Nothing was tried; the next check may install this version.
+                if let Some(marker) = &marker {
+                    launch_update::release(marker);
+                }
+                return Ok(UpdateOutcome::InUse);
+            }
+            IdleDecision::Hidden => {}
+        }
+    }
     log(&format!("installing update {}", update.version));
     if let Err(error) = update.install(bytes) {
+        if let Some(note) = &relaunch_note {
+            launch_update::release(note);
+        }
+        if run == UpdateRun::Idle {
+            // Back to the check, so freeing the updater works as before; a
+            // click, before or while the installer started, still gets its
+            // answer, from its own run.
+            let shell = app.state::<Shell>();
+            let mut updater = shell.updater.lock().unwrap();
+            let clicked = asked || matches!(*updater, Updater::IdleInstalling { asked: true });
+            *updater = Updater::Idle { asked: clicked, presented: false };
+        }
         // Nothing was replaced; give the runtime back to device jobs.
         let _ = tauri::async_runtime::spawn_blocking(release_update_hold).await;
         return Err(format!("update install failed: {error}"));
@@ -963,8 +1593,10 @@ enum UpdateOutcome {
     Installed,
     UpToDate,
     Busy,
-    // Only the check at launch: it tries a version once in 24 hours.
+    // Only the updates nobody asked for: they try a version once in 24 hours.
     AlreadyTried,
+    // Only with the window closed: it was opened before the install.
+    InUse,
 }
 
 // Native message box: works while the webview is hidden or still loading.
@@ -994,7 +1626,10 @@ fn show_message(message: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{clear_loaded_theme, theme_id_from_deep_link};
+    use super::{
+        centre_on_a_work_area, choose_placement, clear_loaded_theme, close_stands, label_for_generation,
+        theme_id_from_deep_link, Placement, WindowRect, remembered_after, remembered_for, store_if_newer,
+    };
     use url::Url;
 
     #[test]
@@ -1045,5 +1680,117 @@ mod tests {
         pending = Some("clippy".to_string());
         assert!(clear_loaded_theme(&mut pending, &theme_page, &origin, true));
         assert_eq!(pending, None);
+    }
+
+    #[test]
+    fn window_after_a_failed_build_gets_a_label_tauri_has_not_seen() {
+        // The first window keeps "main"; a label that Tauri still holds from a
+        // failed build must never be handed out again.
+        assert_eq!(label_for_generation(0), "main");
+        assert_eq!(label_for_generation(1), "main-1");
+        assert_ne!(label_for_generation(1), label_for_generation(2));
+    }
+
+    #[test]
+    fn a_close_is_cancelled_by_any_present_after_the_request() {
+        assert!(close_stands(3, 3));
+        assert!(!close_stands(3, 4));
+    }
+
+    #[test]
+    fn older_geometry_snapshot_never_replaces_a_newer_one() {
+        let snapshot = |x| (Some(WindowRect { x, y: 0, width: 1280, height: 900 }), false);
+        let mut slot = None;
+        store_if_newer(&mut slot, 2, snapshot(20));
+        store_if_newer(&mut slot, 1, snapshot(10));
+        assert_eq!(slot, Some((2, snapshot(20))));
+        store_if_newer(&mut slot, 3, snapshot(30));
+        assert_eq!(slot, Some((3, snapshot(30))));
+    }
+
+    #[test]
+    fn window_geometry_choice_remembered_default_or_off_screen() {
+        let rect = |x, y, width, height| WindowRect { x, y, width, height };
+        // Primary monitor at 0,0 and a second one to its left (negative x).
+        let screens = [rect(0, 0, 1920, 1040), rect(-1280, 0, 1280, 1000)];
+        let placed = rect(100, 80, 1280, 900);
+        assert_eq!(
+            choose_placement(Some((Some(placed), false)), &screens),
+            Placement::Remembered { rect: Some(placed), maximized: false }
+        );
+        // Maximized is kept with the restore rectangle.
+        assert_eq!(
+            choose_placement(Some((Some(placed), true)), &screens),
+            Placement::Remembered { rect: Some(placed), maximized: true }
+        );
+        // Maximized, never restored: maximize again, no rectangle.
+        assert_eq!(
+            choose_placement(Some((None, true)), &screens),
+            Placement::Remembered { rect: None, maximized: true }
+        );
+        // Centre on the left monitor is still on a monitor.
+        let left = rect(-900, 50, 1280, 900);
+        assert!(centre_on_a_work_area(left, &screens));
+        // Nothing remembered: first start default.
+        assert_eq!(choose_placement(None, &screens), Placement::Default);
+        assert_eq!(choose_placement(Some((None, false)), &screens), Placement::Default);
+        // The monitor it was on is unplugged: default, not off-screen.
+        let unplugged = rect(3000, 200, 1280, 900);
+        assert_eq!(choose_placement(Some((Some(unplugged), false)), &screens), Placement::Default);
+        // No monitor known at all: default.
+        assert_eq!(choose_placement(Some((Some(placed), false)), &[]), Placement::Default);
+    }
+
+    #[test]
+    fn a_maximized_window_keeps_its_last_normal_rectangle() {
+        let maximized_bounds = WindowRect { x: 0, y: 0, width: 1920, height: 1040 };
+        let normal = WindowRect { x: 100, y: 80, width: 1280, height: 900 };
+        // Restored earlier: that rectangle survives a close while maximized.
+        assert_eq!(remembered_for(maximized_bounds, true, Some((Some(normal), false))), (Some(normal), true));
+        // Never restored: no rectangle, only the maximized state.
+        assert_eq!(remembered_for(maximized_bounds, true, None), (None, true));
+        // Not maximized: the current rectangle is kept.
+        assert_eq!(remembered_for(normal, false, Some((None, true))), (Some(normal), false));
+    }
+
+    #[test]
+    fn a_window_moved_while_normal_keeps_that_place_through_a_maximized_close() {
+        let rect = |x, y, width, height| WindowRect {
+            x,
+            y,
+            width,
+            height,
+        };
+        let released_before = rect(0, 0, 1000, 700);
+        let moved = rect(100, 80, 1280, 900);
+        let maximized_bounds = rect(0, 0, 1920, 1040);
+        // Closed normal at an older place, then moved and resized, then maximized.
+        let at_last_release = Some(remembered_for(released_before, false, None));
+        let after_move = remembered_after(moved, false, false, at_last_release);
+        let after_maximize = remembered_after(maximized_bounds, false, true, after_move);
+        // Closed while maximized: the release keeps the moved place.
+        let at_close = remembered_after(maximized_bounds, false, true, after_maximize);
+        assert_eq!(at_close, Some((Some(moved), true)));
+    }
+
+    #[test]
+    fn a_restored_window_tracks_its_new_place_and_a_minimized_one_keeps_the_last() {
+        let rect = |x, y, width, height| WindowRect {
+            x,
+            y,
+            width,
+            height,
+        };
+        let before = rect(100, 80, 1280, 900);
+        let restored = rect(300, 120, 1100, 800);
+        let maximized_bounds = rect(0, 0, 1920, 1040);
+        let kept = Some((Some(before), true));
+        // Restored from maximized: the new normal place is the one to keep.
+        assert_eq!(
+            remembered_after(restored, false, false, kept),
+            Some((Some(restored), false))
+        );
+        // Minimized: its position says nothing, nothing is stored.
+        assert_eq!(remembered_after(maximized_bounds, true, false, kept), None);
     }
 }
