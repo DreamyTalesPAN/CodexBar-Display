@@ -105,6 +105,84 @@ func TestCableRescueCancelledInThePauseClearsAChiplessMarker(t *testing.T) {
 	}
 }
 
+// Issue #842: a marker saved before the chip was read is cleared by a replug,
+// because its VibeTV was never written.
+func TestResumableRescueMarkerClearsAFlaggedChiplessMarkerOnReplug(t *testing.T) {
+	prepareCableFirmwareUpdateTest(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := writeRescueMarkerFixture(t, "COM4", time.Hour)
+	marker.ChipMAC, marker.ChipNotRead, marker.Ports = "", true, []string{"COM4"}
+	if err := firmwareupdate.SaveRescueMarker(home, marker); err != nil {
+		t.Fatal(err)
+	}
+	listCablePortsFn = func() ([]string, error) { return []string{"COM9"}, nil }
+	readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{}, errors.New("no hello")
+	}
+	if _, ok := resumableRescueMarker(home); ok {
+		t.Fatal("a flagged marker without a chip must not be resumed")
+	}
+	if rescueMarkerPresent(t) {
+		t.Fatal("a marker saved before the chip was read must be cleared on replug")
+	}
+}
+
+// Issue #842: a marker without the flag may come from a #819 or #840 build,
+// where a failed write could have erased the VibeTV, so it is kept.
+func TestResumableRescueMarkerKeepsALegacyChiplessMarker(t *testing.T) {
+	prepareCableFirmwareUpdateTest(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := writeRescueMarkerFixture(t, "COM4", time.Hour)
+	marker.ChipMAC, marker.Ports = "", []string{"COM4"}
+	if err := firmwareupdate.SaveRescueMarker(home, marker); err != nil {
+		t.Fatal(err)
+	}
+	listCablePortsFn = func() ([]string, error) { return []string{"COM9"}, nil }
+	readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{}, errors.New("no hello")
+	}
+	if _, ok := resumableRescueMarker(home); ok {
+		t.Fatal("a legacy chipless marker must not be resumed")
+	}
+	if !rescueMarkerPresent(t) {
+		t.Fatal("a legacy chipless marker may hold a half-written VibeTV and must be kept")
+	}
+}
+
+// Issue #842: the rescue saves the flagged marker before the first write and
+// replaces it with the chip identity once the chip is read.
+func TestCableRescueMarkerIsFlaggedUntilTheChipIsRead(t *testing.T) {
+	prepareCableFirmwareUpdateTest(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	listCablePortsFn = func() ([]string, error) { return []string{"COM4"}, nil }
+	var beforeChip firmwareupdate.RescueMarker
+	flashCableRescueFn = func(_ context.Context, _ string, _ []byte, opts usb.ROMFlashOptions) error {
+		beforeChip, _ = firmwareupdate.LoadRescueMarker(home, time.Now())
+		return opts.OnChipIdentified(rescueTestChip)
+	}
+	marker := firmwareupdate.RescueMarker{Port: "COM4", Board: rescueTestBoard, Firmware: "1.0.0", TargetFirmware: "1.0.1",
+		ImagePath: filepath.Join(t.TempDir(), "firmware.bin")}
+	if err := flashCableRescueWithRetry(context.Background(), home, marker, []byte("cable firmware"), false); err != nil {
+		t.Fatalf("rescue write: %v", err)
+	}
+	if !beforeChip.ChipNotRead || beforeChip.ChipMAC != "" {
+		t.Fatalf("marker before the chip read = %+v, want flagged without a chip", beforeChip)
+	}
+	after, ok := firmwareupdate.LoadRescueMarker(home, time.Now())
+	if !ok || after.ChipNotRead || after.ChipMAC != rescueTestChip {
+		t.Fatalf("marker after the chip read = %+v ok=%v, want the chip and no flag", after, ok)
+	}
+}
+
 // Codex on #840: a resume on a port the VibeTV seems to have moved to keeps the
 // marker on its first port until the ROM loader confirms the recorded chip.
 // An unrelated silent adapter on the new port must not take the marker over.

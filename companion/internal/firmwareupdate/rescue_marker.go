@@ -34,6 +34,10 @@ type RescueMarker struct {
 	// resumed rescue writes only that chip, so another VibeTV on a reused port
 	// stays untouched.
 	ChipMAC string `json:"chipMac,omitempty"`
+	// ChipNotRead marks a marker saved before the chip was read: no FLASH_BEGIN
+	// was sent, so the VibeTV is untouched and a replug may clear it. Markers
+	// without the flag (#819 and #840 builds) may be half-written and are kept.
+	ChipNotRead bool `json:"chipNotRead,omitempty"`
 	// Ports lists the Cable ports that were there when the write started. A
 	// VibeTV plugged into another USB socket shows up on a port missing here.
 	// Nil means unknown, and then no moved VibeTV is looked for.
