@@ -133,6 +133,34 @@ type pendingDeadlineContext struct {
 
 func (c pendingDeadlineContext) Deadline() (time.Time, bool) { return c.deadline, true }
 
+func TestFirmwareCableProbeFindsVibeTVAfterSilentAdapter(t *testing.T) {
+	const first = "/dev/cu.usbserial-a-silent"
+	const second = "/dev/cu.usbserial-b-vibetv"
+	listSerialPorts(t, first, second)
+	silent := &deadlineSerialPort{mockSerialPort: newMockSerialPort()}
+	vibetv := newMockSerialPort()
+	vibetv.readQueue = [][]byte{[]byte(`{"kind":"hello","board":"esp8266-smalltv-st7789","deviceId":"device-a","capabilities":{"transport":{"active":"usb","mode":"wifi"}}}` + "\n")}
+	opener := &mockOpener{portsByPath: map[string]SerialPort{first: silent, second: vibetv}}
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener: opener, Sleep: func(time.Duration) {}, HelloWindow: time.Second,
+	})
+	defer sender.Close()
+	const budget = 400 * time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), budget)
+	defer cancel()
+	started := time.Now()
+	path, err := sender.ResolveControlPortContext(ctx, "", "device-a")
+	if err != nil || path != second {
+		t.Fatalf("silent first adapter hid the VibeTV: path=%q err=%v", path, err)
+	}
+	if elapsed := time.Since(started); elapsed >= budget {
+		t.Fatalf("VibeTV was not found within the shared budget: %s", elapsed)
+	}
+	if opener.openCount(first) != 1 || opener.openCount(second) != 1 {
+		t.Fatal("both candidates must be probed once")
+	}
+}
+
 func TestFirmwareCableProbesHonorSharedDeadline(t *testing.T) {
 	for _, resolve := range []bool{false, true} {
 		t.Run(map[bool]string{false: "hello", true: "all candidates"}[resolve], func(t *testing.T) {
@@ -140,8 +168,9 @@ func TestFirmwareCableProbesHonorSharedDeadline(t *testing.T) {
 			const second = "/dev/cu.usbserial-deadline-b"
 			listSerialPorts(t, first, second)
 			port := &deadlineSerialPort{mockSerialPort: newMockSerialPort()}
+			secondPort := &deadlineSerialPort{mockSerialPort: newMockSerialPort()}
 			opener := &mockOpener{portsByPath: map[string]SerialPort{
-				first: port, second: newMockSerialPort(),
+				first: port, second: secondPort,
 			}}
 			sender := NewSenderWithConfig(SenderConfig{
 				Opener: opener, Sleep: func(time.Duration) {}, HelloWindow: 250 * time.Millisecond,
@@ -162,11 +191,15 @@ func TestFirmwareCableProbesHonorSharedDeadline(t *testing.T) {
 			if elapsed := time.Since(started); elapsed > 150*time.Millisecond {
 				t.Fatalf("serial probes exceeded the shared 30ms budget: %s", elapsed)
 			}
-			if port.maxTimeout > 30*time.Millisecond {
-				t.Fatalf("serial read received a fresh timeout beyond the shared budget: %s", port.maxTimeout)
+			if longest := max(port.maxTimeout, secondPort.maxTimeout); longest > 30*time.Millisecond {
+				t.Fatalf("serial read received a fresh timeout beyond the shared budget: %s", longest)
 			}
-			if opener.openCount(second) != 0 {
-				t.Fatal("opened another port after the shared deadline expired")
+			wantSecondOpens := 0
+			if resolve {
+				wantSecondOpens = 1
+			}
+			if got := opener.openCount(second); got != wantSecondOpens {
+				t.Fatalf("second candidate opened %d times, want %d", got, wantSecondOpens)
 			}
 		})
 	}

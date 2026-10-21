@@ -324,7 +324,7 @@ func (s *Sender) ResolvePort(explicit, expectedDeviceID string) (string, error) 
 	path, ok := s.currentMatchingPort(explicit, expectedDeviceID, false)
 	if !ok {
 		var err error
-		path, err = resolveVibeTVPort(explicit, expectedDeviceID, s.DeviceHello)
+		path, err = resolveVibeTVPortForControl(context.Background(), explicit, expectedDeviceID, s.DeviceHelloContext, false)
 		if err != nil {
 			return "", err
 		}
@@ -355,18 +355,15 @@ func (s *Sender) ResolveControlPortContext(ctx context.Context, explicit, expect
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	readHello := func(path string) (protocol.DeviceHello, error) {
-		return s.DeviceHelloContext(ctx, path)
-	}
 	if err := s.openPortVanished(explicit); err != nil {
 		return "", err
 	}
 	s.resolveMu.Lock()
 	defer s.resolveMu.Unlock()
 	if path, ok := s.currentMatchingPort(explicit, expectedDeviceID, true); ok {
-		return resolveVibeTVCandidatesForControl([]string{path}, path, expectedDeviceID, readHello, true)
+		return resolveVibeTVCandidatesForControl(ctx, []string{path}, path, expectedDeviceID, s.DeviceHelloContext, true)
 	}
-	path, err := resolveVibeTVPortForControl(explicit, expectedDeviceID, readHello, true)
+	path, err := resolveVibeTVPortForControl(ctx, explicit, expectedDeviceID, s.DeviceHelloContext, true)
 	s.forgetAmbiguousPort(err)
 	return path, err
 }

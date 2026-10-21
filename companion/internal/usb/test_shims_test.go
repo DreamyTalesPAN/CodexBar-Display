@@ -1,6 +1,10 @@
 package usb
 
-import "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+import (
+	"context"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+)
 
 // Short forms of production functions that only the tests call.
 
@@ -11,10 +15,11 @@ func resolveVibeTVCandidates(
 	readHello func(string) (protocol.DeviceHello, error),
 ) (string, error) {
 	return resolveVibeTVCandidatesForControl(
+		context.Background(),
 		candidates,
 		explicit,
 		expectedDeviceID,
-		readHello,
+		func(_ context.Context, path string) (protocol.DeviceHello, error) { return readHello(path) },
 		false,
 	)
 }

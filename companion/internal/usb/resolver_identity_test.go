@@ -1,6 +1,7 @@
 package usb
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -141,10 +142,11 @@ func TestResolveVibeTVControlCandidatesAcceptsWiFiModeOverUSB(t *testing.T) {
 	hello := cableHello("14799300")
 	hello.Capabilities.Transport.Mode = "wifi"
 	got, err := resolveVibeTVCandidatesForControl(
+		context.Background(),
 		[]string{port},
 		port,
 		"14799300",
-		func(string) (protocol.DeviceHello, error) { return hello, nil },
+		func(context.Context, string) (protocol.DeviceHello, error) { return hello, nil },
 		true,
 	)
 	if err != nil || got != port {
@@ -159,10 +161,11 @@ func TestResolveVibeTVControlCandidatesAcceptsLegacyWiFiOnlyForReselection(t *te
 	hello.Capabilities.Transport.Supported = []string{"wifi"}
 
 	got, err := resolveVibeTVCandidatesForControl(
+		context.Background(),
 		[]string{port},
 		port,
 		"14799300",
-		func(string) (protocol.DeviceHello, error) { return hello, nil },
+		func(context.Context, string) (protocol.DeviceHello, error) { return hello, nil },
 		true,
 	)
 	if err != nil || got != port {
@@ -294,7 +297,7 @@ func TestDiscoverVibeTVsReportsTheLegacyVibeTVItFound(t *testing.T) {
 func TestResolveVibeTVControlCandidatesReportsPortsThatCouldNotBeOpened(t *testing.T) {
 	busy := wrapTransportError(errcode.TransportSerialOpen, "open-port", "/dev/cu.usbserial-busy", "", errors.New("resource busy"))
 	silent := wrapTransportError(errcode.ProtocolDeviceHelloUnavailable, "read-hello", "/dev/cu.usbserial-silent", "", ErrDeviceHelloUnavailable)
-	readHello := func(path string) (protocol.DeviceHello, error) {
+	readHello := func(_ context.Context, path string) (protocol.DeviceHello, error) {
 		if strings.Contains(path, "busy") {
 			return protocol.DeviceHello{}, busy
 		}
@@ -306,7 +309,7 @@ func TestResolveVibeTVControlCandidatesReportsPortsThatCouldNotBeOpened(t *testi
 		}
 		return protocol.DeviceHello{}, silent
 	}
-	if got, err := resolveVibeTVCandidatesForControl([]string{"/dev/cu.usbserial-busy", "/dev/cu.usbserial-vibetv"}, "", "14799300", readHello, true); err != nil || got != "/dev/cu.usbserial-vibetv" {
+	if got, err := resolveVibeTVCandidatesForControl(context.Background(), []string{"/dev/cu.usbserial-busy", "/dev/cu.usbserial-vibetv"}, "", "14799300", readHello, true); err != nil || got != "/dev/cu.usbserial-vibetv" {
 		t.Fatalf("a busy port next to the VibeTV must not hide it: got=%q err=%v", got, err)
 	}
 	for _, tc := range []struct {
@@ -319,7 +322,7 @@ func TestResolveVibeTVControlCandidatesReportsPortsThatCouldNotBeOpened(t *testi
 		{"a busy port next to a foreign device", []string{"/dev/cu.usbserial-busy", "/dev/cu.usbserial-foreign"}, errcode.TransportForeignDevice},
 		{"only silent ports", []string{"/dev/cu.usbserial-silent"}, errcode.TransportNoMatchingDevice},
 	} {
-		if _, err := resolveVibeTVCandidatesForControl(tc.ports, "", "14799300", readHello, true); errcode.Of(err) != tc.want {
+		if _, err := resolveVibeTVCandidatesForControl(context.Background(), tc.ports, "", "14799300", readHello, true); errcode.Of(err) != tc.want {
 			t.Fatalf("%s: got %v, want code %s", tc.name, err, tc.want)
 		}
 	}

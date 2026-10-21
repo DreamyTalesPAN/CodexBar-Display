@@ -262,18 +262,11 @@ func discoverVibeTVs(
 	return devices, nil
 }
 
-func resolveVibeTVPort(
-	explicit,
-	expectedDeviceID string,
-	readHello func(string) (protocol.DeviceHello, error),
-) (string, error) {
-	return resolveVibeTVPortForControl(explicit, expectedDeviceID, readHello, false)
-}
-
 func resolveVibeTVPortForControl(
+	ctx context.Context,
 	explicit,
 	expectedDeviceID string,
-	readHello func(string) (protocol.DeviceHello, error),
+	readHello func(context.Context, string) (protocol.DeviceHello, error),
 	allowWiFiMode bool,
 ) (string, error) {
 	explicit = strings.TrimSpace(explicit)
@@ -307,6 +300,7 @@ func resolveVibeTVPortForControl(
 	}
 
 	return resolveVibeTVCandidatesForControl(
+		ctx,
 		candidates,
 		explicit,
 		expectedDeviceID,
@@ -355,10 +349,11 @@ func cableSerialCandidates(ports []string, goos string) []string {
 }
 
 func resolveVibeTVCandidatesForControl(
+	ctx context.Context,
 	candidates []string,
 	explicit,
 	expectedDeviceID string,
-	readHello func(string) (protocol.DeviceHello, error),
+	readHello func(context.Context, string) (protocol.DeviceHello, error),
 	allowWiFiMode bool,
 ) (string, error) {
 	matches := make([]string, 0, 1)
@@ -369,8 +364,17 @@ func resolveVibeTVCandidatesForControl(
 	// be a claim about a device nobody spoke to and the open error is the
 	// answer. A device that did answer (foreign, old firmware) is still named.
 	var openErr error
-	for _, candidate := range candidates {
-		hello, err := readHello(candidate)
+	for index, candidate := range candidates {
+		probeCtx := ctx
+		cancel := func() {}
+		if deadline, ok := ctx.Deadline(); ok {
+			// A silent adapter must leave time for every later candidate.
+			// The parent deadline still caps even the minimum probe window.
+			window := max(time.Millisecond, time.Until(deadline)/time.Duration(len(candidates)-index))
+			probeCtx, cancel = context.WithTimeout(ctx, window)
+		}
+		hello, err := readHello(probeCtx, candidate)
+		cancel()
 		if err != nil {
 			if errcode.Of(err) == errcode.TransportSerialOpen {
 				openErr = err
