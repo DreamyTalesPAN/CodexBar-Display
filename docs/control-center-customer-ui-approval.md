@@ -9605,3 +9605,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Recent activity keeps its HH:mm:ss timestamps; update attempt identity remains full precision internally.
 - Scope: remove the two update-start event timestamp overrides, exercise the rendered Support activity row, and append this approval record.
 - What's new: none — bug fix, not announced to customers
+
+## 2026-10-21 — #798: approval marker after merging claude/group-calm-redesign at 52397ff8
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (52397ff8) into #798; the own entries of #798 keep their approvals)
+- Approved customer-visible result: #798 as in its own entries plus the entries merged with 52397ff8; nothing else changes.
+- Scope: the merge of 52397ff8 and this approval record. Pull request branch #798 only, not merged, not released.
+- What's new: none — merge of 52397ff8, no customer-visible change of its own
