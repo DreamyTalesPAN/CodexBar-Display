@@ -13282,3 +13282,39 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve the incoming feature together with the existing Build 6 customer flows in the local integration candidate.
 - Scope: Merge claude/787-not-found-dismissal into claude/paultest-build7; retain all source approval entries.
 - What's new: none — integration of existing feature entries only.
+
+## 2026-10-21 — #817: approval marker after merging claude/group-calm-redesign at fb30d196
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (fb30d196) into #817; the own entries of #817 keep their approvals)
+- Approved customer-visible result: #817 as in its own entries plus the entries merged with fb30d196; nothing else changes.
+- Scope: the merge of fb30d196 and this approval record. Pull request branch #817 only, not merged, not released.
+- What's new: none — merge of fb30d196, no customer-visible change of its own
+
+## 2026-10-21 — #817: approval marker after merging claude/group-calm-redesign at ff601365
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (ff601365) into #817; the own entries of #817 keep their approvals)
+- Approved customer-visible result: #817 as in its own entries plus the entries merged with ff601365; nothing else changes.
+- Scope: the merge of ff601365 and this approval record. Pull request branch #817 only, not merged, not released.
+- What's new: none — merge of ff601365, no customer-visible change of its own
+=========
+
+## 2026-10-21 — #817: approval marker after merging claude/group-calm-redesign at ff601365
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (ff601365) into #817; the own entries of #817 keep their approvals)
+- Approved customer-visible result: #817 as in its own entries plus the entries merged with ff601365; nothing else changes.
+- Scope: the merge of ff601365 and this approval record. Pull request branch #817 only, not merged, not released.
+- What's new: none — merge of ff601365, no customer-visible change of its own
+
+## 2026-10-21 — #817: approval marker after merging claude/group-calm-redesign at 3caaf211
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (3caaf211) into #817; the own entries of #817 keep their approvals)
+- Approved customer-visible result: #817 as in its own entries plus the entries merged with 3caaf211; nothing else changes.
+- Scope: the merge of 3caaf211 and this approval record. Pull request branch #817 only, not merged, not released.
+- What's new: none — merge of 3caaf211, no customer-visible change of its own
+
+## 2026-10-21 — #817: approval marker after merging claude/group-calm-redesign at 4371975c
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (4371975c) into #817; the own entries of #817 keep their approvals)
+- Approved customer-visible result: #817 as in its own entries plus the entries merged with 4371975c; nothing else changes.
+- Scope: the merge of 4371975c and this approval record. Pull request branch #817 only, not merged, not released.
+- What's new: none — merge of 4371975c, no customer-visible change of its own
