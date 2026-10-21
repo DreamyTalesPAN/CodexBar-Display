@@ -9630,8 +9630,9 @@ async function testUpdatesKeepDmgHiddenWithoutVerifiedAsset(browser, appUrl) {
     "Overview must not announce an unavailable update",
   );
   await clickNavigation(page, "Updates");
+  // A required migration with no verified download is never "up to date" (Codex on #798).
   await page
-    .getByRole("heading", { name: "Everything is up to date" })
+    .getByRole("heading", { name: "No update available" })
     .waitFor({ timeout: 10_000 });
   const unavailableButton = page.getByRole("button", {
     name: "Update",
