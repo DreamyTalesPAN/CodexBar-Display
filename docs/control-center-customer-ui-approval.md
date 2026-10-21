@@ -8375,3 +8375,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #782 as in its own entries plus the entries merged with f314106c; nothing else changes.
 - Scope: the merge of f314106c and this approval record. Pull request branch #782 only, not merged, not released.
 - What's new: none — merge of f314106c, no customer-visible change of its own
+
+## 2026-10-21 — #782: a report reuses the collection that is running (Codex review)
+
+- User approval: no visible change – UI approval not needed (#782 Codex fix: a report requested elsewhere while diagnostics run reuses that collection instead of failing)
+- Approved customer-visible result: #782 a Create report from setup Help or Updates while Run diagnostics collects gets that report instead of nothing; Run diagnostics still writes no Recent activity entry; no new text.
+- Scope: #782 `apps/control-center/src/components/control-center-app.tsx` (one shared collection for Create report and Run diagnostics) and `control-center-app.support-report-card.test.tsx` (test), and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new wording

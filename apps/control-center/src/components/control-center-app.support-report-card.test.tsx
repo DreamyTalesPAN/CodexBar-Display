@@ -41,11 +41,14 @@ afterEach(() => {
 
 let diagnosticsRequests = 0;
 
-function startApp(diagnosticsReply: () => Promise<Response> = async () => jsonResponse({
-  ok: true,
-  generatedAt: "2026-10-18T06:00:00.000Z",
-  checks: [],
-})) {
+function startApp(
+  diagnosticsReply: () => Promise<Response> = async () => jsonResponse({
+    ok: true,
+    generatedAt: "2026-10-18T06:00:00.000Z",
+    checks: [],
+  }),
+  providerSetup?: unknown,
+) {
   diagnosticsRequests = 0;
   window.localStorage.clear();
   // A customer who has read "What's new"; it would lie over Support.
@@ -90,6 +93,7 @@ function startApp(diagnosticsReply: () => Promise<Response> = async () => jsonRe
             display: { themeSpec: { active: true, renderOk: true } },
             health: { ok: true },
           },
+          providerSetup,
         });
       }
       if (url.includes("/v1/diagnostics")) {
@@ -225,4 +229,34 @@ it("does not start a second report while Run diagnostics is collecting", async (
   release();
   await wait(3);
   expect(diagnosticsRequests).toBe(1);
+});
+
+it("gives a report requested from setup the report Run diagnostics is collecting, with one request", async () => {
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  // A usage service that cannot answer puts the setup usage dialog on screen,
+  // and its "Create support report" is the second caller.
+  startApp(
+    async () => {
+      await held;
+      return jsonResponse({ ok: true, generatedAt: "2026-10-18T06:00:00.000Z", checks: [] });
+    },
+    { status: "setup_required", engine: { status: "not_configured" }, providers: [] },
+  );
+  await wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Support" }));
+  await wait(2);
+
+  fireEvent.click(screen.getByRole("button", { name: "Run diagnostics" }));
+  await wait(1);
+  fireEvent.click(screen.getByRole("button", { name: "Create support report" }));
+  await wait(1);
+  expect(diagnosticsRequests).toBe(1);
+
+  release();
+  await wait(3);
+  expect(diagnosticsRequests).toBe(1);
+  expect(screen.getByRole("button", { name: "Copy" })).toBeTruthy();
 });
