@@ -27,7 +27,7 @@ function pairFrame(pace = true) {
     clock.toISOString(),
     {
       provider: "claude+codex",
-      label: "Claude + Codex",
+      label: "",
       usageMode: "used",
       usageWindows: [
         {
@@ -76,7 +76,7 @@ describe("Two Limits theme pack", () => {
   it("shows both providers with the deficit the usage engine sent", () => {
     const screen = screenText(render());
 
-    expect(screen).toContain("Claude + Codex");
+    expect(screen).not.toContain("Claude + Codex");
     // The wire contract offers a combined provider/window label, not two fields.
     expect(screen).toContain("Claude Weekly used");
     expect(screen).toContain("Codex Weekly used");
@@ -120,12 +120,12 @@ describe("Two Limits theme pack", () => {
 
   it("hides absent limits without inventing percentages or pace", () => {
     const frame = buildFrameData(clock.toISOString(), {
-      provider: "claude+codex", label: "Claude + Codex", usageWindows: [],
+      provider: "claude+codex", label: "", usageWindows: [],
     }, clock);
     const html = render(frame);
 
     // Existing slot visibility hides missing data; it has no dash binding.
-    expect(screenText(html)).toBe("Claude + Codex");
+    expect(screenText(html)).toBe("");
     expect(screenText(html)).not.toMatch(/\d+%|reserve|deficit|On pace/);
     expect(html).not.toContain("<pattern");
   });

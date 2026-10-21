@@ -1025,13 +1025,7 @@ const char* currentFirmwareUpdateNoticeText() {
   if (runtimeCtx.topLineOverride.length()) {
     return runtimeCtx.topLineOverride.c_str();
   }
-  if (frame.label.length()) {
-    return frame.label.c_str();
-  }
-  if (frame.provider.length()) {
-    return frame.provider.c_str();
-  }
-  return "Provider";
+  return frame.label.c_str();
 }
 
 void drawFirmwareUpdateNotice() {

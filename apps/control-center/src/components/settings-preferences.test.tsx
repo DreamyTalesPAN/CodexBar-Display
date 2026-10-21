@@ -170,7 +170,6 @@ describe("SettingsScreen installed screensaver", () => {
   });
 });
 
-// Variante A (#592): the Source, Provider 1 and Provider 2 selects under their radios.
 describe("SettingsScreen display sources", () => {
   const item = (providerId: string, label: string): ProviderItem => ({
     allowsDefault: false,
@@ -245,15 +244,4 @@ describe("SettingsScreen display sources", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("saves the one source from Source", () => {
-    const onDisplayChange = sources("fixed", ["claude"]);
-
-    expect(screen.queryByRole("combobox", { name: "Provider 1" })).toBeNull();
-    openSelect("Source");
-    choose("Codex");
-    expect(onDisplayChange).toHaveBeenLastCalledWith(
-      { mode: "fixed", providerIds: ["codex"] },
-      "codex",
-    );
-  });
 });

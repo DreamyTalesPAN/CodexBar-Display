@@ -1523,7 +1523,7 @@ export function buildFrameData(
     clampPercent(slot?.percent) === nothingUsedPercent;
   return {
     provider: displayFrame.provider || "",
-    label: displayFrame.label || displayFrame.provider || "",
+    label: displayFrame.label ?? displayFrame.provider ?? "",
     session: clampPercent(displayFrame.session),
     weekly: clampPercent(displayFrame.weekly),
     sessionUnavailable: displayFrame.sessionUnavailable === true,
