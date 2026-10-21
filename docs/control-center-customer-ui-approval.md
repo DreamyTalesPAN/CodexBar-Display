@@ -8250,14 +8250,14 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-20 — #780: one sentence for providers with their own app (setup log and popup)
 
-- User approval: pending — #780 wording as decided by the communicator on 20.10.2026 (text decision for Paul's 7198 review); Paul sees it in build 7198. Before → after: #780 "VibeTV reads <Provider> usage from <Provider>'s own app, so make sure it is installed and signed in on this computer." → #780 "VibeTV can't read <Provider> until the <Provider> app is installed and running." (the template sentence), the same in the setup log and in the popup.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #780: one sentence for providers with their own app (setup log and popup) — Before → after: #780 "VibeTV reads <Provider> usage from <Provider>'s own app, so make sure it is installed and signed in on this computer." → #780 "VibeTV can't read <Provider> until the <Provider> app is installed and running." (the template sentence), the same in the setup log and in the popup.
 - Approved customer-visible result: #780 one sentence for a provider that needs its own app, wherever setup shows it.
 - Scope: #780 the setup sentence in the Control Center (and, in #782, the Companion's setup log and the shared sentence file), their tests and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #780 wording not announced
 
 ## 2026-10-20 — #780: correction — Paul's 7198 approval does not cover this PR yet
 
-- User approval: pending — #780 correction (communicator, 20.10.2026): Paul's "rest passt" for build 7198 covered only what he saw in normal use (#781, #783, #784, #798, #803); the approval recorded for #780 a moment ago was premature and is reverted, its entries are pending again until he says yes to #780 itself.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #780: correction — Paul's 7198 approval does not cover this PR yet
 - Approved customer-visible result: #780 unchanged; this entry only corrects the record.
 - Scope: #780 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #780 record correction only
@@ -8303,3 +8303,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #780 as in its own entries plus the entries merged with e3503bda; nothing else changes.
 - Scope: the merge of e3503bda and this approval record. Pull request branch #780 only, not merged, not released.
 - What's new: none — merge of e3503bda, no customer-visible change of its own
+
+## 2026-10-21 — #780: Paul's approval of build 7200 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" — #780 approval record for build 7200; the #780 entries that were in build 7200 now carry it, merge markers are marked as no visible change, entries added after build 7200 stay pending.
+- Approved customer-visible result: #780 as described in its entries above, as seen in build 7200.
+- Scope: #780 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #780 approval record only
