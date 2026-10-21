@@ -8500,3 +8500,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: setup step 11 as in #831; Automatic rotates only over the providers the stream rotates to, a retained reading keeps its values, and the frames disappear with the usage they came from.
 - Scope: daemon.PreviewFrames and the preview-frames response, displayPreviewsFor/rotatingPreviews and their tests, the customer-flow mock route. Pull request branch only, not merged, not released.
 - What's new: none — the tiles show what the stream sends
+
+## 2026-10-21 — #858: setup preview shows the stream's last-good frame, usage and frames update together
+
+- User approval: no visible change – UI approval not needed (#858 Codex fixes: setup preview shows the stream's last-good frame and usage+frames update together)
+- Approved customer-visible result: setup step 11 as in #858; when no provider has a current reading Automatic shows the one last-good frame the stream restates, and usage and its frames are published as one snapshot.
+- Scope: daemon.PreviewFrames (last-good restate), the usage refresh in control-center-app.tsx, its test, the customer-flow preview-frames mock. Pull request branch only, not merged, not released.
+- What's new: none — the tiles show what the stream sends

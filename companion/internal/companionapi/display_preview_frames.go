@@ -18,9 +18,9 @@ type previewFramesResponse struct {
 // previewFramesForItem carries one provider's frame as the host would send it
 // in Automatic (absent for one the stream does not rotate to) and when pinned in Manual.
 type previewFramesForItem struct {
-	ID        string         `json:"id"`
+	ID        string          `json:"id"`
 	Automatic *protocol.Frame `json:"automatic,omitempty"`
-	Pinned    protocol.Frame `json:"pinned"`
+	Pinned    protocol.Frame  `json:"pinned"`
 }
 
 // handleDisplayPreviewFrames gives the setup tiles the frames the stream would

@@ -37,9 +37,21 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-it("ends the Refreshing mark within seconds of the new values", async () => {
-  // The Mac App: a manual refresh stays "refreshing" until the new snapshot.
-  const companion = { refreshing: false, providerReads: 0 };
+function usageBody(session: number, weekly: number, refresh = "fresh") {
+  return {
+    ok: true,
+    usageMode: "used",
+    tokenUsageReady: true,
+    currentProvider: "codex",
+    refresh: { state: refresh },
+    providers: [{ id: "codex", label: "Codex", session, weekly, usageMode: "used" }],
+  };
+}
+
+type UsageRoute = (url: string) => Response | Promise<Response>;
+
+// Mounts the app on a Mac App stub whose /v1/usage reads are answered by `usage`.
+function mountApp(usage: UsageRoute, onProviderRead = () => {}) {
   // A customer who has read "What's new"; it would lie over Overview.
   markWhatsNewSeen();
   vi.useFakeTimers();
@@ -90,7 +102,7 @@ it("ends the Refreshing mark within seconds of the new values", async () => {
       }
       if (url.includes("/v1/preferences")) {
         if (url.endsWith("section=providers")) {
-          companion.providerReads += 1;
+          onProviderRead();
         }
         return jsonResponse({ ok: true, items: [] });
       }
@@ -101,17 +113,7 @@ it("ends the Refreshing mark within seconds of the new values", async () => {
         });
       }
       if (url.includes("/v1/usage")) {
-        if (url.endsWith("?refresh=1")) {
-          companion.refreshing = true;
-        }
-        return jsonResponse({
-          ok: true,
-          usageMode: "used",
-          tokenUsageReady: true,
-          currentProvider: "codex",
-          refresh: { state: companion.refreshing ? "refreshing" : "fresh" },
-          providers: [{ id: "codex", label: "Codex", session: 12, weekly: 34, usageMode: "used" }],
-        });
+        return usage(url);
       }
       return jsonResponse({ ok: false, error: { code: "HTTP_404" } }, 404);
     }),
@@ -131,6 +133,24 @@ it("ends the Refreshing mark within seconds of the new values", async () => {
       });
     }
   };
+  return { text, wait };
+}
+
+
+it("ends the Refreshing mark within seconds of the new values", async () => {
+  // The Mac App: a manual refresh stays "refreshing" until the new snapshot.
+  const companion = { refreshing: false, providerReads: 0 };
+  const { wait } = mountApp(
+    (url) => {
+      if (url.endsWith("?refresh=1")) {
+        companion.refreshing = true;
+      }
+      return jsonResponse(usageBody(12, 34, companion.refreshing ? "refreshing" : "fresh"));
+    },
+    () => {
+      companion.providerReads += 1;
+    },
+  );
 
   await wait(10);
   fireEvent.click(screen.getByRole("button", { name: "Usage" }));
@@ -153,4 +173,28 @@ it("ends the Refreshing mark within seconds of the new values", async () => {
   expect(
     screen.getByRole("button", { name: "Refresh token usage" }).getAttribute("aria-busy"),
   ).toBe("false");
+});
+
+it("keeps the newest usage when an older read resolves last", async () => {
+  let releaseOlder: (response: Response) => void = () => {};
+  const { text, wait } = mountApp((url) =>
+    url.endsWith("?refresh=1")
+      ? new Promise<Response>((resolve) => {
+          releaseOlder = resolve;
+        })
+      : jsonResponse(usageBody(12, 77)),
+  );
+  await wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Usage" }));
+  await wait(1);
+  // The customer's refresh starts first and answers last, after the poll read.
+  fireEvent.click(screen.getByRole("button", { name: "Refresh token usage" }));
+  await wait(35);
+  expect(text()).toContain("77%");
+  await act(async () => {
+    releaseOlder(jsonResponse(usageBody(12, 11)));
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+  expect(text()).toContain("77%");
+  expect(text()).not.toContain("11%");
 });

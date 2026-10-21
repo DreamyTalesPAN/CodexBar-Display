@@ -23,10 +23,12 @@ type ProviderPreview struct {
 // PreviewFrames builds, for every provider of usage, in that order, the frame
 // the stream would send for it right now, with the same row, bars and
 // reset-trust steps as the stream (selectCycleFrameFromProviders,
-// sendCycleResult). A retained reading goes out as the stream sends it without
-// a last-good frame; the stream's own last-good frame is per-device state that
-// the retained snapshot stands in for. The device-specific steps (protocol version, clock, theme,
-// wire budget) are left out.
+// sendCycleResult). When no provider has a current reading the stream
+// restates its one last-good frame instead of rotating, so Automatic is
+// exactly that frame (read from the persisted file the runtime bootstraps and
+// saves) on its provider; without one, a retained reading goes out as it is.
+// The device-specific steps (protocol version, clock, theme, wire budget) are
+// left out.
 func PreviewFrames(usage PersistedUsage, showUsed bool, now time.Time) []ProviderPreview {
 	providers := make([]codexbar.ParsedFrame, 0, len(usage.Providers))
 	for _, snapshot := range usage.Providers {
@@ -40,6 +42,7 @@ func PreviewFrames(usage PersistedUsage, showUsed bool, now time.Time) []Provide
 		})
 	}
 	automaticSet := preferAvailableProviders(providers)
+	lastGood, restated := restatedLastGood(automaticSet, now)
 	inAutomatic := make(map[string]bool, len(automaticSet))
 	for _, shown := range automaticSet {
 		inAutomatic[shown.Provider] = true
@@ -50,7 +53,12 @@ func PreviewFrames(usage PersistedUsage, showUsed bool, now time.Time) []Provide
 			Provider: shown.Provider,
 			Pinned:   previewFrame(shown, []codexbar.ParsedFrame{shown}, showUsed, now),
 		}
-		if inAutomatic[shown.Provider] {
+		if restated {
+			if normalizeProviderKey(shown.Provider) == normalizeProviderKey(lastGood.Frame.Provider) {
+				automatic := applyUsageBarsPreference(lastGood.Frame, showUsed).ApplyResetTrust(lastGood.SavedAt, now, false)
+				preview.Automatic = &automatic
+			}
+		} else if inAutomatic[shown.Provider] {
 			automatic := previewFrame(shown, automaticSet, showUsed, now)
 			preview.Automatic = &automatic
 		}
@@ -72,4 +80,28 @@ func previewFrame(shown codexbar.ParsedFrame, rowProviders []codexbar.ParsedFram
 	frame.ProviderSlots = providerResetSlots(rowProviders, collectedAt)
 	frame = applyUsageBarsPreference(frame.Normalize(), showUsed).ApplyResetTrust(collectedAt, now, !shown.Stale && !shown.Frame.UsageUnavailable)
 	return frame
+}
+
+// restatedLastGood is the stream's last-good frame when the stream would send
+// it instead of a provider: no provider has a current reading, so the cycle is
+// not fresh, and the persisted last-good frame still stands. The expiry marks
+// are the stream's (sendCycleResult).
+func restatedLastGood(automaticSet []codexbar.ParsedFrame, now time.Time) (persistedLastGood, bool) {
+	var none persistedLastGood
+	allUnavailable := true
+	for _, provider := range automaticSet {
+		if !provider.Stale && !provider.Frame.UsageUnavailable {
+			return none, false
+		}
+		allUnavailable = allUnavailable && provider.Frame.UsageUnavailable
+	}
+	frame, savedAt, ok := loadPersistedLastGoodAnyAge()
+	if !ok || (allUnavailable && !isLastGoodFreshAt(savedAt, now, providerSnapshotMaxAge())) {
+		return none, false
+	}
+	if !isLastGoodFreshAt(savedAt, now, lastGoodMaxAge()) {
+		frame.UsageUnavailable = true
+	}
+	frame.V = protocol.ProtocolVersionV2
+	return persistedLastGood{SavedAt: savedAt, Frame: frame}, true
 }

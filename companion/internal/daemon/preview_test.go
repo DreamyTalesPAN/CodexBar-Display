@@ -24,6 +24,7 @@ func previewSnapshot(provider string, collectedAt time.Time, windows ...protocol
 }
 
 func TestPreviewFramesMatchTheStreamsRowsAndResetTrust(t *testing.T) {
+	isolatePreviewHome(t)
 	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
 	usage := PersistedUsage{Providers: []ProviderUsageSnapshot{
 		// Read 5 minutes ago: by now its countdown has burned 300 seconds.
@@ -62,6 +63,7 @@ func TestPreviewFramesMatchTheStreamsRowsAndResetTrust(t *testing.T) {
 }
 
 func TestPreviewFramesFlipRowsInRemainingMode(t *testing.T) {
+	isolatePreviewHome(t)
 	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
 	usage := PersistedUsage{Providers: []ProviderUsageSnapshot{
 		previewSnapshot("codex", now, protocol.UsageWindow{ID: "weekly", Label: "Weekly", Percent: 30, ResetSec: 3600}),
@@ -74,6 +76,7 @@ func TestPreviewFramesFlipRowsInRemainingMode(t *testing.T) {
 }
 
 func TestPreviewFramesKeepUnavailableProvidersUnavailable(t *testing.T) {
+	isolatePreviewHome(t)
 	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
 	stale := previewSnapshot("stale", now, protocol.UsageWindow{ID: "session", Label: "Session", Percent: 10, ResetSec: 600})
 	stale.Stale = true
@@ -126,6 +129,7 @@ func parsedOf(snapshot ProviderUsageSnapshot) codexbar.ParsedFrame {
 }
 
 func TestPreviewFramesAutomaticSkipsWhatTheStreamSkips(t *testing.T) {
+	isolatePreviewHome(t)
 	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
 	live := previewSnapshot("codex", now, protocol.UsageWindow{ID: "session", Label: "Session", Percent: 10, ResetSec: 600})
 	stale := previewSnapshot("claude", now.Add(-time.Hour), protocol.UsageWindow{ID: "session", Label: "Session", Percent: 50, ResetSec: 600})
@@ -145,6 +149,7 @@ func TestPreviewFramesAutomaticSkipsWhatTheStreamSkips(t *testing.T) {
 }
 
 func TestPreviewFramesRetainedReadingIsWhatTheStreamSends(t *testing.T) {
+	isolatePreviewHome(t)
 	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
 	stale := previewSnapshot("claude", now.Add(-time.Minute), protocol.UsageWindow{ID: "session", Label: "Session", Percent: 50, ResetSec: 600})
 	stale.Stale = true
@@ -159,4 +164,48 @@ func TestPreviewFramesRetainedReadingIsWhatTheStreamSends(t *testing.T) {
 			t.Fatalf("%s: stream sends %+v, preview %+v", name, want, got)
 		}
 	}
+}
+
+func TestPreviewFramesAllStaleRestateTheStreamsLastGood(t *testing.T) {
+	isolatePreviewHome(t)
+	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
+	claude := previewSnapshot("claude", now.Add(-2*time.Minute), protocol.UsageWindow{ID: "session", Label: "Session", Percent: 50, ResetSec: 600})
+	claude.Stale = true
+	codex := previewSnapshot("codex", now.Add(-3*time.Minute), protocol.UsageWindow{ID: "session", Label: "Session", Percent: 30, ResetSec: 900})
+	codex.Stale = true
+	good := codex.Frame
+	good.V = protocol.ProtocolVersionV2
+	savedAt := now.Add(-3 * time.Minute)
+	if err := persistLastGood(good, savedAt); err != nil {
+		t.Fatal(err)
+	}
+
+	// The stream with this runtime state: both providers stale, so it restates
+	// state.lastGood through sendCycleResult's steps.
+	state := &runtimeState{selector: codexbar.NewProviderSelector(), lastGood: good.Normalize(), lastGoodAt: savedAt, hasLastGood: true}
+	deps := rotationTestDeps(0, nil)
+	deps.now = func() time.Time { return now }
+	result := selectCycleFrameFromProviders(state, []codexbar.ParsedFrame{parsedOf(claude), parsedOf(codex)}, now, deps, nil, "", "", "", "")
+	if result.usageFresh {
+		t.Fatalf("all-stale cycle must not be fresh: %+v", result)
+	}
+	want := applyUsageBarsPreference(state.lastGood, true).ApplyResetTrust(state.lastGoodAt, now, false)
+
+	previews := PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{claude, codex}}, true, now)
+	if previews[0].Automatic != nil || previews[1].Automatic == nil {
+		t.Fatalf("exactly the last-good provider shows in Automatic: %+v", previews)
+	}
+	got := *previews[1].Automatic
+	if got.Provider != "codex" || got.ResetSec != want.ResetSec || got.ResetTrust != want.ResetTrust || len(got.UsageWindows) != 1 || got.UsageWindows[0].Percent != 30 {
+		t.Fatalf("stream restates %+v, preview %+v", want, got)
+	}
+}
+
+// PreviewFrames reads the runtime's persisted last-good frame from the home
+// directory; a test must not see the developer's.
+func isolatePreviewHome(t *testing.T) {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 }

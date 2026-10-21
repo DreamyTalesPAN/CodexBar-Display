@@ -26,6 +26,7 @@ func getPreviewFrames(t *testing.T, server *Server) previewFramesResponse {
 }
 
 func TestDisplayPreviewFramesAreTheDaemonsFrames(t *testing.T) {
+	isolatePreviewHome(t)
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
 	server.now = func() time.Time { return now }
@@ -60,6 +61,7 @@ func TestDisplayPreviewFramesAreTheDaemonsFrames(t *testing.T) {
 // reading yet has the host's unavailable frame when pinned, and no Automatic
 // frame while another provider is current, as the stream drops it there.
 func TestDisplayPreviewFramesCoverEveryEnabledProvider(t *testing.T) {
+	isolatePreviewHome(t)
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
 	server.now = func() time.Time { return now }
@@ -100,6 +102,7 @@ func TestDisplayPreviewFramesCoverEveryEnabledProvider(t *testing.T) {
 }
 
 func TestDisplayPreviewFramesWithoutUsageIsEmptyAndGetOnly(t *testing.T) {
+	isolatePreviewHome(t)
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
 
@@ -112,4 +115,13 @@ func TestDisplayPreviewFramesWithoutUsageIsEmptyAndGetOnly(t *testing.T) {
 	if recorder.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("POST status=%d", recorder.Code)
 	}
+}
+
+// PreviewFrames reads the runtime's persisted last-good frame from the home
+// directory; a test must not see the developer's.
+func isolatePreviewHome(t *testing.T) {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 }

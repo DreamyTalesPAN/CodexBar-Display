@@ -533,6 +533,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const providerDisplayWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
   const providerPreferencesReadRef = useRef<Promise<void> | null>(null);
   const quietUsageReadRef = useRef<Promise<void> | null>(null);
+  const usageGenerationRef = useRef(0);
   const providerPreferencesRevisionRef = useRef(0);
   const providerPreferenceWritesRef = useRef<Promise<void>>(Promise.resolve());
   const displayPreferencesRevisionRef = useRef(0);
@@ -3417,6 +3418,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (quiet && quietUsageReadRef.current) {
         return quietUsageReadRef.current;
       }
+      const generation = ++usageGenerationRef.current;
       const read = (async () => {
         if (!quiet) {
           setBusyAction("usage");
@@ -3427,14 +3429,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             undefined,
             { preserveLastError: quiet },
           );
-          setUsage(payload);
           // The frames the setup tiles draw are the ones the companion builds
-          // for the stream, read again with the usage they come from.
-          runCompanion<PreviewFrames>("/v1/display/preview-frames", undefined, {
-            preserveLastError: true,
-          })
-            .then(setPreviewFrames)
-            .catch(() => setPreviewFrames(null));
+          // for the stream, read with the usage they come from and published
+          // together with it; a slower, older read never replaces a newer pair.
+          const frames = await runCompanion<PreviewFrames>(
+            "/v1/display/preview-frames",
+            undefined,
+            { preserveLastError: true },
+          ).catch(() => null);
+          if (generation === usageGenerationRef.current) {
+            setUsage(payload);
+            setPreviewFrames(frames);
+          }
           setUsageError(null);
           setCompanionStatus("online");
           if (!quiet) {
