@@ -8647,3 +8647,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #821 as in its own entries plus the entries merged with e55eaf93; nothing else changes.
 - Scope: the merge of e55eaf93 and this approval record. Pull request branch #821 only, not merged, not released.
 - What's new: none — merge of e55eaf93, no customer-visible change of its own
+
+## 2026-10-21 — #821: approval marker after merging claude/group-setup-b at b821b9ed
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-setup-b (b821b9ed) into #821; the own entries of #821 keep their approvals)
+- Approved customer-visible result: #821 as in its own entries plus the entries merged with b821b9ed; nothing else changes.
+- Scope: the merge of b821b9ed and this approval record. Pull request branch #821 only, not merged, not released.
+- What's new: none — merge of b821b9ed, no customer-visible change of its own
