@@ -330,6 +330,8 @@ export type DeviceInfo = {
     wifi?: {
       rssi: number;
       weak?: boolean;
+      /** Valid reading above the Companion's current weak threshold. */
+      recovered?: boolean;
     };
   };
   display?: {

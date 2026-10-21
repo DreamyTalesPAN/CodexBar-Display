@@ -51,11 +51,9 @@ const NOTICE_COPY: Record<OverviewNotice, { description: string; title: string }
 const DIALOGS = '[role="dialog"], [role="alertdialog"]';
 
 // Issue #498: the Companion names a theme the VibeTV cannot draw.
-// Issue #265: the Mac App names a WiFi signal too weak for reliable updates.
 function activeOverviewNotices(device: DeviceInfo | null): OverviewNotice[] {
   const notices: OverviewNotice[] = [];
   if (!deviceIsCustomerConnected(device)) return notices;
-  if (device?.health?.wifi?.weak === true) notices.push("weak-wifi");
   if (device?.connectionState === "display_render_failed") {
     notices.push("theme-not-shown");
   }
