@@ -18150,3 +18150,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #781 as in its own entries; on Windows only, the green export notice names the Downloads folder instead of `Theme pack exported. No device was contacted.`; the Mac notice and the file name stay as they are.
 - Scope: the Theme Studio export notice for the Windows app (one ternary) and its regression test. Pull request branch #781 only, not merged, not released.
 - What's new: none — the Windows export notice changes its sentence only, the sentence Support already shows, no new control
+
+## 2026-10-21 — #887: explain an invalid Theme Studio color
+
+- User approval: pending — new error text for an invalid Theme Studio color; Paul has not seen it
+- Approved customer-visible result: none yet. Proposed text under an invalid color field (Theme Studio editor, ColorField): "Use a 6-digit hex color, like #FFAA00." The field is linked to this text via aria-describedby; the text disappears when the draft is valid or the field is reverted on blur.
+- Scope: `editor-fields.tsx` and its new regression test `editor-fields.test.tsx`; issue #887 item 3 only, not merged, not released.
+- What's new: none — the error text is not approved yet, so it is not announced

@@ -2,7 +2,7 @@
 
 import { ChevronDown, Pipette } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
-import { Field, FieldLabel } from "@/components/ui/field";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
   InputGroup,
@@ -147,6 +147,7 @@ export function ColorField({
             />
           </InputGroupAddon>
           <InputGroupInput
+            aria-describedby={draftValid ? undefined : `${id}-error`}
             aria-invalid={!draftValid}
             className="font-mono"
             onBlur={commitDraft}
@@ -239,6 +240,11 @@ export function ColorField({
           value={safeValue}
         />
       </div>
+      {draftValid ? null : (
+        <FieldError id={`${id}-error`}>
+          Use a 6-digit hex color, like #FFAA00.
+        </FieldError>
+      )}
     </Field>
   );
 }
