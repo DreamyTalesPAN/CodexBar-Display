@@ -8906,3 +8906,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Automatic and Manual share a native-size 240 × 240 pixelated theme preview, including the loading placeholder; the setup grid stacks cards when two 256px cards do not fit, with a 120px half-scale preview only in exceptionally narrow cards; Automatic crossfades for 180ms of each two-second rotation and shows exactly one provider at rest.
 - Scope: setup-display-mode-screen.tsx (calm setup grid only), setup-display-theme-tiles.tsx (shared preview size and fade duration), setup-display-theme-carousel.test.tsx and this approval record; unit and type checks only, with the real Mac/Windows screen left to the coordinator's next build.
 - What's new: none — refine the pending setup preview layout; no persistent stacking found in the component or regression checks.
+
+## 2026-10-21 — #821: keep unavailable providers inside the theme preview
+
+- User approval: no visible change – UI approval not needed (bug fix: #821 unavailable Automatic providers retain the existing grey theme placeholder and preview size instead of switching to a smaller text fallback; coordinator-authorized review follow-up)
+- Approved customer-visible result: an unavailable provider keeps the same preview area and shows no invented readings; a missing theme still uses the existing plain fallback.
+- Scope: setup-display-mode-screen.tsx (one guard), setup-display-theme-carousel.test.tsx, setup-display-mode-screen.test.tsx and this approval record; regression reproduced before the fix, no hardware or running-app check.
+- What's new: none — restore the existing unavailable placeholder during rotation.

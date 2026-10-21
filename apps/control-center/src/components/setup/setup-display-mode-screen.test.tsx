@@ -270,7 +270,8 @@ describe("SetupDisplayModeScreen", () => {
     });
 
     expect(html).not.toContain('data-state="skeleton"');
-    expect(html).toContain("Usage unavailable");
+    expect(html).toContain('data-state="unavailable"');
+    expect(html).toContain('aria-label="Codex: no usage yet"');
     expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);
   });
 

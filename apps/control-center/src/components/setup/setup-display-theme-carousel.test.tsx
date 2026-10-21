@@ -193,14 +193,16 @@ describe("Automatic shows one theme tile that changes provider (#821 single tile
     }
   });
 
-  it("shows the existing unavailable preview on a provider's turn without values", async () => {
+  it("keeps the same-size grey theme placeholder on a provider's turn without values", async () => {
     show([live("Claude", 64), { providerLabel: "Cursor", resetLabel: null, windows: [] }]);
     await settle();
     act(() => { vi.advanceTimersByTime(ROTATION_HOLD_MS); });
-    const preview = document.querySelector('[data-slot="display-mode-preview"]');
-    expect(preview?.textContent).toContain("Cursor");
-    expect(preview?.textContent).toContain("Usage unavailable");
-    expect(preview?.querySelector('[data-state="skeleton"]')).toBeNull();
+    const shown = tiles(0).find((tile) => tile.dataset.visible === "true");
+    expect(shown?.dataset.provider).toBe("Cursor");
+    expect(shown?.dataset.state).toBe("unavailable");
+    expect(shown?.parentElement?.className).toContain("@min-[240px]:size-[240px]");
+    expect(shown?.querySelector("svg")).toBeNull();
+    expect(shown?.textContent).toBe("");
   });
 
   it("does not rotate Manual", async () => {

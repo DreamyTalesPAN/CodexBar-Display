@@ -247,7 +247,7 @@ export function DisplayModeChoice({
     if (tileIsSkeleton(themePack, usageLoading)) {
       return <ThemeTileSkeleton count={frames.length} />;
     }
-    if (themePack.pack && frames[at]?.frame) {
+    if (themePack.pack && frames[at]) {
       return (
         <ThemeTileStrip
           frames={frames}
