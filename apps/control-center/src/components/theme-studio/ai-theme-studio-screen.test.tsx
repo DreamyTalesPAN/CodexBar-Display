@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { buildAIThemeCandidate, fetchAIThemeCapabilities, generateAIThemeConcept, planAIThemeLayout } from "@/lib/ai-theme";
+import { buildAIThemeCandidate, fetchAIThemeCapabilities, generateAIThemeConcept, planAIThemeLayout, saveAIThemeCredential, verifyAIThemeCredential } from "@/lib/ai-theme";
 import { createBlankThemeSpec } from "@/lib/theme-studio";
 import { AIThemeStudioScreen } from "./ai-theme-studio-screen";
 import { createDesignElement } from "./design-controls";
@@ -460,5 +460,59 @@ describe("Theme Studio send reason", () => {
     expect(sendButton().hasAttribute("disabled")).toBe(false);
     expect(reasonLine()).toBeNull();
     expect(tooltipOf(sendButton())?.hasAttribute("title")).toBe(false);
+  });
+});
+
+describe("Theme Studio key state against late capability answers (#847)", () => {
+  const theme = { assets: {}, packName: "Idea", source: "blank" as const, spec: createBlankThemeSpec(), usage: "live" as const };
+  const caps = (configured: boolean, verificationRequired = false) =>
+    ({ enabled: true, providers: [{ id: "openai", configured, verificationRequired }] }) as unknown as Awaited<ReturnType<typeof fetchAIThemeCapabilities>>;
+  // Consent is remembered in the browser; each test starts without it.
+  beforeEach(() => localStorage.removeItem("vibetv.aiTheme.consent"));
+
+  // The screen's mount read is still pending; a rerender with a new theme starts a second read, which enables Create.
+  async function openSetupWithMountReadPending(stale: ReturnType<typeof deferred<Awaited<ReturnType<typeof fetchAIThemeCapabilities>>>>) {
+    vi.mocked(fetchAIThemeCapabilities)
+      .mockReturnValueOnce(stale.promise)
+      .mockResolvedValueOnce(caps(false)) // the rerender's read: ready, no key yet
+      .mockResolvedValueOnce(caps(false)); // the key form's mount read
+    vi.mocked(planAIThemeLayout).mockResolvedValue({ mode: "answer", notes: "Done." } as never);
+    const { rerender } = render(<AIThemeStudioScreen initialTheme={theme} />);
+    rerender(<AIThemeStudioScreen initialTheme={{ ...theme }} />);
+    await sendIdea();
+    fireEvent.change(await screen.findByLabelText("OpenAI key", { selector: "input" }), { target: { value: "sk-test-key" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+  }
+
+  it("keeps the pending state after a failed save when a pre-save capability read answers late", async () => {
+    const stale = deferred<Awaited<ReturnType<typeof fetchAIThemeCapabilities>>>();
+    await openSetupWithMountReadPending(stale);
+    vi.mocked(fetchAIThemeCapabilities).mockResolvedValueOnce(caps(true, true)); // the read after the failed check
+    vi.mocked(saveAIThemeCredential).mockResolvedValue(undefined as never);
+    vi.mocked(verifyAIThemeCredential).mockRejectedValue(new Error("Check failed."));
+    fireEvent.click(screen.getByRole("button", { name: "Connect and continue" }));
+    await screen.findByRole("button", { name: "Retry connection check" });
+
+    stale.resolve(caps(false));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.getByRole("dialog", { name: "Replace OpenAI key" })).toBeTruthy();
+  });
+
+  it("keeps a saved key ready when a pre-save capability read answers late", async () => {
+    const stale = deferred<Awaited<ReturnType<typeof fetchAIThemeCapabilities>>>();
+    await openSetupWithMountReadPending(stale);
+    vi.mocked(fetchAIThemeCapabilities).mockResolvedValue(caps(true));
+    vi.mocked(saveAIThemeCredential).mockResolvedValue(undefined as never);
+    vi.mocked(verifyAIThemeCredential).mockResolvedValue(true as never);
+    fireEvent.click(screen.getByRole("button", { name: "Connect and continue" }));
+    // The saved key carries the first request straight through to the AI.
+    await waitFor(() => expect(planAIThemeLayout).toHaveBeenCalledTimes(1));
+
+    stale.resolve(caps(false));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    // A new idea goes straight to the AI: no key dialog opens again.
+    await sendIdea();
+    await waitFor(() => expect(planAIThemeLayout).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
