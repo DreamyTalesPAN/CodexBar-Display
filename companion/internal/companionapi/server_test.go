@@ -12600,14 +12600,35 @@ func TestFirmwareUpdateWiFiJobVerifiesOverCableWhenUpdaterReportsCable(t *testin
 	server.readCableHello = func(string) (protocol.DeviceHello, error) {
 		return protocol.DeviceHello{
 			Kind: "hello", DeviceID: deviceID, Board: "esp8266-smalltv-st7789", Firmware: "1.0.47",
+			Features:     []string{protocol.FeatureCableHealthV1},
 			Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable"}},
 		}, nil
 	}
 	server.streamStatus = func(context.Context, string) displayStreamInfo { return displayStreamInfo{} }
-	server.refreshStream = func(context.Context, string) error { return nil }
+	server.readCableHealth = func(string, string) (deviceHealth, error) {
+		return deviceHealth{OK: true}, nil
+	}
+	server.refreshStream = func(context.Context, string) error {
+		cfg, err := server.config()
+		if err != nil {
+			return err
+		}
+		if cfg.ConnectionMode != "cable" {
+			return errors.New("stream worker still uses WiFi")
+		}
+		return nil
+	}
 	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		cfg, err := server.config()
+		if err != nil || cfg.ConnectionMode != "cable" {
+			return displayStreamInfo{}
+		}
 		return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
 	}
+	server.waitRender = func(_ context.Context, _ string, _ string, health deviceHealth) (deviceHealth, error) {
+		return health, nil
+	}
+
 	server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
 		wifiHits.Store(0)
 		_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"verifying_health","phase":"installing","outcome":"updated","firmware":"1.0.47","observedFirmware":"1.0.47","target":"cable://vibetv","deviceId":"`+deviceID+`","artifactValidated":true,"uploadAccepted":true,"helloVerified":true}`+"\n")
@@ -12628,8 +12649,16 @@ func TestFirmwareUpdateWiFiJobVerifiesOverCableWhenUpdaterReportsCable(t *testin
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if job.Phase == "error" || job.Result == nil || !job.Result.HelloVerified || job.Result.Target != cableDeviceTarget {
+	if job.Phase != "complete" || job.Result == nil || !job.Result.HelloVerified || !job.Result.HealthVerified || !job.Result.StreamVerified || job.Result.Target != cableDeviceTarget {
 		t.Fatalf("a cable-verified WiFi job must not fail on the WiFi address: %+v", job)
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	known, ok := cfg.KnownDevice(deviceID)
+	if cfg.ConnectionMode != "cable" || cfg.DeviceID != deviceID || cfg.DeviceToken != "pair-token" || cfg.DeviceTarget != wifi.URL || !ok || known.Target != wifi.URL || known.DeviceToken != "pair-token" {
+		t.Fatalf("Cable fallback lost the saved WiFi binding: %+v", cfg)
 	}
 	if hits := wifiHits.Load(); hits != 0 {
 		t.Fatalf("the WiFi address was asked %d times, the cable had the answer", hits)
@@ -15649,7 +15678,7 @@ func TestDeviceSearchOffersAHalfWrittenVibeTVForItsRescue(t *testing.T) {
 			}
 			if err := firmwareupdate.SaveRescueMarker(server.home, firmwareupdate.RescueMarker{
 				ChipMAC: "0000aabb11223344",
-				Port: "COM4", Ports: []string{"COM1", "COM4"}, Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
+				Port:    "COM4", Ports: []string{"COM1", "COM4"}, Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
 				ImagePath: imagePath, ImageSHA256: hex.EncodeToString(sum[:]), WriteStartedAt: time.Now().Add(-tc.age),
 			}); err != nil {
 				t.Fatal(err)
@@ -15736,7 +15765,7 @@ func TestFirmwareLatestNamesTheCachedRescueTarget(t *testing.T) {
 	sum := sha256.Sum256([]byte("cable firmware"))
 	if err := firmwareupdate.SaveRescueMarker(server.home, firmwareupdate.RescueMarker{
 		ChipMAC: "0000aabb11223344",
-		Port: "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
+		Port:    "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
 		ImagePath: imagePath, ImageSHA256: hex.EncodeToString(sum[:]), WriteStartedAt: time.Now().Add(-time.Minute),
 	}); err != nil {
 		t.Fatal(err)
@@ -15785,7 +15814,7 @@ func TestFirmwareLatestNamesTheCachedRescueTarget(t *testing.T) {
 	cabled := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "other"})
 	if err := firmwareupdate.SaveRescueMarker(cabled.home, firmwareupdate.RescueMarker{
 		ChipMAC: "0000aabb11223344",
-		Port: "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
+		Port:    "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
 		ImagePath: imagePath, ImageSHA256: hex.EncodeToString(sum[:]), WriteStartedAt: time.Now().Add(-time.Minute),
 	}); err != nil {
 		t.Fatal(err)
@@ -15852,7 +15881,7 @@ func TestFirmwareLatestRescueCheckDoesNotProbeDuringAnUpdate(t *testing.T) {
 	sum := sha256.Sum256([]byte("cable firmware"))
 	if err := firmwareupdate.SaveRescueMarker(server.home, firmwareupdate.RescueMarker{
 		ChipMAC: "0000aabb11223344",
-		Port: "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
+		Port:    "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
 		ImagePath: imagePath, ImageSHA256: hex.EncodeToString(sum[:]), WriteStartedAt: time.Now().Add(-time.Minute),
 	}); err != nil {
 		t.Fatal(err)

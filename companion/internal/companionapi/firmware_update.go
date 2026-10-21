@@ -663,6 +663,15 @@ func (s *Server) verifyCableFirmwareUpdateResult(ctx context.Context, jobID stri
 		result.HealthVerified = true
 	})
 
+	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) != "cable" {
+		// The updater can find the same VibeTV on Cable after WiFi times out.
+		// The daemon chooses its transport from config, not the restart target.
+		cfg, err = s.saveCableSelection(hello, cfg.DeviceToken)
+		if err != nil {
+			return "", "", fmt.Errorf("save verified Cable connection: %w", err)
+		}
+	}
+
 	s.setFirmwareUpdateStage(jobID, "restarting_stream")
 	streamStartedAt := time.Now().UTC()
 	if err := s.startDisplayStream(ctx, cableDeviceTarget); err != nil {
