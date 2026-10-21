@@ -35,6 +35,7 @@ import { ThemeStudioKeyRow } from "./theme-studio/openai-key-form";
 import { isProviderItem, type ProviderPickerProps } from "./provider-picker";
 import {
   defaultPairIds,
+  withPairProvider,
   DisplayModeChoice,
   type SetupDisplayModePreview,
 } from "./setup/setup-display-mode-screen";
@@ -395,14 +396,17 @@ export function SettingsScreen({
                 "",
             )
           }
-          onSelectPair={(providerIds) => {
-            // Settings saves on every pick, so only a full pair is written.
-            if (providerIds[0] && providerIds[1]) {
-              void providerPicker.onDisplayChange(
-                { mode: "pair", providerIds },
-                providerIds[0],
+          onSelectPair={(position, providerId) => {
+            void providerPicker.onDisplayChange((current) => {
+              const providerIds = withPairProvider(
+                current?.mode === "pair" ? current.providerIds : pairIds,
+                position,
+                providerId,
               );
-            }
+              return providerIds[0] && providerIds[1]
+                ? { mode: "pair", providerIds }
+                : null;
+            }, providerId);
           }}
           onSelectProvider={(providerId) =>
             void providerPicker.onDisplayChange(

@@ -1324,3 +1324,43 @@ it("keeps the first of two quick limit changes in the second save", async () => 
 
   expect((window.companion.selection as Record<string, unknown>).hiddenWindows).toEqual({ claude: ["session", "weekly"] });
 });
+
+// Pair edits wait behind another display PATCH. Each must apply only its own
+// slot change to the selection left by the preceding write, including swaps.
+it.each([
+  ["Cursor", "Gemini", ["cursor", "gemini"]],
+  ["Codex", "Cursor", ["codex", "cursor"]],
+])("keeps both queued pair edits (%s then %s)", async (first, second, expected) => {
+  const window = startWindow();
+  window.companion.providers = ["Claude", "Codex", "Cursor", "Gemini"].map((label) => ({
+    ...claude, id: `codexbar.providers.${label.toLowerCase()}.enabled`,
+    providerId: label.toLowerCase(), label,
+  }));
+  window.companion.usageWindows = [
+    { id: "session", label: "Session", usedPercent: 12 },
+    { id: "weekly", label: "Weekly", usedPercent: 34 },
+  ];
+  window.companion.selection = {
+    mode: "pair", providerIds: ["claude", "codex"], configured: true, valid: true,
+  };
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+
+  const answerFirst = window.holdNextWrite();
+  await window.step(() => fireEvent.click(document.getElementById("vibetv-limit-claude-session") as HTMLElement));
+  for (const [picker, choice] of [["Provider 1", first], ["Provider 2", second]]) {
+    await window.step(() => {
+      fireEvent.keyDown(screen.getByRole("combobox", { name: picker }), { key: "Enter" });
+      fireEvent.keyDown(screen.getByRole("option", { name: choice }), { key: "Enter" });
+    });
+  }
+  answerFirst();
+  await window.wait(1);
+
+  const patches = window.companion.requests
+    .filter((request) => request.startsWith("PATCH /api/local-companion/v1/provider-display "))
+    .map((request) => JSON.parse(request.slice(request.indexOf("{"))));
+  expect(patches.at(-1)).toMatchObject({ mode: "pair", providerIds: expected });
+  expect(window.companion.selection.providerIds).toEqual(expected);
+});
