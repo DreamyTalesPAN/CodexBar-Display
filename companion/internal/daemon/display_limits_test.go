@@ -497,3 +497,23 @@ func TestRunCycleRestatedLastGoodDropsALimitHiddenSince(t *testing.T) {
 		}
 	}
 }
+
+// Automatic skips a provider whose every reported window the customer hid,
+// exactly like an unavailable one, so selection and rotation never land on a
+// provider that would leave VibeTV with no usage while another has some.
+func TestProviderDisplayAutomaticSkipsAProviderWithNoVisibleWindow(t *testing.T) {
+	basis := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
+	automatic := runtimeconfig.ProviderDisplayConfig{Mode: "automatic", HiddenWindows: map[string][]string{"claude": {"weekly"}}}
+	claude := providerFrameWithWindows("claude", basis, protocol.UsageWindow{ID: "weekly", Label: "Weekly", Percent: 72, ResetSec: 360000})
+	codex := providerFrameWithWindows("codex", basis, protocol.UsageWindow{ID: "weekly", Label: "Weekly", Percent: 32, ResetSec: 420000})
+	got := applyProviderDisplaySelection(&runtimeState{selector: codexbar.NewProviderSelector()}, []codexbar.ParsedFrame{claude, codex}, providerDisplayTestDeps(automatic), nil)
+	if len(got) != 1 || got[0].Frame.Provider != "codex" {
+		t.Fatalf("automatic selection=%+v want only codex", got)
+	}
+	// With nothing visible anywhere the providers stay, and the display
+	// filter shows usage as unavailable.
+	got = applyProviderDisplaySelection(&runtimeState{selector: codexbar.NewProviderSelector()}, []codexbar.ParsedFrame{claude}, providerDisplayTestDeps(automatic), nil)
+	if len(got) != 1 {
+		t.Fatalf("automatic selection=%+v want the only provider kept", got)
+	}
+}
