@@ -8669,3 +8669,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #782 as in its own entries plus the entries merged with 3dc0a15b; nothing else changes.
 - Scope: the merge of 3dc0a15b and this approval record. Pull request branch #782 only, not merged, not released.
 - What's new: none — merge of 3dc0a15b, no customer-visible change of its own
+
+## 2026-10-21 — #782: closed connect dialog on Settings stays closed
+
+- User approval: no visible change – UI approval not needed (bug fix: the closed connect dialog on Settings stays closed like on Logs)
+- Approved customer-visible result: the connect dialog closed with OK on Settings no longer reappears after about 5 seconds; a new error still shows.
+- Scope: Settings and Logs share one dismiss handler in control-center-app.tsx; the lost-device test pins Settings. Pull request branch #782 only, not merged, not released.
+- What's new: none — the dialog text and buttons are unchanged; only the closed state is kept.

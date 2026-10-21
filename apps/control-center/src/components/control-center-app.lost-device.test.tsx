@@ -204,3 +204,33 @@ it("keeps a closed connect error closed across status polls", async () => {
   expect(window.companion.requests.filter((request) => request.endsWith("/v1/status")).length).toBeGreaterThan(2);
   expect(window.text()).not.toContain("VibeTV could not connect.");
 });
+
+// Settings shows the same connect dialog; its OK must keep it closed the same
+// way the Support page does (#782).
+it("keeps a connect error closed on Settings and shows a new one", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  const rejected = {
+    ...wifi,
+    connected: false,
+    ready: false,
+    stream: { errorCode: "pairing_token_rejected" },
+  } as typeof wifi;
+  window.companion.device = rejected;
+  await window.wait(6);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  expect(window.text()).toContain("VibeTV could not connect.");
+
+  fireEvent.click(screen.getByRole("button", { name: "OK" }));
+  await window.wait(15);
+  expect(window.companion.requests.filter((request) => request.endsWith("/v1/status")).length).toBeGreaterThan(2);
+  expect(window.text()).not.toContain("VibeTV could not connect.");
+
+  // A new rejection after the VibeTV was healthy again is a new error.
+  window.companion.device = wifi;
+  await window.wait(6);
+  window.companion.device = rejected;
+  await window.wait(6);
+  expect(window.text()).toContain("VibeTV could not connect.");
+});

@@ -475,6 +475,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // surface shows it again (Support and Settings alike).
   const [dismissedError, setDismissedError] = useState<ApiError | null>(null);
   const shownError = lastError && lastError !== dismissedError ? lastError : null;
+  const dismissError = () => setDismissedError(lastError);
   const supportError = useMemo(
     () => errorForHost(shownError, windowsHost),
     [shownError, windowsHost],
@@ -5838,8 +5839,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               lostDevicePickerOpen ? null : errorForHost(shownError, windowsHost)
             }
             onDismissError={() => {
-              setDismissedError(lastError);
-              setLastError(null);
+              dismissError();
               setProviderDisplayError(null);
               setProviderPreferencesError(null);
             }}
@@ -5967,7 +5967,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             events={logs}
             lastError={centredDialogOpen ? null : supportError}
             onCreateSupportReport={createSupportReport}
-            onDismissError={() => setDismissedError(lastError)}
+            onDismissError={dismissError}
             onLoadDiagnostics={runSupportDiagnostics}
             onRefresh={checkCompanion}
             onRepairUsageEngine={retryUsageService}
