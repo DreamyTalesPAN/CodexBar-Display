@@ -233,15 +233,9 @@ func discoverVibeTVs(
 	sort.Slice(devices, func(i, j int) bool {
 		return strings.ToLower(devices[i].Hello.DeviceID) < strings.ToLower(devices[j].Hello.DeviceID)
 	})
-	if len(devices) == 0 && foreignDeviceAnswered {
-		return nil, wrapTransportError(
-			errcode.TransportForeignDevice,
-			"discover-vibetvs",
-			"",
-			"Disconnect the other serial device and connect VibeTV with a data-capable Cable.",
-			errors.New("a non-VibeTV serial device answered hello"),
-		)
-	}
+	// A pre-Cable VibeTV wins over a foreign responder: its Cable rescue
+	// (FindLegacyCableVibeTV) ignores foreign devices, so setup can still offer
+	// it (Codex review on #819).
 	if len(devices) == 0 && legacy != nil {
 		return nil, wrapTransportError(
 			errcode.TransportCableFirmwareTooOld,
@@ -249,6 +243,15 @@ func discoverVibeTVs(
 			"",
 			"Update VibeTV over WiFi first, then reconnect the Cable.",
 			legacy,
+		)
+	}
+	if len(devices) == 0 && foreignDeviceAnswered {
+		return nil, wrapTransportError(
+			errcode.TransportForeignDevice,
+			"discover-vibetvs",
+			"",
+			"Disconnect the other serial device and connect VibeTV with a data-capable Cable.",
+			errors.New("a non-VibeTV serial device answered hello"),
 		)
 	}
 	return devices, nil
