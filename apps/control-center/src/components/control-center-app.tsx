@@ -5885,6 +5885,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               displayMode={providerDisplay?.mode ?? "automatic"}
               displayProviderId={providerDisplay?.providerIds?.[0] ?? null}
               displayProviderIds={providerDisplay?.providerIds ?? []}
+              displayHiddenWindows={providerDisplay?.hiddenWindows}
               firmwareProgress={firmwareUpdateStatus?.progress}
               firmwareWrittenPercent={
                 firmwareUpdateInProgress

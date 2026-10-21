@@ -1,5 +1,12 @@
 "use client";
 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldLabel } from "@/components/ui/field";
 import type {
@@ -170,5 +177,52 @@ function withWindowShown(
   } else {
     delete next[providerId];
   }
+  return next;
+}
+
+/** Single-window view of the same shared limit setting used by the checkboxes. */
+export function DisplayLimitSelect({
+  id, label, windows, hidden, disabled, onChange,
+}: {
+  id: string;
+  label: string;
+  windows: UsageWindowInfo[];
+  hidden?: string[];
+  disabled?: boolean;
+  onChange: (windowId: string) => void;
+}) {
+  return (
+    <Select
+      disabled={disabled}
+      onValueChange={onChange}
+      value={visibleUsageWindows(windows, hidden)[0]?.id ?? ""}
+    >
+      <SelectTrigger aria-label={label} className="w-full data-[size=default]:h-9" id={id}>
+        <SelectValue placeholder="Choose a limit" />
+      </SelectTrigger>
+      <SelectContent>
+        {windows.map((window) => (
+          <SelectItem key={window.id} value={window.id}>{window.label}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+/** Preserve unreported hidden windows and every other provider's choices. */
+export function withOnlyWindowShown(
+  hidden: Record<string, string[]>,
+  providerId: string,
+  windows: UsageWindowInfo[],
+  windowId: string,
+): Record<string, string[]> {
+  if (!windows.some((window) => window.id === windowId)) return hidden;
+  const ids = [
+    ...(hidden[providerId] ?? []).filter((id) => !windows.some((window) => window.id === id)),
+    ...windows.filter((window) => window.id !== windowId).map((window) => window.id),
+  ];
+  const next = { ...hidden };
+  if (ids.length) next[providerId] = ids;
+  else delete next[providerId];
   return next;
 }

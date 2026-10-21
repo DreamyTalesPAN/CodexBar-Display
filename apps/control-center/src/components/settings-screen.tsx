@@ -36,7 +36,12 @@ import {
   defaultPairIds,
   withPairProvider,
 } from "./setup/setup-display-mode-screen";
-import { DisplayLimitsSettings } from "./display-limits-settings";
+import {
+  DisplayLimitsSettings,
+  DisplayLimitSelect,
+  withOnlyWindowShown,
+  type DisplayLimitsChange,
+} from "./display-limits-settings";
 import { useActiveThemeLimits } from "./live-vibetv-preview";
 import {
   ProviderList,
@@ -245,6 +250,16 @@ export function SettingsScreen({
     activeLiveThemeId(themes, device),
     themes,
   );
+  const changeLimits = (change: DisplayLimitsChange) =>
+    void providerPicker.onDisplayChange((current) => {
+      // Derive from the queued write's latest state, preserving earlier edits.
+      if (!current) return null;
+      return {
+        mode: current.mode,
+        providerIds: current.mode === "automatic" ? enabledProviderIds : current.providerIds,
+        hiddenWindows: change(current.hiddenWindows ?? {}),
+      };
+    }, providerPicker.display?.providerIds[0] ?? "");
   const selectMode = (mode: "automatic" | "fixed" | "pair") =>
     void providerPicker.onDisplayChange(
       {
@@ -347,20 +362,39 @@ export function SettingsScreen({
           />
           {displayMode === "pair" ? (
             <div className="mt-2 flex flex-col gap-3">
-              <SourceSelect
-                id="vibetv-pair-top"
-                label="Provider 1"
-                onChange={(providerId) => selectPair(0, providerId)}
-                providers={pairChoices}
-                value={pairIds[0] ?? ""}
-              />
-              <SourceSelect
-                id="vibetv-pair-bottom"
-                label="Provider 2"
-                onChange={(providerId) => selectPair(1, providerId)}
-                providers={pairChoices}
-                value={pairIds[1] ?? ""}
-              />
+              {[0, 1].map((position) => {
+                const providerId = pairIds[position] ?? "";
+                const windows = providerPicker.usage?.providers.find(
+                  (provider) => provider.id === providerId,
+                )?.windows ?? [];
+                const limitLabel = `Limit for Provider ${position + 1}`;
+                const limitId = `vibetv-pair-limit-${position}`;
+                return (
+                  <div className="flex flex-col gap-3" key={position}>
+                    <SourceSelect
+                      id={`vibetv-pair-${position}`}
+                      label={`Provider ${position + 1}`}
+                      onChange={(id) => selectPair(position, id)}
+                      providers={pairChoices}
+                      value={providerId}
+                    />
+                    {windows.length ? (
+                      <SettingRow htmlFor={limitId} label={limitLabel}>
+                        <DisplayLimitSelect
+                          id={limitId}
+                          label={limitLabel}
+                          windows={windows}
+                          hidden={providerPicker.display?.hiddenWindows?.[providerId]}
+                          disabled={!providerPicker.display}
+                          onChange={(windowId) => changeLimits((hidden) =>
+                            withOnlyWindowShown(hidden, providerId, windows, windowId),
+                          )}
+                        />
+                      </SettingRow>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           ) : null}
         </div>
@@ -395,32 +429,20 @@ export function SettingsScreen({
         ) : null}
       </SettingsSection>
 
-      <ItemSeparator className="my-0" />
-
-      <SettingsSection title="Limits on VibeTV">
-        <DisplayLimitsSettings
-          display={providerPicker.display}
-          onChange={(change) =>
-            void providerPicker.onDisplayChange((current) => {
-              // Applied to the selection as the write finds it, so a second
-              // toggle keeps the first one while its save is still pending.
-              if (!current) {
-                return null;
-              }
-              const providerIds =
-                current.mode === "automatic" ? enabledProviderIds : current.providerIds;
-              return {
-                mode: current.mode,
-                providerIds,
-                hiddenWindows: change(current.hiddenWindows ?? {}),
-              };
-            }, providerPicker.display?.providerIds[0] ?? "")
-          }
-          providers={displayChoices}
-          theme={activeTheme}
-          usage={providerPicker.usage}
-        />
-      </SettingsSection>
+      {displayMode !== "pair" ? (
+        <>
+          <ItemSeparator className="my-0" />
+          <SettingsSection title="Limits on VibeTV">
+            <DisplayLimitsSettings
+              display={providerPicker.display}
+              onChange={changeLimits}
+              providers={displayChoices}
+              theme={activeTheme}
+              usage={providerPicker.usage}
+            />
+          </SettingsSection>
+        </>
+      ) : null}
 
       {pace ? (
         <>

@@ -101,8 +101,12 @@ describe("SettingsScreen display preferences", () => {
     expect(screen.getAllByRole("combobox", { name: "Show" })).toHaveLength(1);
     expect(screen.getByRole("group", { name: "Display mode" }).compareDocumentPosition(control)
       & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(control.compareDocumentPosition(screen.getByText("Limits on VibeTV"))
-      & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    if (mode !== "pair") {
+      expect(control.compareDocumentPosition(screen.getByText("Limits on VibeTV"))
+        & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    } else {
+      expect(screen.queryByText("Limits on VibeTV")).toBeNull();
+    }
     expect(control.textContent).toBe("Used");
     expect(openSelect("Show")).toEqual(["Used", "Remaining"]);
     choose("Remaining");
@@ -327,6 +331,56 @@ describe("SettingsScreen display sources", () => {
       source.toLowerCase(),
     );
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  describe("Two at once limit choices", () => {
+    function pairProps() {
+      const base = props();
+      return { ...base, providerPicker: {
+        ...base.providerPicker,
+        items: [item("claude", "Claude"), item("codex", "Codex")],
+        display: { mode: "pair" as const, providerIds: ["claude", "codex"], configured: true, valid: true,
+          hiddenWindows: { claude: ["retired"], cursor: ["monthly"] } },
+        usage: { providers: [
+          { id: "claude", label: "Claude", session: 1, weekly: 2, resetSecs: 0, usageMode: "used", windows: [
+            { id: "session", label: "Session", usedPercent: 1, resetSecs: 0 },
+            { id: "weekly", label: "Weekly", usedPercent: 2, resetSecs: 0 },
+          ] },
+          { id: "codex", label: "Codex", session: 3, weekly: 4, resetSecs: 0, usageMode: "used", windows: [
+            { id: "custom", label: "Reported custom limit", usedPercent: 3, resetSecs: 0 },
+          ] },
+        ] },
+      } };
+    }
+    it("lists only reported windows under each provider and replaces Limits on VibeTV", () => {
+      render(<SettingsScreen {...pairProps()} />);
+      expect(screen.queryByText("Limits on VibeTV")).toBeNull();
+      expect(screen.getByRole("combobox", { name: "Limit for Provider 2" }).textContent).toBe("Reported custom limit");
+      expect(openSelect("Limit for Provider 1")).toEqual(["Session", "Weekly"]);
+    });
+    it("saves the existing hiddenWindows map and preserves unrelated hidden limits", () => {
+      const p = pairProps();
+      render(<SettingsScreen {...p} />);
+      openSelect("Limit for Provider 1");
+      choose("Weekly");
+      const change = vi.mocked(p.providerPicker.onDisplayChange).mock.calls[0][0];
+      expect(typeof change).toBe("function");
+      if (typeof change !== "function") throw new Error("expected queued update");
+      expect(change(p.providerPicker.display)).toEqual({
+        mode: "pair", providerIds: ["claude", "codex"],
+        hiddenWindows: { claude: ["retired", "session"], cursor: ["monthly"] },
+      });
+      fireEvent.click(screen.getByRole("button", { name: /Automatic/ }));
+      expect(vi.mocked(p.providerPicker.onDisplayChange).mock.calls.at(-1)?.[0]).toEqual({
+        mode: "automatic", providerIds: ["claude", "codex"],
+      });
+    });
+    it("offers no limit picker for a provider without reported windows", () => {
+      const p = pairProps();
+      p.providerPicker.usage.providers[0].windows = [];
+      render(<SettingsScreen {...p} />);
+      expect(screen.queryByRole("combobox", { name: "Limit for Provider 1" })).toBeNull();
+    });
   });
 
 });

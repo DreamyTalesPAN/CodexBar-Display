@@ -566,11 +566,18 @@ inline const char* SafeText(const char* value) {
   return value == nullptr ? "" : value;
 }
 
+// Two at once carries provider names in its limit labels, leaving the header
+// free for the selected percentage basis. Notices still take precedence.
+inline const char* UsageHeaderText(const FrameData& frame) {
+  return std::strchr(SafeText(frame.provider), '+') != nullptr
+      ? SafeText(frame.usageMode) : SafeText(frame.label);
+}
+
 inline const char* LabelText(const FrameData& frame) {
   if (frame.updateAvailable && frame.showUpdateNotice && SafeText(frame.updateNotice)[0] != '\0') {
     return SafeText(frame.updateNotice);
   }
-  return SafeText(frame.label);
+  return UsageHeaderText(frame);
 }
 
 inline int ParseDecimal(const char* value, size_t& consumed) {
@@ -881,7 +888,7 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
   }
   if (std::strcmp(key, "usageProviderName") == 0) {
     // The provider's name as the label binding shows it, but never the notice.
-    std::snprintf(out, outSize, "%s", SafeText(frame.label));
+    std::snprintf(out, outSize, "%s", UsageHeaderText(frame));
     return;
   }
   if (std::strcmp(key, "session") == 0 || std::strcmp(key, "sessionPercent") == 0 || std::strcmp(key, "s") == 0) {
@@ -973,10 +980,12 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
     std::snprintf(out, outSize, "%s", SafeText(frame.usageMode));
     return;
   }
-  if (std::strcmp(key, "usageModeShort") == 0) {
+  if (std::strcmp(key, "usageModeShort") == 0 || std::strcmp(key, "usageModeStandalone") == 0) {
+    // In Two at once the basis already occupies the provider header.
+    if (std::strchr(SafeText(frame.provider), '+') != nullptr) return;
     // "left" for what remains, else the mode itself ("used"): "Session left".
     std::snprintf(out, outSize, "%s",
-                  std::strcmp(SafeText(frame.usageMode), "remaining") == 0 ? "left" : SafeText(frame.usageMode));
+                  std::strcmp(key, "usageModeShort") == 0 && std::strcmp(SafeText(frame.usageMode), "remaining") == 0 ? "left" : SafeText(frame.usageMode));
     return;
   }
   if (std::strcmp(key, "activity") == 0 || std::strcmp(key, "act") == 0) {
@@ -1193,10 +1202,10 @@ inline uint32_t BindingFieldMask(const char* binding) {
     return kThemeSpecFieldProvider;
   }
   if (StringEqualsAny(binding, "label", "providerLabel", "l")) {
-    return kThemeSpecFieldLabel;
+    return kThemeSpecFieldLabel | kThemeSpecFieldProvider | kThemeSpecFieldUsageMode;
   }
   if (std::strcmp(SafeText(binding), "usageProviderName") == 0) {
-    return kThemeSpecFieldProviderName;
+    return kThemeSpecFieldProviderName | kThemeSpecFieldProvider | kThemeSpecFieldUsageMode;
   }
   if (StringEqualsAny(binding, "session", "sessionPercent", "s")) {
     return kThemeSpecFieldSession;
@@ -1220,8 +1229,8 @@ inline uint32_t BindingFieldMask(const char* binding) {
            // The footer is the notice while one shows, so it is a label field too.
            (std::strcmp(UsageWindowField(binding), "PaceFooter") == 0 ? kThemeSpecFieldLabel : 0);
   }
-  if (StringEqualsAny(binding, "usageMode", "u", "usageModeShort")) {
-    return kThemeSpecFieldUsageMode;
+  if (StringEqualsAny(binding, "usageMode", "u", "usageModeShort") || std::strcmp(SafeText(binding), "usageModeStandalone") == 0) {
+    return kThemeSpecFieldUsageMode | kThemeSpecFieldProvider;
   }
   if (StringEqualsAny(binding, "activity", "act")) {
     return kThemeSpecFieldActivity;
@@ -1869,6 +1878,48 @@ inline int AlignedTextY(int boxY, int boxHeight, int glyphHeight, int valign) {
   return boxY;
 }
 
+// Keep shrink-fit readable at the smallest device font; use a second line
+// only when the existing text box has room. Width comes from the actual TFT.
+struct FittedText {
+  int font;
+  int size;
+  char first[128];
+  char second[128];
+};
+
+template <typename Measure>
+inline FittedText FitText(const TextCommand& cmd, Measure measure) {
+  FittedText result{cmd.font, cmd.size, {0}, {0}};
+  std::snprintf(result.first, sizeof(result.first), "%s", SafeText(cmd.text));
+  if (!cmd.fitShrink || cmd.maxWidth <= 0) return result;
+  while (result.size > 1 && measure(result.first, result.font, result.size) > cmd.maxWidth) --result.size;
+  const int height = TextValignBoxHeight(cmd.height, cmd.font, cmd.size);
+  for (;;) {
+    if (measure(result.first, result.font, result.size) <= cmd.maxWidth) return result;
+    if (height >= 2 * VisualFontHeight(result.font, result.size)) {
+      // Prefer the last word boundary with both lines fitting.
+      const int length = std::strlen(result.first);
+      int split = 0;
+      for (int i = 1; i < length; ++i) {
+        if (result.first[i] != ' ') continue;
+        result.first[i] = '\0';
+        const bool fits = measure(result.first, result.font, result.size) <= cmd.maxWidth &&
+            measure(result.first + i + 1, result.font, result.size) <= cmd.maxWidth;
+        result.first[i] = ' ';
+        if (fits) split = i;
+      }
+      if (split > 0) {
+        std::snprintf(result.second, sizeof(result.second), "%s", result.first + split + 1);
+        result.first[split] = '\0';
+        return result;
+      }
+    }
+    if (result.font == 1) return result;
+    result.font = 1;
+    result.size = 1;
+  }
+}
+
 inline int CompiledProgressPercentFor(const CompiledPrimitive& primitive, const FrameData& frame) {
   const int slotIndex = UsageWindowBindingIndex(primitive.binding);
   if (slotIndex >= 0) {
@@ -2280,12 +2331,28 @@ inline bool CompiledPrimitiveBounds(
   return false;
 }
 
+// A known slot can be temporarily unavailable. Keep its identity visible,
+// without drawing a zero percent bar or a stale reset/pace.
+inline bool MissingUsageText(const CompiledPrimitive& primitive, const FrameData& frame, char* out, size_t outSize) {
+  if (primitive.kind != PrimitiveKind::Text || primitive.usageSlot == 0) return false;
+  const auto window = UsageWindowFor(frame, primitive.usageSlot - 1);
+  if (window.available || SafeText(window.label)[0] == '\0') return false;
+  const char* source = primitive.binding != nullptr ? primitive.binding : SafeText(primitive.text);
+  const bool label = std::strstr(source, "Label") != nullptr || std::strstr(source, ".label") != nullptr;
+  const bool percent = std::strstr(source, "Percent") != nullptr || std::strstr(source, ".percent") != nullptr;
+  if (!label && !percent) return false;
+  std::snprintf(out, outSize, "%s%s", label ? window.label : "", percent ? (label ? " --" : "--") : "");
+  return true;
+}
+
 inline bool DrawCompiledPrimitive(
     const CompiledThemeSpec& scene,
     const CompiledPrimitive& primitive,
     const FrameData& frame,
     Sink& sink) {
-  if (primitive.usageSlot > 0 &&
+  char text[128] = {0};
+  const bool missing = MissingUsageText(primitive, frame, text, sizeof(text));
+  if (primitive.usageSlot > 0 && !missing &&
       !UsageWindowOwnerAvailableFor(frame, static_cast<int>(primitive.usageSlot - 1))) {
     return false;
   }
@@ -2322,8 +2389,7 @@ inline bool DrawCompiledPrimitive(
     if (cmd.size <= 0) {
       return false;
     }
-    char text[128] = {0};
-    if (RenderCompiledText(scene, primitive, frame, text, sizeof(text), &sink) &&
+    if (!missing && RenderCompiledText(scene, primitive, frame, text, sizeof(text), &sink) &&
         IsResetCountdownText(text)) {
       cmd.fitShrink = false;
     }

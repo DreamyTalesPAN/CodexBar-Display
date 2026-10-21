@@ -850,21 +850,18 @@ function ThemePrimitiveNode({
     const text = footer ?? renderTextPrimitive(primitive, frame);
     const maxWidth =
       primitive.maxWidth || primitive.mw || primitive.width || primitive.w || 0;
-    const font = primitive.font || primitive.f || 1;
+    const originalFont = primitive.font || primitive.f || 1;
     const maxSize = Math.max(1, primitive.fontSize || primitive.s || 1);
-    // Only a countdown footer is fixed-width; idle and unavailable wording still shrinks.
-    const countdownFooter =
-      footer !== null && footer !== RESET_IDLE && footer !== RESET_UNAVAILABLE;
-    const size = themeTextFittedSize(
-      text,
-      font,
-      maxSize,
-      maxWidth,
-      !countdownFooter && (primitive.fit || primitive.ft) === "shrink",
-    );
+    // Preserve the fixed countdown size chosen by the footer formatter.
+    const countdownFooter = footer !== null && footer !== RESET_IDLE && footer !== RESET_UNAVAILABLE;
+    const { font, size, lines } = themeTextFit(text, originalFont, maxSize, maxWidth,
+      !countdownFooter && (primitive.fit || primitive.ft) === "shrink", height);
+    const boxHeight = themeTextValignBoxHeight(height, originalFont, maxSize);
+    const top = themeTextAlignedY(y, boxHeight, themeFontSize(font, size) * lines.length, primitive.valign || primitive.va);
     const fontSize = themeFontSize(font, size);
     return (
-      <ThemeTextPrimitive
+      <g>{lines.map((line, index) => <ThemeTextPrimitive
+        key={index}
         align={primitive.align || primitive.al}
         color={
           (primitive.binding || primitive.b || "").includes("Pace") &&
@@ -875,15 +872,15 @@ function ThemePrimitiveNode({
         font={font}
         fontSize={fontSize}
         fontWeight={themeFontWeight(font)}
-        height={height}
+        height={0}
         maxSize={maxSize}
         maxWidth={maxWidth}
         size={size}
-        text={text}
-        valign={primitive.valign || primitive.va}
+        text={line}
+        valign="top"
         x={x}
-        y={y}
-      />
+        y={top + index * fontSize}
+      />)}</g>
     );
   }
 
@@ -1613,10 +1610,21 @@ export function buildFrameData(
   };
 }
 
+function missingUsageText(primitive: ThemePrimitive, frame: FrameData): string | null {
+  if (!["tx", "text"].includes(primitive.t || primitive.type || "")) return null;
+  const index = primitive.usageIndex ?? primitive.ui ?? ((primitive.slot ?? primitive.sl ?? 0) - 1);
+  const window = frame.usageWindows[index];
+  if (!window?.label || window.available) return null;
+  const source = primitive.binding || primitive.b || primitive.text || primitive.v || "";
+  const label = /Label|\.label/.test(source), percent = /Percent|\.percent/.test(source);
+  return label || percent ? `${label ? window.label : ""}${percent ? (label ? " --" : "--") : ""}` : null;
+}
+
 export function primitiveUsageSlotVisible(
   primitive: ThemePrimitive,
   frame: FrameData,
 ): boolean {
+  if (missingUsageText(primitive, frame) !== null) return true;
   const usageIndex = primitive.usageIndex ?? primitive.ui;
   if (typeof usageIndex === "number") {
     return frame.usageWindows[usageIndex]?.available === true;
@@ -1927,6 +1935,8 @@ export function renderTextPrimitive(
   frame: FrameData,
   primitives: ThemePrimitive[] = [],
 ): string {
+  const missing = missingUsageText(primitive, frame);
+  if (missing !== null) return missing;
   const footer = displayedResetFooter(primitive, frame, primitives);
   if (footer !== null) return footer;
   const binding = primitive.binding || primitive.b;
@@ -2175,18 +2185,19 @@ export function boundValue(key: string, frame: FrameData): string {
     }
     return String(window.percent);
   }
-  if (key === "usageModeShort") {
+  if (key === "usageModeShort" || key === "usageModeStandalone") {
+    if (frame.provider.includes("+")) return "";
     // Mirrors the firmware: "left" for what remains, else the mode itself.
-    return frame.usageMode === "remaining" ? "left" : frame.usageMode;
+    return key === "usageModeShort" && frame.usageMode === "remaining" ? "left" : frame.usageMode;
   }
   switch (key) {
     case "label":
     case "providerLabel":
     case "l":
-      return frame.updateNotice || frame.label;
+      return frame.updateNotice || (frame.provider.includes("+") ? frame.usageMode : frame.label);
     case "usageProviderName":
-      // The provider's name, never the notice.
-      return frame.label;
+      // The percentage basis for Two at once, otherwise the provider; never the notice.
+      return frame.provider.includes("+") ? frame.usageMode : frame.label;
     case "provider":
     case "pr":
       return frame.provider;
@@ -2825,6 +2836,26 @@ export function themeTextFittedSize(
   return size;
 }
 
+// Same fallback and two-line fitting as themespec::FitText on the device.
+export function themeTextFit(text: string, font: number, maxSize: number, maxWidth: number, shrink: boolean, height = 0) {
+  let size = themeTextFittedSize(text, font, maxSize, maxWidth, shrink);
+  const boxHeight = themeTextValignBoxHeight(height, font, maxSize);
+  const width = (value: string) => themeFirmwareTextMetrics(value, font, size)?.width ?? themeTextWidth(value, themeFontSize(font, size));
+  if (!shrink || maxWidth <= 0) return { font, size, lines: [text] };
+  for (;;) {
+    if (width(text) <= maxWidth) return { font, size, lines: [text] };
+    if (boxHeight >= 2 * themeFontSize(font, size)) {
+      const splits = Array.from(text.matchAll(/ /g), (match) => match.index!)
+        .filter((index) => width(text.slice(0, index)) <= maxWidth && width(text.slice(index + 1)) <= maxWidth)
+        .reverse();
+      if (splits.length) return { font, size, lines: [text.slice(0, splits[0]), text.slice(splits[0] + 1)] };
+    }
+    if (font === 1) return { font, size, lines: [text] };
+    font = 1;
+    size = 1;
+  }
+}
+
 // Mirrors TFT_eSPI 2.5.43 Fonts/Font16.c, pinned in
 // firmware_esp8266/platformio.ini. Update both together when the pin changes.
 const TFT_ESPI_FONT2_WIDTHS = [
@@ -2832,6 +2863,14 @@ const TFT_ESPI_FONT2_WIDTHS = [
   3, 3, 6, 6, 6, 8, 9, 8, 8, 8, 8, 8, 8, 8, 8, 4, 8, 8, 7, 10, 8, 8, 8, 8, 8, 8,
   8, 8, 8, 10, 8, 8, 8, 4, 7, 4, 7, 9, 5, 7, 7, 7, 7, 7, 6, 7, 7, 4, 5, 6, 4, 8,
   7, 8, 7, 8, 6, 6, 5, 7, 8, 8, 6, 7, 7, 5, 3, 5, 8, 6,
+] as const;
+
+// Mirrors the same pinned TFT_eSPI Font32rle.c (font 4).
+const TFT_ESPI_FONT4_WIDTHS = [
+  5, 8, 8, 19, 14, 21, 17, 6, 8, 8, 12, 10, 7, 8, 7, 8, 14, 14, 14, 14, 14, 14, 14, 14,
+  14, 14, 7, 7, 14, 9, 14, 13, 25, 16, 17, 18, 18, 16, 15, 19, 18, 6, 13, 17, 13, 21, 18, 19,
+  16, 19, 17, 16, 14, 18, 15, 23, 15, 16, 16, 9, 13, 9, 12, 13, 9, 14, 15, 13, 15, 14, 8, 15,
+  15, 6, 6, 12, 6, 22, 15, 15, 15, 15, 8, 12, 7, 14, 12, 18, 13, 13, 12, 13, 13, 13, 15, 1,
 ] as const;
 
 // Mirrors the classic GLCD font's CP437 glyph order in TFT_eSPI 2.5.43.
@@ -2849,9 +2888,10 @@ export function themeFirmwareTextMetrics(
   width: number;
   glyphs: Array<{ character: string; offset: number; width: number }>;
 } | null {
-  if (font !== 1 && font !== 2) {
+  if (font !== 1 && font !== 2 && font !== 4) {
     return null;
   }
+  const widths = font === 4 ? TFT_ESPI_FONT4_WIDTHS : TFT_ESPI_FONT2_WIDTHS;
   const scale = Math.max(1, size);
   let layoutOffset = 0;
   let drawOffset = 0;
@@ -2883,14 +2923,14 @@ export function themeFirmwareTextMetrics(
     }
 
     if (codePoint >= 32 && codePoint <= 127) {
-      const width = TFT_ESPI_FONT2_WIDTHS[codePoint - 32] * scale;
+      const width = widths[codePoint - 32] * scale;
       glyphs.push({ character, offset: drawOffset, width });
       layoutOffset += width;
       drawOffset += width;
     } else {
-      // Font 2 measures every unsupported UTF-8 byte as a space but drops the
+      // Fonts 2/4 measure every unsupported UTF-8 byte as a space but drops the
       // decoded glyph without advancing the draw cursor.
-      layoutOffset += utf8ByteCount * TFT_ESPI_FONT2_WIDTHS[0] * scale;
+      layoutOffset += utf8ByteCount * widths[0] * scale;
     }
   }
   return { width: layoutOffset, glyphs };

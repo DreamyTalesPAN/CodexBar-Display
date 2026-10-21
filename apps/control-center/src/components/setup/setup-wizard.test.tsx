@@ -2733,3 +2733,31 @@ it.each(["Escape", "Scan again"])("reports the setup update dismissal to its own
   else fireEvent.click(within(dialog).getByRole("button", { name: action }));
   expect(onDismiss).toHaveBeenCalledTimes(1);
 });
+it.each(["pair", "automatic", "fixed"] as const)("chooses a reported pair limit, previews it and keeps the shared choice when saving %s", async (mode) => {
+  Element.prototype.hasPointerCapture = () => false;
+  Element.prototype.scrollIntoView = () => {};
+  const props = baseProps({ step: "display", displayMode: "pair",
+    displayProviderIds: ["codex", "claude"],
+    displayProviders: [{ id: "codex", label: "Codex" }, { id: "claude", label: "Claude" }],
+    providers: [provider(), provider("claude", "Claude")],
+    usage: { providers: [
+      { id: "codex", label: "Codex", session: 10, weekly: 20, usageMode: "used", windows: [
+        { id: "session", label: "Session", usedPercent: 10 },
+        { id: "weekly", label: "Weekly", usedPercent: 20 },
+      ] },
+      { id: "claude", label: "Claude", session: 30, weekly: 40, usageMode: "used", windows: [
+        { id: "weekly", label: "Weekly", usedPercent: 40 },
+      ] },
+    ] },
+  });
+  render(<SetupWizard {...props} />);
+  fireEvent.keyDown(screen.getByRole("combobox", { name: "Limit for Provider 1" }), { key: "Enter" });
+  fireEvent.click(screen.getByRole("option", { name: "Weekly" }));
+  expect(props.onDisplayContinue).not.toHaveBeenCalled();
+  expect(screen.getByText("Codex Weekly")).toBeTruthy();
+  if (mode !== "pair") {
+    fireEvent.click(screen.getByRole("button", { name: mode === "automatic" ? /Automatic/ : /One provider/ }));
+  }
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Continue" })); });
+  expect(props.onDisplayContinue).toHaveBeenCalledWith({ mode, providerIds: mode === "fixed" ? ["codex"] : ["codex", "claude"], hiddenWindows: { codex: ["session"] } });
+});

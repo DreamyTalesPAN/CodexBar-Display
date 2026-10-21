@@ -4924,6 +4924,20 @@ void testProviderNameAndPaceFooterAroundTheNotice() {
   // The theme counts as one that shows the notice itself, and repaints with it.
   TEST_ASSERT_TRUE(codexbar_display::core::ThemeSpecLiveUseForRaw(
       String(R"JSON({"p":[{"t":"tx","b":"usageSlot1PaceFooter"}]})JSON")).Uses(codexbar_display::themespec::kThemeSpecFieldLabel));
+  // Two at once uses the existing provider header for the selected basis.
+  frame.provider = "claude+codex";
+  frame.label = "";
+  for (const char* mode : {"used", "remaining"}) {
+    frame.usageMode = mode;
+    frame.updateAvailable = false;
+    auto pair = renderedTexts(spec, frame);
+    TEST_ASSERT_EQUAL_STRING(mode, pair[0].c_str());
+    TEST_ASSERT_EQUAL_STRING(mode, pair[1].c_str());
+    frame.updateAvailable = true;
+    pair = renderedTexts(spec, frame);
+    TEST_ASSERT_EQUAL_STRING(mode, pair[0].c_str());
+    TEST_ASSERT_EQUAL_STRING("Open VibeTV Mac App", pair[1].c_str());
+  }
   // The provider name is not a primitive that shows the notice: the notice surface
   // must not pick the Label field for a theme that only names the provider with it.
   const auto nameUse = codexbar_display::core::ThemeSpecLiveUseForRaw(
@@ -4945,6 +4959,53 @@ void testProviderNameAndPaceFooterAroundTheNotice() {
 }
 
 // A label change repaints the provider name, a notice toggle does not.
+void testTextFitUsesSmallestFontAndTwoLinesWithinExistingHeight() {
+  FrameData frame;
+  frame.provider = "claude"; frame.usageMode = "remaining";
+  char basis[24] = {0};
+  codexbar_display::themespec::BoundValue("usageModeStandalone", frame, basis, sizeof(basis));
+  TEST_ASSERT_EQUAL_STRING("remaining", basis);
+  frame.provider = "claude+codex";
+  codexbar_display::themespec::BoundValue("usageModeStandalone", frame, basis, sizeof(basis));
+  TEST_ASSERT_EQUAL_STRING("", basis);
+
+  TextCommand cmd;
+  cmd.text = "Claude Weekly (Sonnet)";
+  cmd.font = 2; cmd.size = 1; cmd.maxWidth = 110; cmd.height = 32; cmd.fitShrink = true;
+  auto measure = [](const char* value, int font, int size) { return std::strlen(value) * (font == 2 ? 7 : 6) * size; };
+  auto fit = codexbar_display::themespec::FitText(cmd, measure);
+  TEST_ASSERT_EQUAL(2, fit.font);
+  TEST_ASSERT_EQUAL_STRING("Claude Weekly", fit.first);
+  TEST_ASSERT_EQUAL_STRING("(Sonnet)", fit.second);
+  cmd.height = 16;
+  fit = codexbar_display::themespec::FitText(cmd, measure);
+  TEST_ASSERT_EQUAL(1, fit.font);
+  TEST_ASSERT_LESS_OR_EQUAL(110, measure(fit.first, fit.font, fit.size));
+  TEST_ASSERT_LESS_OR_EQUAL(110, measure(fit.second, fit.font, fit.size));
+  cmd.text = "Anthropic Claude Enterprise"; cmd.maxWidth = 164; cmd.height = 16;
+  fit = codexbar_display::themespec::FitText(cmd, measure);
+  TEST_ASSERT_EQUAL(1, fit.font);
+  TEST_ASSERT_EQUAL_STRING(cmd.text, fit.first);
+}
+
+void testKnownUnavailableUsageKeepsNameAndDashWithoutInventingValues() {
+  FrameData frame;
+  frame.provider = "claude+codex";
+  frame.usageWindows[0].label = "Claude Weekly";
+  frame.usageWindows[0].available = false;
+  const char* spec = R"JSON({"p":[
+    {"t":"tx","sl":1,"v":"{usageSlot1Label}"},
+    {"t":"tx","sl":1,"v":"{usageSlot1Percent}%"},
+    {"t":"tx","sl":1,"v":"{usageSlot1Label} {usageSlot1Percent}%"},
+    {"t":"tx","sl":1,"b":"usageSlot1PaceText"}
+  ]})JSON";
+  auto texts = renderedTexts(spec, frame);
+  TEST_ASSERT_EQUAL(3, texts.size());
+  TEST_ASSERT_EQUAL_STRING("Claude Weekly", texts[0].c_str());
+  TEST_ASSERT_EQUAL_STRING("--", texts[1].c_str());
+  TEST_ASSERT_EQUAL_STRING("Claude Weekly --", texts[2].c_str());
+}
+
 void testProviderNameRepaintsWithItsLabelOnly() {
   RuntimeState state;
   SerialConsumeEvent event;
@@ -5227,6 +5288,8 @@ int main() {
   RUN_TEST(testUsagePaceParsesAndRepaintsOnlyThemesThatShowIt);
   RUN_TEST(testCountdownRepaintTakesTheBoundPaceAlong);
   RUN_TEST(testProviderNameAndPaceFooterAroundTheNotice);
+  RUN_TEST(testTextFitUsesSmallestFontAndTwoLinesWithinExistingHeight);
+  RUN_TEST(testKnownUnavailableUsageKeepsNameAndDashWithoutInventingValues);
   RUN_TEST(testProviderNameRepaintsWithItsLabelOnly);
   RUN_TEST(testPaceRepaintsAfterTheCountdownRanOutAndTrustReturns);
   RUN_TEST(testPaceBarRepaintsWhenOnlyTheUsageModeChanges);

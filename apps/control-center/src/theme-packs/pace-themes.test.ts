@@ -99,15 +99,15 @@ describe("the Pace themes", () => {
     expect(spec.p.filter((p: { t: string }) => p.t === "p")).toEqual([]);
   });
 
-  it("Pace Meter is one provider with a session and a weekly lane and the run-out note", () => {
+  it("Pace Meter gives both limit names their own line and omits an untimed run-out note", () => {
     const { text } = renderPack("pace-meter", deficit, [38, 61]);
-    expect(text).toBe("Claude38%Session leftresets 3h 34m14% deficitruns out61%Weekly leftresets 5d 14hOn pace");
-    expect(renderPack("pace-meter", reserve).text).toBe("Claude91%Session leftresets 3h 34m6% reserve87%Weekly leftresets 5d 14h35% reserve");
+    expect(text).toBe("ClaudeSession left38%resets 3h 34m14% deficitWeekly left61%resets 5d 14hOn pace");
+    expect(renderPack("pace-meter", reserve).text).toBe("ClaudeSession left91%resets 3h 34m6% reserveWeekly left87%resets 5d 14h35% reserve");
     // Without a pace: percentage, label, countdown and the plain bar stay.
-    expect(renderPack("pace-meter", null).text).toBe("Claude91%Session leftresets 3h 34m87%Weekly leftresets 5d 14h");
+    expect(renderPack("pace-meter", null).text).toBe("ClaudeSession left91%resets 3h 34mWeekly left87%resets 5d 14h");
   });
 
-  it("Pace Meter keeps the pair header empty and still shows device notices", () => {
+  it("Pace Meter puts the basis in the pair header and still shows device notices", () => {
     const pack = JSON.parse(readFileSync(path.join(root, "dist/theme-packs/render/pace-meter.json"), "utf8")) as ThemeRenderPack;
     const frame = buildFrameData(clock.toISOString(), {
       provider: "codex+claude", label: "", usageMode: "remaining",
@@ -122,10 +122,10 @@ describe("the Pace themes", () => {
     expect(frame.label).toBe("");
     expect(frame.usageSlot1Label).toBe("Codex Weekly");
     expect(frame.usageSlot2Label).toBe("Claude Session");
-    expect(render()).toBe("91%Codex Weekly leftresets 3h 34m87%Claude Session leftresets 5d 14h");
+    expect(render()).toBe("remainingCodex Weekly 91%resets 3h 34mClaude Session 87%resets 5d 14h");
     expect(render()).not.toContain("Codex + Claude");
-    expect(render("Update available")).toBe(`Update available${render()}`);
-    expect(render("Open VibeTV Mac App")).toBe(`Open VibeTV Mac App${render()}`);
+    expect(render("Update available")).toBe(`Update available${render().slice("remaining".length)}`);
+    expect(render("Open VibeTV Mac App")).toBe(`Open VibeTV Mac App${render().slice("remaining".length)}`);
   });
 
   it("Pixel Battery keeps the traffic-light colours of what is left under the piece", () => {

@@ -1112,6 +1112,31 @@ class ThemeSpecSink final : public themespec::Sink {
   }
 
   void DrawText(const themespec::TextCommand& cmd) override {
+    if (cmd.fitShrink) {
+      const auto fitted = themespec::FitText(cmd, [](const char* value, int font, int size) {
+        Tft().setTextFont(font);
+        Tft().setTextSize(size);
+        return Tft().textWidth(value);
+      });
+      themespec::TextCommand line = cmd;
+      line.fitShrink = false;
+      line.font = fitted.font;
+      line.size = fitted.size;
+      line.height = themespec::TextValignBoxHeight(cmd.height, cmd.font, cmd.size);
+      line.text = fitted.first;
+      if (fitted.second[0] != '\0') {
+        const int lineHeight = themespec::VisualFontHeight(fitted.font, fitted.size);
+        line.y = themespec::AlignedTextY(cmd.y, line.height, lineHeight * 2, cmd.valign);
+        line.valign = 0;
+        DrawText(line);
+        line.y += lineHeight;
+        line.text = fitted.second;
+        DrawText(line);
+      } else {
+        DrawText(line);
+      }
+      return;
+    }
     primitive::TextCommand text;
     text.text = cmd.text;
     text.x = cmd.x;
@@ -1128,16 +1153,8 @@ class ThemeSpecSink final : public themespec::Sink {
     int textClipH = 0;
     if (cmd.maxWidth > 0) {
       TFT_eSPI& tft = Tft();
-      int size = cmd.size;
       tft.setTextFont(cmd.font);
-      tft.setTextSize(size);
-      if (cmd.fitShrink) {
-        while (size > 1 && tft.textWidth(cmd.text == nullptr ? "" : cmd.text) > cmd.maxWidth) {
-          --size;
-          tft.setTextSize(size);
-        }
-        text.size = size;
-      }
+      tft.setTextSize(cmd.size);
       const int width = tft.textWidth(cmd.text == nullptr ? "" : cmd.text);
       if (cmd.align == 1) {
         text.x = cmd.x + max(0, (cmd.maxWidth - width) / 2);

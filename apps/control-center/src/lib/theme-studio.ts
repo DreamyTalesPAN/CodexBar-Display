@@ -903,9 +903,11 @@ export function themeStudioSpecUsesUsagePace(spec: ThemeStudioSpec): boolean {
     (primitive) =>
       /Pace/.test(primitive.binding || "") ||
       primitive.binding === "usageModeShort" ||
+      primitive.binding === "usageModeStandalone" ||
       primitive.binding === "usageProviderName" ||
       /\{[^{}]*Pace[^{}]*\}/.test(primitive.text || "") ||
       (primitive.text || "").includes("{usageModeShort}") ||
+      (primitive.text || "").includes("{usageModeStandalone}") ||
       (primitive.text || "").includes("{usageProviderName}"),
   );
 }

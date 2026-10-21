@@ -634,7 +634,7 @@ describe("SettingsScreen standby controls", () => {
       });
       return html.slice(
         html.indexOf(">Display mode</h2>"),
-        html.indexOf(">Limits on VibeTV</h2>"),
+        html.indexOf("</section>", html.indexOf(">Display mode</h2>")),
       );
     };
     const streaming = (lastProviderId?: string): DeviceInfo => ({
@@ -660,7 +660,7 @@ describe("SettingsScreen standby controls", () => {
       });
       return html.slice(
         html.indexOf(">Display mode</h2>"),
-        html.indexOf(">Limits on VibeTV</h2>"),
+        html.indexOf("</section>", html.indexOf(">Display mode</h2>")),
       );
     };
     const pressed = (html: string) =>

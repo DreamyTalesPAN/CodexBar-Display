@@ -38,6 +38,7 @@ import {
   type SetupDisplayModePreview,
   type SetupDisplayModeProvider,
 } from "./setup-display-mode-screen";
+import { withOnlyWindowShown } from "../display-limits-settings";
 import { pairDisplayPreview, withSentActivity } from "./setup-display-previews";
 import {
   SetupFirmwareBlockedDialog,
@@ -95,6 +96,7 @@ export type SetupWizardProps = {
   displayProviderId: string | null;
   /** Every stored provider of the display choice, for Two at once. */
   displayProviderIds?: string[];
+  displayHiddenWindows?: Record<string, string[]>;
   displayProviders: SetupDisplayModeProvider[];
   /** A display choice is being written; its step has not finished yet. */
   displaySavePending: boolean;
@@ -117,7 +119,7 @@ export type SetupWizardProps = {
    * on the step: a save that did not land must not read as one that did.
    */
   onDisplayContinue: (
-    selection: Pick<ProviderDisplaySelection, "mode" | "providerIds">,
+    selection: Pick<ProviderDisplaySelection, "mode" | "providerIds" | "hiddenWindows">,
   ) => void | Promise<boolean | void>;
   /** The closing step has been shown; the app can take the screen back. */
   onFinished: () => void;
@@ -249,6 +251,7 @@ export function SetupWizard(props: SetupWizardProps) {
     mode: ProviderDisplaySelection["mode"];
     providerId: string | null;
     pairIds?: string[];
+    hiddenWindows?: Record<string, string[]>;
   } | null>(null);
   // The counterpart to goBack. Without it the override outlives the visit it
   // was made for. The device step moves forward when its connect sequence ends.
@@ -1098,6 +1101,7 @@ export function SetupWizard(props: SetupWizardProps) {
         displayProviderId,
         pairProviders,
       );
+    const hiddenWindows = displayDraft?.hiddenWindows ?? props.displayHiddenWindows;
     const previewOf = (providerId: string | null | undefined) =>
       displayPreviews.find(
         (preview) =>
@@ -1125,6 +1129,7 @@ export function SetupWizard(props: SetupWizardProps) {
             void Promise.resolve(
               props.onDisplayContinue({
                 mode: displayMode,
+                ...(displayDraft?.hiddenWindows ? { hiddenWindows: displayDraft.hiddenWindows } : {}),
                 providerIds:
                   displayMode === "fixed" && displayProviderId
                     ? [displayProviderId]
@@ -1142,19 +1147,36 @@ export function SetupWizard(props: SetupWizardProps) {
             });
           }}
           onSelectMode={(mode) =>
-            setDisplayDraft({ mode, providerId: displayProviderId, pairIds })
+            setDisplayDraft((current) => ({ ...current, mode, providerId: displayProviderId, pairIds }))
           }
           onSelectPair={(position, providerId) =>
             setDisplayDraft((current) => ({
+              ...current,
               mode: displayMode,
               providerId: displayProviderId,
               pairIds: withPairProvider(current?.pairIds ?? pairIds, position, providerId),
             }))
           }
           onSelectProvider={(providerId) =>
-            setDisplayDraft({ mode: displayMode, providerId, pairIds })
+            setDisplayDraft((current) => ({ ...current, mode: displayMode, providerId, pairIds }))
           }
-          pairPreview={pairDisplayPreview(
+          usage={props.usage}
+          hiddenWindows={hiddenWindows}
+          onSelectLimit={(providerId, windowId) =>
+            setDisplayDraft((current) => ({
+              mode: displayMode,
+              providerId: displayProviderId,
+              pairIds,
+              ...current,
+              hiddenWindows: withOnlyWindowShown(
+                current?.hiddenWindows ?? props.displayHiddenWindows ?? {},
+                providerId,
+                props.usage?.providers.find((provider) => provider.id === providerId)?.windows ?? [],
+                windowId,
+              ),
+            }))
+          }
+          pairPreview={displayDraft?.hiddenWindows ? null : pairDisplayPreview(
             previewOf(pairIds[0]),
             previewOf(pairIds[1]),
           )}

@@ -419,9 +419,9 @@ func specUsesProgressArc(spec Spec) bool {
 // the notice), which only pace themes use.
 func specUsesUsagePace(spec Spec) bool {
 	for _, primitive := range spec.Primitives {
-		if strings.Contains(primitive.Binding, "Pace") || primitive.Binding == "usageModeShort" ||
+		if strings.Contains(primitive.Binding, "Pace") || primitive.Binding == "usageModeShort" || primitive.Binding == "usageModeStandalone" ||
 			primitive.Binding == "usageProviderName" ||
-			usagePaceTextKey.MatchString(primitive.Text) || strings.Contains(primitive.Text, "{usageModeShort}") ||
+			usagePaceTextKey.MatchString(primitive.Text) || strings.Contains(primitive.Text, "{usageModeShort}") || strings.Contains(primitive.Text, "{usageModeStandalone}") ||
 			strings.Contains(primitive.Text, "{usageProviderName}") {
 			return true
 		}
