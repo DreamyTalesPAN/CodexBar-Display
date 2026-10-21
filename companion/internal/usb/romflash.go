@@ -20,6 +20,11 @@ const (
 	romCmdFlashBegin = 0x02
 	romCmdFlashData  = 0x03
 	romCmdSync       = 0x08
+	romCmdReadReg    = 0x0a
+
+	// The chip identity is the eFuse MAC of the ESP8266 (esptool ESP_OTP_MAC0 and MAC1).
+	romEfuseMAC0 = 0x3ff00050
+	romEfuseMAC1 = 0x3ff00054
 
 	// The ROM loader detects the baud rate from the first sync. Measured on a
 	// VibeTV (CH340): 230400 halves the write to about 27 seconds and connects
@@ -58,6 +63,10 @@ var (
 // are not an ESP8266 app image, so nothing is written for them.
 var ErrNotESP8266AppImage = errors.New("firmware is not an ESP8266 app image")
 
+// ErrBeforeErase is returned when a write stopped before FLASH_BEGIN: nothing
+// was erased, so the old firmware still answers and no retry is needed.
+var ErrBeforeErase = errors.New("stopped before the flash erase")
+
 // ErrROMLoaderNotEntered: no sync reply, so nothing was sent that could erase
 // or write the flash.
 var ErrROMLoaderNotEntered = errors.New("VibeTV did not enter the ESP8266 ROM loader")
@@ -72,6 +81,12 @@ type ROMFlashOptions struct {
 	// flash begin command: from then on the old firmware is gone and the
 	// device may be left without bootable firmware.
 	OnWriteStarted func()
+	// ExpectChip, when set, is the chip identity the loader must show before
+	// anything is erased. Another chip, or an unreadable one, stops the write.
+	ExpectChip string
+	// OnChipIdentified, when set, receives the chip identity read before the
+	// erase. An error stops the write before anything is erased.
+	OnChipIdentified func(chip string) error
 }
 
 // FlashESP8266AppImage writes an ESP8266 app image at offset 0 through the ROM
@@ -104,7 +119,7 @@ func FlashESP8266AppImageWithOptions(ctx context.Context, path string, image []b
 		)
 	}
 	defer func() { _ = closePortBestEffort(port, path, closeTimeout) }()
-	loader := &romLoader{port: port, sleep: time.Sleep, progress: opts.Progress, onWriteStarted: opts.OnWriteStarted}
+	loader := &romLoader{port: port, sleep: time.Sleep, progress: opts.Progress, onWriteStarted: opts.OnWriteStarted, expectChip: opts.ExpectChip, onChipIdentified: opts.OnChipIdentified}
 	return loader.flashAndBoot(ctx, image)
 }
 
@@ -133,7 +148,13 @@ type romLoader struct {
 	progress func(percent int)
 	// onWriteStarted runs once the loader accepted flash begin.
 	onWriteStarted func()
-	pending        []byte
+	// expectChip and onChipIdentified guard the erase, see checkChip.
+	expectChip       string
+	onChipIdentified func(chip string) error
+	pending          []byte
+	// beginSent is set before FLASH_BEGIN goes out: from then on an erase may
+	// have happened even when its reply was lost.
+	beginSent bool
 }
 
 func (l *romLoader) connect(ctx context.Context) error {
@@ -179,9 +200,19 @@ func (l *romLoader) hardReset() {
 }
 
 func (l *romLoader) flash(ctx context.Context, image []byte) error {
+	if err := l.checkChip(); err != nil {
+		return err
+	}
+	// A cancel that arrived while the chip identity was being read must stop
+	// the write here: after FLASH_BEGIN an intact VibeTV would be erased with
+	// nothing written back (Codex on #840).
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("%w: %v", ErrBeforeErase, err)
+	}
 	blocks := (len(image) + romFlashBlockSize - 1) / romFlashBlockSize
 	eraseTimeout := max(romCommandTimeout, romEraseTimeoutPerMB*time.Duration(len(image))/(1<<20))
 	begin := romWords(romEraseSize(0, len(image)), uint32(blocks), romFlashBlockSize, 0)
+	l.beginSent = true
 	if err := l.command(romCmdFlashBegin, begin, 0, eraseTimeout); err != nil {
 		return fmt.Errorf("erase flash: %w", err)
 	}
@@ -217,9 +248,14 @@ func (l *romLoader) flash(ctx context.Context, image []byte) error {
 	return nil
 }
 
-// command sends one request and waits for its reply. Replies to other
-// commands, such as the extra sync answers, are skipped.
 func (l *romLoader) command(op byte, data []byte, checksum uint32, timeout time.Duration) error {
+	_, err := l.exchange(op, data, checksum, timeout)
+	return err
+}
+
+// exchange sends one request and returns its reply frame. Replies to other
+// commands, such as the extra sync answers, are skipped.
+func (l *romLoader) exchange(op byte, data []byte, checksum uint32, timeout time.Duration) ([]byte, error) {
 	packet := make([]byte, 8, 8+len(data))
 	packet[1] = op
 	binary.LittleEndian.PutUint16(packet[2:], uint16(len(data)))
@@ -230,7 +266,7 @@ func (l *romLoader) command(op byte, data []byte, checksum uint32, timeout time.
 	for frame := slipEncode(packet); len(frame) > 0; {
 		n, err := l.port.Write(frame)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		frame = frame[n:]
 	}
@@ -238,7 +274,7 @@ func (l *romLoader) command(op byte, data []byte, checksum uint32, timeout time.
 	for {
 		frame, err := l.readFrame(deadline)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if len(frame) < 8 || frame[0] != 0x01 || frame[1] != op {
 			continue
@@ -249,10 +285,57 @@ func (l *romLoader) command(op byte, data []byte, checksum uint32, timeout time.
 		}
 		// ESP8266 ROM replies end with two status bytes: status, error.
 		if status := frame[8+size-2]; status != 0 {
-			return fmt.Errorf("%w 0x%02x (error 0x%02x)", errROMRejected, op, frame[8+size-1])
+			return nil, fmt.Errorf("%w 0x%02x (error 0x%02x)", errROMRejected, op, frame[8+size-1])
 		}
+		return frame, nil
+	}
+}
+
+// readRegister returns the 32-bit register at addr as the ROM loader reads it.
+func (l *romLoader) readRegister(addr uint32) (uint32, error) {
+	frame, err := l.exchange(romCmdReadReg, romWords(addr), 0, romCommandTimeout)
+	if err != nil {
+		return 0, err
+	}
+	return binary.LittleEndian.Uint32(frame[4:8]), nil
+}
+
+// checkChip reads the chip identity before an erase. A different chip, an
+// unreadable one, or an identity the caller refuses stops the write. Once a
+// chip is identified, every later attempt of this write must show that chip.
+func (l *romLoader) checkChip() error {
+	if l.expectChip == "" && l.onChipIdentified == nil {
 		return nil
 	}
+	mac0, err := l.readRegister(romEfuseMAC0)
+	if err != nil {
+		return l.chipCheckError(fmt.Errorf("read chip identity: %w", err))
+	}
+	mac1, err := l.readRegister(romEfuseMAC1)
+	if err != nil {
+		return l.chipCheckError(fmt.Errorf("read chip identity: %w", err))
+	}
+	chip := fmt.Sprintf("%08x%08x", mac1, mac0)
+	if l.expectChip != "" && chip != l.expectChip {
+		return l.chipCheckError(fmt.Errorf("the chip is %s, expected %s", chip, l.expectChip))
+	}
+	if l.onChipIdentified != nil {
+		if err := l.onChipIdentified(chip); err != nil {
+			return l.chipCheckError(err)
+		}
+	}
+	l.expectChip = chip
+	return nil
+}
+
+// chipCheckError marks a stop before the erase. Only a loader that has not
+// sent FLASH_BEGIN can say the erase did not happen: an earlier attempt of the
+// same write may have erased the chip already.
+func (l *romLoader) chipCheckError(err error) error {
+	if l.beginSent {
+		return fmt.Errorf("chip check after an earlier flash begin, which may have erased: %w", err)
+	}
+	return fmt.Errorf("%w: %v", ErrBeforeErase, err)
 }
 
 func (l *romLoader) readFrame(deadline time.Time) ([]byte, error) {

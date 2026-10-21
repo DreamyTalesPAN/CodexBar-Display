@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,12 @@ import (
 )
 
 const rescueTestBoard = "esp8266-smalltv-st7789"
+
+const rescueTestChip = "0000aabb11223344"
+
+// rescueTestChipDeviceID is the deviceId firmware on rescueTestChip reports
+// (ESP.getChipId: 0x11 | 0xaabb<<8).
+const rescueTestChipDeviceID = "11189009"
 
 func legacyRescueDevice() (usb.CableDevice, error) {
 	return usb.CableDevice{Port: "/dev/mock-legacy", Hello: protocol.DeviceHello{Board: rescueTestBoard, Firmware: "1.0.0"}}, nil
@@ -44,6 +51,7 @@ func writeRescueMarkerFixture(t *testing.T, port string, age time.Duration) firm
 		TargetFirmware: "1.0.1",
 		ImagePath:      imagePath,
 		ImageSHA256:    sha256String("cable firmware"),
+		ChipMAC:        rescueTestChip,
 		WriteStartedAt: time.Now().Add(-age),
 	}
 	if err := firmwareupdate.SaveRescueMarker(home, marker); err != nil {
@@ -60,6 +68,134 @@ func rescueMarkerPresent(t *testing.T) bool {
 	}
 	_, ok := firmwareupdate.LoadRescueMarker(home, time.Now())
 	return ok
+}
+
+// Codex on #840: a first write that fails before the chip is read leaves a
+// marker without ChipMAC. A cancel during the pause before the second attempt
+// must still clear it, or it blocks every later rescue until it expires.
+func TestCableRescueCancelledInThePauseClearsAChiplessMarker(t *testing.T) {
+	prepareCableFirmwareUpdateTest(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	prevPause := cableRescueRetryPause
+	cableRescueRetryPause = 5 * time.Second
+	t.Cleanup(func() { cableRescueRetryPause = prevPause })
+	listCablePortsFn = func() ([]string, error) { return []string{"COM4"}, nil }
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	writes := 0
+	flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
+		writes++
+		// Fails before the chip check: no OnChipIdentified, no OnWriteStarted.
+		go func() { time.Sleep(50 * time.Millisecond); cancel() }()
+		return errors.New("ROM loader never synced")
+	}
+	marker := firmwareupdate.RescueMarker{Port: "COM4", Board: rescueTestBoard, Firmware: "1.0.0", TargetFirmware: "1.0.1",
+		ImagePath: filepath.Join(t.TempDir(), "firmware.bin")}
+	if err := flashCableRescueWithRetry(ctx, home, marker, []byte("cable firmware"), false); err == nil {
+		t.Fatal("the failed write must report its error")
+	}
+	if writes != 1 {
+		t.Fatalf("writes=%d, want 1: the cancel ends the retries", writes)
+	}
+	if rescueMarkerPresent(t) {
+		t.Fatal("a chipless marker must be cleared after a cancel in the pause")
+	}
+}
+
+// Codex on #840: a resume on a port the VibeTV seems to have moved to keeps the
+// marker on its first port until the ROM loader confirms the recorded chip.
+// An unrelated silent adapter on the new port must not take the marker over.
+func TestCableRescueMovedPortIsSavedOnlyAfterTheChipMatches(t *testing.T) {
+	prepareCableFirmwareUpdateTest(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	prevPause := cableRescueRetryPause
+	cableRescueRetryPause = time.Millisecond
+	t.Cleanup(func() { cableRescueRetryPause = prevPause })
+	original := firmwareupdate.RescueMarker{
+		Port: "COM4", Ports: []string{"COM1", "COM4"}, Board: rescueTestBoard, Firmware: "1.0.0", TargetFirmware: "1.0.1",
+		ImagePath: filepath.Join(t.TempDir(), "firmware.bin"), ChipMAC: rescueTestChip, WriteStartedAt: time.Now().Add(-time.Hour),
+	}
+	if err := firmwareupdate.SaveRescueMarker(home, original); err != nil {
+		t.Fatal(err)
+	}
+	moved := original
+	moved.Port, moved.Ports = "COM9", []string{"COM1", "COM9"}
+	portOnDisk := func() string {
+		saved, ok := firmwareupdate.LoadRescueMarker(home, time.Now())
+		if !ok {
+			t.Fatal("the marker must stay")
+		}
+		return saved.Port
+	}
+
+	// Another chip answers the loader on COM9: stopped before the erase.
+	flashCableRescueFn = func(_ context.Context, port string, _ []byte, opts usb.ROMFlashOptions) error {
+		if port != "COM9" || opts.ExpectChip != rescueTestChip {
+			t.Fatalf("write on %q expecting %q", port, opts.ExpectChip)
+		}
+		return fmt.Errorf("%w: the chip is 00000000deadbeef, expected %s", usb.ErrBeforeErase, rescueTestChip)
+	}
+	if err := flashCableRescueWithRetry(context.Background(), home, moved, []byte("cable firmware"), true); err == nil {
+		t.Fatal("a chip mismatch must fail the resume")
+	}
+	if got := portOnDisk(); got != "COM4" {
+		t.Fatalf("marker port = %q after a chip mismatch on the new port, want COM4", got)
+	}
+
+	// The recorded chip answers on COM9: from then on the marker follows it.
+	var portWhenWriting string
+	flashCableRescueFn = func(_ context.Context, _ string, _ []byte, opts usb.ROMFlashOptions) error {
+		if err := opts.OnChipIdentified(rescueTestChip); err != nil {
+			return err
+		}
+		portWhenWriting = portOnDisk()
+		opts.OnWriteStarted()
+		return nil
+	}
+	if err := flashCableRescueWithRetry(context.Background(), home, moved, []byte("cable firmware"), true); err != nil {
+		t.Fatalf("resume on the confirmed chip: %v", err)
+	}
+	if portWhenWriting != "COM9" {
+		t.Fatalf("marker port = %q once the chip matched, want COM9", portWhenWriting)
+	}
+}
+
+// #840 bench, 21.10.2026: macOS lists the VibeTV as /dev/cu.X and /dev/tty.X.
+// After a replug both new names are "new", so the moved VibeTV counted as two
+// candidates and the rescue gave up. The tty alias of a listed cu port is the
+// same device.
+func TestResumableRescueMarkerFindsAMovedMacPortListedTwice(t *testing.T) {
+	prepareCableFirmwareUpdateTest(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := writeRescueMarkerFixture(t, "/dev/cu.usbserial-11230", time.Hour)
+	marker.Ports = []string{"/dev/cu.Bluetooth-Incoming-Port", "/dev/cu.usbserial-11230", "/dev/tty.Bluetooth-Incoming-Port", "/dev/tty.usbserial-11230"}
+	if err := firmwareupdate.SaveRescueMarker(home, marker); err != nil {
+		t.Fatal(err)
+	}
+	listCablePortsFn = func() ([]string, error) {
+		return []string{"/dev/cu.Bluetooth-Incoming-Port", "/dev/cu.usbserial-11240", "/dev/tty.Bluetooth-Incoming-Port", "/dev/tty.usbserial-11240"}, nil
+	}
+	probed := map[string]int{}
+	readCableFirmwareHelloFn = func(port string) (protocol.DeviceHello, error) {
+		probed[port]++
+		return protocol.DeviceHello{}, errors.New("half-written: no hello")
+	}
+	resumed, ok := resumableRescueMarker(home)
+	if !ok || resumed.Port != "/dev/cu.usbserial-11240" {
+		t.Fatalf("resume = %q, %v; want the moved VibeTV on /dev/cu.usbserial-11240 (probed %v)", resumed.Port, ok, probed)
+	}
+	if probed["/dev/tty.usbserial-11240"] != 0 {
+		t.Fatalf("the tty alias must not be probed as a second VibeTV: %v", probed)
+	}
 }
 
 func TestRunInstallUpdateCableRescueRetriesAFailedWriteAtALowerBaudRate(t *testing.T) {
@@ -139,7 +275,9 @@ func TestRunInstallUpdateCableRescueKeepsTheMarkerWhenTheLoaderNeverAnswered(t *
 	_, manifestURL, _ := prepareCableFirmwareUpdateTest(t)
 	pinCableRescue(t)
 	findLegacyCableVibeTVFn = legacyRescueDevice
-	flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
+	flashCableRescueFn = func(_ context.Context, _ string, _ []byte, opts usb.ROMFlashOptions) error {
+		// An earlier inner attempt identified the chip before its FLASH_BEGIN reply was lost.
+		_ = opts.OnChipIdentified(rescueTestChip)
 		return usb.ErrROMLoaderNotEntered
 	}
 
@@ -149,6 +287,22 @@ func TestRunInstallUpdateCableRescueKeepsTheMarkerWhenTheLoaderNeverAnswered(t *
 	}
 	if !rescueMarkerPresent(t) {
 		t.Fatal("a loader that never answered may hide an erase; the marker must stay")
+	}
+}
+
+// Without a chip identity the loader never got past the chip check, so no
+// FLASH_BEGIN went out and the marker is cleared (Codex on #840).
+func TestRunInstallUpdateCableRescueClearsTheMarkerWhenNoChipWasIdentified(t *testing.T) {
+	_, manifestURL, _ := prepareCableFirmwareUpdateTest(t)
+	pinCableRescue(t)
+	findLegacyCableVibeTVFn = legacyRescueDevice
+	flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
+		return usb.ErrROMLoaderNotEntered
+	}
+
+	output, err := captureStdout(t, func() error { return runInstallUpdate(rescueArgs(manifestURL)) })
+	if err == nil || rescueMarkerPresent(t) {
+		t.Fatalf("err=%v marker=%v\n%s", err, rescueMarkerPresent(t), output)
 	}
 }
 
@@ -196,7 +350,9 @@ func TestRunInstallUpdateCableRescueKeepsTheMarkerWhenTheFailureMayHaveErased(t 
 		_, manifestURL, _ := prepareCableFirmwareUpdateTest(t)
 		pinCableRescue(t)
 		findLegacyCableVibeTVFn = legacyRescueDevice
-		flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
+		flashCableRescueFn = func(_ context.Context, _ string, _ []byte, opts usb.ROMFlashOptions) error {
+			// The chip was identified before FLASH_BEGIN; its reply then timed out.
+			_ = opts.OnChipIdentified(rescueTestChip)
 			return errors.New("flash begin: ROM loader response timeout")
 		}
 		output, err := captureStdout(t, func() error { return runInstallUpdate(rescueArgs(manifestURL)) })
@@ -223,6 +379,62 @@ func TestRunInstallUpdateCableRescueKeepsTheMarkerWhenTheFailureMayHaveErased(t 
 			t.Fatalf("a resumed rescue must keep its marker: err=%v marker=%v\n%s", err, rescueMarkerPresent(t), output)
 		}
 	})
+}
+
+// A resumed rescue hands the chip its marker recorded to the loader, so the
+// loader refuses to erase any other chip (issue #839).
+func TestRunInstallUpdateCableRescueResumesOnlyTheChipItErased(t *testing.T) {
+	_, manifestURL, _ := prepareCableFirmwareUpdateTest(t)
+	pinCableRescue(t)
+	writeRescueMarkerFixture(t, "COM4", time.Hour)
+	listCablePortsFn = func() ([]string, error) { return []string{"COM4"}, nil }
+	findLegacyCableVibeTVFn = func() (usb.CableDevice, error) {
+		return usb.CableDevice{}, errors.New("no VibeTV with pre-Cable firmware answered hello")
+	}
+	readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{}, errors.New("boot loop: no hello")
+	}
+	var expected string
+	flashCableRescueFn = func(_ context.Context, _ string, _ []byte, opts usb.ROMFlashOptions) error {
+		expected = opts.ExpectChip
+		return usb.ErrBeforeErase
+	}
+	_, _ = captureStdout(t, func() error { return runInstallUpdate(rescueArgs(manifestURL)) })
+	if expected != rescueTestChip {
+		t.Fatalf("resumed write expects chip %q, want %q", expected, rescueTestChip)
+	}
+}
+
+// A marker without a recorded chip cannot prove which VibeTV it belongs to, so
+// nothing is written for it.
+func TestRunInstallUpdateCableRescueWritesNothingForAMarkerWithoutAChip(t *testing.T) {
+	_, manifestURL, _ := prepareCableFirmwareUpdateTest(t)
+	pinCableRescue(t)
+	marker := writeRescueMarkerFixture(t, "COM4", time.Hour)
+	marker.ChipMAC = ""
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := firmwareupdate.SaveRescueMarker(home, marker); err != nil {
+		t.Fatal(err)
+	}
+	listCablePortsFn = func() ([]string, error) { return []string{"COM4"}, nil }
+	findLegacyCableVibeTVFn = func() (usb.CableDevice, error) {
+		return usb.CableDevice{}, errors.New("no VibeTV with pre-Cable firmware answered hello")
+	}
+	readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{}, errors.New("boot loop: no hello")
+	}
+	flashed := false
+	flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
+		flashed = true
+		return nil
+	}
+	output, err := captureStdout(t, func() error { return runInstallUpdate(rescueArgs(manifestURL)) })
+	if flashed || err == nil || !rescueMarkerPresent(t) {
+		t.Fatalf("flashed=%v err=%v marker=%v\n%s", flashed, err, rescueMarkerPresent(t), output)
+	}
 }
 
 type serialOpenTestError struct{}
@@ -306,7 +518,7 @@ func TestRunInstallUpdateCableRescueClearsAStaleMarkerWhoseVibeTVAnswers(t *test
 	var flashedPort string
 	readCableFirmwareHelloFn = func(port string) (protocol.DeviceHello, error) {
 		if port == "COM4" {
-			return protocol.DeviceHello{DeviceID: "healthy-marked", Board: rescueTestBoard, Firmware: "1.0.1"}, nil
+			return protocol.DeviceHello{DeviceID: rescueTestChipDeviceID, Board: rescueTestBoard, Firmware: "1.0.1"}, nil
 		}
 		return protocol.DeviceHello{DeviceID: "device-cable", Board: rescueTestBoard, Firmware: *firmwareVersion}, nil
 	}
@@ -325,6 +537,33 @@ func TestRunInstallUpdateCableRescueClearsAStaleMarkerWhoseVibeTVAnswers(t *test
 	}
 }
 
+// Codex on #840: another VibeTV with the same board and firmware that got the
+// marked port name is not the marked chip. Its hello must not clear the only
+// record of the half-written one, and its port is not written.
+func TestRunInstallUpdateCableRescueKeepsTheMarkerForAnotherChipOnItsPort(t *testing.T) {
+	_, manifestURL, _ := prepareCableFirmwareUpdateTest(t)
+	pinCableRescue(t)
+	writeRescueMarkerFixture(t, "COM4", time.Hour)
+	listCablePortsFn = func() ([]string, error) { return []string{"COM4"}, nil }
+	findLegacyCableVibeTVFn = func() (usb.CableDevice, error) {
+		return usb.CableDevice{}, errors.New("no VibeTV with pre-Cable firmware answered hello")
+	}
+	readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{DeviceID: "16198106", Board: rescueTestBoard, Firmware: "1.0.1"}, nil
+	}
+	flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
+		t.Fatal("another VibeTV on the marked port must not be written")
+		return nil
+	}
+	output, _ := captureStdout(t, func() error { return runInstallUpdate(rescueArgs(manifestURL)) })
+	if strings.Contains(output, "marker is stale") {
+		t.Fatalf("another chip must not make the marker stale:\n%s", output)
+	}
+	if !rescueMarkerPresent(t) {
+		t.Fatal("the marker of the half-written VibeTV must stay")
+	}
+}
+
 // A stale marker whose cached image was deleted is still cleared once its
 // VibeTV answers, so it cannot block every later rescue (Codex on #819).
 func TestRunInstallUpdateCableRescueClearsAStaleMarkerWhoseImageIsGone(t *testing.T) {
@@ -338,7 +577,7 @@ func TestRunInstallUpdateCableRescueClearsAStaleMarkerWhoseImageIsGone(t *testin
 	findLegacyCableVibeTVFn = legacyRescueDevice
 	readCableFirmwareHelloFn = func(port string) (protocol.DeviceHello, error) {
 		if port == "COM4" {
-			return protocol.DeviceHello{DeviceID: "healthy-marked", Board: rescueTestBoard, Firmware: "1.0.1"}, nil
+			return protocol.DeviceHello{DeviceID: rescueTestChipDeviceID, Board: rescueTestBoard, Firmware: "1.0.1"}, nil
 		}
 		return protocol.DeviceHello{DeviceID: "device-cable", Board: rescueTestBoard, Firmware: *firmwareVersion}, nil
 	}

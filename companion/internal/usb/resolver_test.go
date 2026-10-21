@@ -78,3 +78,20 @@ func TestSamePortComparesCOMNamesCaseInsensitively(t *testing.T) {
 		t.Fatal("Unix device paths must compare exactly")
 	}
 }
+
+// #840 bench: macOS lists a replugged USB-UART as /dev/cu.X and /dev/tty.X.
+func TestWithoutTTYAliasesKeepsOneEndpointPerDevice(t *testing.T) {
+	got := WithoutTTYAliases([]string{
+		"/dev/cu.Bluetooth-Incoming-Port", "/dev/cu.usbserial-11240",
+		"/dev/tty.Bluetooth-Incoming-Port", "/dev/tty.usbserial-11240", "/dev/tty.only", "COM9",
+	})
+	want := []string{"/dev/cu.Bluetooth-Incoming-Port", "/dev/cu.usbserial-11240", "/dev/tty.only", "COM9"}
+	if len(got) != len(want) {
+		t.Fatalf("WithoutTTYAliases = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("WithoutTTYAliases = %v, want %v", got, want)
+		}
+	}
+}
