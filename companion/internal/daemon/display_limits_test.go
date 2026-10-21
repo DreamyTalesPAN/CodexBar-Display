@@ -121,6 +121,34 @@ func TestDisplayLimitsPairSourceLossSelectsTheOtherReadableMember(t *testing.T) 
 	}
 }
 
+// Collection freshness is independent of the display filter. Otherwise the
+// send path restates a cached pair when both current readings lose their
+// chosen windows, showing an old chosen limit instead of unavailable.
+func TestDisplayLimitsPairSourceLossDoesNotRestateTheLastGoodPair(t *testing.T) {
+	basis := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	claude := displayLimitsClaude(basis)
+	codex := displayLimitsCodex(basis)
+	display := runtimeconfig.ProviderDisplayConfig{
+		Mode: "pair", ProviderIDs: []string{"claude", "codex"},
+		HiddenWindows: map[string][]string{"claude": {"weekly", "claude-weekly-scoped-fable"}, "codex": {"weekly"}},
+	}
+	claude.Frame.UsageWindows = claude.Frame.UsageWindows[1:]
+	for _, staleOther := range []bool{false, true} {
+		codex.Stale = staleOther
+		state := &runtimeState{
+			selector: codexbar.NewProviderSelector(), hasLastGood: true, lastGoodAt: basis.Add(-time.Minute),
+			lastGood: protocol.Frame{Provider: "claude+codex", UsageWindows: []protocol.UsageWindow{
+				{ID: "claude:session", Label: "Claude Session", Percent: 13},
+				{ID: "codex:session", Label: "Codex Session", Percent: 10},
+			}},
+		}
+		got := selectCycleFrameFromProviders(state, []codexbar.ParsedFrame{claude, codex}, basis, providerDisplayTestDeps(display), nil, "select-provider", "", "", "codexbar")
+		if !got.frame.UsageUnavailable || !got.usageFresh || got.usedLastGood || got.failureErr != nil {
+			t.Fatalf("source loss eligible for last-good resend (other stale=%t): %+v", staleOther, got)
+		}
+	}
+}
+
 func TestDisplayLimitsPairShowsEachProvidersFirstVisibleWindow(t *testing.T) {
 	basis := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
 	claude := displayLimitsClaude(basis)
