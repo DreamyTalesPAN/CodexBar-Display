@@ -8353,3 +8353,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #877 as in its own entries plus the entries merged with 3dc0a15b; nothing else changes.
 - Scope: the merge of 3dc0a15b and this approval record. Pull request branch #877 only, not merged, not released.
 - What's new: none — merge of 3dc0a15b, no customer-visible change of its own
+
+## 2026-10-21 — #895: Settings reads CodexBar's Used / Remaining once the first usage read lands
+
+- User approval: no visible change – UI approval not needed (bug fix: Settings re-reads CodexBar's Used / Remaining while it is unavailable, so the first serve snapshot shows it without reopening Settings)
+- Approved customer-visible result: The Show row stays disabled until the first serve snapshot and then shows the saved mode without leaving Settings; nothing else changes.
+- Scope: Control Center Settings display-preference re-read on usage reads and its regression test; no new controls or copy.
+- What's new: none — the row fills in sooner after a fresh start.

@@ -5126,6 +5126,20 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     refreshProviderPreferences,
   ]);
 
+  // A fresh Mac reports CodexBar's Used / Remaining as unavailable until the
+  // first serve snapshot arrives (#895). While it is unavailable, each usage
+  // read that lands in Settings asks once more; the read that brings it ends that.
+  const usageModeUnavailable = displayPreferences.some(
+    (item) =>
+      item.id === "codexbar.usageBarsShowUsed" &&
+      item.availability.state === "unavailable",
+  );
+  useEffect(() => {
+    if (activeShellTab === "settings" && usage && usageModeUnavailable) {
+      void refreshDisplayPreferences();
+    }
+  }, [activeShellTab, refreshDisplayPreferences, usage, usageModeUnavailable]);
+
   const setupDeviceSummary = deviceReady
     ? `VibeTV ${device?.deviceId || ""} on ${device?.target || "an unknown address"}`.trim()
     : deviceSearchState === "not-found"

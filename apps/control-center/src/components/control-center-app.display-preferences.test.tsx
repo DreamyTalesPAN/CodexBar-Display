@@ -102,6 +102,8 @@ function startWindow(themes: unknown[] = []) {
     device: device as typeof device,
     stored: rotation,
     usageMode: usageModePreference,
+    // A fresh Mac has no CodexBar value until the first serve snapshot arrives.
+    usageModeKnown: true,
     holdUsageRead: null as Promise<void> | null,
     // What VibeTV reports about its screensaver slot, if it reports it.
     slot: undefined as { screensaverPath?: string } | undefined,
@@ -192,7 +194,10 @@ function startWindow(themes: unknown[] = []) {
       if (url.endsWith("/v1/preferences?section=display")) {
         const found = companion.stored;
         await companion.holdRead;
-        return jsonResponse({ ok: true, items: [found, companion.usageMode] });
+        const usageMode = companion.usageModeKnown
+          ? companion.usageMode
+          : { ...usageModePreference, value: null, effectiveValue: null, availability: { state: "unavailable" } };
+        return jsonResponse({ ok: true, items: [found, usageMode] });
       }
       if (url.includes("/v1/preferences?section=providers")) {
         return jsonResponse({ ok: true, items: companion.providers });
@@ -272,6 +277,7 @@ function startWindow(themes: unknown[] = []) {
         const held = companion.holdUsageRead;
         companion.holdUsageRead = null;
         await held;
+        companion.usageModeKnown = true;
         return jsonResponse(found);
       }
       return jsonResponse({ ok: false, error: { code: "HTTP_404" } }, 404);
@@ -1348,4 +1354,23 @@ it("refreshes usage after saving Remaining and ignores a pre-write usage answer"
   expect(window.text()).not.toContain("12%");
   answerNavigation();
   await window.wait(1);
+});
+
+// #895: a fresh Mac has no CodexBar value until the first serve snapshot. The
+// row stays unavailable, and the next usage poll must make it usable.
+it("shows CodexBar's mode once a usage poll delivers it, without reopening Settings", async () => {
+  const window = startWindow();
+  window.companion.providers = [claude];
+  await window.wait(10);
+  window.companion.usageModeKnown = false;
+  // The first serve read is the one that tells CodexBar's mode to VibeTV.
+  let serveAnswered = () => {};
+  window.companion.holdUsageRead = new Promise<void>((resolve) => { serveAnswered = resolve; });
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  expect((screen.getByRole("combobox", { name: "Show" }) as HTMLButtonElement).disabled).toBe(true);
+  serveAnswered();
+  await window.wait(10);
+  expect((screen.getByRole("combobox", { name: "Show" }) as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.getByRole("combobox", { name: "Show" }).textContent).toBe("Used");
 });
