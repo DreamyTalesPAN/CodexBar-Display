@@ -665,9 +665,12 @@ func (s *Server) verifyCableFirmwareUpdateResult(ctx context.Context, jobID stri
 	s.setFirmwareUpdateStage(jobID, "restarting_stream")
 	streamStartedAt := time.Now().UTC()
 	if err := s.startDisplayStream(ctx, cableDeviceTarget); err != nil {
-		return firmwareAttentionOutcome("stream"), "Firmware is current, but the display stream could not restart.", nil
+		// A restart that failed outright never recovers by itself, unlike a
+		// stream that was only not seen in time: its own outcome keeps the app
+		// from polling it back to "recovered" on an older frame (Codex on #829).
+		return firmwareAttentionOutcome("stream_restart"), "Firmware is current, but the display stream could not restart.", nil
 	}
-	stream := s.waitForFreshDisplayStream(ctx, cableDeviceTarget, streamStartedAt)
+	stream := s.waitForFirmwareUpdateStream(ctx, cableDeviceTarget, streamStartedAt)
 	streamHealthy := displayStreamHealthyForTarget(&stream, cableDeviceTarget)
 	streamAwaitingProvider := !streamHealthy && providerSetupStreamForTarget(&stream, cableDeviceTarget)
 	if !streamHealthy && !streamAwaitingProvider {
@@ -689,13 +692,35 @@ func (s *Server) verifyCableFirmwareUpdateResult(ctx context.Context, jobID stri
 	}
 
 	s.setFirmwareUpdateStage(jobID, "verifying_render")
-	if _, err := s.waitForVerifiedCableDisplayRender(ctx, port, hello.DeviceID, cfg.DeviceToken, health, stream); err != nil {
-		return firmwareAttentionOutcome("render"), "Firmware is current, but the picture could not be verified.", nil
+	if last, err := s.waitForVerifiedCableDisplayRender(ctx, port, hello.DeviceID, cfg.DeviceToken, health, stream); err != nil {
+		// Only a fresh read that found the counters unchanged qualifies; a read
+		// that failed afterwards (cable gone) keeps the attention result (Codex
+		// review on #838).
+		if !errors.Is(err, errDisplayRenderNotAdvanced) || !unchangedLivePicture(health, last) {
+			return firmwareAttentionOutcome("render"), "Firmware is current, but the picture could not be verified.", nil
+		}
+		s.appendFirmwareUpdateDiagnostic(jobID, "render: live picture unchanged since the stream restart")
 	}
 	s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
 		result.RenderVerified = true
 	})
 	return firmwareUpdateOutcome(snapshot), "", nil
+}
+
+// unchangedLivePicture reports whether VibeTV still shows the healthy live
+// picture it showed before the stream restart. The firmware redraws only when
+// a frame changes the screen, so a frame with the same values leaves the
+// render counters where they were (issue #835). The last draw may be the
+// minute countdown on that picture ("reset"). Nothing was drawn in between:
+// same boot, same counters, no new theme render failure.
+func unchangedLivePicture(before, after deviceHealth) bool {
+	beforeFull, beforePartial, beforeOK := displayRenderCounters(before)
+	afterFull, afterPartial, afterOK := displayRenderCounters(after)
+	return before.OK && after.OK && beforeOK && afterOK &&
+		beforeFull == afterFull && beforePartial == afterPartial &&
+		strings.TrimSpace(before.System.BootID) == strings.TrimSpace(after.System.BootID) &&
+		before.Display.ThemeSpec.RenderFailures == after.Display.ThemeSpec.RenderFailures &&
+		renderSurfaceHealthy(after) && liveScreenRenderKind(after.Render.LastKind)
 }
 
 func firmwareUpdateOutcome(snapshot firmwareUpdateJob) string {
@@ -774,9 +799,12 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 	baseline := health
 	streamStartedAt := time.Now().UTC()
 	if err := s.startDisplayStream(ctx, target); err != nil {
-		return firmwareAttentionOutcome("stream"), "Firmware is current, but the display stream could not restart.", nil
+		// A restart that failed outright never recovers by itself, unlike a
+		// stream that was only not seen in time: its own outcome keeps the app
+		// from polling it back to "recovered" on an older frame (Codex on #829).
+		return firmwareAttentionOutcome("stream_restart"), "Firmware is current, but the display stream could not restart.", nil
 	}
-	stream := s.waitForFreshDisplayStream(ctx, target, streamStartedAt)
+	stream := s.waitForFirmwareUpdateStream(ctx, target, streamStartedAt)
 	streamHealthy := displayStreamHealthyForTarget(&stream, target)
 	// A stream that restarted, owns this exact VibeTV, and is only held back by
 	// provider setup has nothing left to prove about the firmware update. It
@@ -946,6 +974,8 @@ func firmwareAttentionOutcome(kind string) string {
 		return prefix + "health_attention"
 	case "stream":
 		return prefix + "stream_attention"
+	case "stream_restart":
+		return prefix + "stream_restart_attention"
 	default:
 		return prefix + "render_attention"
 	}
