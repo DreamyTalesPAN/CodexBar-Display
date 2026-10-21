@@ -8339,3 +8339,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: times and dates in the Control Center follow the computer's region and 12/24-hour setting; the device preview keeps its de-DE 24-hour format because the device firmware draws its own clock.
 - Scope: the time and date formatters of the Control Center pages, the user agent of the Mac App and the Windows App (carries the locale), and the Windows user-locale lookup. Draft pull request, not merged, not released.
 - What's new: none — draft for after v1.0.66; the What's new entry is added with the release, not in this draft
+
+## 2026-10-22 — #890: an invalid locale tag from the shell falls back to de-DE
+
+- User approval: no visible change – UI approval not needed (bug fix: a malformed locale tag in the user agent no longer throws during render; valid tags are unchanged)
+- Approved customer-visible result: none; times and dates keep the computer's locale as before, and an invalid tag shows de-DE instead of a blank screen.
+- Scope: hostTimeLocale in control-center-runtime.ts with its regression test.
+- What's new: none — crash guard only

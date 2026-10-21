@@ -46,7 +46,14 @@ export function nativeControlCenterAppBuild(userAgent: string): {
  * it the page keeps de-DE with 24 hours.
  */
 export function hostTimeLocale(userAgent: string): string {
-  return userAgent.match(HOST_LOCALE_USER_AGENT_PATTERN)?.[1] ?? "de-DE";
+  const locale = userAgent.match(HOST_LOCALE_USER_AGENT_PATTERN)?.[1] ?? "de-DE";
+  try {
+    // Intl throws on a malformed tag; checked here once, not on every render.
+    new Intl.DateTimeFormat(locale);
+    return locale;
+  } catch {
+    return "de-DE";
+  }
 }
 
 /** The one formatter for the times and dates the customer reads (issue #890). */

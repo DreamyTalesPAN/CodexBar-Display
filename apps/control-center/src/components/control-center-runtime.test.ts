@@ -50,6 +50,12 @@ describe("host time locale", () => {
     );
     expect(timeOf(hostTimeLocale("Mozilla/5.0"))).toBe("13:05:09");
   });
+
+  it("falls back to de-DE when a shell passes a tag Intl rejects, so no render throws", () => {
+    const invalid = "VibeTVControlCenter/1.2.3+45 Locale/en_DE-u-hc-h23";
+    expect(hostTimeLocale(invalid)).toBe("de-DE");
+    expect(timeOf(hostTimeLocale(invalid))).toBe("13:05:09");
+  });
 });
 
 describe("native Control Center recovery", () => {
