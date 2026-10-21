@@ -43,7 +43,7 @@ function show(display: Partial<ProviderDisplaySelection>, onChange = vi.fn()) {
       display={{ configured: true, mode: "fixed", providerIds: ["claude"], valid: true, ...display }}
       onChange={onChange}
       providers={providers}
-      theme={{ limits: 2, name: "Two Limits" }}
+      theme={{ limits: 2, name: "Pace Meter" }}
       usage={usage}
     />,
   );

@@ -190,8 +190,8 @@ func (s *Server) handleProviderDisplayNext(w http.ResponseWriter, r *http.Reques
 		usage, _ = s.loadUsage(s.currentTime().UTC())
 	}
 	// Automatic has no provider of its own: the one on screen is the one the
-	// last frame was built from.
-	shown := usage.CurrentProvider
+	// last frame was built from. A pair walks on from its top member.
+	shown := topProviderID(usage.CurrentProvider)
 	if selection.Mode == providerDisplayModeFixed && len(selection.ProviderIDs) == 1 {
 		shown = selection.ProviderIDs[0]
 	}
