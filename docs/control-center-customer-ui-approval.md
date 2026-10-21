@@ -8310,3 +8310,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #780 as described in its entries above, as seen in build 7200.
 - Scope: #780 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #780 approval record only
+
+## 2026-10-21 — #780: approval marker after merging main at 41bf10cf
+
+- User approval: no visible change – UI approval not needed (merge of main (41bf10cf) into #780; the own entries of #780 keep their approvals)
+- Approved customer-visible result: #780 as in its own entries plus the entries merged with 41bf10cf; nothing else changes.
+- Scope: the merge of 41bf10cf and this approval record. Pull request branch #780 only, not merged, not released.
+- What's new: none — merge of 41bf10cf, no customer-visible change of its own
