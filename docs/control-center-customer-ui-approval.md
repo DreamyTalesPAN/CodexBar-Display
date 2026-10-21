@@ -8817,14 +8817,14 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-20 — #816: "Not now" on "VibeTV not found" holds through a short status change in the same outage (#787)
 
-- User approval: pending — Paul reviews (Codex finding #787 on #784); before → after: after "Not now" on the Overview's "VibeTV not found" dialog, a short in-between status (reconnecting, inconclusive check) during the same outage cleared the choice and the dialog came back when VibeTV was still missing → "Not now" holds until VibeTV is connected again; after a real reconnect and a new loss the dialog shows again as before. No new or changed text, layout or look.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #816: "Not now" on "VibeTV not found" holds through a short status change in the same outa — before → after: after "Not now" on the Overview's "VibeTV not found" dialog, a short in-between status (reconnecting, inconclusive check) during the same outage cleared the choice and the dialog came back when VibeTV was still missing → "Not now" holds until VibeTV is connected again; after a real reconnect and a new loss the dialog shows again as before. No new or changed text, layout or look.
 - Approved customer-visible result: the "VibeTV not found" dialog as in #784, shown once per outage after "Not now".
 - Scope: `apps/control-center/src/components/control-center-app.tsx`, its new test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
 ## 2026-10-20 — #816: "Not now" also holds while the companion keeps a recently seen VibeTV "connected" during reconnecting (Codex review)
 
-- User approval: pending — Paul reviews (Codex review fix on #816); before → after: in the companion's short anti-flap grace a recently seen cable VibeTV is reported connected while it is still reconnecting; that cleared "Not now" and the "VibeTV not found" dialog came back in the same outage → only a connected VibeTV that is no longer reconnecting ends the outage. No new or changed text, layout or look.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #816: "Not now" also holds while the companion keeps a recently seen VibeTV "connected" du — before → after: in the companion's short anti-flap grace a recently seen cable VibeTV is reported connected while it is still reconnecting; that cleared "Not now" and the "VibeTV not found" dialog came back in the same outage → only a connected VibeTV that is no longer reconnecting ends the outage. No new or changed text, layout or look.
 - Approved customer-visible result: as in the #816 entry above.
 - Scope: `apps/control-center/src/components/control-center-app.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
@@ -8877,3 +8877,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #816 as in its own entries plus the entries merged with fb30d196; nothing else changes.
 - Scope: the merge of fb30d196 and this approval record. Pull request branch #816 only, not merged, not released.
 - What's new: none — merge of fb30d196, no customer-visible change of its own
+
+## 2026-10-21 — #816: Paul's approval of build 7200 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" — #816 approval record for build 7200; the #816 entries that were in build 7200 now carry it, merge markers are marked as no visible change, entries added after build 7200 stay pending.
+- Approved customer-visible result: #816 as described in its entries above, as seen in build 7200.
+- Scope: #816 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #816 approval record only
