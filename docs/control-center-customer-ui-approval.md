@@ -9310,3 +9310,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: nothing is approved yet. Settings and setup name the Two at once pickers "Provider 1" and "Provider 2"; choosing the other picker's source swaps both and saves the distinct pair without the duplicate-provider error. Recent activity keeps "Show <Provider 1> and <Provider 2> at once" with the chosen source names.
 - Scope: setup-display-mode-screen.tsx and Settings/setup interaction tests. Both screens already share the setup swap helper on this branch; keep it and verify saving in both directions. Companion validation and generic error handling stay in place; no dedicated app-side duplicate-provider dialog exists to remove.
 - What's new: none — picker labels and swap regression coverage, no new announcement
+
+## 2026-10-21 — #864: no "A + B" top line in Two at once (Paul 7202)
+
+- User approval: pending — Paul (21.10.): no "A + B" top line in Two at once on the VibeTV and in its preview; Paul sees it in build 7203
+- Approved customer-visible result: Two at once leaves the shared provider line blank because each usage slot already names its provider. Device notices still appear on that line; the app's own provider names and Showing now text stay unchanged. Paul's review on build 7203 remains pending.
+- Scope: pair-frame label construction and serialization, firmware preservation of explicitly empty labels, live VibeTV preview label preservation, focused tests and protocol documentation. No theme layout changes.
+- What's new: none — removal of the redundant pair header, no separate announcement.

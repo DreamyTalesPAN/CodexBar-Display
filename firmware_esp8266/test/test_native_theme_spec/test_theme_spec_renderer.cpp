@@ -1686,6 +1686,31 @@ void testResetCountdownFormatsDaysAndHours() {
   TEST_ASSERT_EQUAL_STRING("6d 20h", reset);
 }
 
+void testEmptyPairLabelAndMissingLabelKeepTheirMeaningWithNotices() {
+  codexbar_display::core::Frame parsed;
+  TEST_ASSERT_TRUE(codexbar_display::core::ParseFrameLine(
+      R"JSON({"v":2,"provider":"codex+claude","label":""})JSON", parsed));
+  TEST_ASSERT_EQUAL_STRING("", parsed.label.c_str());
+  FrameData frame;
+  frame.label = parsed.label.c_str();
+  char text[64] = {0};
+  codexbar_display::themespec::BoundValue("l", frame, text, sizeof(text));
+  TEST_ASSERT_EQUAL_STRING("", text);
+  frame.updateAvailable = true;
+  frame.showUpdateNotice = true;
+  for (const char* notice : {"Update available", "Open VibeTV Mac App"}) {
+    frame.updateNotice = notice;
+    codexbar_display::themespec::BoundValue("l", frame, text, sizeof(text));
+    TEST_ASSERT_EQUAL_STRING(notice, text);
+  }
+  frame.showUpdateNotice = false;
+  codexbar_display::themespec::BoundValue("l", frame, text, sizeof(text));
+  TEST_ASSERT_EQUAL_STRING("", text);
+  TEST_ASSERT_TRUE(codexbar_display::core::ParseFrameLine(
+      R"JSON({"v":2,"provider":"codex"})JSON", parsed));
+  TEST_ASSERT_EQUAL_STRING("Provider", parsed.label.c_str());
+}
+
 void testLabelBindingUsesProviderLabelWithoutUpdateNotice() {
   const char* spec = R"JSON({
     "themeSpecVersion": 1,
@@ -4957,6 +4982,7 @@ int main() {
   RUN_TEST(testWhitespaceUsageWindowOwnersTriggerLiveRedraw);
   RUN_TEST(testPartialUsageProtocolRendersOnlyUnknownLane);
   RUN_TEST(testResetCountdownFormatsDaysAndHours);
+  RUN_TEST(testEmptyPairLabelAndMissingLabelKeepTheirMeaningWithNotices);
   RUN_TEST(testLabelBindingUsesProviderLabelWithoutUpdateNotice);
   RUN_TEST(testChangedLabelPassUsesSynchronizedUpdateNoticeText);
   RUN_TEST(testChangedLabelPassCanRestoreProviderText);
