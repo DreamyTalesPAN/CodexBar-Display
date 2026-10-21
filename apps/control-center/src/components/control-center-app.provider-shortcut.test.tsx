@@ -2,7 +2,7 @@
 //
 // Issue #424: the app's global shortcut for the next provider is named in
 // Settings, and a press shows up there although this page did not save it.
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -171,9 +171,9 @@ it("names the shortcut in Settings and shows what a press chose", async () => {
   const settings = await openSettings("VibeTVControlCenter/1.2.3+45");
 
   expect(settings.text()).toContain(press);
-  expect(settings.text()).not.toContain("Show this provider");
+  expect(settings.text()).not.toContain("Source");
 
-  // The customer presses the shortcut: the Mac App stores Manual on Claude
+  // The customer presses the shortcut: the Mac App stores One provider on Claude
   // and tells the page that the display choice changed.
   settings.companion.selection = {
     mode: "fixed",
@@ -184,14 +184,13 @@ it("names the shortcut in Settings and shows what a press chose", async () => {
   window.dispatchEvent(new Event("vibetv:provider-display-changed"));
   await settings.wait(1);
 
-  const manual = screen.getByText("Show this provider").parentElement!;
   expect(
-    within(manual).getByRole("button", { name: "Claude" }).getAttribute("aria-pressed"),
+    screen.getByRole("button", { name: "One provider" }).getAttribute("aria-pressed"),
   ).toBe("true");
   expect(
-    within(manual).getByRole("button", { name: "Codex" }).getAttribute("aria-pressed"),
-  ).toBe("false");
-  // Manual is chosen now, so the line no longer says a press switches to it.
+    screen.getByRole("combobox", { name: "Source" }).textContent,
+  ).toContain("Claude");
+  // One provider is chosen now, so the line no longer says a press switches to it.
   expect(settings.text()).toContain("Press ⌃⌥⌘P in any app to show the next provider.");
   expect(settings.text()).not.toContain("This switches to One provider.");
 });

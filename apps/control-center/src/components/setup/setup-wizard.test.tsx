@@ -638,7 +638,7 @@ describe("SetupWizard: direct connection", () => {
     fireEvent.click(screen.getByRole("radio", { name: /cable-device/ }));
     fireEvent.click(screen.getByRole("button", { name: "Connect" }));
     await waitFor(() => expect(connect).toHaveBeenCalledWith(cable));
-    fireEvent.click(await screen.findByRole("button", { name: "Close" }));
+    fireEvent.keyDown(document, { key: "Escape" });
     rerender(<SetupWizard {...props} connectionMode="cable" connectionModeChoiceRequired={false} deviceCandidates={[wifi]} />);
     fireEvent.click(await screen.findByRole("button", { name: /Already on WiFi/ }));
     fireEvent.click(await screen.findByRole("radio", { name: /wifi-device/ }));
@@ -983,7 +983,7 @@ describe("SetupWizard: direct connection", () => {
       fireEvent.click(screen.getByRole("button", { name: "Connect" }));
     } else if (entry === "failed-cable") {
       await waitFor(() => expect(connect).toHaveBeenCalledWith(cable));
-      fireEvent.click(await screen.findByRole("button", { name: "Close" }));
+      fireEvent.keyDown(document, { key: "Escape" });
       fireEvent.click(screen.getByRole("button", { name: "Use WiFi instead" }));
     } else {
       await waitFor(() => expect(props.onScanWiFiNetworks).toHaveBeenCalledOnce());
@@ -1201,7 +1201,7 @@ describe("SetupWizard: saved WiFi recovery", () => {
     });
     const { rerender } = render(<SetupWizard {...props} />);
     await screen.findByRole("button", { name: "Use WiFi instead" });
-    fireEvent.click(await screen.findByRole("button", { name: "Close" }));
+    fireEvent.keyDown(document, { key: "Escape" });
     fireEvent.click(screen.getByRole("button", { name: "Use WiFi instead" }));
     await waitFor(() => expect(props.onSelectConnectionMode).toHaveBeenCalledWith("wifi", cable.deviceId));
     await waitFor(() => expect(onSearchDevices).toHaveBeenCalledOnce(), { timeout: 2_500 });
@@ -2235,7 +2235,7 @@ describe("SetupWizard with a broken usage service", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.keyDown(document, { key: "Escape" });
 
     expect(onDismissUsageFailure).toHaveBeenCalledTimes(1);
   });

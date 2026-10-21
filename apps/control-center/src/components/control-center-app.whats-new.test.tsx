@@ -75,6 +75,7 @@ function startWindow({
   os = "darwin",
   appVersion = "1.0.63",
   newVibeTV = false,
+  weakWifi = false,
 } = {}) {
   // `usageBroken`: the usage service cannot start, which the app says in a
   // dialog of its own.
@@ -148,7 +149,7 @@ function startWindow({
             firmware: "9999.0.524",
             activeTheme: newVibeTV ? "theme-missing" : "codex",
             display: newVibeTV ? undefined : { themeSpec },
-            health: { ok: true },
+            health: weakWifi ? { ok: true, wifi: { rssi: -85, weak: true } } : { ok: true },
           },
         });
       }
@@ -248,12 +249,16 @@ afterEach(() => {
 it("tells a set-up customer what is new once, on Overview, until they close it", async () => {
   const window = startWindow();
   await window.wait(10);
-  // In a short window only the list scrolls. The button that has the focus
-  // stands outside it, so it stays in view and the list stays at its start.
+  // In a short window only the list scrolls.   // stands outside it, so it stays in view and the list stays at its start.
   const list = notice()!.querySelector("ul")!;
   expect(list.className).toContain("overflow-y-auto");
   expect(notice()!.className).not.toContain("overflow-y-auto");
   expect(list.contains(within(notice()!).getByRole("button", { name: "Got it" }))).toBe(false);
+  // The template spaces the entries 20 px apart and sets "Show me in ..." as one 20 px line, 4 px under the sentence.
+  expect(list.className).toContain("gap-5");
+  const showMe = within(notice()!).getAllByRole("button", { name: /^Show me in/ })[0];
+  expect(showMe.className).toContain("h-5");
+  expect(showMe.className).toContain("mt-0.5");
 
   const text = notice()?.textContent ?? "";
   expect(text).toContain("Version 1.0.63");
@@ -284,8 +289,10 @@ it("tells a set-up customer what is new once, on Overview, until they close it",
     "Switch providers with a shortcut",
     "Choose how often VibeTV switches",
   ]);
-  // Enter closes the notice instead of opening Settings.
-  expect(document.activeElement?.textContent).toBe("Got it");
+  // The app opened the notice by itself: no control shows a ring yet. The
+  // notice takes focus, and the first Tab goes to its first control.
+  expect(document.activeElement).toBe(notice());
+  expect(document.activeElement?.matches("button")).toBe(false);
   expect(seen()).toBeNull();
 
   fireEvent.click(within(notice()!).getByRole("button", { name: "Got it" }));
@@ -491,7 +498,7 @@ it("opens Themes from a new theme at that theme and counts the notice as read", 
 
   expect(notice()).toBeNull();
   expect(seen()).toEqual(allIds);
-  expect(screen.getByRole("heading", { name: "Themes" })).toBeTruthy();
+  expect(screen.getByRole("heading", { level: 1, name: "Themes" })).toBeTruthy();
   // Issue #584: the list is longer than the window; the row of the theme the
   // entry announces is brought into view.
   expect(shown).toEqual([
@@ -552,7 +559,7 @@ it("ends at the customer's input even when a control keeps the event to itself",
   );
   await vi.advanceTimersByTimeAsync(0);
   shown.length = 0;
-  const control = screen.getByRole("heading", { name: "Themes" });
+  const control = screen.getByRole("heading", { level: 1, name: "Themes" });
   control.addEventListener("keydown", (event) => event.stopPropagation());
 
   fireEvent.keyDown(control);
@@ -571,7 +578,7 @@ it("brings the place into view once in an app that cannot watch the page's heigh
   );
   await window.wait(1);
 
-  expect(screen.getByRole("heading", { name: "Themes" })).toBeTruthy();
+  expect(screen.getByRole("heading", { level: 1, name: "Themes" })).toBeTruthy();
   expect(shown).toEqual([
     screen.getByRole("button", { name: "Preview Token Counter" }).closest("[role=listitem]"),
   ]);
@@ -723,15 +730,37 @@ it("lets the customer's own question come before a busy computer", async () => {
   const question = () => screen.queryByRole("dialog", { name: "Run setup again?" });
   expect(busyDialog()).not.toBeNull();
 
-  fireEvent.click(screen.getByRole("button", { name: "Support" }));
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   await app.wait(1);
-  fireEvent.click(screen.getByRole("button", { name: "Run setup again" }));
+  fireEvent.click(screen.getByRole("button", { name: "Run setup" }));
   await app.wait(1);
   expect(question()).not.toBeNull();
   expect(busyDialog()).toBeNull();
 
   // Answered, the busy computer is told again: the customer never closed it.
+  // (This fixture has no preferences route, so Settings shows its own
+  // "Request failed" dialog; that one comes first and is closed here.)
   fireEvent.click(within(question()!).getByRole("button", { name: "Cancel" }));
   await app.wait(1);
+  fireEvent.click(
+    within(screen.getByRole("dialog", { name: "Request failed." })).getByRole("button", { name: "OK" }),
+  );
+  await app.wait(1);
   expect(busyDialog()).not.toBeNull();
+});
+
+// Codex review (#772 with the What's new notice): both are due on the first
+// render of the Overview. The weak WiFi notice asks first; What's new follows
+// once it is closed, and the two are never on screen together.
+it("tells a weak WiFi signal first and What's new after it, never both at once", async () => {
+  const app = startWindow({ weakWifi: true });
+  await app.wait(10);
+  const wifiDialog = () => screen.queryByRole("dialog", { name: "Weak WiFi signal" });
+  expect(wifiDialog()).not.toBeNull();
+  expect(notice()).toBeNull();
+
+  fireEvent.click(within(wifiDialog()!).getByRole("button", { name: "Not now" }));
+  await app.wait(1);
+  expect(wifiDialog()).toBeNull();
+  expect(notice()).not.toBeNull();
 });

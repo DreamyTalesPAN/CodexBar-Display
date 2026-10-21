@@ -1,36 +1,88 @@
 "use client";
 
-import {
-  AppWindow,
-  ArrowUpFromLine,
-  Check,
-  CircleHelp,
-  Monitor,
-} from "lucide-react";
-import type { ReactNode } from "react";
-import { Badge } from "@/components/ui/badge";
-import {
-  Item,
-  ItemContent,
-  ItemDescription,
-  ItemGroup,
-  ItemMedia,
-  ItemTitle,
-} from "@/components/ui/item";
+import dynamic from "next/dynamic";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type {
   CompanionStatus,
   DeviceInfo,
   UsageSnapshot,
 } from "./control-center-types";
+import { Check } from "lucide-react";
+import { activeLiveThemeId } from "@/lib/active-theme-upgrade";
+import { validateThemeSpec } from "@/lib/theme-studio";
+import {
+  loadUserThemes,
+  type ThemeStudioDocument,
+} from "@/lib/theme-studio-storage";
+import type { ThemeProduct } from "@/lib/themes";
 import {
   deviceIsCustomerConnected,
   deviceIsReady,
-  deviceIsWaitingForUsage,
+  deviceUsesCable,
 } from "./control-center-types";
+import { SetupDialog } from "./setup/setup-dialog";
 import {
   LiveVibeTVPreview,
   type DisplayFrameSnapshot,
 } from "./live-vibetv-preview";
+import { hardwareWebGLAvailable } from "./vibetv-3d-support";
+
+// three.js and the model are their own chunk, loaded only on Overview.
+const VibeTV3DPreview = dynamic(
+  () => import("./vibetv-3d-preview").then((module) => module.VibeTV3DPreview),
+  { ssr: false },
+);
+
+export type OverviewNotice = "weak-wifi" | "theme-not-shown";
+
+// The words the Overview tiles used before #755, unchanged.
+const NOTICE_COPY: Record<OverviewNotice, { description: string; title: string }> = {
+  "weak-wifi": {
+    description: "Move VibeTV closer to your router.",
+    title: "Weak WiFi signal",
+  },
+  "theme-not-shown": {
+    description: "VibeTV can't show this theme. Choose another theme.",
+    title: "Theme not shown",
+  },
+};
+
+const DIALOGS = '[role="dialog"], [role="alertdialog"]';
+
+// Issue #498: the Companion names a theme the VibeTV cannot draw.
+// Issue #265: the Mac App names a WiFi signal too weak for reliable updates.
+function activeOverviewNotices(device: DeviceInfo | null): OverviewNotice[] {
+  const notices: OverviewNotice[] = [];
+  if (!deviceIsCustomerConnected(device)) return notices;
+  if (device?.health?.wifi?.weak === true) notices.push("weak-wifi");
+  if (device?.connectionState === "display_render_failed") {
+    notices.push("theme-not-shown");
+  }
+  return notices;
+}
+
+/**
+ * The one Overview notice to show now, or null; the weak WiFi notice comes
+ * first. A notice the customer closed stays closed while it is there; once it
+ * has gone away, its return opens again. It waits while `held` (the busy
+ * notice is due): the two would otherwise each wait for the other. The state
+ * lives in the app, not in the screen, because the Overview unmounts on other
+ * tabs and a closed notice must stay closed there too.
+ */
+export function useOverviewNotice(device: DeviceInfo | null, held: boolean) {
+  const active = activeOverviewNotices(device);
+  const [closed, setClosed] = useState<OverviewNotice[]>([]);
+  // A notice that went away is forgotten, so its return opens again.
+  const stillClosed = closed.filter((notice) => active.includes(notice));
+  if (stillClosed.length !== closed.length) setClosed(stillClosed);
+  const notice =
+    active.find((candidate) => !stillClosed.includes(candidate)) ?? null;
+  return {
+    close: (closedNotice: OverviewNotice) =>
+      setClosed([...stillClosed, closedNotice]),
+    notice: held ? null : notice,
+  };
+}
 
 type OverviewScreenProps = {
   companionVersion?: string;
@@ -41,199 +93,290 @@ type OverviewScreenProps = {
     phase?: string;
     stage?: string;
   } | null;
+  /** The notice to show, from useOverviewNotice. */
+  notice?: OverviewNotice | null;
+  onCloseNotice?: (notice: OverviewNotice) => void;
   usage?: UsageSnapshot | null;
-  /** The app runs on Windows; the Mac wording stays exactly as it is. */
+  /**
+   * What the last update check found, for the lines under the Mac App and
+   * Firmware figures. No value (not checked yet, or the check failed) says
+   * nothing: "Up to date" is only for a confirmed-current result.
+   */
+  firmwareUpdate?: "available" | "current";
+  macAppUpdate?: "available" | "current";
+  /** The catalog, to name the theme VibeTV shows. */
+  themes?: ThemeProduct[];
+  /** The app runs on Windows; the wording says "computer" instead of "Mac". */
   windowsHost?: boolean;
 };
 
+/**
+ * Overview: the status line with a small green check, the VibeTV centred in 3D
+ * and four quiet figures under a hairline (Mac App, VibeTV, Display, Firmware),
+ * as in the approved calm master. Calm rule 12 is deliberately not applied to
+ * this page: the heading and the device are centred, not left-aligned.
+ */
 export function OverviewScreen({
-  companionVersion,
   companionStatus,
+  companionVersion,
   device,
   displayFrame = null,
+  firmwareUpdate,
   firmwareUpdateStatus = null,
+  macAppUpdate,
+  notice = null,
+  onCloseNotice,
+  themes = [],
   usage,
   windowsHost = false,
 }: OverviewScreenProps) {
   const connected = deviceIsCustomerConnected(device);
-  const displayReady = deviceIsReady(device);
-  const waitingForUsage = deviceIsWaitingForUsage(device);
-  // Issue #498: the Companion names a theme the VibeTV cannot draw.
-  const themeNotShown =
-    connected && device?.connectionState === "display_render_failed";
-  // Issue #265: the Mac App names a WiFi signal too weak for reliable updates.
-  const weakWiFiSignal = connected && device?.health?.wifi?.weak === true;
   const updateOwnedDisconnect = Boolean(
     !connected && firmwareUpdateStatus?.phase === "installing",
   );
-  const hero = buildHeroCopy(
-    companionStatus,
-    connected,
-    updateOwnedDisconnect,
-    windowsHost,
+  // The heading and the flat live preview come first. The 3D case starts after
+  // the first paint, only on a hardware WebGL, and replaces the flat preview
+  // once its model is on screen; the device screen inside shows the live
+  // state, or the offline placeholder when VibeTV has no live frame.
+  const [use3D, setUse3D] = useState(false);
+  const [threeReady, setThreeReady] = useState(false);
+  // Stable, so the flat preview's handover timer is not restarted on each poll.
+  const onThreeReady = useCallback(() => setThreeReady(true), []);
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => setUse3D(hardwareWebGLAvailable()),
+      0,
+    );
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  // The notice waits while another dialog is open on the page. Its own dialog
+  // is one of the open dialogs, so it is counted out with the ref. The first
+  // answer is read before the first render, so it never opens over a dialog
+  // that is already there.
+  const [otherDialogOpen, setOtherDialogOpen] = useState(
+    () =>
+      typeof document !== "undefined" &&
+      document.querySelectorAll(DIALOGS).length > 0,
   );
+  const noticeOpen = notice !== null && !otherDialogOpen;
+  const noticeOpenRef = useRef(false);
+  useLayoutEffect(() => {
+    noticeOpenRef.current = noticeOpen;
+  });
+  useLayoutEffect(() => {
+    const check = () =>
+      setOtherDialogOpen(
+        document.querySelectorAll(DIALOGS).length >
+          (noticeOpenRef.current ? 1 : 0),
+      );
+    check();
+    const observer = new MutationObserver(check);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
 
   return (
-    <div className="mx-auto max-w-[1180px] py-4">
-      <section aria-labelledby="vibetv-overview-title">
-        <div className="mx-auto flex w-full max-w-[1040px] flex-col items-center gap-5">
-          <div className="flex flex-col items-center gap-2 text-center">
-            <Badge variant={hero.badgeVariant}>
-              {hero.icon}
-              <span>{hero.badge}</span>
-            </Badge>
-            <h2
-              className="text-4xl font-black tracking-tight md:text-5xl"
-              id="vibetv-overview-title"
+    <div className="flex w-full flex-1 flex-col pb-8">
+      {/* The page fills the window's height (#784 point 1): the numbers sit at
+          the bottom, "VibeTV is connected" and the device are centred as one
+          group in the space above them. */}
+      <section
+        aria-labelledby="vibetv-overview-title"
+        className="mt-7 flex flex-1 flex-col items-center"
+      >
+        <div className="mt-auto flex items-center gap-3">
+          {connected ? (
+            <span
+              aria-hidden
+              className="grid size-[22px] place-items-center rounded-full bg-success text-success-foreground shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--success-foreground)_22%,transparent)]"
             >
-              {connected
-                ? "VibeTV is connected"
-                : updateOwnedDisconnect
-                  ? "VibeTV is restarting"
-                  : "VibeTV status"}
-            </h2>
-          </div>
-
-          <div className="flex w-full justify-center">
-            <LiveVibeTVPreview
-              device={device}
-              displayFrame={displayFrame}
-              updateOwnedDisconnect={updateOwnedDisconnect}
-              usage={usage || null}
-            />
-          </div>
-
-          <ItemGroup className="grid w-full gap-3 lg:grid-cols-4">
-            <StatusItem
-              icon={<AppWindow aria-hidden />}
-              label={windowsHost ? "App" : "Mac App"}
-              value={labelForCompanion(
-                companionStatus,
-                companionVersion,
-                windowsHost,
-              )}
-            />
-            <StatusItem
-              detail={
-                weakWiFiSignal ? "Move VibeTV closer to your router." : undefined
-              }
-              icon={<ArrowUpFromLine aria-hidden />}
-              label="VibeTV"
-              value={
-                weakWiFiSignal
-                  ? "Weak WiFi signal"
-                  : connected
-                  ? "Connected"
-                  : updateOwnedDisconnect
-                    ? "Restarting"
-                    : "Not connected"
-              }
-            />
-            <StatusItem
-              detail={
-                displayReady
-                  ? undefined
-                  : updateOwnedDisconnect
-                    ? "No action is required. Keep VibeTV connected to power and wait."
-                  : themeNotShown
-                    ? "VibeTV can't show this theme. Choose another theme."
-                  : waitingForUsage
-                    ? "This can take up to 60 seconds."
-                    : "Waiting for a fresh image from VibeTV."
-              }
-              icon={<Monitor aria-hidden />}
-              label="Display"
-              value={
-                displayReady
-                  ? device?.standby?.active === true
-                    ? "Screensaver"
-                    : "Live"
-                  : updateOwnedDisconnect
-                    ? "Update running"
-                  : themeNotShown
-                    ? "Theme not shown"
-                  : waitingForUsage
-                    ? "Waiting for usage"
-                    : "Waiting for first image"
-              }
-            />
-            <StatusItem
-              icon={<Monitor aria-hidden />}
-              label="VibeTV firmware"
-              value={device?.firmware || "Waiting for VibeTV"}
-            />
-          </ItemGroup>
+              <Check className="size-[13px]" strokeWidth={2.6} />
+            </span>
+          ) : null}
+          <h2
+            className="text-[28px] font-semibold leading-[1.1] tracking-[-0.01em] text-foreground"
+            id="vibetv-overview-title"
+          >
+            {connected
+              ? "VibeTV is connected"
+              : updateOwnedDisconnect
+                ? "VibeTV is restarting"
+                : "VibeTV status"}
+          </h2>
         </div>
+
+        <div className="relative mt-3 mb-5 flex w-full justify-center">
+          {use3D ? (
+            <div
+              // Until the 3D is revealed it is only drawn in the background:
+              // the flat preview is the one screen readers get.
+              aria-hidden={threeReady ? undefined : true}
+              className={
+                threeReady
+                  ? "flex w-full justify-center"
+                  : "absolute inset-0 flex justify-center opacity-0"
+              }
+              inert={threeReady ? undefined : true}
+            >
+              <VibeTV3DPreview
+                className="-my-[22px] aspect-[640/411] max-w-[718px]"
+                device={device}
+                displayFrame={displayFrame}
+                onReady={onThreeReady}
+                updateOwnedDisconnect={updateOwnedDisconnect}
+                usage={usage || null}
+              />
+            </div>
+          ) : null}
+          {threeReady ? null : (
+            <div className="w-[440px] max-w-full">
+              <LiveVibeTVPreview
+                device={device}
+                displayFrame={displayFrame}
+                updateOwnedDisconnect={updateOwnedDisconnect}
+                usage={usage || null}
+              />
+            </div>
+          )}
+        </div>
+
+        <dl className="mt-auto grid w-full grid-cols-2 gap-x-8 gap-y-5 border-t border-foreground/10 pt-5 text-[13px] min-[960px]:grid-cols-4">
+          <Fact
+            label={windowsHost ? "App" : "Mac App"}
+            line={updateLine(macAppUpdate)}
+            value={
+              companionStatus === "online"
+                ? companionVersion || "Online"
+                : companionStatus === "missing"
+                  ? "Not reachable"
+                  : windowsHost
+                    ? "Waiting for app"
+                    : "Waiting for Mac App"
+            }
+          />
+          <Fact
+            label="VibeTV"
+            line={
+              connected
+                ? `${deviceUsesCable(device) ? "USB-C cable" : "WiFi"} · connected`
+                : undefined
+            }
+            value={
+              connected
+                ? device?.deviceId || device?.board || "Connected"
+                : updateOwnedDisconnect
+                  ? "Restarting"
+                  : "Not connected"
+            }
+          />
+          <Fact
+            label="Display"
+            line="Active theme"
+            value={activeThemeLabel(themes, device)}
+          />
+          <Fact
+            label="Firmware"
+            line={device?.firmware ? updateLine(firmwareUpdate) : undefined}
+            value={device?.firmware || "Waiting for VibeTV"}
+          />
+        </dl>
       </section>
+
+      {notice ? (
+        <SetupDialog
+          description={NOTICE_COPY[notice].description}
+          onOpenChange={(open) => {
+            if (!open) onCloseNotice?.(notice);
+          }}
+          open={noticeOpen}
+          secondaryAction={{
+            label: "Not now",
+            onSelect: () => onCloseNotice?.(notice),
+          }}
+          showCloseButton={false}
+          title={NOTICE_COPY[notice].title}
+        />
+      ) : null}
     </div>
   );
 }
 
-function StatusItem({
-  detail,
-  icon,
+function updateLine(update?: "available" | "current"): string | undefined {
+  return update === "available"
+    ? "Update available"
+    : update === "current"
+      ? "Up to date"
+      : undefined;
+}
+
+/** One quiet figure: a muted label, the value in 600, a muted line. */
+function Fact({
   label,
+  line,
   value,
 }: {
-  detail?: string;
-  icon: ReactNode;
   label: string;
+  line?: string;
   value: string;
 }) {
   return (
-    <Item className="min-w-0 flex-nowrap items-start" role="listitem" variant="muted">
-      <ItemMedia variant="icon">{icon}</ItemMedia>
-      <ItemContent>
-        <ItemDescription>{label}</ItemDescription>
-        <ItemTitle>{value}</ItemTitle>
-        {detail ? <ItemDescription>{detail}</ItemDescription> : null}
-      </ItemContent>
-    </Item>
+    <div className="min-w-0">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="mt-0.5 truncate font-semibold">{value}</dd>
+      {line ? <dd className="text-muted-foreground">{line}</dd> : null}
+    </div>
   );
 }
 
-function buildHeroCopy(
-  companionStatus: CompanionStatus,
-  connected: boolean,
-  updateOwnedDisconnect = false,
-  windowsHost = false,
-) {
-  if (connected) {
-    return {
-      badge: "Connected",
-      badgeVariant: "default" as const,
-      icon: <Check data-icon="inline-start" aria-hidden />,
-    };
-  }
-  if (updateOwnedDisconnect) {
-    return {
-      badge: "Updating",
-      badgeVariant: "default" as const,
-      icon: <ArrowUpFromLine data-icon="inline-start" aria-hidden />,
-    };
-  }
-  return {
-    badge:
-      companionStatus === "missing"
-        ? windowsHost
-          ? "App offline"
-          : "Mac App offline"
-        : "Not connected",
-    badgeVariant: "outline" as const,
-    icon: <CircleHelp data-icon="inline-start" aria-hidden />,
-  };
-}
-
-function labelForCompanion(
-  status: CompanionStatus,
-  companionVersion?: string,
-  windowsHost = false,
+function activeThemeLabel(
+  themes: ThemeProduct[],
+  device: DeviceInfo | null | undefined,
 ): string {
-  if (status === "online") {
-    return companionVersion ? `Online ${companionVersion}` : "Online";
+  // The customer's own themes are saved in this browser, by Theme Studio, with
+  // the name they gave them.
+  const saved = loadUserThemes();
+  const ownName = (matches: (document: ThemeStudioDocument) => boolean) =>
+    (saved.ok ? saved.value.themes : saved.data?.themes || []).find(
+      ({ document }) => document.usage !== "screensaver" && matches(document),
+    )?.document.packName;
+  // The file in the live slot says whose theme it is: a saved theme is sent
+  // under a path only it has, also when a later catalog gave one of its themes
+  // the same id. During standby that file is all VibeTV reports of the slot;
+  // the screensaver on screen is not it.
+  const standbyActive = device?.standby?.active === true;
+  const livePath = (
+    standbyActive
+      ? device.standby?.liveThemePath
+      : device?.display?.themeSpec?.path
+  )?.trim();
+  const ownByFile =
+    livePath &&
+    ownName(
+      (document) =>
+        validateThemeSpec(document.spec, document.assets, "live")
+          .themeSpecPath === livePath,
+    );
+  if (ownByFile) {
+    return ownByFile;
   }
-  if (status === "missing") {
-    return "Not reachable";
+  const theme = activeLiveThemeId(themes, device)?.trim();
+  if (!theme) {
+    if (standbyActive && livePath) {
+      return "Custom theme";
+    }
+    return deviceIsReady(device) ? "Default" : "Not available";
   }
-  return windowsHost ? "Waiting for app" : "Waiting for Mac App";
+  const own =
+    !themes.some((listed) => listed.themeId === theme) &&
+    ownName((document) => document.spec.themeId === theme);
+  if (own) {
+    return own;
+  }
+  // A catalog theme is called by its title, as the Themes page calls it.
+  const listed = themes.find((product) => product.themeId === theme);
+  if (listed) {
+    return listed.title;
+  }
+  return theme.split(/[-_]+/).filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
 }

@@ -74,7 +74,7 @@ describe("the Settings section Pace", () => {
     const device: DeviceInfo = { active: true, connected: true, paired: true, ready: true, activeTheme: active, ...(standby ? { standby } : {}) };
     return renderToStaticMarkup(
       <SettingsScreen
-        automaticPreviews={[]} brightness={70} busyAction={null} connectionMode="cable"
+        brightness={70} busyAction={null} connectionMode="cable"
         device={device} displayPreferences={displayPreferences} standby={null}
         onBrightnessChange={vi.fn()} onChooseScreensaver={vi.fn()} onConnectionModeChange={vi.fn()}
         onDismissError={vi.fn()} onResetSetup={vi.fn()} onSaveBrightness={vi.fn()}
@@ -84,10 +84,10 @@ describe("the Settings section Pace", () => {
     );
   };
 
-  it("stands directly under Display mode with the switch on and the muted line", () => {
+  it("stands under Display mode and Limits on VibeTV with the switch on and the muted line", () => {
     const html = render([showPace(true)], usage("farAhead"), "token-counter");
     const sections = [...html.matchAll(/<h2[^>]*>([^<]*)<\/h2>/g)].map(([, title]) => title);
-    expect(sections.slice(sections.indexOf("Display mode"), sections.indexOf("Display mode") + 2)).toEqual(["Display mode", "Pace"]);
+    expect(sections.slice(sections.indexOf("Display mode"), sections.indexOf("Display mode") + 3)).toEqual(["Display mode", "Limits on VibeTV", "Pace"]);
     expect(html).toContain(">Show reserve or deficit</label>");
     expect(html).toMatch(/role="switch"[^>]*aria-checked="true"|aria-checked="true"[^>]*role="switch"/);
     expect(html).toContain("Token Counter has no place for it. Pace Meter shows it.");

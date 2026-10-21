@@ -789,6 +789,7 @@ export function SetupWizard(props: SetupWizardProps) {
             open
             onOpenChange={(open) => !open && setWiFiError(null)}
             primaryAction={{ label: "OK", onSelect: () => setWiFiError(null) }}
+            showCloseButton={false}
           />
         ) : null}
         {searchFailed && !wifiSetup && !props.connectionMode && !preferredTransport ? (

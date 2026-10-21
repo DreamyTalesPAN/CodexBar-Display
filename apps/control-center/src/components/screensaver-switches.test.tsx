@@ -27,7 +27,6 @@ const vibetv: DeviceInfo = {
 function settings(device: DeviceInfo, busyAction: string | null, saved: StandbySettings | null) {
   return renderToStaticMarkup(
     <SettingsScreen
-      automaticPreviews={[]}
       brightness={70}
       busyAction={busyAction}
       connectionMode="cable"
@@ -112,8 +111,8 @@ describe("Show screensaver in Settings, a line under Screensavers", () => {
 
   it("says in one line under Screensavers that the screensaver is off and links to Settings", () => {
     const off = screensavers({ ...standby, enabled: false });
-    expect(off).toContain("<span>Screensaver is off.</span>");
-    expect(off).toMatch(/<a [^>]*href="#settings-screensaver"[^>]*>Turn on in Settings<\/a>/);
+    expect(off).toContain("Screensaver is off. Turn it on in");
+    expect(off).toMatch(/<a [^>]*href="#settings-screensaver"[^>]*>Settings<\/a>/);
     expect(settings(vibetv, null, standby)).toContain('id="settings-screensaver"');
 
     expect(screensavers(standby)).not.toContain("Screensaver is off.");

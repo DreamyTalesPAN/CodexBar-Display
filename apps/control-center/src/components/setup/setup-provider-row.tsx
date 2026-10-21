@@ -138,7 +138,7 @@ export function SetupProviderRow({
       variant="outline"
     >
       <ItemContent>
-        <ItemTitle className={cn(noUsage && "text-muted-foreground")}>{label}</ItemTitle>
+        <ItemTitle className={cn("text-[13px] font-semibold", noUsage && "text-muted-foreground")}>{label}</ItemTitle>
       </ItemContent>
       <ItemActions>
         {action ? (
