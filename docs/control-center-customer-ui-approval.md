@@ -9010,3 +9010,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #816 as in its own entries; a later VibeTV not-found dialog after a successful selection shows again instead of staying hidden.
 - Scope: the dismissal latch is cleared on a successful device selection; status snapshots keep the anti-flap rule. Pull request branch #816 only, not merged, not released.
 - What's new: none — bug fix that removes a wrong suppression, no new customer-visible text or layout
+
+## 2026-10-21 — #816: approval marker after merging claude/group-calm-redesign at 3caaf211
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (3caaf211) into #816; the own entries of #816 keep their approvals)
+- Approved customer-visible result: #816 as in its own entries plus the entries merged with 3caaf211; nothing else changes.
+- Scope: the merge of 3caaf211 and this approval record. Pull request branch #816 only, not merged, not released.
+- What's new: none — merge of 3caaf211, no customer-visible change of its own
