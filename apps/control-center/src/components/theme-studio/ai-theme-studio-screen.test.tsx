@@ -452,6 +452,17 @@ describe("Theme Studio send reason", () => {
     expect(tooltipOf(screen.getByRole("button", { name: "Sending…" }))?.hasAttribute("title")).toBe(false);
   });
 
+  it("keeps the send button width while it sends, so the toolbar does not move (#579)", async () => {
+    const send = deferred<boolean>();
+    render(<AIThemeStudioScreen onInstallTheme={() => send.promise} />);
+    fireEvent.click(screen.getByRole("button", { name: "Add manually" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Text/ }));
+    expect(sendButton().className).toContain("min-w-36");
+
+    fireEvent.click(sendButton());
+    expect(screen.getByRole("button", { name: "Sending…" }).className).toContain("min-w-36");
+  });
+
   it("gives no reason when a valid design can be sent", async () => {
     render(<AIThemeStudioScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Add manually" }));

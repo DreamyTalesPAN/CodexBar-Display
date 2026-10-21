@@ -8816,3 +8816,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #781 as in its own entries; the Settings AI row keeps the state of the newest key dialog when an older one answers late, nothing else changes.
 - Scope: the Settings AI row's reports from its key dialog, plus a regression test. Pull request branch #781 only, not merged, not released.
 - What's new: none — bug fix that drops a stale write, no new text or layout
+
+## 2026-10-21 — #781: send reason on hover and a steady Send button
+
+- User approval: pending — Theme Studio: disabled Send shows its reason on hover; toolbar no longer shifts while sending
+- Approved customer-visible result: #781 as in its own entries; a disabled "Send to VibeTV" shows its reason on hover, and the toolbar no longer moves when the button reads "Sending…"; nothing else changes.
+- Scope: the Theme Studio header's Send button (fixed minimum width) and its send-reason tests. Pull request branch #781 only, not merged, not released.
+- What's new: none — tooltip and fixed-width fix, no new text or control to announce
