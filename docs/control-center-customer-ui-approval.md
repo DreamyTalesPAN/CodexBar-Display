@@ -8137,3 +8137,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: no new wording or layout; the log drops wrong "Still …" lines after a finished step or a closed device search, and no longer pulls a scrolled-up log back to the bottom at the five-line cap.
 - Scope: apps/control-center setup log and welcome screen, with the wizard passing the device search state. Pull request branch #813 only, not merged, not released.
 - What's new: none — removes wrong "Still …" lines and a scroll pull, no new wording or layout
+
+## 2026-10-21 — #813: approval marker after merging main at 41bf10cf
+
+- User approval: no visible change – UI approval not needed (merge of main (41bf10cf) into #813; the own entries of #813 keep their approvals)
+- Approved customer-visible result: #813 as in its own entries plus the entries merged with 41bf10cf; nothing else changes.
+- Scope: the merge of 41bf10cf and this approval record. Pull request branch #813 only, not merged, not released.
+- What's new: none — merge of 41bf10cf, no customer-visible change of its own
