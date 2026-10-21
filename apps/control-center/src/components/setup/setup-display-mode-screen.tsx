@@ -531,7 +531,7 @@ function PreviewTile({
         className="truncate text-center text-[11px] font-bold tracking-[0.12em] uppercase"
         cycleKey={index}
       >
-        {frame.providerLabel}
+        {frame.frame?.label || frame.providerLabel}
       </CycledText>
 
       <span className="flex gap-3">

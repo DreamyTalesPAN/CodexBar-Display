@@ -116,6 +116,17 @@ describe("SetupDisplayModeScreen", () => {
     }
   });
 
+  it("keeps the companion's Busy label on both fallback tiles", () => {
+    const { automatic, manual } = companionTile({
+      provider: "codex", label: "Busy", session: 42, weekly: 26, resetTrust: "stale",
+    });
+    for (const tile of [automatic, manual]) {
+      expect(tile).toContain(">Busy<");
+      expect(tile).toContain("42<span");
+      expect(tile).toContain("Reset unavailable");
+    }
+  });
+
   it("explains both display modes", () => {
     const html = render();
 

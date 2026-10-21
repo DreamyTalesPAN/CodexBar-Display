@@ -8738,3 +8738,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: available percentages remain visible when their countdown is unavailable, including retained Busy readings.
 - Scope: setup fallback formatter and root/window regression tests.
 - What's new: none — correct existing usage and reset rendering
+
+## 2026-10-21 — #858: preserve the host label in fallback tiles
+
+- User approval: no visible change – UI approval not needed (bug fix: #858 finding 6, retain the companion's existing Busy label in plain previews)
+- Approved customer-visible result: Automatic and Manual show the frame's Busy label with its retained percentages; provider selection keeps its existing identity.
+- Scope: fallback tile label and rendered Automatic/Manual regression test.
+- What's new: none — correct existing companion label rendering
