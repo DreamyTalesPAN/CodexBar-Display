@@ -8157,3 +8157,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Settings → Display mode has a Show row with Used and Remaining, using the existing preference control; it follows CodexBar's saved choice and is disabled when the usage-mode environment override is set.
 - Scope: CodexBar preference read/write adapter, display preference registration, Settings row, and focused tests; no VibeTV copy, usage conversion, or Windows setting.
 - What's new: none — customer notice waits for Paul's review of build 7203.
+
+## 2026-10-21 — #877: Keep usage current after saving the display mode
+
+- User approval: no visible change – UI approval not needed (bug fix: reject usage responses started before the Used / Remaining save and read the saved mode immediately)
+- Approved customer-visible result: The existing Show choice and usage numbers stay in the same saved mode, including when an older poll finishes late.
+- Scope: Control Center usage read revision, post-write refresh, and regression test; no new controls or copy.
+- What's new: none — correction of stale usage after saving a display preference.
