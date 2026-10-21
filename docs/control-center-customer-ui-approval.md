@@ -8877,3 +8877,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the slider thumb looks as in the pending #784 slider entry: grey ring on hover and drag, olive ring only for keyboard focus. Nothing else changes.
 - Scope: `apps/control-center/src/components/ui/slider.tsx` (thumb ring classes), its test `apps/control-center/src/components/ui/slider.focus-ring.test.tsx`, and this approval record. Pull request branch #784 only, not merged, not released.
 - What's new: none — ring colour classes of the slider thumb, no new text
+
+## 2026-10-21 — #784: approval marker after merging main at f314106c
+
+- User approval: no visible change – UI approval not needed (merge of main (f314106c) into #784; the own entries of #784 keep their approvals)
+- Approved customer-visible result: #784 as in its own entries plus the entries merged with f314106c; nothing else changes.
+- Scope: the merge of f314106c and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — merge of f314106c, no customer-visible change of its own
