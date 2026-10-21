@@ -9395,3 +9395,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Support: "n of 6 passed" and a Fix link for the usage engine (#795), as named in the earlier entry "Support: "n of 6 passed" and a Fix link for the usage engine (#795)" and its approval quote "rest passt".
 - Scope: this record only. The earlier entry stays unchanged (append-only). Pull request branch #803 only, not merged, not released.
 - What's new: none — correction of the approval record only, no customer-visible change
+
+## 2026-10-21 — #803: approval marker after merging claude/group-calm-redesign at 035ced04
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (035ced04) into #803; the own entries of #803 keep their approvals)
+- Approved customer-visible result: #803 as in its own entries plus the entries merged with 035ced04; nothing else changes.
+- Scope: the merge of 035ced04 and this approval record. Pull request branch #803 only, not merged, not released.
+- What's new: none — merge of 035ced04, no customer-visible change of its own
