@@ -2,6 +2,8 @@ import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { truncateUtf8Bytes } from "@/lib/truncate-utf8-bytes";
+
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
@@ -207,22 +209,6 @@ function safeText(value: unknown): string {
   return typeof value === "string"
     ? Array.from(value.trim()).slice(0, 80).join("")
     : "";
-}
-
-export function truncateUtf8Bytes(value: string, maxBytes: number): string {
-  if (maxBytes <= 0) {
-    return "";
-  }
-  const encoder = new TextEncoder();
-  let result = "";
-  for (const character of value) {
-    const candidate = `${result}${character}`;
-    if (encoder.encode(candidate).byteLength > maxBytes) {
-      break;
-    }
-    result = candidate;
-  }
-  return result.trimEnd();
 }
 
 function percent(value: unknown): number | null {

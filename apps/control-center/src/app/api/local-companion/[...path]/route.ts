@@ -24,7 +24,7 @@ async function localMacAppOrigin() {
 }
 
 type RouteContext = {
-  params: Promise<{ path?: string[] }> | { path?: string[] };
+  params: Promise<{ path?: string[] }>;
 };
 
 export async function GET(request: NextRequest, context: RouteContext) {

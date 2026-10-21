@@ -8332,3 +8332,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #785 as in its own entries plus the entries merged with 35152cc8; nothing else changes.
 - Scope: the merge of 35152cc8 and this approval record. Pull request branch #785 only, not merged, not released.
 - What's new: none — merge of 35152cc8, no customer-visible change of its own
+
+## 2026-10-22 — Control Center: route files export only handlers (next build type check)
+
+- User approval: no visible change – UI approval not needed (typecheck fix: route files export only handlers so plain next build passes)
+- Approved customer-visible result: nothing changes for the customer; the web build for app.vibetv.shop type-checks again.
+- Scope: truncateUtf8Bytes moved from the display-frame route to src/lib, local-companion route params typed as a Promise, CI builds the Control Center with next build.
+- What's new: none — no customer-visible change

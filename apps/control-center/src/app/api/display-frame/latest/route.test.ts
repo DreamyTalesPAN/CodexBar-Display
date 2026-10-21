@@ -4,7 +4,9 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { GET, truncateUtf8Bytes } from "./route";
+import { truncateUtf8Bytes } from "@/lib/truncate-utf8-bytes";
+
+import { GET } from "./route";
 
 async function readDisplayFrame(frame: Record<string, unknown>) {
   const stateDir = await mkdtemp(path.join(os.tmpdir(), "display-frame-route-"));

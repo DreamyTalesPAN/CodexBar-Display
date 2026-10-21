@@ -365,6 +365,10 @@ jobs:
         working-directory: apps/control-center
         run: npm run lint
 
+      - name: Build Control Center like app.vibetv.shop (route type check)
+        working-directory: apps/control-center
+        run: npm run build
+
       - name: Check Control Center customer UI copy
         working-directory: apps/control-center
         run: npm run check:customer-ui-copy
