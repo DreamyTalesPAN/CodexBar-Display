@@ -155,6 +155,9 @@ export function SetupDeviceScreen({
         previewDevice?.deviceId &&
         candidate.deviceId.toLowerCase() === previewDevice.deviceId.toLowerCase(),
     );
+  // The single 3D model follows the connected VibeTV's row; row 0 keeps it
+  // only while nothing is connected.
+  const live3DIndex = previewDevice ? candidates.findIndex(isPreviewDevice) : 0;
   const wifiBusy = connecting || wifiSubmitting || waitingForWiFi;
   const passwordRequired = manualWiFiName ||
     wifiNetworks.find((network) => network.ssid === wifiName)?.encrypted !== false;
@@ -456,7 +459,7 @@ export function SetupDeviceScreen({
               candidate={candidate}
               key={`${candidate.deviceId || "legacy"}-${candidate.target}`}
               onSelect={() => onSelect(candidate)}
-              preview3D={index === 0 ? preview3D : false}
+              preview3D={index === live3DIndex ? preview3D : false}
               previewDevice={isPreviewDevice(candidate) ? previewDevice : null}
               previewFrame={isPreviewDevice(candidate) ? previewFrame : null}
               previewUsage={isPreviewDevice(candidate) ? previewUsage : null}

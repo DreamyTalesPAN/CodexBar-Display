@@ -14991,3 +14991,52 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #800 as described in those entries, as seen in build 7202.
 - Scope: #800 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #800 approval record only
+
+## 2026-10-17 — Calm Setup Wizard, steps 1–8: check mark colour scoped to device cards (Codex fix)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:30: "top, die neue app passt so" (setup B pictures incl. the 3D VibeTV in the device list and on "Your VibeTV is live"; the earlier "rest passt" for the other setup B pictures applies too) — entry: Calm Setup Wizard, steps 1–8: check mark colour scoped to device cards (Codex fix)
+- Approved customer-visible result: none yet; only the device cards (steps 2 to 8) change, the check marks of Display Mode and Choose your theme keep their support colour.
+- Visible text: none changed.
+- Scope: `apps/control-center/src/components/setup/setup-selectable-card.tsx` (optional colour class on the shared check; default kept) and `apps/control-center/src/components/setup/setup-device-card.tsx` (passes ink), plus this approval record. Pull-request branch only, not merge or release.
+- What's new: none — scope fix after a Codex finding, no new capability
+## 2026-10-21 — #780: 3D VibeTV sways once, then stands still (#854)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: #854 the 3D VibeTV in setup sways once and then stays still (Paul decided 21.10. "Nach einer Runde stehen"; not yet seen in a build)
+- Approved customer-visible result: #780 3D VibeTV on the setup screens sways one full cycle after 2.5 s without a touch and then stays still; a drag starts one more cycle. Reduced motion stays still; texts and layout unchanged.
+- Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx` (sway loop) and its test `apps/control-center/src/components/vibetv-3d-preview.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #854 not announced to customers
+
+## 2026-10-21 — #780: The flat VibeTV picture no longer flashes before the 3D model
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: #780 setup: the old flat VibeTV picture no longer flashes before the 3D model on "Your VibeTV is live" and in the chooser (Paul 21.10. 7201 feedback: "das komplett löschen einfach")
+- Approved customer-visible result: on "Your VibeTV is live" and in the first row of the chooser the flat VibeTV picture is gone; the area stays empty (same size) until the 3D model is on screen. Without hardware WebGL the flat picture stays as before; rows 2+ of the chooser keep their photo.
+- Scope: `apps/control-center/src/components/setup/setup-3d-preview.tsx`, `setup-device-card.tsx`, `setup-device-screen.tsx`, `setup-live-screen.tsx`, their tests, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — bug fix, not announced to customers
+
+## 2026-10-21 — #780: 3D preview follows the selected VibeTV row
+
+- User approval: no visible change – UI approval not needed (bug fix: with several VibeTVs the 3D preview follows the selected VibeTV instead of staying on the first row)
+- Approved customer-visible result: with several VibeTVs in the chooser the 3D model is drawn on the row of the VibeTV that is connected and selected; the first row shows its photo. With nothing connected the first row keeps the 3D model as before.
+- Scope: `apps/control-center/src/components/setup/setup-device-screen.tsx` and its test `setup-device-screen-3d.test.tsx`, plus this approval record. Pull request branch only, not merged, not released.
+- What's new: none — bug fix, not announced to customers
+
+## 2026-10-21 — #780: approval marker after merging main at 35152cc8
+
+- User approval: no visible change – UI approval not needed (merge of main (35152cc8) into #780; the own entries of #780 keep their approvals)
+- Approved customer-visible result: #780 as in its own entries plus the entries merged with 35152cc8; nothing else changes.
+- Scope: the merge of 35152cc8 and this approval record. Pull request branch #780 only, not merged, not released.
+- What's new: none — merge of 35152cc8, no customer-visible change of its own
+
+## 2026-10-21 — #780: Paul's approval of build 7202 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — #780 approval record for build 7202; only the 2 listed 7202 entries of #780 now carry it, everything else stays as it was.
+- Approved customer-visible result: #780 as described in those entries, as seen in build 7202.
+- Scope: #780 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #780 approval record only
+
+## 2026-10-21 — paultest-build8: integrate claude/group-setup-b (#780)
+
+- User approval: pending — build8 integration of claude/group-setup-b at d6ac78c730d5 for Paul’s next Mac test build 7203.
+- Approved customer-visible result: Preserve the incoming feature together with the existing calm customer flows in the integration candidate.
+- Scope: Merge claude/group-setup-b into claude/paultest-build8; retain all source approval entries.
+- What's new: none — integration of existing feature entries only.
