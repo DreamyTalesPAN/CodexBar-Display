@@ -1353,7 +1353,10 @@ it.each([
   await window.wait(1);
 
   const answerFirst = window.holdNextWrite();
-  await window.step(() => fireEvent.click(document.getElementById("vibetv-limit-claude-session") as HTMLElement));
+  await window.step(() => {
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "Limit for Provider 1" }), { key: "Enter" });
+    fireEvent.keyDown(screen.getByRole("option", { name: "Weekly" }), { key: "Enter" });
+  });
   for (const [picker, choice] of [["Provider 1", first], ["Provider 2", second]]) {
     await window.step(() => {
       fireEvent.keyDown(screen.getByRole("combobox", { name: picker }), { key: "Enter" });

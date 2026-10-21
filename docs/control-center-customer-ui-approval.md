@@ -10589,3 +10589,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the paired headers and layouts from 5723123e retain the exact Pace segments and shortened labels from 98ecf9e7; previous integration changes carried by that branch remain present.
 - Scope: merge conflict resolution in renderer/theme tests and append-only preservation of both approval logs, followed by targeted integration checks. No main merge, release, installed-app or hardware action.
 - What's new: none — integration of already recorded changes; visual approval remains pending.
+
+## 2026-10-21 — #592 integration: validate queued pair edits through the current limit picker
+
+- User approval: no visible change – UI approval not needed (test-only integration repair after 4777c181: the queued-pair regression uses the existing Limit for Provider 1 dropdown instead of the removed checkbox)
+- Approved customer-visible result: unchanged; both queued provider edits still survive a preceding limit change. The pending layout and Pace approvals above remain pending.
+- Scope: the two parameterized queue regression cases and this post-merge approval marker; no product code changes.
+- What's new: none — test fixture follows the current customer control.
