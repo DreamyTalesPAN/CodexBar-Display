@@ -8829,3 +8829,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #783 as described in its entries above, as seen in build 7200.
 - Scope: #783 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #783 approval record only
+
+## 2026-10-21 — #783: a different usage error shows again after OK
+
+- User approval: no visible change – UI approval not needed (#783 Codex fix: a different usage error shows again after an earlier one was dismissed; no new wording or layout)
+- Approved customer-visible result: #783 as in its entries above; only a different usage error that replaces a dismissed one now shows again. The same error stays closed, no new text or layout.
+- Scope: #783 Codex fix in the Usage page error dialog state. Pull request branch only, not merged, not released.
+- What's new: none — the dismissal resets on a different error, no new text or layout

@@ -5337,14 +5337,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setUsageHistoryDismissed(false);
     }
   }
-  // The same reset for the usage error: it comes back only after it has cleared.
-  const usageErrorShown = Boolean(usageError);
-  const [usageErrorWasShown, setUsageErrorWasShown] = useState(usageErrorShown);
-  if (usageErrorWasShown !== usageErrorShown) {
-    setUsageErrorWasShown(usageErrorShown);
-    if (!usageErrorShown) {
-      setUsageErrorDismissed(false);
-    }
+  // The same reset for the usage error: it comes back after it has cleared, or
+  // when a different error takes its place.
+  const usageErrorKey = usageError ? `${usageError.code}\n${usageError.message}` : "";
+  const [usageErrorWasKey, setUsageErrorWasKey] = useState(usageErrorKey);
+  if (usageErrorWasKey !== usageErrorKey) {
+    setUsageErrorWasKey(usageErrorKey);
+    setUsageErrorDismissed(false);
   }
   // Opened from Updates and taken away by something else, or by the window
   // moving to another page, the notice does not come back by itself: what
