@@ -128,6 +128,7 @@ import { displayPreviewsFor } from "./setup/setup-display-previews";
 import {
   PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS,
   forgetResolvedProviderIssues,
+  providerUnresolvedIds,
   providerRowHealthState,
   setupProviderCanDisplay,
 } from "./setup/setup-providers-screen";
@@ -4857,10 +4858,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         ),
     )
     .map((item) => item.providerId);
-  const providerChecking = (providerPreferences || [])
-    .filter(isProviderItem)
-    .filter((item) => providerRowHealthState(item.health) === "checking")
-    .map((item) => item.providerId);
+  const providerUnresolved = providerUnresolvedIds(
+    (providerPreferences || []).filter(isProviderItem),
+  );
   // A healthy or switched-off provider forgets its closed message, even while
   // its list is not shown (see forgetResolvedProviderIssues).
   useEffect(() => {
@@ -4870,7 +4870,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     useProviderActionDismissal(
       providerActions,
       activeTab === "settings",
-      providerChecking,
+      providerUnresolved,
     );
   useEffect(() => {
     providerActionReportRef.current = reportProviderSignIn;

@@ -49,8 +49,8 @@ export function useProviderActionDismissal(
   actions: Record<string, UsageProviderAction>,
   /** Settings is the page: it lists the provider in its own dialog, so the overlay counts as seen. */
   onSettings = false,
-  /** Providers still being checked: their dismissal holds until a definitive healthy or disabled result. */
-  checkingIds: string[] = [],
+  /** Providers not healthy yet (see providerUnresolvedIds): their dismissal holds until a healthy or switched-off result. */
+  unresolvedIds: string[] = [],
 ): [
   { id: string; action: UsageProviderAction; error: ApiError | null } | null,
   () => void,
@@ -59,21 +59,21 @@ export function useProviderActionDismissal(
 ] {
   const entries = Object.entries(actions);
   const signature = entries.map(([id, action]) => actionKey(id, action)).join("\n");
-  const checking = checkingIds.join("\n");
+  const unresolved = unresolvedIds.join("\n");
   const [memory, setMemory] = useState({
     signature,
-    checking,
+    unresolved,
     dismissed: new Set<string>(),
     failures: new Map<string, ApiError>(),
     // The latest sign-in start per provider (#679). Only its reply counts.
     signIns: new Map<string, object>(),
   });
   let { dismissed, failures, signIns } = memory;
-  if (memory.signature !== signature || memory.checking !== checking) {
+  if (memory.signature !== signature || memory.unresolved !== unresolved) {
     // The set of actions changed: keep what is still there, and what is still
-    // being checked (a checking read is not a healthy result).
+    // not healthy yet (a checking, stale or timeout read is not a healthy result).
     const current = new Set(signature ? signature.split("\n") : []);
-    const held = new Set(checkingIds);
+    const held = new Set(unresolvedIds);
     // A provider that left its action forgets its sign-in: a reply for it
     // after its return must not reopen or clear the new incident.
     const ids = new Set(entries.map(([id]) => id));
@@ -90,7 +90,7 @@ export function useProviderActionDismissal(
         ([key]) => current.has(key) || held.has(key.split(":")[0]),
       ),
     );
-    setMemory({ signature, checking, dismissed, failures, signIns });
+    setMemory({ signature, unresolved, dismissed, failures, signIns });
   }
   let shown: [string, UsageProviderAction] | undefined = entries.find(
     ([id, action]) => !dismissed.has(actionKey(id, action)),
@@ -138,7 +138,7 @@ export function useProviderActionDismissal(
       if (
         error &&
         !previous.signature.split("\n").includes(key) &&
-        !checkingIds.includes(id)
+        !unresolvedIds.includes(id)
       ) {
         return previous;
       }

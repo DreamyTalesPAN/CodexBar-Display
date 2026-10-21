@@ -11,6 +11,7 @@ import {
   ProviderActionDialog,
   useProviderActionDismissal,
 } from "./provider-action-dialog";
+import { providerUnresolvedIds } from "./setup/setup-providers-screen";
 import { SystemBusyDialog, systemBusyCopy } from "./system-busy-dialog";
 import type { UsageProviderAction } from "./usage-screen";
 
@@ -380,4 +381,40 @@ it("names Settings on the button when the sign-in cannot start from here", () =>
   render(<Overlay actions={claude("auth_required", vi.fn(), true)} />);
   expect(screen.getByRole("button", { name: "Open AI providers" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Sign in to Claude" })).toBeNull();
+});
+
+function ProviderHealthOverlay({
+  actions,
+  states,
+}: {
+  actions: Record<string, UsageProviderAction>;
+  states: string[];
+}) {
+  const providers = states.map((state) => ({
+    providerId: "claude",
+    value: true,
+    health: { state, service: "unknown", message: "" },
+  }));
+  const [shown, dismiss] = useProviderActionDismissal(
+    actions,
+    false,
+    providerUnresolvedIds(providers),
+  );
+  return shown ? <ProviderActionDialog action={shown.action} error={shown.error} onDismiss={dismiss} /> : null;
+}
+
+it("a dismissed sign-in stays closed through a timeout read of the same incident", async () => {
+  const { rerender } = render(<ProviderHealthOverlay actions={claude()} states={["auth_required"]} />);
+  fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+  await act(async () => rerender(<ProviderHealthOverlay actions={{}} states={["timeout"]} />));
+  await act(async () => rerender(<ProviderHealthOverlay actions={claude()} states={["auth_required"]} />));
+  expect(dialog("Claude needs a new sign-in")).toBeNull();
+});
+
+it("a dismissed sign-in opens again once the provider was healthy", async () => {
+  const { rerender } = render(<ProviderHealthOverlay actions={claude()} states={["auth_required"]} />);
+  fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+  await act(async () => rerender(<ProviderHealthOverlay actions={{}} states={["healthy"]} />));
+  await act(async () => rerender(<ProviderHealthOverlay actions={claude()} states={["auth_required"]} />));
+  expect(dialog("Claude needs a new sign-in")).not.toBeNull();
 });
