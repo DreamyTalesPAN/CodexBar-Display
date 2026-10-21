@@ -516,6 +516,32 @@ test_crlf_working_copy_keeps_base_entries() {
   expect_gate_success "$repo"
 }
 
+# Evidence lines above the first "## " entry belong to no entry; the gate must
+# not accept them just because the diff adds them.
+test_headless_evidence_lines_fail() {
+  local repo="${TMP_ROOT}/headless-evidence"
+  local log="$repo/docs/control-center-customer-ui-approval.md"
+  local output
+  setup_repo "$repo"
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Change customer-facing UI"
+  {
+    head -n 1 "$log"
+    printf '%s\n' \
+      '- User approval: no visible change – UI approval not needed (headless test)' \
+      '- Approved customer-visible result: headless test' \
+      "$WHATS_NEW_NONE"
+    tail -n +2 "$log"
+  } > "${TMP_ROOT}/headless.md"
+  mv "${TMP_ROOT}/headless.md" "$log"
+  git -C "$repo" add docs/control-center-customer-ui-approval.md
+  git -C "$repo" commit -q -m "Append approval evidence without a heading"
+  output="$(run_gate "$repo")" && die "expected headless approval evidence to fail the gate"
+  assert_contains "$output" 'Approval evidence outside any "## " entry'
+  assert_contains "$output" "User approval: no visible change"
+}
+
+test_headless_evidence_lines_fail
 test_required_fields_and_approval_forms
 test_merge_base_scopes_validation
 test_crlf_working_copy_keeps_base_entries

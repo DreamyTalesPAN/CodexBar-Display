@@ -40,9 +40,10 @@ const approvalText = workingTreeApprovalChanged
   ? (existsSync(APPROVAL_FILE) ? readFileSync(APPROVAL_FILE, "utf8") : "")
   : tryGit(["show", `${analysisRef}:${APPROVAL_FILE}`]);
 const addedApprovalEntries = introducedApprovalEntries();
-const invalidApprovalEntries = addedApprovalEntries
-  .map((entry) => ({ title: entry.split("\n")[0].slice(3), errors: approvalErrors(entry) }))
-  .filter(({ errors }) => errors.length > 0);
+const invalidApprovalEntries = [
+  { title: 'Approval evidence outside any "## " entry (add it under its own heading)', errors: approvalLinesOutsideEntries() },
+  ...addedApprovalEntries.map((entry) => ({ title: entry.split("\n")[0].slice(3), errors: approvalErrors(entry) })),
+].filter(({ errors }) => errors.length > 0);
 const workingTreeApprovalValid = workingTreeApprovalChanged
   ? diffAddsApprovalEvidence(workingTreeApprovalDiff())
   : false;
@@ -223,16 +224,32 @@ function approvalEntries(text) {
 // cannot hide an earlier broken or pending one. Consume matches so copying an
 // existing entry still counts as an addition and fails the uniqueness check.
 function introducedApprovalEntries() {
-  const baseRef = pullRequestBase() || `origin/${process.env["GITHUB_BASE_REF"] || "main"}`;
-  const base = tryGit(["merge-base", baseRef, analysisRef]);
-  const previous = base || (approvalCommit ? `${approvalCommit}^` : null);
-  const existing = approvalEntries(previous ? tryGit(["show", `${previous}:${APPROVAL_FILE}`]) : "");
+  const existing = approvalEntries(approvalBaseText());
   return approvalEntries(approvalText).filter((entry) => {
     const index = existing.indexOf(entry);
     if (index < 0) return true;
     existing.splice(index, 1);
     return false;
   });
+}
+
+function approvalBaseText() {
+  const baseRef = pullRequestBase() || `origin/${process.env["GITHUB_BASE_REF"] || "main"}`;
+  const base = tryGit(["merge-base", baseRef, analysisRef]);
+  const previous = base || (approvalCommit ? `${approvalCommit}^` : null);
+  return previous ? tryGit(["show", `${previous}:${APPROVAL_FILE}`]) : "";
+}
+
+// Only "## " entries are validated, so evidence above the first one would pass
+// unchecked. Lines the base already had do not count as added.
+function approvalLinesOutsideEntries() {
+  const outside = (text) => lines(text.replace(/\r\n/g, "\n").split(/^(?=## )/m)[0]);
+  const base = outside(approvalBaseText());
+  return outside(approvalText).filter(
+    (line) =>
+      !base.includes(line) &&
+      (line.startsWith(WHATS_NEW_PREFIX) || APPROVAL_PREFIXES.some((prefix) => line.startsWith(prefix))),
+  );
 }
 
 function approvalErrors(entry) {
