@@ -307,6 +307,9 @@ func (s *Server) handlePreferences(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
+	if r.URL.Query().Get("fresh") == "1" {
+		s.forgetProviderPreferences()
+	}
 	section := strings.TrimSpace(r.URL.Query().Get("section"))
 	items := make([]preferenceDescriptor, 0)
 	matchedSection := section == ""
@@ -475,6 +478,16 @@ func writeInvalidPreferenceValue(w http.ResponseWriter, settingType preferenceTy
 		nextAction = "Choose on or off, then try again."
 	}
 	writeError(w, http.StatusBadRequest, "invalid_preference_value", message, nextAction)
+}
+
+// forgetProviderPreferences makes the next provider read ask CodexBar again
+// (fresh=1). The Control Center sends it once when a provider list opens; the
+// polls that follow it do not, so they keep the lifetime cache.
+func (s *Server) forgetProviderPreferences() {
+	codexbar.ForgetProviderInventory()
+	s.providerPreferences.mu.Lock()
+	s.providerPreferences.at = time.Time{}
+	s.providerPreferences.mu.Unlock()
 }
 
 func (s *Server) cachedProviderSettings(ctx context.Context, force bool) ([]codexbar.ProviderSetting, error) {

@@ -142,16 +142,21 @@ class ESP8266PrimitiveSink final : public primitive::Sink {
         const int segX1 = cmd.x + 1 + ((i * innerW) / segments);
         const int segX2 = cmd.x + 1 + (((i + 1) * innerW) / segments);
         const int segW = max(0, segX2 - segX1 - gap);
-        if (segW > 0 && i < filledSegments) {
-          const int segmentRadius = ClampDrawRadius(innerRadius, segW, innerH);
+        // Pace boundaries are pixels, not rounded-up whole segments.
+        const int offset = segX1 - cmd.x - 1;
+        const int fillW = cmd.planAt >= 0 ? max(0, min(segW, innerW * p / 100 - offset)) : (i < filledSegments ? segW : 0);
+        const int endW = cmd.planAt >= 0 ? max(0, min(segW, innerW * pieceP / 100 - offset)) : (i < pieceSegments ? segW : 0);
+        if (fillW > 0) {
+          const int segmentRadius = ClampDrawRadius(innerRadius, fillW, innerH);
           if (segmentRadius > 0) {
-            tft.fillRoundRect(segX1, cmd.y + 1, segW, innerH, segmentRadius, cmd.fillColor);
+            tft.fillRoundRect(segX1, cmd.y + 1, fillW, innerH, segmentRadius, cmd.fillColor);
           } else {
-            tft.fillRect(segX1, cmd.y + 1, segW, innerH, cmd.fillColor);
+            tft.fillRect(segX1, cmd.y + 1, fillW, innerH, cmd.fillColor);
           }
-        } else if (segW > 0 && i < pieceSegments) {
-          const int pieceRadius = ClampDrawRadius(innerRadius, segW, innerH);
-          FillPacePiece(tft, segX1, cmd.y + 1, segW, innerH, cmd, pieceRadius, pieceRadius);
+        }
+        if (endW > fillW) {
+          const int pieceRadius = ClampDrawRadius(innerRadius, endW - fillW, innerH);
+          FillPacePiece(tft, segX1 + fillW, cmd.y + 1, endW - fillW, innerH, cmd, pieceRadius, pieceRadius);
         }
       }
     } else {

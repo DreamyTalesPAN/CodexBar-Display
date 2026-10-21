@@ -797,8 +797,8 @@ inline const char* RootResetUnavailableText(const FrameData& frame) {
   return ResetTextFor(RootResetIsIdle(frame));
 }
 
-// The pace texts behind usageSlotN<suffix>. Text: "6% in reserve", "On pace",
-// "14% in deficit"; Short: "6% reserve", "on pace", "14% deficit"; Lasts:
+// The pace texts behind usageSlotN<suffix>. Text: "6% reserve", "On pace",
+// "14% deficit"; Short: "6% reserve", "on pace", "14% deficit"; Lasts:
 // "lasts until reset" or "runs out" (LastsSep: the same followed by " - ");
 // RunsOut: "runs out" only. Each is empty
 // without a pace, for a window whose countdown is gone, and for a suffix it
@@ -821,7 +821,7 @@ inline void FormatBoundPace(
     if (pace.state == usage_window_contract::kPaceOnPace) {
       std::snprintf(out, outSize, "%s", shortForm ? "on pace" : "On pace");
     } else {
-      std::snprintf(out, outSize, shortForm ? "%d%% %s" : "%d%% in %s", ClampPct(amount),
+      std::snprintf(out, outSize, "%d%% %s", ClampPct(amount),
                     usage_window_contract::PaceState(pace.state));
     }
   } else if ((lastsSep || std::strcmp(suffix, "Lasts") == 0) && pace.lasts != 0) {

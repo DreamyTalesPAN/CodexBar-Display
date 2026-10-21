@@ -1226,6 +1226,7 @@ function ThemeProgress({
           fillColor={fillColor}
           height={innerHeight}
           percent={marks.fillTo}
+          exact={marks.planAt >= 0}
           pieceFill={pieceFill}
           piecePercent={marks.pieceTo}
           segmentGap={primitive.segmentGap ?? primitive.gg ?? 1}
@@ -1272,6 +1273,7 @@ function ThemeProgress({
 }
 
 function SegmentedProgress({
+  exact,
   fillColor,
   height,
   percent,
@@ -1284,6 +1286,7 @@ function SegmentedProgress({
   x,
   y,
 }: {
+  exact: boolean;
   fillColor: string;
   height: number;
   percent: number;
@@ -1301,21 +1304,38 @@ function SegmentedProgress({
   return (
     <g>
       {Array.from({ length: segments }, (_, index) => {
-        const segX1 = x + (index * width) / segments;
-        const segX2 = x + ((index + 1) * width) / segments;
+        const segX1 = exact
+          ? Math.floor((index * width) / segments)
+          : (index * width) / segments;
+        const segX2 = exact
+          ? Math.floor(((index + 1) * width) / segments)
+          : ((index + 1) * width) / segments;
         const segW = Math.max(0, segX2 - segX1 - Math.max(0, segmentGap));
-        return index < pieceSegments && segW > 0 ? (
-          <rect
-            fill={index < filledSegments ? fillColor : pieceFill}
-            height={height}
-            key={index}
-            rx={clampRadius(radius, segW, height)}
-            ry={clampRadius(radius, segW, height)}
-            width={segW}
-            x={segX1}
-            y={y}
-          />
-        ) : null;
+        // Pace boundaries are pixels, not rounded-up whole segments.
+        const fillW = exact
+          ? Math.max(0, Math.min(segW, Math.floor(width * percent / 100) - segX1))
+          : index < filledSegments ? segW : 0;
+        const endW = exact
+          ? Math.max(0, Math.min(segW, Math.floor(width * piecePercent / 100) - segX1))
+          : index < pieceSegments ? segW : 0;
+        return (
+          <g key={index}>
+            {fillW > 0 ? (
+              <rect
+                fill={fillColor} height={height}
+                rx={clampRadius(radius, fillW, height)} ry={clampRadius(radius, fillW, height)}
+                width={fillW} x={x + segX1} y={y}
+              />
+            ) : null}
+            {endW > fillW ? (
+              <rect
+                fill={pieceFill} height={height}
+                rx={clampRadius(radius, endW - fillW, height)} ry={clampRadius(radius, endW - fillW, height)}
+                width={endW - fillW} x={x + segX1 + fillW} y={y}
+              />
+            ) : null}
+          </g>
+        );
       })}
     </g>
   );
@@ -1477,8 +1497,6 @@ export function buildFrameData(
   currentTime = new Date(),
 ): FrameData {
   const elapsedSeconds = secondsSince(generatedAt, currentTime);
-  const remainingResetSeconds = (seconds: number | undefined) =>
-    remainingResetSecs(seconds, generatedAt, currentTime);
   const sourceUsageMode = frameUsageMode(displayFrame);
   const slots = (
     (displayFrame.usageWindows?.length
@@ -1510,6 +1528,8 @@ export function buildFrameData(
     (!trustEnforced ||
       (Boolean(displayFrame.resetSource) &&
         (displayFrame.resetTrustSecs ?? 0) - elapsedSeconds > 0));
+  const remainingResetSeconds = (seconds: number | undefined) =>
+    basisTrusted ? remainingResetSecs(seconds, generatedAt, currentTime) : 0;
   // Mirrors CurrentUsageWindowRemainingSecs: idle is a window the host sent
   // with no deadline and nothing used. No deadline alone is not enough -- the
   // host also sends 0 for a deadline that ran out before the frame left and
@@ -2024,7 +2044,7 @@ function usagePaceText(binding: string, kind: string, frame: FrameData): string 
       return short ? "on pace" : "On pace";
     }
     const amount = Math.min(100, Math.abs(pace.delta ?? 0));
-    return `${amount}% ${short ? "" : "in "}${pace.state}`;
+    return `${amount}% ${pace.state}`;
   }
   if (pace.lasts === undefined || (kind === "RunsOut" && pace.lasts)) {
     return "";
