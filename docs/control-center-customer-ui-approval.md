@@ -8143,3 +8143,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: when the Companion reports `wifi.weak` for a connected VibeTV on WiFi, a dialog "VibeTV's Wi-Fi is weak" with the text "VibeTV stopped getting updates. Move it closer to your router or check your Wi-Fi." and one "OK" button opens over the page. "OK" hides it until the signal is no longer weak. Cable VibeTVs and a signal that is not weak show nothing new.
 - Scope: `apps/control-center/src/components/weak-wifi-dialog.tsx`, its test, `control-center-app.tsx` (state, reset effect, render), and this approval record. Pull request branch only, not merge or release.
 - What's new: none — the notice is a warning on the page, not an announcement
+
+## 2026-10-21 — #265: weak WiFi notice, Codex fixes
+
+- User approval: no visible change – UI approval not needed (#861 Codex fixes: the weak-WiFi notice stays dismissed through short disconnects and waits while another dialog is open)
+- Approved customer-visible result: the approved notice of the block above, unchanged; no new text or layout.
+- Scope: `weak-wifi-dialog.tsx` and its test (dismissal, other-dialog guard), `system-busy-dialog.tsx` (shared other-dialog helper), `control-center-app.tsx` (uses the dismissal hook). Pull request branch only, not merge or release.
+- What's new: none — bug fix, no new entry; the notice keeps its approved wording

@@ -2,7 +2,9 @@
 //
 // #265: the weak WiFi notice opens when the Companion reports a WiFi VibeTV
 // with a weak signal. A cable VibeTV and a signal that is not weak get no notice.
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+// Closing it keeps it closed through a short disconnect, and waits while another
+// dialog of the page is open.
+import { act, cleanup, fireEvent, render, renderHook, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -12,6 +14,7 @@ import {
   WeakWiFiDialog,
   weakWiFiCopy,
   weakWiFiSignal,
+  useWeakWiFiDismissal,
 } from "./weak-wifi-dialog";
 
 afterEach(cleanup);
@@ -20,6 +23,7 @@ const wifiDevice = (weak?: boolean): DeviceInfo => ({
   active: true,
   connected: true,
   paired: true,
+  target: "192.168.1.20",
   health: { ok: true, wifi: { rssi: -82, weak } },
 } as DeviceInfo);
 
@@ -55,7 +59,66 @@ it("shows the approved text with one OK button that closes it", async () => {
   expect(onClose).toHaveBeenCalledTimes(1);
 });
 
+function page(other: string | null) {
+  return createElement(
+    "div",
+    null,
+    other ? createElement("div", { role: other }, "Delete this theme?") : null,
+    createElement(WeakWiFiDialog, { onClose: () => {} }),
+  );
+}
+
+const weak = () => screen.queryByRole("dialog", { name: weakWiFiCopy.title });
+
+for (const role of ["dialog", "alertdialog"]) {
+  it(`waits while a ${role} is open`, async () => {
+    const { rerender } = render(page(null));
+    expect(weak()).not.toBeNull();
+
+    await act(async () => rerender(page(role)));
+    expect(weak()).toBeNull();
+
+    await act(async () => rerender(page(null)));
+    expect(weak()).not.toBeNull();
+  });
+}
+
 it("has no accessibility violations while it is open", async () => {
   render(createElement(WeakWiFiDialog, { onClose: () => {} }));
   await expectNoAxeViolations(document.body.innerHTML);
+});
+
+// Lets the reset after a recovery run.
+const settle = () => act(() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
+
+it("stays closed through a short disconnect and opens again after the signal recovers", async () => {
+  const { result, rerender } = renderHook(
+    ({ device }) => useWeakWiFiDismissal(device),
+    { initialProps: { device: wifiDevice(true) } },
+  );
+  act(() => result.current[1]());
+  expect(result.current[0]).toBe(true);
+
+  rerender({ device: { ...wifiDevice(true), connected: false } });
+  await settle();
+  expect(result.current[0]).toBe(true);
+  rerender({ device: wifiDevice(true) });
+  expect(result.current[0]).toBe(true);
+
+  rerender({ device: wifiDevice(false) });
+  await settle();
+  expect(result.current[0]).toBe(false);
+
+  rerender({ device: wifiDevice(true) });
+  expect(result.current[0]).toBe(false);
+});
+
+it("opens again for another device", () => {
+  const { result, rerender } = renderHook(
+    ({ device }) => useWeakWiFiDismissal(device),
+    { initialProps: { device: wifiDevice(true) } },
+  );
+  act(() => result.current[1]());
+  rerender({ device: { ...wifiDevice(true), target: "192.168.1.30" } });
+  expect(result.current[0]).toBe(false);
 });

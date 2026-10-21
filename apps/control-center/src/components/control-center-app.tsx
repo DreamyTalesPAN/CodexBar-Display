@@ -146,7 +146,7 @@ import {
 import { SetupDevicePickerDialog } from "./setup/setup-device-dialogs";
 import { SetupDialog } from "./setup/setup-dialog";
 import { SystemBusyDialog, useSystemBusyDismissal } from "./system-busy-dialog";
-import { WeakWiFiDialog, weakWiFiSignal } from "./weak-wifi-dialog";
+import { WeakWiFiDialog, useWeakWiFiDismissal, weakWiFiSignal } from "./weak-wifi-dialog";
 import { SetupRecoveryDialogs } from "./setup/setup-recovery-dialogs";
 import { SetupWizard } from "./setup/setup-wizard";
 import { SettingsScreen, standbyTimeoutLabel } from "./settings-screen";
@@ -605,7 +605,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // Issue #265: the Companion names a WiFi signal too weak for updates. Closing
   // the notice hides it until the signal is no longer weak.
   const weakWiFi = weakWiFiSignal(device);
-  const [weakWiFiHidden, setWeakWiFiHidden] = useState(false);
+  const [weakWiFiHidden, dismissWeakWiFi] = useWeakWiFiDismissal(device);
   // "Run setup again" asks first, from Settings and from Support alike.
   const [setupAgainRequested, setSetupAgainRequested] = useState(false);
   // The "What's new" entries this customer has seen, null while nothing is
@@ -4734,15 +4734,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     ? setupUsageCauseFor(providerSetup)
     : null;
 
-  // The weak WiFi notice (#265) is hidden only while its signal stays weak.
-  useEffect(() => {
-    if (weakWiFi) {
-      return;
-    }
-    const timer = window.setTimeout(() => setWeakWiFiHidden(false), 0);
-    return () => window.clearTimeout(timer);
-  }, [weakWiFi]);
-
   // A dismissal covers the incident it was made during, not the next one. A
   // "checking" answer is the probe still running, not the incident ending:
   // the companion reports it during every cache refresh, and treating it as
@@ -5946,7 +5937,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       ) : null}
       {systemBusyOpen ? <SystemBusyDialog onClose={dismissSystemBusy} /> : null}
       {weakWiFiOpen ? (
-        <WeakWiFiDialog onClose={() => setWeakWiFiHidden(true)} />
+        <WeakWiFiDialog onClose={dismissWeakWiFi} />
       ) : null}
       {setupAgainRequested ? (
         <SetupDialog

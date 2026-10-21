@@ -35,30 +35,31 @@ export function useSystemBusyDismissal(
  * closed. The first answer is read before the first render, so the busy dialog
  * never mounts over a dialog that was already open.
  */
-function otherDialogOpen(): boolean {
+function otherDialogOpen(ownTitle: string): boolean {
   return (
     typeof document !== "undefined" &&
     Array.from(
       document.querySelectorAll('[role="dialog"], [role="alertdialog"]'),
-    ).some((dialog) => !dialog.textContent?.includes(systemBusyCopy.title))
+    ).some((dialog) => !dialog.textContent?.includes(ownTitle))
   );
 }
 
-function useOtherDialogOpen(): boolean {
-  const [open, setOpen] = useState(otherDialogOpen);
+/** Whether a dialog other than the one titled `ownTitle` is open (see above). */
+export function useOtherDialogOpen(ownTitle: string): boolean {
+  const [open, setOpen] = useState(() => otherDialogOpen(ownTitle));
   useEffect(() => {
-    const check = () => setOpen(otherDialogOpen());
+    const check = () => setOpen(otherDialogOpen(ownTitle));
     check();
     const observer = new MutationObserver(check);
     observer.observe(document.body, { childList: true, subtree: true });
     return () => observer.disconnect();
-  }, []);
+  }, [ownTitle]);
   return open;
 }
 
 /** The computer is too starved for the usage engine to answer (#606). */
 export function SystemBusyDialog({ onClose }: { onClose: () => void }) {
-  if (useOtherDialogOpen()) {
+  if (useOtherDialogOpen(systemBusyCopy.title)) {
     return null;
   }
   return (
