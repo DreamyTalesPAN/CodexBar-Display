@@ -9185,3 +9185,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #784 as in its own entries plus the entries merged with 3dc0a15b; nothing else changes.
 - Scope: the merge of 3dc0a15b and this approval record. Pull request branch #784 only, not merged, not released.
 - What's new: none — merge of 3dc0a15b, no customer-visible change of its own
+
+## 2026-10-21 — #784: Overview 3D sway stops and pauses while hidden
+
+- User approval: pending — the Overview 3D VibeTV sways once and then stands still (as approved for setup in 7202), paused while the window is hidden
+- Approved customer-visible result: the Overview follows the one-cycle sway from #780, approved in build 7202: after 2.5 seconds without a touch it sways once and settles; a drag starts one more cycle. Hidden windows pause that cycle, and reduced motion stays still. Text and layout remain unchanged.
+- Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx` and its animation regression tests; adapted from #780 commit 65352daf4412c41df5041baea327f079b92c1dff with visibility handling and event-driven rendering. Pull request #784 only, not merged, not released.
+- What's new: none — performance fix to the existing Overview preview
