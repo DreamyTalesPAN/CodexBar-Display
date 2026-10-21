@@ -673,6 +673,21 @@ test_historical_entry_order_is_preserved() {
   done
 }
 
+test_push_preserves_the_exact_previous_tip() {
+  local repo="${TMP_ROOT}/rewritten-push" output ancestor before event="${TMP_ROOT}/rewritten-push-event.json"
+  setup_repo "$repo"
+  ancestor="$(git -C "$repo" rev-parse HEAD)"
+  commit_approval "$repo" "Previous tip approval"
+  before="$(git -C "$repo" rev-parse HEAD)"
+  git -C "$repo" reset -q --hard "$ancestor"
+  commit_approval "$repo" "Replacement tip approval"
+  git -C "$repo" update-ref refs/remotes/origin/main HEAD
+  printf '{"before":"%s"}\n' "$before" > "$event"
+  output="$(cd "$repo" && GITHUB_EVENT_NAME=push GITHUB_EVENT_PATH="$event" node "$GATE" 2>&1)" && die "expected rewritten push to preserve previous approvals"
+  assert_contains "$output" 'Previous tip approval: historical approval entries are append-only'
+}
+
+test_push_preserves_the_exact_previous_tip
 test_historical_entry_order_is_preserved
 test_historical_entries_cannot_be_rewritten_or_deleted
 test_large_approval_log_is_validated

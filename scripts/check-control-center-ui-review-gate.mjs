@@ -230,10 +230,13 @@ function approvalEntryChanges() {
 
 function approvalBaseText() {
   // A push must compare with the previous tip, not origin/main after the push.
-  const baseRef = process.env["GITHUB_EVENT_NAME"] === "push"
+  const isPush = process.env["GITHUB_EVENT_NAME"] === "push";
+  const baseRef = isPush
     ? JSON.parse(readFileSync(process.env["GITHUB_EVENT_PATH"], "utf8")).before
     : pullRequestBase() || `origin/${process.env["GITHUB_BASE_REF"] || "main"}`;
-  const base = tryGit(["merge-base", baseRef, analysisRef]);
+  const base = tryGit(isPush
+    ? ["rev-parse", "--verify", `${baseRef}^{commit}`]
+    : ["merge-base", baseRef, analysisRef]);
   if (!base) {
     throw new Error(`Cannot determine approval comparison base (${baseRef}). Fetch the base ref and complete history before running the gate.`);
   }
