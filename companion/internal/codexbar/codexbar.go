@@ -28,6 +28,10 @@ var runUsageCommandFn = runUsageCommand
 var runCostCommandFn = runUsageCommand
 var runVersionCommandFn = runUsageCommand
 var executablePathFn = os.Executable
+var usagePreferenceGOOS = runtime.GOOS
+var runUsagePreferenceCommandFn = func(ctx context.Context, bin string, args ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, bin, args...).Output()
+}
 
 const usageModeEnvVar = "CODEXBAR_DISPLAY_USAGE_MODE"
 const appManagedCodexBarVersionEnvVar = "VIBETV_CODEXBAR_PINNED_VERSION"
@@ -200,14 +204,14 @@ func UsageBarsShowUsed() bool {
 	if showUsed, ok := usageBarsShowUsedFromEnv(); ok {
 		return showUsed
 	}
-	if runtime.GOOS != "darwin" {
+	if usagePreferenceGOOS != "darwin" {
 		return true
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 	defer cancel()
 
-	out, err := exec.CommandContext(ctx, "defaults", "read", "com.steipete.codexbar", "usageBarsShowUsed").Output()
+	out, err := runUsagePreferenceCommandFn(ctx, "defaults", "read", "com.steipete.codexbar", "usageBarsShowUsed")
 	if err != nil {
 		return true
 	}
@@ -215,6 +219,24 @@ func UsageBarsShowUsed() bool {
 		return showUsed
 	}
 	return true
+}
+
+// UsageBarsShowUsedOverridden prevents a saved choice from being offered when
+// the process environment takes precedence over CodexBar's own preference.
+func UsageBarsShowUsedOverridden() bool {
+	return strings.TrimSpace(os.Getenv(usageModeEnvVar)) != ""
+}
+
+// SetUsageBarsShowUsed writes only CodexBar's preference. Existing usage reads
+// and display cycles pick it up without a VibeTV setting or cache.
+func SetUsageBarsShowUsed(parent context.Context, showUsed bool) error {
+	if usagePreferenceGOOS != "darwin" || UsageBarsShowUsedOverridden() {
+		return errors.New("CodexBar usage preference is not writable")
+	}
+	ctx, cancel := context.WithTimeout(parent, 1500*time.Millisecond)
+	defer cancel()
+	_, err := runUsagePreferenceCommandFn(ctx, "defaults", "write", "com.steipete.codexbar", "usageBarsShowUsed", "-bool", strconv.FormatBool(showUsed))
+	return err
 }
 
 func runUsageCommand(parent context.Context, timeout time.Duration, bin string, args ...string) ([]byte, error) {

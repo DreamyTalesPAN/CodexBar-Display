@@ -62,7 +62,7 @@ export function standbyTimeoutLabel(minutes: number): string {
 
 export type SettingsScreenProps = {
   device: DeviceInfo | null;
-  /** The app's own display preferences; a Mac App without them sends none. */
+  /** Display preferences listed by the companion; unsupported choices are absent. */
   displayPreferences?: PreferenceDescriptor[];
   brightness: number | null;
   busyAction: string | null;
@@ -225,6 +225,9 @@ export function SettingsScreen({
   const activeTheme = useActiveThemeLimits(device);
   const providerError =
     providerPicker.preferencesError || providerPicker.displayError;
+  const usageMode = displayPreferences.find(
+    (item) => item.id === "codexbar.usageBarsShowUsed",
+  );
   const rotation = displayPreferences.find(
     (item) => item.id === "vibetv.display.rotateSeconds",
   );
@@ -347,6 +350,13 @@ export function SettingsScreen({
             </div>
           ) : null}
         </div>
+        {usageMode ? (
+          <PreferenceRow
+            descriptor={usageMode}
+            disabled={localActionBusy}
+            onChange={onDisplayPreferenceChange}
+          />
+        ) : null}
         {providerShortcut ? (
           // Two lines are always kept: the text wraps to one line (Manual, or
           // usage not read yet) or two (Automatic with usage), and a change of

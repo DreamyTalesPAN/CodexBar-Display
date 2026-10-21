@@ -15218,3 +15218,24 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: The Two at once card renders the active theme through the same live tile, height and card structure as Automatic and One provider, using Provider 1 above Provider 2; the Continue rules and existing wording stay unchanged.
 - Scope: Reuse the existing setup tile renderer and extend pairDisplayPreview with its two existing live source frames, preserving their countdown basis and leaving unavailable frames unavailable; regression tests cover rendered tiles and pair data.
 - What's new: none — consistent setup preview design for Paul's next Mac test build.
+
+## 2026-10-21 — Settings: Used / Remaining switch (writes CodexBar's own setting, Mac)
+
+- User approval: pending — Paul (21.10.): Settings gets a switch Used / Remaining (Mac; it is CodexBar's own setting, Usage and VibeTV follow it); not on Windows until Win-CodexBar has the setting (#874); Paul sees it in build 7203
+- Approved customer-visible result: Settings → Display mode has a Show row with Used and Remaining, using the existing preference control; it follows CodexBar's saved choice and is disabled when the usage-mode environment override is set.
+- Scope: CodexBar preference read/write adapter, display preference registration, Settings row, and focused tests; no VibeTV copy, usage conversion, or Windows setting.
+- What's new: none — customer notice waits for Paul's review of build 7203.
+
+## 2026-10-21 — paultest-build8: Show Used or Remaining in every Display mode
+
+- User approval: pending — build8 coordinator follow-up on 21.10.: place the Used/Remaining Show row below the mode-specific choices in Automatic, One provider and Two at once for Paul's Mac test build 7203.
+- Approved customer-visible result: One existing generic Show preference row appears in Display mode before Limits on VibeTV in all three modes; it uses CodexBar's preference and preserves the calm Settings layout from claude/paultest-592a.
+- Scope: Integrate claude/used-remaining-switch (#877) and test all three modes, row placement, existing preference writes and unavailable/overridden choices.
+- What's new: none — existing preference surfaced in the combined test candidate.
+
+## 2026-10-21 — paultest-build8: integrate claude/used-remaining-switch
+
+- User approval: pending — build8 integration of claude/used-remaining-switch at 513ee9087e0e for Paul’s next Mac test build 7203.
+- Approved customer-visible result: Preserve the incoming feature together with the existing calm customer flows in the integration candidate.
+- Scope: Merge claude/used-remaining-switch into claude/paultest-build8; retain all source approval entries.
+- What's new: none — integration of existing feature entries only.
