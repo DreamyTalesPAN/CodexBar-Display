@@ -1,12 +1,75 @@
 package daemon
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 )
+
+func TestFixedSelectionRetainsSentProviderSlotsDuringCollectionFailure(t *testing.T) {
+	for _, pinned := range []string{"one", "three"} {
+		t.Run(pinned, func(t *testing.T) {
+			prepareFastTestEnv(t)
+			basis := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+			var providers []codexbar.ParsedFrame
+			for _, id := range []string{"one", "two", "three"} {
+				reading := providerFrameWithWindows(id, basis,
+					protocol.UsageWindow{ID: "session", Label: "Session", Percent: 40, ResetSec: 600})
+				reading.Frame.V = protocol.ProtocolVersionV2
+				providers = append(providers, reading)
+			}
+			// Automatic sent the pinned provider with its first two cross-provider
+			// rows. The third provider has no own row in that sent frame.
+			lastGood := providers[0].Frame
+			if pinned == "three" {
+				lastGood = providers[2].Frame
+			}
+			lastGood.ProviderSlots = providerResetSlots(providers, basis)
+			for i := range providers {
+				providers[i].Stale = true
+			}
+			state := &runtimeState{selector: codexbar.NewProviderSelector(),
+				lastGood: lastGood, lastGoodAt: basis, hasLastGood: true}
+			deps := providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
+				Mode: "fixed", ProviderIDs: []string{pinned},
+			})
+			home := t.TempDir()
+			deps.homeDir = func() (string, error) { return home, nil }
+			deps.now = func() time.Time { return basis.Add(time.Minute) }
+			deps.usageBarsShowUsed = func() bool { return true }
+			deps.logf = func(string, ...any) {}
+			var sent protocol.Frame
+			deps.sendLine = func(_ string, line []byte) error {
+				sent = decodeFrameLine(t, line)
+				return nil
+			}
+			deps = deps.withDefaults()
+			selected := selectCycleFrameFromProviders(state, providers, deps.now(), deps, nil, "select-provider", "", "", "codexbar")
+			if selected.usageFresh || len(selected.frame.ProviderSlots) != 0 {
+				t.Fatalf("fixed selection must exclude stale provider rows: %+v", selected)
+			}
+			caps := protocol.DeviceCapabilities{NegotiatedProtocolVersion: protocol.ProtocolVersionV2,
+				SupportsProviderSlotsV1: true, MaxUsageWindows: 1}
+			if err := sendCycleResult(context.Background(), "test-port", caps, 2048, state, deps, selected); err != nil {
+				t.Fatal(err)
+			}
+			if sent.Provider != pinned || sent.ResetTrust != protocol.ResetTrustOffline || len(sent.ProviderSlots) != 2 {
+				t.Fatalf("fixed stale send must restate the matching last-good frame: %+v", sent)
+			}
+			for i, slot := range sent.ProviderSlots {
+				want := lastGood.ProviderSlots[i]
+				want.ResetSec -= 60
+				if slot != want {
+					t.Fatalf("sent row %d = %+v, want retained %+v", i, slot, want)
+				}
+			}
+		})
+	}
+}
 
 func providerFrameWithWindows(provider string, collectedAt time.Time, windows ...protocol.UsageWindow) codexbar.ParsedFrame {
 	frame := testParsedFrame(provider, 10, 20, 0)
