@@ -50,18 +50,18 @@ describe("Gauge 2.0 theme pack", () => {
   it("is a pace theme that needs the arc, colour stops and usage-pace-v1", () => {
     const validation = validateThemeSpec(importThemeSpec(JSON.parse(rawSpec)), {}, "live");
     expect(validation.errors).toEqual([]);
-    expect(arc).toMatchObject({ ps: "arc", b: "usageSlot1Pace", sl: 1, as: 225, aw: 270, at: 16, rc: "#C9F26B", dc: "#E7A3AC" });
-    expect(manifest).toMatchObject({ usage: "live", assets: [], minFirmware: "1.0.50", version: "0.2.0" });
+    expect(arc).toMatchObject({ ps: "arc", b: "usageSlot1Pace", sl: 1, as: 225, aw: 270, at: 18, rc: "#C9F26B", dc: "#E7A3AC" });
+    expect(manifest).toMatchObject({ usage: "live", assets: [], minFirmware: "1.0.50", version: "0.2.1" });
     expect(manifest.requiredCapabilities).toEqual(["usage-slots-v1", "color-stops-v1", "progress-arc-v1", "usage-pace-v1"]);
     // Two letters, so no theme a customer saves can share the file name.
-    expect(manifest.themeSpec.path).toMatch(/^\/themes\/u\/ga-10-[0-9a-f]{8}\.json$/);
+    expect(manifest.themeSpec.path).toMatch(/^\/themes\/u\/ga-11-[0-9a-f]{8}\.json$/);
     expect(manifest.themeSpec.bytes).toBe(Buffer.byteLength(rawSpec));
     expect(pack.specPath).toBe(manifest.themeSpec.path);
   });
 
   it("draws the ring open at the bottom, with the plan tick, the piece and nothing without a pace", () => {
     const geometry = themeProgressArc(arc, 91)!;
-    expect(geometry).toMatchObject({ start: 225, sweep: 270, thickness: 16, filled: 245 });
+    expect(geometry).toMatchObject({ start: 225, sweep: 270, thickness: 18, filled: 245 });
     // No pace: a plain ring of the use, no piece, no tick.
     const plain = render(frame(91));
     expect(ring(plain)).toEqual([[arc.bg, 270], ["#EDEDED", 245]]);
@@ -140,41 +140,30 @@ describe("Gauge 2.0 theme pack", () => {
     }
   });
 
-  // A notice replaces the reset line under the ring, never the provider name in it:
-  // the name stays inside the hole, and every notice lies wholly outside the ring.
-  it("shows the update notice under the ring and keeps the provider name inside it", () => {
+  it("keeps the header above the larger ring and both limit labels clear of it", () => {
+    expect(arc.w).toBe(190);
+    expect(arc.h).toBe(190);
+    const header = texts.find((p) => p.b === "usageProviderName")!;
+    expect(header.y! + 16).toBeLessThan(arc.y!);
     const { cx, cy, radius, thickness } = themeProgressArc(arc, 0)!;
-    const hole = radius - thickness / 2;
-    const outer = radius + thickness / 2;
-    const name = texts.find((p) => p.b === "usageProviderName")!;
-    const footer = texts.find((p) => p.b === "usageSlot1PaceFooter")!;
-    const box = (p: ThemePrimitive, text: string) => {
-      const size = themeTextFittedSize(text, p.f!, p.s!, p.w!, true);
-      const width = themeFirmwareTextMetrics(text, p.f!, size)!.width;
-      const left = p.x! + (p.w! - width) / 2;
-      const height = 16 * size;
-      return [[left, p.y!], [left + width, p.y!], [left, p.y! + height], [left + width, p.y! + height]];
-    };
-    // Names are short: every corner of the name box lies inside the hole, notice or not.
-    for (const label of ["Claude", "Codex", "Cursor", "OpenCode Go"]) {
-      for (const [x, y] of box(name, renderTextPrimitive(name, frame(91, { label, updateNotice: "Open VibeTV Mac App" })))) {
-        expect(Math.hypot(x - cx, y - cy), `${label} corner ${x},${y}`).toBeLessThan(hole);
-      }
+    const inner = radius - thickness / 2;
+    const limit = texts.find((p) => p.v === "{usageSlot1Label} {usageModeShort}")!;
+    const paired = frame(96, { provider: "claude+codex", label: "", usageMode: "used", usageSlots: [
+      { id: "claude:weekly", label: "Claude Weekly", percent: 96, resetSecs: 262800 },
+      { id: "codex:weekly", label: "Codex Weekly", percent: 59, resetSecs: 586800 },
+    ] });
+    const value = renderTextPrimitive(limit, paired);
+    const width = themeFirmwareTextMetrics(value, 2, 1)!.width;
+    expect(value.trim()).toBe("Claude Weekly");
+    for (const y of [limit.y!, limit.y! + 16]) {
+      expect(Math.hypot(width / 2, y - cy)).toBeLessThan(inner);
     }
-    expect(renderTextPrimitive(name, frame(91, { updateNotice: "Update available" }))).toBe("Claude");
+    const footer = texts.find((p) => p.b === "usageSlot1PaceFooter")!;
+    // The 270-degree ring ends at 45 degrees either side of its open bottom.
+    expect(footer.y!).toBeGreaterThan(cy + (radius + thickness / 2) / Math.sqrt(2));
     for (const updateNotice of ["Update available", "Open VibeTV Mac App"]) {
-      const data = frame(91, {}, paceSession);
-      const text = renderTextPrimitive(footer, { ...data, updateNotice });
-      expect(text).toBe(updateNotice);
-      for (const [x, y] of box(footer, text)) {
-        expect(Math.hypot(x - cx, y - cy), `${updateNotice} corner ${x},${y}`).toBeGreaterThan(outer + 4);
-        expect(x).toBeGreaterThanOrEqual(0);
-        expect(x).toBeLessThanOrEqual(240);
-      }
-      // The reset line is hidden while it shows, and the pace line above stays.
-      const shownText = shown(render({ ...data, updateNotice }));
-      expect(shownText).not.toContain("resets");
-      expect(shownText).toContain(`6% in reserve${updateNotice}`);
+      expect(renderTextPrimitive(footer, { ...paired, updateNotice })).toBe(updateNotice);
+      expect(shown(render({ ...paired, updateNotice }))).not.toContain("resets");
     }
   });
 

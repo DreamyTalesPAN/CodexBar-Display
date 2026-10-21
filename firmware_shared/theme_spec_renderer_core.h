@@ -565,11 +565,18 @@ inline const char* SafeText(const char* value) {
   return value == nullptr ? "" : value;
 }
 
+// Two at once carries provider names in its limit labels, leaving the header
+// free for the selected percentage basis. Notices still take precedence.
+inline const char* UsageHeaderText(const FrameData& frame) {
+  return std::strchr(SafeText(frame.provider), '+') != nullptr
+      ? SafeText(frame.usageMode) : SafeText(frame.label);
+}
+
 inline const char* LabelText(const FrameData& frame) {
   if (frame.updateAvailable && frame.showUpdateNotice && SafeText(frame.updateNotice)[0] != '\0') {
     return SafeText(frame.updateNotice);
   }
-  return SafeText(frame.label);
+  return UsageHeaderText(frame);
 }
 
 inline int ParseDecimal(const char* value, size_t& consumed) {
@@ -873,7 +880,7 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
   }
   if (std::strcmp(key, "usageProviderName") == 0) {
     // The provider's name as the label binding shows it, but never the notice.
-    std::snprintf(out, outSize, "%s", SafeText(frame.label));
+    std::snprintf(out, outSize, "%s", UsageHeaderText(frame));
     return;
   }
   if (std::strcmp(key, "session") == 0 || std::strcmp(key, "sessionPercent") == 0 || std::strcmp(key, "s") == 0) {
@@ -966,6 +973,8 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
     return;
   }
   if (std::strcmp(key, "usageModeShort") == 0) {
+    // In Two at once the basis already occupies the provider header.
+    if (std::strchr(SafeText(frame.provider), '+') != nullptr) return;
     // "left" for what remains, else the mode itself ("used"): "Session left".
     std::snprintf(out, outSize, "%s",
                   std::strcmp(SafeText(frame.usageMode), "remaining") == 0 ? "left" : SafeText(frame.usageMode));
@@ -1185,10 +1194,10 @@ inline uint32_t BindingFieldMask(const char* binding) {
     return kThemeSpecFieldProvider;
   }
   if (StringEqualsAny(binding, "label", "providerLabel", "l")) {
-    return kThemeSpecFieldLabel;
+    return kThemeSpecFieldLabel | kThemeSpecFieldProvider | kThemeSpecFieldUsageMode;
   }
   if (std::strcmp(SafeText(binding), "usageProviderName") == 0) {
-    return kThemeSpecFieldProviderName;
+    return kThemeSpecFieldProviderName | kThemeSpecFieldProvider | kThemeSpecFieldUsageMode;
   }
   if (StringEqualsAny(binding, "session", "sessionPercent", "s")) {
     return kThemeSpecFieldSession;
@@ -1213,7 +1222,7 @@ inline uint32_t BindingFieldMask(const char* binding) {
            (std::strcmp(UsageWindowField(binding), "PaceFooter") == 0 ? kThemeSpecFieldLabel : 0);
   }
   if (StringEqualsAny(binding, "usageMode", "u", "usageModeShort")) {
-    return kThemeSpecFieldUsageMode;
+    return kThemeSpecFieldUsageMode | kThemeSpecFieldProvider;
   }
   if (StringEqualsAny(binding, "activity", "act")) {
     return kThemeSpecFieldActivity;

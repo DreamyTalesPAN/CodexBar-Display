@@ -4800,6 +4800,20 @@ void testProviderNameAndPaceFooterAroundTheNotice() {
   // The theme counts as one that shows the notice itself, and repaints with it.
   TEST_ASSERT_TRUE(codexbar_display::core::ThemeSpecLiveUseForRaw(
       String(R"JSON({"p":[{"t":"tx","b":"usageSlot1PaceFooter"}]})JSON")).Uses(codexbar_display::themespec::kThemeSpecFieldLabel));
+  // Two at once uses the existing provider header for the selected basis.
+  frame.provider = "claude+codex";
+  frame.label = "";
+  for (const char* mode : {"used", "remaining"}) {
+    frame.usageMode = mode;
+    frame.updateAvailable = false;
+    auto pair = renderedTexts(spec, frame);
+    TEST_ASSERT_EQUAL_STRING(mode, pair[0].c_str());
+    TEST_ASSERT_EQUAL_STRING(mode, pair[1].c_str());
+    frame.updateAvailable = true;
+    pair = renderedTexts(spec, frame);
+    TEST_ASSERT_EQUAL_STRING(mode, pair[0].c_str());
+    TEST_ASSERT_EQUAL_STRING("Open VibeTV Mac App", pair[1].c_str());
+  }
   // The provider name is not a primitive that shows the notice: the notice surface
   // must not pick the Label field for a theme that only names the provider with it.
   const auto nameUse = codexbar_display::core::ThemeSpecLiveUseForRaw(

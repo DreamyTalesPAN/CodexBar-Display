@@ -2079,6 +2079,7 @@ export function boundValue(key: string, frame: FrameData): string {
     return String(window.percent);
   }
   if (key === "usageModeShort") {
+    if (frame.provider.includes("+")) return "";
     // Mirrors the firmware: "left" for what remains, else the mode itself.
     return frame.usageMode === "remaining" ? "left" : frame.usageMode;
   }
@@ -2086,10 +2087,10 @@ export function boundValue(key: string, frame: FrameData): string {
     case "label":
     case "providerLabel":
     case "l":
-      return frame.updateNotice || frame.label;
+      return frame.updateNotice || (frame.provider.includes("+") ? frame.usageMode : frame.label);
     case "usageProviderName":
-      // The provider's name, never the notice.
-      return frame.label;
+      // The percentage basis for Two at once, otherwise the provider; never the notice.
+      return frame.provider.includes("+") ? frame.usageMode : frame.label;
     case "provider":
     case "pr":
       return frame.provider;

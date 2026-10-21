@@ -1233,6 +1233,15 @@ describe("usage pace", () => {
     expect(boundValue("usageSlot1PaceText", later)).toBe("");
   });
 
+  it.each(["used", "remaining"])("puts %s in the Two at once header without hiding notices", (usageMode) => {
+    const frame = { ...paced(96, { delta: 40, state: "deficit" }), provider: "claude+codex", label: "", usageMode };
+    for (const key of ["label", "providerLabel", "l", "usageProviderName"]) {
+      expect(boundValue(key, frame)).toBe(usageMode);
+    }
+    expect(boundValue("l", { ...frame, updateNotice: "Update available" })).toBe("Update available");
+    expect(boundValue("usageProviderName", { ...frame, updateNotice: "Update available" })).toBe(usageMode);
+  });
+
   it("names the provider without the notice and puts the notice in the footer line", () => {
     const frame = { ...paced(91, { delta: -6, state: "reserve", lasts: true }), label: "Claude" };
     expect(boundValue("usageProviderName", frame)).toBe("Claude");
