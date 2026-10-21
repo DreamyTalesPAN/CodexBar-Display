@@ -550,7 +550,8 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 				// The updater already proved the new firmware and identity over
 				// Cable. Connecting it is the setup's Cable step.
 				outcome = "updated"
-			} else if cableUpdate {
+			} else if cableUpdate || (snapshot.Result != nil && samePublicTarget(snapshot.Result.Target, cableDeviceTarget)) {
+				// A WiFi job whose updater found the VibeTV on the cable (#832).
 				outcome, attentionMessage, verifyErr = s.verifyCableFirmwareUpdateResult(ctx, jobID, cfg)
 			} else {
 				outcome, attentionMessage, verifyErr = s.verifyFirmwareUpdateResult(ctx, jobID, cfg)

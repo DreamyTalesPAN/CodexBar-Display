@@ -3638,6 +3638,10 @@ func TestRunInstallUpdateWiFiTimeoutAcceptsTargetFirmwareOnCable(t *testing.T) {
 	if !strings.Contains(output, "Done: firmware 1.0.1 installed") {
 		t.Fatalf("expected success output, got:\n%s", output)
 	}
+	// The parent verifies where the updater found the VibeTV.
+	if !strings.Contains(output, `"stage":"verifying_health"`) || !strings.Contains(output, `"target":"cable://vibetv"`) {
+		t.Fatalf("expected the verified target to be the cable, got:\n%s", output)
+	}
 }
 
 func TestRunInstallUpdateWiFiTimeoutFailsWhenCableIsSilent(t *testing.T) {

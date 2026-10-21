@@ -442,9 +442,10 @@ func runInstallUpdate(args []string) (retErr error) {
 		} else {
 			helloErr = err
 			// Issue #832: a firmware that boots in cable mode never answers over
-			// WiFi. One bounded cable check tells whether the update still worked.
+			// WiFi. One bounded cable check tells whether the update still worked;
+			// the cable target tells the parent to verify over the cable too.
 			if cableHello, cableErr := waitForCableFirmwareVersion(ctx, targetVersion, deviceID, "", cableCheckAfterWiFiTimeout); cableErr == nil {
-				verifiedBase, verifiedHello, helloErr = base, cableHello, nil
+				verifiedBase, verifiedHello, helloErr = "cable://vibetv", cableHello, nil
 			}
 		}
 	}
@@ -498,7 +499,7 @@ func runInstallUpdate(args []string) (retErr error) {
 		UploadAccepted:    true,
 		HelloVerified:     true,
 	})
-	if !cableMode && verifiedBase != base {
+	if !cableMode && verifiedBase != base && verifiedBase != "cable://vibetv" {
 		base = verifiedBase
 		if _, err := ensureFirmwareUpdateDeviceToken(ctx, home, base, deviceID); err != nil {
 			fmt.Printf("warning: firmware updated, but saving the rediscovered VibeTV address failed: %v\n", err)

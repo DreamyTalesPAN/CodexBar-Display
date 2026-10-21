@@ -12580,6 +12580,62 @@ func TestFirmwareUpdateCableRequiresVerifiedRender(t *testing.T) {
 	}
 }
 
+// Issue #832: a WiFi job whose updater found the VibeTV on the cable reports
+// the cable as its verified target. The parent verifies there; the WiFi address
+// does not answer on a VibeTV that boots in cable mode.
+func TestFirmwareUpdateWiFiJobVerifiesOverCableWhenUpdaterReportsCable(t *testing.T) {
+	const deviceID = "wifi-job-cable-result"
+	var wifiHits atomic.Int32
+	wifi := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wifiHits.Add(1)
+		if r.URL.Path == "/hello" {
+			_, _ = fmt.Fprintf(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.46","deviceId":%q}`, deviceID)
+			return
+		}
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	}))
+	defer wifi.Close()
+	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "wifi", DeviceTarget: wifi.URL, DeviceID: deviceID, DeviceToken: "pair-token"})
+	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock-cable", nil }
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			Kind: "hello", DeviceID: deviceID, Board: "esp8266-smalltv-st7789", Firmware: "1.0.47",
+			Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable"}},
+		}, nil
+	}
+	server.streamStatus = func(context.Context, string) displayStreamInfo { return displayStreamInfo{} }
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
+	}
+	server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+		wifiHits.Store(0)
+		_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"verifying_health","phase":"installing","outcome":"updated","firmware":"1.0.47","observedFirmware":"1.0.47","target":"cable://vibetv","deviceId":"`+deviceID+`","artifactValidated":true,"uploadAccepted":true,"helloVerified":true}`+"\n")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`)))
+	var started firmwareUpdateJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	var job firmwareUpdateJob
+	for attempt := 0; attempt < 200; attempt++ {
+		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		if job.Phase != "installing" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if job.Phase == "error" || job.Result == nil || !job.Result.HelloVerified || job.Result.Target != cableDeviceTarget {
+		t.Fatalf("a cable-verified WiFi job must not fail on the WiFi address: %+v", job)
+	}
+	if hits := wifiHits.Load(); hits != 0 {
+		t.Fatalf("the WiFi address was asked %d times, the cable had the answer", hits)
+	}
+}
+
 // Issue #835, Beelink Windows over USB, 2026-10-20: after an update the only
 // frame inside the picture check carried the same values the screen already
 // showed. The firmware redraws only when a frame changes the screen, so the
