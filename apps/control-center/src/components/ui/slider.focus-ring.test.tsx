@@ -12,7 +12,10 @@ it("shows the olive thumb ring only for keyboard focus, grey on hover and drag",
   host.innerHTML = renderToStaticMarkup(<Slider defaultValue={[50]} aria-label="Brightness" />);
 
   const thumb = host.querySelector('[role="slider"]') as HTMLElement;
+  expect(thumb.classList).toContain("focus-visible:border-ring");
+  expect(thumb.classList).toContain("focus-visible:ring-1");
   expect(thumb.classList).toContain("focus-visible:ring-ring");
+  expect(thumb.classList).not.toContain("focus-visible:ring-3");
   expect(thumb.classList).not.toContain("ring-ring");
   expect(thumb.classList).not.toContain("hover:ring-ring");
   expect(thumb.classList).not.toContain("active:ring-ring");
