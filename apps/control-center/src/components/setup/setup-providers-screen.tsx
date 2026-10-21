@@ -201,6 +201,19 @@ export function forgetResolvedProviderIssues(
   }
 }
 
+/**
+ * The enabled providers that are not healthy yet: a checking, stale, timeout or
+ * rate-limited read is no definitive answer, so a dismissed sign-in overlay
+ * stays closed through it. Only a healthy or switched-off provider ends it.
+ */
+export function providerUnresolvedIds(
+  providers: Pick<ProviderItem, "providerId" | "health" | "value">[],
+): string[] {
+  return providers
+    .filter((provider) => provider.value && providerRowHealthState(provider.health) !== "healthy")
+    .map((provider) => provider.providerId);
+}
+
 type ProviderListProps = {
   className?: string;
   onOpenSignIn?: (provider: ProviderItem) => void;
