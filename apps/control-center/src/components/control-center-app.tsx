@@ -589,17 +589,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, []);
   const finishConnectionChange = useCallback(() => setSettingsWiFiSetup(null), []);
   const finishSetup = useCallback(() => {
-    // A theme install that is running or has failed keeps Appearance, where its dialog lives.
-    const themeInstallOpen = themeInstallStatus?.phase === "installing" || themeInstallStatus?.phase === "error";
-    // A connection change started in Settings returns to Settings.
-    const firstRun = setupFinishedThisSession || !setupCompletedFor(device?.deviceId);
-    if (activeTab !== "settings" && firstRun && !themeInstallOpen) {
-      setActiveTab("overview");
-    }
+    // A firmware update seen during setup moved the app to Updates; setup ends on Overview.
+    // Settings (connection change) and Appearance (theme install dialog) stay where they are.
+    if (activeTab === "updates") setActiveTab("overview");
     rememberCompletedSetup(device?.deviceId);
     setSetupFinishedThisSession(true);
     setHasEnteredControlCenter(true);
-  }, [activeTab, device?.deviceId, setupFinishedThisSession, themeInstallStatus?.phase]);
+  }, [activeTab, device?.deviceId]);
   // The completion response clears providerSelectionRequired before the first
   // renderable frame necessarily exists. Keep this setup's confirmed device
   // usable so the next screen is Display Mode, never a flash of Connect.
