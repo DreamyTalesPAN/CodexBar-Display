@@ -3,7 +3,7 @@
   "schemaVersion": 1,
   "id": "tiny-office",
   "name": "Tiny Office",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "minFirmware": "1.0.50",
   "usage": "live",
   "requiredCapabilities": [
@@ -12,10 +12,10 @@
     "usage-pace-v1"
   ],
   "themeSpec": {
-    "path": "/themes/u/to-8-fdeaccda.json",
+    "path": "/themes/u/to-9-f7d37e42.json",
     "file": "theme.json",
-    "bytes": 1705,
-    "sha256": "fdeaccdae8198f30d250ac33cf7ac31404ebcdc0a950be6e9d9feb029ce358b0",
+    "bytes": 1710,
+    "sha256": "f7d37e42d2c703cec85a8819e3425f5870d15c5a74c8d8b4bb98241127731d6b",
     "contentType": "application/json"
   },
   "assets": [

@@ -104,7 +104,7 @@ describe("Token Counter theme pack", () => {
     }
     const markup = render();
     expect(markup).toContain('viewBox="0 0 240 240"');
-    expect(markup).toContain("38.4M");
+    expect(markup.replace(/<[^>]*>/g, "")).toContain("38.4M");
     // A visible preview can be requested explicitly without writes on normal CI runs.
     const previewDir = process.env.VIBETV_THEME_PREVIEW_DIR;
     if (previewDir) {

@@ -6,7 +6,7 @@ import {
   primitiveUsageSlotVisible,
   renderTextPrimitive,
   themeFirmwareTextMetrics,
-  themeTextFittedSize,
+  themeTextFittedSize, themeTextFit,
   type ThemePrimitive,
   type ThemeRenderPack,
 } from "@/components/live-vibetv-preview";
@@ -62,14 +62,8 @@ function laneWidth(p: ThemePrimitive): number {
 
 function renderedWidth(p: ThemePrimitive, value: string): number {
   const font = (p.f ?? p.font ?? 1) as number;
-  const size = themeTextFittedSize(
-    value,
-    font,
-    (p.s ?? p.fontSize ?? 1) as number,
-    laneWidth(p),
-    (p.ft ?? p.fit) === "shrink",
-  );
-  return themeFirmwareTextMetrics(value, font, size)?.width ?? 0;
+  const fit = themeTextFit(value, font, (p.s ?? p.fontSize ?? 1) as number, laneWidth(p), (p.ft ?? p.fit) === "shrink", p.h ?? 0);
+  return Math.max(...fit.lines.map(line => themeFirmwareTextMetrics(line, fit.font, fit.size)?.width ?? 0));
 }
 
 describe.each(themes)("%s legibility and fit (issue #258)", (themeId) => {
@@ -162,8 +156,8 @@ describe.each(themes)("%s legibility and fit (issue #258)", (themeId) => {
       readFileSync(path.join(root, "theme-packs", themeId, "manifest.json"), "utf8"),
     );
     const raw = readFileSync(path.join(root, "theme-packs", themeId, "theme.json"), "utf8");
-    expect(JSON.parse(raw).rev).toBe(10);
-    expect(manifest.themeSpec.path).toContain("-10-");
+    expect(JSON.parse(raw).rev).toBe(11);
+    expect(manifest.themeSpec.path).toContain("-11-");
     expect(manifest.themeSpec.bytes).toBe(Buffer.byteLength(raw));
     // The published render pack has to match the tracked source revision.
     expect(pack(themeId).specPath).toBe(manifest.themeSpec.path);

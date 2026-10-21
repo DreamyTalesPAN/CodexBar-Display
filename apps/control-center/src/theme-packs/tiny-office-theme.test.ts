@@ -78,7 +78,7 @@ describe("Tiny Office theme pack", () => {
     const visible = texts.filter((p) => primitiveUsageSlotVisible(p, changed)).map((p) => text(p, changed));
     expect(visible).toContain("Codex Spark Weekly");
     expect(visible).toContain("100%");
-    expect(visible).toContain("remaining");
+    expect(visible).toContain("left");
     expect(visible).not.toContain("used");
     expect(visible).not.toContain("Weekly");
     const unavailable = frame("idle", []);

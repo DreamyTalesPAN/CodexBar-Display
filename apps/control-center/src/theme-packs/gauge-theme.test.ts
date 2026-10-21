@@ -5,7 +5,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   buildFrameData, primitiveUsageSlotVisible, renderTextPrimitive, THEME_CATALOG_PREVIEW_FRAME,
-  ThemeSpecPreview, themeFirmwareTextMetrics, themeProgressArc, themeTextFittedSize,
+  ThemeSpecPreview, themeFirmwareTextMetrics, themeProgressArc, themeTextFittedSize, themeTextFit,
   type ThemePrimitive, type ThemeRenderPack,
 } from "@/components/live-vibetv-preview";
 import { importThemeSpec, validateThemeSpec } from "@/lib/theme-studio";
@@ -51,10 +51,10 @@ describe("Gauge 2.0 theme pack", () => {
     const validation = validateThemeSpec(importThemeSpec(JSON.parse(rawSpec)), {}, "live");
     expect(validation.errors).toEqual([]);
     expect(arc).toMatchObject({ ps: "arc", b: "usageSlot1Pace", sl: 1, as: 225, aw: 270, at: 18, rc: "#C9F26B", dc: "#E7A3AC" });
-    expect(manifest).toMatchObject({ usage: "live", assets: [], minFirmware: "1.0.50", version: "0.2.1" });
+    expect(manifest).toMatchObject({ usage: "live", assets: [], minFirmware: "1.0.50", version: "0.2.2" });
     expect(manifest.requiredCapabilities).toEqual(["usage-slots-v1", "color-stops-v1", "progress-arc-v1", "usage-pace-v1"]);
     // Two letters, so no theme a customer saves can share the file name.
-    expect(manifest.themeSpec.path).toMatch(/^\/themes\/u\/ga-11-[0-9a-f]{8}\.json$/);
+    expect(manifest.themeSpec.path).toMatch(/^\/themes\/u\/ga-12-[0-9a-f]{8}\.json$/);
     expect(manifest.themeSpec.bytes).toBe(Buffer.byteLength(rawSpec));
     expect(pack.specPath).toBe(manifest.themeSpec.path);
   });
@@ -71,11 +71,11 @@ describe("Gauge 2.0 theme pack", () => {
     const reserve = render(frame(91, {}, paceSession));
     expect(ring(reserve)).toEqual([[arc.bg, 270], ["#EDEDED", 229], ["#C9F26B", 16]]);
     expect(reserve).toContain("<line");
-    expect(shown(reserve)).toBe("Claude91%Session left6% reservelasts until reset - resets 2h 14mWeekly 87%35% reserve");
+    expect(shown(reserve)).toBe("Claude91%Session left6% reservelasts until reset- resets 2h 14mWeekly 87%35% reserve");
     // 14% deficit: the hatched piece runs from the use (38 %) to the plan (52 %).
     const deficit = render(frame(38, {}, { delta: 14, state: "deficit", lasts: false }));
     expect(ring(deficit)).toEqual([[arc.bg, 270], ["#EDEDED", 102], [expect.stringMatching(/^url\(#hatch-/), 38]]);
-    expect(shown(deficit)).toContain("14% deficitruns out - resets 2h 14m");
+    expect(shown(deficit).replaceAll(" ", "")).toContain("14%deficitrunsout-resets2h14m");
     // On pace: the use itself and the tick, no piece.
     const onPace = render(frame(91, {}, { delta: 0, state: "on pace" }));
     expect(ring(onPace)).toEqual([[arc.bg, 270], ["#EDEDED", 245]]);
@@ -130,8 +130,8 @@ describe("Gauge 2.0 theme pack", () => {
         const value = renderTextPrimitive(p, data);
         seen.add(value);
         const font = p.f ?? 1;
-        const size = themeTextFittedSize(value, font, p.s!, p.w!, true);
-        const width = themeFirmwareTextMetrics(value, font, size)!.width;
+        const fit = themeTextFit(value, font, p.s!, p.w!, true, p.h ?? 0);
+        const width = Math.max(...fit.lines.map(line => themeFirmwareTextMetrics(line, fit.font, fit.size)!.width));
         expect(width, `${value} in ${p.v ?? p.b}`).toBeLessThanOrEqual(p.w!);
       }
     }
@@ -160,7 +160,7 @@ describe("Gauge 2.0 theme pack", () => {
     }
     const footer = texts.find((p) => p.b === "usageSlot1PaceFooter")!;
     // The 270-degree ring ends at 45 degrees either side of its open bottom.
-    expect(footer.y!).toBeGreaterThan(cy + (radius + thickness / 2) / Math.sqrt(2));
+    expect(footer.w!).toBeLessThan(2 * (footer.y! - cy));
     for (const updateNotice of ["Update available", "Open VibeTV Mac App"]) {
       expect(renderTextPrimitive(footer, { ...paired, updateNotice })).toBe(updateNotice);
       expect(shown(render({ ...paired, updateNotice }))).not.toContain("resets");
@@ -173,7 +173,7 @@ describe("Gauge 2.0 theme pack", () => {
     expect(cx - radius - thickness / 2 - 3).toBeGreaterThanOrEqual(0);
     expect(cy - radius - thickness / 2 - 3).toBeGreaterThanOrEqual(0);
     for (const p of texts) {
-      expect((p.y ?? 0) + (p.h ?? (p.f === 4 ? 26 : 16) * (p.s ?? 1)), `${p.v ?? p.b} bottom`).toBeLessThanOrEqual(240);
+      expect((p.y ?? 0) + (p.h ?? (p.f === 4 ? 26 : p.f === 2 ? 16 : 8) * (p.s ?? 1)), `${p.v ?? p.b} bottom`).toBeLessThanOrEqual(240);
     }
     const markup = render();
     expect(markup).toContain('viewBox="0 0 240 240"');

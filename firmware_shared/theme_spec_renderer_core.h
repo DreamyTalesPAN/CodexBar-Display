@@ -1870,6 +1870,48 @@ inline int AlignedTextY(int boxY, int boxHeight, int glyphHeight, int valign) {
   return boxY;
 }
 
+// Keep shrink-fit readable at the smallest device font; use a second line
+// only when the existing text box has room. Width comes from the actual TFT.
+struct FittedText {
+  int font;
+  int size;
+  char first[128];
+  char second[128];
+};
+
+template <typename Measure>
+inline FittedText FitText(const TextCommand& cmd, Measure measure) {
+  FittedText result{cmd.font, cmd.size, {0}, {0}};
+  std::snprintf(result.first, sizeof(result.first), "%s", SafeText(cmd.text));
+  if (!cmd.fitShrink || cmd.maxWidth <= 0) return result;
+  while (result.size > 1 && measure(result.first, result.font, result.size) > cmd.maxWidth) --result.size;
+  const int height = TextValignBoxHeight(cmd.height, cmd.font, cmd.size);
+  for (;;) {
+    if (measure(result.first, result.font, result.size) <= cmd.maxWidth) return result;
+    if (height >= 2 * VisualFontHeight(result.font, result.size)) {
+      // Prefer the last word boundary with both lines fitting.
+      const int length = std::strlen(result.first);
+      int split = 0;
+      for (int i = 1; i < length; ++i) {
+        if (result.first[i] != ' ') continue;
+        result.first[i] = '\0';
+        const bool fits = measure(result.first, result.font, result.size) <= cmd.maxWidth &&
+            measure(result.first + i + 1, result.font, result.size) <= cmd.maxWidth;
+        result.first[i] = ' ';
+        if (fits) split = i;
+      }
+      if (split > 0) {
+        std::snprintf(result.second, sizeof(result.second), "%s", result.first + split + 1);
+        result.first[split] = '\0';
+        return result;
+      }
+    }
+    if (result.font == 1) return result;
+    result.font = 1;
+    result.size = 1;
+  }
+}
+
 inline int CompiledProgressPercentFor(const CompiledPrimitive& primitive, const FrameData& frame) {
   const int slotIndex = UsageWindowBindingIndex(primitive.binding);
   if (slotIndex >= 0) {
@@ -2221,12 +2263,28 @@ inline bool CompiledPrimitiveBounds(
   return false;
 }
 
+// A known slot can be temporarily unavailable. Keep its identity visible,
+// without drawing a zero percent bar or a stale reset/pace.
+inline bool MissingUsageText(const CompiledPrimitive& primitive, const FrameData& frame, char* out, size_t outSize) {
+  if (primitive.kind != PrimitiveKind::Text || primitive.usageSlot == 0) return false;
+  const auto window = UsageWindowFor(frame, primitive.usageSlot - 1);
+  if (window.available || SafeText(window.label)[0] == '\0') return false;
+  const char* source = primitive.binding != nullptr ? primitive.binding : SafeText(primitive.text);
+  const bool label = std::strstr(source, "Label") != nullptr || std::strstr(source, ".label") != nullptr;
+  const bool percent = std::strstr(source, "Percent") != nullptr || std::strstr(source, ".percent") != nullptr;
+  if (!label && !percent) return false;
+  std::snprintf(out, outSize, "%s%s", label ? window.label : "", percent ? (label ? " --" : "--") : "");
+  return true;
+}
+
 inline bool DrawCompiledPrimitive(
     const CompiledThemeSpec& scene,
     const CompiledPrimitive& primitive,
     const FrameData& frame,
     Sink& sink) {
-  if (primitive.usageSlot > 0 &&
+  char text[128] = {0};
+  const bool missing = MissingUsageText(primitive, frame, text, sizeof(text));
+  if (primitive.usageSlot > 0 && !missing &&
       !UsageWindowOwnerAvailableFor(frame, static_cast<int>(primitive.usageSlot - 1))) {
     return false;
   }
@@ -2263,11 +2321,12 @@ inline bool DrawCompiledPrimitive(
     if (cmd.size <= 0) {
       return false;
     }
-    char text[128] = {0};
-    if (primitive.binding != nullptr) {
-      BoundValue(primitive.binding, frame, text, sizeof(text));
-    } else {
-      RenderTextTemplate(primitive.text, frame, text, sizeof(text));
+    if (!missing) {
+      if (primitive.binding != nullptr) {
+        BoundValue(primitive.binding, frame, text, sizeof(text));
+      } else {
+        RenderTextTemplate(primitive.text, frame, text, sizeof(text));
+      }
     }
     cmd.text = text;
     cmd.fg = primitive.colorStopCount > 0 ? ResolvePaceColor(primitive, frame) : primitive.color;

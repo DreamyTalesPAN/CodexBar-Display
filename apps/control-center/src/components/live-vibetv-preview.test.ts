@@ -20,6 +20,7 @@ import {
   themeProgressArc,
   themeTextAlignedY,
   themeTextFittedSize,
+  themeTextFit,
   themeTextLayout,
   themeTextValignBoxHeight,
   themeTextWidth,
@@ -1362,5 +1363,36 @@ describe("usage pace", () => {
     expect(theme(paced(38, { delta: 14, state: "deficit" }))).toContain('fill="#E7A3AC"');
     // Without a pace the text keeps its solid colour.
     expect(theme(paced(91, undefined))).toContain('fill="#111111"');
+  });
+});
+
+
+describe("bounded text and unavailable slot layout", () => {
+  it("measures font 4 with the pinned TFT table, including the percentage glyph", () => {
+    expect(themeFirmwareTextMetrics("96%", 4, 1)?.width).toBe(49);
+    expect(themeFirmwareTextMetrics("100%", 4, 1)?.width).toBe(63);
+    expect(themeTextFit("100%", 4, 1, 55, true)).toEqual({font: 1, size: 1, lines: ["100%"]});
+  });
+
+  it("wraps long limit names inside the existing box before falling back to the smallest font", () => {
+    const text = "Claude Weekly (Sonnet)";
+    expect(themeTextFit(text, 2, 1, 110, true, 32)).toEqual({font: 2, size: 1, lines: ["Claude Weekly", "(Sonnet)"]});
+    const fit = themeTextFit(text, 2, 1, 110, true, 16);
+    expect(fit.font).toBe(1);
+    expect(fit.lines.join(" ")).toBe(text);
+    for (const line of fit.lines) expect(themeFirmwareTextMetrics(line, fit.font, fit.size)!.width).toBeLessThanOrEqual(110);
+    expect(themeTextFit("Anthropic Claude Enterprise", 2, 1, 164, true, 16)).toEqual({font: 1, size: 1, lines: ["Anthropic Claude Enterprise"]});
+  });
+  it("retains the known unavailable slot name and a dash, without percentages, pace or bars", () => {
+    const now = new Date("2026-10-21T12:00:00Z");
+    const frame = buildFrameData(now.toISOString(), { provider: "claude+codex", usageWindows: [{id:"claude:weekly",label:"Claude Weekly",percent:96,resetSecs:100}] }, now);
+    frame.usageWindows[0].available = frame.usageSlot1Available = false;
+    for (const [v, expected] of [["{usageSlot1Label}", "Claude Weekly"], ["{usageSlot1Percent}%", "--"], ["{usageSlot1Label} {usageSlot1Percent}%", "Claude Weekly --"]]) {
+      const p: ThemePrimitive = {t:"tx",sl:1,v};
+      expect(primitiveUsageSlotVisible(p, frame)).toBe(true);
+      expect(renderTextPrimitive(p, frame)).toBe(expected);
+    }
+    expect(primitiveUsageSlotVisible({t:"p",sl:1,b:"usageSlot1Percent"}, frame)).toBe(false);
+    expect(primitiveUsageSlotVisible({t:"tx",sl:1,b:"usageSlot1PaceText"}, frame)).toBe(false);
   });
 });
