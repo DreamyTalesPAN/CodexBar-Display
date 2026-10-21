@@ -9009,3 +9009,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #783 as described in those entries, as seen in build 7202.
 - Scope: #783 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #783 approval record only
+
+## 2026-10-21 — #783: Customer-flow test waits for token history only with usage data
+
+- User approval: no visible change – UI approval not needed (test-only: the provider-readiness customer-flow assertion matches the no-usage hiding rule of #783; the app is unchanged)
+- Approved customer-visible result: none; the customer sees the same Usage screen as before.
+- Scope: apps/control-center/scripts/test-customer-flows.mjs only (port of 2815e311 from #864).
+- What's new: none — test-only change, no customer-visible change
