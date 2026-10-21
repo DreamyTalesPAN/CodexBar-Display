@@ -133,6 +133,26 @@ describe("DiagnosticsPanel", () => {
     expect(repair).toHaveBeenCalledTimes(1);
   });
 
+  it("shows one repair control for an incompatible engine, not the block and a row Fix", () => {
+    const repair = vi.fn();
+    show(
+      {
+        checks: [
+          { name: "usage_engine", status: "fail", detail: "Usage engine 0.17.0 is too old.", nextAction: "Repair the usage engine, then check again." },
+        ],
+        providerSetup: {
+          status: "setup_required",
+          engine: { status: "engine_incompatible", version: "0.17.0", minimumVersion: "0.23.0" },
+        },
+      },
+      { onRepairUsageEngine: repair },
+    );
+    const controls = screen.getAllByRole("button", { name: /^(Repair|Fix)$/ });
+    expect(controls.map((button) => button.textContent)).toEqual(["Repair"]);
+    fireEvent.click(controls[0]);
+    expect(repair).toHaveBeenCalledTimes(1);
+  });
+
   it("names the next action when no repair is reachable", () => {
     const text = show({ providerSetup: { engine: { status: "engine_incompatible", version: "0.17.0", minimumVersion: "0.23.0" } } });
     expect(text).toContain("Repair the usage engine, then check again.");

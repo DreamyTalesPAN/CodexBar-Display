@@ -9003,3 +9003,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #803 as in its own entries plus the entries merged with 0a599c37; nothing else changes.
 - Scope: the merge of 0a599c37 and this approval record. Pull request branch #803 only, not merged, not released.
 - What's new: none — merge of 0a599c37, no customer-visible change of its own
+
+## 2026-10-21 — #803: one repair control for an incompatible engine
+
+- User approval: no visible change – UI approval not needed (#803 Codex fix: an incompatible engine shows one Repair control instead of two; no new wording)
+- Approved customer-visible result: an incompatible usage engine shows the existing Repair control once; no new text.
+- Scope: the diagnostics panel's usage-engine check row and its test. Pull request branch #803 only.
+- What's new: none — the duplicate Fix control on the usage_engine row is removed when the engine block already shows Repair

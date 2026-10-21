@@ -51,6 +51,7 @@ export function DiagnosticsPanel({
   windowsHost = false,
 }: Props) {
   const engine = diagnosticsEngine(diagnostics);
+  const engineBlock = engine?.status === "engine_incompatible";
   const checks = diagnostics?.checks ?? [];
   const passed = checks.filter((check) => check.status === "pass").length;
   const partial =
@@ -92,7 +93,7 @@ export function DiagnosticsPanel({
           {partial ? (
             <StatusLine icon="attention" text="Some checks could not run." />
           ) : null}
-          {engine?.status === "engine_incompatible" ? (
+          {engineBlock ? (
             <UsageEngineBlock
               engine={engine}
               onRepair={onRepairUsageEngine}
@@ -102,12 +103,15 @@ export function DiagnosticsPanel({
           {checks.length ? (
             <ul aria-label="Diagnostic checks" className={SUPPORT_FRAME}>
               {checks.map((check, index) => (
-                // Only the usage engine has a repair the app can start today.
+                // Only the usage engine has a repair the app can start today;
+                // the engine block already offers it when shown.
                 <CheckRow
                   check={check}
                   key={check.name + "-" + index}
                   onRepair={
-                    check.name === "usage_engine" ? onRepairUsageEngine : undefined
+                    check.name === "usage_engine" && !engineBlock
+                      ? onRepairUsageEngine
+                      : undefined
                   }
                   repairing={repairing}
                   windowsHost={windowsHost}
