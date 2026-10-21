@@ -8941,3 +8941,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #821 as in its own entries plus the entries merged with 01f8694d; nothing else changes.
 - Scope: the merge of 01f8694d and this approval record. Pull request branch #821 only, not merged, not released.
 - What's new: none — merge of 01f8694d, no customer-visible change of its own
+
+## 2026-10-21 — #821: match capped preview fields to the host frame
+
+- User approval: no visible change – UI approval not needed (bug fix: #821 capped legacy lanes, fixed-provider reset rows and plain fallback readings now match the existing host send order; coordinator-authorized three-thread review follow-up)
+- Approved customer-visible result: setup previews show only retained usage windows and their legacy fields, while Manual keeps its own provider row built before the window cap; no new copy, controls or layout.
+- Scope: setup-display-previews.ts, its regression tests and the SetupDisplayModePreview data type; red-first regression checks and scoped local validation only, with no hardware or installed-app changes.
+- What's new: none — correct preview parity with the existing device frame.

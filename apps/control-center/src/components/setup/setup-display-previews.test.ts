@@ -104,6 +104,59 @@ describe("displayPreviewFor: the frame the theme draws", () => {
     expect(reading.windows).toHaveLength(maxUsageWindows + 1);
   });
 
+  it.each([
+    [["session", "weekly"], 20, 0, false, true],
+    [["weekly", "session"], 0, 20, true, false],
+    [["primary", "secondary"], 20, 0, false, true],
+    [["secondary", "primary"], 0, 20, true, false],
+    [["extra", "weekly"], 20, 0, false, true],
+  ] as const)("projects legacy fields from retained %j windows", (ids, session, weekly, sessionUnavailable, weeklyUnavailable) => {
+    const reading = provider({
+      collectedAt: stamped,
+      windows: ids.map((id, index) => ({ id, label: id, usedPercent: 20 + index * 10 })),
+    });
+    const frame = displayPreviewFor(reading, new Date(stamped), [reading], 1)!.frame!;
+    expect(frame).toMatchObject({ session, weekly, sessionUnavailable, weeklyUnavailable });
+    const data = buildFrameData(stamped, frame, new Date(stamped));
+    expect(boundValue("session", data)).toBe(sessionUnavailable ? "??" : String(session));
+    expect(boundValue("weekly", data)).toBe(weeklyUnavailable ? "??" : String(weekly));
+  });
+
+  it("caps plain fallback windows and excludes an overflow-only reset", () => {
+    const reading = provider({
+      collectedAt: stamped,
+      windows: [
+        { id: "session", label: "Session", usedPercent: 20 },
+        { id: "weekly", label: "Weekly", usedPercent: 90, resetSecs: 7200 },
+      ],
+    });
+    const preview = displayPreviewFor(reading, new Date(stamped), [reading], 1)!;
+    expect(preview.windows).toEqual([{ label: "Session", percent: 20 }]);
+    expect(preview.resetLabel).toBe("Reset unknown");
+    expect(displayPreviewFor({ ...reading, stale: true }, new Date(stamped), [reading], 1)?.windows)
+      .toEqual([{ label: "Session", percent: null }]);
+    expect(reading.windows).toHaveLength(2);
+  });
+
+  it("builds the pinned row before capping even outside Automatic's first two rows", () => {
+    const readings = ["a", "b", "c"].map((id) => provider({
+      id, label: id, collectedAt: stamped,
+      windows: [
+        { id: "session", label: "Session", usedPercent: 20 },
+        { id: "weekly", label: "Weekly", usedPercent: 90, resetSecs: 7200 },
+      ],
+    }));
+    const previews = displayPreviewsFor({ providers: readings } as UsageSnapshot, readings, 1);
+    expect(previews[2].frame?.providerSlots?.map((row) => row.id)).toEqual(["a", "b"]);
+    for (const [index, preview] of previews.entries()) {
+      const pinned = pinnedPreview(preview).frame!;
+      expect(pinned.usageWindows).toHaveLength(1);
+      expect(pinned.providerSlots).toEqual([
+        { id: readings[index].id, label: readings[index].label, percent: 90, resetSecs: 7200 },
+      ]);
+    }
+  });
+
   it("keeps the first retained deadline and does not invent a cap when capabilities are unknown", () => {
     const reading = provider({
       collectedAt: stamped,
@@ -150,6 +203,8 @@ describe("displayPreviewFor: the frame the theme draws", () => {
 
     expect(frame).toMatchObject({ session: 42, weekly: 26 });
     expect(frame?.usageWindows).toEqual([]);
+    expect(displayPreviewFor(provider({}), new Date(stamped), undefined, 1)?.frame)
+      .toMatchObject({ session: 42, weekly: 26, usageWindows: [] });
   });
 
   it("leaves a window the collector could not read out of the frame", () => {
@@ -344,6 +399,26 @@ describe("provider slots in the synthesized frames", () => {
     expect(pinnedPreview(previews[0]).frame?.providerSlots).toEqual([
       { id: "claude", label: "Claude", percent: 55, resetSecs: 3600 },
     ]);
+  });
+
+  it("classifies pinned reset trust from its own rows and keeps the sent activity", () => {
+    const [preview] = displayPreviewsFor({ providers: [
+      provider({ id: "a", label: "A", collectedAt: stamped, windows: [
+        { id: "session", label: "Session", usedPercent: 0, resetSecs: 30 },
+      ] }),
+      usage.providers[1],
+    ] } as UsageSnapshot, [{ id: "a", label: "A" }, enabled[1]], 1);
+    // Another provider's live row keeps Automatic live. Fixed mode cannot use
+    // that deadline to claim its expired reading is still trusted.
+    expect(preview.frame?.resetTrust).toBe("live");
+    const [active] = withSentActivity([preview], {
+      frame: { provider: "a", activity: "coding", activityTtlSecs: 90 }, savedAt: stamped,
+    });
+    expect(pinnedPreview(active)).toMatchObject({
+      activityAt: stamped,
+      frame: { resetTrust: "stale", activity: "coding", activityTtlSecs: 90,
+        providerSlots: [{ id: "a", resetSecs: 0 }] },
+    });
   });
 
   it("gives a legacy provider without windows no row, even with root resetSecs", () => {

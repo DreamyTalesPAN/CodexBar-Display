@@ -61,6 +61,8 @@ export type SetupDisplayModePreview = {
    * theme tile then shows a placeholder instead of numbers.
    */
   frame?: DisplayFrame;
+  /** The same frame builder with fixed provider selection before the window cap. */
+  pinnedFrame?: DisplayFrame;
   /** When those readings were taken, so reset countdowns keep counting down. */
   frameAt?: string;
   /** When VibeTV received the frame whose activity this preview shows (its TTL counts from there). */
