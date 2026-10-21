@@ -2,7 +2,7 @@
 //
 // Issue #341: the loopback Control Center route answers 410 Gone in a normal
 // browser, so a support report must never present it as a page to open.
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { collectSupportReport, serializeSupportReport, supportReportFilename } from "./support-report";
 import type {
@@ -214,6 +214,16 @@ describe("support report timeline", () => {
 // Issue #579: the name carried the UTC time, so a report saved late in the
 // evening or early in the morning was dated another day than the customer's.
 describe("support report file name", () => {
+  // CI runs in UTC, where the old UTC name passed too: pin a zone east of UTC.
+  const zone = process.env.TZ;
+  beforeAll(() => {
+    process.env.TZ = "Europe/Berlin";
+  });
+  afterAll(() => {
+    if (zone === undefined) delete process.env.TZ;
+    else process.env.TZ = zone;
+  });
+
   it("carries the date and time of this computer's clock", () => {
     for (const [hour, time] of [[23, "23-58-07"], [0, "00-58-07"]] as const) {
       expect(supportReportFilename(new Date(2026, 9, 7, hour, 58, 7).toISOString())).toBe(
