@@ -8185,3 +8185,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #861 as in its own entries plus the entries merged with 467fd7fb; nothing else changes.
 - Scope: the merge of 467fd7fb and this approval record. Pull request branch #861 only, not merged, not released.
 - What's new: none — merge of 467fd7fb, no customer-visible change of its own
+
+## 2026-10-21 — #861: weak-WiFi dismissal recovers per VibeTV
+
+- User approval: no visible change – UI approval not needed (bug fix: a dismissed weak-Wi-Fi warning no longer reopens because another VibeTV recovered)
+- Approved customer-visible result: the approved notice of the blocks above, unchanged; no new text or layout.
+- Scope: `weak-wifi-dialog.tsx` and its test (a recovery clears the dismissal only for the same device key). Pull request branch only, not merge or release.
+- What's new: none — bug fix, no new entry; the notice keeps its approved wording

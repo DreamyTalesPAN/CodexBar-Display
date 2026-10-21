@@ -44,9 +44,12 @@ export function useWeakWiFiDismissal(
     if (!recovered) {
       return;
     }
-    const timer = window.setTimeout(() => setDismissedFor(null), 0);
+    const timer = window.setTimeout(
+      () => setDismissedFor((dismissed) => (dismissed === key ? null : dismissed)),
+      0,
+    );
     return () => window.clearTimeout(timer);
-  }, [recovered]);
+  }, [recovered, key]);
   return [dismissedFor !== null && dismissedFor === key, () => setDismissedFor(key)];
 }
 

@@ -147,6 +147,37 @@ it("stays closed when the same VibeTV comes back on a new address", () => {
   expect(result.current[0]).toBe(true);
 });
 
+it("stays closed for a weak VibeTV after another VibeTV recovers", async () => {
+  const a = { ...wifiDevice(true), deviceId: "vibetv-a" } as DeviceInfo;
+  const b = { ...wifiDevice(false), deviceId: "vibetv-b" } as DeviceInfo;
+  const { result, rerender } = renderHook(
+    ({ device }) => useWeakWiFiDismissal(device),
+    { initialProps: { device: a } },
+  );
+  act(() => result.current[1]());
+  expect(result.current[0]).toBe(true);
+
+  rerender({ device: b });
+  await settle();
+  rerender({ device: a });
+  expect(result.current[0]).toBe(true);
+});
+
+it("opens again when the dismissed VibeTV itself recovers and turns weak again", async () => {
+  const a = { ...wifiDevice(true), deviceId: "vibetv-a" } as DeviceInfo;
+  const aRecovered = { ...wifiDevice(false), deviceId: "vibetv-a" } as DeviceInfo;
+  const { result, rerender } = renderHook(
+    ({ device }) => useWeakWiFiDismissal(device),
+    { initialProps: { device: a } },
+  );
+  act(() => result.current[1]());
+
+  rerender({ device: aRecovered });
+  await settle();
+  rerender({ device: a });
+  expect(result.current[0]).toBe(false);
+});
+
 it("opens again for another device", () => {
   const { result, rerender } = renderHook(
     ({ device }) => useWeakWiFiDismissal(device),
