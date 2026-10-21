@@ -196,6 +196,70 @@ describe("SetupWizard: terminal firmware attention", () => {
   });
 });
 
+describe("SetupWizard: firmware stream attention recovers by itself (#826)", () => {
+  // Windows bench, 1.0.65: the update succeeded, the first look at the stream
+  // came a moment before the first frames, and setup stopped on the dialog
+  // with no way forward. The frames arrived a few seconds later.
+  function streamAttentionProps(streamRecovered: () => Promise<boolean>) {
+    return baseProps({
+      step: "device",
+      deviceCandidates: [{ deviceId: "vibetv-1", target: "http://192.168.178.73", known: true } as DeviceCandidate],
+      connectSteps: {
+        connect: vi.fn().mockResolvedValue({ firmware: "1.0.48" }),
+        checkFirmware: vi.fn().mockResolvedValue({ from: "1.0.48", to: "1.0.49" }),
+        installFirmware: vi.fn().mockRejectedValue({
+          code: "firmware_update_stream_attention",
+          message: "Firmware is current, but the display stream still needs attention.",
+        }),
+        streamRecovered,
+      },
+    });
+  }
+
+  it("carries on when the frames arrive after the failed check", async () => {
+    vi.useFakeTimers();
+    const streamRecovered = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
+    const props = streamAttentionProps(streamRecovered);
+    render(<SetupWizard {...props} />);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Connect" })); });
+    expect(screen.getByText("Firmware current — attention needed")).toBeTruthy();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(streamRecovered).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Firmware current — attention needed")).toBeTruthy();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(streamRecovered).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText("Firmware current — attention needed")).toBeNull();
+  });
+
+  it("keeps the dialog and stops looking when the stream never comes back", async () => {
+    vi.useFakeTimers();
+    const streamRecovered = vi.fn().mockResolvedValue(false);
+    const props = streamAttentionProps(streamRecovered);
+    render(<SetupWizard {...props} />);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Connect" })); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10 * 60 * 1000); });
+    expect(streamRecovered).toHaveBeenCalledTimes(40);
+    expect(screen.getByText("Firmware current — attention needed")).toBeTruthy();
+  });
+
+  it("does not look for a stream after other firmware attention", async () => {
+    vi.useFakeTimers();
+    const streamRecovered = vi.fn().mockResolvedValue(true);
+    const props = streamAttentionProps(streamRecovered);
+    props.connectSteps.installFirmware = vi.fn().mockRejectedValue({
+      code: "firmware_update_attention",
+      message: "Firmware is current, but the picture could not be verified.",
+    });
+    render(<SetupWizard {...props} />);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Connect" })); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(60 * 1000); });
+    expect(streamRecovered).not.toHaveBeenCalled();
+    expect(screen.getByText("Firmware current — attention needed")).toBeTruthy();
+  });
+});
+
 describe("SetupWizard: theme failures", () => {
   it("shows an unavailable catalog over the theme step and reloads it", () => {
     const onRetryTheme = vi.fn();
