@@ -104,5 +104,5 @@ function paceWords(pace: LanePace): string {
   if (pace.tone === "onTrack") {
     return "On pace";
   }
-  return `${pace.delta}% in ${pace.tone === "reserve" ? "reserve" : "deficit"}`;
+  return `${pace.delta}% ${pace.tone === "reserve" ? "reserve" : "deficit"}`;
 }

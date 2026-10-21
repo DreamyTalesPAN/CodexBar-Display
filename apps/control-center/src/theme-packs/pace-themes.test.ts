@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
-  buildFrameData, ThemeSpecPreview, type ThemeRenderPack,
+  buildFrameData, paceBarMarks, ThemeSpecPreview, type ThemeRenderPack,
 } from "@/components/live-vibetv-preview";
 
 // The eight themes of the approved page "Pace - alle Themes": what each shows in
@@ -33,16 +33,34 @@ const PACE_THEMES = ["pace-meter", "gauge", "claude-creature", "clippy", "mini-c
 // Themes with a pace bar (or ring); Claude Creature and Mini Classic have only the short text.
 const HAS_BAR = ["pace-meter", "gauge", "clippy", "pixel-battery", "synthwave", "tiny-office"];
 const HAS_SENTENCE: Record<string, [string, string, string]> = {
-  "pace-meter": ["6% in reserve", "14% in deficit", "On pace"],
-  gauge: ["6% in reserve", "14% in deficit", "On pace"],
-  clippy: ["6% in reserve", "14% in deficit", "On pace"],
-  "pixel-battery": ["6% in reserve", "14% in deficit", "On pace"],
-  synthwave: ["6% in reserve", "14% in deficit", "On pace"],
+  "pace-meter": ["6% reserve", "14% deficit", "On pace"],
+  gauge: ["6% reserve", "14% deficit", "On pace"],
+  clippy: ["6% reserve", "14% deficit", "On pace"],
+  "pixel-battery": ["6% reserve", "14% deficit", "On pace"],
+  synthwave: ["6% reserve", "14% deficit", "On pace"],
   "claude-creature": ["6% reserve", "14% deficit", "on pace"],
   "mini-classic": ["6% reserve", "14% deficit", "on pace"],
 };
 
 describe("the Pace themes", () => {
+  it.each(HAS_BAR)("%s uses the same exact 40% deficit and 6% reserve boundaries", (id) => {
+    const pack = JSON.parse(readFileSync(path.join(root, `dist/theme-packs/render/${id}.json`), "utf8")) as ThemeRenderPack;
+    const bars = pack.spec!.p!.filter((p) => /Pace$/.test(p.b || p.binding || ""));
+    expect(bars.length).toBeGreaterThan(0);
+    for (const [percent, delta, state, fillTo, pieceTo] of [
+      [96, 40, "deficit", 56, 96], [50, -6, "reserve", 50, 56],
+    ] as const) {
+      const frame = buildFrameData(clock.toISOString(), {
+        provider: "claude", usageMode: "used", usageSlots: ["session", "weekly"].map((id) => ({
+          id, label: id, percent, resetSecs: 12000, pace: { delta, state },
+        })),
+      }, clock);
+      for (const bar of bars) {
+        expect(paceBarMarks(bar, frame, percent)).toEqual({ fillTo, pieceTo, planAt: 56, hatched: state === "deficit" });
+      }
+    }
+  });
+
   it.each(PACE_THEMES)("%s needs usage-pace-v1 and the firmware that ships it", (id) => {
     const manifest = manifestOf(id);
     expect(manifest.requiredCapabilities).toContain("usage-pace-v1");
@@ -83,8 +101,8 @@ describe("the Pace themes", () => {
 
   it("Pace Meter is one provider with a session and a weekly lane and the run-out note", () => {
     const { text } = renderPack("pace-meter", deficit, [38, 61]);
-    expect(text).toBe("Claude38%Session leftresets 3h 34m14% in deficitruns out61%Weekly leftresets 5d 14hOn pace");
-    expect(renderPack("pace-meter", reserve).text).toBe("Claude91%Session leftresets 3h 34m6% in reserve87%Weekly leftresets 5d 14h35% in reserve");
+    expect(text).toBe("Claude38%Session leftresets 3h 34m14% deficitruns out61%Weekly leftresets 5d 14hOn pace");
+    expect(renderPack("pace-meter", reserve).text).toBe("Claude91%Session leftresets 3h 34m6% reserve87%Weekly leftresets 5d 14h35% reserve");
     // Without a pace: percentage, label, countdown and the plain bar stay.
     expect(renderPack("pace-meter", null).text).toBe("Claude91%Session leftresets 3h 34m87%Weekly leftresets 5d 14h");
   });

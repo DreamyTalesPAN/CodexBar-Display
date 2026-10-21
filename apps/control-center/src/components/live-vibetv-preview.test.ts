@@ -1209,13 +1209,13 @@ describe("usage pace", () => {
 
   it("says reserve, deficit and on pace as ready sentences", () => {
     const reserve = paced(91, { delta: -6, state: "reserve", lasts: true });
-    expect(boundValue("usageSlot1PaceText", reserve)).toBe("6% in reserve");
+    expect(boundValue("usageSlot1PaceText", reserve)).toBe("6% reserve");
     expect(boundValue("usageSlot1PaceShort", reserve)).toBe("6% reserve");
     expect(boundValue("usageSlot1PaceLasts", reserve)).toBe("lasts until reset");
     expect(boundValue("usageSlot1PaceLastsSep", reserve)).toBe("lasts until reset - ");
     expect(boundValue("usageSlot1PaceRunsOut", reserve)).toBe("");
     const deficit = paced(38, { delta: 14, state: "deficit", lasts: false });
-    expect(boundValue("usageSlot1PaceText", deficit)).toBe("14% in deficit");
+    expect(boundValue("usageSlot1PaceText", deficit)).toBe("14% deficit");
     expect(boundValue("usageSlot1PaceShort", deficit)).toBe("14% deficit");
     expect(boundValue("usageSlot1PaceRunsOut", deficit)).toBe("runs out");
     const onPace = paced(91, { delta: -1, state: "on pace" });
@@ -1237,7 +1237,7 @@ describe("usage pace", () => {
   it("reads every spelling of a pace binding the firmware reads", () => {
     const frame = paced(91, { delta: -6, state: "reserve", lasts: true });
     for (const key of ["usageSlot1PaceText", "us1PaceText", "usage.0.PaceText"]) {
-      expect(boundValue(key, frame), key).toBe("6% in reserve");
+      expect(boundValue(key, frame), key).toBe("6% reserve");
     }
     expect(boundValue("us1PaceLastsSep", frame)).toBe("lasts until reset - ");
     for (const binding of ["usageSlot1Pace", "us1Pace", "usage.0.Pace"]) {
@@ -1259,7 +1259,7 @@ describe("usage pace", () => {
         usageSlots: [{ id: "session", label: "Session", percent: 91, resetSecs: 12000, pace: { delta: -6, state: "reserve" } }] },
       new Date(clock.getTime() + 120_000),
     );
-    expect(boundValue("usageSlot1PaceText", expired)).toBe("6% in reserve");
+    expect(boundValue("usageSlot1PaceText", expired)).toBe("6% reserve");
     expect(boundValue("usageSlot1PaceText", later)).toBe("");
   });
 
@@ -1318,12 +1318,36 @@ describe("usage pace", () => {
     expect(boundValue("usageModeShort", paced(9, undefined, { usageMode: "used" }))).toBe("used");
   });
 
+  it("draws 96% used with 40% deficit from 56 to 96, even inside segments", () => {
+    const frame = paced(96, { delta: 40, state: "deficit" }, { usageMode: "used" });
+    expect(paceBarMarks(bar, frame, 96)).toEqual({ fillTo: 56, pieceTo: 96, planAt: 56, hatched: true });
+    const svg = renderToStaticMarkup(createElement(ThemeSpecPreview, {
+      pack: { spec: { p: [{ ...bar, x: 0, y: 0, w: 102, h: 12, ps: "segments", sg: 10, gg: 1, c: "#123456" }] } },
+      status: "ready", themeId: "x", animate: false, frame,
+    }));
+    expect(svg).toMatch(/<rect fill="#123456"[^>]*width="6" x="51"/);
+    expect(svg).toMatch(/<rect fill="url\(#[^"]+\)"[^>]*width="3" x="57"/);
+    expect(svg).toMatch(/<rect fill="url\(#[^"]+\)"[^>]*width="6" x="91"/);
+    expect(boundValue("usageSlot1PaceText", frame)).toBe("40% deficit");
+  });
+
+  it("draws a 6% reserve as a partial segment, without rounding it to 10%", () => {
+    const frame = paced(50, { delta: -6, state: "reserve" }, { usageMode: "used" });
+    const svg = renderToStaticMarkup(createElement(ThemeSpecPreview, {
+      pack: { spec: { p: [{ ...bar, x: 0, y: 0, w: 102, h: 12, ps: "segments", sg: 10, gg: 1, rc: "#654321" }] } },
+      status: "ready", themeId: "x", animate: false, frame,
+    }));
+    expect(svg).toMatch(/<rect fill="#654321"[^>]*width="6" x="51"/);
+    expect(svg).not.toContain("<pattern");
+    expect(boundValue("usageSlot1PaceText", frame)).toBe("6% reserve");
+  });
+
   it("fills to the smaller of use and plan and puts the piece up to the larger", () => {
-    // 91 % left with 6 % in reserve: 85 % was planned.
+    // 91 % left with 6 % reserve: 85 % was planned.
     expect(paceBarMarks(bar, paced(91, { delta: -6, state: "reserve" }), 91)).toEqual({
       fillTo: 85, pieceTo: 91, planAt: 85, hatched: false,
     });
-    // 38 % left with 14 % in deficit: 52 % was planned to be left.
+    // 38 % left with 14 % deficit: 52 % was planned to be left.
     expect(paceBarMarks(bar, paced(38, { delta: 14, state: "deficit" }), 38)).toEqual({
       fillTo: 38, pieceTo: 52, planAt: 52, hatched: true,
     });

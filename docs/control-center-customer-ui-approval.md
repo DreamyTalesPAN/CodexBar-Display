@@ -16430,3 +16430,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Settings stays as in build9 including Used/Remaining; all three setup cards use host frames, preserving selected window limits and pair order; the new weak WiFi notice replaces the old duplicate trigger.
 - Scope: Companion pair previews reuse existing selection and wire preparation, remove browser pair-frame construction, preserve all source approval blocks, and align merged regression fixtures and signatures.
 - What's new: none — integration only, no release.
+## 2026-10-21 — #800: exact Pace segments and shorter reserve/deficit labels
+
+- User approval: pending — Paul asked on 2026-10-21 22:40: hatched part as long as the deficit, '40% deficit' / '6% reserve' without 'in', all themes; result not yet seen by him
+- Approved customer-visible result: 96% used with 40% deficit fills normally to 56% and hatches 56–96%; reserve spans its stated percentage, including partial segments; labels read “40% deficit” and “6% reserve”, with “On pace” unchanged.
+- Scope: shared firmware and Control Center/Theme Studio preview rendering for Pace Meter, Gauge, Clippy, Pixel Battery, Synthwave and Tiny Office; shared text bindings also cover Claude Creature and Mini Classic; Usage page labels and regression tests. No Two-at-once header or overlap changes; no hardware rehearsal in this worker.
+- What's new: none — correction to existing Pace rendering and wording.
+
+
+## 2026-10-21 — build9: refresh #800 for 7205
+
+- User approval: pending — integrate claude/usage-pace at 28cae074a601 into build 7205.
+- Approved customer-visible result: Preserve this feature together with the existing build9 Settings and three equal display cards.
+- Scope: Integration merge preserving both approval histories.
+- What's new: none — integration only.
