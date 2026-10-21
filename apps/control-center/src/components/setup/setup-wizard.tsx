@@ -740,6 +740,7 @@ export function SetupWizard(props: SetupWizardProps) {
           {...help}
           lines={props.welcomeLines}
           onEnterAddressManually={openAddressDialog}
+          searching={searchingForDevices}
         />
         {addressDialog}
         {addressDialogOpen ? null : usageDialog}
@@ -777,6 +778,7 @@ export function SetupWizard(props: SetupWizardProps) {
             {...help}
             lines={props.welcomeLines}
             onEnterAddressManually={openAddressDialog}
+            searching={searchingForDevices}
           />
         ) : <SetupDeviceScreen
           {...help}

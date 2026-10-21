@@ -44,30 +44,35 @@ export function SetupLog({
   stillLines = true,
 }: SetupLogProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const lastKey = lines.length ? stepKey(lines[lines.length - 1]) : undefined;
+  const lastLine = lines.length ? lines[lines.length - 1] : undefined;
+  const lastKey = lastLine ? stepKey(lastLine) : undefined;
+  // A step that already says it is finished is not running, whatever the screen says.
+  const active = running && lastLine !== undefined && !isFinished(lastLine);
   // How many "Still …" lines each step has got, keyed by stepKey.
   const [stillCounts, setStillCounts] = useState<Record<string, number>>({});
   // A retry reuses the step's id: a step that starts running again counts from zero.
-  const [prevRun, setPrevRun] = useState({ key: lastKey, running });
-  if (prevRun.key !== lastKey || prevRun.running !== running) {
-    setPrevRun({ key: lastKey, running });
-    if (running && lastKey !== undefined) {
+  const [prevRun, setPrevRun] = useState({ key: lastKey, active });
+  if (prevRun.key !== lastKey || prevRun.active !== active) {
+    setPrevRun({ key: lastKey, active });
+    if (active && lastKey !== undefined) {
       setStillCounts((counts) => ({ ...counts, [lastKey]: 0 }));
     }
   }
 
   useEffect(() => {
-    if (!stillLines || !running || lastKey === undefined) {
+    if (!stillLines || !active || lastKey === undefined) {
       return;
     }
     const timer = window.setInterval(() => {
-      setStillCounts((counts) => ({
-        ...counts,
-        [lastKey]: Math.min((counts[lastKey] ?? 0) + 1, STILL_MAX_LINES),
-      }));
+      // At the cap the same object comes back, so nothing re-renders or scrolls.
+      setStillCounts((counts) =>
+        (counts[lastKey] ?? 0) >= STILL_MAX_LINES
+          ? counts
+          : { ...counts, [lastKey]: (counts[lastKey] ?? 0) + 1 },
+      );
     }, STILL_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [stillLines, running, lastKey]);
+  }, [stillLines, active, lastKey]);
 
   const rows: SetupLogLine[] = lines.flatMap((line) => [
     line,
@@ -119,6 +124,11 @@ export function SetupLog({
 function stepWording(text: string): string {
   const sentences = text.replace(/\.$/, "").split(/\. /);
   return sentences[sentences.length - 1].split(/: | · | — /)[0];
+}
+
+/** Completion wording from setup-connect-log.ts: the step is over, not running. */
+function isFinished(line: SetupLogLine): boolean {
+  return /^(update complete|firmware is up to date)$/.test(stepWording(line.text));
 }
 
 /**

@@ -9,6 +9,8 @@ import { CALM_LINK_CLASS, SetupWizardScreen } from "./setup-wizard-screen";
 
 type SetupWelcomeScreenProps = {
   lines: SetupLogLine[];
+  /** Whether the WiFi search is still running; its log says so only then. */
+  searching?: boolean;
   aiFixPrompt?: () => string;
   onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
   /** The app runs on Windows; the Help menu words its outcomes for it. */
@@ -29,6 +31,7 @@ type SetupWelcomeScreenProps = {
  */
 export function SetupWelcomeScreen({
   lines,
+  searching = true,
   aiFixPrompt,
   onCreateSupportReport,
   windowsHost,
@@ -43,7 +46,7 @@ export function SetupWelcomeScreen({
     >
       <p className="text-[13px] text-muted-foreground">Welcome to</p>
       <ControlCenterBrand className="mt-3.5" variant="hero" />
-      <SetupLog className="mt-8" lines={lines} running />
+      <SetupLog className="mt-8" lines={lines} running={searching} />
       {onEnterAddressManually ? (
         <Button
           className={cn(CALM_LINK_CLASS, "mt-5")}
