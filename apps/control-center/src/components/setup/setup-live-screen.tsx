@@ -57,8 +57,11 @@ export function SetupLiveScreen({
   // With WebGL it draws only the screen, never the flat picture, and the area
   // stays empty until the model is on screen.
   const hardware3D = useHardware3D();
-  const [threeReady, setThreeReady] = useState(false);
-  const onThreeReady = useCallback(() => setThreeReady(true), []);
+  const [threeState, setThreeState] = useState<"loading" | "ready" | "failed">("loading");
+  const onThreeReady = useCallback(() => setThreeState("ready"), []);
+  const onThreeFailed = useCallback(() => setThreeState("failed"), []);
+  const threeReady = threeState === "ready";
+  const preview3D = threeState === "failed" ? false : hardware3D;
   if (alreadySetUp) {
     return null;
   }
@@ -71,7 +74,7 @@ export function SetupLiveScreen({
     >
       <SetupWizardTitle className={CALM_TITLE_CLASS}>Your VibeTV is live</SetupWizardTitle>
       <div className="relative mt-8 flex w-full justify-center">
-        {hardware3D ? (
+        {preview3D ? (
           <div
             // Until the 3D is revealed it is only drawn in the background: the
             // flat preview is the one screen readers get.
@@ -88,6 +91,7 @@ export function SetupLiveScreen({
               device={device}
               displayFrame={displayFrame}
               onReady={onThreeReady}
+              onFailed={onThreeFailed}
               usage={usage}
             />
           </div>
@@ -96,7 +100,7 @@ export function SetupLiveScreen({
           className={
             threeReady
               ? "hidden"
-              : hardware3D === false
+              : preview3D === false
                 ? "w-full"
                 : "invisible aspect-[640/411] w-[min(640px,calc(100vw-48px))]"
           }
@@ -104,8 +108,8 @@ export function SetupLiveScreen({
           <LiveVibeTVPreview
             device={device}
             displayFrame={displayFrame}
-            onPreviewReady={onPreviewReady}
-            screenOnly={hardware3D !== false}
+            onPreviewReady={threeReady || preview3D === false ? onPreviewReady : undefined}
+            screenOnly={preview3D !== false}
             usage={usage}
           />
         </div>

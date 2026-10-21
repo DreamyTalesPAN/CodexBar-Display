@@ -8682,6 +8682,20 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of 3dc0a15b and this approval record. Pull request branch #780 only, not merged, not released.
 - What's new: none — merge of 3dc0a15b, no customer-visible change of its own
 
+## 2026-10-21 — #780: Back keeps the next connection choice explicit
+
+- User approval: no visible change – UI approval not needed (bug fix: Back during pairing keeps a later single-result scan from reconnecting or updating without the customer's next choice)
+- Approved customer-visible result: after Back, setup waits on the existing connection or device choice even if only one path remains; the next explicit Connect or transport choice resumes setup. Initial single-device autoconnect remains unchanged.
+- Scope: `setup-wizard.tsx`, `setup-connection.ts`, and `setup-wizard.test.tsx` under `apps/control-center/src/components/setup`, plus this approval record. Pull request #780 only, not merged, not released.
+- What's new: none — bug fix, not announced to customers
+
+## 2026-10-21 — #780: failed 3D loading restores the existing preview
+
+- User approval: no visible change – UI approval not needed (bug fix: a real 3D renderer or model-load failure restores the existing photo or live 2D fallback instead of leaving setup artwork blank)
+- Approved customer-visible result: a failed 3D preview behaves like unsupported 3D; the device photo or live 2D preview is visible. Normal 3D loading still shows no flat-picture flash, and the live-screen handover waits until its preview is visible.
+- Scope: `vibetv-3d-preview.tsx` and its test, `setup/setup-device-card.tsx`, `setup/setup-live-screen.tsx`, and `setup/setup-3d-preview.test.tsx` under `apps/control-center/src/components`, plus this approval record. Pull request #780 only, not merged, not released.
+- What's new: none — bug fix, not announced to customers
+
 ## 2026-10-20 — Setup step 11: display mode tiles show the active theme with live values
 
 - User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: Setup step 11: display mode tiles show the active theme with live values — before → after: (1) Automatic shows one tile per provider that is switched on, each the theme picture with that provider's own current values (the one VibeTV is on 104 px and full strength, the others 84 px at 30 % strength, as drawn in frame 22) → before one plain tile of CLAUDE / SESSION / WEEKLY bars that changed provider every 2 seconds; (2) Manual shows one such tile for the chosen provider → before the same plain tile; (3) a provider that has no values yet shows a quiet grey placeholder tile where the picture would be → before the words "No usage yet" or "Usage unavailable"; no example numbers are drawn anywhere, and the app calculates nothing: it shows only what the usage service delivers; (4) while the theme is still being read the tiles show the same placeholders, and if it cannot be read the plain tiles stay as before. Settings keeps its plain tiles for now.

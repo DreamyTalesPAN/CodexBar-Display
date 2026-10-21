@@ -37,6 +37,8 @@ type VibeTV3DPreviewProps = {
    * show; the caller then drops its flat preview.
    */
   onReady?: () => void;
+  /** The renderer or model could not load; reveal the existing flat fallback. */
+  onFailed?: () => void;
   updateOwnedDisconnect?: boolean;
   usage: UsageSnapshot | null;
 };
@@ -84,6 +86,7 @@ export function VibeTV3DPreview({
   device,
   displayFrame,
   onReady,
+  onFailed,
   updateOwnedDisconnect = false,
   usage,
 }: VibeTV3DPreviewProps) {
@@ -106,6 +109,10 @@ export function VibeTV3DPreview({
   useEffect(() => {
     onReadyRef.current = onReady;
   }, [onReady]);
+
+  useEffect(() => {
+    if (modelFailed) onFailed?.();
+  }, [modelFailed, onFailed]);
 
   useEffect(() => {
     if (modelFailed) return;
