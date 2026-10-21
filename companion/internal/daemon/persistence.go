@@ -36,6 +36,7 @@ type ProviderUsageSnapshot struct {
 	TokenHistorySettled   bool
 	ActivityObservedAt    time.Time
 	Stale                 bool
+	Terminal              bool
 	// NoReading: CollectedAt is the time of a failed reading, because this
 	// provider has not delivered one yet.
 	NoReading bool
@@ -261,6 +262,7 @@ func LoadPersistedUsage(now time.Time) (PersistedUsage, bool) {
 			Meta:                  snapshot.Meta,
 			CollectedAt:           snapshot.Collected.UTC(),
 			NoReading:             snapshot.NoReading,
+			Terminal:              snapshot.Terminal,
 			Retained:              snapshot.Retained,
 			TokenStatsCollectedAt: snapshot.TokenStatsCollected.UTC(),
 			TokenHistorySettled:   snapshot.TokenHistorySettled,

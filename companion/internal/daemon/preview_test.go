@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -530,5 +531,53 @@ func TestPreviewFramesDoNotNormalizeTheSharedUpdateCache(t *testing.T) {
 	}
 	if got := cache.snapshot(caps).update; got != original {
 		t.Fatalf("preview mutated the atomically shared update snapshot: got %+v, want %+v", got, original)
+	}
+}
+
+func TestPreviewFramesDiscardTerminalLastGoodWithoutChangingPersistence(t *testing.T) {
+	for _, terminal := range []bool{true, false} {
+		name := "transient"
+		if terminal {
+			name = "terminal"
+		}
+		t.Run(name, func(t *testing.T) {
+			isolatePreviewHome(t)
+			now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+			frames := []codexbar.ParsedFrame{testParsedFrame("gemini", 73, 21, 3600)}
+			collector := terminalTestCollector(&now, &frames)
+			collector.order = []string{"gemini"}
+			collector.collectOnce(context.Background())
+			if err := persistLastGood(frames[0].Frame, now); err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.ReadFile(lastGoodSnapshotPath())
+			if err != nil {
+				t.Fatal(err)
+			}
+			now = now.Add(time.Minute)
+			frames = []codexbar.ParsedFrame{terminalTestFrame("gemini", terminal)}
+			collector.collectOnce(context.Background())
+			usage, ok := LoadPersistedUsage(now)
+			if !ok || len(usage.Providers) != 1 {
+				t.Fatalf("missing persisted usage: %+v", usage)
+			}
+			preview := PreviewFrames(usage, true, false, previewTestCaps(2048), now, nil, "", nil)[0]
+			for mode, frame := range map[string]*protocol.Frame{"automatic": preview.Automatic, "pinned": &preview.Pinned} {
+				if frame == nil {
+					t.Fatalf("missing %s frame", mode)
+				}
+				if terminal {
+					if frame.Error != protocol.ErrorFrame(runtimeErrorFrameCode(runtimeErrorNoProviders)).Error || frame.Session != 0 {
+						t.Errorf("%s preview retained terminal quota: %+v", mode, frame)
+					}
+				} else if frame.Error != "" || frame.Session != 73 {
+					t.Errorf("%s preview lost transient quota: %+v", mode, frame)
+				}
+			}
+			after, err := os.ReadFile(lastGoodSnapshotPath())
+			if err != nil || string(after) != string(before) {
+				t.Fatalf("preview changed persisted last-good: err=%v", err)
+			}
+		})
 	}
 }

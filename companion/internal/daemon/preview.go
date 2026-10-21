@@ -49,6 +49,7 @@ func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, caps protoco
 			Meta:        snapshot.Meta,
 			CollectedAt: snapshot.CollectedAt,
 			Stale:       snapshot.Stale,
+			Terminal:    snapshot.Terminal,
 		})
 	}
 	deps := runtimeDeps{
@@ -64,13 +65,14 @@ func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, caps protoco
 	for _, shown := range providers {
 		preview := ProviderPreview{
 			Provider: shown.Provider,
-			Pinned:   previewPinnedFrame(shown, deps, systemBusy, caps, now, update, theme, providerEnabled),
+			Pinned:   previewPinnedFrame(shown, providers, deps, systemBusy, caps, now, update, theme, providerEnabled),
 		}
 		// A fresh stream per rotation position: the timer sits on this
 		// provider, the rest is the runtime's own start.
 		state := &runtimeState{selector: codexbar.NewProviderSelector(), rotationProvider: normalizeProviderKey(shown.Frame.Provider), rotationAt: now}
 		bootstrapStateFromPersistedLastGood(state, now, deps)
 		discardLastGoodDisabledByInventory(state, providerEnabled)
+		discardLastGoodTerminal(state, providers)
 		// The slice is copied: selection and restating work on it in place.
 		result := selectCycleFrameFromProviders(state, slices.Clone(providers), now, deps, nil, "select-provider", "", "", "")
 		result.frame.Update = update
@@ -86,13 +88,14 @@ func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, caps protoco
 	return previews
 }
 
-func previewPinnedFrame(shown codexbar.ParsedFrame, deps runtimeDeps, systemBusy bool, caps protocol.DeviceCapabilities, now time.Time, update *protocol.UpdateState, theme string, providerEnabled func(string) (bool, bool)) protocol.Frame {
+func previewPinnedFrame(shown codexbar.ParsedFrame, providers []codexbar.ParsedFrame, deps runtimeDeps, systemBusy bool, caps protocol.DeviceCapabilities, now time.Time, update *protocol.UpdateState, theme string, providerEnabled func(string) (bool, bool)) protocol.Frame {
 	deps.loadConfig = func(string) (runtimeconfig.Config, error) {
 		return runtimeconfig.Config{ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{Mode: "fixed", ProviderIDs: []string{shown.Provider}}}, nil
 	}
 	state := &runtimeState{selector: codexbar.NewProviderSelector()}
 	bootstrapStateFromPersistedLastGood(state, now, deps)
 	discardLastGoodDisabledByInventory(state, providerEnabled)
+	discardLastGoodTerminal(state, providers)
 	result := selectCycleFrameFromProviders(state, []codexbar.ParsedFrame{shown}, now, deps, nil, "select-provider", "", "", "")
 	result.frame.Update = update
 	result.systemBusy = systemBusy
