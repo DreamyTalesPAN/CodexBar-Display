@@ -91,6 +91,7 @@ export function LogsScreen({
         </div>
         <div className="shrink-0">
           <SupportReportActions
+            busyElsewhere={diagnosticsRunning}
             creating={supportReportBusy}
             diagnostics={supportReport}
             onCreate={onCreateSupportReport}
@@ -102,6 +103,7 @@ export function LogsScreen({
       </div>
 
       <DiagnosticsPanel
+        busyElsewhere={supportReportBusy}
         diagnostics={diagnostics}
         onRepairUsageEngine={onRepairUsageEngine}
         onRun={onLoadDiagnostics}

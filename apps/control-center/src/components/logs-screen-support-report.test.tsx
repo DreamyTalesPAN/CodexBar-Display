@@ -60,7 +60,8 @@ it("shows Copy, Download and Create new once Create report made the report", () 
 });
 
 // Busy states do not cross: Run diagnostics does not show the card as creating,
-// and creating a report does not show Run diagnostics as running.
+// and creating a report does not show Run diagnostics as running. While one
+// collects, the other button is disabled.
 it("keeps the busy states of Run diagnostics and Create report apart", () => {
   const running = render(
     <LogsScreen
@@ -74,7 +75,7 @@ it("keeps the busy states of Run diagnostics and Create report apart", () => {
   expect(
     (screen.getByRole("button", { name: "Create report" }) as HTMLButtonElement)
       .disabled,
-  ).toBe(false);
+  ).toBe(true);
   running.unmount();
 
   render(
@@ -89,5 +90,5 @@ it("keeps the busy states of Run diagnostics and Create report apart", () => {
   expect(
     (screen.getByRole("button", { name: "Run diagnostics" }) as HTMLButtonElement)
       .disabled,
-  ).toBe(false);
+  ).toBe(true);
 });

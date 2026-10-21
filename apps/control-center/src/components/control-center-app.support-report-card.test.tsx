@@ -2,7 +2,7 @@
 //
 // Support › Run diagnostics collects the same snapshot as Create report, but
 // only Create report may switch the Support report card to Copy / Download.
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -12,17 +12,41 @@ import { ControlCenterApp } from "./control-center-app";
 
 vi.mock("./theme-render-preview", () => ({ ThemeRenderPreview: () => null }));
 
+// A /v1/diagnostics error becomes a fallback report; only a collection that
+// throws reaches the error dialog, so the failure test makes it throw.
+const collection = vi.hoisted(() => ({ fail: false }));
+vi.mock("./support-report", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./support-report")>();
+  return {
+    ...actual,
+    collectSupportReport: (...args: Parameters<typeof actual.collectSupportReport>) => {
+      if (collection.fail) {
+        return Promise.reject(new Error("Collector failed"));
+      }
+      return actual.collectSupportReport(...args);
+    },
+  };
+});
+
 function jsonResponse(body: unknown, status = 200): Response {
   return { ok: status < 400, status, json: async () => body } as unknown as Response;
 }
 
 afterEach(() => {
+  collection.fail = false;
   cleanup();
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 
-function startApp() {
+let diagnosticsRequests = 0;
+
+function startApp(diagnosticsReply: () => Promise<Response> = async () => jsonResponse({
+  ok: true,
+  generatedAt: "2026-10-18T06:00:00.000Z",
+  checks: [],
+})) {
+  diagnosticsRequests = 0;
   window.localStorage.clear();
   // A customer who has read "What's new"; it would lie over Support.
   markWhatsNewSeen();
@@ -69,11 +93,8 @@ function startApp() {
         });
       }
       if (url.includes("/v1/diagnostics")) {
-        return jsonResponse({
-          ok: true,
-          generatedAt: "2026-10-18T06:00:00.000Z",
-          checks: [],
-        });
+        diagnosticsRequests += 1;
+        return diagnosticsReply();
       }
       if (url.endsWith("/v1/provider-display")) {
         return jsonResponse({
@@ -142,4 +163,66 @@ it("keeps Create report on the Support report card after Run diagnostics, and Cr
   expect(screen.getByRole("button", { name: "Copy" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Download" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Create new" })).toBeTruthy();
+});
+
+function recentActivity() {
+  return within(
+    screen.getByText("Recent activity").closest("section") as HTMLElement,
+  ).queryByRole("list")?.textContent ?? "";
+}
+
+it("writes no Recent activity entry for a Run diagnostics that succeeds", async () => {
+  startApp();
+  await wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Support" }));
+  await wait(2);
+  const before = recentActivity();
+
+  fireEvent.click(screen.getByRole("button", { name: "Run diagnostics" }));
+  await wait(3);
+
+  expect(diagnosticsRequests).toBe(1);
+  expect(recentActivity()).toBe(before);
+  expect(recentActivity()).not.toContain("Support report");
+});
+
+it("writes no Recent activity entry when Run diagnostics fails", async () => {
+  startApp();
+  await wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Support" }));
+  await wait(2);
+  const before = recentActivity();
+
+  collection.fail = true;
+  fireEvent.click(screen.getByRole("button", { name: "Run diagnostics" }));
+  await wait(3);
+
+  expect(recentActivity()).toBe(before);
+  expect(document.body.textContent).not.toContain("Support report failed");
+  expect(screen.getByRole("button", { name: "Run diagnostics" }).hasAttribute("disabled")).toBe(false);
+});
+
+it("does not start a second report while Run diagnostics is collecting", async () => {
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  startApp(async () => {
+    await held;
+    return jsonResponse({ ok: true, generatedAt: "2026-10-18T06:00:00.000Z", checks: [] });
+  });
+  await wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Support" }));
+  await wait(2);
+
+  fireEvent.click(screen.getByRole("button", { name: "Run diagnostics" }));
+  await wait(1);
+  const createReport = screen.getByRole("button", { name: "Create report" }) as HTMLButtonElement;
+  expect(createReport.disabled).toBe(true);
+  fireEvent.click(createReport);
+  expect(diagnosticsRequests).toBe(1);
+
+  release();
+  await wait(3);
+  expect(diagnosticsRequests).toBe(1);
 });
