@@ -241,13 +241,31 @@ describe("recent activity", () => {
 describe("display mode entry under Recent activity", () => {
   const automatic = { mode: "automatic" as const, providerIds: ["claude", "codex"] };
   const claude = { mode: "fixed" as const, providerIds: ["claude"] };
+  const pair = { mode: "pair" as const, providerIds: ["claude", "codex"] };
+  const label = (providerId: string) =>
+    ({ claude: "Claude", codex: "Codex", gemini: "Gemini" })[providerId] ?? providerId;
 
   it("is written for a changed mode or provider only", () => {
-    expect(displayModeChange(null, automatic)).toBeNull();
-    expect(displayModeChange(automatic, { ...automatic, providerIds: ["claude"] })).toBeNull();
-    expect(displayModeChange(claude, claude)).toBeNull();
-    expect(displayModeChange(null, claude)).toBe("claude");
-    expect(displayModeChange(claude, { ...claude, providerIds: ["codex"] })).toBe("codex");
-    expect(displayModeChange(claude, automatic)).toBe("");
+    expect(displayModeChange(null, automatic, label)).toBeNull();
+    expect(displayModeChange(automatic, { ...automatic, providerIds: ["claude"] }, label)).toBeNull();
+    expect(displayModeChange(claude, claude, label)).toBeNull();
+    expect(displayModeChange(null, claude, label)).toBe("Always show Claude.");
+    expect(displayModeChange(claude, { ...claude, providerIds: ["codex"] }, label)).toBe(
+      "Always show Codex.",
+    );
+    expect(displayModeChange(claude, automatic, label)).toBe(
+      "Automatic: VibeTV switches between your providers.",
+    );
+  });
+
+  it("names both sources of Two at once, and records a change to either one", () => {
+    expect(displayModeChange(claude, pair, label)).toBe("Show Claude and Codex at once");
+    expect(
+      displayModeChange(pair, { ...pair, providerIds: ["claude", "gemini"] }, label),
+    ).toBe("Show Claude and Gemini at once");
+    expect(
+      displayModeChange(pair, { ...pair, providerIds: ["gemini", "codex"] }, label),
+    ).toBe("Show Gemini and Codex at once");
+    expect(displayModeChange(pair, pair, label)).toBeNull();
   });
 });

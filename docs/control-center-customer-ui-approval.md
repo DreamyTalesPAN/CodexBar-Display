@@ -9289,3 +9289,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the reduced Two Limits layout uses a dark background, large percentages without a mode suffix, thin pace bars and small state-coloured pace sentences. The existing combined provider/window label and mode sit on the left; a small grey provider/system-notice line remains at the bottom. Missing slots stay hidden because the existing theme format has no unavailable-dash binding; the second panel starts below the divider to avoid an overlap. Device review remains pending.
 - Scope: theme-packs/two-limits/theme.json and manifest.json, regenerated dist/theme-packs outputs, apps/control-center/src/theme-packs/two-limits-theme.test.ts and this approval record. No firmware, Companion or app UI change.
 - What's new: none — layout refinement of the existing Two Limits theme; its existing announcement remains unchanged.
+
+## 2026-10-21 — #864: Recent activity names both sources in Two at once
+
+- User approval: pending — Recent activity says "Show <Top> and <Bottom> at once" when the Two at once sources change (wording decided by the coordinator 21.10.); Paul sees it in the next build
+- Approved customer-visible result: nothing is approved yet. Under Recent activity, a change of only the Bottom source of Two at once is recorded with the draft sentence "Show <Top> and <Bottom> at once" (source labels as the picker shows them) instead of nothing, and switching from a fixed or Automatic display to Two at once is recorded the same way. Other entries keep their wording ("Always show <provider>." and "Automatic: VibeTV switches between your providers.").
+- Scope: displayModeChange in apps/control-center/src/components/control-center-app.tsx (the caller now takes its sentence from it) and its tests in control-center-app.test.ts, plus this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — no announcement; the Recent activity sentence is the only change
