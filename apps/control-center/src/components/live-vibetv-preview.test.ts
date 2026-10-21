@@ -491,7 +491,11 @@ describe("dynamic usage slot preview", () => {
     expect(textFor({ ...idleAccount, resetTrust: "offline" })).toEqual(unavailable);
     expect(textFor({ ...idleAccount, resetTrust: undefined })).toEqual(unavailable);
     expect(textFor({ ...idleAccount, resetSource: "" })).toEqual(unavailable);
-    expect(textFor({ ...idleAccount, usageUnavailable: true })).toEqual(unavailable);
+    const hidden = buildFrameData(savedAt, { ...idleAccount, usageUnavailable: true }, new Date(savedAt));
+    expect(boundValue("reset", hidden)).toBe("Reset unavailable");
+    expect(boundValue("us1r", hidden)).toBe("");
+    expect(primitiveUsageSlotVisible(lane1, hidden)).toBe(false);
+    expect(primitiveUsageSlotVisible(lane2, hidden)).toBe(false);
     // A window with usage and no deadline is still not idle, and neither is
     // the root line that speaks for all windows.
     expect(
@@ -562,7 +566,8 @@ describe("dynamic usage slot preview", () => {
         { id: "secondary", label: "Weekly", percent: 32, resetSecs: 4 * 24 * 3600 },
       ],
     });
-    expect(boundValue("us1r", retained)).toBe("Reset unavailable");
+    expect(boundValue("us1r", retained)).toBe("");
+    expect(primitiveUsageSlotVisible(lane1, retained)).toBe(false);
 
     // "remaining" mode sends what is left: nothing used reads 100.
     const remaining = frameWith({
@@ -1103,6 +1108,31 @@ describe("arc-style progress", () => {
 });
 
 describe("live VibeTV partial usage", () => {
+  it.each(["usageWindows", "usageSlots"] as const)("keeps retained globally unavailable %s and roots unavailable", (key) => {
+    const at = "2026-10-21T12:00:00Z";
+    const frame = buildFrameData(at, {
+      provider: "codex", label: "Codex", session: 42, weekly: 26,
+      usageUnavailable: true,
+      [key]: [
+        { id: "session", label: "Session", percent: 42, resetSecs: 3600 },
+        { id: "weekly", label: "Weekly", percent: 26, resetSecs: 7200 },
+      ],
+      providerSlots: [{ id: "claude", label: "Claude", percent: 12, resetSecs: 3600 }],
+    }, new Date(at));
+    expect(frame.usageWindows.every((window) => !window.available)).toBe(true);
+    expect(frame.usageSlot1Available).toBe(false);
+    expect(frame.usageSlot2Available).toBe(false);
+    expect(boundValue("session", frame)).toBe("??");
+    expect(boundValue("weekly", frame)).toBe("??");
+    expect(progressPercent({ binding: "session" }, frame)).toBe(0);
+    expect(progressPercent({ binding: "weekly" }, frame)).toBe(0);
+    expect(primitiveUsageSlotVisible(lane1, frame)).toBe(false);
+    expect(primitiveUsageSlotVisible({ usageIndex: 1 }, frame)).toBe(false);
+    expect(frame.label).toBe("Codex");
+    expect(frame.time).not.toBe("");
+    // Firmware gates the selected provider's usage, not another provider's row.
+    expect(frame.providerSlots[0].available).toBe(true);
+  });
   it("renders only the unknown lane as unavailable", () => {
     const frame = buildFrameData("2026-07-24T10:30:00Z", {
       v: 1,

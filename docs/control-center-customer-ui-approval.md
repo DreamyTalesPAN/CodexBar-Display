@@ -8717,3 +8717,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the existing Continue rule remains effective while preview tiles load; unavailable error frames do not block setup.
 - Scope: merge #821, setup display-mode gate and regression tests, theme tile state marker and test; all prior approval blocks retained.
 - What's new: none — existing loading and unavailable behavior remains consistent with companion frames
+
+## 2026-10-21 — #858: preserve unavailable usage in theme previews
+
+- User approval: no visible change – UI approval not needed (bug fix: #858 finding 3, honor the companion frame's global usage-unavailable flag)
+- Approved customer-visible result: retained unavailable usage stays unavailable, matching VibeTV; provider labels and unrelated data keep rendering.
+- Scope: shared preview frame renderer and regression tests for windows, legacy slots and root lanes.
+- What's new: none — correct existing unavailable rendering
