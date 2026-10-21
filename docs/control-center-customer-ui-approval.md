@@ -8359,3 +8359,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #780 unchanged; a customer who presses Back during a firmware write stays on the connection choice even if the stream recovers afterwards.
 - Scope: `apps/control-center/src/components/setup/setup-connect.ts` (the Back path ends the run), its test in `apps/control-center/src/components/setup/setup-wizard.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — bug fix that removes a wrong move, not announced to customers
+
+## 2026-10-21 — #780: Only the first VibeTV in the chooser shows the live 3D model (#846)
+
+- User approval: pending — #780 / #846: with several VibeTVs in the chooser only the first row shows the live 3D model, the others a still image of it
+- Approved customer-visible result: with one VibeTV nothing changes; with several, the first row keeps the 3D model and the other rows show the VibeTV photo, so the browser keeps its graphics context and no row ends up with an empty thumbnail.
+- Scope: `apps/control-center/src/components/setup/setup-device-screen.tsx`, its test `setup-device-screen-3d.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — bug fix, not announced to customers
