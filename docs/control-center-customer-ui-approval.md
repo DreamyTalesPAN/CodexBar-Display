@@ -9139,3 +9139,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #798 Updates screen as in its own entries; in narrow windows (below lg) the checked timestamp and Check button sit below the page title instead of overlapping it; wide windows unchanged.
 - Scope: the Updates title row in apps/control-center/src/components/updates-screen.tsx and its class test. Pull request branch #798 only, not merged, not released.
 - What's new: none — layout fix of the Updates title row, no new feature
+
+## 2026-10-21 — #798: approval marker after merging claude/group-calm-redesign at b095ff2d
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (b095ff2d) into #798; the own entries of #798 keep their approvals)
+- Approved customer-visible result: #798 as in its own entries plus the entries merged with b095ff2d; nothing else changes.
+- Scope: the merge of b095ff2d and this approval record. Pull request branch #798 only, not merged, not released.
+- What's new: none — merge of b095ff2d, no customer-visible change of its own
