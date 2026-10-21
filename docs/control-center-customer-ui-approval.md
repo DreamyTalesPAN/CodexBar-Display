@@ -18025,3 +18025,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve this feature together with the existing build9 Settings and three equal display cards.
 - Scope: Integration merge preserving both approval histories.
 - What's new: none — integration only.
+
+## 2026-10-21 — build9: include final provider visibility refresh for 7205
+
+- User approval: pending — validate build 7205 with the final #864 provider visibility head 5aa365a026db.
+- Approved customer-visible result: Automatic and Two at once skip providers whose reported windows are all hidden when another provider has visible usage.
+- Scope: Preserve both merged approval histories and validate the refreshed central provider selection.
+- What's new: none — integration of the source fix only.
