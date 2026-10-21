@@ -9219,3 +9219,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #800 as in its own entries plus the entries merged with f563a07e; nothing else changes.
 - Scope: the merge of f563a07e and this approval record. Pull request branch #800 only, not merged, not released.
 - What's new: none — merge of f563a07e, no customer-visible change of its own
+
+## 2026-10-21 — #592 on #800: Two at once, Limits on VibeTV
+
+- User approval: pending — #592 two providers at once (Two at once mode, Limits on VibeTV, Two Limits theme); visible parts go to a Claude Design round before Paul sees them
+- Approved customer-visible result: nothing is approved yet. Display mode gains "Two at once" (with a First and Second provider choice) in setup and Settings, and Settings gains "Limits on VibeTV"; these screens are the carried #592 versions and are redesigned in a Claude Design round first.
+- Scope: Control Center only: display mode panel, provider pair choice, Limits on VibeTV section, the pair preview and the "One provider" name of the former Manual mode. Pace is not part of this entry; it comes from #800 unchanged.
+- What's new: none — the visible parts go to a Claude Design round first

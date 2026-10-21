@@ -34,9 +34,13 @@ import { paceSetting, PaceSetting } from "./settings-pace";
 import { ThemeStudioKeyRow } from "./theme-studio/openai-key-form";
 import { isProviderItem, type ProviderPickerProps } from "./provider-picker";
 import {
+  defaultPairIds,
   DisplayModeChoice,
   type SetupDisplayModePreview,
 } from "./setup/setup-display-mode-screen";
+import { pairDisplayPreview } from "./setup/setup-display-previews";
+import { DisplayLimitsSettings } from "./display-limits-settings";
+import { useActiveThemeLimits } from "./live-vibetv-preview";
 import {
   ProviderList,
   setupProviderCanDisplay,
@@ -208,6 +212,24 @@ export function SettingsScreen({
     ? currentProviderId
     : displayable[0]?.providerId;
   const displayMode = providerPicker.display?.mode ?? "automatic";
+  const displayChoices = displayable.map((item) => ({
+    id: item.providerId,
+    label: item.label,
+  }));
+  const pairIds = defaultPairIds(
+    providerPicker.display?.mode === "pair"
+      ? providerPicker.display.providerIds
+      : [],
+    manualProviderId,
+    displayChoices,
+  );
+  const previewOf = (providerId: string | null | undefined) =>
+    automaticPreviews.find(
+      (preview) =>
+        preview.providerLabel ===
+        displayable.find((item) => item.providerId === providerId)?.label,
+    );
+  const activeTheme = useActiveThemeLimits(device);
   const providerError =
     providerPicker.preferencesError || providerPicker.displayError;
   const rotation = displayPreferences.find(
@@ -357,23 +379,35 @@ export function SettingsScreen({
                 providerIds:
                   mode === "automatic"
                     ? enabledProviderIds
-                    : manualProviderId
-                      ? [manualProviderId]
-                      : [],
+                    : mode === "pair"
+                      ? pairIds
+                      : manualProviderId
+                        ? [manualProviderId]
+                        : [],
               },
-              manualProviderId ?? enabledProviderIds[0] ?? "",
+              (mode === "pair" ? pairIds[0] : manualProviderId) ??
+                enabledProviderIds[0] ??
+                "",
             )
           }
+          onSelectPair={(providerIds) => {
+            // Settings saves on every pick, so only a full pair is written.
+            if (providerIds[0] && providerIds[1]) {
+              void providerPicker.onDisplayChange(
+                { mode: "pair", providerIds },
+                providerIds[0],
+              );
+            }
+          }}
           onSelectProvider={(providerId) =>
             void providerPicker.onDisplayChange(
               { mode: "fixed", providerIds: [providerId] },
               providerId,
             )
           }
-          providers={displayable.map((item) => ({
-            id: item.providerId,
-            label: item.label,
-          }))}
+          pairPreview={pairDisplayPreview(previewOf(pairIds[0]), previewOf(pairIds[1]))}
+          pairProviderIds={pairIds}
+          providers={displayChoices}
           selectedProviderId={providerPicker.display?.providerIds[0] ?? null}
         />
         {displayMode === "automatic" && rotation ? (
@@ -397,7 +431,7 @@ export function SettingsScreen({
                       ? " This needs two providers with usage."
                       : displayMode === "fixed"
                         ? ""
-                        : " This switches to Manual."
+                        : " This switches to One provider."
                 }`
               : `The shortcut ${shortcutKeys} for the next provider is not available: another app may already be using these keys.`}
           </p>
@@ -417,6 +451,33 @@ export function SettingsScreen({
           </SettingsSection>
         </>
       ) : null}
+
+      <ItemSeparator className="my-0" />
+
+      <SettingsSection title="Limits on VibeTV">
+        <p className="text-sm text-muted-foreground">
+          VibeTV shows the ticked limits from the top, as many as your theme has
+          room for. Two at once shows the first ticked limit of each provider.
+        </p>
+        <DisplayLimitsSettings
+          display={providerPicker.display}
+          onChange={(change) => {
+            const display = providerPicker.display;
+            if (!display) {
+              return;
+            }
+            const providerIds =
+              display.mode === "automatic" ? enabledProviderIds : display.providerIds;
+            void providerPicker.onDisplayChange(
+              { mode: display.mode, providerIds, ...change },
+              providerIds[0] ?? "",
+            );
+          }}
+          providers={displayChoices}
+          theme={activeTheme}
+          usage={providerPicker.usage}
+        />
+      </SettingsSection>
 
       {standbySupport ? (
         <>

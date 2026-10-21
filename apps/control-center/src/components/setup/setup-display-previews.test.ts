@@ -3,6 +3,7 @@ import type { UsageProviderInfo, UsageSnapshot } from "../control-center-types";
 import {
   displayPreviewFor,
   displayPreviewsFor,
+  pairDisplayPreview,
 } from "./setup-display-previews";
 
 function provider(fields: Partial<UsageProviderInfo>): UsageProviderInfo {
@@ -122,5 +123,24 @@ describe("displayPreviewsFor", () => {
         windows: [],
       },
     ]);
+  });
+});
+describe("pairDisplayPreview", () => {
+  const preview = (providerLabel: string, resetLabel: string | null) => ({
+    providerLabel,
+    resetLabel,
+    windows: [{ label: "Weekly", percent: 40 }],
+  });
+
+  it("counts down with the first of the two that has a reset time", () => {
+    expect(
+      pairDisplayPreview(preview("Claude", "Reset unknown"), preview("Codex", "Reset in 2h 0m"))?.resetLabel,
+    ).toBe("Reset in 2h 0m");
+    expect(
+      pairDisplayPreview(preview("Claude", "Reset in 4d 4h"), preview("Codex", "Reset in 2h 0m"))?.resetLabel,
+    ).toBe("Reset in 4d 4h");
+    expect(
+      pairDisplayPreview(preview("Claude", "Reset unknown"), preview("Codex", null))?.resetLabel,
+    ).toBe("Reset unknown");
   });
 });

@@ -11,7 +11,7 @@ import { markWhatsNewSeen } from "@/lib/whats-new";
 import { ControlCenterApp } from "./control-center-app";
 
 const press =
-  "Press ⌃⌥⌘P in any app to show the next provider. This switches to Manual.";
+  "Press ⌃⌥⌘P in any app to show the next provider. This switches to One provider.";
 const refused =
   "The shortcut ⌃⌥⌘P for the next provider is not available: another app may already be using these keys.";
 
@@ -193,7 +193,7 @@ it("names the shortcut in Settings and shows what a press chose", async () => {
   ).toBe("false");
   // Manual is chosen now, so the line no longer says a press switches to it.
   expect(settings.text()).toContain("Press ⌃⌥⌘P in any app to show the next provider.");
-  expect(settings.text()).not.toContain("This switches to Manual.");
+  expect(settings.text()).not.toContain("This switches to One provider.");
 });
 
 it("says in Settings when the system refused the shortcut's keys", async () => {

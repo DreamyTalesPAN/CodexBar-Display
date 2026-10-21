@@ -2,6 +2,7 @@ import type {
   ApiError,
   UsageSnapshot,
   PreferenceDescriptor,
+  ProviderDisplayChange,
   ProviderDisplaySelection,
 } from "./control-center-types";
 
@@ -30,7 +31,7 @@ export type ProviderPickerProps = {
   /** Opens the customer setup guide in the default browser. */
   onOpenSetupGuide?: () => void | Promise<void>;
   onDisplayChange: (
-    selection: Pick<ProviderDisplaySelection, "mode" | "providerIds">,
+    selection: ProviderDisplayChange,
     providerId: string,
   ) => void | Promise<boolean | void>;
   onPreferenceChange: (

@@ -19,6 +19,7 @@ import {
   themeRenderPackUrl,
 } from "./control-center-runtime";
 import { loadLocalThemeRenderPack } from "@/lib/local-theme-render-pack";
+import { importThemeSpec, themeStudioSpecUsageLimitCount } from "@/lib/theme-studio";
 import {
   formatResetCountdown,
   remainingResetSecs,
@@ -1684,6 +1685,87 @@ export function themeRenderPackMatchesActiveRevision(
       receivedSpecHash === themeSpecHash ||
       (!receivedSpecHash && Boolean(themeSpecPath)))
   );
+}
+
+/** What the active theme has room for, as Settings explains it. */
+export type ActiveThemeLimits = {
+  name: string;
+  /** How many of the customer's ticked limits the theme shows. */
+  limits: number;
+};
+
+export function themeLimitsFromPack(
+  pack: Pick<ThemeRenderPack, "name" | "spec" | "themeId">,
+): ActiveThemeLimits | null {
+  if (!pack.spec) {
+    return null;
+  }
+  try {
+    const spec = importThemeSpec(pack.spec);
+    return {
+      name: pack.name || pack.themeId || "Your theme",
+      limits: themeStudioSpecUsageLimitCount(spec),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Reads the theme VibeTV runs, once per installed revision. Until it is read,
+ * or when it cannot be, the answer is null and Settings says nothing about
+ * the theme rather than guessing.
+ */
+export function useActiveThemeLimits(
+  device: DeviceInfo | null,
+): ActiveThemeLimits | null {
+  const themeId = activeThemeId(device);
+  const themeSpecPath = device?.display?.themeSpec?.path || "";
+  const themeSpecHash = normalizeThemeSpecHash(
+    device?.display?.themeSpec?.hash,
+  );
+  const key = [themeId, themeSpecPath, themeSpecHash].join("|");
+  const [state, setState] = useState<{
+    key: string;
+    limits: ActiveThemeLimits | null;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!themeId) {
+      return;
+    }
+    const localPack = loadLocalThemeRenderPack(themeId, themeSpecPath);
+    if (localPack && (!themeSpecHash || localPack.specHash === themeSpecHash)) {
+      const timer = window.setTimeout(
+        () => setState({ key, limits: themeLimitsFromPack(localPack) }),
+        0,
+      );
+      return () => window.clearTimeout(timer);
+    }
+    const controller = new AbortController();
+    fetchThemeRenderPackRevision(
+      themeId,
+      themeSpecPath,
+      themeSpecHash,
+      controller.signal,
+    )
+      .then((pack) =>
+        setState({
+          key,
+          limits: themeRenderPackMatchesActiveRevision(
+            pack,
+            themeSpecPath,
+            themeSpecHash,
+          )
+            ? themeLimitsFromPack(pack)
+            : null,
+        }),
+      )
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [key, themeId, themeSpecHash, themeSpecPath]);
+
+  return state?.key === key ? state.limits : null;
 }
 
 // The firmware renders this wherever a countdown has expired or its basis went

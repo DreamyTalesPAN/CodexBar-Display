@@ -307,16 +307,17 @@ describe("SettingsScreen standby controls", () => {
     const html = render(standbyDevice);
     const headings = html.match(/<h2[^>]*>([^<]+)<\/h2>/g) || [];
 
-    expect(headings).toHaveLength(7);
+    expect(headings).toHaveLength(8);
     expect(html).toContain(">Display</h2>");
     expect(html).toContain(">Display mode</h2>");
+    expect(html).toContain(">Limits on VibeTV</h2>");
     expect(html).toContain(">AI providers</h2>");
     expect(html).toContain(">Screensaver</h2>");
     expect(html).toContain(">Connection</h2>");
     expect(html).toContain(">Setup</h2>");
     expect(html).toContain(">Theme Studio AI</h2>");
     expect(html).toContain("Connect this Mac to another VibeTV.");
-    expect(html.match(/<section /g)).toHaveLength(7);
+    expect(html.match(/<section /g)).toHaveLength(8);
   });
 
   // The provider list is the longest thing on the page, so it closes it rather
@@ -331,6 +332,7 @@ describe("SettingsScreen standby controls", () => {
       "Connection",
       "Display",
       "Display mode",
+      "Limits on VibeTV",
       "Screensaver",
       "Setup",
       "Theme Studio AI",
@@ -604,7 +606,7 @@ describe("SettingsScreen standby controls", () => {
     };
 
     expect(displayMode("available")).toContain(
-      "Press ⌃⌥⌘P in any app to show the next provider. This switches to Manual.",
+      "Press ⌃⌥⌘P in any app to show the next provider. This switches to One provider.",
     );
     expect(displayMode("unavailable")).toContain(
       "The shortcut ⌃⌥⌘P for the next provider is not available: another app may already be using these keys.",
@@ -613,7 +615,7 @@ describe("SettingsScreen standby controls", () => {
 
     const windows = displayMode("available", true);
     expect(windows).toContain(
-      "Press Ctrl+Alt+Shift+P in any app to show the next provider. This switches to Manual.",
+      "Press Ctrl+Alt+Shift+P in any app to show the next provider. This switches to One provider.",
     );
     expect(windows).not.toContain("⌘");
     expect(displayMode("unavailable", true)).toContain(
@@ -621,17 +623,17 @@ describe("SettingsScreen standby controls", () => {
     );
 
     // Issue #558: the line follows what a press would do. With Manual chosen
-    // nothing switches to Manual, and with one provider that has usage a
+    // nothing switches to One provider, and with one provider that has usage a
     // press changes nothing, also when a second one is on without usage.
     const manual = displayMode("available", false, "fixed");
     expect(manual).toContain("Press ⌃⌥⌘P in any app to show the next provider.");
-    expect(manual).not.toContain("This switches to Manual.");
+    expect(manual).not.toContain("This switches to One provider.");
     for (const mode of ["automatic", "fixed"] as const) {
       const one = displayMode("available", true, mode, [provider("claude", "Claude", true), signedOut]);
       expect(one).toContain(
         "Press Ctrl+Alt+Shift+P in any app to show the next provider. This needs two providers with usage.",
       );
-      expect(one).not.toContain("This switches to Manual.");
+      expect(one).not.toContain("This switches to One provider.");
     }
 
     // Until usage has been read, nobody knows how many providers have usage,

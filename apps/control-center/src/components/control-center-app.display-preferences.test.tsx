@@ -1028,7 +1028,7 @@ it("keeps the display mode cards focused while the mode is saved", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   await window.wait(1);
 
-  for (const [name, mode] of [[/Manual/, "fixed"], [/Automatic/, "automatic"]] as const) {
+  for (const [name, mode] of [[/One provider/, "fixed"], [/Automatic/, "automatic"]] as const) {
     const card = screen.getByRole("button", { name });
     card.focus();
 
@@ -1123,7 +1123,7 @@ it("enters a changed display mode, provider switching and provider under Recent 
 
   // Switch providers is offered under Automatic only.
   await window.choose("Every 30 seconds");
-  fireEvent.click(screen.getByRole("button", { name: /Manual/ }));
+  fireEvent.click(screen.getByRole("button", { name: /One provider/ }));
   await window.wait(1);
   fireEvent.click(screen.getByRole("switch", { name: "Claude" }));
   await window.wait(2);
