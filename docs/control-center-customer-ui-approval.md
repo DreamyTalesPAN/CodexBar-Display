@@ -10114,3 +10114,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #784 as in its own entries plus the entries merged with 467fd7fb; nothing else changes.
 - Scope: the merge of 467fd7fb and this approval record. Pull request branch #784 only, not merged, not released.
 - What's new: none — merge of 467fd7fb, no customer-visible change of its own
+
+## 2026-10-21 — #864: approval marker after merging claude/group-calm-redesign at 4371975c
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (4371975c) at the merge commit b6393775 into the local integration branch claude/paultest-592a; the own entries of both branches keep their approvals)
+- Approved customer-visible result: #864 and #784 as in their own entries; nothing else changes.
+- Scope: the merge of 4371975c and this approval record. Local integration branch claude/paultest-592a only, not a pull request, not merged, not released.
+- What's new: none — merge of 4371975c, no customer-visible change of its own
+
+## 2026-10-21 — #864: Settings Display mode Variante A (three modes) + Limits on VibeTV
+
+- User approval: pending — Settings Display mode as Paul's pick "Variante A – empfohlen" (Claude Design page "Usage-Skeleton und Two Limits - Runde 21.10"): radios Automatic / One provider / Two at once, Source picker, Top/Bottom pickers, Limits on VibeTV right below without description; Paul sees it in the next build
+- Approved customer-visible result: nothing is approved yet. Settings › Display mode lists Automatic, One provider and Two at once as calm radios; One provider shows a "Source" select, Two at once shows "Top" and "Bottom" selects; "Limits on VibeTV" follows directly without a description; the dialogs lose their header icon.
+- Scope: apps/control-center/src/components/settings-screen.tsx and its tests; provider-action-dialog.tsx and usage-screen.tsx without the dialog icon. Local integration branch claude/paultest-592a only.
+- What's new: none — no What's-new entry for this variant yet
