@@ -10,6 +10,7 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import { expectNoAxeViolations } from "@/test/axe";
 import type { DeviceInfo } from "./control-center-types";
+import { mergeDeviceInfo } from "./device-merge";
 import {
   WeakWiFiDialog,
   weakWiFiCopy,
@@ -24,7 +25,7 @@ const wifiDevice = (weak?: boolean): DeviceInfo => ({
   connected: true,
   paired: true,
   target: "192.168.1.20",
-  health: { ok: true, wifi: { rssi: -82, weak } },
+  health: { ok: true, wifi: { rssi: weak === false ? -60 : -82, weak, recovered: weak === false } },
 } as DeviceInfo);
 
 it("opens for a connected WiFi VibeTV whose signal the Companion calls weak", () => {
@@ -113,12 +114,11 @@ it("stays closed through a short disconnect and opens again after the signal rec
   expect(result.current[0]).toBe(false);
 });
 
-it("opens again when the Companion sends a WiFi reading without the weak flag", async () => {
-  // The Companion omits `weak` when the signal is fine (omitempty), so a recovery
-  // arrives as a reading with no `weak` key at all.
+it("opens again when the Companion explicitly reports recovery without the weak flag", async () => {
+  // Recovery must be explicit: an unconfirmed low reading also omits `weak`.
   const recovered = {
     ...wifiDevice(true),
-    health: { ok: true, wifi: { rssi: -60 } },
+    health: { ok: true, wifi: { rssi: -60, recovered: true } },
   } as DeviceInfo;
   const { result, rerender } = renderHook(
     ({ device }) => useWeakWiFiDismissal(device),
@@ -207,4 +207,38 @@ it("keeps each weak VibeTV's dismissal when another weak VibeTV is dismissed", a
   await settle();
   rerender({ device: a });
   expect(result.current[0]).toBe(false);
+});
+
+for (const transition of ["new DHCP address", "unknown signal"] as const) {
+  it(`keeps dismissal through ${transition}, an unconfirmed low reading, then weak`, async () => {
+    const a = { ...wifiDevice(true), deviceId: "vibetv-a" };
+    const { result, rerender } = renderHook(
+      ({ device }) => useWeakWiFiDismissal(device),
+      { initialProps: { device: a } },
+    );
+    act(() => result.current[1]());
+
+    if (transition === "unknown signal") {
+      rerender({ device: { ...a, health: { ok: true } } });
+      await settle();
+      expect(result.current[0]).toBe(true);
+    }
+    const target = transition === "new DHCP address" ? "192.168.1.21" : a.target;
+    rerender({ device: { ...a, target, health: { ok: true, wifi: { rssi: -85 } } } });
+    await settle();
+    expect(result.current[0]).toBe(true);
+
+    rerender({ device: { ...a, target } });
+    expect(result.current[0]).toBe(true);
+  });
+}
+
+it("hides retained weak health while reconnecting without a current health sample", () => {
+  const previous = wifiDevice(true);
+  const unreachable = { ...previous, connectionState: "reconnecting", health: undefined } as DeviceInfo;
+  expect(weakWiFiSignal(unreachable)).toBe(false);
+  const merged = mergeDeviceInfo(previous, unreachable);
+  expect(merged.health?.wifi?.weak).toBe(true);
+  expect(weakWiFiSignal(merged)).toBe(false);
+  expect(weakWiFiSignal(mergeDeviceInfo(merged, { ...previous, connectionState: "ready" }))).toBe(true);
 });

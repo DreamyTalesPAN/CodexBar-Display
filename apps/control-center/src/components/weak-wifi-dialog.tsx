@@ -20,7 +20,9 @@ export const weakWiFiCopy = {
  * gets the notice.
  */
 export function weakWiFiSignal(device: DeviceInfo | null | undefined): boolean {
-  return deviceIsCustomerConnected(device) && device.health?.wifi?.weak === true;
+  return deviceIsCustomerConnected(device) &&
+    device.connectionState !== "reconnecting" &&
+    device.health?.wifi?.weak === true;
 }
 
 /**
@@ -36,11 +38,11 @@ export function useWeakWiFiDismissal(
 ): [boolean, () => void] {
   const key = device?.deviceId ?? device?.target ?? "";
   const [dismissed, setDismissed] = useState<Set<string>>(() => new Set());
-  // The Companion omits `weak` when the signal is fine, so a WiFi reading without it is a recovery.
+  // Only affirmative recovery clears dismissal; unconfirmed low readings also omit `weak`.
   const recovered =
     deviceIsCustomerConnected(device) &&
-    device.health?.wifi !== undefined &&
-    device.health.wifi.weak !== true;
+    device.connectionState !== "reconnecting" &&
+    device.health?.wifi?.recovered === true;
   useEffect(() => {
     if (!recovered) {
       return;

@@ -7454,7 +7454,7 @@ func TestStatusCarriesDeviceWiFiHealth(t *testing.T) {
 		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 			t.Fatalf("%s: %v", endpoint, err)
 		}
-		want := deviceWiFiHealth{RSSI: -67, Channel: 6, PhyMode: "11n", SleepMode: "none"}
+		want := deviceWiFiHealth{RSSI: -67, Channel: 6, PhyMode: "11n", SleepMode: "none", Recovered: true}
 		if got.Device.Health == nil || got.Device.Health.WiFi == nil || *got.Device.Health.WiFi != want {
 			t.Fatalf("%s: device.health.wifi missing or wrong: %s", endpoint, rec.Body.String())
 		}
@@ -7591,6 +7591,77 @@ func TestStatusNamesAWeakWiFiSignalOnTheSecondReading(t *testing.T) {
 	wifi = `,"wifi":{"rssi":-48}`
 	if nextPoll() || !nextPoll() {
 		t.Fatal("the bench override must replace the threshold and keep the two readings")
+	}
+}
+
+// Recovery is affirmative signal evidence, never the absence of a confirmed weak run.
+func TestWiFiRecoveryDistinguishesUnconfirmedLowReadings(t *testing.T) {
+	for _, transition := range []string{"new address", "long gap", "restart", "missing RSSI"} {
+		t.Run(transition, func(t *testing.T) {
+			rssi := -85
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "wifi": map[string]int{"rssi": rssi}})
+			})
+			first := httptest.NewServer(handler)
+			defer first.Close()
+			second := httptest.NewServer(handler)
+			defer second.Close()
+			server := newTestServer(t, runtimeconfig.Config{})
+			now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+			server.now = func() time.Time { return now }
+			target := first.URL
+			reading := func(wantWeak, wantRecovered bool) {
+				t.Helper()
+				health, err := server.getHealth(context.Background(), target, "pair-token")
+				if err != nil {
+					t.Fatal(err)
+				}
+				data, err := json.Marshal(health.WiFi)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var got struct {
+					Weak      bool `json:"weak"`
+					Recovered bool `json:"recovered"`
+				}
+				if err := json.Unmarshal(data, &got); err != nil {
+					t.Fatal(err)
+				}
+				if got.Weak != wantWeak || got.Recovered != wantRecovered {
+					t.Fatalf("rssi=%d: got %s, want weak=%v recovered=%v", rssi, data, wantWeak, wantRecovered)
+				}
+				now = now.Add(5 * time.Second)
+			}
+			reading(false, false)
+			reading(true, false)
+			switch transition {
+			case "new address":
+				target = second.URL
+			case "long gap":
+				now = now.Add(wifiSignalRunForget + time.Second)
+			case "restart":
+				server = newTestServer(t, runtimeconfig.Config{})
+				server.now = func() time.Time { return now }
+			case "missing RSSI":
+				rssi = 0
+				reading(false, false)
+				rssi = -85
+			}
+			reading(false, false)
+			reading(true, false)
+			rssi = -78
+			reading(true, false) // Hysteresis still belongs to the Companion.
+			rssi = -76
+			reading(false, true)
+			rssi = 31
+			reading(false, false) // A sentinel is not recovery evidence.
+			t.Setenv(wifiSignalWeakEnvVar, "-40")
+			rssi = -48
+			reading(false, false)
+			reading(true, false)
+			rssi = -36
+			reading(false, true)
+		})
 	}
 }
 

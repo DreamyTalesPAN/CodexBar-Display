@@ -84,6 +84,9 @@ type deviceWiFiHealth struct {
 	SleepMode string `json:"sleepMode,omitempty"`
 	// Weak is the Mac App's decision, set by getHealth for a VibeTV on WiFi.
 	Weak bool `json:"weak,omitempty"`
+	// Recovered is a valid reading above the Companion's current weak threshold.
+	// An unconfirmed low reading or missing RSSI is not recovery.
+	Recovered bool `json:"recovered,omitempty"`
 }
 
 // The VibeTV whose WiFi readings are at or below the weak-signal threshold,
@@ -704,12 +707,12 @@ const (
 	wifiSignalRunForget = 5 * time.Minute
 )
 
-// wifiSignalStaysWeak reports a signal at or below the threshold on two health
+// wifiSignalState reports a signal at or below the threshold on two health
 // readings in a row, the second at least themeNotDrawnConfirmTime after the
 // first. One low reading can be a passing dip, a better reading ends the run,
 // and another VibeTV starts it over. The threshold is always negative, so
 // firmware that reports no signal strength, which leaves 0, is never weak.
-func (s *Server) wifiSignalStaysWeak(target string, rssi int) bool {
+func (s *Server) wifiSignalState(target string, rssi int) (weak, recovered bool) {
 	threshold := wifiSignalWeakDBm
 	if dbm, err := strconv.Atoi(strings.TrimSpace(os.Getenv(wifiSignalWeakEnvVar))); err == nil && dbm < 0 {
 		threshold = dbm
@@ -724,14 +727,14 @@ func (s *Server) wifiSignalStaysWeak(target string, rssi int) bool {
 	}
 	if rssi > threshold {
 		s.weakWiFi = weakWiFiRun{}
-		return false
+		return false, rssi < 0
 	}
 	if !sameRun {
 		s.weakWiFi = weakWiFiRun{target: target, since: now}
 	}
 	s.weakWiFi.last = now
 	s.weakWiFi.named = now.Sub(s.weakWiFi.since) >= themeNotDrawnConfirmTime
-	return s.weakWiFi.named
+	return s.weakWiFi.named, false
 }
 
 // renderOk=false also covers states the firmware leaves on its own, and one
