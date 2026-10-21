@@ -164,6 +164,13 @@ func (s *Sender) DeviceHello(path string) (protocol.DeviceHello, error) {
 	return s.deviceHelloWithin(path, s.helloWindow)
 }
 
+// DeviceHelloContext reads a fresh hello within the caller's deadline.
+func (s *Sender) DeviceHelloContext(ctx context.Context, path string) (protocol.DeviceHello, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.deviceHelloLocked(ctx, path, s.helloWindow)
+}
+
 func (s *Sender) deviceHelloWithin(path string, window time.Duration) (protocol.DeviceHello, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -262,14 +269,14 @@ func (s *Sender) captureHelloAfterOpenLockedWithin(window time.Duration) {
 }
 
 func (s *Sender) captureHelloAfterOpenLockedContext(ctx context.Context, window time.Duration) {
-	_ = s.port.ResetInputBuffer()
-	s.sleep(s.settleDuration)
 	// Opening a supplier USB adapter can reset a WiFi-mode device. Re-send
 	// hello on the same port while it boots; an early request can be lost.
 	deadline := time.Now().Add(window)
 	if limit, ok := ctx.Deadline(); ok && limit.Before(deadline) {
 		deadline = limit
 	}
+	_ = s.port.ResetInputBuffer()
+	s.sleep(min(s.settleDuration, max(0, time.Until(deadline))))
 	var hello protocol.DeviceHello
 	var carry []byte
 	seen := false
@@ -289,7 +296,7 @@ func (s *Sender) captureHelloAfterOpenLockedContext(ctx context.Context, window 
 		// have to. Firmware from before the Cable identity contract only says
 		// hello while it boots, so a board that stays silent is reset once,
 		// the way opening the port does on macOS.
-		if !reset && s.silentResetAfter > 0 && time.Since(openedAt) >= s.silentResetAfter {
+		if !reset && s.silentResetAfter > 0 && time.Since(openedAt) >= s.silentResetAfter && time.Until(deadline) >= 100*time.Millisecond {
 			reset = true
 			resetBoard(s.port, s.sleep)
 		}
@@ -337,15 +344,26 @@ func (s *Sender) ResolvePort(explicit, expectedDeviceID string) (string, error) 
 }
 
 func (s *Sender) ResolveControlPort(explicit, expectedDeviceID string) (string, error) {
+	return s.ResolveControlPortContext(context.Background(), explicit, expectedDeviceID)
+}
+
+// ResolveControlPortContext shares the caller's deadline across all probes.
+func (s *Sender) ResolveControlPortContext(ctx context.Context, explicit, expectedDeviceID string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	readHello := func(path string) (protocol.DeviceHello, error) {
+		return s.DeviceHelloContext(ctx, path)
+	}
 	if err := s.openPortVanished(explicit); err != nil {
 		return "", err
 	}
 	s.resolveMu.Lock()
 	defer s.resolveMu.Unlock()
 	if path, ok := s.currentMatchingPort(explicit, expectedDeviceID, true); ok {
-		return resolveVibeTVCandidatesForControl([]string{path}, path, expectedDeviceID, s.DeviceHello, true)
+		return resolveVibeTVCandidatesForControl([]string{path}, path, expectedDeviceID, readHello, true)
 	}
-	path, err := resolveVibeTVPortForControl(explicit, expectedDeviceID, s.DeviceHello, true)
+	path, err := resolveVibeTVPortForControl(explicit, expectedDeviceID, readHello, true)
 	s.forgetAmbiguousPort(err)
 	return path, err
 }

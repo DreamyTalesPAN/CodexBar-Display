@@ -113,3 +113,60 @@ func TestDeviceHelloKeepsControlWindow(t *testing.T) {
 		t.Fatalf("control hello returned after %s; it must use the full configured window", elapsed)
 	}
 }
+
+func TestFirmwareCableProbesHonorSharedDeadline(t *testing.T) {
+	for _, resolve := range []bool{false, true} {
+		t.Run(map[bool]string{false: "hello", true: "all candidates"}[resolve], func(t *testing.T) {
+			const first = "/dev/cu.usbserial-deadline-a"
+			const second = "/dev/cu.usbserial-deadline-b"
+			listSerialPorts(t, first, second)
+			port := &deadlineSerialPort{mockSerialPort: newMockSerialPort()}
+			opener := &mockOpener{portsByPath: map[string]SerialPort{
+				first: port, second: newMockSerialPort(),
+			}}
+			sender := NewSenderWithConfig(SenderConfig{
+				Opener: opener, Sleep: func(time.Duration) {}, HelloWindow: 250 * time.Millisecond,
+			})
+			defer sender.Close()
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+			defer cancel()
+			started := time.Now()
+			var err error
+			if resolve {
+				_, err = sender.ResolveControlPortContext(ctx, "", "device-a")
+			} else {
+				_, err = sender.DeviceHelloContext(ctx, first)
+			}
+			if err == nil {
+				t.Fatal("silent ports cannot prove a VibeTV")
+			}
+			if elapsed := time.Since(started); elapsed > 150*time.Millisecond {
+				t.Fatalf("serial probes exceeded the shared 30ms budget: %s", elapsed)
+			}
+			if port.maxTimeout > 30*time.Millisecond {
+				t.Fatalf("serial read received a fresh timeout beyond the shared budget: %s", port.maxTimeout)
+			}
+			if opener.openCount(second) != 0 {
+				t.Fatal("opened another port after the shared deadline expired")
+			}
+		})
+	}
+}
+
+// Model a silent serial driver that blocks for the timeout it was given.
+type deadlineSerialPort struct {
+	*mockSerialPort
+	timeout    time.Duration
+	maxTimeout time.Duration
+}
+
+func (p *deadlineSerialPort) SetReadTimeout(timeout time.Duration) error {
+	p.timeout = timeout
+	p.maxTimeout = max(p.maxTimeout, timeout)
+	return nil
+}
+
+func (p *deadlineSerialPort) Read([]byte) (int, error) {
+	time.Sleep(p.timeout)
+	return 0, nil
+}

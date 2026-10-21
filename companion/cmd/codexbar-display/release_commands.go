@@ -56,8 +56,8 @@ var (
 	discoverWiFiDeviceFn                               = transportlayer.DiscoverWiFiDevice
 	flashReleaseFirmwareImageFn                        = flashReleaseFirmwareImage
 	uploadFirmwareOTAFn                                = uploadFirmwareOTA
-	resolveCableFirmwarePortFn                         = usb.ResolveVibeTVControlPort
-	readCableFirmwareHelloFn                           = usb.ReadDeviceHello
+	resolveCableFirmwarePortFn                         = usb.ResolveVibeTVControlPortContext
+	readCableFirmwareHelloFn                           = usb.ReadDeviceHelloContext
 	transferCableFirmwareFn                            = usb.TransferFirmware
 	findLegacyCableVibeTVFn                            = usb.FindLegacyCableVibeTV
 	flashCableRescueFn                                 = usb.FlashESP8266AppImageWithOptions
