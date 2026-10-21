@@ -9213,3 +9213,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: finishing setup returns to the existing Overview even if a firmware update selected Updates during setup.
 - Scope: `control-center-app.tsx` setup completion and regression tests; update navigation outside setup is unchanged.
 - What's new: none — restore the intended setup destination
+
+## 2026-10-21 — #893: preserve theme links when setup is skipped
+
+- User approval: no visible change – UI approval not needed (bug fix: remembered setup preserves the requested theme destination)
+- Approved customer-visible result: completed setup returns to Overview; returning customers opening a theme install link still reach that theme.
+- Scope: `control-center-app.tsx` completion guard and theme-link regression test for Codex P1.
+- What's new: none — preserve the existing theme-link destination

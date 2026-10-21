@@ -8,6 +8,7 @@ import { createElement } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { rememberCompletedSetup } from "@/lib/completed-setup-devices";
 import { WHATS_NEW } from "@/lib/whats-new";
 import { expectNoAxeViolations } from "@/test/axe";
 import { ControlCenterApp } from "./control-center-app";
@@ -75,6 +76,7 @@ function startWindow({
   appVersion = "1.0.63",
   newVibeTV = false,
   weakWifi = false,
+  initialThemeId = "",
 } = {}) {
   // `usageBroken`: the usage service cannot start, which the app says in a
   // dialog of its own.
@@ -232,7 +234,7 @@ function startWindow({
     createElement(
       TooltipProvider,
       null,
-      createElement(ControlCenterApp, { catalog: { themes: [gauge] } as never }),
+      createElement(ControlCenterApp, { catalog: { themes: [gauge] } as never, initialThemeId }),
     ),
   );
   return {
@@ -797,4 +799,13 @@ it("a failed check alone never leaves Overview", async () => {
   await app.wait(15);
   expect(screen.queryByRole("heading", { name: "Overview" })).not.toBeNull();
   expect(screen.queryByRole("dialog", { name: "Could not check for updates" })).toBeNull();
+});
+
+it("preserves a theme install link when remembered setup skips the wizard", async () => {
+  rememberCompletedSetup("16199235");
+  window.localStorage.setItem(SEEN_KEY, JSON.stringify(allIds));
+  const app = startWindow({ initialThemeId: "gauge" });
+  await app.wait(15);
+  expect(screen.queryByRole("heading", { name: "Themes" })).not.toBeNull();
+  expect(screen.queryByRole("heading", { name: "Overview" })).toBeNull();
 });
