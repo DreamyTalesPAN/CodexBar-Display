@@ -5633,6 +5633,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                 macAppUpdateAvailable && isNativeControlCenterApp() && !windowsHost
                   ? {
                       version: macAppUpdateOfferedVersion,
+                      onDismiss: () => {
+                        macAppUpdatePromptedFor.current = macAppUpdateOfferedVersion;
+                      },
                       onUpdate: () => {
                         // The wizard's own check counts as this version's prompt:
                         // setup ending later must not open Sparkle's dialog again.

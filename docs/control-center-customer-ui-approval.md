@@ -9374,3 +9374,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: an unavailable current update check withdraws the existing setup offer and does not open the native prompt after setup; a successful later check can offer the update again.
 - Scope: control-center-app.tsx release precedence and its regression test; runtime release state remains authoritative in the installed app.
 - What's new: none — fix stale update availability
+
+## 2026-10-21 — #822: preserve setup update dismissal after completion
+
+- User approval: no visible change – UI approval not needed (bug fix: #822 forwards Escape and Scan again to the existing per-version native update prompt owner)
+- Approved customer-visible result: dismissing the existing setup offer does not immediately reopen the same update in Sparkle after setup; a later version can still be offered.
+- Scope: setup-wizard.tsx, control-center-app.tsx and their dismissal regression tests; no text or layout changes.
+- What's new: none — remove a duplicate update prompt
