@@ -8046,6 +8046,13 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of 5f09bf54 and this approval record. Pull request branch #829 only, not merged, not released.
 - What's new: none — merge of 5f09bf54, no customer-visible change of its own
 
+## 2026-10-20 — #838: approval marker after merging main at 392e4e18
+
+- User approval: no visible change – UI approval not needed (merge of main (392e4e18) into #838; the own entries of #838 keep their approvals)
+- Approved customer-visible result: #838 as in its own entries plus the entries merged with 392e4e18; nothing else changes.
+- Scope: the merge of 392e4e18 and this approval record. Pull request branch #838 only, not merged, not released.
+- What's new: none — merge of 392e4e18, no customer-visible change of its own
+
 ## 2026-10-20 — #840: approval marker after rebasing onto main at 5f09bf54
 
 - User approval: no visible change – UI approval not needed (#840 base switched from claude/818-rom-rescue-retry to main after #819 was merged as 5f09bf54; merged the final #819 branch and main, which carry the same tree; the own entries of #840 keep their approvals)
