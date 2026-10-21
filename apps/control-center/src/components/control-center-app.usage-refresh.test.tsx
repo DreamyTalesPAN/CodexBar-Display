@@ -3,7 +3,7 @@
 // Issue #544: after Refresh on the Usage page, the "Refreshing" mark has to go
 // within a few seconds of the Mac App having the new values, not on the next
 // 30 s usage read.
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -153,4 +153,97 @@ it("ends the Refreshing mark within seconds of the new values", async () => {
   expect(
     (screen.getByRole("button", { name: "Refresh" }) as HTMLButtonElement).disabled,
   ).toBe(false);
+});
+
+// OK closes a usage error once. A different error that a later read puts in
+// its place shows again; the same error stays closed.
+it("shows a different usage error again after OK closed the earlier one", async () => {
+  let usageFailure: { code: string; message: string; nextAction: string } | null = null;
+  let usageReads = 0;
+  markWhatsNewSeen();
+  vi.stubGlobal("matchMedia", () => ({
+    matches: true,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/v1/status")) {
+        return jsonResponse({ ok: true, companion: { version: "9.9.9", installationMode: "dmg" }, device });
+      }
+      if (url.endsWith("/v1/display-frame/latest")) {
+        return jsonResponse({
+          ok: true,
+          deviceId: device.deviceId,
+          frame: { v: 2, provider: "codex", label: "Codex", usageSlots: [{ id: "weekly", label: "Weekly", percent: 29 }] },
+        });
+      }
+      if (url.includes("/api/theme-pack/")) {
+        return jsonResponse({ themeId: "codex", spec: { p: [] }, specPath: themeSpec.path, specHash: themeSpec.hash, assets: {} });
+      }
+      if (url.includes("/v1/preferences")) {
+        return jsonResponse({ ok: true, items: [] });
+      }
+      if (url.endsWith("/v1/provider-display")) {
+        return jsonResponse({
+          ok: true,
+          selection: { mode: "automatic", providerIds: [], configured: true, valid: true },
+        });
+      }
+      if (url.includes("/v1/usage")) {
+        usageReads += 1;
+        if (usageFailure) {
+          return jsonResponse({ ok: false, error: usageFailure }, 500);
+        }
+        return jsonResponse({
+          ok: true,
+          usageMode: "used",
+          tokenUsageReady: true,
+          currentProvider: "codex",
+          providers: [{ id: "codex", label: "Codex", session: 12, weekly: 34, usageMode: "used", cost: { daily: [{ day: "2026-07-22", totalTokens: 9 }] } }],
+        });
+      }
+      return jsonResponse({ ok: false, error: { code: "HTTP_404" } }, 404);
+    }),
+  );
+  render(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(ControlCenterApp, { catalog: { themes: [] } as never }),
+    ),
+  );
+
+  fireEvent.click(await screen.findByRole("button", { name: "Usage" }));
+  const refresh = await screen.findByRole("button", { name: "Refresh" });
+
+  usageFailure = { code: "USAGE_READ_FAILED", message: "Usage read failed.", nextAction: "Try again." };
+  fireEvent.click(refresh);
+  const first = await screen.findByRole("dialog", { name: "Usage read failed." });
+  fireEvent.click(within(first).getByRole("button", { name: "OK" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+
+  // The same error on the next read stays closed.
+  const readsBefore = usageReads;
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  await waitFor(() => expect(usageReads).toBeGreaterThan(readsBefore));
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+  expect(screen.queryByRole("dialog")).toBeNull();
+
+  // A different error replaces it: it shows.
+  usageFailure = { code: "USAGE_PROVIDER_FAILED", message: "Codex usage is unavailable.", nextAction: "Try again." };
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  expect(await screen.findByRole("dialog", { name: "Codex usage is unavailable." })).toBeTruthy();
 });

@@ -949,9 +949,10 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 		if strings.TrimSpace(frame.Provider) == "" {
 			frame.Provider = key
 		}
-		if label := strings.TrimSpace(frame.Label); label == "" || label == key {
-			// Empty, or a raw id left by an older build's placeholder, takes the
-			// inventory name; without one, the readable name for the id (#682).
+		if label := strings.TrimSpace(frame.Label); label == "" || label == key || label == codexbar.HumanLabel(key) {
+			// Empty, or a placeholder an older build stored (the raw id or the
+			// readable name for it), takes the inventory name; without one, the
+			// readable name for the id (#682).
 			frame.Label = c.inventoryLabels[key]
 			if frame.Label == "" {
 				frame.Label = codexbar.HumanLabel(key)

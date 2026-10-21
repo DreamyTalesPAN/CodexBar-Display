@@ -7540,7 +7540,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-16 — #663: Same device-switch reset as #645 for display brightness (no visible change)
 
-- User approval: none needed, no visible change. Same device-switch reset as #645 for display brightness (#663); no new wording; not seen by Paul.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #663: Same device-switch reset as #645 for display brightness (no visible change)
 - Approved customer-visible result: unchanged; Brightness and the Settings screensaver switch stay as in the entries above. While another VibeTV's settings are still unknown, Brightness stays disabled, as the screensaver switch does.
 - Scope: `control-center-app.tsx`, its display preferences test. Pull-request branch only, not merge or release.
 - What's new: none — review fix, no customer-visible change of its own
@@ -7549,7 +7549,7 @@ issue scope, or release permission never implies UI permission.
 
 
 
-- User approval: Merge of the stacked base (#645) and main for the hardware run; no visible change of its own; not seen by Paul. The UI review gate cannot read a clean merge commit as approval marker, so this entry stands for that merge. No new wording.
+- User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #674: approval marker after merging #645 and main (no visible change))
 
 - Approved customer-visible result: as approved in the #663 entry above (no visible change); nothing else changes.
 
@@ -7559,7 +7559,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-16 — #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible change)
 
-- User approval: Codex review fix, no visible change; not seen by Paul.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible chang
 - Approved customer-visible result: none. When another VibeTV connects, a Brightness change still waiting to be sent is dropped instead of being sent to that VibeTV; the slider and all wording stay as they are.
 - Scope: `resetDeviceSettings` in `apps/control-center/src/components/control-center-app.tsx`, its test in `control-center-app.display-preferences.test.tsx`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — review fix, no customer-visible change
@@ -7573,7 +7573,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-19 — #674: Codex review fix of #645, a late settings answer for another VibeTV no longer chooses the selected theme (no visible change)
 
-- User approval: Codex review finding on #645 (`1a568a04`); Marcus, via the orchestrator on 2026-10-19: fix it in #674 with a unit test, without a new device test, because this path never runs with one VibeTV.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #674: Codex review fix of #645, a late settings answer for another VibeTV no longer choose
 - Approved customer-visible result: none with one VibeTV. When another VibeTV connects while a read of the first one's settings is still on its way, that late answer no longer marks the first VibeTV's active theme as selected under Appearance › Themes; the selection follows the VibeTV connected now, as Brightness and the Settings screensaver switch already do.
 - Scope: `readSettings` in `apps/control-center/src/components/control-center-app.tsx`, its test in `control-center-app.display-preferences.test.tsx`, and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — review fix, no customer-visible change
@@ -8844,7 +8844,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none; no visible change.
 - Scope: `apps/control-center/src/components/setup/setup-recovery-dialogs.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.test.tsx`, the comment in `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merged, not released.
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #663: Same device-switch reset as #645 for display brightness (no visible change)
-- User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #674: approval marker after merging #645 and main (no visible change))
+- User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #674: approval marker after merging #645 and main (no visible change); occurrence 2)
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible chang
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #674: Codex review fix of #645, a late settings answer for another VibeTV no longer choose
 
@@ -12459,3 +12459,31 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: an invalid checked checkbox keeps its red border as before; no new text, no layout change.
 - Scope: the checkbox class list and the invalid focus ring test file. Pull request branch #817 only.
 - What's new: none — the removed variant was redundant with aria-invalid:aria-checked:border-destructive
+
+## 2026-10-21 — #783: Paul's approval of build 7200 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" — #783 approval record for build 7200; the #783 entries that were in build 7200 now carry it, merge markers are marked as no visible change, entries added after build 7200 stay pending.
+- Approved customer-visible result: #783 as described in its entries above, as seen in build 7200.
+- Scope: #783 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #783 approval record only
+
+## 2026-10-21 — #783: a different usage error shows again after OK
+
+- User approval: no visible change – UI approval not needed (#783 Codex fix: a different usage error shows again after an earlier one was dismissed; no new wording or layout)
+- Approved customer-visible result: #783 as in its entries above; only a different usage error that replaces a dismissed one now shows again. The same error stays closed, no new text or layout.
+- Scope: #783 Codex fix in the Usage page error dialog state. Pull request branch only, not merged, not released.
+- What's new: none — the dismissal resets on a different error, no new text or layout
+
+## 2026-10-21 — #783: approval marker after merging main at 41bf10cf
+
+- User approval: no visible change – UI approval not needed (merge of main (41bf10cf) into #783; the own entries of #783 keep their approvals)
+- Approved customer-visible result: #783 as in its own entries plus the entries merged with 41bf10cf; nothing else changes.
+- Scope: the merge of 41bf10cf and this approval record. Pull request branch #783 only, not merged, not released.
+- What's new: none — merge of 41bf10cf, no customer-visible change of its own
+
+## 2026-10-21 — #783: a dismissed sign-in overlay stays closed through a timeout read
+
+- User approval: no visible change – UI approval not needed (#783 Codex fix: a dismissed sign-in overlay stays closed through a timeout/rate-limit read of the same incident; no new wording or layout)
+- Approved customer-visible result: #783 as in its entries above; a dismissed sign-in or access overlay stays closed while its provider is stale, timeout, rate-limited or checking, and opens again only after a healthy or switched-off read. No new text or layout.
+- Scope: #783 Codex fix in the provider overlay dismissal (provider-action-dialog, setup-providers-screen helper, control-center-app caller). Pull request branch only, not merged, not released.
+- What's new: none — the dismissal holds through transient reads, no new text or layout
