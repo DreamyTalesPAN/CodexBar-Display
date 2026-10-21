@@ -14373,3 +14373,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve the incoming feature together with the existing Build 6 customer flows in the local integration candidate.
 - Scope: Merge claude/paultest-592a into claude/paultest-build7; retain all source approval entries.
 - What's new: none — integration of existing feature entries only.
+
+## 2026-10-21 — #864: Build 7 final integration with Recent activity pair wording
+
+- User approval: pending — build7 final source refresh to 44562783f80d for the requested Pace + Two at once Mac test, following the coordinator's Recent activity follow-up.
+- Approved customer-visible result: Preserve the combined calm Settings, Showing now, limits and Pace; Recent activity names both sources when Two at once is selected.
+- Scope: Integration of claude/paultest-592a at 44562783f80d into claude/paultest-build7 with all earlier feature heads and approval blocks retained; next validation is Paul's Mac test build.
+- What's new: none — existing feature wording integrated into the test candidate.
