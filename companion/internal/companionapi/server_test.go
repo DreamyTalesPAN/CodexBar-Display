@@ -4216,6 +4216,10 @@ func TestInspectDisplayStreamCountsAnErrorStampedWithItsFrame(t *testing.T) {
 	if stream.Healthy || stream.ErrorCode != "provider_setup_required" {
 		t.Fatalf("an error stamped with its frame was ignored: %+v", stream)
 	}
+	// The page compares this stamp with the end of a firmware update (#829).
+	if stream.ErrorAt != frameAt.UTC().Format(time.RFC3339) {
+		t.Fatalf("errorAt=%q, want the error line's time %s", stream.ErrorAt, frameAt.UTC().Format(time.RFC3339))
+	}
 }
 
 func TestInspectDisplayStreamReportsPairingErrorBeforeFirstFrame(t *testing.T) {
@@ -12566,6 +12570,104 @@ func TestFirmwareUpdateCableRequiresVerifiedRender(t *testing.T) {
 	}
 }
 
+// Issue #835, Beelink Windows over USB, 2026-10-20: after an update the only
+// frame inside the picture check carried the same values the screen already
+// showed. The firmware redraws only when a frame changes the screen, so the
+// render counters stayed put and the customer got "the picture could not be
+// verified" for a VibeTV showing its picture normally. The same healthy live
+// picture, unchanged since before the stream restart, is a verified picture.
+// A screen that changed or broke while nothing was drawn is not.
+func TestFirmwareUpdateCableAcceptsUnchangedLivePicture(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		lastKind string
+		after    func(*deviceHealth)
+		complete bool
+	}{
+		{name: "unchanged live picture", lastKind: "theme_spec_frame", after: func(*deviceHealth) {}, complete: true},
+		// Beelink, clippy: the minute countdown was the last thing drawn.
+		{name: "unchanged picture after the countdown", lastKind: "reset", after: func(*deviceHealth) {}, complete: true},
+		{name: "parked on the setup screen", lastKind: "connected_setup", after: func(*deviceHealth) {}},
+		{name: "rebooted during the check", lastKind: "theme_spec_frame", after: func(h *deviceHealth) { h.System.BootID = "boot-b" }},
+		{name: "theme render failed", lastKind: "theme_spec_frame", after: func(h *deviceHealth) {
+			failed := false
+			h.Display.ThemeSpec.RenderOK = &failed
+			h.Display.ThemeSpec.RenderFailures = 1
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "device-cable-update", DeviceToken: "pair-token"}
+			server := newTestServer(t, cfg)
+			server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock-cable", nil }
+			server.readCableHello = func(string) (protocol.DeviceHello, error) {
+				return protocol.DeviceHello{
+					DeviceID: "device-cable-update",
+					Board:    "esp8266-smalltv-st7789",
+					Firmware: "1.0.41",
+					Features: []string{protocol.FeatureCableTransferV1, protocol.FeatureCableHealthV1},
+					Capabilities: protocol.CapabilityBlock{
+						Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable"},
+					},
+				}, nil
+			}
+			livePicture := func() deviceHealth {
+				fullCount, partialCount, renderOK := uint64(2), uint64(14), true
+				health := deviceHealth{OK: true}
+				health.System.BootID = "boot-a"
+				health.Display.ActiveTheme = "clippy"
+				health.Display.ThemeSpec.Active = true
+				health.Display.ThemeSpec.Path = "/themes/u/clippy-3-fe3fd4.json"
+				health.Display.ThemeSpec.RenderOK = &renderOK
+				health.Render.FullCount = &fullCount
+				health.Render.PartialCount = &partialCount
+				health.Render.LastKind = tc.lastKind
+				return health
+			}
+			server.readCableHealth = func(string, string) (deviceHealth, error) { return livePicture(), nil }
+			server.refreshStream = func(context.Context, string) error { return nil }
+			server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+				return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
+			}
+			// The real wait hands back its last reading with the error.
+			server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+				health := livePicture()
+				tc.after(&health)
+				return health, fmt.Errorf("display render not ready: %w", errDisplayRenderNotAdvanced)
+			}
+			server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+				_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"verifying_health","phase":"complete","outcome":"already_current","firmware":"1.0.41","observedFirmware":"1.0.41","target":"cable://vibetv","deviceId":"device-cable-update","artifactValidated":true,"helloVerified":true}`+"\n")
+				return nil
+			}
+
+			rec := httptest.NewRecorder()
+			server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`)))
+			var started firmwareUpdateJobResponse
+			if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+				t.Fatal(err)
+			}
+			var job firmwareUpdateJob
+			// The updater's own events can already say "complete" while the
+			// server still checks the picture; only FinishedAt marks the end.
+			for attempt := 0; attempt < 500; attempt++ {
+				job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+				if job.FinishedAt != nil {
+					break
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			if tc.complete {
+				if job.Phase != "complete" || job.Outcome != "already_current" || job.Result == nil || !job.Result.RenderVerified {
+					t.Fatalf("an unchanged live picture must complete the update: phase=%q outcome=%q message=%q result=%+v", job.Phase, job.Outcome, job.Message, job.Result)
+				}
+				return
+			}
+			if job.Phase != "attention" || job.Result == nil || job.Result.RenderVerified {
+				t.Fatalf("a changed or broken screen must stay unverified: phase=%q result=%+v", job.Phase, job.Result)
+			}
+		})
+	}
+}
+
 func TestFirmwareUpdateCableDoesNotOverridePostUpdateVerificationError(t *testing.T) {
 	cfg := runtimeconfig.Config{
 		ConnectionMode: "cable",
@@ -12856,7 +12958,7 @@ func TestFirmwareUpdateCurrentFirmwareWithStreamFailureNeedsAttention(t *testing
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if job.Phase != "attention" || job.Outcome != "firmware_current_stream_attention" || job.Result == nil || !job.Result.HealthVerified || job.Result.StreamVerified {
+	if job.Phase != "attention" || job.Outcome != "firmware_current_stream_restart_attention" || job.Result == nil || !job.Result.HealthVerified || job.Result.StreamVerified {
 		t.Fatalf("current firmware with a broken stream must need attention without another flash: %+v", job)
 	}
 }
@@ -15361,6 +15463,43 @@ func TestStatusAndDiagnosticsCarrySystemBusy(t *testing.T) {
 	}
 }
 
+// An unchanged live picture may only stand in for a fresh, successful read:
+// when the last read fails (cable gone), the error must not qualify (Codex on #838).
+func TestDisplayRenderUnchangedOnlyFromAFreshRead(t *testing.T) {
+	// The wait and poll interval are short here: the error paths must not
+	// cost the production 12 seconds each (Codex on #838).
+	started := time.Now()
+	defer func() {
+		if elapsed := time.Since(started); elapsed > 3*time.Second {
+			t.Errorf("render check error paths took %v; they must use a short deadline", elapsed)
+		}
+	}()
+	full, partial := uint64(5), uint64(2)
+	baseline := deviceHealth{OK: true}
+	baseline.Render.FullCount = &full
+	baseline.Render.PartialCount = &partial
+	baseline.Render.LastKind = "usage"
+
+	reads := 0
+	_, err := waitForDisplayRenderPolling(context.Background(), cableDeviceTarget, baseline, displayStreamInfo{}, 30*time.Millisecond, 5*time.Millisecond, func() (deviceHealth, error) {
+		reads++
+		if reads == 1 {
+			return baseline, nil
+		}
+		return deviceHealth{}, errors.New("serial port gone")
+	})
+	if err == nil || errors.Is(err, errDisplayRenderNotAdvanced) {
+		t.Fatalf("a failed last read must not count as unchanged counters: %v", err)
+	}
+
+	_, err = waitForDisplayRenderPolling(context.Background(), cableDeviceTarget, baseline, displayStreamInfo{}, 30*time.Millisecond, 5*time.Millisecond, func() (deviceHealth, error) {
+		return baseline, nil
+	})
+	if !errors.Is(err, errDisplayRenderNotAdvanced) {
+		t.Fatalf("fresh unchanged reads must report errDisplayRenderNotAdvanced: %v", err)
+	}
+}
+
 // Issue #818: a rescue write that failed after the erase leaves a VibeTV that
 // boot-loops and says no hello. While its marked port is connected, the search
 // offers it for the rescue instead of "No VibeTV found".
@@ -15586,7 +15725,10 @@ func TestFirmwareLatestRescueCheckDoesNotProbeDuringAnUpdate(t *testing.T) {
 	}
 	server.listCablePorts = func() ([]string, error) { return []string{"COM4"}, nil }
 	probed := false
-	server.readCableHello = func(string) (protocol.DeviceHello, error) { probed = true; return protocol.DeviceHello{}, errors.New("busy") }
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		probed = true
+		return protocol.DeviceHello{}, errors.New("busy")
+	}
 	server.firmwareUpdateActive.Store(true)
 	defer server.firmwareUpdateActive.Store(false)
 	if target, ok := server.cachedRescueTarget("esp8266-smalltv-st7789", "1.0.0"); !ok || target != "1.0.9" || probed {
