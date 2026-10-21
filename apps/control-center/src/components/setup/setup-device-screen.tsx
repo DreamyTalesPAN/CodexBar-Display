@@ -436,7 +436,7 @@ export function SetupDeviceScreen({
               candidate={candidate}
               key={`${candidate.deviceId || "legacy"}-${candidate.target}`}
               onSelect={() => onSelect(candidate)}
-              preview3D={preview3D}
+              preview3D={index === 0 ? preview3D : false}
               previewDevice={isPreviewDevice(candidate) ? previewDevice : null}
               previewFrame={isPreviewDevice(candidate) ? previewFrame : null}
               previewUsage={isPreviewDevice(candidate) ? previewUsage : null}
