@@ -167,7 +167,7 @@ export function UsageScreen({
   const tokenUsagePending =
     companionStatus === "online" &&
     !usageError &&
-    hasProviders &&
+    shownProviders.length > 0 &&
     !tokenUsageReady;
   // A requested refresh that still waits for its reading: a small spinner by
   // the token total, not a notice above the page (Paul, 2026-10-09).
@@ -207,7 +207,7 @@ export function UsageScreen({
             updating={tokenUsageUpdating}
           />
         ) : tokenUsagePending ? (
-          <TokenUsageSkeleton providerCount={providers.length} />
+          <TokenUsageSkeleton providerCount={shownProviders.length} />
         ) : null}
 
         {tiles.length > 0 ? (

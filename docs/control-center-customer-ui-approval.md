@@ -8137,6 +8137,20 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of f314106c and this approval record. Pull request branch #837 only, not merged, not released.
 - What's new: none — merge of f314106c, no customer-visible change of its own
 
+## 2026-10-21 — #579: support report file name test pins a non-UTC zone
+
+- User approval: no visible change – UI approval not needed (test-only: the file name test pins a non-UTC zone; the local date was already on main; no screen changes)
+- Approved customer-visible result: none; the support report file name stays as it is on main (local date and time).
+- Scope: apps/control-center/src/components/support-report.test.ts only.
+- What's new: none — test-only change.
+
+## 2026-10-21 — #856: approval marker after merging main at 61f79061
+
+- User approval: no visible change – UI approval not needed (merge of main (61f79061) into #856; the own entries of #856 keep their approvals)
+- Approved customer-visible result: #856 as in its own entries plus the entries merged with 61f79061; nothing else changes.
+- Scope: the merge of 61f79061 and this approval record. Pull request branch #856 only, not merged, not released.
+- What's new: none — merge of 61f79061, no customer-visible change of its own
+
 - User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #663: Same device-switch reset as #645 for display brightness (no visible change)
 - User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #674: approval marker after merging #645 and main (no visible change))
 - User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible chang
@@ -8960,6 +8974,20 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #783 as in its own entries plus the entries merged with 5b9c0cb4; nothing else changes.
 - Scope: the merge of 5b9c0cb4 and this approval record. Pull request branch #783 only, not merged, not released.
 - What's new: none — merge of 5b9c0cb4, no customer-visible change of its own
+
+## 2026-10-21 — #783: the loading skeleton leaves out hidden providers
+
+- User approval: no visible change – UI approval not needed (#783 Codex fix: the loading skeleton leaves out hidden providers too)
+- Approved customer-visible result: #783 as in its own entries; a hidden provider no longer gets a token-history loading skeleton beside the empty state. No new text or layout.
+- Scope: #783 Codex fix in the usage screen (pending token-history skeleton counts shown providers only). Pull request branch only, not merged, not released.
+- What's new: none — a switched-off, unsupported or dataless provider no longer draws a loading skeleton, and no text or layout changes
+
+## 2026-10-21 — #783: approval marker after merging main at 467fd7fb
+
+- User approval: no visible change – UI approval not needed (merge of main (467fd7fb) into #783; the own entries of #783 keep their approvals)
+- Approved customer-visible result: #783 as in its own entries plus the entries merged with 467fd7fb; nothing else changes.
+- Scope: the merge of 467fd7fb and this approval record. Pull request branch #783 only, not merged, not released.
+- What's new: none — merge of 467fd7fb, no customer-visible change of its own
 
 ## 2026-10-19 — Pace on Usage (#789, stacked on #783)
 
