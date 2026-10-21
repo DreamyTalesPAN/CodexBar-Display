@@ -589,13 +589,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, []);
   const finishConnectionChange = useCallback(() => setSettingsWiFiSetup(null), []);
   const finishSetup = useCallback(() => {
-    if (setupFinishedThisSession || !setupCompletedFor(device?.deviceId)) {
+    // A theme install that is running or has failed keeps Appearance, where its dialog lives.
+    const themeInstallOpen = themeInstallStatus?.phase === "installing" || themeInstallStatus?.phase === "error";
+    if ((setupFinishedThisSession || !setupCompletedFor(device?.deviceId)) && !themeInstallOpen) {
       setActiveTab("overview");
     }
     rememberCompletedSetup(device?.deviceId);
     setSetupFinishedThisSession(true);
     setHasEnteredControlCenter(true);
-  }, [device?.deviceId, setupFinishedThisSession]);
+  }, [device?.deviceId, setupFinishedThisSession, themeInstallStatus?.phase]);
   // The completion response clears providerSelectionRequired before the first
   // renderable frame necessarily exists. Keep this setup's confirmed device
   // usable so the next screen is Display Mode, never a flash of Connect.

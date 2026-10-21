@@ -9220,3 +9220,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: completed setup returns to Overview; returning customers opening a theme install link still reach that theme.
 - Scope: `control-center-app.tsx` completion guard and theme-link regression test for Codex P1.
 - What's new: none — preserve the existing theme-link destination
+
+## 2026-10-22 — #893: a theme install still open at setup end keeps Appearance
+
+- User approval: no visible change – UI approval not needed (restores the behaviour before #893 for a theme install that is running or has failed when setup ends: it stays on Appearance, where its dialog is; firmware updates still end on Overview)
+- Approved customer-visible result: none beyond #893 itself; a failed theme install picked up during setup is shown in its dialog on Appearance, as before.
+- Scope: finishSetup in control-center-app.tsx and its tests; pull request branch #893 only.
+- What's new: none — no visible change beyond #893
