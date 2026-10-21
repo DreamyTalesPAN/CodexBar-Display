@@ -8953,3 +8953,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #783 as in its own entries; the Last 30 days total, chart and legend count only providers that have a tile. No new text or layout.
 - Scope: #783 Codex fix in the usage screen (token-history panel gets the shown providers). Pull request branch only, not merged, not released.
 - What's new: none — a switched-off, unsupported or dataless provider no longer appears in the token total and legend, and no text or layout changes
+
+## 2026-10-21 — #783: approval marker after merging main at 5b9c0cb4
+
+- User approval: no visible change – UI approval not needed (merge of main (5b9c0cb4) into #783; the own entries of #783 keep their approvals)
+- Approved customer-visible result: #783 as in its own entries plus the entries merged with 5b9c0cb4; nothing else changes.
+- Scope: the merge of 5b9c0cb4 and this approval record. Pull request branch #783 only, not merged, not released.
+- What's new: none — merge of 5b9c0cb4, no customer-visible change of its own
