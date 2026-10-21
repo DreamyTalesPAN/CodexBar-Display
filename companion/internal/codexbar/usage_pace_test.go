@@ -2,6 +2,7 @@ package codexbar
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -51,9 +52,9 @@ func TestDashboardUsageCarriesCodexBarPace(t *testing.T) {
 	want := map[string][]protocol.UsagePace{
 		// "54% in deficit | Expected 16% used | Runs out in 11h 14m"
 		"codex": {pace(54, protocol.PaceDeficit, false)},
-		// "39% in reserve | ... | Lasts until reset", "2% in reserve | ..."
-		// the extra Fable window has no pace in CodexBar
-		"claude": {pace(-39, protocol.PaceReserve, true), pace(-2, protocol.PaceReserve, true), {}},
+		// Claude's recorded resets differ by one second between endpoints;
+		// those paces cannot describe the dashboard windows. Fable has none.
+		"claude": {{}, {}, {}},
 	}
 	for _, provider := range providers {
 		windows := provider.Frame.UsageWindows
@@ -65,8 +66,8 @@ func TestDashboardUsageCarriesCodexBarPace(t *testing.T) {
 				t.Fatalf("%s window %s pace=%+v want %+v", provider.Provider, window.ID, window.Pace, want[provider.Provider][i])
 			}
 		}
-		if len(provider.Meta.Pace) == 0 {
-			t.Fatalf("%s: /v1/usage lost the pace the frame carries", provider.Provider)
+		if (len(provider.Meta.Pace) > 0) != (provider.Provider == "codex") {
+			t.Fatalf("%s: API pace must match the device's measurement: %+v", provider.Provider, provider.Meta.Pace)
 		}
 	}
 }
@@ -113,5 +114,54 @@ func TestUsagePaceMirrorsEveryCodexBarStage(t *testing.T) {
 func TestUsagePaceWithoutDeltaStaysUnknown(t *testing.T) {
 	if got := (ProviderPace{Window: "primary", Stage: "ahead"}).Device(); got != (protocol.UsagePace{}) {
 		t.Fatalf("a stage without deltaPercent must stay unknown, got %+v", got)
+	}
+}
+
+// Serve caches these endpoints independently: pace must describe the exact
+// measurement retained from the dashboard, including its reset when present.
+func TestDashboardPaceRequiresMatchingMeasurement(t *testing.T) {
+	for _, tc := range []struct {
+		name, used, dashboardReset, usageReset string
+		wantPace                               bool
+	}{
+		{"different usage", "70", "2099-01-01T00:00:00Z", "2099-01-01T00:00:00Z", false},
+		{"same measurement", "20", "2099-01-01T00:00:00Z", "2099-01-01T00:00:00Z", true},
+		{"different reset", "20", "2099-01-01T00:00:00Z", "2099-01-02T00:00:00Z", false},
+		{"fractional mismatch", "20.1", "2099-01-01T00:00:00Z", "2099-01-01T00:00:00Z", false},
+		{"missing usage", "null", "2099-01-01T00:00:00Z", "2099-01-01T00:00:00Z", false},
+		{"missing usage reset", "20", "2099-01-01T00:00:00Z", "", true},
+		{"missing dashboard reset", "20", "", "2099-01-01T00:00:00Z", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reset := func(key, value string) string {
+				if value == "" {
+					return ""
+				}
+				return fmt.Sprintf(",%q:%q", key, value)
+			}
+			mux := http.NewServeMux()
+			mux.HandleFunc(dashboardSnapshotPath, func(w http.ResponseWriter, _ *http.Request) {
+				fmt.Fprintf(w, `{"schemaVersion":1,"providers":[{"id":"claude","windows":[{"kind":"session","label":"Session","usedPercent":20%s}]}]}`, reset("resetAt", tc.dashboardReset))
+			})
+			mux.HandleFunc(dashboardUsagePath, func(w http.ResponseWriter, _ *http.Request) {
+				fmt.Fprintf(w, `[{"provider":"claude","usage":{"primary":{"usedPercent":%s%s}},"pace":{"primary":{"stage":"ahead","deltaPercent":20,"expectedUsedPercent":50}}}]`, tc.used, reset("resetsAt", tc.usageReset))
+			})
+			server := httptest.NewServer(mux)
+			defer server.Close()
+			providers, err := FetchDashboardProviders(context.Background(), dashboardFetchTestInfo(server), time.Now())
+			if err != nil || len(providers) != 1 {
+				t.Fatalf("providers=%+v err=%v", providers, err)
+			}
+			got := providers[0]
+			if len(got.Frame.UsageWindows) != 1 || got.Frame.UsageWindows[0].Percent != 20 {
+				t.Fatalf("dashboard must remain the usage source: %+v", got.Frame)
+			}
+			if hasPace := got.Frame.UsageWindows[0].Pace.State != ""; hasPace != tc.wantPace {
+				t.Errorf("device pace=%+v, want present=%v", got.Frame.UsageWindows[0].Pace, tc.wantPace)
+			}
+			if (len(got.Meta.Pace) != 0) != tc.wantPace {
+				t.Errorf("API pace=%+v, want present=%v", got.Meta.Pace, tc.wantPace)
+			}
+		})
 	}
 }

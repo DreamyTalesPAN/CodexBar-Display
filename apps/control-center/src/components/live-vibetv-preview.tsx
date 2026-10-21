@@ -1479,8 +1479,6 @@ export function buildFrameData(
   currentTime = new Date(),
 ): FrameData {
   const elapsedSeconds = secondsSince(generatedAt, currentTime);
-  const remainingResetSeconds = (seconds: number | undefined) =>
-    remainingResetSecs(seconds, generatedAt, currentTime);
   const sourceUsageMode = frameUsageMode(displayFrame);
   const slots = (
     (displayFrame.usageWindows?.length
@@ -1512,6 +1510,8 @@ export function buildFrameData(
     (!trustEnforced ||
       (Boolean(displayFrame.resetSource) &&
         (displayFrame.resetTrustSecs ?? 0) - elapsedSeconds > 0));
+  const remainingResetSeconds = (seconds: number | undefined) =>
+    basisTrusted ? remainingResetSecs(seconds, generatedAt, currentTime) : 0;
   // Mirrors CurrentUsageWindowRemainingSecs: idle is a window the host sent
   // with no deadline and nothing used. No deadline alone is not enough -- the
   // host also sends 0 for a deadline that ran out before the frame left and
