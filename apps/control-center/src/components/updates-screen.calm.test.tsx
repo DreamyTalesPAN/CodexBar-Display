@@ -2,13 +2,18 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WHATS_NEW } from "@/lib/whats-new";
-import { UpdatesScreen, type UpdatesScreenProps } from "./updates-screen";
+import { UpdatesScreen as UpdatesScreenView, useUpdatesDialogs, type UpdatesScreenProps } from "./updates-screen";
 
 afterEach(cleanup);
 
+function UpdatesScreen(props: Omit<UpdatesScreenProps, "dialogs">) {
+  const dialogs = useUpdatesDialogs(props);
+  return <UpdatesScreenView {...props} dialogs={dialogs} />;
+}
+
 // The calm Updates screen as drawn in the approved master: one headline, one
 // framed object with a row per component, the "What's new" note card.
-const upToDate: UpdatesScreenProps = {
+const upToDate: Omit<UpdatesScreenProps, "dialogs"> = {
   companionStatus: "online",
   companionInfo: { app: { version: "1.0.64", installedInApplications: true } },
   companionRelease: {
@@ -49,6 +54,37 @@ describe("calm Updates screen", () => {
     expect(screen.queryByRole("link", { name: "Update" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Update" })).toBeNull();
     expect(variant(screen.getByRole("button", { name: "Check for updates" }))).toBe("outline");
+  });
+
+  it("does not claim everything is current without a device or firmware answer", () => {
+    render(<UpdatesScreen {...upToDate} device={null} firmwareUpdate={null} />);
+    expect(screen.queryByRole("heading", { name: "Everything is up to date" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "No update available" })).toBeTruthy();
+    expect(screen.getByText("Unknown")).toBeTruthy();
+    expect(screen.getAllByText("Up to date")).toHaveLength(1);
+  });
+
+  it.each(["missing", "unknown"] as const)("does not claim retained checks are current when the companion is %s", (companionStatus) => {
+    const view = render(<UpdatesScreen {...upToDate} />);
+    expect(screen.getAllByText("Up to date")).toHaveLength(2);
+    view.rerender(<UpdatesScreen {...upToDate} companionStatus={companionStatus} companionInfo={null} device={{ ...upToDate.device!, connected: false }} />);
+    expect(screen.queryByRole("heading", { name: "Everything is up to date" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "No update available" })).toBeTruthy();
+    expect(screen.queryByText("Up to date")).toBeNull();
+  });
+
+  it("does not claim a retained comparison is current without device firmware metadata", () => {
+    render(<UpdatesScreen {...upToDate} device={{ connected: true }} />);
+    expect(screen.queryByRole("heading", { name: "Everything is up to date" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "No update available" })).toBeTruthy();
+    expect(screen.getAllByText("Up to date")).toHaveLength(1);
+  });
+
+  it("does not call disconnected firmware current even while the companion is online", () => {
+    render(<UpdatesScreen {...upToDate} device={{ ...upToDate.device!, connected: false }} />);
+    expect(screen.queryByRole("heading", { name: "Everything is up to date" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "No update available" })).toBeTruthy();
+    expect(screen.getAllByText("Up to date")).toHaveLength(1);
   });
 
   it("checks for updates from the header button", () => {
@@ -215,6 +251,19 @@ describe("calm Updates screen", () => {
     expect(screen.getByText("No update is available for this VibeTV.")).toBeTruthy();
     // Only the Mac App row says it is up to date.
     expect(screen.getAllByText("Up to date")).toHaveLength(1);
+  });
+
+  // Codex P2 (#798): "available" without an installed version does not show the
+  // Mac App is current; the unknown state stays.
+  it("a Mac App check without an installed version is not 'up to date'", () => {
+    render(
+      <UpdatesScreen
+        {...upToDate}
+        companionRelease={{ ...upToDate.companionRelease!, installedVersion: undefined }}
+      />,
+    );
+    expect(screen.queryByRole("heading", { level: 2, name: "Everything is up to date" })).toBeNull();
+    expect(screen.getByRole("heading", { level: 2, name: "No update available" })).toBeTruthy();
   });
 
   it("installing: the step is a process-steps line inside the card, no Update button", () => {

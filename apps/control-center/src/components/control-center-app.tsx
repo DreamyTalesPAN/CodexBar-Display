@@ -169,7 +169,7 @@ import {
   clearRetiredAiThemeStorage,
   type ThemeStudioInstallPayload,
 } from "./theme-studio-screen";
-import { UpdatesScreen } from "./updates-screen";
+import { UpdatesScreen, useUpdatesDialogs } from "./updates-screen";
 import {
   UsageScreen,
   usageProviderActionsFor,
@@ -3090,7 +3090,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     const shouldUpgradeActiveTheme = Boolean(
       activeThemeUpgrade.theme && activeThemeUpgrade.needed,
     );
-    const startedAt = formatTime();
+    // Before a job exists, identify the local attempt with full precision.
+    // Once it exists, retain the same server key used by status polling.
+    let startedAt = new Date().toISOString();
     const initialLogs = ["Preparing VibeTV update."];
     const firmwareIsKnownCurrent = Boolean(
       firmwareUpdate?.status === "current" &&
@@ -3152,7 +3154,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       return true;
     }
     const applyUpdateJob = (job: FirmwareUpdateJob) => {
-      setFirmwareUpdateStatus(firmwareUpdateStatusFromJob(job, startedAt));
+      const status = firmwareUpdateStatusFromJob(job, startedAt);
+      startedAt = status.startedAt;
+      setFirmwareUpdateStatus(status);
     };
     setBusyAction("firmware-update");
     setFirmwareUpdateStatus({
@@ -4685,6 +4689,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       : hostedCompanionRelease?.status === "check_failed" && runtimeRelease
         ? { ...runtimeRelease, ...hostedCompanionRelease }
         : hostedCompanionRelease || runtimeRelease || null;
+  const updatesDialogs = useUpdatesDialogs({
+    companionStatus,
+    device,
+    firmwareUpdate: effectiveFirmwareUpdate,
+    companionRelease,
+    busyAction,
+  });
   const macAppUpdateAvailable = Boolean(
     companionInfo?.update?.updateAvailable || companionRelease?.updateAvailable,
   );
@@ -6105,6 +6116,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
         {activeShellTab === "updates" ? (
           <UpdatesScreen
+            dialogs={updatesDialogs}
             busyAction={busyAction}
             companionRelease={companionRelease}
             companionStatus={companionStatus}

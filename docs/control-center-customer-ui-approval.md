@@ -15683,3 +15683,66 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve the refreshed feature together with the existing calm customer flows in the integration candidate.
 - Scope: Merge claude/group-theme-studio into claude/paultest-build9 and retain all source approval blocks.
 - What's new: none — integration of existing feature entries only.
+
+## 2026-10-21 — #798: Mac App not 'up to date' without an installed version
+
+- User approval: no visible change – UI approval not needed (bug fix: a Mac App check that answers "available" without an installed version no longer shows the Mac App as up to date; the existing unknown state stays)
+- Approved customer-visible result: without a known installed version the Updates screen shows the unknown state ("No update available") instead of "Everything is up to date"; with a known version nothing changes.
+- Scope: `apps/control-center/src/components/updates-screen.tsx` and its test `updates-screen.calm.test.tsx`, plus this approval record. Pull request branch only, not merged, not released.
+- What's new: none — bug fix, not announced to customers
+
+## 2026-10-21 — #798: Updates attempt key keeps milliseconds
+
+- User approval: no visible change – UI approval not needed (bug fix: two local VibeTV update failures within one second both open the "Update failed" dialog; the attempt key now keeps milliseconds, the time shown stays HH:mm:ss)
+- Approved customer-visible result: each failed local VibeTV update opens its "Update failed" dialog, also when a second one follows the closed one within the same second; nothing else changes.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (attempt start time), its test `updates-screen.test.tsx`, plus this approval record. Pull request branch only, not merged, not released.
+- What's new: none — bug fix, not announced to customers
+
+## 2026-10-21 — #798: approval marker after merging claude/group-calm-redesign at 035ced04
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (035ced04) into #798; the own entries of #798 keep their approvals)
+- Approved customer-visible result: #798 as in its own entries plus the entries merged with 035ced04; nothing else changes.
+- Scope: the merge of 035ced04 and this approval record. Pull request branch #798 only, not merged, not released.
+- What's new: none — merge of 035ced04, no customer-visible change of its own
+
+## 2026-10-21 — #798: Keep dismissed update notices closed across tabs
+
+- User approval: no visible change – UI approval not needed (bug fix: closed update notices stay closed after a tab switch until a new check or update attempt)
+- Approved customer-visible result: the existing Close decision survives navigation; a new check or failed update attempt may still open its existing notice.
+- Scope: UpdatesScreen dialog state, its ControlCenterApp owner, the Updates tests and this approval record.
+- What's new: none — bug fix, not announced to customers
+
+## 2026-10-21 — #798: Keep unavailable update checks unknown
+
+- User approval: no visible change – UI approval not needed (bug fix: missing firmware data or an offline companion no longer claims everything is up to date)
+- Approved customer-visible result: unavailable checks use the existing unknown state and retained firmware checks lose their green status while the device or companion is disconnected; no new copy or layout.
+- Scope: UpdatesScreen availability checks, targeted regression tests and this approval record.
+- What's new: none — bug fix, not announced to customers
+
+## 2026-10-21 — #798: Retain one firmware attempt key through local errors and polls
+
+- User approval: no visible change – UI approval not needed (bug fix: a closed firmware failure does not reopen when the same server job arrives after the local handler)
+- Approved customer-visible result: the existing failure notice stays closed for the same update attempt; a new failed attempt still opens it.
+- Scope: ControlCenterApp firmware job handling using firmwareUpdateStatusFromJob, the end-to-end component regression and this approval record.
+- What's new: none — bug fix, not announced to customers
+
+## 2026-10-21 — #798: Restore compact update activity times
+
+- User approval: no visible change – UI approval not needed (bug fix: firmware and theme-only update activity uses the existing clock format instead of exposing the internal attempt key)
+- Approved customer-visible result: Recent activity keeps its HH:mm:ss timestamps; update attempt identity remains full precision internally.
+- Scope: remove the two update-start event timestamp overrides, exercise the rendered Support activity row, and append this approval record.
+- What's new: none — bug fix, not announced to customers
+
+## 2026-10-21 — #798: approval marker after merging claude/group-calm-redesign at 52397ff8
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (52397ff8) into #798; the own entries of #798 keep their approvals)
+- Approved customer-visible result: #798 as in its own entries plus the entries merged with 52397ff8; nothing else changes.
+- Scope: the merge of 52397ff8 and this approval record. Pull request branch #798 only, not merged, not released.
+- What's new: none — merge of 52397ff8, no customer-visible change of its own
+
+## 2026-10-21 — paultest-build9: refresh claude/calm-updates (#798)
+
+- User approval: pending — build9 integration of claude/calm-updates at 19fd34d58a4a for Paul’s Mac test build 7204.
+- Approved customer-visible result: Preserve the refreshed feature together with the existing calm customer flows in the integration candidate.
+- Scope: Merge claude/calm-updates into claude/paultest-build9 and retain all source approval blocks.
+- What's new: none — integration of existing feature entries only.
