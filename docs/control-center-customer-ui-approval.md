@@ -8465,6 +8465,20 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of 467fd7fb and this approval record. Pull request branch #780 only, not merged, not released.
 - What's new: none — merge of 467fd7fb, no customer-visible change of its own
 
+## 2026-10-21 — #780: 3D preview follows the selected VibeTV row
+
+- User approval: no visible change – UI approval not needed (bug fix: with several VibeTVs the 3D preview follows the selected VibeTV instead of staying on the first row)
+- Approved customer-visible result: with several VibeTVs in the chooser the 3D model is drawn on the row of the VibeTV that is connected and selected; the first row shows its photo. With nothing connected the first row keeps the 3D model as before.
+- Scope: `apps/control-center/src/components/setup/setup-device-screen.tsx` and its test `setup-device-screen-3d.test.tsx`, plus this approval record. Pull request branch only, not merged, not released.
+- What's new: none — bug fix, not announced to customers
+
+## 2026-10-21 — #780: approval marker after merging main at 35152cc8
+
+- User approval: no visible change – UI approval not needed (merge of main (35152cc8) into #780; the own entries of #780 keep their approvals)
+- Approved customer-visible result: #780 as in its own entries plus the entries merged with 35152cc8; nothing else changes.
+- Scope: the merge of 35152cc8 and this approval record. Pull request branch #780 only, not merged, not released.
+- What's new: none — merge of 35152cc8, no customer-visible change of its own
+
 ## 2026-10-20 — Setup step 11: display mode tiles show the active theme with live values
 
 - User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: Setup step 11: display mode tiles show the active theme with live values — before → after: (1) Automatic shows one tile per provider that is switched on, each the theme picture with that provider's own current values (the one VibeTV is on 104 px and full strength, the others 84 px at 30 % strength, as drawn in frame 22) → before one plain tile of CLAUDE / SESSION / WEEKLY bars that changed provider every 2 seconds; (2) Manual shows one such tile for the chosen provider → before the same plain tile; (3) a provider that has no values yet shows a quiet grey placeholder tile where the picture would be → before the words "No usage yet" or "Usage unavailable"; no example numbers are drawn anywhere, and the app calculates nothing: it shows only what the usage service delivers; (4) while the theme is still being read the tiles show the same placeholders, and if it cannot be read the plain tiles stay as before. Settings keeps its plain tiles for now.
