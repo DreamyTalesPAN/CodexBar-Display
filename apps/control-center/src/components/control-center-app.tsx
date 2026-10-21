@@ -5983,7 +5983,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                 macAppUpdate={
                   macAppUpdateAvailable
                     ? "available"
-                    : companionRelease?.status === "available"
+                    : companionRelease?.status === "available" &&
+                        companionRelease.installedVersion
                       ? "current"
                       : undefined
                 }

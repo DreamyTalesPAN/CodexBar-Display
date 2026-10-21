@@ -14380,3 +14380,415 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve the combined calm Settings, Showing now, limits and Pace; Recent activity names both sources when Two at once is selected.
 - Scope: Integration of claude/paultest-592a at 44562783f80d into claude/paultest-build7 with all earlier feature heads and approval blocks retained; next validation is Paul's Mac test build.
 - What's new: none — existing feature wording integrated into the test candidate.
+
+## 2026-08-04 — Shopify themes are not a Mac App install path
+
+- User approval: The user explicitly stated that Shopify theme handling is outdated, that Shopify themes currently have no connection to the Mac App, and instructed Codex to remove the obsolete test.
+- Approved customer-visible result: Missing or unavailable catalog themes use neutral app-catalog wording. The Theme Library no longer tells customers to open a theme shop, and Shopify product pages are not presented as a Mac App theme-install path.
+- Approved files: Theme Library availability wording, its customer-flow assertion, Shopify boundary documentation, customer-readiness checks, and this approval record.
+## 2026-08-04 — Cold provider checks retry before blocking setup
+
+- User approval: After reproducing the restart path where Codex showed `No
+  usage available` until the customer pressed `Check again`, the user
+  explicitly asked to fix it in the Codex task on 2026-08-04.
+- Approved customer-visible result: Startup retries transient cold provider
+  checks twice with a short delay while the provider remains pending. The
+  setup hint names any enabled provider that is outside the saved display pool,
+  so a disabled `Finish setup` button has a concrete next action.
+- Approved files: `control-center-app.tsx`, `provider-picker.tsx`,
+  `setup-screen.tsx`, their unit and customer-flow assertions, and this
+  approval record.
+## 2026-08-04 — Standby live-theme selection identity
+
+- User approval: The user explicitly requested that every Codex reviewer
+  finding on PR #296 be fixed until the PR is ready to merge.
+- Approved customer-visible result: While a screensaver is visible, the
+  existing `Themes` view keeps the saved live theme selected instead of
+  selecting that screensaver. Screensavers remain in the existing
+  `Screensavers` view. No copy, control, or hierarchy changes.
+- Approved files: `control-center-app.tsx`, `active-theme-upgrade.ts`, its
+  focused unit test, and this approval record.
+## 2026-08-24 — Mandatory theme setup explains temporary readiness
+
+- User approval: Issue #400 was assigned for implementation with the explicit
+  acceptance criteria that mandatory theme setup replace unexplained `Wait`
+  labels with one visible activity indicator and a plain-language reason, keep
+  provider recovery owned by #371 / PR #373, advance automatically to `Install`,
+  and turn a bounded failure into an actionable error.
+- Approved customer-visible result: While VibeTV checks firmware support or
+  confirms its connection and theme-install support, one shared status above
+  the theme list explains that work and shows one spinner. Theme buttons stay
+  disabled but retain `Install` or their concrete blocker such as `Update
+  Needed`; they never read `Wait` in mandatory setup. Firmware install keeps its
+  existing reboot/reconnect progress, provider recovery keeps its separate
+  #371 screen, a completed check exposes enabled `Install` actions
+  automatically, and a terminal readiness error offers `Create support report`.
+- Approved files: `theme-library-screen.tsx`,
+  `theme-library-screen.test.tsx`, `control-center-app.tsx`, and this approval
+  record.
+## 2026-09-09 — Use saved pairing for startup
+
+- User approved the central startup fix after comparing the wizard with Claude Design. Returning customers open Overview while their saved VibeTV reconnects; missing/rejected pairing and first setup remain in the wizard.
+- Accept the Companion's configured offline device snapshot without marking it reachable or resetting recovery failure counts. Keep foreign-device rejection intact.
+- Consolidate the two session entry flags into one. Wait for a successful saved-setup read and the display selection before deciding; the final live preview still owns completion of a fresh setup. Preserve the selected Cable candidate during connection and firmware checking.
+- Validation: 108 focused unit tests; ten browser scenarios covering offline/connected startup, late status/display reads, rejected pairing, first setup, discovery, firmware update/failure, and a running-device outage. TypeScript passes.
+- Native local candidate 9999.0.101 (02a306c-dirty), VibeTV 5804508 via Cable: Overview was visible while disconnected/not ready, then stayed open when Connected/Live arrived. Run setup again completed provider selection and display mode back to Overview with the existing tiny-office theme. No new firmware flash; device remains 9999.0.100. This is local unsigned validation, not a signed cold/warm release rehearsal. Pairing rejection and a genuinely fresh Mac were covered by fixtures, not reproduced physically in this round.
+
+
+## 2026-09-10 — Preserve WiFi-only production hardware
+
+- User approval: Paul clarified that devices with identical old firmware exist both with and without working Cable data; WiFi-only devices must remain connected over WiFi.
+- Approved customer-visible result: Settings asks for a data cable before switching. The app verifies the selected device over USB before turning WiFi off; without that identity, the existing WiFi connection and saved settings remain untouched. Firmware version or advertised USB protocol support alone never establishes physical Cable availability.
+
+
+## 2026-09-10 — Mac App owns the first WiFi instructions
+
+- User approval: Paul corrected the first-power screen: the entry on new firmware is always "Download Mac App"; when the Mac App finds no VibeTV over USB, it must guide WiFi setup.
+- Approved customer-visible result: Fresh VibeTV shows "VIBE TV", "Download Mac App", and "app.vibetv.shop". Its setup access point starts in the background. After discovery finds neither USB nor an already configured WiFi device, the Mac App directly opens "Connect to WiFi" with phone setup instructions. Search errors retain their recovery message. Existing USB discoveries retain the Cable/WiFi selector, and existing WiFi devices remain connectable.
+
+
+## 2026-09-10 — Firmware update errors use the shared popup
+
+- User approval: Paul instructed "error states sind ab jetzt immer pop ups" with the setup wizard as the reference, and requested fixing failures while completing the hardware matrix.
+- Approved customer-visible result: Updates uses the same setup dialog for failed firmware jobs, preserving the existing error text, retry policy and report action. A failed update no longer shows an inline red banner or a completed progress bar. Dismissal survives repeated status polls for the same job; a new failed attempt opens its own popup.
+- Evidence: App 119 installed from the local DMG rejected an intentionally wrong SHA-256 during artifact validation, before upload. Firmware 115, boot ID, saved settings and animation remained unchanged. The original inline error text overlapped its buttons, prompting this popup correction.
+- Native validation: local DMG 120, device 14799300 / firmware 115, repeated invalid-hash rejection before upload. The shared Update failed popup rendered correctly and closed; unchanged boot ID/settings and increasing animation frames verified. Eleven DOM tests, focused firmware browser cases, TypeScript, lint and customer-copy checks pass.
+
+
+## 2026-09-10 — Enforce animation-free popup dismissal
+
+- User approval: Paul requested "error states sind ab jetzt immer pop ups" using the setup wizard as the reference, and fixing matrix issues along the way.
+- Approved customer-visible result: The shared popup remains immediately visible and closes immediately. An inline animation override enforces the already-approved absence of enter/exit keyframes despite inherited stylesheet ordering; layout, text and controls stay the same.
+- Validation: A browser regression checks computed animation names for both open and closed states against the actual production stylesheet.
+
+
+## 2026-09-11 — Theme recovery uses the approved error popup
+
+- User approval: Paul explicitly instructed “error states sind ab jetzt immer pop ups” using the setup wizard as the reference, and requested fixing issues discovered in the core cases.
+- Approved customer-visible result: Theme-install failures use the shared setup error popup with the existing failure text and Try again. Closing the popup preserves a retry action in the theme row; polling does not reopen the dismissed failure. A theme that was written but failed rendering can be retried on the connected paired device. Recovery guidance points to reinstalling the theme instead of a nonexistent Reload image control.
+- Validation: Regression tests cover missing render proof, a reported-active but unready Cable theme, popup dismissal, polling, one retry and a later failure. Browser tests check popup, dismissal, retry and unchanged successful progress.
+
+
+## 2026-09-12 — Remove nearby setup-network discovery and location permission
+
+- User approval: Paul rejected the location permission and explicitly requested removing open VibeTV-Setup network discovery: “dann bau das so um ... ausschließlich code wegnehmen”. USB users finish setup by Cable and can switch to WiFi later in Settings; existing retry and manual-IP dialogs are sufficient.
+- Approved customer-visible result: The Mac App discovers USB devices and devices already reachable on the local network. A USB-only device connects directly; only two discovered paths to the same device show the existing Cable/WiFi chooser. Nearby setup access points are no longer counted and no location permission or scan-error popup is requested. Existing phone instructions, retry, manual IP and Settings WiFi setup remain. No new UI element. This supersedes the September 10 approval for native setup-SSID scanning.
+- Regression correction: Discovery of an existing LAN path exposed premature connection while the WiFi mode request was still pending. The existing waiting screen now distinguishes the pending selection internally and begins discovery/connection only after the request succeeds; rejected choices remain retryable. No new UI.
+
+
+## 2026-09-12 — Require a valid preview before leaving setup
+
+- User approval: Paul reported the candidate opening Overview without a preview after exchanging VibeTVs and explicitly required: “ich darf niemals den wizard verlassen, wenn es keine gültige preview gibt”.
+- Approved customer-visible result: Saved pairing, provider and display choices cannot bypass the wizard on launch. The existing final preview step releases the Control Center only with a rendered theme/frame and a currently connected, ready VibeTV. Losing readiness or changing devices cancels the pending handover. After a successful handover, transient outages preserve the open Control Center. Existing choices are reused; no new UI element.
+- Supersedes the earlier saved-setup shortcut that admitted a configured offline device directly to Overview.
+
+
+## 2026-09-12 — Apply the preview requirement to Settings WiFi setup
+
+- User approval: Paul's current requirement “ich darf niemals den wizard verlassen, wenn es keine gültige preview gibt” applies to every entry into the existing wizard, including the WiFi switch from Settings.
+- Approved customer-visible result: Opening that WiFi wizard clears the previous handover. A confirmed WiFi status alone cannot return to Settings; the existing live preview must render while the selected VibeTV is connected and ready. Browser fixtures for previously admitted sessions establish a valid preview before simulating later outages, and Theme Studio fixtures provide matching active render packs.
+
+
+## 2026-10-06 — Pace bindings and Pace Meter taken out of this batch again
+
+- User approval: On 2026-10-06 the Windows rehearsal of this pull request showed
+  Pace Meter almost empty and a wrong weekly value, because the Windows usage
+  engine loses Claude's weekly window and reset times whenever it falls back to
+  its CLI source (marcus7989/Win-CodexBar#3). Paul decided in chat: "dann bau
+  das pace meter zeug wieder aus aus dem pr und kommentier im issue, dass man
+  das erst machen kann, wenn dieser upstream pr gemerged usw ist."
+- Approved customer-visible result: Everything the three entries above added
+  for #412 is gone from this pull request: the Pace Meter theme no longer
+  appears in Appearance or in setup's theme step, and Theme Studio's "Binding"
+  list and variable tokens no longer offer the six pace entries. Themes,
+  previews and the VibeTV behave as on `main` in this respect. #412 stays open
+  until the Windows engine delivers the reset times a pace needs.
+- Approved files: the files named in the three entries above, restored to
+  their state without #412, and this approval record.
+## 2026-10-06 — A WiFi VibeTV that takes updates only over the cable is updated over the cable (#522)
+
+- User approval: On 2026-10-06 Paul named issue #522 a blocker for the 1.0.62 release (recorded in the issue). In chat on 2026-10-06 he asked for #520, #521 and #522 to be fixed in one pull request ("bearbeite diese 3 issues, mach PR fertig"); the behaviour chosen for it: when such a VibeTV answers on the USB cable the update runs over the cable, otherwise it is refused before the upload with a message that says what to do. On 2026-10-06 Paul approved the shortened sentence below in chat: asked "Gibst du den neuen Satz frei?" with the new and the old wording side by side, he chose "Freigeben". Hardware run on 2026-10-06 (Mac, VibeTV 16198106): update started while the app was on WiFi, the app switched to USB-C within 11 s and the update finished with "Update complete."
+- Approved customer-visible result: When an update is started for a VibeTV that is connected by WiFi and accepts updates only over the cable, and this VibeTV answers on the USB cable, the app connects it by USB-C (the same switch as choosing USB-C in Settings) and installs the update over the cable; Settings then shows USB-C selected. When it does not answer on the cable, the update stops before "Uploading firmware" with "VibeTV installs updates only over the USB cable." and "Connect VibeTV to this Mac with the USB cable, then update again." (before: the same message after the upload had failed, with "switch to USB-C in Settings" as an extra step; the Windows app shows "this computer" instead of "this Mac", as for every Companion message). A VibeTV still in legacy WiFi mode keeps updating over WiFi. No layout or control changes. The customer-flow contract test now expects the long request timeout on the update start as well.
+- Scope: The Companion (`server.go` and its test) and the request timeout of the update start in `control-center-app.tsx`. This approves the pull request only, not merge, release, installation, or a device operation.
+## 2026-10-06 — "We couldn't find your VibeTV": the two choices look like cards
+
+- User approval: On 2026-10-06 Paul asked for this after clicking the wrong choice in the dialog: "da sehen die beiden optionen gar nicht klickbar aus … ändere das, dass die klickbarer aussehen, wie die karten in den settings, mit nem anderen hintergrund oder so".
+- Approved customer-visible result: In the dialog "We couldn't find your VibeTV" the two choices "Use the cable" and "Already on WiFi" are drawn like the connection cards in Settings: an outline, the card background, more padding, a hover tint and a pointer cursor, with a larger gap between them. Icons, titles, descriptions, the order, the two buttons below and what each choice does are unchanged.
+- Scope: `SetupDeviceNotFoundDialog` in `apps/control-center/src/components/setup/setup-device-dialogs.tsx`. This approves the pull request only, not merge, release, installation, or a device operation.
+## 2026-10-01 — The Gemini message names Antigravity without CodexBar
+
+- User approval: On 2026-10-01 Paul asked that the Gemini message "Google no longer supports Gemini CLI OAuth for individual, AI Pro, or Ultra accounts. Enable CodexBar's Antigravity provider, sign in to Antigravity or run `agy`, then refresh." no longer name CodexBar, so that it only says to enable Antigravity.
+- Approved customer-visible result: Wherever the app shows or copies CodexBar's Gemini migration message (the provider message dialog in setup and Settings and its Copy button), "CodexBar's Antigravity provider" reads "Antigravity": "… Enable Antigravity, sign in to Antigravity or run `agy`, then refresh." The rest of the sentence is unchanged.
+- Scope: `companion/internal/companionapi/provider_reported.go` (the one place the reported provider message leaves the Companion), its test, the matching Control Center test fixture, and this approval record. The Companion's classification of the message still reads CodexBar's original sentence. This approves the pull-request branch only, not merge, release, installation, or a device operation.
+
+
+## 2026-10-06 — A theme VibeTV cannot show is named as a theme problem (#498)
+
+- User approval: Confirmed by Paul on 2026-10-07 (see the entry "Paul confirms the drafted entries" of that date); drafted during the unattended night batch of 2026-10-06.
+- Approved customer-visible result: Approved by Paul on 2026-10-07. (1) When a theme install ends because VibeTV cannot draw the installed theme, the dialog reads "VibeTV can't show this theme." with "Choose another theme." (before: "Theme install failed: theme-pack/render-health: theme render not healthy: … renderError="low_heap_cba_buffer" …" with "keep VibeTV powered and retry theme install; if this repeats, contact support with `codexbar-display health` output"). The "Try again" button stays. The same two sentences appear for this entry in the setup log on the Support page. (2) Overview, Display tile, while a connected VibeTV reports that it cannot draw its active theme and an AI provider is ready: "Theme not shown" with "VibeTV can't show this theme. Choose another theme." (before: "Waiting for first image" with "Waiting for a fresh image from VibeTV."). (3) Support page, card "Connected VibeTV": the badge reads "Connected" and the description "The VibeTV currently controlled by this Mac." whenever the VibeTV is connected and paired, as the Overview already says (before: "Not connected" and "No VibeTV is currently connected." until the display was live, so also while only the theme failed or usage was still pending). No layout or control changes.
+- Scope: The Companion (`server.go` and its test: connection state `display_render_failed`, the theme install error for a failed render check), `overview-screen.tsx`, `logs-screen.tsx`, `control-center-types.ts`, their tests, and this approval record. This is a draft for the pull request only, not approval for merge, release, installation, or a device operation.
+## 2026-10-07 — Paul confirms the drafted entries of PR #524
+
+- User approval: On 2026-10-07 Paul asked to be shown everything he has to approve, was given the list of all entries of 2026-10-06 and 2026-10-07 that were marked "not yet confirmed by Paul", asked about two of them (the Overview Display tile "Theme not shown" with "VibeTV can't show this theme. Choose another theme.", and the increased-contrast styles), and answered "ok passt beides, trag meine freigabe ein".
+- Approved customer-visible result: The results of those entries as written, without changes to their wording: the theme-install dialog "VibeTV can't show this theme." with "Choose another theme."; the Display tile "Theme not shown" for a theme the VibeTV reports twice that it cannot draw, with "Waiting for first image" unchanged for every other case; "Connected" on the Support page in that state; "No active session" for an idle window and for an account with no reset time anywhere, "Reset unavailable" otherwise; the rate-limit message for a "credentials were preserved" answer; Install staying usable while a theme is not shown; the lost-VibeTV dialog closing once the Companion reports a connected VibeTV; and, in PR #525, the support timeline in the downloaded report, the screen-reader names and focus behaviour, and the styles that apply only with the system setting "Increase contrast".
+- Scope: the entries above that now read "Confirmed by Paul on 2026-10-07" and this approval record. This approves the customer-visible results on the pull-request branch only, not merge, release, installation, or a device operation.
+
+
+## 2026-10-08 — Theme Studio creation and device actions
+
+- User approval: Paul requested Create beside the prompt, an icon-only manual add action below it, removal of the OpenAI status row, and primary Send to VibeTV with secondary Save in the header.
+- Approved customer-visible result: Settings, Save and Send to VibeTV appear in that order. Create shares the prompt row; the manual add control is a left-aligned plus. Sending uses the existing Mac App install endpoint and shared install-job polling, surfaces its result and locks edits during transfer. No hardware write test was authorized or performed.
+
+
+## 2026-10-08 — Remaining Theme Studio review corrections
+
+- User approval: Paul authorized refactoring and pushing this Theme Studio batch, then explicitly requested restoring the flat display instead of the 3D model.
+- Approved customer-visible result: Keep the existing flat display with no 3D model or additional graphics dependency. Static scenes include the requested subject; recovered edits retain their unsaved status; concurrent image imports select the correct element. Device transfers resolve the installed Mac App's owned listener and retain an accepted job across polling errors and page reloads, allowing Check transfer without uploading again. No hardware write test was performed.
+
+
+## 2026-10-08 — Prompt action alignment
+
+- User approval: Paul requested keeping Create vertically centered when the prompt spans multiple lines.
+- Approved customer-visible result: Create stays vertically centered beside the prompt box at every prompt height.
+
+
+## 2026-10-08 — Prompt toolbar
+
+- User approval: Paul requested moving attachments beside the manual add action below the prompt and using a clearer element-add icon.
+- Approved customer-visible result: A square-with-plus icon adds elements; the paperclip attaches reference images in the same left-aligned toolbar beneath the prompt. The prompt uses its full width.
+
+
+## 2026-10-08 — Native Theme Studio candidate
+
+- User approval: Paul explicitly requested replacing the existing Theme Studio inside the Mac and Windows app with this new editor, enabling API-key entry and AI creation, and building an unsigned quick DMG from PR #422 for his own testing; completing that integration includes retaining the existing recovery and screensaver safeguards.
+- Approved customer-visible result: Appearance opens the new Theme Studio for new, saved, published and recovered themes and screensavers. Create connects OpenAI on first use; Settings replaces an existing key. Save uses the app library, Send to VibeTV uses the existing app install flow, and Back returns to the library. The Companion serves the local AI endpoints by default. Keys stay in the running Companion memory and require entry after a runtime restart. Opening a clean design preserves unrelated recovery; screensaver document changes, saved-design selection and validation retain the screensaver slot and size limit. No signing, release, main push or hardware write test is authorized.
+
+
+## 2026-10-08 — Theme Studio inside the app shell
+
+- User approval: Paul requested removing the editor's own VIBETV bar so Theme Studio sits in the original shell again, collapsing the sidebar when the editor opens, and moving the prompt box further down, then asked for the invisible result message after Create to be shown under the prompt box.
+- Approved customer-visible result: Theme Studio keeps the app header and the navigation sidebar, which collapses to icons when the editor opens and returns to its earlier state on leaving; the customer can still expand it. The editor shows no brand bar of its own, only Back, Settings, Save and Send to VibeTV. The display is centered in the free space and the prompt box with Create sits at the bottom of the window. The development preview renders the editor inside the same shell. The result message of each action, such as the AI plan after Create, is visible under the prompt box, so a request that changes nothing no longer ends without feedback.
+
+
+## 2026-10-08 — Send to VibeTV from the development preview
+
+- User approval: Paul requested that Send to VibeTV in the development preview reaches his VibeTV on the cable.
+- Approved customer-visible result: No customer-visible change. The development proxy also accepts the runtime of a locally built preview app as the owner of the local listener, so Send to VibeTV in the development preview installs the design through that app. Paul's cable VibeTV received and activated a design this way.
+
+
+## 2026-10-08 — Animated companions keep their surroundings on the device
+
+- User approval: Paul reported that the cat sent to his VibeTV sat in a solid box while the preview showed it cut out, and asked for it to be fixed.
+- Approved customer-visible result: On VibeTV an animated companion shows the artwork around it, as in the preview, instead of a box in the theme background colour. Send to VibeTV and the exported theme pack paint the artwork behind each companion into its frames; the saved, editable design is unchanged.
+
+
+## 2026-10-08 — Theme Studio chat
+
+- User approval: Paul asked for a chat instead of the single prompt box, so the AI keeps the context and can explain things such as why an artwork cannot fill the whole display.
+- Approved customer-visible result: Beside the display Theme Studio shows a conversation with the customer's messages and the AI's replies above the prompt box; below wide-window width it sits under the display. Earlier turns are sent with each request, so follow-ups such as "do it" refer to them. Questions are answered in the chat without changing the design, and a request that is not possible is explained there instead of as a red error. The conversation belongs to the open editor and starts empty with a new or opened design. The editor's settings button is named Design settings to tell it apart from the app's Settings.
+
+
+## 2026-10-08 — Flexible Theme Studio designs
+
+- User approval: Paul asked why AI artwork is limited to the top of the display, said this is our own rule and not a technical one, and asked for a far more flexible editor: artwork over the whole screen or at the bottom, designs such as a virtual pet with no session and weekly limits, a name field at the top like in the old editor, the Details section under the display on the left instead of in the chat, and Create as an arrow inside the prompt box.
+- Approved customer-visible result: The AI can draw the picture over the whole 240x240 display or over the top 240x128, and decides from the request whether the design shows the session and weekly readouts; over a full-screen picture the readouts sit directly on it. Asking for a picture of another size draws a new one and replaces the layout. In the chat the picture can be moved, for example to the bottom, and its animated figures move with it. Figures can be placed anywhere on the display, and on VibeTV they show the picture and coloured areas behind them. The design name is edited in a field at the top left of the editor. Details for the selected element opens under the display. Create is an arrow button inside the prompt box. Connecting an OpenAI key checks both models the editor needs. Leaving with edits that could not be stored as a draft asks first. Asking the AI to redraw an imported image is declined in the chat instead of drawing an unrelated picture.
+
+
+## 2026-10-08 — Connection check and forgotten transfers
+
+- User approval: Paul asked for the review findings on this pull request to be fixed where relevant.
+- Approved customer-visible result: Connecting an OpenAI key succeeds again: the check of the text model is no longer blocked before it leaves the Mac. When the Mac App was restarted during a transfer and no longer knows it, Send to VibeTV starts a new transfer instead of staying on Check transfer.
+
+
+## 2026-10-08 — Longer text stays on the display
+
+- User approval: Paul asked for the review findings on this pull request to be fixed where relevant.
+- Approved customer-visible result: Typing longer text or enlarging it widens the text box only up to the display edge, so the design stays valid and Save and Send to VibeTV stay available.
+
+
+## 2026-10-08 — Provider readings and AI text sizes
+
+- User approval: Paul asked for the review findings on this pull request to be fixed where relevant.
+- Approved customer-visible result: Choosing a provider name, usage or reset countdown for a text keeps its box as wide as the reading, so right-aligned and centred provider texts stay in place. The AI can set every text size the editor offers, up to 8.
+
+
+## 2026-10-08 — Figures beside the picture stay put
+
+- User approval: Paul asked for the review findings on this pull request to be fixed where relevant.
+- Approved customer-visible result: An animated figure the customer placed beside the picture stays where it is when the AI changes something else in the scene; it only moves when the AI is asked to move it.
+
+
+## 2026-10-08 — Theme Studio review round
+
+- User approval: Paul asked for the review findings on this pull request to be fixed where relevant.
+- Approved customer-visible result: A figure beside the picture no longer blocks AI layout changes. Text the AI makes longer near the right edge is widened only up to the edge. Starting from the built-in example keeps its layout when the AI redraws the scene. Making a saved design full screen keeps it the same theme and keeps an unchanged figure exactly as it was. Moving the picture in the chat carries the example's animated figure along, a picture with an attached motion stays in place, and a move that would not fit is declined. A request that fails or is cancelled appears in the chat only once it has an answer, and reference images are not sent again after an answer. Keyboard shortcuts do nothing while the leave dialog is open.
+
+
+## 2026-10-09 — OpenAI key survives restarts, readouts stay over animated figures
+
+- User approval: Paul asked for issues #577 and #578 to be fixed in this pull request, because merging it releases the whole feature.
+- Approved customer-visible result: The OpenAI key a customer connected and OpenAI accepted is kept across restarts of the app: in the login keychain on the Mac, and on Windows in a file only that Windows user can decrypt. A key that was not verified, was replaced or was disconnected is not kept. The agreement to send prompts to OpenAI is remembered with it, so after a restart Create works without entering anything again; disconnecting clears both. This replaces the earlier rule that the key must be entered again after a restart. On VibeTV, text and usage bars placed over an animated figure stay visible while the figure moves; this needs the firmware of this pull request.
+
+
+## 2026-10-09 — Layer order and honest disconnect
+
+- User approval: Paul asked for this pull request to release the whole feature and for the review findings to be fixed where relevant.
+- Approved customer-visible result: Details for one selected element offers Bring forward and Send backward, so a shape added later can be put behind a label or bar; the picture and its attached motion keep their place at the back. If the kept OpenAI key cannot be removed, disconnecting or replacing it reports a failure instead of claiming the key is gone.
+
+
+## 2026-10-09 — Overlapping figures and a key that could not be kept
+
+- User approval: Paul asked for this pull request to release the whole feature and for the review findings to be fixed where relevant.
+- Approved customer-visible result: A design in which the two animated figures overlap cannot be saved or sent; the editor says "Move the two animated figures apart. VibeTV cannot show them overlapping." When OpenAI accepted the key but the app could not save it, the editor says "AI is ready. The key could not be saved on this Mac, so it is needed again after the Mac App restarts." (on Windows with the app's Windows wording) instead of only "AI is ready."
+
+
+## 2026-10-09 — Overlap rule for every animation
+
+- User approval: Paul asked for this pull request to release the whole feature and for the review findings to be fixed where relevant.
+- Approved customer-visible result: The rule against overlapping animations also covers imported animations and GIFs, not only the AI figures. The message now reads "Move the animated elements apart. VibeTV cannot show them overlapping."
+
+
+## 2026-10-09 — Working indicator in the chat and usage shown again
+
+- User approval: Paul asked that while the AI works, his message appears at once as a chat message at the top right with three animated dots under it, instead of the spinner with "Working…".
+- Approved customer-visible result: After Create the customer's message appears immediately as their chat message and the prompt box empties; three animated dots under it show that the AI is working (still dots with reduced motion). When the request fails or is cancelled the message leaves the chat and returns to the prompt box. A design without usage readouts that is asked to show usage again gets the standard readouts; the AI is told whether the current design shows them and keeps that unless asked.
+
+
+## 2026-10-09 — A described picture fills the display
+
+- User approval: Paul reported that "a jellyfish drifting through the sea. Fullscreen, animated." produced the standard layout with the usage readouts below and a black area where the jellyfish should be, and asked for it to be fixed: the prompt should simply have made a full-screen jellyfish.
+- Approved customer-visible result: A request that describes a picture and says nothing about usage produces a full-screen picture without the session and weekly readouts; the readouts come only when the customer asks for usage, limits, bars or similar, or when the design being refined already shows them. In the Mac and Windows app a new theme no longer hides the generated picture and figures behind its black starting background.
+
+
+## 2026-10-09 — Usage lanes named by the limit, discarded drafts stay discarded
+
+- User approval: Paul asked for the review comment on fixed SESSION and WEEKLY labels to be fixed in this pull request, and for the review findings to be fixed where relevant.
+- Approved customer-visible result: A generated design titles each usage lane with the name of the limit it shows (for example Session, Weekly or a model limit) instead of the fixed words SESSION and WEEKLY, shrinking a long name to fit; values and bars follow the first and second limit the provider reports. A draft the customer explicitly discards is not offered again later.
+
+
+## 2026-10-09 — Findings from building five themes through the chat
+
+- User approval: Paul asked for five very different, demanding themes to be built through the chat interface, including changes and undo, and for the review findings to be fixed where relevant.
+- Approved customer-visible result: A request that asks for a picture together with native elements such as a clock, a date or a usage bar delivers both in one go. A generated figure shows only that figure, without pieces of the scene around it. The chat answers and names labels in the customer's language, with real umlauts. Two animated figures are never placed on top of each other; asking for that is declined with an explanation and the design stays unchanged. Undo clears an old error message, and loading a design clears an old transfer status. Generated pictures no longer contain a painted clock or text. Width and height typed into the size fields, and text resized on the canvas, stop at the edge of the display, so Save and Send stay available.
+
+
+## 2026-10-09 — The picture of an existing design can be redrawn
+
+- User approval: Paul asked the chat to rework an existing Synthwave design and got "I can only redraw pictures I created"; he said the helper must of course be able to change existing themes and their images, and asked for it to be fixed. He also reported a send that left the VibeTV without the usage limits and with a boxed figure after the transfer was interrupted.
+- Approved customer-visible result: When a design from the library, an imported design or an older design has a picture, the chat redraws that picture on request: the new picture takes the place, size and layer of the old one, and the usage readouts and other elements stay as they are. Only a second image beside the main picture is left alone, with an explanation. The chat describes a new scene in the customer's language. A cable transfer that misses one acknowledgement sends that file again instead of failing with half of the new files on the VibeTV.
+
+
+## 2026-10-09 — Mac App: the menu bar says Reconnecting for a VibeTV that just stopped answering
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-08/09; wording not yet seen by him. Correction from the automated review of the entry `Mac App: VibeTV in the menu bar, with its status and three actions` above.
+- Approved customer-visible result: One new word in the menu of the TV symbol in the menu bar, on the Mac only. For a short while after a VibeTV stopped answering, the background service still counts it as connected and calls its state reconnecting. Opened in that time, the menu now reads `VibeTV 16199235: Reconnecting` and `Display: Not available`, and the symbol is the struck-through TV (`VibeTV Control Center: VibeTV is not connected`). Before, it read `Connected over WiFi` or `Connected by Cable`, and with an older message of the display still standing `Display: Needs attention` with the `!`, which sent the customer to the AI providers for a VibeTV that was only out of reach. Once the VibeTV answers again the lines are as before; when it stays away they read `Not connected`. During a VibeTV update nothing changes.
+- Scope: the order of the conditions in `menuBarStatus` in `macos/VibeTVControlCenter/main.swift`, test cases in `URLSchemeTests.swift`, and this approval record (issue #220); checked with the Swift tests only.
+- What's new: none — a correction to a feature that is not released yet
+## 2026-10-13 — Review bundle: two quick presses of the provider shortcut each move one provider on
+
+- User approval: Marcus asked on 2026-10-13 to bundle, test and fix the open review PRs before his own test. This corrects a finding of the automated Codex review on the bundle (PR #600); no new wording.
+- Approved customer-visible result: pressing the provider shortcut twice quickly (⌃⌥⌘P on a Mac, Ctrl+Alt+Shift+P on Windows) now shows the provider after next, as two slow presses do. Before, both presses could pick the same provider and one press was lost.
+- Scope: `companion/internal/companionapi/provider_display.go`, `server.go`, `provider_display_test.go`, and this approval record. This entry also stands as the approval marker after the merge of #599, whose entries are above. Bundle branch only, not merge or release.
+- What's new: none — a correction inside the bundle
+
+
+## 2026-10-16 — #628 merged with current main (#606)
+
+- User approval: Paul approved the busy computer dialog, its wording, the VibeTV label and the last good values on 2026-10-15 (entries above). This entry records only the merge of main into `claude/issue-606-busy-computer`; it adds no wording and no new visible behaviour.
+- Approved customer-visible result: as recorded in the busy computer entries above; nothing else changes.
+- Scope: the merge of main (with #615 and #620) into this branch and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+## 2026-10-15 — Display Mode in setup skips a saved provider that shows nothing
+
+- User approval: found in the Windows walk-through of #642 on 2026-10-15 and reported to Marcus through the VibeTV orchestrator chat, which asked to fix it in this pull request and to keep the rule identical to Settings. No new wording.
+- Approved customer-visible result: when the saved selection names a provider that has no usage (for example a signed-out Codex listed first), the Display Mode step in setup uses the first provider that has usage, as Settings already does. The Manual card previews that provider instead of "No usage yet", and Continue is open with Manual chosen.
+- Scope: `apps/control-center/src/components/setup/setup-wizard.tsx`, its test, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — setup correction, not announced to customers
+## 2026-10-15 — #627: Continue waits exactly while a switched-on row spins
+
+- User approval: follows the #627 entries above; the Codex review on #642 (d1bbaa0e) found that a switched-on provider whose reading had no percentages kept its row spinning while Continue was already open. The Companion reports such a reading also before the first real reading and after one expired, so it is not a final answer. No new wording.
+- Approved customer-visible result: as in the #627 entries above; Continue stays closed while any switched-on provider row shows its spinner, and opens when that row shows a reading, asks the customer to do something (for example sign in), or is switched off. This replaces the earlier rule that a reading without percentages released the step.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — a correction of the unreleased change above
+## 2026-10-16 — #642 merged with current main (#615, #619, #628)
+
+- User approval: Marcus approved the setup changes of #642 in his click test on 2026-10-16 (entries above). Main moved on with #615, #619 and #628 while #642 was in review, so main is merged in. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording.
+- Approved customer-visible result: as recorded in the #627, #631 and #234 entries above and in the entries of #615, #619 and #628; nothing else changes.
+- Scope: the merge of main into `codex/setup-display-mode-pack` and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+## 2026-10-16 — #642 merged with current main (#657)
+
+- User approval: Marcus approved the setup changes of #642 in his click test on 2026-10-16 (entries above). Main moved on with #657 (an approval record only) while #642 was in review, so main is merged in. The UI review gate cannot read a merge commit as approval marker, so this entry stands for that merge. No new wording; not seen by Paul.
+- Approved customer-visible result: as recorded in the #627, #631 and #234 entries above and in the entries of #615, #619 and #628; nothing else changes.
+- Scope: the merge of main into `codex/setup-display-mode-pack` and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no customer-visible change of its own
+## 2026-10-15 — Create with AI: no repeated consent, visible progress, Mac export confirmed after saving (#633, #634, #582)
+
+- User approval: Marcus asked on 2026-10-15 to fix #633, #634 and #582 in one pull request; the behaviour follows the preferred option of each issue. The step texts below are drafted and not yet confirmed by Marcus; he sees them in his Mac test before the merge.
+- Approved customer-visible result: Draft, to be confirmed by Marcus. With an OpenAI key saved, the first message in Create with AI goes straight to the AI, also after the app was closed and opened again; the "Create with AI" dialog with the consent box appears only while no key is saved, and Disconnect OpenAI still removes the key so the next message asks again (#633). While the AI works, the three dots are followed by the running step: "Understanding your request…", then for a new picture "Drawing the picture…" and "Adding clock, text and readings…". Once a step runs 10 seconds or longer, its seconds count up next to it ("23 s"). Answers and layout changes show only the first step (#634). On the Mac, Export theme pack shows "Theme pack exported. No device was contacted." only after the save dialog saved the file, and nothing after Cancel; Windows and the browser show it at once as before (#582).
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, the native Theme Studio flow in `apps/control-center/scripts/test-customer-flows.mjs`, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — fixes to the AI editor, nothing new for customers to learn
+
+
+## 2026-10-20 — #827: Paul's approval of the "macOS blocked VibeTV's background service" screen
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 11:43: "ja" — #827 picture "App heute (main) | App mit PR #827" (heute-vs-pr827.png).
+- Approved customer-visible result: #827 the native start screen for a background service killed by macOS for a different signature, exactly as in the entry "a background service blocked by macOS sends the customer to a new download (#626)" above.
+- Scope: #827 this approval record only (records Paul's approval of the entry above). Pull request branch only, not merged, not released.
+- What's new: none — #827 approval record only
+## 2026-10-18 — Codex review fix: the internal Theme Studio preview keeps the Appearance title (#758)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Codex review fix: the internal Theme Studio preview keeps the Appearance title (#758)
+- Approved customer-visible result: as in the calm shell entry of 2026-10-18 (#758): Theme Studio keeps its own "Appearance" header.
+- Scope: `apps/control-center/src/components/theme-studio/theme-studio-preview.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a header flag in the development preview
+## 2026-10-18 — Settings chosen Display mode card and provider in ink, not lime (#748)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Settings chosen Display mode card and provider in ink, not lime (#748)
+- Approved customer-visible result: Only the colour of the outline around the chosen card and the chosen provider changes, to ink. Same words, same places, same size and thickness. Lime stays only for primary button fills and the switch on state. The round selection mark keeps its look. The setup wizard's Display Mode step is not changed by this entry.
+- Scope: `apps/control-center/src/components/setup/setup-selectable-card.tsx` (optional ink tone for the chosen frame, default unchanged), `apps/control-center/src/components/setup/setup-display-mode-screen.tsx` (ink flag passed through `DisplayModeChoice`, only Settings sets it), `apps/control-center/src/components/settings-screen.tsx` (sets the flag), `apps/control-center/src/components/settings-screen.test.tsx` (new test for the ink frame), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a colour change of an existing outline needs no notice.
+## 2026-10-17 — Overview: centered 3D VibeTV, no tiles, not-found dialog (#713)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview: centered 3D VibeTV, no tiles, not-found dialog (#713)
+- Approved customer-visible result: Overview shows only the VibeTV as a 3D model, centered, under the status line "VibeTV is connected" (or "VibeTV status", "VibeTV is restarting" as before). The Mac App, VibeTV, Display and firmware tiles and the "Connected" badge are removed. When VibeTV is not found, a dialog "We couldn't find your VibeTV" with "Check that VibeTV is plugged in and on the same WiFi as this Mac." (computer on Windows), the lime "Run setup again" and "Not now", and no close button, is shown over the page.
+- Scope: `apps/control-center/src/components/overview-screen.tsx`, `vibetv-3d-preview.tsx` (new, three.js case from #465), `live-vibetv-preview.tsx` (`screenOnly`), `control-center-app.tsx` (one callback), the `/models/` route in the companion, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the Overview look only; the 3D case is shipped as the look of this page
+
+
+## 2026-10-18 — Overview: Windows flow waits for the heading, not the removed app tile (#755)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview: Windows flow waits for the heading, not the removed app tile (#755)
+- Approved customer-visible result: none. The test script changes what it waits for, not what the customer sees.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+
+## 2026-10-18 — Overview notices: the app keeps the closed state and the busy notice goes first (#772)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview notices: the app keeps the closed state and the busy notice goes first (#772)
+- Approved customer-visible result: none beyond the entry above. A closed notice now stays closed when the customer switches tabs and comes back. When both notices are due, the theme notice shows once the WiFi notice is closed. Both notices wait while the low-memory notice is due, so the two never block each other.
+- Scope: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/overview-screen.notices.test.tsx`, `apps/control-center/src/components/control-center-app.tsx` (state and props for the Overview notice only), and this approval record. Option stacked on PR #755; not merge or release.
+- What's new: none — no new content
+
+
+## 2026-10-21 — #784: Mac App up to date only with a known installed version
+
+- User approval: no visible change – UI approval not needed (bug fix: without a known installed version the Mac App is no longer called up to date)
+- Approved customer-visible result: #784 as before; the Mac App line says "Up to date" only when its installed version was compared, otherwise it stays as it was without a check.
+- Scope: Overview Mac App line in control-center-app.tsx and its test. Pull request branch #784 only, not merged, not released.
+- What's new: none — bug fix, no new text
+
+## 2026-10-21 — #784: approval marker after merging main at 35152cc8
+
+- User approval: no visible change – UI approval not needed (merge of main (35152cc8) into #784; the own entries of #784 keep their approvals)
+- Approved customer-visible result: #784 as in its own entries plus the entries merged with 35152cc8; nothing else changes.
+- Scope: the merge of 35152cc8 and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — merge of 35152cc8, no customer-visible change of its own
+
+## 2026-10-21 — paultest-build8: integrate claude/group-calm-redesign (#784)
+
+- User approval: pending — build8 integration of claude/group-calm-redesign at 260c48435f65 for Paul’s next Mac test build 7203.
+- Approved customer-visible result: Preserve the incoming feature together with the existing calm customer flows in the integration candidate.
+- Scope: Merge claude/group-calm-redesign into claude/paultest-build8; retain all source approval entries.
+- What's new: none — integration of existing feature entries only.
