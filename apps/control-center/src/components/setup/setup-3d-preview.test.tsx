@@ -87,10 +87,11 @@ describe("3D VibeTV in the device list", () => {
   it("keeps the photo until the model is on screen, then drops it", async () => {
     const { container } = render(deviceScreen());
     await settle();
-    expect(fake3D.instances).toHaveLength(2);
+    // Only the first row renders the live model; the second row keeps its photo.
+    expect(fake3D.instances).toHaveLength(1);
     expect(container.querySelectorAll("img")).toHaveLength(2);
     act(() => fake3D.instances.forEach((instance) => instance.onReady?.()));
-    expect(container.querySelectorAll("img")).toHaveLength(0);
+    expect(container.querySelectorAll("img")).toHaveLength(1);
   });
 
   it("gives the live screen only to the VibeTV the app is connected to", async () => {
@@ -98,7 +99,6 @@ describe("3D VibeTV in the device list", () => {
     await settle();
     expect(fake3D.instances.map((instance) => instance.device)).toEqual([
       device,
-      null,
     ]);
   });
 
