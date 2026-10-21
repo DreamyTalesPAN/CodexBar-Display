@@ -10323,3 +10323,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Calm Settings cannot submit an invalid new pair when only one provider has readable usage; an already-saved pair and both source selectors remain visible and selectable through transient gaps.
 - Scope: one availability guard on the existing Two at once radio, regression cases for disabled, missing, stale and unavailable second providers, and saved-pair preservation. The inherited F2 unavailable-state approval remains pending.
 - What's new: none — prevent an invalid existing action without changing the calm Settings layout.
+
+## 2026-10-21 — #864 integration: choose one limit under each Two at once provider
+
+- User approval: pending — Paul asked on 2026-10-21 22:12 for a limit choice per provider under Provider 1/2 in Two at once; result not yet seen by him
+- Approved customer-visible result: Settings and Setup show "Limit for Provider 1" directly below "Provider 1" and "Limit for Provider 2" directly below "Provider 2", using the same dropdown controls and only each provider's reported window labels. No reported windows means no limit picker; no visible saved window means "Choose a limit". In Two at once these two choices replace the Settings section "Limits on VibeTV"; Setup previews the chosen limit and saves on "Continue".
+- Scope: existing shared hiddenWindows only, no new Companion or firmware field. The coordinator selected option A: choosing a limit also changes that provider's later Automatic/One provider limits; merely switching modes preserves the existing choices. Other providers and unreported hidden windows stay intact. No hardware or installed-app validation in this worker.
+- What's new: none — requested integration UI awaits Paul's visual review.

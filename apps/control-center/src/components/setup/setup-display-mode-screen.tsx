@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import type {
   ProviderDisplaySelection,
   SupportDiagnostics,
+  UsageSnapshot,
 } from "../control-center-types";
 import {
   Item,
@@ -22,6 +23,7 @@ import {
   ItemDescription,
   ItemTitle,
 } from "@/components/ui/item";
+import { DisplayLimitSelect } from "../display-limits-settings";
 import { SETUP_REVEAL } from "./setup-reveal";
 import { SelectionCheck, selectedItemClass } from "./setup-selectable-card";
 import {
@@ -74,6 +76,9 @@ type SetupDisplayModeScreenProps = {
    * Without it, or with fewer than two providers, the mode is not offered.
    */
   onSelectPair?: (position: number, providerId: string) => void;
+  usage?: UsageSnapshot | null;
+  hiddenWindows?: Record<string, string[]>;
+  onSelectLimit?: (providerId: string, windowId: string) => void;
   mode: ProviderDisplaySelection["mode"];
   aiFixPrompt?: () => string;
   onBack?: () => void;
@@ -92,6 +97,9 @@ type SetupDisplayModeScreenProps = {
 export function SetupDisplayModeScreen({
   automaticPreview,
   automaticPreviews,
+  usage,
+  hiddenWindows,
+  onSelectLimit,
   manualPreview,
   mode,
   aiFixPrompt,
@@ -124,6 +132,9 @@ export function SetupDisplayModeScreen({
       </SetupWizardSubtitle>
 
       <DisplayModeChoice
+        usage={usage}
+        hiddenWindows={hiddenWindows}
+        onSelectLimit={onSelectLimit}
         automaticPreview={automaticPreview}
         automaticPreviews={automaticPreviews}
         className="mt-4"
@@ -170,6 +181,9 @@ export function SetupDisplayModeScreen({
 
 type DisplayModeChoiceProps = Pick<
   SetupDisplayModeScreenProps,
+  | "usage"
+  | "hiddenWindows"
+  | "onSelectLimit"
   | "automaticPreview"
   | "automaticPreviews"
   | "manualPreview"
@@ -205,6 +219,9 @@ export function DisplayModeChoice({
   automaticPreview,
   automaticPreviews,
   className,
+  usage,
+  hiddenWindows,
+  onSelectLimit,
   ink = false,
   manualPreview,
   mode,
@@ -270,29 +287,45 @@ export function DisplayModeChoice({
 
       {mode === "pair" && offersPair && onSelectPair ? (
         <div className={cn("grid w-full grid-cols-2 gap-4 text-left", SETUP_REVEAL)}>
-          {(["Provider 1", "Provider 2"] as const).map((name, position) => (
-            <Field key={name}>
-              <FieldLabel htmlFor={`vibetv-pair-${position}`}>{name}</FieldLabel>
-              <Select
-                disabled={saving}
-                onValueChange={(providerId) =>
-                  onSelectPair(position, providerId)
-                }
-                value={pairProviderIds[position] ?? ""}
-              >
-                <SelectTrigger aria-label={name} id={`vibetv-pair-${position}`}>
-                  <SelectValue placeholder="Choose a provider" />
-                </SelectTrigger>
-                <SelectContent>
-                  {pairProviders.map((provider) => (
-                    <SelectItem key={provider.id} value={provider.id}>
-                      {provider.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-          ))}
+          {(["Provider 1", "Provider 2"] as const).map((name, position) => {
+            const providerId = pairProviderIds[position];
+            const windows = usage?.providers.find(
+              (provider) => provider.id === providerId,
+            )?.windows ?? [];
+            const limitId = `vibetv-pair-limit-${position}`;
+            const limitLabel = `Limit for ${name}`;
+            return (
+              <div className="flex flex-col gap-3" key={name}>
+                <Field>
+                  <FieldLabel htmlFor={`vibetv-pair-${position}`}>{name}</FieldLabel>
+                  <Select
+                    disabled={saving}
+                    onValueChange={(providerId) =>
+                      onSelectPair(position, providerId)
+                    }
+                    value={pairProviderIds[position] ?? ""}
+                  >
+                    <SelectTrigger aria-label={name} id={`vibetv-pair-${position}`}>
+                      <SelectValue placeholder="Choose a provider" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {pairProviders.map((provider) => (
+                        <SelectItem key={provider.id} value={provider.id}>
+                          {provider.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                {windows.length && onSelectLimit ? <Field>
+                  <FieldLabel htmlFor={limitId}>{limitLabel}</FieldLabel>
+                  <DisplayLimitSelect id={limitId} label={limitLabel} windows={windows}
+                    hidden={hiddenWindows?.[providerId]} disabled={saving}
+                    onChange={(windowId) => onSelectLimit(providerId, windowId)} />
+                </Field> : null}
+              </div>
+            );
+          })}
         </div>
       ) : null}
 
