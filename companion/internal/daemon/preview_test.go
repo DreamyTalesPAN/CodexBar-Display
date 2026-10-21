@@ -10,6 +10,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/testenv"
 )
 
 func previewSnapshot(provider string, collectedAt time.Time, windows ...protocol.UsageWindow) ProviderUsageSnapshot {
@@ -206,9 +207,7 @@ func TestPreviewFramesAllStaleRestateTheStreamsLastGood(t *testing.T) {
 // directory; a test must not see the developer's.
 func isolatePreviewHome(t *testing.T) {
 	t.Helper()
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
+	testenv.Home(t, t.TempDir())
 }
 
 // The preview is the stream's own selection: for each state, every provider's

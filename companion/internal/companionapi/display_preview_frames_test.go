@@ -13,6 +13,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/testenv"
 )
 
 func getUsage(t *testing.T, server *Server, target string) usageResponse {
@@ -192,9 +193,7 @@ func isolatePreviewHome(t *testing.T) {
 	previous := time.Local
 	time.Local = time.UTC
 	t.Cleanup(func() { time.Local = previous })
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
+	testenv.Home(t, t.TempDir())
 }
 
 func TestUsagePreviewFramesUseCurrentSystemBusyVerdict(t *testing.T) {
