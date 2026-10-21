@@ -61,6 +61,10 @@ const GLASS = {
 const GLASS_WIDTH = GLASS.right - GLASS.left;
 const GLASS_HEIGHT = Math.hypot(GLASS.topY - GLASS.bottomY, GLASS.topZ - GLASS.bottomZ);
 const GLASS_TILT = Math.atan2(GLASS.topZ - GLASS.bottomZ, GLASS.topY - GLASS.bottomY);
+// After 2.5 s without a touch the device sways one full cycle, then stands still.
+const SWAY_DELAY_MS = 2500;
+const SWAY_SPEED = 0.35;
+const SWAY_CYCLE_MS = (2 * Math.PI / SWAY_SPEED) * 1000;
 
 function disposeMeshes(root: Object3D) {
   root.traverse((node) => {
@@ -188,33 +192,38 @@ export function VibeTV3DPreview({
     let modelShown = false;
     let drawn = false;
     let announced = false;
+    // Frames are requested only while something moves or is about to move.
+    let running = false;
     let dragging = false;
-    controls.addEventListener("start", () => { dragging = true; });
+    controls.addEventListener("start", () => { dragging = true; wake(); });
     controls.addEventListener("end", () => {
       dragging = false;
       touchedAt = performance.now();
+      wake();
     });
 
-    // Like the design: after 2.5 s without dragging, the device sways gently.
+    // Like the design: 2.5 s after the last touch the device sways once, a full
+    // cycle, and then stands still. A drag starts the count again.
     const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const startedAt = performance.now();
     let frameRequest = 0;
-    let previousAt = startedAt;
-    // The sway starts from the resting angle of the picture, not mid-swing.
-    let swayFrom = startedAt;
+    let previousAt = performance.now();
     const loop = () => {
-      frameRequest = requestAnimationFrame(loop);
       const now = performance.now();
       const elapsed = Math.min(now - previousAt, 100);
       previousAt = now;
-      const swaying = !still && !dragging && now - touchedAt > 2500;
-      if (!swaying) swayFrom = now;
-      if (swaying) {
-        const sway = Math.sin(((now - swayFrom) / 1000) * 0.35) * 0.18;
-        modelPivot.rotation.y += (sway - modelPivot.rotation.y) * (1 - Math.pow(0.98, elapsed / (1000 / 60)));
+      const swayAt = now - touchedAt - SWAY_DELAY_MS;
+      const swaying = !still && !dragging && swayAt > 0 && swayAt < SWAY_CYCLE_MS;
+      const before = modelPivot.rotation.y;
+      if (!dragging) {
+        const target = swaying ? Math.sin((swayAt / 1000) * SWAY_SPEED) * 0.18 : 0;
+        const eased = before + (target - before) * (1 - Math.pow(0.98, elapsed / (1000 / 60)));
+        // Snapping onto the rest angle lets the frames stop.
+        modelPivot.rotation.y = Math.abs(target - eased) < 1e-4 ? target : eased;
         screenPivot.rotation.y = modelPivot.rotation.y;
       }
-      if (controls.update() || swaying || dirty) {
+      const spun = modelPivot.rotation.y !== before;
+      const turned = controls.update();
+      if (turned || spun || dirty) {
         dirty = false;
         renderer.render(scene, camera);
         cssRenderer.render(cssScene, camera);
@@ -225,6 +234,14 @@ export function VibeTV3DPreview({
         announced = true;
         onReadyRef.current?.();
       }
+      // Still waiting for the sway to start counts as moving; after its cycle
+      // and the settling to rest, nothing does.
+      running = dragging || swaying || spun || turned || !announced || (!still && swayAt <= 0);
+      if (running) frameRequest = requestAnimationFrame(loop);
+    };
+    // Restarts the frames after they stopped, e.g. for a drag or a resize.
+    const wake = () => {
+      if (!running) loop();
     };
 
     const resize = () => {
@@ -235,11 +252,11 @@ export function VibeTV3DPreview({
       renderer.setSize(width, height, false);
       cssRenderer.setSize(width, height);
       dirty = true;
+      wake();
     };
     const observer = new ResizeObserver(resize);
     observer.observe(stage);
     resize();
-    loop();
 
     new GLTFLoader().load(
       MODEL_URL,
