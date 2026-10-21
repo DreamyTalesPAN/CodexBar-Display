@@ -2,7 +2,9 @@ package codexbar
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -163,5 +165,52 @@ func TestDashboardPaceRequiresMatchingMeasurement(t *testing.T) {
 				t.Errorf("API pace=%+v, want present=%v", got.Meta.Pace, tc.wantPace)
 			}
 		})
+	}
+}
+
+// CodexBar 0.75.0 CLIRenderer.pacePayload rounds both percentages before
+// encoding them; integral JSON numbers are valid regardless of decimal syntax.
+func TestParsePacePercentagesStrictNumbers(t *testing.T) {
+	for _, field := range []string{"deltaPercent", "expectedUsedPercent"} {
+		for _, tc := range []struct {
+			raw     string
+			want    int
+			present bool
+		}{
+			{"100.1", 0, false}, {"40.5", 0, false}, {`"0oops"`, 0, false},
+			{`"40"`, 0, false}, {"40", 40, true}, {"40.0", 40, true},
+			{"", 0, false}, {"null", 0, false}, {"true", 0, false},
+			{"0", 0, true}, {"100", 100, true}, {"101", 0, false},
+			{"-101", 0, false}, {"1e100", 0, false},
+		} {
+			t.Run(field+"/"+tc.raw, func(t *testing.T) {
+				raw := `{"pace":{"primary":{"stage":"ahead"`
+				if tc.raw != "" {
+					raw += fmt.Sprintf(",%q:%s", field, tc.raw)
+				}
+				raw += `}}}`
+				var payload map[string]any
+				if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+					t.Fatal(err)
+				}
+				got := parseProviderPace(payload)[0]
+				value, present := got.DeltaPercent, got.HasDeltaPercent
+				if field == "expectedUsedPercent" {
+					value, present = got.ExpectedUsedPercent, got.HasExpectedUsedPercent
+				}
+				if value != tc.want || present != tc.present {
+					t.Fatalf("value=%d present=%v; want %d/%v", value, present, tc.want, tc.present)
+				}
+			})
+		}
+	}
+	for _, value := range []float64{-100, -1, math.NaN(), math.Inf(1), math.Inf(-1)} {
+		got := parseProviderPace(map[string]any{"pace": map[string]any{"primary": map[string]any{
+			"stage": "behind", "deltaPercent": value, "expectedUsedPercent": value,
+		}}})[0]
+		validDelta := value == -100 || value == -1
+		if got.HasDeltaPercent != validDelta || got.HasExpectedUsedPercent {
+			t.Fatalf("value=%v pace=%+v", value, got)
+		}
 	}
 }

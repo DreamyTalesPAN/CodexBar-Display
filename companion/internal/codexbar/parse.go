@@ -760,6 +760,16 @@ func parseProviderResetCredits(payload map[string]any) (ProviderResetCredits, bo
 	}, true
 }
 
+// CodexBar 0.75.0 CLIRenderer.pacePayload rounds these before JSON encoding.
+// Our JSON decoder supplies float64; strings and fractional values are not pace.
+func parsePacePercent(value any, minimum float64) (int, bool) {
+	n, ok := value.(float64)
+	if !ok || !finiteAmount(n) || n < minimum || n > 100 || math.Trunc(n) != n {
+		return 0, false
+	}
+	return int(n), true
+}
+
 func parseProviderPace(payload map[string]any) []ProviderPace {
 	paceAny, ok := payload["pace"]
 	if !ok {
@@ -789,8 +799,8 @@ func parseProviderPace(payload map[string]any) []ProviderPace {
 		}
 		eta, hasETA := intAtPathsWithPresence(itemMap, "etaSeconds")
 		pace.ETASeconds, pace.HasETA = int64(eta), hasETA
-		pace.DeltaPercent, pace.HasDeltaPercent = intAtPathsWithPresence(itemMap, "deltaPercent")
-		pace.ExpectedUsedPercent, pace.HasExpectedUsedPercent = intAtPathsWithPresence(itemMap, "expectedUsedPercent")
+		pace.DeltaPercent, pace.HasDeltaPercent = parsePacePercent(itemMap["deltaPercent"], -100)
+		pace.ExpectedUsedPercent, pace.HasExpectedUsedPercent = parsePacePercent(itemMap["expectedUsedPercent"], 0)
 		if pace.Stage == "" && pace.Summary == "" {
 			continue
 		}
