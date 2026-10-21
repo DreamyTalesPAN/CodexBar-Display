@@ -165,7 +165,6 @@ jobs:
         shell: pwsh
         run: |
           ./scripts/fetch-win-codexbar.ps1 -Destination "$env:RUNNER_TEMP/codexbar-contract"
-          'CODEXBAR_CONTRACT_KNOWN_GAPS=1' | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Test recordings and the released CLI
         working-directory: companion
         run: go test ./internal/codexbar -run 'TestCLIFixtures|TestReleasedCLIContract|TestPreparePinnedCLIRelease' -v -count=1

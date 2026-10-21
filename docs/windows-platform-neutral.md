@@ -28,12 +28,6 @@ behaviour listed below. The Companion works around each on Windows only; the
 Mac path is unchanged. Each entry names the code that carries the detour, so
 it can be removed when the engine closes the gap.
 
-- `serve --request-timeout 0` is rejected. Windows omits the flag
-  (`dashboard_serve.go`). The flag was added for slow-refresh availability on
-  the Mac; whether Windows needs it has no bench comparison yet.
-- `config providers --json` is missing. Windows reads the text inventory
-  (`codex: enabled default (Codex)`) through the same parser
-  (`providerInventoryArgs`, `parseProviderSettingsText` in `providers.go`).
 - There is no usage call for the switched-on providers. A plain `usage --json`
   answers for Claude only and `--provider all` walks every provider the CLI
   knows, switched on or not. Windows reads the inventory and asks each
@@ -67,11 +61,10 @@ reports provider failures as a message without a typed reason, so
 signal is the fork's `[<provider>:browser-sign-in-required <url>]` marker
 (`browserSignInMarker`).
 
-CI's contract test (`released_cli_test.go`, run with
-`CODEXBAR_CONTRACT_KNOWN_GAPS=1` against the pinned Windows CLI) asserts the
-first two gaps only: it fails as soon as the pinned release accepts
-`config providers --json` or `serve --request-timeout`, so those two detours
-are revisited then. The other entries have no such assertion.
+Since `v0.60.3-vibetv.13` both platforms use `config providers --json` and
+`serve --request-timeout 0`; CI's contract test (`released_cli_test.go`)
+requires both from the pinned Windows CLI as from the Mac CLI. The entries
+above have no such assertion.
 
 CI downloads the pinned Windows console CLI from the SHA-256-verified upstream
 release zip (this release is unsigned; no upstream source build, patch,
