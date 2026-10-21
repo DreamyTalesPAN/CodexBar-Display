@@ -152,8 +152,17 @@ func (s *Server) repairCableDevice(w http.ResponseWriter, r *http.Request, expec
 			return
 		}
 		cfg, err = s.updateConfig(func(current *runtimeconfig.Config) {
+			// Keep the WiFi target the Cable connection choice keeps for this device.
+			known, isKnown := current.KnownDevice(hello.DeviceID)
+			target := current.DeviceTarget
+			if isKnown {
+				target = known.Target
+			} else if !strings.EqualFold(current.DeviceID, hello.DeviceID) {
+				target = ""
+			}
 			current.SetActiveDevice(runtimeconfig.KnownDevice{
 				DeviceID:    hello.DeviceID,
+				Target:      target,
 				DeviceToken: token,
 			})
 			current.ConnectionMode = "cable"

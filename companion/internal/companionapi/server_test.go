@@ -2342,6 +2342,48 @@ func TestDeviceRepairForcePairRotatesCableToken(t *testing.T) {
 	}
 }
 
+func TestDeviceRepairForcePairCableKeepsKnownWiFiTarget(t *testing.T) {
+	const wifiTarget = "http://192.168.1.50"
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "cable-a",
+		DeviceTarget:   wifiTarget,
+		DeviceToken:    "stale-token",
+		KnownDevices:   []runtimeconfig.KnownDevice{{DeviceID: "cable-a", Target: wifiTarget, DeviceToken: "stale-token"}},
+	})
+	server.resolveCablePort = func(string, string) (string, error) {
+		return "/dev/mock-cable", nil
+	}
+	hello := cableHelloForTest("cable-a")
+	hello.Capabilities.Auth = &protocol.AuthCapabilities{}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return hello, nil
+	}
+	server.pairCableDevice = func(string, string) (string, error) {
+		return "fresh-token", nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/repair", strings.NewReader(`{"target":"cable://vibetv","forcePair":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("cable force-pair status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeviceToken != "fresh-token" || cfg.DeviceTarget != wifiTarget {
+		t.Fatalf("cable force-pair dropped the WiFi target: target=%q token=%q", cfg.DeviceTarget, cfg.DeviceToken)
+	}
+	known, ok := cfg.KnownDevice("cable-a")
+	if !ok || known.Target != wifiTarget || known.DeviceToken != "fresh-token" {
+		t.Fatalf("known device lost its WiFi target or token: known=%+v ok=%v", known, ok)
+	}
+}
+
 func TestDeviceDiscoverAcceptsCableTarget(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a"})
 	server.resolveCablePort = func(_, expected string) (string, error) {
