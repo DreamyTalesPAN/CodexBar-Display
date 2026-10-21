@@ -597,7 +597,7 @@ export function AIThemeStudioScreen({
       if (isNativeControlCenterApp() && !windowsHost) {
         setStatus("");
         setExporting(pack.fileName);
-      } else setStatus("Theme pack exported. No device was contacted.");
+      } else setStatus(windowsHost ? "Saved in your Downloads folder. Nothing was sent." : "Theme pack exported. No device was contacted.");
     } catch {
       setError(
         "This scene cannot be exported yet. Check its elements and assets.",

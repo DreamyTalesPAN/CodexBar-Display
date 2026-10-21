@@ -527,3 +527,14 @@ describe("Theme Studio key state against late capability answers (#847)", () => 
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
+
+describe("Theme Studio export notice", () => {
+  it("says on Windows where the theme pack went, without naming the file", async () => {
+    const text = { ...createDesignElement("text", 1), text: "Hello" };
+    render(<AIThemeStudioScreen windowsHost initialTheme={{ packName: "Palette", source: "custom", spec: { ...createBlankThemeSpec(), primitives: [text] } }} />);
+    const header = document.querySelector("header") as HTMLElement;
+    fireEvent.click(within(header).getByRole("button", { name: "File" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Export theme pack" }));
+    expect(await screen.findByText("Saved in your Downloads folder. Nothing was sent.")).toBeTruthy();
+  });
+});

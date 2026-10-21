@@ -8823,3 +8823,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #781 as in its own entries; a disabled "Send to VibeTV" shows its reason on hover, and the toolbar no longer moves when the button reads "Sending…"; nothing else changes.
 - Scope: the Theme Studio header's Send button (fixed minimum width) and its send-reason tests. Pull request branch #781 only, not merged, not released.
 - What's new: none — tooltip and fixed-width fix, no new text or control to announce
+
+## 2026-10-21 — #781: Theme Studio export notice on Windows says where the pack went
+
+- User approval: pending — Theme Studio on Windows: after `Export theme pack` the notice reads `Saved in your Downloads folder. Nothing was sent.`
+- Approved customer-visible result: #781 as in its own entries; on Windows only, the green export notice names the Downloads folder instead of `Theme pack exported. No device was contacted.`; the Mac notice and the file name stay as they are.
+- Scope: the Theme Studio export notice for the Windows app (one ternary) and its regression test. Pull request branch #781 only, not merged, not released.
+- What's new: none — the Windows export notice changes its sentence only, the sentence Support already shows, no new control
