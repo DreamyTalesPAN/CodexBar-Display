@@ -18067,3 +18067,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: in Two at once, a theme that draws token numbers gets the same "Shows -- while token history is unavailable. See Usage." line that one-provider mode already shows, because Two at once frames carry no token totals; nothing else changes.
 - Scope: Theme Library hint for Two at once (usage-screen.tsx helper, control-center-app.tsx call site, tests). Pull request branch #864 only, not merged, not released.
 - What's new: none — the hint text already exists; only the case in which it shows is extended to Two at once
+
+## 2026-10-21 — #894: Footer wording table tests
+- User approval: no visible change – UI approval not needed (test-only: footer wording table in firmware and preview)
+- Approved customer-visible result: none; the rendered footer wording is unchanged.
+- Scope: Table-driven footer wording tests (countdown, idle, unavailable; used and remaining; one and two displayed limits; hidden limits) in the native firmware suite and the Control Center preview suite.
+- What's new: none — tests only.

@@ -677,6 +677,68 @@ void testIdleFooterStillShrinksToFit() {
   TEST_ASSERT_TRUE(sink.commands.back().fitShrink);
 }
 
+// The footer wording table, row for row the same as footerWordingCases in
+// apps/control-center/src/components/live-vibetv-preview.test.ts (no shared
+// fixture file exists between the native and the preview suites).
+// Codes per limit: C countdown (Session 4d 4h, Weekly 3d 1h), I idle, E expired
+// (a reset that ran out). `shown` is how many usage rows the theme
+// draws; a limit without a row is hidden and must not decide the footer. The
+// footer is owned by limit 1 (sl:1), so it is not drawn while limit 1 is
+// unavailable; the preview hides it the same way, so that case has no row here.
+struct FooterWordingCase {
+  char first;
+  char second;
+  int shown;
+  int width;  // footer w, 0 = no width
+  bool untrusted;
+  const char* expected;
+};
+
+const FooterWordingCase kFooterWordingCases[] = {
+  {'C', 'C', 2, 0, false, "Session resets in 4d 4h"},
+  {'C', 'C', 2, 200, false, "Session 4d 4h"},
+  {'C', 'I', 2, 0, false, "Session resets in 4d 4h"},
+  {'I', 'C', 2, 300, false, "Weekly resets in 3d 1h"},
+  {'I', 'C', 2, 200, false, "Weekly 3d 1h"},
+  {'C', 'C', 2, 170, false, "Session 4d 4h"},
+  {'C', 'C', 2, 0, true, "Reset unavailable"},
+  {'C', 'C', 1, 0, false, "Session resets in 4d 4h"},
+  {'C', 'C', 1, 170, false, "Resets 4d 4h"},
+  {'I', 'C', 1, 0, false, "No active session"},
+  {'E', 'C', 1, 0, false, "Reset unavailable"},
+  {'C', 'C', 1, 0, true, "Reset unavailable"},
+};
+
+int64_t FooterResetSecs(char code, int64_t countdown) {
+  if (code == 'I') return kResetSecsIdle;
+  if (code == 'E') return 0;
+  return countdown;
+}
+
+void testFooterWordingTable() {
+  for (const char* mode : {"used", "remaining"}) {
+    for (const FooterWordingCase& row : kFooterWordingCases) {
+      FrameData frame;
+      frame.usageMode = mode;
+      frame.usageSlot1Label = "Session";
+      frame.usageSlot1ResetSecs = FooterResetSecs(row.first, 360000);
+      frame.usageSlot1Available = true;
+      frame.usageSlot2Label = "Weekly";
+      frame.usageSlot2ResetSecs = FooterResetSecs(row.second, 262800);
+      frame.usageSlot2Available = true;
+      frame.usageUnavailable = row.untrusted;
+      std::string spec = R"({"v":1,"id":"footer","rev":1,"p":[{"t":"tx","y":30,"sl":1,"v":"{usageSlot1Label}"},)";
+      if (row.shown == 2) spec += R"({"t":"tx","y":30,"sl":2,"v":"{usageSlot2Label}"},)";
+      spec += R"({"t":"tx","y":204,"f":2,"s":2,)";
+      if (row.width > 0) spec += "\"w\":" + std::to_string(row.width) + ",";
+      spec += R"("ft":"shrink","sl":1,"v":"Reset in {usageSlot1Reset}"}]})";
+      RecordingSink sink;
+      TEST_ASSERT_TRUE(renderSpec(spec.c_str(), frame, sink));
+      TEST_ASSERT_EQUAL_STRING_MESSAGE(row.expected, sink.commands.back().text.c_str(), mode);
+    }
+  }
+}
+
 // A customer received a VibeTV showing "Resets in Reset unavailable" on the
 // Claude Creature theme: Session at 0% with no active Claude session, so
 // Anthropic sent no session deadline, and the theme's hard-coded "Resets in "
@@ -5125,6 +5187,7 @@ int main() {
   RUN_TEST(testFooterUsesFirstDisplayedReset);
   RUN_TEST(testFooterKeepsOriginalFontSize);
   RUN_TEST(testIdleFooterStillShrinksToFit);
+  RUN_TEST(testFooterWordingTable);
   RUN_TEST(testIdleSlotCountdownCollapsesInsteadOfDoublingThePrefix);
   RUN_TEST(testIdleCountdownCollapsesForCompactResetAliases);
   RUN_TEST(testStaleCountdownKeepsTheUnavailableWordingWhileIdleDoesNot);

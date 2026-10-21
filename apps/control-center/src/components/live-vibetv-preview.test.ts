@@ -1505,3 +1505,60 @@ describe("bounded text and unavailable slot layout", () => {
     expect(primitiveUsageSlotVisible({t:"tx",sl:1,b:"usageSlot1PaceText"}, frame)).toBe(false);
   });
 });
+
+// The footer wording table, row for row the same as footerWordingCases in
+// test_theme_spec_renderer.cpp (no shared fixture file exists between the native
+// and the preview suites). Codes per limit: C countdown (Session 4d 4h, Weekly
+// 3d 1h), I idle, E expired. `shown` is how many usage rows the theme draws; a
+// limit without a row is hidden.
+const footerWordingCases: Array<{
+  first: string;
+  second: string;
+  shown: number;
+  width: number;
+  untrusted: boolean;
+  expected: string;
+}> = [
+  { first: "C", second: "C", shown: 2, width: 0, untrusted: false, expected: "Session resets in 4d 4h" },
+  { first: "C", second: "C", shown: 2, width: 200, untrusted: false, expected: "Session 4d 4h" },
+  { first: "C", second: "I", shown: 2, width: 0, untrusted: false, expected: "Session resets in 4d 4h" },
+  { first: "I", second: "C", shown: 2, width: 300, untrusted: false, expected: "Weekly resets in 3d 1h" },
+  { first: "I", second: "C", shown: 2, width: 200, untrusted: false, expected: "Weekly 3d 1h" },
+  { first: "C", second: "C", shown: 2, width: 170, untrusted: false, expected: "Session 4d 4h" },
+  { first: "C", second: "C", shown: 2, width: 0, untrusted: true, expected: "Reset unavailable" },
+  { first: "C", second: "C", shown: 1, width: 0, untrusted: false, expected: "Session resets in 4d 4h" },
+  { first: "C", second: "C", shown: 1, width: 170, untrusted: false, expected: "Resets 4d 4h" },
+  { first: "I", second: "C", shown: 1, width: 0, untrusted: false, expected: "No active session" },
+  { first: "E", second: "C", shown: 1, width: 0, untrusted: false, expected: "Reset unavailable" },
+  { first: "C", second: "C", shown: 1, width: 0, untrusted: true, expected: "Reset unavailable" },
+];
+
+describe("footer wording table", () => {
+  const now = new Date("2026-10-21T20:20:00Z");
+  for (const row of footerWordingCases) {
+    for (const mode of ["used", "remaining"] as const) {
+      it(`${row.first}${row.second}, ${row.shown} shown, width ${row.width}${row.untrusted ? ", untrusted" : ""}, ${mode}: ${row.expected}`, () => {
+        // Idle means nothing used: 0 in used mode, 100 in remaining mode.
+        const nothingUsed = mode === "remaining" ? 100 : 0;
+        const window = (label: string, code: string, countdown: number) => ({
+          id: label.toLowerCase(),
+          label,
+          percent: code === "I" ? nothingUsed : 50,
+          resetSecs: code === "I" || code === "E" ? 0 : countdown,
+        });
+        const built = buildFrameData(now.toISOString(), {
+          provider: "claude",
+          usageMode: mode,
+          usageUnavailable: row.untrusted,
+          usageWindows: [window("Session", row.first, 360000), window("Weekly", row.second, 262800)],
+        }, now);
+        const footer: ThemePrimitive = {
+          t: "tx", y: 204, sl: 1, f: 2, s: 2, ft: "shrink", v: "Reset in {usageSlot1Reset}",
+          ...(row.width > 0 ? { w: row.width } : {}),
+        };
+        const primitives = row.shown === 2 ? [lane1, lane2, footer] : [lane1, footer];
+        expect(renderTextPrimitive(footer, built, primitives)).toBe(row.expected);
+      });
+    }
+  }
+});
