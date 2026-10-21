@@ -11191,6 +11191,13 @@ issue scope, or release permission never implies UI permission.
 - What's new: none — #822 approval record only
 ## 2026-10-20 — #784: Overview fills the window's height (7197 template point 1)
 
+## 2026-10-20 — #784: the keyboard focus ring is the template's olive
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: the keyboard focus ring is the template's olive — Before → after: #784 the 2 px keyboard focus ring was ink (#1B1B1B light, #EDEDED dark) → #784 the template's olive (#506600 light, #CCFF00 dark); the red ring on invalid fields (#817) stays.
+- Approved customer-visible result: #784 every keyboard focus ring (input, select, button, checkbox, switch, tab) in the template's --ring colour, 2 px, keyboard-only.
+- Scope: #784 `apps/control-center/src/app/globals.css` (--ring), its test `globals.focus-ring.test.ts`, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #784 focus ring colour not announced
+
 ## 2026-10-20 — #784: the Copilot popup heading says it needs a GitHub sign-in
 
 - User approval: pending — #784 Copilot heading as decided by the communicator on 20.10.2026 (text decision for Paul's 7198 review); Paul sees it in build 7198. Before → after: #784 the Copilot popup in setup said "GitHub Copilot needs its own app" above a text about a GitHub sign-in → #784 "GitHub Copilot needs a GitHub sign-in".
@@ -11423,6 +11430,17 @@ issue scope, or release permission never implies UI permission.
 ## 2026-10-20 — #816: approval marker after merging claude/group-calm-redesign
 
 - User approval: no visible change – UI approval not needed (#816: approval marker after merging claude/group-calm-redesign: Merge of claude/group-calm-redesign into this branch; no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
+
+## 2026-10-20 — #778: an invalid field with keyboard focus shows the full ink focus ring
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 09:05: "ja" (to the picture ui/817-invalid-focus/rot-close.png, question "Passt das so?"; the final #817 look is the red focus ring on every invalid field) — entry: #778: an invalid field with keyboard focus shows the full ink focus ring — before → after: a focused invalid field showed the red, reduced invalid ring → the full ink focus ring on a focused invalid field (light and dark), the red border stays and the red ring stays when the field is not focused. Nothing else changes.
+- Approved customer-visible result: Replaced by Paul's correction below (red focus ring on every invalid field); this entry's ink ring is not shipped.
+- Scope: `apps/control-center/src/components/ui/input-group.tsx`, its new test `apps/control-center/src/components/ui/input-group.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #817: approval marker after merging claude/group-calm-redesign
+
+- User approval: no visible change – UI approval not needed (merge commit into #817; no visible change of its own; entry: #817: approval marker after merging claude/group-calm-redesign)
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
@@ -11467,4 +11485,79 @@ issue scope, or release permission never implies UI permission.
 - User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (fb30d196) into #816; the own entries of #816 keep their approvals)
 - Approved customer-visible result: #816 as in its own entries plus the entries merged with fb30d196; nothing else changes.
 - Scope: the merge of fb30d196 and this approval record. Pull request branch #816 only, not merged, not released.
+## 2026-10-20 — #817: approval marker after merging claude/group-calm-redesign at ece7b388
+
+- User approval: no visible change – UI approval not needed (merge commit into #817; no visible change of its own; entry: #817: approval marker after merging claude/group-calm-redesign at ece7b388)
+- Approved customer-visible result: #817 as in its own entries (pending, Paul reviews) plus the entries merged with ece7b388; nothing else changes.
+- Scope: the merge of ece7b388 and this approval record. Pull request branch #817 only, not merged, not released.
+- What's new: none — merge of ece7b388, no customer-visible change of its own
+
+## 2026-10-20 — #817: red focus ring on invalid fields (Paul's correction of #817)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 09:05: "ja" (to the picture ui/817-invalid-focus/rot-close.png, question "Passt das so?"; the final #817 look is the red focus ring on every invalid field) — entry: #817: red focus ring on invalid fields (Paul's correction of #817)
+- Approved customer-visible result: #817 invalid fields (input, textarea, select, checkbox, input group) keep the red border and show the full-strength red focus ring under keyboard focus; unfocused invalid fields look as before.
+- Scope: #817 changes `components/ui/input.tsx`, `textarea.tsx`, `select.tsx`, `checkbox.tsx`, `input-group.tsx`, their tests, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #817 focus ring colour on invalid fields, no new content
+
+## 2026-10-20 — #817 waits for Paul's look at the red focus ring
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 09:05: "ja" (to the picture ui/817-invalid-focus/rot-close.png, question "Passt das so?"; the final #817 look is the red focus ring on every invalid field) — entry: #817 waits for Paul's look at the red focus ring
+- Approved customer-visible result: #817 as in its entries above (red focus ring under keyboard focus, red border kept, one style for every field); this entry adds nothing visible.
+- Scope: this approval record for #817 only. Pull request branch only, not merged, not released.
+- What's new: none — #817 pending marker, no new content
+
+## 2026-10-20 — #817 checked checkbox keeps its red border under keyboard focus (Codex review)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 09:05: "ja" (to the picture ui/817-invalid-focus/rot-close.png, question "Passt das so?"; the final #817 look is the red focus ring on every invalid field) — entry: #817 checked checkbox keeps its red border under keyboard focus (Codex review)
+- Approved customer-visible result: #817 a checked, invalid checkbox under keyboard focus shows the red border with the red ring, like every other invalid field.
+- Scope: #817 `apps/control-center/src/components/ui/checkbox.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #817 checkbox border fix, no new content
+
+## 2026-10-20 — #817: Paul's approval recorded (the red focus ring on every invalid field (ui/817-invalid-focus/rot-close.png))
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 09:05: "ja" — #817 approval record for the red focus ring on every invalid field (ui/817-invalid-focus/rot-close.png); the #817 entries above now carry this approval, merge markers are marked as no visible change.
+- Approved customer-visible result: #817 as described in its entries above; nothing else changes.
+- Scope: #817 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #817 approval record only
+
+## 2026-10-20 — #817: approval marker after merging claude/group-calm-redesign at e51f999f
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (e51f999f) into #817; no visible change of its own; entry: #817: approval marker after merging claude/group-calm-redesign at e51f999f)
+- Approved customer-visible result: #817 as in its own entries (the red 2 px focus ring on invalid fields, Paul's yes of 2026-10-20 09:05) on top of the merged calm redesign with its olive ring; nothing else changes.
+- Scope: the merge of e51f999f (conflicts in the shared controls and `globals.focus-ring.test.ts` resolved by keeping the redesign's 2 px structure and #817's red-on-invalid classes, including the checked checkbox rule) and this approval record. Pull request branch #817 only, not merged, not released.
+- What's new: none — merge of e51f999f, no customer-visible change of its own
+
+## 2026-10-20 — #817: result lines of approved entries cleaned up
+
+- User approval: no visible change – UI approval not needed (#817: result lines of approved entries cleaned up: record cleanup, wording only: entries that already carry Paul's approval no longer open their result line with an old status word)
+- Approved customer-visible result: #817 unchanged; only the wording of the approval record.
+- Scope: #817 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #817 record cleanup
+
+## 2026-10-20 — #817: approval lines rewritten to the two accepted forms
+
+- User approval: no visible change – UI approval not needed (#817 record rewrite for the gate in #823; no customer-visible change)
+- Approved customer-visible result: #817 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
+- Scope: #817 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #817 approval record only
+
+## 2026-10-20 — #817: approval marker after merging claude/group-calm-redesign at d748c370
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (d748c370) into #817; the own entries of #817 keep their approvals)
+- Approved customer-visible result: #817 as in its own entries plus the entries merged with d748c370; nothing else changes.
+- Scope: the merge of d748c370 and this approval record. Pull request branch #817 only, not merged, not released.
+- What's new: none — merge of d748c370, no customer-visible change of its own
+
+## 2026-10-20 — #817: approval marker after merging claude/group-calm-redesign at 79a9589b
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (79a9589b) into #817; the own entries of #817 keep their approvals)
+- Approved customer-visible result: #817 as in its own entries plus the entries merged with 79a9589b; nothing else changes.
+- Scope: the merge of 79a9589b and this approval record. Pull request branch #817 only, not merged, not released.
+- What's new: none — merge of 79a9589b, no customer-visible change of its own
+
+## 2026-10-21 — #817: approval marker after merging claude/group-calm-redesign at fb30d196
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (fb30d196) into #817; the own entries of #817 keep their approvals)
+- Approved customer-visible result: #817 as in its own entries plus the entries merged with fb30d196; nothing else changes.
+- Scope: the merge of fb30d196 and this approval record. Pull request branch #817 only, not merged, not released.
 - What's new: none — merge of fb30d196, no customer-visible change of its own
