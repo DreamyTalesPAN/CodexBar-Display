@@ -196,6 +196,7 @@ export function SetupWizard(props: SetupWizardProps) {
   // Only then does the connect screen have a choice to go back to; a lone
   // VibeTV that connects by itself has none.
   const [connectChosen, setConnectChosen] = useState(false);
+  const [requireConnectionChoice, setRequireConnectionChoice] = useState(false);
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [connectionDeviceId, setConnectionDeviceId] = useState<string | null>(null);
   const [preferredTransport, setPreferredTransport] =
@@ -268,6 +269,7 @@ export function SetupWizard(props: SetupWizardProps) {
     () =>
       decideSetupConnection({
         candidates: connectionCandidates,
+        requireExplicitChoice: requireConnectionChoice,
         choiceRequired:
           preferredTransport === "choose" || props.connectionModeChoiceRequired,
         savedMode: props.connectionMode,
@@ -276,6 +278,7 @@ export function SetupWizard(props: SetupWizardProps) {
       }),
     [
       connectionCandidates,
+      requireConnectionChoice,
       preferredTransport,
       props.connectionMode,
       props.connectionModeChoiceRequired,
@@ -404,6 +407,7 @@ export function SetupWizard(props: SetupWizardProps) {
   }, [onSearchDevices]);
 
   const startConnect = useCallback(() => {
+    setRequireConnectionChoice(false);
     const candidate = visibleCandidates.find(
       (entry) => candidateKey(entry) === preselected,
     );
@@ -428,6 +432,8 @@ export function SetupWizard(props: SetupWizardProps) {
   // WiFi leaves nothing running here: the details are with VibeTV, and the
   // search that waits for it stops with the step.
   const backToConnectionChoice = () => {
+    // Back keeps the next scan from choosing a remaining path on its own.
+    setRequireConnectionChoice(true);
     transportChoiceRef.current += 1;
     setConnectChosen(false);
     setPreferredTransport("choose");
@@ -461,6 +467,7 @@ export function SetupWizard(props: SetupWizardProps) {
 
   const chooseTransport = useCallback(
     async (transport: SetupTransport) => {
+      setRequireConnectionChoice(false);
       const choice = ++transportChoiceRef.current;
       resetConnect();
       setWiFiError(null);
@@ -654,6 +661,7 @@ export function SetupWizard(props: SetupWizardProps) {
           // the connecting screen, because the search state only clears once
           // the connect answers.
           setAddressDialogOpen(false);
+          setRequireConnectionChoice(false);
           // A typed address is a choice too: Back stays available during its pairing.
           setConnectChosen(true);
           void connect.run(candidate);
