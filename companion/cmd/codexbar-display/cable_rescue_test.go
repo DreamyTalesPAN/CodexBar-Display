@@ -166,6 +166,38 @@ func TestCableRescueMovedPortIsSavedOnlyAfterTheChipMatches(t *testing.T) {
 	}
 }
 
+// #840 bench, 21.10.2026: macOS lists the VibeTV as /dev/cu.X and /dev/tty.X.
+// After a replug both new names are "new", so the moved VibeTV counted as two
+// candidates and the rescue gave up. The tty alias of a listed cu port is the
+// same device.
+func TestResumableRescueMarkerFindsAMovedMacPortListedTwice(t *testing.T) {
+	prepareCableFirmwareUpdateTest(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := writeRescueMarkerFixture(t, "/dev/cu.usbserial-11230", time.Hour)
+	marker.Ports = []string{"/dev/cu.Bluetooth-Incoming-Port", "/dev/cu.usbserial-11230", "/dev/tty.Bluetooth-Incoming-Port", "/dev/tty.usbserial-11230"}
+	if err := firmwareupdate.SaveRescueMarker(home, marker); err != nil {
+		t.Fatal(err)
+	}
+	listCablePortsFn = func() ([]string, error) {
+		return []string{"/dev/cu.Bluetooth-Incoming-Port", "/dev/cu.usbserial-11240", "/dev/tty.Bluetooth-Incoming-Port", "/dev/tty.usbserial-11240"}, nil
+	}
+	probed := map[string]int{}
+	readCableFirmwareHelloFn = func(port string) (protocol.DeviceHello, error) {
+		probed[port]++
+		return protocol.DeviceHello{}, errors.New("half-written: no hello")
+	}
+	resumed, ok := resumableRescueMarker(home)
+	if !ok || resumed.Port != "/dev/cu.usbserial-11240" {
+		t.Fatalf("resume = %q, %v; want the moved VibeTV on /dev/cu.usbserial-11240 (probed %v)", resumed.Port, ok, probed)
+	}
+	if probed["/dev/tty.usbserial-11240"] != 0 {
+		t.Fatalf("the tty alias must not be probed as a second VibeTV: %v", probed)
+	}
+}
+
 func TestRunInstallUpdateCableRescueRetriesAFailedWriteAtALowerBaudRate(t *testing.T) {
 	_, manifestURL, firmwareVersion := prepareCableFirmwareUpdateTest(t)
 	pinCableRescue(t)

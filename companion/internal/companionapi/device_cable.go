@@ -181,7 +181,7 @@ func (s *Server) rescueMarkerPortProbed(marker firmwareupdate.RescueMarker) (str
 	// and that port may be the moved VibeTV, so no port is named then.
 	deadline := time.Now().Add(movedRescueProbeBudget)
 	overBudget := false
-	moved, found := firmwareupdate.MovedRescuePort(marker, ports, func(port string) (protocol.DeviceHello, error) {
+	moved, found := firmwareupdate.MovedRescuePort(marker, usb.WithoutTTYAliases(ports), func(port string) (protocol.DeviceHello, error) {
 		if time.Now().After(deadline) {
 			overBudget = true
 			// Counted as answering so it is no candidate; the result is refused below.

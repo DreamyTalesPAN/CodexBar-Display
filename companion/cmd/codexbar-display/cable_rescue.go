@@ -148,7 +148,7 @@ func resumableRescueMarker(home string) (firmwareupdate.RescueMarker, bool) {
 	if !portListed(ports, marker.Port) {
 		// Replugged into another USB socket: only one new port, silent and
 		// not the marked one, may be resumed. Anything else stays unwritten.
-		moved, found := firmwareupdate.MovedRescuePort(marker, ports, readCableFirmwareHelloFn)
+		moved, found := firmwareupdate.MovedRescuePort(marker, usb.WithoutTTYAliases(ports), readCableFirmwareHelloFn)
 		if !found {
 			fmt.Printf("Cable rescue: marked port %s is not present, nothing to resume\n", marker.Port)
 			return firmwareupdate.RescueMarker{}, false
