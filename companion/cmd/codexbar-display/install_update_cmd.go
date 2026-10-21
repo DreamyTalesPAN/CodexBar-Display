@@ -436,11 +436,16 @@ func runInstallUpdate(args []string) (retErr error) {
 		}
 		verifiedHello, helloErr = waitForCableFirmwareVersion(ctx, targetVersion, deviceID, rescuedPort, cableFirmwareVerifyTimeout)
 	} else {
-		verifiedBase, err = waitForHTTPFirmwareVersionWithDiscovery(ctx, home, base, targetVersion, deviceID, 120*time.Second)
+		verifiedBase, err = waitForHTTPFirmwareVersionWithDiscovery(ctx, home, base, targetVersion, deviceID, firmwareWiFiVerifyTimeout)
 		if err == nil {
 			verifiedHello, helloErr = fetchDeviceHelloHTTP(ctx, verifiedBase)
 		} else {
 			helloErr = err
+			// Issue #832: a firmware that boots in cable mode never answers over
+			// WiFi. One bounded cable check tells whether the update still worked.
+			if cableHello, cableErr := waitForCableFirmwareVersion(ctx, targetVersion, deviceID, "", cableFirmwareVerifyTimeout); cableErr == nil {
+				verifiedBase, verifiedHello, helloErr = base, cableHello, nil
+			}
 		}
 	}
 	if helloErr != nil {

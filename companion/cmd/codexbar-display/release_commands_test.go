@@ -3559,3 +3559,114 @@ func TestResolveRestoreImagePicksNewestBackupThenPath(t *testing.T) {
 		t.Fatalf("resolveRestoreImage() = %q, want the newest backup with the lowest path %q", got, want)
 	}
 }
+
+// Issue #832: a firmware that boots in cable mode never answers over WiFi, so
+// the WiFi check times out although the update was accepted and installed.
+// The device here stays on 1.0.0 over WiFi after its upload is accepted.
+func prepareWiFiUpdateStuckOnOldFirmware(t *testing.T) (string, string) {
+	t.Helper()
+	useMultipartUpload(t)
+	pinNoOtherRuntimeWriter(t)
+	testenv.Home(t, t.TempDir())
+	previousHTTPClient := releaseHTTPClient
+	previousDiscover := discoverWiFiDeviceFn
+	previousWiFiTimeout := firmwareWiFiVerifyTimeout
+	previousPoll := firmwareHTTPVerifyPollInterval
+	previousRediscoveryAfter := firmwareUpdateRediscoveryAfter
+	previousRediscoveryInterval := firmwareUpdateRediscoveryInterval
+	previousCableTimeout := cableFirmwareVerifyTimeout
+	previousCablePoll := cableFirmwareVerifyPollInterval
+	previousResolve := resolveCableFirmwarePortFn
+	previousRead := readCableFirmwareHelloFn
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		discoverWiFiDeviceFn = previousDiscover
+		firmwareWiFiVerifyTimeout = previousWiFiTimeout
+		firmwareHTTPVerifyPollInterval = previousPoll
+		firmwareUpdateRediscoveryAfter = previousRediscoveryAfter
+		firmwareUpdateRediscoveryInterval = previousRediscoveryInterval
+		cableFirmwareVerifyTimeout = previousCableTimeout
+		cableFirmwareVerifyPollInterval = previousCablePoll
+		resolveCableFirmwarePortFn = previousResolve
+		readCableFirmwareHelloFn = previousRead
+	})
+
+	image := "firmware image"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-a","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.0","features":["theme"],"maxFrameBytes":1024}`))
+		case "/manifest.json":
+			_, _ = fmt.Fprintf(w, `{"schemaVersion":1,"release":"v1.0.1","artifacts":[{"firmwareEnv":"esp8266_smalltv_st7789","board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.1","asset":"firmware.bin","firmwareUrl":"http://%s/firmware.bin","sha256":"%s"}]}`, r.Host, sha256String(image))
+		case "/firmware.bin":
+			_, _ = io.WriteString(w, image)
+		case "/api/pair":
+			_, _ = w.Write([]byte(`{"ok":true,"token":"pair-token"}`))
+		case "/update/firmware":
+			_, _ = w.Write([]byte("ok"))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(server.Close)
+	releaseHTTPClient = server.Client()
+	discoverWiFiDeviceFn = func(context.Context, transportlayer.WiFiDiscoveryOptions) (transportlayer.WiFiDiscoveryResult, error) {
+		return transportlayer.WiFiDiscoveryResult{}, errors.New("no VibeTV answers on WiFi")
+	}
+	firmwareWiFiVerifyTimeout = 20 * time.Millisecond
+	firmwareHTTPVerifyPollInterval = time.Millisecond
+	firmwareUpdateRediscoveryAfter = time.Millisecond
+	firmwareUpdateRediscoveryInterval = time.Millisecond
+	cableFirmwareVerifyTimeout = 20 * time.Millisecond
+	cableFirmwareVerifyPollInterval = time.Millisecond
+	return server.URL, server.URL + "/manifest.json"
+}
+
+func TestRunInstallUpdateWiFiTimeoutAcceptsTargetFirmwareOnCable(t *testing.T) {
+	target, manifestURL := prepareWiFiUpdateStuckOnOldFirmware(t)
+	resolveCableFirmwarePortFn = func(string, string) (string, error) { return "/dev/mock-cable", nil }
+	readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{DeviceID: "device-a", Board: "esp8266-smalltv-st7789", Firmware: "1.0.1"}, nil
+	}
+
+	output, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{"--target", target, "--manifest-url", manifestURL})
+	})
+	if err != nil {
+		t.Fatalf("expected the cable to confirm the update, got %v", err)
+	}
+	if !strings.Contains(output, "Done: firmware 1.0.1 installed") {
+		t.Fatalf("expected success output, got:\n%s", output)
+	}
+}
+
+func TestRunInstallUpdateWiFiTimeoutFailsWhenCableIsSilent(t *testing.T) {
+	target, manifestURL := prepareWiFiUpdateStuckOnOldFirmware(t)
+	resolveCableFirmwarePortFn = func(string, string) (string, error) { return "", errors.New("no cable VibeTV") }
+	readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+		t.Fatal("a silent cable must not be read")
+		return protocol.DeviceHello{}, nil
+	}
+
+	_, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{"--target", target, "--manifest-url", manifestURL})
+	})
+	if err == nil || !strings.Contains(err.Error(), "timed out waiting for firmware 1.0.1") {
+		t.Fatalf("expected the WiFi timeout to stay the reported failure, got %v", err)
+	}
+}
+
+func TestRunInstallUpdateWiFiTimeoutFailsWhenCableRunsOtherFirmware(t *testing.T) {
+	target, manifestURL := prepareWiFiUpdateStuckOnOldFirmware(t)
+	resolveCableFirmwarePortFn = func(string, string) (string, error) { return "/dev/mock-cable", nil }
+	readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{DeviceID: "device-a", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0"}, nil
+	}
+
+	_, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{"--target", target, "--manifest-url", manifestURL})
+	})
+	if err == nil || !strings.Contains(err.Error(), "timed out waiting for firmware 1.0.1") {
+		t.Fatalf("expected the WiFi timeout to stay the reported failure, got %v", err)
+	}
+}

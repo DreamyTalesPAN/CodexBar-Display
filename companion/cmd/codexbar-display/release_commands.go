@@ -65,6 +65,7 @@ var (
 	cableRescueRetryPause                              = 3 * time.Second
 	cableFirmwareVerifyTimeout                         = 120 * time.Second
 	cableFirmwareVerifyPollInterval                    = time.Second
+	firmwareWiFiVerifyTimeout                          = 120 * time.Second
 	firmwareRawDialContextFn                           = dialFirmwareRawConnection
 	firmwareRawOTAPort                                 = "8081"
 	firmwareHTTPVerifyPollInterval                     = 2 * time.Second
