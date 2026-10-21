@@ -8053,6 +8053,27 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of 392e4e18 and this approval record. Pull request branch #838 only, not merged, not released.
 - What's new: none — merge of 392e4e18, no customer-visible change of its own
 
+## 2026-10-20 — #840: approval marker after rebasing onto main at 5f09bf54
+
+- User approval: no visible change – UI approval not needed (#840 base switched from claude/818-rom-rescue-retry to main after #819 was merged as 5f09bf54; merged the final #819 branch and main, which carry the same tree; the own entries of #840 keep their approvals)
+- Approved customer-visible result: #840 as in its own entries plus the entries merged with #819 and main; nothing else changes.
+- Scope: the merge of the final #819 branch and main and this approval record. Pull request branch #840 only, not merged, not released.
+- What's new: none — merge only, no customer-visible change of its own
+
+## 2026-10-20 — #840: approval marker after merging main at 392e4e18
+
+- User approval: no visible change – UI approval not needed (merge of main (392e4e18) into #840; the own entries of #840 keep their approvals)
+- Approved customer-visible result: #840 as in its own entries plus the entries merged with 392e4e18; nothing else changes.
+- Scope: the merge of 392e4e18 and this approval record. Pull request branch #840 only, not merged, not released.
+- What's new: none — merge of 392e4e18, no customer-visible change of its own
+
+## 2026-10-21 — #840: approval marker after merging main at e3503bda
+
+- User approval: no visible change – UI approval not needed (merge of main (e3503bda) into #840; the own entries of #840 keep their approvals)
+- Approved customer-visible result: #840 as in its own entries plus the entries merged with e3503bda; nothing else changes.
+- Scope: the merge of e3503bda and this approval record. Pull request branch #840 only, not merged, not released.
+- What's new: none — merge of e3503bda, no customer-visible change of its own
+
 ## 2026-10-18 — Calm type: 13 px text in the shared buttons, cards, labels and inputs (#713)
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm type: 13 px text in the shared buttons, cards, labels and inputs (#713)
@@ -8856,6 +8877,13 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the slider thumb looks as in the pending #784 slider entry: grey ring on hover and drag, olive ring only for keyboard focus. Nothing else changes.
 - Scope: `apps/control-center/src/components/ui/slider.tsx` (thumb ring classes), its test `apps/control-center/src/components/ui/slider.focus-ring.test.tsx`, and this approval record. Pull request branch #784 only, not merged, not released.
 - What's new: none — ring colour classes of the slider thumb, no new text
+
+## 2026-10-21 — #784: approval marker after merging main at f314106c
+
+- User approval: no visible change – UI approval not needed (merge of main (f314106c) into #784; the own entries of #784 keep their approvals)
+- Approved customer-visible result: #784 as in its own entries plus the entries merged with f314106c; nothing else changes.
+- Scope: the merge of f314106c and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — merge of f314106c, no customer-visible change of its own
 
 ## 2026-10-20 — #816: "Not now" on "VibeTV not found" holds through a short status change in the same outage (#787)
 

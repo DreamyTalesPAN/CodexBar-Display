@@ -310,6 +310,26 @@ func resolveVibeTVPortForControl(
 	)
 }
 
+// WithoutTTYAliases drops each /dev/tty.X whose /dev/cu.X is listed too: macOS
+// exposes one USB-UART twice, and a search that compares port lists would count
+// one replugged VibeTV as two new ports (#840 bench, 21.10.2026).
+func WithoutTTYAliases(ports []string) []string {
+	callout := make(map[string]bool, len(ports))
+	for _, port := range ports {
+		if name, ok := strings.CutPrefix(strings.TrimSpace(port), "/dev/cu."); ok {
+			callout[name] = true
+		}
+	}
+	kept := make([]string, 0, len(ports))
+	for _, port := range ports {
+		if name, ok := strings.CutPrefix(strings.TrimSpace(port), "/dev/tty."); ok && callout[name] {
+			continue
+		}
+		kept = append(kept, port)
+	}
+	return kept
+}
+
 func cableSerialCandidates(ports []string, goos string) []string {
 	candidates := make([]string, 0, len(ports))
 	for _, candidate := range ports {
