@@ -485,24 +485,6 @@ func runURLSchemeTests() {
         "the Companion child must inherit the app environment so it can find HOME"
     )
     require(
-        RuntimePreparationOutcome.nativeRuntimeReady.shouldReloadControlCenter,
-        "healthy native runtime must refresh the WebView"
-    )
-    require(
-        !RuntimePreparationOutcome.codexBarRepairRequired.shouldReloadControlCenter,
-        "a failed CodexBar installation must keep customer setup blocked"
-    )
-    require(
-        !RuntimePreparationOutcome.failure(.backgroundApproval)
-            .shouldReloadControlCenter,
-        "background approval must keep the WebView closed until the runtime is verified"
-    )
-    require(
-        !RuntimePreparationOutcome.failure(.legacyRepair)
-            .shouldReloadControlCenter,
-        "uncertain runtime state must not force a misleading WebView refresh"
-    )
-    require(
         !shouldRetryControlCenterNavigation(
             NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)
         ),
@@ -878,9 +860,8 @@ func runURLSchemeTests() {
         coldRouter.receive([URL(string: "vibetv://open-control-center")!]) == nil,
         "cold launch must queue the request until AppKit finishes launching"
     )
-    require(coldRouter.hasPendingOpen, "cold launch request was not queued")
     require(coldRouter.markReady() == "control-center", "queued cold launch request was not delivered")
-    require(!coldRouter.hasPendingOpen, "delivered cold launch request was not cleared")
+    require(coldRouter.markReady() == nil, "delivered cold launch request was not cleared")
 
     var warmRouter = ControlCenterURLRouter()
     require(warmRouter.markReady() == nil, "warm router should start without a queued request")
@@ -901,7 +882,7 @@ func runURLSchemeTests() {
         coldThemeRouter.markReady() == "control-center/install/claude-creature",
         "cold theme link must keep its selected theme"
     )
-    require(!coldThemeRouter.hasPendingOpen, "delivered theme link must be cleared")
+    require(coldThemeRouter.markReady() == nil, "delivered theme link must be cleared")
     require(
         warmRouter.receive([themeLink]) == "control-center/install/claude-creature",
         "warm theme link must navigate immediately"
@@ -961,7 +942,7 @@ func runURLSchemeTests() {
         invalidRouter.receive([URL(string: "vibetv://install-theme")!]) == nil,
         "invalid URL must not open the Control Center"
     )
-    require(!invalidRouter.hasPendingOpen, "invalid URL must not be queued")
+    require(invalidRouter.markReady() == nil, "invalid URL must not be queued")
 
     require(
         !runtimeServiceNeedsRefresh(

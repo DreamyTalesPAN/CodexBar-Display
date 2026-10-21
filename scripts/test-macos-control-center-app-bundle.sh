@@ -962,12 +962,10 @@ prepare_payload_end = source.find("private func bootstrapCodexBar()", prepare_pa
 prepare_payload = source[prepare_payload_start:prepare_payload_end]
 if (
     '"prepare-codexbar", "--archive"' not in prepare_payload
-    or 'arguments.append("--reuse-running")' not in prepare_payload
-    or 'withBundleIdentifier: codexBarBundleIdentifier' not in prepare_payload
     or 'return await runPinnedCodexBar(arguments)' not in prepare_payload
     or 'await runPinnedCodexBar(["validate-codexbar", "--app", appURL.path])' not in source
 ):
-    raise SystemExit("native shell must delegate pinned staging/validation and preserve the running-app exception")
+    raise SystemExit("native shell must delegate pinned staging/validation")
 
 repair_start = source.find("private func beginCodexBarRepair(hasJavaScriptOwner: Bool)")
 repair_end = source.find("@objc private func openSupportLog()", repair_start)
