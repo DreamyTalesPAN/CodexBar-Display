@@ -18094,3 +18094,38 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none beyond #893 itself; confirming WiFi from Settings shows the selected WiFi card again, a reload during a theme install shows its dialog on Appearance.
 - Scope: finishSetup in control-center-app.tsx; pull request branch #893 only.
 - What's new: none — no visible change beyond #893
+
+## 2026-10-21 — #895: Settings reads CodexBar's Used / Remaining once the first usage read lands
+
+- User approval: no visible change – UI approval not needed (bug fix: Settings re-reads CodexBar's Used / Remaining while it is unavailable, so the first serve snapshot shows it without reopening Settings)
+- Approved customer-visible result: The Show row stays disabled until the first serve snapshot and then shows the saved mode without leaving Settings; nothing else changes.
+- Scope: Control Center Settings display-preference re-read on usage reads and its regression test; no new controls or copy.
+- What's new: none — the row fills in sooner after a fresh start.
+
+## 2026-10-21 — #877: Recent activity names a saved Used / Remaining change
+
+- User approval: pending — Recent activity gets an entry when Used / Remaining is changed
+- Approved customer-visible result: Recent activity gets one entry "Usage display saved" with the chosen mode (Used or Remaining) when the change is saved; a refused change keeps the existing "save needs attention" entry; nothing else changes.
+- Scope: Control Center Settings entry for the Show (Used / Remaining) preference and its regression test; not on Windows.
+- What's new: none — the notice waits until Paul approves this entry
+
+## 2026-10-21 — #877: Recent activity wording change reverted (#579 point 6 already fixed)
+
+- User approval: no visible change – UI approval not needed (revert of 11b7f9bf: the existing entry "Show saved – Show is set to Remaining." stays; the pending wording change above is withdrawn)
+- Approved customer-visible result: Recent activity keeps the existing "Show saved – Show is set to …" entry when Used / Remaining is changed; nothing else changes.
+- Scope: this approval record only; the code change of 11b7f9bf was reverted in 108ad227. Pull request branch #877 only, not merged, not released.
+- What's new: none — revert, no customer-visible change
+
+## 2026-10-22 — #877: lint fix for the Used / Remaining re-read (#895)
+
+- User approval: no visible change – UI approval not needed (typecheck-level fix: the re-read that #895 added runs in a timer instead of synchronously in the effect body, to satisfy react-hooks/set-state-in-effect; same reads, same timing for the customer)
+- Approved customer-visible result: none; Settings shows the same Used / Remaining state as before.
+- Scope: control-center-app.tsx effect for the unavailable usage mode; pull request branch #877 only.
+- What's new: none — lint fix, no customer-visible change
+
+## 2026-10-22 — #877: Used / Remaining re-read runs from the usage poll (no timer)
+
+- User approval: no visible change – UI approval not needed (lint-level restructuring: the #895 re-read that the timer in 99050316 delayed now runs from the usage poll result itself; same reads, same Settings state for the customer)
+- Approved customer-visible result: none; Settings shows the same Used / Remaining state as before.
+- Scope: control-center-app.tsx only (usage poll result, moved derivations); pull request branch #877 only.
+- What's new: none — lint fix, no customer-visible change
