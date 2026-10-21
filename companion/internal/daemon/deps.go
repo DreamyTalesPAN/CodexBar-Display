@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
@@ -33,6 +34,7 @@ type runtimeDeps struct {
 	dashboard             codexbar.DashboardServe
 	usageBarsShowUsed     func() bool
 	beginDeviceWrite      func() func()
+	deviceWriteWaited     *atomic.Bool
 	interval              time.Duration
 	sendLine              func(string, []byte) error
 	fetchUpdateState      func(context.Context, protocol.DeviceCapabilities) (protocol.UpdateState, error)
