@@ -14,15 +14,57 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 )
 
-func getPreviewFrames(t *testing.T, server *Server) previewFramesResponse {
+func getUsage(t *testing.T, server *Server, target string) usageResponse {
 	t.Helper()
 	recorder := httptest.NewRecorder()
-	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/display/preview-frames", nil))
-	var got previewFramesResponse
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, target, nil))
+	var got usageResponse
 	if err := json.Unmarshal(recorder.Body.Bytes(), &got); err != nil || recorder.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s err=%v", recorder.Code, recorder.Body.String(), err)
 	}
 	return got
+}
+
+func getPreviewFrames(t *testing.T, server *Server) previewFramesResponse {
+	t.Helper()
+	got := getUsage(t, server, "/v1/usage?previewFrames=1")
+	if got.PreviewFrames == nil {
+		t.Fatal("previewFrames missing")
+	}
+	return *got.PreviewFrames
+}
+
+// Usage and frames of one response are built from one loaded snapshot: a
+// collector cycle between two requests cannot make them disagree.
+func TestUsagePreviewFramesComeFromTheSameSnapshotAsUsage(t *testing.T) {
+	isolatePreviewHome(t)
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	loads := 0
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		loads++
+		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
+			Provider: "codex", CollectedAt: now,
+			Frame: protocol.Frame{
+				Provider: "codex", Label: "Codex", UsageMode: "used",
+				UsageWindows: []protocol.UsageWindow{{ID: "weekly", Label: "Weekly", Percent: loads, ResetSec: 3600}},
+			},
+		}}}, true
+	}
+
+	got := getUsage(t, server, "/v1/usage?previewFrames=1")
+	if loads != 1 {
+		t.Fatalf("usage loaded %d times for one response", loads)
+	}
+	frame := got.PreviewFrames.Providers[0].Pinned
+	if len(got.Providers) != 1 || got.Providers[0].Weekly != 1 ||
+		len(frame.ProviderSlots) != 1 || frame.ProviderSlots[0].Percent != 1 {
+		t.Fatalf("usage and frame disagree: usage=%+v frame=%+v", got.Providers, frame.ProviderSlots)
+	}
+	if plain := getUsage(t, server, "/v1/usage"); plain.PreviewFrames != nil {
+		t.Fatalf("frames only on request: %+v", plain.PreviewFrames)
+	}
 }
 
 func TestDisplayPreviewFramesAreTheDaemonsFrames(t *testing.T) {
@@ -98,22 +140,6 @@ func TestDisplayPreviewFramesCoverEveryEnabledProvider(t *testing.T) {
 	}
 	if rows := got.Providers[1].Automatic.ProviderSlots; len(rows) != 1 || rows[0].ID != "codex" {
 		t.Fatalf("the unavailable provider has no row: %+v", rows)
-	}
-}
-
-func TestDisplayPreviewFramesWithoutUsageIsEmptyAndGetOnly(t *testing.T) {
-	isolatePreviewHome(t)
-	server := newTestServer(t, runtimeconfig.Config{})
-	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
-
-	if got := getPreviewFrames(t, server); len(got.Providers) != 0 {
-		t.Fatalf("providers: %+v", got.Providers)
-	}
-
-	recorder := httptest.NewRecorder()
-	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/display/preview-frames", nil))
-	if recorder.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("POST status=%d", recorder.Code)
 	}
 }
 

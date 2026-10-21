@@ -8507,3 +8507,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: setup step 11 as in #858; when no provider has a current reading Automatic shows the one last-good frame the stream restates, and usage and its frames are published as one snapshot.
 - Scope: daemon.PreviewFrames (last-good restate), the usage refresh in control-center-app.tsx, its test, the customer-flow preview-frames mock. Pull request branch only, not merged, not released.
 - What's new: none — the tiles show what the stream sends
+
+## 2026-10-21 — #858: usage and setup preview frames come from one snapshot
+
+- User approval: no visible change – UI approval not needed (#858 Codex fix: usage and setup preview frames come from one snapshot)
+- Approved customer-visible result: setup step 11 as in #858; the frames now arrive inside the /v1/usage response, so a collector cycle between two requests cannot make usage and frames disagree.
+- Scope: GET /v1/usage?previewFrames=1 replaces the separate /v1/display/preview-frames route; the usage refresh in control-center-app.tsx, its test, the customer-flow mock. Pull request branch only, not merged, not released.
+- What's new: none — the tiles show what the stream sends

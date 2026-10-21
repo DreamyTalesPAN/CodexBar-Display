@@ -4,7 +4,7 @@ import { formatReset } from "../usage-screen";
 import type { DisplayFrame } from "../live-vibetv-preview";
 import type { SetupDisplayModePreview } from "./setup-display-mode-screen";
 
-/** GET /v1/display/preview-frames: the frames the companion builds for the stream, per provider. */
+/** `previewFrames` of GET /v1/usage?previewFrames=1: the frames the companion builds for the stream, per provider. */
 export type PreviewFrames = {
   generatedAt?: string;
   providers?: { id: string; automatic?: DisplayFrame; pinned?: DisplayFrame }[];

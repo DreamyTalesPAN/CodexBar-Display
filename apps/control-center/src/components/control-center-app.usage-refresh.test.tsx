@@ -142,7 +142,7 @@ it("ends the Refreshing mark within seconds of the new values", async () => {
   const companion = { refreshing: false, providerReads: 0 };
   const { wait } = mountApp(
     (url) => {
-      if (url.endsWith("?refresh=1")) {
+      if (url.includes("refresh=1")) {
         companion.refreshing = true;
       }
       return jsonResponse(usageBody(12, 34, companion.refreshing ? "refreshing" : "fresh"));
@@ -175,10 +175,22 @@ it("ends the Refreshing mark within seconds of the new values", async () => {
   ).toBe("false");
 });
 
+it("reads the setup preview frames with the usage, not from a second request", async () => {
+  const frames = { generatedAt: "2026-08-13T12:00:00Z", providers: [{ id: "codex" }] };
+  const { wait } = mountApp((url) =>
+    jsonResponse(url.includes("previewFrames=1") ? { ...usageBody(12, 34), previewFrames: frames } : usageBody(12, 34)),
+  );
+  await wait(10);
+
+  const urls = vi.mocked(fetch).mock.calls.map(([input]) => String(input));
+  expect(urls.filter((url) => url.includes("/v1/usage")).every((url) => url.includes("previewFrames=1"))).toBe(true);
+  expect(urls.some((url) => url.includes("preview-frames"))).toBe(false);
+});
+
 it("keeps the newest usage when an older read resolves last", async () => {
   let releaseOlder: (response: Response) => void = () => {};
   const { text, wait } = mountApp((url) =>
-    url.endsWith("?refresh=1")
+    url.includes("refresh=1")
       ? new Promise<Response>((resolve) => {
           releaseOlder = resolve;
         })

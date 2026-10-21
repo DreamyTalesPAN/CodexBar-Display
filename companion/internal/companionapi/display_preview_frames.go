@@ -1,7 +1,6 @@
 package companionapi
 
 import (
-	"net/http"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
@@ -9,8 +8,10 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 )
 
+// previewFramesResponse carries the frames the stream would send, built by the
+// daemon's own frame code from the same persisted usage a /v1/usage response is
+// built from, so the app draws them without rebuilding any host logic.
 type previewFramesResponse struct {
-	OK          bool                   `json:"ok"`
 	GeneratedAt string                 `json:"generatedAt"`
 	Providers   []previewFramesForItem `json:"providers"`
 }
@@ -23,27 +24,16 @@ type previewFramesForItem struct {
 	Pinned    protocol.Frame  `json:"pinned"`
 }
 
-// handleDisplayPreviewFrames gives the setup tiles the frames the stream would
-// send, built by the daemon's own frame code from the persisted usage, so the
-// app draws them without rebuilding any host logic. Providers come in
-// CodexBar's order; one without a reading yet gets the host's unavailable frame,
-// and has no Automatic frame while another provider has a current reading.
-func (s *Server) handleDisplayPreviewFrames(w http.ResponseWriter, r *http.Request) {
-	if !requireMethod(w, r, http.MethodGet) {
-		return
+// previewFramesFor lists providers in CodexBar's order; one without a reading
+// yet gets the host's unavailable frame, and has no Automatic frame while
+// another provider has a current reading.
+func previewFramesFor(usage daemon.PersistedUsage, inventory []codexbar.ProviderSetting, now time.Time) *previewFramesResponse {
+	resp := &previewFramesResponse{GeneratedAt: now.UTC().Format(time.RFC3339Nano), Providers: []previewFramesForItem{}}
+	usage = usageInInventoryOrder(usage, inventory)
+	for _, preview := range daemon.PreviewFrames(usage, codexbar.UsageBarsShowUsed(), now) {
+		resp.Providers = append(resp.Providers, previewFramesForItem{ID: preview.Provider, Automatic: preview.Automatic, Pinned: preview.Pinned})
 	}
-
-	now := s.currentTime()
-	resp := previewFramesResponse{OK: true, GeneratedAt: now.UTC().Format(time.RFC3339Nano), Providers: []previewFramesForItem{}}
-	if s.loadUsage != nil {
-		if usage, ok := s.loadUsage(now); ok {
-			usage = usageInInventoryOrder(usage, s.providerInventoryForUsage(r.Context()))
-			for _, preview := range daemon.PreviewFrames(usage, codexbar.UsageBarsShowUsed(), now) {
-				resp.Providers = append(resp.Providers, previewFramesForItem{ID: preview.Provider, Automatic: preview.Automatic, Pinned: preview.Pinned})
-			}
-		}
-	}
-	writeJSON(w, http.StatusOK, resp)
+	return resp
 }
 
 // usageInInventoryOrder lists the persisted usage of every enabled provider in

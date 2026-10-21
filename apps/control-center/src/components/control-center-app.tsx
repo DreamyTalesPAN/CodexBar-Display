@@ -3424,22 +3424,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           setBusyAction("usage");
         }
         try {
-          const payload = await runCompanion<UsageSnapshot>(
-            quiet ? "/v1/usage" : "/v1/usage?refresh=1",
+          // The frames the setup tiles draw are the ones the companion builds
+          // for the stream, in the same response as the usage they come from.
+          const { previewFrames: frames, ...payload } = await runCompanion<
+            UsageSnapshot & { previewFrames?: PreviewFrames }
+          >(
+            quiet ? "/v1/usage?previewFrames=1" : "/v1/usage?refresh=1&previewFrames=1",
             undefined,
             { preserveLastError: quiet },
           );
-          // The frames the setup tiles draw are the ones the companion builds
-          // for the stream, read with the usage they come from and published
-          // together with it; a slower, older read never replaces a newer pair.
-          const frames = await runCompanion<PreviewFrames>(
-            "/v1/display/preview-frames",
-            undefined,
-            { preserveLastError: true },
-          ).catch(() => null);
           if (generation === usageGenerationRef.current) {
             setUsage(payload);
-            setPreviewFrames(frames);
+            setPreviewFrames(frames ?? null);
           }
           setUsageError(null);
           setCompanionStatus("online");

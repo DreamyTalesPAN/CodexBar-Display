@@ -12034,14 +12034,6 @@ async function routeCompanionOnline(
       });
       return;
     }
-    if (pathname === "/v1/display/preview-frames") {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(previewFramesFromUsageResponse(usageResponse)),
-      });
-      return;
-    }
     if (pathname === "/v1/usage") {
       if (usageStatus !== 200) {
         await route.fulfill({
@@ -12057,10 +12049,7 @@ async function routeCompanionOnline(
         });
         return;
       }
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(
+      const body =
           usageResponse || {
             ok: true,
             generatedAt: "2026-06-29T10:47:46Z",
@@ -12077,8 +12066,11 @@ async function routeCompanionOnline(
                 usageMode: "used",
               },
             ],
-          },
-        ),
+          };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ...body, previewFrames: previewFramesFromUsageResponse(body) }),
       });
       return;
     }
@@ -12737,7 +12729,6 @@ function previewFramesFromUsageResponse(usageResponse) {
       ? usageResponse.providers
       : [];
   return {
-    ok: true,
     generatedAt: "2026-06-29T10:47:46Z",
     providers: providers.map((provider) => {
       const frame = {
